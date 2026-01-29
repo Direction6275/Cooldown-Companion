@@ -269,12 +269,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
     
-    -- Tooltip and clickthrough handling
-    -- Clicks and motion are controlled independently:
-    --   disableClicks = clickthrough enabled (allows camera LMB/RMB pass-through)
-    --   disableMotion = tooltips disabled (no OnEnter/OnLeave needed)
+    -- Click-through is always enabled (clicks always pass through for camera movement)
+    -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips ~= false
-    local disableClicks = style.enableClickthrough or false
+    local disableClicks = true
     local disableMotion = not showTooltips
 
     -- Apply to the button frame and all children recursively
@@ -453,10 +451,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
     end
 
-    -- Update clickthrough and tooltip handling
-    -- Clicks and motion are controlled independently
+    -- Click-through is always enabled (clicks always pass through for camera movement)
+    -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips ~= false
-    local disableClicks = style.enableClickthrough or false
+    local disableClicks = true
     local disableMotion = not showTooltips
 
     -- Apply to the button frame and all children recursively

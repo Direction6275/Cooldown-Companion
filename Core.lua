@@ -83,7 +83,6 @@ local defaults = {
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = false, -- Prevent icon image stretching
                         showTooltips = true,
-                        enableClickthrough = false, -- Allow clicks to pass through buttons
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
                     },
                     enabled = true,
@@ -102,7 +101,6 @@ local defaults = {
             iconWidthRatio = 1.0,
             maintainAspectRatio = false,
             showTooltips = true,
-            enableClickthrough = false,
             desaturateOnCooldown = false,
         },
         locked = false,

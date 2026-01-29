@@ -460,17 +460,10 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     if not frame or not group then return end
 
-    local style = group.style or {}
-
-    -- Group frame container should always have clicks disabled when locked
-    -- (buttons handle their own clickthrough independently)
-    local disableClicks = style.enableClickthrough or false
-    local disableMotion = not (style.showTooltips ~= false)
-
-    -- When locked and clickthrough: disable clicks on group container
-    -- When unlocked: always enable everything for dragging
-    if self.db.profile.locked and disableClicks then
-        SetFrameClickThrough(frame, true, true) -- Group container: fully non-interactive
+    -- When locked: group container is always fully non-interactive
+    -- When unlocked: enable everything for dragging
+    if self.db.profile.locked then
+        SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
         end

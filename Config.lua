@@ -935,29 +935,6 @@ function CooldownCompanion:SetupConfig()
                             end
                         end,
                     },
-                    enableClickthrough = {
-                        name = "Enable Click-Through",
-                        desc = "Allow mouse clicks to pass through buttons to frames underneath",
-                        type = "toggle",
-                        order = 52,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            -- Only show when tooltips are enabled
-                            return not (group and group.style.showTooltips ~= false)
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.enableClickthrough
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.enableClickthrough = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
                 },
             },
             profiles = AceDBOptions:GetOptionsTable(self.db),
