@@ -188,9 +188,18 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if not frame or not group then return end
 
     local style = group.style or {}
-    local buttonSize = style.buttonSize or ST.BUTTON_SIZE
-    local widthRatio = style.iconWidthRatio or 1.0
-    local buttonWidth = buttonSize * widthRatio
+    local buttonWidth, buttonHeight
+
+    if style.maintainAspectRatio then
+        buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    else
+        local buttonSize = style.buttonSize or ST.BUTTON_SIZE
+        local widthRatio = style.iconWidthRatio or 1.0
+        buttonWidth = buttonSize * widthRatio
+        buttonHeight = buttonSize
+    end
+
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
@@ -211,11 +220,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         if orientation == "horizontal" then
             row = math.floor((i - 1) / buttonsPerRow)
             col = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonSize + spacing))
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
         else
             col = math.floor((i - 1) / buttonsPerRow)
             row = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonSize + spacing))
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
         end
 
         button:Show()
@@ -239,16 +248,25 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     if not frame or not group then return end
 
     local style = group.style or {}
-    local buttonSize = style.buttonSize or ST.BUTTON_SIZE
-    local widthRatio = style.iconWidthRatio or 1.0
-    local buttonWidth = buttonSize * widthRatio
+    local buttonWidth, buttonHeight
+
+    if style.maintainAspectRatio then
+        buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    else
+        local buttonSize = style.buttonSize or ST.BUTTON_SIZE
+        local widthRatio = style.iconWidthRatio or 1.0
+        buttonWidth = buttonSize * widthRatio
+        buttonHeight = buttonSize
+    end
+
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = #group.buttons
 
     if numButtons == 0 then
-        frame:SetSize(buttonWidth, buttonSize)
+        frame:SetSize(buttonWidth, buttonHeight)
         return
     end
 
@@ -262,9 +280,9 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     local width = cols * buttonWidth + (cols - 1) * spacing
-    local height = rows * buttonSize + (rows - 1) * spacing
+    local height = rows * buttonHeight + (rows - 1) * spacing
 
-    frame:SetSize(math.max(width, buttonWidth), math.max(height, buttonSize))
+    frame:SetSize(math.max(width, buttonWidth), math.max(height, buttonHeight))
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
@@ -372,24 +390,11 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     local showTooltips = style.showTooltips ~= false
     local isClickthrough = not showTooltips or style.enableClickthrough
 
-    -- When locked:
-    --   If clickthrough: disable click capture to allow camera movement
-    --   If not clickthrough: normal behavior
-    -- When unlocked: need mouse for dragging (drag handle always works as backup)
-    if self.db.profile.locked then
-        if isClickthrough then
-            frame:EnableMouse(false)
-            frame:SetMouseClickEnabled(false)
-            frame:SetMouseMotionEnabled(false)
-        else
-            frame:EnableMouse(true)
-            frame:SetMouseClickEnabled(true)
-            frame:SetMouseMotionEnabled(true)
-        end
+    -- When locked and clickthrough: disable mouse completely for camera passthrough
+    -- When unlocked: always enable mouse for dragging (drag handle is backup)
+    if self.db.profile.locked and isClickthrough then
+        frame:EnableMouse(false)
     else
-        -- When unlocked, enable dragging but still respect clickthrough for clicks
         frame:EnableMouse(true)
-        frame:SetMouseClickEnabled(true)
-        frame:SetMouseMotionEnabled(true)
     end
 end

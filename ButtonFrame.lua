@@ -66,13 +66,24 @@ local function HideGlow(frame)
 end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
-    local size = style.buttonSize or ST.BUTTON_SIZE
-    local widthRatio = style.iconWidthRatio or 1.0
-    local width = size * widthRatio
+    local width, height
+    local maintainAspectRatio = style.maintainAspectRatio
+
+    if maintainAspectRatio then
+        -- Use separate width/height when maintaining aspect ratio
+        width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    else
+        -- Use buttonSize and widthRatio when stretching
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        local widthRatio = style.iconWidthRatio or 1.0
+        width = size * widthRatio
+        height = size
+    end
 
     -- Create main button frame
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
-    button:SetSize(width, size)
+    button:SetSize(width, height)
     
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -87,21 +98,21 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
     -- Handle aspect ratio via texture cropping
-    local maintainAspectRatio = style.maintainAspectRatio
-    if maintainAspectRatio and widthRatio ~= 1.0 then
+    if maintainAspectRatio and width ~= height then
         -- Crop the icon texture to match frame shape while keeping icon undistorted
         -- Default visible texture range: 0.08 to 0.92 (0.84 of texture)
         local texMin, texMax = 0.08, 0.92
         local texRange = texMax - texMin
+        local aspectRatio = width / height
 
-        if widthRatio > 1.0 then
+        if aspectRatio > 1.0 then
             -- Frame is wider than tall - crop top/bottom of icon
-            local visibleHeight = texRange / widthRatio
+            local visibleHeight = texRange / aspectRatio
             local cropAmount = (texRange - visibleHeight) / 2
             button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
         else
             -- Frame is taller than wide - crop left/right of icon
-            local visibleWidth = texRange * widthRatio
+            local visibleWidth = texRange * aspectRatio
             local cropAmount = (texRange - visibleWidth) / 2
             button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
         end
@@ -118,7 +129,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     })
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.border:SetBackdropBorderColor(unpack(borderColor))
-    
+    button.border:EnableMouse(false) -- Never capture mouse on border
+
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
@@ -126,6 +138,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+    button.cooldown:EnableMouse(false) -- Never capture mouse on cooldown
 
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -163,24 +176,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
     
     -- Tooltip and clickthrough handling
-    -- If tooltips are off, buttons are automatically clickthrough
-    -- If tooltips are on, clickthrough is controlled by enableClickthrough setting
+    -- If tooltips are off OR clickthrough is enabled, disable mouse completely
+    -- This allows camera movement (LMB/RMB) to pass through the icons
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
 
-    -- EnableMouse controls whether the frame receives ANY mouse events
-    -- SetMouseClickEnabled controls whether clicks are captured (for camera movement passthrough)
-    -- SetMouseMotionEnabled controls whether motion events are captured (for tooltips)
-    if enableClickthrough then
-        -- Full click-through: allow camera movement and all clicks to pass through
-        button:EnableMouse(showTooltips) -- Enable mouse only if we want tooltips
-        button:SetMouseClickEnabled(false) -- Allow LMB/RMB camera movement through
-        button:SetMouseMotionEnabled(showTooltips) -- Motion events only for tooltips
-    else
-        button:EnableMouse(true)
-        button:SetMouseClickEnabled(true)
-        button:SetMouseMotionEnabled(true)
-    end
+    -- EnableMouse(false) = full click-through, camera works, no tooltips
+    -- EnableMouse(true) = captures mouse, tooltips work, blocks camera
+    button:EnableMouse(not enableClickthrough)
 
     button:SetScript("OnEnter", function(self)
         if not self.style.showTooltips then return end
@@ -273,15 +276,27 @@ function CooldownCompanion:SetButtonGlow(button, show)
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
-    local size = style.buttonSize or ST.BUTTON_SIZE
-    local widthRatio = style.iconWidthRatio or 1.0
-    local width = size * widthRatio
+    local width, height
+    local maintainAspectRatio = style.maintainAspectRatio
+
+    if maintainAspectRatio then
+        -- Use separate width/height when maintaining aspect ratio
+        width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    else
+        -- Use buttonSize and widthRatio when stretching
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        local widthRatio = style.iconWidthRatio or 1.0
+        width = size * widthRatio
+        height = size
+    end
+
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
 
     -- Store updated style reference
     button.style = style
 
-    button:SetSize(width, size)
+    button:SetSize(width, height)
 
     -- Update icon position
     button.icon:ClearAllPoints()
@@ -289,20 +304,20 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
     -- Handle aspect ratio via texture cropping
-    local maintainAspectRatio = style.maintainAspectRatio
-    if maintainAspectRatio and widthRatio ~= 1.0 then
+    if maintainAspectRatio and width ~= height then
         -- Crop the icon texture to match frame shape while keeping icon undistorted
         local texMin, texMax = 0.08, 0.92
         local texRange = texMax - texMin
+        local aspectRatio = width / height
 
-        if widthRatio > 1.0 then
+        if aspectRatio > 1.0 then
             -- Frame is wider than tall - crop top/bottom of icon
-            local visibleHeight = texRange / widthRatio
+            local visibleHeight = texRange / aspectRatio
             local cropAmount = (texRange - visibleHeight) / 2
             button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
         else
             -- Frame is taller than wide - crop left/right of icon
-            local visibleWidth = texRange * widthRatio
+            local visibleWidth = texRange * aspectRatio
             local cropAmount = (texRange - visibleWidth) / 2
             button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
         end
@@ -335,20 +350,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
 
     -- Update clickthrough based on tooltip settings
+    -- If tooltips are off OR clickthrough is enabled, disable mouse completely
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
 
-    -- EnableMouse controls whether the frame receives ANY mouse events
-    -- SetMouseClickEnabled controls whether clicks are captured (for camera movement passthrough)
-    -- SetMouseMotionEnabled controls whether motion events are captured (for tooltips)
-    if enableClickthrough then
-        -- Full click-through: allow camera movement and all clicks to pass through
-        button:EnableMouse(showTooltips) -- Enable mouse only if we want tooltips
-        button:SetMouseClickEnabled(false) -- Allow LMB/RMB camera movement through
-        button:SetMouseMotionEnabled(showTooltips) -- Motion events only for tooltips
-    else
-        button:EnableMouse(true)
-        button:SetMouseClickEnabled(true)
-        button:SetMouseMotionEnabled(true)
-    end
+    -- EnableMouse(false) = full click-through, camera works, no tooltips
+    -- EnableMouse(true) = captures mouse, tooltips work, blocks camera
+    button:EnableMouse(not enableClickthrough)
 end
