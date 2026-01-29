@@ -21,6 +21,13 @@ local function SetFrameClickThrough(frame, clickThrough)
         if frame.SetMouseMotionEnabled then
             frame:SetMouseMotionEnabled(false)
         end
+        -- Propagate mouse events to parent (pass-through)
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(true)
+        end
+        if frame.SetPropagateMouseClicks then
+            frame:SetPropagateMouseClicks(true)
+        end
         -- Unregister any click/drag events
         if frame.RegisterForClicks then
             frame:RegisterForClicks()
@@ -34,6 +41,11 @@ local function SetFrameClickThrough(frame, clickThrough)
         end
         -- Disable keyboard interaction too
         frame:EnableKeyboard(false)
+        -- Clear any scripts that might capture mouse
+        frame:SetScript("OnEnter", nil)
+        frame:SetScript("OnLeave", nil)
+        frame:SetScript("OnMouseDown", nil)
+        frame:SetScript("OnMouseUp", nil)
     else
         -- Enable mouse interaction
         frame:EnableMouse(true)
@@ -43,10 +55,26 @@ local function SetFrameClickThrough(frame, clickThrough)
         if frame.SetMouseMotionEnabled then
             frame:SetMouseMotionEnabled(true)
         end
+        -- Don't propagate mouse events
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(false)
+        end
+        if frame.SetPropagateMouseClicks then
+            frame:SetPropagateMouseClicks(false)
+        end
         -- Reset hit rect to normal
         if frame.SetHitRectInsets then
             frame:SetHitRectInsets(0, 0, 0, 0)
         end
+    end
+end
+
+-- Recursively apply click-through to frame and all children
+local function SetFrameClickThroughRecursive(frame, clickThrough)
+    SetFrameClickThrough(frame, clickThrough)
+    -- Apply to all child frames
+    for _, child in ipairs({frame:GetChildren()}) do
+        SetFrameClickThroughRecursive(child, clickThrough)
     end
 end
 
@@ -439,10 +467,21 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- When locked and clickthrough: disable mouse completely for camera passthrough
     -- When unlocked: always enable mouse for dragging (drag handle is backup)
     if self.db.profile.locked and isClickthrough then
+        -- Only apply to the group frame container (not buttons, which handle their own)
         SetFrameClickThrough(frame, true)
+        -- Also disable the drag handle
+        if frame.dragHandle then
+            SetFrameClickThrough(frame.dragHandle, true)
+        end
     else
         SetFrameClickThrough(frame, false)
         -- Re-register for drag when not click-through
         frame:RegisterForDrag("LeftButton")
+        -- Re-enable drag handle
+        if frame.dragHandle then
+            SetFrameClickThrough(frame.dragHandle, false)
+            frame.dragHandle:EnableMouse(true)
+            frame.dragHandle:RegisterForDrag("LeftButton")
+        end
     end
 end

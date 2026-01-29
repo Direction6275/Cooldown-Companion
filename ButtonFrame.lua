@@ -27,6 +27,13 @@ local function SetFrameClickThrough(frame, clickThrough)
         if frame.SetMouseMotionEnabled then
             frame:SetMouseMotionEnabled(false)
         end
+        -- Propagate mouse events to parent (pass-through)
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(true)
+        end
+        if frame.SetPropagateMouseClicks then
+            frame:SetPropagateMouseClicks(true)
+        end
         -- Unregister any click events
         if frame.RegisterForClicks then
             frame:RegisterForClicks()
@@ -40,6 +47,11 @@ local function SetFrameClickThrough(frame, clickThrough)
         end
         -- Disable keyboard interaction too
         frame:EnableKeyboard(false)
+        -- Clear any scripts that might capture mouse
+        frame:SetScript("OnEnter", nil)
+        frame:SetScript("OnLeave", nil)
+        frame:SetScript("OnMouseDown", nil)
+        frame:SetScript("OnMouseUp", nil)
     else
         -- Enable mouse interaction
         frame:EnableMouse(true)
@@ -49,10 +61,26 @@ local function SetFrameClickThrough(frame, clickThrough)
         if frame.SetMouseMotionEnabled then
             frame:SetMouseMotionEnabled(true)
         end
+        -- Don't propagate mouse events (handle them ourselves)
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(false)
+        end
+        if frame.SetPropagateMouseClicks then
+            frame:SetPropagateMouseClicks(false)
+        end
         -- Reset hit rect to normal
         if frame.SetHitRectInsets then
             frame:SetHitRectInsets(0, 0, 0, 0)
         end
+    end
+end
+
+-- Recursively apply click-through to frame and all children
+local function SetFrameClickThroughRecursive(frame, clickThrough)
+    SetFrameClickThrough(frame, clickThrough)
+    -- Apply to all child frames
+    for _, child in ipairs({frame:GetChildren()}) do
+        SetFrameClickThroughRecursive(child, clickThrough)
     end
 end
 
@@ -189,7 +217,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
-    SetFrameClickThrough(button.cooldown, true) -- Never capture mouse on cooldown
+    -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
+    SetFrameClickThroughRecursive(button.cooldown, true)
 
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -232,17 +261,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
 
-    -- Apply click-through to the button frame
-    SetFrameClickThrough(button, enableClickthrough)
+    -- Apply click-through to the button frame and all children recursively
+    -- This includes clearing scripts (done in SetFrameClickThrough)
+    SetFrameClickThroughRecursive(button, enableClickthrough)
 
-    -- CRITICAL: Clear all scripts when click-through is enabled
-    -- Having scripts set can keep the frame "interactive" even with EnableMouse(false)
-    if enableClickthrough then
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-        button:SetScript("OnMouseDown", nil)
-        button:SetScript("OnMouseUp", nil)
-    else
+    -- Only set tooltip scripts when click-through is disabled
+    if not enableClickthrough then
         button:SetScript("OnEnter", function(self)
             if not self.style.showTooltips then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -420,17 +444,12 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
 
-    -- Apply click-through to the button frame
-    SetFrameClickThrough(button, enableClickthrough)
+    -- Apply click-through to the button frame and all children recursively
+    -- This includes clearing scripts (done in SetFrameClickThrough)
+    SetFrameClickThroughRecursive(button, enableClickthrough)
 
-    -- CRITICAL: Clear all scripts when click-through is enabled
-    -- Having scripts set can keep the frame "interactive" even with EnableMouse(false)
-    if enableClickthrough then
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-        button:SetScript("OnMouseDown", nil)
-        button:SetScript("OnMouseUp", nil)
-    else
+    -- Only set tooltip scripts when click-through is disabled
+    if not enableClickthrough then
         button:SetScript("OnEnter", function(self)
             if not self.style.showTooltips then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
