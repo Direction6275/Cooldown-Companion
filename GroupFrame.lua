@@ -28,6 +28,12 @@ local function SetFrameClickThrough(frame, clickThrough)
         if frame.RegisterForDrag then
             frame:RegisterForDrag()
         end
+        -- Push hit rect outside frame bounds (makes frame effectively non-interactive)
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
+        end
+        -- Disable keyboard interaction too
+        frame:EnableKeyboard(false)
     else
         -- Enable mouse interaction
         frame:EnableMouse(true)
@@ -36,6 +42,10 @@ local function SetFrameClickThrough(frame, clickThrough)
         end
         if frame.SetMouseMotionEnabled then
             frame:SetMouseMotionEnabled(true)
+        end
+        -- Reset hit rect to normal
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(0, 0, 0, 0)
         end
     end
 end

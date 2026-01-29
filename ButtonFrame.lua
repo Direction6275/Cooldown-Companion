@@ -34,6 +34,12 @@ local function SetFrameClickThrough(frame, clickThrough)
         if frame.RegisterForDrag then
             frame:RegisterForDrag()
         end
+        -- Push hit rect outside frame bounds (makes frame effectively non-interactive)
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
+        end
+        -- Disable keyboard interaction too
+        frame:EnableKeyboard(false)
     else
         -- Enable mouse interaction
         frame:EnableMouse(true)
@@ -42,6 +48,10 @@ local function SetFrameClickThrough(frame, clickThrough)
         end
         if frame.SetMouseMotionEnabled then
             frame:SetMouseMotionEnabled(true)
+        end
+        -- Reset hit rect to normal
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(0, 0, 0, 0)
         end
     end
 end
@@ -225,19 +235,28 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Apply click-through to the button frame
     SetFrameClickThrough(button, enableClickthrough)
 
-    button:SetScript("OnEnter", function(self)
-        if not self.style.showTooltips then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if self.buttonData.type == "spell" then
-            GameTooltip:SetSpellByID(self.buttonData.id)
-        elseif self.buttonData.type == "item" then
-            GameTooltip:SetItemByID(self.buttonData.id)
-        end
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        GameTooltip:Hide()
-    end)
+    -- CRITICAL: Clear all scripts when click-through is enabled
+    -- Having scripts set can keep the frame "interactive" even with EnableMouse(false)
+    if enableClickthrough then
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
+        button:SetScript("OnMouseDown", nil)
+        button:SetScript("OnMouseUp", nil)
+    else
+        button:SetScript("OnEnter", function(self)
+            if not self.style.showTooltips then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if self.buttonData.type == "spell" then
+                GameTooltip:SetSpellByID(self.buttonData.id)
+            elseif self.buttonData.type == "item" then
+                GameTooltip:SetItemByID(self.buttonData.id)
+            end
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
+    end
     
     return button
 end
@@ -403,4 +422,27 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Apply click-through to the button frame
     SetFrameClickThrough(button, enableClickthrough)
+
+    -- CRITICAL: Clear all scripts when click-through is enabled
+    -- Having scripts set can keep the frame "interactive" even with EnableMouse(false)
+    if enableClickthrough then
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
+        button:SetScript("OnMouseDown", nil)
+        button:SetScript("OnMouseUp", nil)
+    else
+        button:SetScript("OnEnter", function(self)
+            if not self.style.showTooltips then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if self.buttonData.type == "spell" then
+                GameTooltip:SetSpellByID(self.buttonData.id)
+            elseif self.buttonData.type == "item" then
+                GameTooltip:SetItemByID(self.buttonData.id)
+            end
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
+    end
 end
