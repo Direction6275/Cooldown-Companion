@@ -103,18 +103,51 @@ end
 
 function CooldownCompanion:AnchorGroupFrame(frame, anchor)
     frame:ClearAllPoints()
-    
+
+    -- Stop any existing alpha sync
+    if frame.alphaSyncFrame then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    frame.anchoredToParent = nil
+
     local relativeTo = anchor.relativeTo
     if relativeTo and relativeTo ~= "UIParent" then
         local relativeFrame = _G[relativeTo]
         if relativeFrame then
             frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
+            -- Store reference for alpha inheritance
+            frame.anchoredToParent = relativeFrame
+            -- Set up alpha sync
+            self:SetupAlphaSync(frame, relativeFrame)
             return
         end
     end
-    
-    -- Default to UIParent
+
+    -- Default to UIParent - reset alpha to full
+    frame:SetAlpha(1)
     frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+end
+
+function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
+    -- Create a hidden frame to handle OnUpdate if needed
+    if not frame.alphaSyncFrame then
+        frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
+    end
+
+    -- Sync alpha immediately
+    frame:SetAlpha(parentFrame:GetEffectiveAlpha())
+
+    -- Set up periodic alpha sync
+    local elapsed = 0
+    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + delta
+        if elapsed >= 0.1 then
+            elapsed = 0
+            if frame.anchoredToParent then
+                frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
+            end
+        end
+    end)
 end
 
 function CooldownCompanion:SaveGroupPosition(groupId)

@@ -826,6 +826,42 @@ function CooldownCompanion:SetupConfig()
                             end
                         end,
                     },
+                    maintainAspectRatio = {
+                        name = "Maintain Aspect Ratio",
+                        desc = "Prevent icon image from stretching when using non-square width ratios",
+                        type = "toggle",
+                        order = 42,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.maintainAspectRatio
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.maintainAspectRatio = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    desaturateOnCooldown = {
+                        name = "Desaturate On Cooldown",
+                        desc = "Make icon grayscale while the spell/item is on cooldown",
+                        type = "toggle",
+                        order = 43,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.desaturateOnCooldown
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.desaturateOnCooldown = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
                     tooltipHeader = {
                         name = "Tooltips",
                         type = "header",
@@ -834,7 +870,7 @@ function CooldownCompanion:SetupConfig()
                     },
                     showTooltips = {
                         name = "Show Tooltips",
-                        desc = "Display spell/item tooltips when hovering over buttons",
+                        desc = "Display spell/item tooltips when hovering over buttons. When disabled, buttons are automatically click-through.",
                         type = "toggle",
                         order = 51,
                         hidden = function() return ST.styleSelectedGroup == nil end,
@@ -846,6 +882,29 @@ function CooldownCompanion:SetupConfig()
                             local group = self.db.profile.groups[ST.styleSelectedGroup]
                             if group then
                                 group.style.showTooltips = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    enableClickthrough = {
+                        name = "Enable Click-Through",
+                        desc = "Allow mouse clicks to pass through buttons to frames underneath",
+                        type = "toggle",
+                        order = 52,
+                        hidden = function()
+                            if ST.styleSelectedGroup == nil then return true end
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            -- Only show when tooltips are enabled
+                            return not (group and group.style.showTooltips ~= false)
+                        end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.enableClickthrough
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.enableClickthrough = val
                                 self:UpdateGroupStyle(ST.styleSelectedGroup)
                             end
                         end,

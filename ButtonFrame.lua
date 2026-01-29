@@ -83,8 +83,20 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+
+    -- Handle aspect ratio maintenance
+    local maintainAspectRatio = style.maintainAspectRatio
+    if maintainAspectRatio and widthRatio ~= 1.0 then
+        -- Calculate icon size to maintain square aspect ratio
+        local iconSize = math.min(width - borderSize * 2, size - borderSize * 2)
+        local xOffset = (width - iconSize) / 2
+        local yOffset = (size - iconSize) / 2
+        button.icon:SetSize(iconSize, iconSize)
+        button.icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+    else
+        button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+        button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    end
     button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     
     -- Border frame
@@ -140,8 +152,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
     
-    -- Tooltip (respects showTooltips setting)
-    button:EnableMouse(true)
+    -- Tooltip and clickthrough handling
+    -- If tooltips are off, buttons are automatically clickthrough
+    -- If tooltips are on, clickthrough is controlled by enableClickthrough setting
+    local showTooltips = style.showTooltips ~= false
+    local enableClickthrough = not showTooltips or style.enableClickthrough
+    button:EnableMouse(not enableClickthrough)
+
     button:SetScript("OnEnter", function(self)
         if not self.style.showTooltips then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -180,7 +197,9 @@ end
 
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
-    
+    local style = button.style
+    local isOnCooldown = false
+
     -- Use pcall and avoid ANY Lua operations on returned values
     -- Secret values can only be passed directly to Blizzard functions
     pcall(function()
@@ -189,13 +208,24 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if cooldownInfo then
                 -- Pass values directly to SetCooldown - it handles secret values internally
                 button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                -- Check if on cooldown for desaturation (duration > 1.5 to ignore GCD)
+                isOnCooldown = cooldownInfo.duration and cooldownInfo.duration > 1.5
             end
         elseif buttonData.type == "item" then
             local start, duration = C_Item.GetItemCooldown(buttonData.id)
             -- Pass values directly without any nil checks on the values themselves
             button.cooldown:SetCooldown(start, duration)
+            -- Check if on cooldown for desaturation
+            isOnCooldown = duration and duration > 1.5
         end
     end)
+
+    -- Handle desaturation based on cooldown state
+    if style.desaturateOnCooldown then
+        button.icon:SetDesaturated(isOnCooldown)
+    else
+        button.icon:SetDesaturated(false)
+    end
 end
 
 function CooldownCompanion:SetButtonGlow(button, show)
@@ -230,10 +260,18 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     button:SetSize(width, size)
 
-    -- Update icon inset
+    -- Update icon position/size based on aspect ratio setting
     button.icon:ClearAllPoints()
-    button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    local maintainAspectRatio = style.maintainAspectRatio
+    if maintainAspectRatio and widthRatio ~= 1.0 then
+        -- Calculate icon size to maintain square aspect ratio
+        local iconSize = math.min(width - borderSize * 2, size - borderSize * 2)
+        button.icon:SetSize(iconSize, iconSize)
+        button.icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+    else
+        button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+        button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    end
 
     -- Update border
     button.border:SetBackdrop({
@@ -258,4 +296,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
     end
+
+    -- Update clickthrough based on tooltip settings
+    local showTooltips = style.showTooltips ~= false
+    local enableClickthrough = not showTooltips or style.enableClickthrough
+    button:EnableMouse(not enableClickthrough)
 end
