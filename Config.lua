@@ -267,10 +267,17 @@ function CooldownCompanion:SetupConfig()
                                     return ""
                                 end,
                                 set = function(_, val)
-                                    if val == "" then
-                                        val = "UIParent"
+                                    local wasAnchored = false
+                                    local group = self.db.profile.groups[selectedGroup]
+                                    if group and group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent" then
+                                        wasAnchored = true
                                     end
-                                    self:SetGroupAnchor(selectedGroup, val)
+                                    if val == "" then
+                                        -- Un-anchoring from a frame - center it
+                                        self:SetGroupAnchor(selectedGroup, "UIParent", wasAnchored)
+                                    else
+                                        self:SetGroupAnchor(selectedGroup, val)
+                                    end
                                 end,
                             },
                             anchorPoint = {
@@ -608,7 +615,7 @@ function CooldownCompanion:SetupConfig()
                         order = 13,
                         min = 0,
                         max = 5,
-                        step = 1,
+                        step = 0.1,
                         hidden = function() return ST.styleSelectedGroup == nil end,
                         get = function()
                             local group = self.db.profile.groups[ST.styleSelectedGroup]

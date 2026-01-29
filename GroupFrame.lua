@@ -101,7 +101,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     return frame
 end
 
-function CooldownCompanion:AnchorGroupFrame(frame, anchor)
+function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     frame:ClearAllPoints()
 
     -- Stop any existing alpha sync
@@ -120,25 +120,31 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor)
             -- Set up alpha sync
             self:SetupAlphaSync(frame, relativeFrame)
             return
+        else
+            -- Target frame doesn't exist - if forceCenter, reset to center
+            -- Otherwise use saved position relative to UIParent
+            if forceCenter then
+                frame:SetAlpha(1)
+                frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+                -- Update the saved anchor to reflect the centered position
+                local group = self.db.profile.groups[frame.groupId]
+                if group then
+                    group.anchor = {
+                        point = "CENTER",
+                        relativeTo = "UIParent",
+                        relativePoint = "CENTER",
+                        x = 0,
+                        y = 0,
+                    }
+                end
+                return
+            end
         end
     end
 
-    -- Default to UIParent - reset alpha to full and center the frame
+    -- Anchor to UIParent using saved position (preserves position across reloads)
     frame:SetAlpha(1)
-    -- When unanchored from a frame, reset to center of UI
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-
-    -- Update the saved anchor to reflect the centered position
-    local group = self.db.profile.groups[frame.groupId]
-    if group then
-        group.anchor = {
-            point = "CENTER",
-            relativeTo = "UIParent",
-            relativePoint = "CENTER",
-            x = 0,
-            y = 0,
-        }
-    end
+    frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
@@ -291,18 +297,36 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
 end
 
-function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName)
+function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     local group = self.db.profile.groups[groupId]
     local frame = self.groupFrames[groupId]
-    
+
     if not group or not frame then return false end
-    
+
+    -- Handle UIParent (free positioning)
+    if targetFrameName == "UIParent" then
+        if forceCenter then
+            -- Explicitly un-anchoring - center the frame
+            group.anchor = {
+                point = "CENTER",
+                relativeTo = "UIParent",
+                relativePoint = "CENTER",
+                x = 0,
+                y = 0,
+            }
+        end
+        -- If not forceCenter, keep current anchor settings (just relativeTo changes)
+        group.anchor.relativeTo = "UIParent"
+        self:AnchorGroupFrame(frame, group.anchor, forceCenter)
+        return true
+    end
+
     local targetFrame = _G[targetFrameName]
     if not targetFrame then
         self:Print("Frame '" .. targetFrameName .. "' not found.")
         return false
     end
-    
+
     group.anchor = {
         point = "TOPLEFT",
         relativeTo = targetFrameName,
@@ -310,7 +334,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName)
         x = 0,
         y = -5,
     }
-    
+
     self:AnchorGroupFrame(frame, group.anchor)
     return true
 end
@@ -348,13 +372,24 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     local showTooltips = style.showTooltips ~= false
     local isClickthrough = not showTooltips or style.enableClickthrough
 
-    -- When locked, always respect clickthrough setting
-    -- When unlocked, only enable mouse if NOT clickthrough (for dragging)
+    -- When locked:
+    --   If clickthrough: disable click capture to allow camera movement
+    --   If not clickthrough: normal behavior
+    -- When unlocked: need mouse for dragging (drag handle always works as backup)
     if self.db.profile.locked then
-        frame:EnableMouse(not isClickthrough)
+        if isClickthrough then
+            frame:EnableMouse(false)
+            frame:SetMouseClickEnabled(false)
+            frame:SetMouseMotionEnabled(false)
+        else
+            frame:EnableMouse(true)
+            frame:SetMouseClickEnabled(true)
+            frame:SetMouseMotionEnabled(true)
+        end
     else
-        -- When unlocked, we need mouse for dragging, but drag handle also works
-        -- So we can still make the frame clickthrough when unlocked
-        frame:EnableMouse(not isClickthrough)
+        -- When unlocked, enable dragging but still respect clickthrough for clicks
+        frame:EnableMouse(true)
+        frame:SetMouseClickEnabled(true)
+        frame:SetMouseMotionEnabled(true)
     end
 end

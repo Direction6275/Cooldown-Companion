@@ -167,7 +167,20 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- If tooltips are on, clickthrough is controlled by enableClickthrough setting
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
-    button:EnableMouse(not enableClickthrough)
+
+    -- EnableMouse controls whether the frame receives ANY mouse events
+    -- SetMouseClickEnabled controls whether clicks are captured (for camera movement passthrough)
+    -- SetMouseMotionEnabled controls whether motion events are captured (for tooltips)
+    if enableClickthrough then
+        -- Full click-through: allow camera movement and all clicks to pass through
+        button:EnableMouse(showTooltips) -- Enable mouse only if we want tooltips
+        button:SetMouseClickEnabled(false) -- Allow LMB/RMB camera movement through
+        button:SetMouseMotionEnabled(showTooltips) -- Motion events only for tooltips
+    else
+        button:EnableMouse(true)
+        button:SetMouseClickEnabled(true)
+        button:SetMouseMotionEnabled(true)
+    end
 
     button:SetScript("OnEnter", function(self)
         if not self.style.showTooltips then return end
@@ -324,5 +337,18 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update clickthrough based on tooltip settings
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
-    button:EnableMouse(not enableClickthrough)
+
+    -- EnableMouse controls whether the frame receives ANY mouse events
+    -- SetMouseClickEnabled controls whether clicks are captured (for camera movement passthrough)
+    -- SetMouseMotionEnabled controls whether motion events are captured (for tooltips)
+    if enableClickthrough then
+        -- Full click-through: allow camera movement and all clicks to pass through
+        button:EnableMouse(showTooltips) -- Enable mouse only if we want tooltips
+        button:SetMouseClickEnabled(false) -- Allow LMB/RMB camera movement through
+        button:SetMouseMotionEnabled(showTooltips) -- Motion events only for tooltips
+    else
+        button:EnableMouse(true)
+        button:SetMouseClickEnabled(true)
+        button:SetMouseMotionEnabled(true)
+    end
 end
