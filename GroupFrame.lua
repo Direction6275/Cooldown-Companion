@@ -6,63 +6,67 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
--- Helper function to make a frame fully click-through
--- Uses multiple methods for maximum compatibility across WoW versions
-local function SetFrameClickThrough(frame, clickThrough)
+-- Helper function to make a frame click-through
+-- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
+-- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
+local function SetFrameClickThrough(frame, disableClicks, disableMotion)
     if not frame then return end
 
-    if clickThrough then
-        -- Disable all mouse interaction
-        frame:EnableMouse(false)
-        -- These methods may not exist in all WoW versions
+    if disableClicks then
         if frame.SetMouseClickEnabled then
             frame:SetMouseClickEnabled(false)
-        end
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(false)
-        end
-        -- Propagate mouse events to parent (pass-through)
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(true)
         end
         if frame.SetPropagateMouseClicks then
             frame:SetPropagateMouseClicks(true)
         end
-        -- Unregister any click/drag events
         if frame.RegisterForClicks then
             frame:RegisterForClicks()
         end
         if frame.RegisterForDrag then
             frame:RegisterForDrag()
         end
-        -- Push hit rect outside frame bounds (makes frame effectively non-interactive)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
-        end
-        -- Disable keyboard interaction too
-        frame:EnableKeyboard(false)
-        -- Clear any scripts that might capture mouse
-        frame:SetScript("OnEnter", nil)
-        frame:SetScript("OnLeave", nil)
         frame:SetScript("OnMouseDown", nil)
         frame:SetScript("OnMouseUp", nil)
     else
-        -- Enable mouse interaction
-        frame:EnableMouse(true)
         if frame.SetMouseClickEnabled then
             frame:SetMouseClickEnabled(true)
-        end
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(true)
-        end
-        -- Don't propagate mouse events
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(false)
         end
         if frame.SetPropagateMouseClicks then
             frame:SetPropagateMouseClicks(false)
         end
-        -- Reset hit rect to normal
+    end
+
+    if disableMotion then
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(false)
+        end
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(true)
+        end
+        frame:SetScript("OnEnter", nil)
+        frame:SetScript("OnLeave", nil)
+    else
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(true)
+        end
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(false)
+        end
+    end
+
+    if disableClicks and disableMotion then
+        frame:EnableMouse(false)
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
+        end
+        frame:EnableKeyboard(false)
+    elseif not disableClicks and not disableMotion then
+        frame:EnableMouse(true)
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(0, 0, 0, 0)
+        end
+    else
+        frame:EnableMouse(true)
         if frame.SetHitRectInsets then
             frame:SetHitRectInsets(0, 0, 0, 0)
         end
@@ -70,11 +74,10 @@ local function SetFrameClickThrough(frame, clickThrough)
 end
 
 -- Recursively apply click-through to frame and all children
-local function SetFrameClickThroughRecursive(frame, clickThrough)
-    SetFrameClickThrough(frame, clickThrough)
-    -- Apply to all child frames
+local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
+    SetFrameClickThrough(frame, disableClicks, disableMotion)
     for _, child in ipairs({frame:GetChildren()}) do
-        SetFrameClickThroughRecursive(child, clickThrough)
+        SetFrameClickThroughRecursive(child, disableClicks, disableMotion)
     end
 end
 
@@ -459,27 +462,23 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     local style = group.style or {}
 
-    -- Determine if group should be clickthrough
-    -- Clickthrough if: tooltips off OR (tooltips on AND enableClickthrough is true)
-    local showTooltips = style.showTooltips ~= false
-    local isClickthrough = not showTooltips or style.enableClickthrough
+    -- Group frame container should always have clicks disabled when locked
+    -- (buttons handle their own clickthrough independently)
+    local disableClicks = style.enableClickthrough or false
+    local disableMotion = not (style.showTooltips ~= false)
 
-    -- When locked and clickthrough: disable mouse completely for camera passthrough
-    -- When unlocked: always enable mouse for dragging (drag handle is backup)
-    if self.db.profile.locked and isClickthrough then
-        -- Only apply to the group frame container (not buttons, which handle their own)
-        SetFrameClickThrough(frame, true)
-        -- Also disable the drag handle
+    -- When locked and clickthrough: disable clicks on group container
+    -- When unlocked: always enable everything for dragging
+    if self.db.profile.locked and disableClicks then
+        SetFrameClickThrough(frame, true, true) -- Group container: fully non-interactive
         if frame.dragHandle then
-            SetFrameClickThrough(frame.dragHandle, true)
+            SetFrameClickThrough(frame.dragHandle, true, true)
         end
     else
-        SetFrameClickThrough(frame, false)
-        -- Re-register for drag when not click-through
+        SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
-        -- Re-enable drag handle
         if frame.dragHandle then
-            SetFrameClickThrough(frame.dragHandle, false)
+            SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
             frame.dragHandle:RegisterForDrag("LeftButton")
         end

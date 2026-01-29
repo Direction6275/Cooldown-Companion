@@ -12,63 +12,76 @@ local CooldownCompanion = ST.Addon
 -- Button Frame Pool
 local buttonPool = {}
 
--- Helper function to make a frame fully click-through
--- Uses multiple methods for maximum compatibility across WoW versions
-local function SetFrameClickThrough(frame, clickThrough)
+-- Helper function to make a frame click-through
+-- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
+-- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
+local function SetFrameClickThrough(frame, disableClicks, disableMotion)
     if not frame then return end
 
-    if clickThrough then
-        -- Disable all mouse interaction
-        frame:EnableMouse(false)
-        -- These methods may not exist in all WoW versions, so use pcall
+    if disableClicks then
+        -- Disable mouse click interaction for camera pass-through
         if frame.SetMouseClickEnabled then
             frame:SetMouseClickEnabled(false)
-        end
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(false)
-        end
-        -- Propagate mouse events to parent (pass-through)
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(true)
         end
         if frame.SetPropagateMouseClicks then
             frame:SetPropagateMouseClicks(true)
         end
-        -- Unregister any click events
+        -- Unregister click/drag events
         if frame.RegisterForClicks then
             frame:RegisterForClicks()
         end
         if frame.RegisterForDrag then
             frame:RegisterForDrag()
         end
-        -- Push hit rect outside frame bounds (makes frame effectively non-interactive)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
-        end
-        -- Disable keyboard interaction too
-        frame:EnableKeyboard(false)
-        -- Clear any scripts that might capture mouse
-        frame:SetScript("OnEnter", nil)
-        frame:SetScript("OnLeave", nil)
+        -- Clear click scripts
         frame:SetScript("OnMouseDown", nil)
         frame:SetScript("OnMouseUp", nil)
     else
-        -- Enable mouse interaction
-        frame:EnableMouse(true)
         if frame.SetMouseClickEnabled then
             frame:SetMouseClickEnabled(true)
-        end
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(true)
-        end
-        -- Don't propagate mouse events (handle them ourselves)
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(false)
         end
         if frame.SetPropagateMouseClicks then
             frame:SetPropagateMouseClicks(false)
         end
-        -- Reset hit rect to normal
+    end
+
+    if disableMotion then
+        -- Disable mouse motion (hover) events
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(false)
+        end
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(true)
+        end
+        -- Clear hover scripts
+        frame:SetScript("OnEnter", nil)
+        frame:SetScript("OnLeave", nil)
+    else
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(true)
+        end
+        if frame.SetPropagateMouseMotion then
+            frame:SetPropagateMouseMotion(false)
+        end
+    end
+
+    -- EnableMouse must be true if we want motion events (tooltips)
+    -- Only fully disable if both clicks and motion are disabled
+    if disableClicks and disableMotion then
+        frame:EnableMouse(false)
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
+        end
+        frame:EnableKeyboard(false)
+    elseif not disableClicks and not disableMotion then
+        frame:EnableMouse(true)
+        if frame.SetHitRectInsets then
+            frame:SetHitRectInsets(0, 0, 0, 0)
+        end
+    else
+        -- Mixed mode: clicks disabled but motion enabled (or vice versa)
+        -- EnableMouse must be true for motion events to fire
+        frame:EnableMouse(true)
         if frame.SetHitRectInsets then
             frame:SetHitRectInsets(0, 0, 0, 0)
         end
@@ -76,11 +89,11 @@ local function SetFrameClickThrough(frame, clickThrough)
 end
 
 -- Recursively apply click-through to frame and all children
-local function SetFrameClickThroughRecursive(frame, clickThrough)
-    SetFrameClickThrough(frame, clickThrough)
+local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
+    SetFrameClickThrough(frame, disableClicks, disableMotion)
     -- Apply to all child frames
     for _, child in ipairs({frame:GetChildren()}) do
-        SetFrameClickThroughRecursive(child, clickThrough)
+        SetFrameClickThroughRecursive(child, disableClicks, disableMotion)
     end
 end
 
@@ -218,7 +231,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
-    SetFrameClickThroughRecursive(button.cooldown, true)
+    -- Always fully non-interactive: disable both clicks and motion
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
 
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -256,20 +270,20 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
     
     -- Tooltip and clickthrough handling
-    -- If tooltips are off OR clickthrough is enabled, disable mouse completely
-    -- This allows camera movement (LMB/RMB) to pass through the icons
+    -- Clicks and motion are controlled independently:
+    --   disableClicks = clickthrough enabled (allows camera LMB/RMB pass-through)
+    --   disableMotion = tooltips disabled (no OnEnter/OnLeave needed)
     local showTooltips = style.showTooltips ~= false
-    local enableClickthrough = not showTooltips or style.enableClickthrough
+    local disableClicks = style.enableClickthrough or false
+    local disableMotion = not showTooltips
 
-    -- Apply click-through to the button frame and all children recursively
-    -- This includes clearing scripts (done in SetFrameClickThrough)
-    SetFrameClickThroughRecursive(button, enableClickthrough)
+    -- Apply to the button frame and all children recursively
+    SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
 
-    -- Only set tooltip scripts when click-through is disabled
-    if not enableClickthrough then
+    -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
+    if showTooltips then
         button:SetScript("OnEnter", function(self)
-            if not self.style.showTooltips then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
             if self.buttonData.type == "spell" then
                 GameTooltip:SetSpellByID(self.buttonData.id)
             elseif self.buttonData.type == "item" then
@@ -281,7 +295,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             GameTooltip:Hide()
         end)
     end
-    
+
     return button
 end
 
@@ -439,20 +453,19 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
     end
 
-    -- Update clickthrough based on tooltip settings
-    -- If tooltips are off OR clickthrough is enabled, disable mouse completely
+    -- Update clickthrough and tooltip handling
+    -- Clicks and motion are controlled independently
     local showTooltips = style.showTooltips ~= false
-    local enableClickthrough = not showTooltips or style.enableClickthrough
+    local disableClicks = style.enableClickthrough or false
+    local disableMotion = not showTooltips
 
-    -- Apply click-through to the button frame and all children recursively
-    -- This includes clearing scripts (done in SetFrameClickThrough)
-    SetFrameClickThroughRecursive(button, enableClickthrough)
+    -- Apply to the button frame and all children recursively
+    SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
 
-    -- Only set tooltip scripts when click-through is disabled
-    if not enableClickthrough then
+    -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
+    if showTooltips then
         button:SetScript("OnEnter", function(self)
-            if not self.style.showTooltips then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
             if self.buttonData.type == "spell" then
                 GameTooltip:SetSpellByID(self.buttonData.id)
             elseif self.buttonData.type == "item" then
