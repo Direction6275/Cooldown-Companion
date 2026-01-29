@@ -152,16 +152,25 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
     
-    -- Border frame
-    button.border = CreateFrame("Frame", nil, button, "BackdropTemplate")
-    button.border:SetAllPoints()
-    button.border:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = borderSize,
-    })
+    -- Border using textures (not BackdropTemplate which captures mouse)
     local borderColor = style.borderColor or {0, 0, 0, 1}
-    button.border:SetBackdropBorderColor(unpack(borderColor))
-    SetFrameClickThrough(button.border, true) -- Never capture mouse on border
+    button.borderTextures = {}
+
+    -- Create 4 edge textures for border
+    local edges = {
+        {point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = -borderSize}, -- Top
+        {point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = borderSize, x2 = 0, y2 = 0}, -- Bottom
+        {point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = borderSize, y2 = 0}, -- Left
+        {point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = -borderSize, y1 = 0, x2 = 0, y2 = 0}, -- Right
+    }
+
+    for i, edge in ipairs(edges) do
+        local tex = button:CreateTexture(nil, "OVERLAY")
+        tex:SetPoint(edge.point1, button, edge.point1, edge.x1, edge.y1)
+        tex:SetPoint(edge.point2, button, edge.point2, edge.x2, edge.y2)
+        tex:SetColorTexture(unpack(borderColor))
+        button.borderTextures[i] = tex
+    end
 
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
@@ -354,14 +363,23 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
 
-    -- Update border
-    button.border:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = borderSize,
-    })
-
+    -- Update border textures
     local borderColor = style.borderColor or {0, 0, 0, 1}
-    button.border:SetBackdropBorderColor(unpack(borderColor))
+    if button.borderTextures then
+        -- Update positions for new border size
+        local edges = {
+            {point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = -borderSize}, -- Top
+            {point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = borderSize, x2 = 0, y2 = 0}, -- Bottom
+            {point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = borderSize, y2 = 0}, -- Left
+            {point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = -borderSize, y1 = 0, x2 = 0, y2 = 0}, -- Right
+        }
+        for i, tex in ipairs(button.borderTextures) do
+            tex:ClearAllPoints()
+            tex:SetPoint(edges[i].point1, button, edges[i].point1, edges[i].x1, edges[i].y1)
+            tex:SetPoint(edges[i].point2, button, edges[i].point2, edges[i].x2, edges[i].y2)
+            tex:SetColorTexture(unpack(borderColor))
+        end
+    end
 
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
