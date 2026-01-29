@@ -123,9 +123,22 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor)
         end
     end
 
-    -- Default to UIParent - reset alpha to full
+    -- Default to UIParent - reset alpha to full and center the frame
     frame:SetAlpha(1)
-    frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+    -- When unanchored from a frame, reset to center of UI
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+    -- Update the saved anchor to reflect the centered position
+    local group = self.db.profile.groups[frame.groupId]
+    if group then
+        group.anchor = {
+            point = "CENTER",
+            relativeTo = "UIParent",
+            relativePoint = "CENTER",
+            x = 0,
+            y = 0,
+        }
+    end
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
@@ -137,15 +150,10 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     -- Sync alpha immediately
     frame:SetAlpha(parentFrame:GetEffectiveAlpha())
 
-    -- Set up periodic alpha sync
-    local elapsed = 0
+    -- Sync alpha every frame to match parent's fade animations
     frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
-        elapsed = elapsed + delta
-        if elapsed >= 0.1 then
-            elapsed = 0
-            if frame.anchoredToParent then
-                frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
-            end
+        if frame.anchoredToParent then
+            frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
         end
     end)
 end
@@ -210,6 +218,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Resize the frame to fit buttons
     self:ResizeGroupFrame(groupId)
+
+    -- Update clickthrough state
+    self:UpdateGroupClickthrough(groupId)
 
     -- Initial cooldown update
     frame:UpdateCooldowns()
@@ -307,16 +318,43 @@ end
 function CooldownCompanion:UpdateGroupStyle(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local style = group.style or {}
-    
+
     -- Update all buttons
     for _, button in ipairs(frame.buttons) do
         button:UpdateStyle(style)
     end
-    
+
+    -- Update group frame clickthrough
+    self:UpdateGroupClickthrough(groupId)
+
     -- Reposition and resize
     self:PopulateGroupButtons(groupId)
+end
+
+function CooldownCompanion:UpdateGroupClickthrough(groupId)
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+
+    if not frame or not group then return end
+
+    local style = group.style or {}
+
+    -- Determine if group should be clickthrough
+    -- Clickthrough if: tooltips off OR (tooltips on AND enableClickthrough is true)
+    local showTooltips = style.showTooltips ~= false
+    local isClickthrough = not showTooltips or style.enableClickthrough
+
+    -- When locked, always respect clickthrough setting
+    -- When unlocked, only enable mouse if NOT clickthrough (for dragging)
+    if self.db.profile.locked then
+        frame:EnableMouse(not isClickthrough)
+    else
+        -- When unlocked, we need mouse for dragging, but drag handle also works
+        -- So we can still make the frame clickthrough when unlocked
+        frame:EnableMouse(not isClickthrough)
+    end
 end

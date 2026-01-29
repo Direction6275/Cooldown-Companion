@@ -281,9 +281,10 @@ function CooldownCompanion:UpdateAllCooldowns()
 end
 
 function CooldownCompanion:LockAllFrames()
-    for _, frame in pairs(self.groupFrames) do
+    for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            frame:EnableMouse(false)
+            -- Update clickthrough based on style settings
+            self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Hide()
             end
@@ -292,9 +293,10 @@ function CooldownCompanion:LockAllFrames()
 end
 
 function CooldownCompanion:UnlockAllFrames()
-    for _, frame in pairs(self.groupFrames) do
+    for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            frame:EnableMouse(true)
+            -- Update clickthrough based on style settings
+            self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Show()
             end

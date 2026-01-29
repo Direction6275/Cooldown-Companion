@@ -83,21 +83,31 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+    button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
-    -- Handle aspect ratio maintenance
+    -- Handle aspect ratio via texture cropping
     local maintainAspectRatio = style.maintainAspectRatio
     if maintainAspectRatio and widthRatio ~= 1.0 then
-        -- Calculate icon size to maintain square aspect ratio
-        local iconSize = math.min(width - borderSize * 2, size - borderSize * 2)
-        local xOffset = (width - iconSize) / 2
-        local yOffset = (size - iconSize) / 2
-        button.icon:SetSize(iconSize, iconSize)
-        button.icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+        -- Crop the icon texture to match frame shape while keeping icon undistorted
+        -- Default visible texture range: 0.08 to 0.92 (0.84 of texture)
+        local texMin, texMax = 0.08, 0.92
+        local texRange = texMax - texMin
+
+        if widthRatio > 1.0 then
+            -- Frame is wider than tall - crop top/bottom of icon
+            local visibleHeight = texRange / widthRatio
+            local cropAmount = (texRange - visibleHeight) / 2
+            button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
+        else
+            -- Frame is taller than wide - crop left/right of icon
+            local visibleWidth = texRange * widthRatio
+            local cropAmount = (texRange - visibleWidth) / 2
+            button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
+        end
     else
-        button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-        button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
-    button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     
     -- Border frame
     button.border = CreateFrame("Frame", nil, button, "BackdropTemplate")
@@ -260,17 +270,31 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     button:SetSize(width, size)
 
-    -- Update icon position/size based on aspect ratio setting
+    -- Update icon position
     button.icon:ClearAllPoints()
+    button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+    button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+
+    -- Handle aspect ratio via texture cropping
     local maintainAspectRatio = style.maintainAspectRatio
     if maintainAspectRatio and widthRatio ~= 1.0 then
-        -- Calculate icon size to maintain square aspect ratio
-        local iconSize = math.min(width - borderSize * 2, size - borderSize * 2)
-        button.icon:SetSize(iconSize, iconSize)
-        button.icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+        -- Crop the icon texture to match frame shape while keeping icon undistorted
+        local texMin, texMax = 0.08, 0.92
+        local texRange = texMax - texMin
+
+        if widthRatio > 1.0 then
+            -- Frame is wider than tall - crop top/bottom of icon
+            local visibleHeight = texRange / widthRatio
+            local cropAmount = (texRange - visibleHeight) / 2
+            button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
+        else
+            -- Frame is taller than wide - crop left/right of icon
+            local visibleWidth = texRange * widthRatio
+            local cropAmount = (texRange - visibleWidth) / 2
+            button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
+        end
     else
-        button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-        button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
 
     -- Update border
