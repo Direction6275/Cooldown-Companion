@@ -67,10 +67,12 @@ end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local size = style.buttonSize or ST.BUTTON_SIZE
-    
+    local widthRatio = style.iconWidthRatio or 1.0
+    local width = size * widthRatio
+
     -- Create main button frame
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
-    button:SetSize(size, size)
+    button:SetSize(width, size)
     
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -102,6 +104,15 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+
+    -- Apply custom cooldown text font settings
+    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFontSize = style.cooldownFontSize or 12
+    local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
+    local region = button.cooldown:GetRegions()
+    if region and region.SetFont then
+        region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+    end
     
     -- Stack count text (for items)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
@@ -129,9 +140,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
     
-    -- Tooltip
+    -- Tooltip (respects showTooltips setting)
     button:EnableMouse(true)
     button:SetScript("OnEnter", function(self)
+        if not self.style.showTooltips then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if self.buttonData.type == "spell" then
             GameTooltip:SetSpellByID(self.buttonData.id)
@@ -209,30 +221,41 @@ end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
     local size = style.buttonSize or ST.BUTTON_SIZE
+    local widthRatio = style.iconWidthRatio or 1.0
+    local width = size * widthRatio
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    
+
     -- Store updated style reference
     button.style = style
-    
-    button:SetSize(size, size)
-    
+
+    button:SetSize(width, size)
+
     -- Update icon inset
     button.icon:ClearAllPoints()
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
-    
+
     -- Update border
     button.border:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = borderSize,
     })
-    
+
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.border:SetBackdropBorderColor(unpack(borderColor))
-    
+
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
-    
-    -- Update cooldown text visibility
+
+    -- Update cooldown text visibility and font
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+
+    -- Update cooldown font settings
+    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFontSize = style.cooldownFontSize or 12
+    local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
+    local region = button.cooldown:GetRegions()
+    if region and region.SetFont then
+        region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+    end
 end

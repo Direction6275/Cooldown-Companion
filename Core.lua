@@ -77,6 +77,11 @@ local defaults = {
                         orientation = "horizontal", -- "horizontal" or "vertical"
                         buttonsPerRow = 12,
                         showCooldownText = true,
+                        cooldownFontSize = 12,
+                        cooldownFontOutline = "OUTLINE",
+                        cooldownFont = "Fonts\\FRIZQT__.TTF",
+                        iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
+                        showTooltips = true,
                     },
                     enabled = true,
                 }
@@ -88,6 +93,11 @@ local defaults = {
             buttonSpacing = 2,
             borderSize = 1,
             borderColor = {0, 0, 0, 1},
+            cooldownFontSize = 12,
+            cooldownFontOutline = "OUTLINE",
+            cooldownFont = "Fonts\\FRIZQT__.TTF",
+            iconWidthRatio = 1.0,
+            showTooltips = true,
         },
         locked = false,
     },

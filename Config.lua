@@ -15,6 +15,75 @@ local newSpellInput = ""
 local newItemInput = ""
 local selectedGroup = nil
 
+-- Font options for dropdown
+local fontOptions = {
+    ["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata (Default)",
+    ["Fonts\\ARIALN.TTF"] = "Arial Narrow",
+    ["Fonts\\MORPHEUS.TTF"] = "Morpheus",
+    ["Fonts\\SKURRI.TTF"] = "Skurri",
+    ["Fonts\\2002.TTF"] = "2002",
+    ["Fonts\\NIMROD.TTF"] = "Nimrod",
+}
+
+local outlineOptions = {
+    [""] = "None",
+    ["OUTLINE"] = "Outline",
+    ["THICKOUTLINE"] = "Thick Outline",
+    ["MONOCHROME"] = "Monochrome",
+}
+
+-- Helper function to add a spell to selected group
+local function TryAddSpell(input)
+    if input == "" or not selectedGroup then return false end
+
+    local spellId = tonumber(input)
+    local spellName
+
+    if spellId then
+        local info = C_Spell.GetSpellInfo(spellId)
+        spellName = info and info.name
+    else
+        local info = C_Spell.GetSpellInfo(input)
+        if info then
+            spellId = info.spellID
+            spellName = info.name
+        end
+    end
+
+    if spellId and spellName then
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
+        CooldownCompanion:Print("Added spell: " .. spellName)
+        return true
+    else
+        CooldownCompanion:Print("Spell not found: " .. input)
+        return false
+    end
+end
+
+-- Helper function to add an item to selected group
+local function TryAddItem(input)
+    if input == "" or not selectedGroup then return false end
+
+    local itemId = tonumber(input)
+    local itemName
+
+    if itemId then
+        itemName = C_Item.GetItemNameByID(itemId)
+    else
+        itemName = input
+        itemId = C_Item.GetItemIDForItemInfo(input)
+    end
+
+    if itemId then
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "item", itemId, itemName or "Unknown Item")
+        CooldownCompanion:Print("Added item: " .. (itemName or itemId))
+        return true
+    else
+        CooldownCompanion:Print("Item not found: " .. input)
+        return false
+    end
+end
+
 -- Helper function to get sorted group list
 local function GetGroupList()
     local list = {}
@@ -320,82 +389,34 @@ function CooldownCompanion:SetupConfig()
                     },
                     addSpellInput = {
                         name = "Spell Name or ID",
-                        desc = "Enter a spell name or ID to add",
+                        desc = "Enter a spell name or ID and press Enter to add",
                         type = "input",
                         order = 21,
                         width = "double",
                         hidden = function() return selectedGroup == nil end,
                         get = function() return newSpellInput end,
-                        set = function(_, val) newSpellInput = val end,
-                    },
-                    addSpellButton = {
-                        name = "Add Spell",
-                        type = "execute",
-                        order = 22,
-                        hidden = function() return selectedGroup == nil end,
-                        func = function()
-                            if newSpellInput == "" then return end
-                            
-                            local spellId = tonumber(newSpellInput)
-                            local spellName
-                            
-                            if spellId then
-                                local info = C_Spell.GetSpellInfo(spellId)
-                                spellName = info and info.name
-                            else
-                                -- Try to find by name
-                                local info = C_Spell.GetSpellInfo(newSpellInput)
-                                if info then
-                                    spellId = info.spellID
-                                    spellName = info.name
-                                end
-                            end
-                            
-                            if spellId and spellName then
-                                self:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
-                                self:Print("Added spell: " .. spellName)
+                        set = function(_, val)
+                            if TryAddSpell(val) then
                                 newSpellInput = ""
                             else
-                                self:Print("Spell not found: " .. newSpellInput)
+                                newSpellInput = val
                             end
                             AceConfigRegistry:NotifyChange(ADDON_NAME)
                         end,
                     },
                     addItemInput = {
                         name = "Item Name or ID",
-                        desc = "Enter an item name or ID to add",
+                        desc = "Enter an item name or ID and press Enter to add",
                         type = "input",
                         order = 25,
                         width = "double",
                         hidden = function() return selectedGroup == nil end,
                         get = function() return newItemInput end,
-                        set = function(_, val) newItemInput = val end,
-                    },
-                    addItemButton = {
-                        name = "Add Item",
-                        type = "execute",
-                        order = 26,
-                        hidden = function() return selectedGroup == nil end,
-                        func = function()
-                            if newItemInput == "" then return end
-                            
-                            local itemId = tonumber(newItemInput)
-                            local itemName
-                            
-                            if itemId then
-                                itemName = C_Item.GetItemNameByID(itemId)
-                            else
-                                -- Try to find by name (this may not work immediately due to cache)
-                                itemName = newItemInput
-                                itemId = C_Item.GetItemIDForItemInfo(newItemInput)
-                            end
-                            
-                            if itemId then
-                                self:AddButtonToGroup(selectedGroup, "item", itemId, itemName or "Unknown Item")
-                                self:Print("Added item: " .. (itemName or itemId))
+                        set = function(_, val)
+                            if TryAddItem(val) then
                                 newItemInput = ""
                             else
-                                self:Print("Item not found: " .. newItemInput)
+                                newItemInput = val
                             end
                             AceConfigRegistry:NotifyChange(ADDON_NAME)
                         end,
@@ -714,6 +735,117 @@ function CooldownCompanion:SetupConfig()
                             local group = self.db.profile.groups[ST.styleSelectedGroup]
                             if group then
                                 group.style.showCooldownText = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    cooldownFontSize = {
+                        name = "Cooldown Font Size",
+                        desc = "Size of the cooldown countdown text",
+                        type = "range",
+                        order = 32,
+                        min = 8,
+                        max = 32,
+                        step = 1,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.cooldownFontSize or 12
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.cooldownFontSize = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    cooldownFont = {
+                        name = "Cooldown Font",
+                        desc = "Font face for cooldown countdown text",
+                        type = "select",
+                        order = 33,
+                        values = fontOptions,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.cooldownFont = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    cooldownFontOutline = {
+                        name = "Cooldown Font Outline",
+                        desc = "Outline style for cooldown countdown text",
+                        type = "select",
+                        order = 34,
+                        values = outlineOptions,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.cooldownFontOutline or "OUTLINE"
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.cooldownFontOutline = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    iconHeader = {
+                        name = "Icon Shape",
+                        type = "header",
+                        order = 40,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                    },
+                    iconWidthRatio = {
+                        name = "Icon Width Ratio",
+                        desc = "Adjust icon width relative to height. 1.0 = square, <1 = taller than wide, >1 = wider than tall",
+                        type = "range",
+                        order = 41,
+                        min = 0.5,
+                        max = 2.0,
+                        step = 0.05,
+                        isPercent = false,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.iconWidthRatio or 1.0
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.iconWidthRatio = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    tooltipHeader = {
+                        name = "Tooltips",
+                        type = "header",
+                        order = 50,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                    },
+                    showTooltips = {
+                        name = "Show Tooltips",
+                        desc = "Display spell/item tooltips when hovering over buttons",
+                        type = "toggle",
+                        order = 51,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.showTooltips ~= false
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.showTooltips = val
                                 self:UpdateGroupStyle(ST.styleSelectedGroup)
                             end
                         end,

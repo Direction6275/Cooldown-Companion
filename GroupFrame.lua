@@ -137,45 +137,47 @@ end
 function CooldownCompanion:PopulateGroupButtons(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local style = group.style or {}
     local buttonSize = style.buttonSize or ST.BUTTON_SIZE
+    local widthRatio = style.iconWidthRatio or 1.0
+    local buttonWidth = buttonSize * widthRatio
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
-    
+
     -- Clear existing buttons
     for _, button in ipairs(frame.buttons) do
         button:Hide()
         button:SetParent(nil)
     end
     wipe(frame.buttons)
-    
+
     -- Create new buttons
     for i, buttonData in ipairs(group.buttons) do
         local button = self:CreateButtonFrame(frame, i, buttonData, style)
-        
-        -- Position the button
+
+        -- Position the button (use width for horizontal spacing, height for vertical)
         local row, col
         if orientation == "horizontal" then
             row = math.floor((i - 1) / buttonsPerRow)
             col = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonSize + spacing), -row * (buttonSize + spacing))
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonSize + spacing))
         else
             col = math.floor((i - 1) / buttonsPerRow)
             row = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonSize + spacing), -row * (buttonSize + spacing))
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonSize + spacing))
         end
-        
+
         button:Show()
         table.insert(frame.buttons, button)
     end
-    
+
     -- Resize the frame to fit buttons
     self:ResizeGroupFrame(groupId)
-    
+
     -- Initial cooldown update
     frame:UpdateCooldowns()
 end
@@ -183,21 +185,23 @@ end
 function CooldownCompanion:ResizeGroupFrame(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local style = group.style or {}
     local buttonSize = style.buttonSize or ST.BUTTON_SIZE
+    local widthRatio = style.iconWidthRatio or 1.0
+    local buttonWidth = buttonSize * widthRatio
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = #group.buttons
-    
+
     if numButtons == 0 then
-        frame:SetSize(buttonSize, buttonSize)
+        frame:SetSize(buttonWidth, buttonSize)
         return
     end
-    
+
     local rows, cols
     if orientation == "horizontal" then
         cols = math.min(numButtons, buttonsPerRow)
@@ -206,11 +210,11 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         rows = math.min(numButtons, buttonsPerRow)
         cols = math.ceil(numButtons / buttonsPerRow)
     end
-    
-    local width = cols * buttonSize + (cols - 1) * spacing
+
+    local width = cols * buttonWidth + (cols - 1) * spacing
     local height = rows * buttonSize + (rows - 1) * spacing
-    
-    frame:SetSize(math.max(width, buttonSize), math.max(height, buttonSize))
+
+    frame:SetSize(math.max(width, buttonWidth), math.max(height, buttonSize))
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
