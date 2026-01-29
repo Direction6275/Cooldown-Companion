@@ -673,6 +673,116 @@ function CooldownCompanion:SetupConfig()
                             end
                         end,
                     },
+                    maintainAspectRatio = {
+                        name = "Maintain Aspect Ratio",
+                        desc = "When enabled, icon image is cropped instead of stretched. Use separate width/height controls.",
+                        type = "toggle",
+                        order = 16,
+                        hidden = function() return ST.styleSelectedGroup == nil end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.maintainAspectRatio
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.maintainAspectRatio = val
+                                -- When switching modes, initialize the other settings if needed
+                                if val then
+                                    -- Switching to maintain aspect ratio mode - set width/height from current size and ratio
+                                    local size = group.style.buttonSize or ST.BUTTON_SIZE
+                                    local ratio = group.style.iconWidthRatio or 1.0
+                                    group.style.iconWidth = group.style.iconWidth or math.floor(size * ratio)
+                                    group.style.iconHeight = group.style.iconHeight or size
+                                end
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    -- Shown when maintainAspectRatio is CHECKED
+                    iconWidth = {
+                        name = "Icon Width",
+                        desc = "Width of icons in pixels (texture will be cropped to fit)",
+                        type = "range",
+                        order = 17,
+                        min = 10,
+                        max = 100,
+                        step = 1,
+                        hidden = function()
+                            if ST.styleSelectedGroup == nil then return true end
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return not (group and group.style.maintainAspectRatio)
+                        end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                return group.style.iconWidth or (group.style.buttonSize or ST.BUTTON_SIZE)
+                            end
+                            return ST.BUTTON_SIZE
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.iconWidth = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    iconHeight = {
+                        name = "Icon Height",
+                        desc = "Height of icons in pixels (texture will be cropped to fit)",
+                        type = "range",
+                        order = 18,
+                        min = 10,
+                        max = 100,
+                        step = 1,
+                        hidden = function()
+                            if ST.styleSelectedGroup == nil then return true end
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return not (group and group.style.maintainAspectRatio)
+                        end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                return group.style.iconHeight or (group.style.buttonSize or ST.BUTTON_SIZE)
+                            end
+                            return ST.BUTTON_SIZE
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.iconHeight = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
+                    -- Shown when maintainAspectRatio is UNCHECKED
+                    iconWidthRatio = {
+                        name = "Icon Width Ratio",
+                        desc = "Adjust icon width relative to height. 1.0 = square, <1 = taller than wide, >1 = wider than tall. Texture will stretch.",
+                        type = "range",
+                        order = 17,
+                        min = 0.5,
+                        max = 2.0,
+                        step = 0.05,
+                        isPercent = false,
+                        hidden = function()
+                            if ST.styleSelectedGroup == nil then return true end
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.maintainAspectRatio
+                        end,
+                        get = function()
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            return group and group.style.iconWidthRatio or 1.0
+                        end,
+                        set = function(_, val)
+                            local group = self.db.profile.groups[ST.styleSelectedGroup]
+                            if group then
+                                group.style.iconWidthRatio = val
+                                self:UpdateGroupStyle(ST.styleSelectedGroup)
+                            end
+                        end,
+                    },
                     layoutHeader = {
                         name = "Layout",
                         type = "header",
@@ -805,127 +915,11 @@ function CooldownCompanion:SetupConfig()
                             end
                         end,
                     },
-                    iconHeader = {
-                        name = "Icon Shape",
-                        type = "header",
-                        order = 40,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                    },
-                    maintainAspectRatio = {
-                        name = "Maintain Aspect Ratio",
-                        desc = "When enabled, icon image is cropped instead of stretched. Use separate width/height controls.",
-                        type = "toggle",
-                        order = 41,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.maintainAspectRatio
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.maintainAspectRatio = val
-                                -- When switching modes, initialize the other settings if needed
-                                if val then
-                                    -- Switching to maintain aspect ratio mode - set width/height from current size and ratio
-                                    local size = group.style.buttonSize or ST.BUTTON_SIZE
-                                    local ratio = group.style.iconWidthRatio or 1.0
-                                    group.style.iconWidth = group.style.iconWidth or math.floor(size * ratio)
-                                    group.style.iconHeight = group.style.iconHeight or size
-                                end
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    -- Shown when maintainAspectRatio is CHECKED
-                    iconWidth = {
-                        name = "Icon Width",
-                        desc = "Width of icons in pixels (texture will be cropped to fit)",
-                        type = "range",
-                        order = 42,
-                        min = 10,
-                        max = 100,
-                        step = 1,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return not (group and group.style.maintainAspectRatio)
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                return group.style.iconWidth or (group.style.buttonSize or ST.BUTTON_SIZE)
-                            end
-                            return ST.BUTTON_SIZE
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.iconWidth = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    iconHeight = {
-                        name = "Icon Height",
-                        desc = "Height of icons in pixels (texture will be cropped to fit)",
-                        type = "range",
-                        order = 43,
-                        min = 10,
-                        max = 100,
-                        step = 1,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return not (group and group.style.maintainAspectRatio)
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                return group.style.iconHeight or (group.style.buttonSize or ST.BUTTON_SIZE)
-                            end
-                            return ST.BUTTON_SIZE
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.iconHeight = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    -- Shown when maintainAspectRatio is UNCHECKED
-                    iconWidthRatio = {
-                        name = "Icon Width Ratio",
-                        desc = "Adjust icon width relative to height. 1.0 = square, <1 = taller than wide, >1 = wider than tall. Texture will stretch.",
-                        type = "range",
-                        order = 44,
-                        min = 0.5,
-                        max = 2.0,
-                        step = 0.05,
-                        isPercent = false,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.maintainAspectRatio
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.iconWidthRatio or 1.0
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.iconWidthRatio = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
                     desaturateOnCooldown = {
                         name = "Desaturate On Cooldown",
                         desc = "Make icon grayscale while the spell/item is on cooldown",
                         type = "toggle",
-                        order = 45,
+                        order = 35,
                         hidden = function() return ST.styleSelectedGroup == nil end,
                         get = function()
                             local group = self.db.profile.groups[ST.styleSelectedGroup]
