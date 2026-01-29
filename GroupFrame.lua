@@ -103,18 +103,59 @@ end
 
 function CooldownCompanion:AnchorGroupFrame(frame, anchor)
     frame:ClearAllPoints()
-    
+
+    -- Stop any existing alpha sync
+    if frame.alphaSyncFrame then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    frame.anchoredToParent = nil
+
     local relativeTo = anchor.relativeTo
     if relativeTo and relativeTo ~= "UIParent" then
         local relativeFrame = _G[relativeTo]
         if relativeFrame then
             frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
+            -- Store reference for alpha inheritance
+            frame.anchoredToParent = relativeFrame
+            -- Set up alpha sync
+            self:SetupAlphaSync(frame, relativeFrame)
             return
         end
     end
-    
-    -- Default to UIParent
-    frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+
+    -- Default to UIParent - reset alpha to full and center the frame
+    frame:SetAlpha(1)
+    -- When unanchored from a frame, reset to center of UI
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+    -- Update the saved anchor to reflect the centered position
+    local group = self.db.profile.groups[frame.groupId]
+    if group then
+        group.anchor = {
+            point = "CENTER",
+            relativeTo = "UIParent",
+            relativePoint = "CENTER",
+            x = 0,
+            y = 0,
+        }
+    end
+end
+
+function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
+    -- Create a hidden frame to handle OnUpdate if needed
+    if not frame.alphaSyncFrame then
+        frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
+    end
+
+    -- Sync alpha immediately
+    frame:SetAlpha(parentFrame:GetEffectiveAlpha())
+
+    -- Sync alpha every frame to match parent's fade animations
+    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
+        if frame.anchoredToParent then
+            frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
+        end
+    end)
 end
 
 function CooldownCompanion:SaveGroupPosition(groupId)
@@ -137,45 +178,50 @@ end
 function CooldownCompanion:PopulateGroupButtons(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local style = group.style or {}
     local buttonSize = style.buttonSize or ST.BUTTON_SIZE
+    local widthRatio = style.iconWidthRatio or 1.0
+    local buttonWidth = buttonSize * widthRatio
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
-    
+
     -- Clear existing buttons
     for _, button in ipairs(frame.buttons) do
         button:Hide()
         button:SetParent(nil)
     end
     wipe(frame.buttons)
-    
+
     -- Create new buttons
     for i, buttonData in ipairs(group.buttons) do
         local button = self:CreateButtonFrame(frame, i, buttonData, style)
-        
-        -- Position the button
+
+        -- Position the button (use width for horizontal spacing, height for vertical)
         local row, col
         if orientation == "horizontal" then
             row = math.floor((i - 1) / buttonsPerRow)
             col = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonSize + spacing), -row * (buttonSize + spacing))
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonSize + spacing))
         else
             col = math.floor((i - 1) / buttonsPerRow)
             row = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonSize + spacing), -row * (buttonSize + spacing))
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonSize + spacing))
         end
-        
+
         button:Show()
         table.insert(frame.buttons, button)
     end
-    
+
     -- Resize the frame to fit buttons
     self:ResizeGroupFrame(groupId)
-    
+
+    -- Update clickthrough state
+    self:UpdateGroupClickthrough(groupId)
+
     -- Initial cooldown update
     frame:UpdateCooldowns()
 end
@@ -183,21 +229,23 @@ end
 function CooldownCompanion:ResizeGroupFrame(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local style = group.style or {}
     local buttonSize = style.buttonSize or ST.BUTTON_SIZE
+    local widthRatio = style.iconWidthRatio or 1.0
+    local buttonWidth = buttonSize * widthRatio
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = #group.buttons
-    
+
     if numButtons == 0 then
-        frame:SetSize(buttonSize, buttonSize)
+        frame:SetSize(buttonWidth, buttonSize)
         return
     end
-    
+
     local rows, cols
     if orientation == "horizontal" then
         cols = math.min(numButtons, buttonsPerRow)
@@ -206,11 +254,11 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         rows = math.min(numButtons, buttonsPerRow)
         cols = math.ceil(numButtons / buttonsPerRow)
     end
-    
-    local width = cols * buttonSize + (cols - 1) * spacing
+
+    local width = cols * buttonWidth + (cols - 1) * spacing
     local height = rows * buttonSize + (rows - 1) * spacing
-    
-    frame:SetSize(math.max(width, buttonSize), math.max(height, buttonSize))
+
+    frame:SetSize(math.max(width, buttonWidth), math.max(height, buttonSize))
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
@@ -270,16 +318,43 @@ end
 function CooldownCompanion:UpdateGroupStyle(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local style = group.style or {}
-    
+
     -- Update all buttons
     for _, button in ipairs(frame.buttons) do
         button:UpdateStyle(style)
     end
-    
+
+    -- Update group frame clickthrough
+    self:UpdateGroupClickthrough(groupId)
+
     -- Reposition and resize
     self:PopulateGroupButtons(groupId)
+end
+
+function CooldownCompanion:UpdateGroupClickthrough(groupId)
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+
+    if not frame or not group then return end
+
+    local style = group.style or {}
+
+    -- Determine if group should be clickthrough
+    -- Clickthrough if: tooltips off OR (tooltips on AND enableClickthrough is true)
+    local showTooltips = style.showTooltips ~= false
+    local isClickthrough = not showTooltips or style.enableClickthrough
+
+    -- When locked, always respect clickthrough setting
+    -- When unlocked, only enable mouse if NOT clickthrough (for dragging)
+    if self.db.profile.locked then
+        frame:EnableMouse(not isClickthrough)
+    else
+        -- When unlocked, we need mouse for dragging, but drag handle also works
+        -- So we can still make the frame clickthrough when unlocked
+        frame:EnableMouse(not isClickthrough)
+    end
 end

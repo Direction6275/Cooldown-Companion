@@ -77,6 +77,14 @@ local defaults = {
                         orientation = "horizontal", -- "horizontal" or "vertical"
                         buttonsPerRow = 12,
                         showCooldownText = true,
+                        cooldownFontSize = 12,
+                        cooldownFontOutline = "OUTLINE",
+                        cooldownFont = "Fonts\\FRIZQT__.TTF",
+                        iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
+                        maintainAspectRatio = false, -- Prevent icon image stretching
+                        showTooltips = true,
+                        enableClickthrough = false, -- Allow clicks to pass through buttons
+                        desaturateOnCooldown = false, -- Desaturate icon while on cooldown
                     },
                     enabled = true,
                 }
@@ -88,6 +96,14 @@ local defaults = {
             buttonSpacing = 2,
             borderSize = 1,
             borderColor = {0, 0, 0, 1},
+            cooldownFontSize = 12,
+            cooldownFontOutline = "OUTLINE",
+            cooldownFont = "Fonts\\FRIZQT__.TTF",
+            iconWidthRatio = 1.0,
+            maintainAspectRatio = false,
+            showTooltips = true,
+            enableClickthrough = false,
+            desaturateOnCooldown = false,
         },
         locked = false,
     },
@@ -265,9 +281,10 @@ function CooldownCompanion:UpdateAllCooldowns()
 end
 
 function CooldownCompanion:LockAllFrames()
-    for _, frame in pairs(self.groupFrames) do
+    for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            frame:EnableMouse(false)
+            -- Update clickthrough based on style settings
+            self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Hide()
             end
@@ -276,9 +293,10 @@ function CooldownCompanion:LockAllFrames()
 end
 
 function CooldownCompanion:UnlockAllFrames()
-    for _, frame in pairs(self.groupFrames) do
+    for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            frame:EnableMouse(true)
+            -- Update clickthrough based on style settings
+            self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Show()
             end

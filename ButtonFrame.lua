@@ -67,10 +67,12 @@ end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local size = style.buttonSize or ST.BUTTON_SIZE
-    
+    local widthRatio = style.iconWidthRatio or 1.0
+    local width = size * widthRatio
+
     -- Create main button frame
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
-    button:SetSize(size, size)
+    button:SetSize(width, size)
     
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -83,7 +85,29 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
-    button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    -- Handle aspect ratio via texture cropping
+    local maintainAspectRatio = style.maintainAspectRatio
+    if maintainAspectRatio and widthRatio ~= 1.0 then
+        -- Crop the icon texture to match frame shape while keeping icon undistorted
+        -- Default visible texture range: 0.08 to 0.92 (0.84 of texture)
+        local texMin, texMax = 0.08, 0.92
+        local texRange = texMax - texMin
+
+        if widthRatio > 1.0 then
+            -- Frame is wider than tall - crop top/bottom of icon
+            local visibleHeight = texRange / widthRatio
+            local cropAmount = (texRange - visibleHeight) / 2
+            button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
+        else
+            -- Frame is taller than wide - crop left/right of icon
+            local visibleWidth = texRange * widthRatio
+            local cropAmount = (texRange - visibleWidth) / 2
+            button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
+        end
+    else
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
     
     -- Border frame
     button.border = CreateFrame("Frame", nil, button, "BackdropTemplate")
@@ -102,6 +126,15 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+
+    -- Apply custom cooldown text font settings
+    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFontSize = style.cooldownFontSize or 12
+    local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
+    local region = button.cooldown:GetRegions()
+    if region and region.SetFont then
+        region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+    end
     
     -- Stack count text (for items)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
@@ -129,9 +162,15 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
     
-    -- Tooltip
-    button:EnableMouse(true)
+    -- Tooltip and clickthrough handling
+    -- If tooltips are off, buttons are automatically clickthrough
+    -- If tooltips are on, clickthrough is controlled by enableClickthrough setting
+    local showTooltips = style.showTooltips ~= false
+    local enableClickthrough = not showTooltips or style.enableClickthrough
+    button:EnableMouse(not enableClickthrough)
+
     button:SetScript("OnEnter", function(self)
+        if not self.style.showTooltips then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if self.buttonData.type == "spell" then
             GameTooltip:SetSpellByID(self.buttonData.id)
@@ -168,7 +207,9 @@ end
 
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
-    
+    local style = button.style
+    local isOnCooldown = false
+
     -- Use pcall and avoid ANY Lua operations on returned values
     -- Secret values can only be passed directly to Blizzard functions
     pcall(function()
@@ -177,13 +218,24 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if cooldownInfo then
                 -- Pass values directly to SetCooldown - it handles secret values internally
                 button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                -- Check if on cooldown for desaturation (duration > 1.5 to ignore GCD)
+                isOnCooldown = cooldownInfo.duration and cooldownInfo.duration > 1.5
             end
         elseif buttonData.type == "item" then
             local start, duration = C_Item.GetItemCooldown(buttonData.id)
             -- Pass values directly without any nil checks on the values themselves
             button.cooldown:SetCooldown(start, duration)
+            -- Check if on cooldown for desaturation
+            isOnCooldown = duration and duration > 1.5
         end
     end)
+
+    -- Handle desaturation based on cooldown state
+    if style.desaturateOnCooldown then
+        button.icon:SetDesaturated(isOnCooldown)
+    else
+        button.icon:SetDesaturated(false)
+    end
 end
 
 function CooldownCompanion:SetButtonGlow(button, show)
@@ -209,30 +261,68 @@ end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
     local size = style.buttonSize or ST.BUTTON_SIZE
+    local widthRatio = style.iconWidthRatio or 1.0
+    local width = size * widthRatio
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    
+
     -- Store updated style reference
     button.style = style
-    
-    button:SetSize(size, size)
-    
-    -- Update icon inset
+
+    button:SetSize(width, size)
+
+    -- Update icon position
     button.icon:ClearAllPoints()
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
-    
+
+    -- Handle aspect ratio via texture cropping
+    local maintainAspectRatio = style.maintainAspectRatio
+    if maintainAspectRatio and widthRatio ~= 1.0 then
+        -- Crop the icon texture to match frame shape while keeping icon undistorted
+        local texMin, texMax = 0.08, 0.92
+        local texRange = texMax - texMin
+
+        if widthRatio > 1.0 then
+            -- Frame is wider than tall - crop top/bottom of icon
+            local visibleHeight = texRange / widthRatio
+            local cropAmount = (texRange - visibleHeight) / 2
+            button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
+        else
+            -- Frame is taller than wide - crop left/right of icon
+            local visibleWidth = texRange * widthRatio
+            local cropAmount = (texRange - visibleWidth) / 2
+            button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
+        end
+    else
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
+
     -- Update border
     button.border:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = borderSize,
     })
-    
+
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.border:SetBackdropBorderColor(unpack(borderColor))
-    
+
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
-    
-    -- Update cooldown text visibility
+
+    -- Update cooldown text visibility and font
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+
+    -- Update cooldown font settings
+    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFontSize = style.cooldownFontSize or 12
+    local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
+    local region = button.cooldown:GetRegions()
+    if region and region.SetFont then
+        region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+    end
+
+    -- Update clickthrough based on tooltip settings
+    local showTooltips = style.showTooltips ~= false
+    local enableClickthrough = not showTooltips or style.enableClickthrough
+    button:EnableMouse(not enableClickthrough)
 end
