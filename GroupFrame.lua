@@ -191,13 +191,14 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local buttonWidth, buttonHeight
 
     if style.maintainAspectRatio then
+        -- Square mode: use buttonSize for both dimensions
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        buttonWidth = size
+        buttonHeight = size
+    else
+        -- Non-square mode: use separate width/height
         buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    else
-        local buttonSize = style.buttonSize or ST.BUTTON_SIZE
-        local widthRatio = style.iconWidthRatio or 1.0
-        buttonWidth = buttonSize * widthRatio
-        buttonHeight = buttonSize
     end
 
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
@@ -251,13 +252,14 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local buttonWidth, buttonHeight
 
     if style.maintainAspectRatio then
+        -- Square mode: use buttonSize for both dimensions
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        buttonWidth = size
+        buttonHeight = size
+    else
+        -- Non-square mode: use separate width/height
         buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    else
-        local buttonSize = style.buttonSize or ST.BUTTON_SIZE
-        local widthRatio = style.iconWidthRatio or 1.0
-        buttonWidth = buttonSize * widthRatio
-        buttonHeight = buttonSize
     end
 
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING

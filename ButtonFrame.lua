@@ -67,18 +67,16 @@ end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
-    local maintainAspectRatio = style.maintainAspectRatio
 
-    if maintainAspectRatio then
-        -- Use separate width/height when maintaining aspect ratio
+    if style.maintainAspectRatio then
+        -- Square mode: use buttonSize for both dimensions
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        width = size
+        height = size
+    else
+        -- Non-square mode: use separate width/height
         width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    else
-        -- Use buttonSize and widthRatio when stretching
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        local widthRatio = style.iconWidthRatio or 1.0
-        width = size * widthRatio
-        height = size
     end
 
     -- Create main button frame
@@ -97,8 +95,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
-    -- Handle aspect ratio via texture cropping
-    if maintainAspectRatio and width ~= height then
+    -- Handle aspect ratio via texture cropping (always crop to prevent stretching)
+    if width ~= height then
         -- Crop the icon texture to match frame shape while keeping icon undistorted
         -- Default visible texture range: 0.08 to 0.92 (0.84 of texture)
         local texMin, texMax = 0.08, 0.92
@@ -277,18 +275,16 @@ end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
     local width, height
-    local maintainAspectRatio = style.maintainAspectRatio
 
-    if maintainAspectRatio then
-        -- Use separate width/height when maintaining aspect ratio
+    if style.maintainAspectRatio then
+        -- Square mode: use buttonSize for both dimensions
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        width = size
+        height = size
+    else
+        -- Non-square mode: use separate width/height
         width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    else
-        -- Use buttonSize and widthRatio when stretching
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        local widthRatio = style.iconWidthRatio or 1.0
-        width = size * widthRatio
-        height = size
     end
 
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
@@ -303,8 +299,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
-    -- Handle aspect ratio via texture cropping
-    if maintainAspectRatio and width ~= height then
+    -- Handle aspect ratio via texture cropping (always crop to prevent stretching)
+    if width ~= height then
         -- Crop the icon texture to match frame shape while keeping icon undistorted
         local texMin, texMax = 0.08, 0.92
         local texRange = texMax - texMin
