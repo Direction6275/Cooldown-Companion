@@ -28,7 +28,11 @@ local minimapButton = LDB:NewDataObject(ADDON_NAME, {
     OnClick = function(self, button)
         if button == "LeftButton" then
             local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-            AceConfigDialog:Open(ADDON_NAME)
+            if AceConfigDialog.OpenFrames[ADDON_NAME] then
+                AceConfigDialog:Close(ADDON_NAME)
+            else
+                AceConfigDialog:Open(ADDON_NAME)
+            end
         end
     end,
     OnTooltipShow = function(tooltip)
