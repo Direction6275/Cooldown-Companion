@@ -17,9 +17,32 @@ ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
 ST.DEFAULT_BORDER_SIZE = 1
 
+-- Minimap icon setup using LibDataBroker and LibDBIcon
+local LDB = LibStub("LibDataBroker-1.1")
+local LDBIcon = LibStub("LibDBIcon-1.0")
+
+local minimapButton = LDB:NewDataObject(ADDON_NAME, {
+    type = "launcher",
+    text = "Cooldown Companion",
+    icon = "Interface\\AddOns\\CooldownCompanion\\Media\\cdcminimap",
+    OnClick = function(self, button)
+        if button == "LeftButton" then
+            local AceConfigDialog = LibStub("AceConfigDialog-3.0")
+            AceConfigDialog:Open(ADDON_NAME)
+        end
+    end,
+    OnTooltipShow = function(tooltip)
+        tooltip:AddLine("Cooldown Companion")
+        tooltip:AddLine("|cffeda55fLeft-Click|r to open options", 0.2, 1, 0.2)
+    end,
+})
+
 -- Default database structure
 local defaults = {
     profile = {
+        minimap = {
+            hide = false,
+        },
         groups = {
             --[[
                 [groupId] = {
@@ -69,18 +92,21 @@ local defaults = {
 function CooldownCompanion:OnInitialize()
     -- Initialize database
     self.db = LibStub("AceDB-3.0"):New("CooldownCompanionDB", defaults, true)
-    
+
     -- Initialize storage tables
     self.groupFrames = {}
     self.buttonFrames = {}
-    
+
+    -- Register minimap icon
+    LDBIcon:Register(ADDON_NAME, minimapButton, self.db.profile.minimap)
+
     -- Register chat commands
     self:RegisterChatCommand("cdc", "SlashCommand")
     self:RegisterChatCommand("cooldowncompanion", "SlashCommand")
-    
+
     -- Initialize config
     self:SetupConfig()
-    
+
     self:Print("Cooldown Companion loaded. Type /cdc for options.")
 end
 
