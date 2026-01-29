@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - ButtonFrame
     Individual button frames with cooldown animations and glow effects
-    
+
     Note: WoW 12.0 "secret value" API blocks direct comparison of cooldown data.
     We pass values directly to SetCooldown and let the internal WoW code handle them.
 ]]
@@ -11,6 +11,40 @@ local CooldownCompanion = ST.Addon
 
 -- Button Frame Pool
 local buttonPool = {}
+
+-- Helper function to make a frame fully click-through
+-- Uses multiple methods for maximum compatibility across WoW versions
+local function SetFrameClickThrough(frame, clickThrough)
+    if not frame then return end
+
+    if clickThrough then
+        -- Disable all mouse interaction
+        frame:EnableMouse(false)
+        -- These methods may not exist in all WoW versions, so use pcall
+        if frame.SetMouseClickEnabled then
+            frame:SetMouseClickEnabled(false)
+        end
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(false)
+        end
+        -- Unregister any click events
+        if frame.RegisterForClicks then
+            frame:RegisterForClicks()
+        end
+        if frame.RegisterForDrag then
+            frame:RegisterForDrag()
+        end
+    else
+        -- Enable mouse interaction
+        frame:EnableMouse(true)
+        if frame.SetMouseClickEnabled then
+            frame:SetMouseClickEnabled(true)
+        end
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(true)
+        end
+    end
+end
 
 -- Glow functions (using LibCustomGlow if available, otherwise fallback)
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
@@ -127,7 +161,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     })
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.border:SetBackdropBorderColor(unpack(borderColor))
-    button.border:EnableMouse(false) -- Never capture mouse on border
+    SetFrameClickThrough(button.border, true) -- Never capture mouse on border
 
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
@@ -136,7 +170,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
-    button.cooldown:EnableMouse(false) -- Never capture mouse on cooldown
+    SetFrameClickThrough(button.cooldown, true) -- Never capture mouse on cooldown
 
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -179,9 +213,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
 
-    -- EnableMouse(false) = full click-through, camera works, no tooltips
-    -- EnableMouse(true) = captures mouse, tooltips work, blocks camera
-    button:EnableMouse(not enableClickthrough)
+    -- Apply click-through to the button frame
+    SetFrameClickThrough(button, enableClickthrough)
 
     button:SetScript("OnEnter", function(self)
         if not self.style.showTooltips then return end
@@ -350,7 +383,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local showTooltips = style.showTooltips ~= false
     local enableClickthrough = not showTooltips or style.enableClickthrough
 
-    -- EnableMouse(false) = full click-through, camera works, no tooltips
-    -- EnableMouse(true) = captures mouse, tooltips work, blocks camera
-    button:EnableMouse(not enableClickthrough)
+    -- Apply click-through to the button frame
+    SetFrameClickThrough(button, enableClickthrough)
 end

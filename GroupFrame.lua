@@ -6,6 +6,40 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+-- Helper function to make a frame fully click-through
+-- Uses multiple methods for maximum compatibility across WoW versions
+local function SetFrameClickThrough(frame, clickThrough)
+    if not frame then return end
+
+    if clickThrough then
+        -- Disable all mouse interaction
+        frame:EnableMouse(false)
+        -- These methods may not exist in all WoW versions
+        if frame.SetMouseClickEnabled then
+            frame:SetMouseClickEnabled(false)
+        end
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(false)
+        end
+        -- Unregister any click/drag events
+        if frame.RegisterForClicks then
+            frame:RegisterForClicks()
+        end
+        if frame.RegisterForDrag then
+            frame:RegisterForDrag()
+        end
+    else
+        -- Enable mouse interaction
+        frame:EnableMouse(true)
+        if frame.SetMouseClickEnabled then
+            frame:SetMouseClickEnabled(true)
+        end
+        if frame.SetMouseMotionEnabled then
+            frame:SetMouseMotionEnabled(true)
+        end
+    end
+end
+
 function CooldownCompanion:CreateGroupFrame(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return end
@@ -395,8 +429,10 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- When locked and clickthrough: disable mouse completely for camera passthrough
     -- When unlocked: always enable mouse for dragging (drag handle is backup)
     if self.db.profile.locked and isClickthrough then
-        frame:EnableMouse(false)
+        SetFrameClickThrough(frame, true)
     else
-        frame:EnableMouse(true)
+        SetFrameClickThrough(frame, false)
+        -- Re-register for drag when not click-through
+        frame:RegisterForDrag("LeftButton")
     end
 end
