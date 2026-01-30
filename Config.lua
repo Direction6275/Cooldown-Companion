@@ -10,6 +10,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local AceConfig = LibStub("AceConfig-3.0")
 local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local AceDBOptions = LibStub("AceDBOptions-3.0")
+local AceSerializer = LibStub("AceSerializer-3.0")
 
 -- Selection state
 local selectedGroup = nil
@@ -109,6 +110,189 @@ StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
             selectedButton = nil
             CooldownCompanion:RefreshConfigPanel()
         end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
+    text = "Delete profile '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.profileName then
+            local db = CooldownCompanion.db
+            local allProfiles = db:GetProfiles()
+            local nextProfile = nil
+            for _, name in ipairs(allProfiles) do
+                if name ~= data.profileName then
+                    nextProfile = name
+                    break
+                end
+            end
+            if not nextProfile then
+                nextProfile = "Default"
+            end
+            db:SetProfile(nextProfile)
+            db:DeleteProfile(data.profileName, true)
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_NEW_PROFILE"] = {
+    text = "Enter new profile name:",
+    button1 = "Create",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self)
+        local text = self.editBox:GetText()
+        if text and text ~= "" then
+            local db = CooldownCompanion.db
+            db:SetProfile(text)
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_NEW_PROFILE"].OnAccept(parent)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        self.editBox:SetFocus()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
+    text = "Rename profile '%s' to:",
+    button1 = "Rename",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self, data)
+        local newName = self.editBox:GetText()
+        if newName and newName ~= "" and data and data.oldName then
+            local db = CooldownCompanion.db
+            db:SetProfile(newName)
+            db:CopyProfile(data.oldName)
+            db:DeleteProfile(data.oldName, true)
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_RENAME_PROFILE"].OnAccept(parent, parent.data)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        self.editBox:SetFocus()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
+    text = "Enter name for the duplicate profile:",
+    button1 = "Duplicate",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self, data)
+        local newName = self.editBox:GetText()
+        if newName and newName ~= "" and data and data.source then
+            local db = CooldownCompanion.db
+            db:SetProfile(newName)
+            db:CopyProfile(data.source)
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_DUPLICATE_PROFILE"].OnAccept(parent, parent.data)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        self.editBox:SetFocus()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
+    text = "Export string (Ctrl+C to copy):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        local db = CooldownCompanion.db
+        local serialized = AceSerializer:Serialize(db.profile)
+        self.editBox:SetText(serialized)
+        self.editBox:HighlightText()
+        self.editBox:SetFocus()
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
+    text = "Paste import string:",
+    button1 = "Import",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self)
+        local text = self.editBox:GetText()
+        if text and text ~= "" then
+            local success, data = AceSerializer:Deserialize(text)
+            if success and type(data) == "table" then
+                local db = CooldownCompanion.db
+                -- Deep-copy imported data into current profile
+                for k, v in pairs(data) do
+                    db.profile[k] = v
+                end
+                selectedGroup = nil
+                selectedButton = nil
+                CooldownCompanion:RefreshConfigPanel()
+                CooldownCompanion:RefreshAllGroups()
+            else
+                CooldownCompanion:Print("Import failed: invalid data.")
+            end
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_IMPORT_PROFILE"].OnAccept(parent)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        self.editBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -937,15 +1121,24 @@ function RefreshProfileBar(barFrame)
     end
     wipe(profileBarAceWidgets)
 
-    -- Clear existing children
+    -- Clear existing children (FontStrings are regions, not children, so clear both)
     for _, child in ipairs({barFrame:GetChildren()}) do
         child:Hide()
         child:SetParent(nil)
+    end
+    if barFrame.profileLabel then
+        barFrame.profileLabel:Hide()
     end
 
     local db = CooldownCompanion.db
     local profiles = db:GetProfiles()
     local currentProfile = db:GetCurrentProfile()
+
+    -- "Profile:" label
+    local label = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("LEFT", barFrame, "LEFT", 8, 0)
+    label:SetText("Profile:")
+    barFrame.profileLabel = label
 
     -- Build ordered profile list for AceGUI Dropdown
     local profileList = {}
@@ -967,100 +1160,66 @@ function RefreshProfileBar(barFrame)
     end)
     profileDrop.frame:SetParent(barFrame)
     profileDrop.frame:ClearAllPoints()
-    profileDrop.frame:SetPoint("LEFT", barFrame, "LEFT", 15, 0)
+    profileDrop.frame:SetPoint("LEFT", label, "RIGHT", 4, 0)
     profileDrop:SetWidth(160)
     profileDrop.frame:Show()
     table.insert(profileBarAceWidgets, profileDrop)
 
-    -- New profile editbox (AceGUI)
-    local newProfileBox = AceGUI:Create("EditBox")
-    newProfileBox:SetLabel("")
-    newProfileBox:SetText("")
-    newProfileBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        if text and text ~= "" then
-            db:SetProfile(text)
-            widget:SetText("")
-            selectedGroup = nil
-            selectedButton = nil
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
+    -- Helper to create bar buttons
+    local lastAnchor = profileDrop.frame
+    local function AddBarButton(text, onClick)
+        local btn = AceGUI:Create("Button")
+        btn:SetText(text)
+        btn:SetCallback("OnClick", onClick)
+        btn.frame:SetParent(barFrame)
+        btn.frame:ClearAllPoints()
+        btn.frame:SetPoint("LEFT", lastAnchor, "RIGHT", 4, 0)
+        btn:SetWidth(70)
+        btn:SetHeight(24)
+        btn.frame:Show()
+        table.insert(profileBarAceWidgets, btn)
+        lastAnchor = btn.frame
+        return btn
+    end
+
+    -- New
+    AddBarButton("New", function()
+        StaticPopup_Show("CDC_NEW_PROFILE")
+    end)
+
+    -- Rename
+    AddBarButton("Rename", function()
+        local dialog = StaticPopup_Show("CDC_RENAME_PROFILE", currentProfile)
+        if dialog then
+            dialog.data = { oldName = currentProfile }
         end
     end)
-    newProfileBox.frame:SetParent(barFrame)
-    newProfileBox.frame:ClearAllPoints()
-    newProfileBox.frame:SetPoint("LEFT", profileDrop.frame, "RIGHT", 4, 0)
-    newProfileBox:SetWidth(120)
-    newProfileBox.frame:Show()
-    table.insert(profileBarAceWidgets, newProfileBox)
 
-    -- Copy button (AceGUI)
-    local copyBtn = AceGUI:Create("Button")
-    copyBtn:SetText("Copy")
-    copyBtn:SetCallback("OnClick", function()
-        local menuFrame = CreateFrame("Frame", "CDCCopyMenu", barFrame, "UIDropDownMenuTemplate")
-        UIDropDownMenu_Initialize(menuFrame, function(self, level)
-            for _, name in ipairs(profiles) do
-                if name ~= currentProfile then
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = name
-                    info.func = function(self)
-                        db:CopyProfile(self.value)
-                        CloseDropDownMenus()
-                        selectedGroup = nil
-                        selectedButton = nil
-                        CooldownCompanion:RefreshConfigPanel()
-                        CooldownCompanion:RefreshAllGroups()
-                    end
-                    info.value = name
-                    UIDropDownMenu_AddButton(info, level)
-                end
-            end
-        end, "MENU")
-        ToggleDropDownMenu(1, nil, menuFrame, copyBtn.frame, 0, 0)
-    end)
-    copyBtn.frame:SetParent(barFrame)
-    copyBtn.frame:ClearAllPoints()
-    copyBtn.frame:SetPoint("LEFT", newProfileBox.frame, "RIGHT", 4, 0)
-    copyBtn:SetWidth(75)
-    copyBtn:SetHeight(24)
-    copyBtn.frame:Show()
-    table.insert(profileBarAceWidgets, copyBtn)
-
-    -- Delete button (AceGUI)
-    local delBtn = AceGUI:Create("Button")
-    delBtn:SetText("Delete")
-    delBtn:SetCallback("OnClick", function()
-        local active = db:GetCurrentProfile()
-        if active == currentProfile then
-            -- Deleting the active profile: switch to another first
-            local allProfiles = db:GetProfiles()
-            local nextProfile = nil
-            for _, name in ipairs(allProfiles) do
-                if name ~= currentProfile then
-                    nextProfile = name
-                    break
-                end
-            end
-            if not nextProfile then
-                nextProfile = "Default"
-            end
-            db:SetProfile(nextProfile)
-            db:DeleteProfile(currentProfile, true)
-        else
-            db:DeleteProfile(currentProfile, true)
+    -- Duplicate
+    AddBarButton("Duplicate", function()
+        local dialog = StaticPopup_Show("CDC_DUPLICATE_PROFILE")
+        if dialog then
+            dialog.data = { source = currentProfile }
         end
-        selectedGroup = nil
-        selectedButton = nil
-        CooldownCompanion:RefreshConfigPanel()
-        CooldownCompanion:RefreshAllGroups()
     end)
-    delBtn.frame:SetParent(barFrame)
-    delBtn.frame:ClearAllPoints()
-    delBtn.frame:SetPoint("LEFT", copyBtn.frame, "RIGHT", 4, 0)
-    delBtn:SetWidth(75)
-    delBtn:SetHeight(24)
-    delBtn.frame:Show()
-    table.insert(profileBarAceWidgets, delBtn)
+
+    -- Delete
+    AddBarButton("Delete", function()
+        local dialog = StaticPopup_Show("CDC_DELETE_PROFILE", currentProfile)
+        if dialog then
+            dialog.data = { profileName = currentProfile }
+        end
+    end)
+
+    -- Export
+    AddBarButton("Export", function()
+        StaticPopup_Show("CDC_EXPORT_PROFILE")
+    end)
+
+    -- Import
+    AddBarButton("Import", function()
+        StaticPopup_Show("CDC_IMPORT_PROFILE")
+    end)
 end
 
 ------------------------------------------------------------------------
