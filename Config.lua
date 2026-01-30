@@ -1,19 +1,29 @@
 --[[
     CooldownCompanion - Config
-    AceConfig-based configuration panel
+    Custom 3-column config panel using AceGUI-3.0 Frame + raw WoW frame positioning
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+local AceGUI = LibStub("AceGUI-3.0")
 local AceConfig = LibStub("AceConfig-3.0")
 local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local AceDBOptions = LibStub("AceDBOptions-3.0")
 
--- Locals for new spell/item input
-local newSpellInput = ""
-local newItemInput = ""
+-- Selection state
 local selectedGroup = nil
+local selectedButton = nil
+local selectedTab = "general"
+local newInput = ""
+
+-- Main frame reference
+local configFrame = nil
+
+-- Column content frames (for refresh)
+local col1ScrollChild = nil
+local col2ScrollChild = nil
+local col3Container = nil
 
 -- Font options for dropdown
 local fontOptions = {
@@ -32,7 +42,78 @@ local outlineOptions = {
     ["MONOCHROME"] = "Monochrome",
 }
 
--- Helper function to add a spell to selected group
+local anchorPoints = {
+    "TOPLEFT", "TOP", "TOPRIGHT",
+    "LEFT", "CENTER", "RIGHT",
+    "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
+}
+
+local anchorPointLabels = {
+    TOPLEFT = "Top Left",
+    TOP = "Top",
+    TOPRIGHT = "Top Right",
+    LEFT = "Left",
+    CENTER = "Center",
+    RIGHT = "Right",
+    BOTTOMLEFT = "Bottom Left",
+    BOTTOM = "Bottom",
+    BOTTOMRIGHT = "Bottom Right",
+}
+
+local glowTypeOptions = {
+    pixel = "Pixel Glow",
+    action = "Action Glow",
+    proc = "Proc Glow",
+}
+
+-- Layout constants
+local COLUMN_PADDING = 8
+local HEADER_HEIGHT = 22
+local BUTTON_HEIGHT = 24
+local BUTTON_SPACING = 2
+local PROFILE_BAR_HEIGHT = 36
+
+-- Static popup for delete confirmations
+StaticPopupDialogs["CDC_DELETE_GROUP"] = {
+    text = "Are you sure you want to delete group '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.groupId then
+            CooldownCompanion:DeleteGroup(data.groupId)
+            if selectedGroup == data.groupId then
+                selectedGroup = nil
+                selectedButton = nil
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
+    text = "Remove '%s' from this group?",
+    button1 = "Remove",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.groupId and data.buttonIndex then
+            CooldownCompanion:RemoveButtonFromGroup(data.groupId, data.buttonIndex)
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+------------------------------------------------------------------------
+-- Helper: Add spell to selected group
+------------------------------------------------------------------------
 local function TryAddSpell(input)
     if input == "" or not selectedGroup then return false end
 
@@ -60,7 +141,9 @@ local function TryAddSpell(input)
     end
 end
 
--- Helper function to add an item to selected group
+------------------------------------------------------------------------
+-- Helper: Add item to selected group
+------------------------------------------------------------------------
 local function TryAddItem(input)
     if input == "" or not selectedGroup then return false end
 
@@ -84,870 +167,1199 @@ local function TryAddItem(input)
     end
 end
 
--- Helper function to get sorted group list
-local function GetGroupList()
-    local list = {}
-    for groupId, group in pairs(CooldownCompanion.db.profile.groups) do
-        list[groupId] = group.name
+------------------------------------------------------------------------
+-- Helper: Get icon for a button data entry
+------------------------------------------------------------------------
+local function GetButtonIcon(buttonData)
+    if buttonData.type == "spell" then
+        local info = C_Spell.GetSpellInfo(buttonData.id)
+        return info and info.iconID or 134400
+    elseif buttonData.type == "item" then
+        local _, _, _, _, _, _, _, _, _, icon = C_Item.GetItemInfo(buttonData.id)
+        return icon or 134400
     end
-    return list
+    return 134400
 end
 
--- Helper function to get button list for a group
-local function GetButtonList(groupId)
-    local list = {}
-    if not groupId then return list end
-    local group = CooldownCompanion.db.profile.groups[groupId]
-    if group and group.buttons then
-        for i, button in ipairs(group.buttons) do
-            local name = button.name or ("Unknown " .. button.type)
-            -- Use string keys for AceConfig dropdown compatibility
-            list[tostring(i)] = string.format("%d. [%s] %s", i, button.type:upper(), name)
+------------------------------------------------------------------------
+-- Helper: Create a scroll frame inside a parent
+------------------------------------------------------------------------
+local function CreateScrollFrame(parent)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -22, 0)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetWidth(scrollFrame:GetWidth())
+    scrollChild:SetHeight(1) -- will be set dynamically
+    scrollFrame:SetScrollChild(scrollChild)
+
+    -- Update child width on resize
+    scrollFrame:SetScript("OnSizeChanged", function(self, w, h)
+        scrollChild:SetWidth(w)
+    end)
+
+    return scrollFrame, scrollChild
+end
+
+------------------------------------------------------------------------
+-- Helper: Create a column backdrop frame
+------------------------------------------------------------------------
+local function CreateColumnFrame(parent)
+    local col = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    col:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    col:SetBackdropColor(0.1, 0.1, 0.1, 0.3)
+    col:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
+    return col
+end
+
+------------------------------------------------------------------------
+-- Helper: Create a text button
+------------------------------------------------------------------------
+local function CreateTextButton(parent, text, width, height, onClick)
+    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    btn:SetSize(width, height)
+    btn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    btn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+
+    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.text:SetPoint("CENTER")
+    btn.text:SetText(text)
+
+    btn:RegisterForClicks("AnyUp")
+    btn:SetScript("OnClick", function(self, button)
+        if button == "LeftButton" and onClick then
+            onClick(self)
+        end
+    end)
+
+    btn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        if self.isSelected then
+            self:SetBackdropColor(0.15, 0.4, 0.15, 0.9)
+        else
+            self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        end
+    end)
+
+    return btn
+end
+
+------------------------------------------------------------------------
+-- Helper: Create a header label
+------------------------------------------------------------------------
+local function CreateHeaderLabel(parent, text)
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetText(text)
+    label:SetTextColor(1, 0.82, 0, 1)
+    return label
+end
+
+------------------------------------------------------------------------
+-- Forward declarations for refresh functions
+------------------------------------------------------------------------
+local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
+
+------------------------------------------------------------------------
+-- COLUMN 1: Groups
+------------------------------------------------------------------------
+function RefreshColumn1(scrollChild)
+    -- Clear existing children
+    for _, child in ipairs({scrollChild:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    local yOffset = -4
+    local db = CooldownCompanion.db.profile
+    local contentWidth = scrollChild:GetWidth() - 8
+
+    -- Sort group IDs for consistent ordering
+    local groupIds = {}
+    for id in pairs(db.groups) do
+        table.insert(groupIds, id)
+    end
+    table.sort(groupIds)
+
+    for _, groupId in ipairs(groupIds) do
+        local group = db.groups[groupId]
+        if group then
+            local btn = CreateTextButton(scrollChild, group.name, contentWidth, BUTTON_HEIGHT, function()
+                selectedGroup = groupId
+                selectedButton = nil
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+            btn:RegisterForClicks("AnyUp")
+
+            -- Highlight selected group
+            if selectedGroup == groupId then
+                btn.isSelected = true
+                btn:SetBackdropColor(0.15, 0.4, 0.15, 0.9)
+                btn:SetBackdropBorderColor(0.3, 0.8, 0.3, 1)
+            end
+
+            yOffset = yOffset - (BUTTON_HEIGHT + BUTTON_SPACING)
         end
     end
-    return list
-end
 
--- Helper to get selected button index as number
-local function GetSelectedButtonIndex()
-    if ST.selectedButton then
-        return tonumber(ST.selectedButton)
+    -- "New" button
+    local newBtn = CreateTextButton(scrollChild, "New", contentWidth, BUTTON_HEIGHT, function()
+        local name = "Group " .. (CooldownCompanion.db.profile.nextGroupId or 1)
+        local groupId = CooldownCompanion:CreateGroup(name)
+        selectedGroup = groupId
+        selectedButton = nil
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    newBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+    newBtn:SetBackdropColor(0.15, 0.3, 0.15, 0.8)
+    newBtn:SetBackdropBorderColor(0.3, 0.6, 0.3, 1)
+    yOffset = yOffset - (BUTTON_HEIGHT + BUTTON_SPACING)
+
+    -- "Delete" button (only if a group is selected)
+    if selectedGroup and CooldownCompanion.db.profile.groups[selectedGroup] then
+        local delBtn = CreateTextButton(scrollChild, "Delete", contentWidth, BUTTON_HEIGHT, function()
+            local group = CooldownCompanion.db.profile.groups[selectedGroup]
+            local name = group and group.name or "this group"
+            local dialog = StaticPopup_Show("CDC_DELETE_GROUP", name)
+            if dialog then
+                dialog.data = { groupId = selectedGroup }
+            end
+        end)
+        delBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+        delBtn:SetBackdropColor(0.4, 0.15, 0.15, 0.8)
+        delBtn:SetBackdropBorderColor(0.6, 0.3, 0.3, 1)
+        yOffset = yOffset - (BUTTON_HEIGHT + BUTTON_SPACING)
     end
-    return nil
+
+    scrollChild:SetHeight(math.abs(yOffset) + 4)
 end
 
+------------------------------------------------------------------------
+-- COLUMN 2: Spells / Items
+------------------------------------------------------------------------
+function RefreshColumn2(scrollChild, col2Frame)
+    -- Clear existing children
+    for _, child in ipairs({scrollChild:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    -- Also clear any AceGUI widgets previously parented to col2Frame
+    if col2Frame.aceWidgets then
+        for _, widget in ipairs(col2Frame.aceWidgets) do
+            widget:Release()
+        end
+    end
+    col2Frame.aceWidgets = {}
+
+    if not selectedGroup then
+        local label = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+        label:SetPoint("TOPLEFT", 8, -8)
+        label:SetText("Select a group first")
+        scrollChild:SetHeight(30)
+        return
+    end
+
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then
+        scrollChild:SetHeight(30)
+        return
+    end
+
+    local yOffset = -4
+    local contentWidth = scrollChild:GetWidth() - 8
+
+    -- Input editbox (raw frame)
+    local editFrame = CreateFrame("Frame", nil, scrollChild)
+    editFrame:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+    editFrame:SetSize(contentWidth, 24)
+
+    local editBox = CreateFrame("EditBox", nil, editFrame, "InputBoxTemplate")
+    editBox:SetPoint("TOPLEFT", 6, 0)
+    editBox:SetPoint("BOTTOMRIGHT", -6, 0)
+    editBox:SetAutoFocus(false)
+    editBox:SetFontObject("ChatFontNormal")
+    editBox:SetText(newInput)
+    editBox:SetScript("OnTextChanged", function(self, userInput)
+        if userInput then
+            newInput = self:GetText()
+        end
+    end)
+    editBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+    editBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    yOffset = yOffset - 28
+
+    -- Add Spell / Add Item buttons side by side
+    local halfWidth = math.floor((contentWidth - 4) / 2)
+
+    local addSpellBtn = CreateTextButton(scrollChild, "Add Spell", halfWidth, BUTTON_HEIGHT, function()
+        if TryAddSpell(newInput) then
+            newInput = ""
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    addSpellBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+
+    local addItemBtn = CreateTextButton(scrollChild, "Add Item", halfWidth, BUTTON_HEIGHT, function()
+        if TryAddItem(newInput) then
+            newInput = ""
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4 + halfWidth + 4, yOffset)
+
+    yOffset = yOffset - (BUTTON_HEIGHT + 6)
+
+    -- Separator
+    local sep = scrollChild:CreateTexture(nil, "ARTWORK")
+    sep:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+    sep:SetSize(contentWidth, 1)
+    sep:SetColorTexture(0.4, 0.4, 0.4, 0.5)
+    yOffset = yOffset - 6
+
+    -- Button list
+    for i, buttonData in ipairs(group.buttons) do
+        local btnHeight = 26
+        local btn = CreateFrame("Button", nil, scrollChild, "BackdropTemplate")
+        btn:SetSize(contentWidth, btnHeight)
+        btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+        btn:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        btn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+        btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        btn:RegisterForClicks("AnyUp")
+
+        -- Icon
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(btnHeight - 4, btnHeight - 4)
+        icon:SetPoint("LEFT", 3, 0)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetTexture(GetButtonIcon(buttonData))
+
+        -- Name label
+        local nameLabel = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        nameLabel:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+        nameLabel:SetPoint("RIGHT", btn, "RIGHT", -24, 0)
+        nameLabel:SetJustifyH("LEFT")
+        nameLabel:SetText(buttonData.name or ("Unknown " .. buttonData.type))
+        nameLabel:SetWordWrap(false)
+
+        -- Delete button (X)
+        local delBtn = CreateFrame("Button", nil, btn)
+        delBtn:SetSize(16, 16)
+        delBtn:SetPoint("RIGHT", -4, 0)
+        delBtn:SetNormalFontObject("GameFontNormalSmall")
+        local delText = delBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        delText:SetPoint("CENTER")
+        delText:SetText("|cffff4444X|r")
+        delBtn:SetScript("OnClick", function()
+            local name = buttonData.name or "this entry"
+            local dialog = StaticPopup_Show("CDC_DELETE_BUTTON", name)
+            if dialog then
+                dialog.data = { groupId = selectedGroup, buttonIndex = i }
+            end
+        end)
+
+        -- Selection highlight
+        if selectedButton == i then
+            btn.isSelected = true
+            btn:SetBackdropColor(0.15, 0.3, 0.5, 0.9)
+            btn:SetBackdropBorderColor(0.3, 0.5, 0.8, 1)
+        end
+
+        btn:SetScript("OnClick", function(self, mouseButton)
+            if mouseButton == "LeftButton" then
+                selectedButton = i
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
+        btn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            if self.isSelected then
+                self:SetBackdropColor(0.15, 0.3, 0.5, 0.9)
+            else
+                self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+            end
+        end)
+
+        yOffset = yOffset - (btnHeight + BUTTON_SPACING)
+    end
+
+    -- Glow settings area (shown when a button is selected)
+    if selectedButton and group.buttons[selectedButton] then
+        local btnData = group.buttons[selectedButton]
+        yOffset = yOffset - 6
+
+        -- Separator
+        local sep2 = scrollChild:CreateTexture(nil, "ARTWORK")
+        sep2:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+        sep2:SetSize(contentWidth, 1)
+        sep2:SetColorTexture(0.4, 0.4, 0.4, 0.5)
+        yOffset = yOffset - 8
+
+        -- Glow header
+        local glowHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        glowHeader:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, yOffset)
+        glowHeader:SetText("Glow Settings")
+        glowHeader:SetTextColor(1, 0.82, 0, 1)
+        yOffset = yOffset - 18
+
+        -- Show Glow checkbox (raw)
+        local glowCheck = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
+        glowCheck:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
+        glowCheck:SetSize(24, 24)
+        glowCheck:SetChecked(btnData.showGlow or false)
+        local glowLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        glowLabel:SetPoint("LEFT", glowCheck, "RIGHT", 2, 0)
+        glowLabel:SetText("Show Glow")
+        glowCheck:SetScript("OnClick", function(self)
+            btnData.showGlow = self:GetChecked()
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        yOffset = yOffset - 26
+
+        -- Glow Type dropdown (raw)
+        local typeLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        typeLabel:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, yOffset)
+        typeLabel:SetText("Glow Type:")
+        yOffset = yOffset - 16
+
+        local typeDropdown = CreateFrame("Frame", "CDCGlowTypeDropdown", scrollChild, "UIDropDownMenuTemplate")
+        typeDropdown:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", -8, yOffset)
+        UIDropDownMenu_SetWidth(typeDropdown, contentWidth - 20)
+        UIDropDownMenu_SetText(typeDropdown, glowTypeOptions[btnData.glowType or "pixel"])
+        UIDropDownMenu_Initialize(typeDropdown, function(self, level)
+            for key, label in pairs(glowTypeOptions) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = label
+                info.value = key
+                info.checked = (btnData.glowType or "pixel") == key
+                info.func = function(self)
+                    btnData.glowType = self.value
+                    UIDropDownMenu_SetText(typeDropdown, glowTypeOptions[self.value])
+                    CloseDropDownMenus()
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end)
+        yOffset = yOffset - 30
+
+        -- Glow Color button
+        local colorLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        colorLabel:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, yOffset)
+        colorLabel:SetText("Glow Color:")
+
+        local gc = btnData.glowColor or {1, 1, 0, 1}
+        local colorBtn = CreateFrame("Button", nil, scrollChild)
+        colorBtn:SetSize(20, 20)
+        colorBtn:SetPoint("LEFT", colorLabel, "RIGHT", 6, 0)
+        colorBtn.tex = colorBtn:CreateTexture(nil, "ARTWORK")
+        colorBtn.tex:SetAllPoints()
+        colorBtn.tex:SetColorTexture(gc[1], gc[2], gc[3], gc[4])
+        colorBtn:SetScript("OnClick", function()
+            local r, g, b, a = gc[1], gc[2], gc[3], gc[4]
+            ColorPickerFrame:SetupColorPickerAndShow({
+                r = r, g = g, b = b, opacity = 1 - a,
+                hasOpacity = true,
+                swatchFunc = function()
+                    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                    local na = 1 - (ColorPickerFrame:GetColorAlpha and ColorPickerFrame:GetColorAlpha() or OpacitySliderFrame:GetValue())
+                    btnData.glowColor = {nr, ng, nb, na}
+                    colorBtn.tex:SetColorTexture(nr, ng, nb, na)
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                end,
+                cancelFunc = function(prev)
+                    btnData.glowColor = {prev.r, prev.g, prev.b, 1 - prev.opacity}
+                    colorBtn.tex:SetColorTexture(prev.r, prev.g, prev.b, 1 - prev.opacity)
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                end,
+            })
+        end)
+        yOffset = yOffset - 28
+    end
+
+    scrollChild:SetHeight(math.abs(yOffset) + 4)
+end
+
+------------------------------------------------------------------------
+-- COLUMN 3: Settings (TabGroup)
+------------------------------------------------------------------------
+local function BuildGeneralTab(container)
+    if not selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+
+    -- Group Name
+    local nameBox = AceGUI:Create("EditBox")
+    nameBox:SetLabel("Group Name")
+    nameBox:SetText(group.name or "")
+    nameBox:SetFullWidth(true)
+    nameBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        group.name = text
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(nameBox)
+
+    -- Enabled toggle
+    local enabledCb = AceGUI:Create("CheckBox")
+    enabledCb:SetLabel("Enabled")
+    enabledCb:SetValue(group.enabled ~= false)
+    enabledCb:SetFullWidth(true)
+    enabledCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.enabled = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(enabledCb)
+
+    -- Lock Frames toggle (global)
+    local lockCb = AceGUI:Create("CheckBox")
+    lockCb:SetLabel("Lock Frames")
+    lockCb:SetValue(CooldownCompanion.db.profile.locked)
+    lockCb:SetFullWidth(true)
+    lockCb:SetCallback("OnValueChanged", function(widget, event, val)
+        CooldownCompanion.db.profile.locked = val
+        if val then
+            CooldownCompanion:LockAllFrames()
+        else
+            CooldownCompanion:UnlockAllFrames()
+        end
+    end)
+    container:AddChild(lockCb)
+end
+
+local function BuildPositioningTab(container)
+    if not selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+
+    -- Anchor to Frame
+    local anchorBox = AceGUI:Create("EditBox")
+    anchorBox:SetLabel("Anchor to Frame")
+    local currentAnchor = group.anchor.relativeTo
+    if currentAnchor == "UIParent" then currentAnchor = "" end
+    anchorBox:SetText(currentAnchor)
+    anchorBox:SetFullWidth(true)
+    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent"
+        if text == "" then
+            CooldownCompanion:SetGroupAnchor(selectedGroup, "UIParent", wasAnchored)
+        else
+            CooldownCompanion:SetGroupAnchor(selectedGroup, text)
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorBox)
+
+    -- Anchor Point dropdown
+    local pointValues = {}
+    for _, pt in ipairs(anchorPoints) do
+        pointValues[pt] = anchorPointLabels[pt]
+    end
+
+    local anchorPt = AceGUI:Create("Dropdown")
+    anchorPt:SetLabel("Anchor Point")
+    anchorPt:SetList(pointValues)
+    anchorPt:SetValue(group.anchor.point or "CENTER")
+    anchorPt:SetFullWidth(true)
+    anchorPt:SetCallback("OnValueChanged", function(widget, event, val)
+        group.anchor.point = val
+        local frame = CooldownCompanion.groupFrames[selectedGroup]
+        if frame then
+            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+        end
+    end)
+    container:AddChild(anchorPt)
+
+    -- Relative Point dropdown
+    local relPt = AceGUI:Create("Dropdown")
+    relPt:SetLabel("Relative Point")
+    relPt:SetList(pointValues)
+    relPt:SetValue(group.anchor.relativePoint or "CENTER")
+    relPt:SetFullWidth(true)
+    relPt:SetCallback("OnValueChanged", function(widget, event, val)
+        group.anchor.relativePoint = val
+        local frame = CooldownCompanion.groupFrames[selectedGroup]
+        if frame then
+            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+        end
+    end)
+    container:AddChild(relPt)
+
+    -- X Offset
+    local xSlider = AceGUI:Create("Slider")
+    xSlider:SetLabel("X Offset")
+    xSlider:SetSliderValues(-500, 500, 1)
+    xSlider:SetValue(group.anchor.x or 0)
+    xSlider:SetFullWidth(true)
+    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        group.anchor.x = val
+        local frame = CooldownCompanion.groupFrames[selectedGroup]
+        if frame then
+            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+        end
+    end)
+    container:AddChild(xSlider)
+
+    -- Y Offset
+    local ySlider = AceGUI:Create("Slider")
+    ySlider:SetLabel("Y Offset")
+    ySlider:SetSliderValues(-500, 500, 1)
+    ySlider:SetValue(group.anchor.y or 0)
+    ySlider:SetFullWidth(true)
+    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+        group.anchor.y = val
+        local frame = CooldownCompanion.groupFrames[selectedGroup]
+        if frame then
+            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+        end
+    end)
+    container:AddChild(ySlider)
+
+    -- Orientation dropdown
+    local orientDrop = AceGUI:Create("Dropdown")
+    orientDrop:SetLabel("Orientation")
+    orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
+    orientDrop:SetValue(group.style.orientation or "horizontal")
+    orientDrop:SetFullWidth(true)
+    orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        group.style.orientation = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(orientDrop)
+
+    -- Buttons Per Row
+    local bprSlider = AceGUI:Create("Slider")
+    bprSlider:SetLabel("Buttons Per Row/Column")
+    bprSlider:SetSliderValues(1, 24, 1)
+    bprSlider:SetValue(group.style.buttonsPerRow or 12)
+    bprSlider:SetFullWidth(true)
+    bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        group.style.buttonsPerRow = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(bprSlider)
+end
+
+local function BuildAppearanceTab(container)
+    if not selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+    local style = group.style
+
+    -- Square Icons toggle
+    local squareCb = AceGUI:Create("CheckBox")
+    squareCb:SetLabel("Square Icons")
+    squareCb:SetValue(style.maintainAspectRatio or false)
+    squareCb:SetFullWidth(true)
+    squareCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.maintainAspectRatio = val
+        if not val then
+            local size = style.buttonSize or ST.BUTTON_SIZE
+            style.iconWidth = style.iconWidth or size
+            style.iconHeight = style.iconHeight or size
+        end
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(squareCb)
+
+    if style.maintainAspectRatio then
+        -- Button Size (square)
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Button Size")
+        sizeSlider:SetSliderValues(20, 64, 1)
+        sizeSlider:SetValue(style.buttonSize or ST.BUTTON_SIZE)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.buttonSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(sizeSlider)
+    else
+        -- Icon Width
+        local wSlider = AceGUI:Create("Slider")
+        wSlider:SetLabel("Icon Width")
+        wSlider:SetSliderValues(10, 100, 1)
+        wSlider:SetValue(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
+        wSlider:SetFullWidth(true)
+        wSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.iconWidth = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(wSlider)
+
+        -- Icon Height
+        local hSlider = AceGUI:Create("Slider")
+        hSlider:SetLabel("Icon Height")
+        hSlider:SetSliderValues(10, 100, 1)
+        hSlider:SetValue(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
+        hSlider:SetFullWidth(true)
+        hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.iconHeight = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(hSlider)
+    end
+
+    -- Button Spacing
+    local spacingSlider = AceGUI:Create("Slider")
+    spacingSlider:SetLabel("Button Spacing")
+    spacingSlider:SetSliderValues(0, 10, 1)
+    spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
+    spacingSlider:SetFullWidth(true)
+    spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.buttonSpacing = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(spacingSlider)
+
+    -- Border Size
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.borderSize = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(borderSlider)
+
+    -- Border Color
+    local borderColor = AceGUI:Create("ColorPicker")
+    borderColor:SetLabel("Border Color")
+    borderColor:SetHasAlpha(true)
+    local bc = style.borderColor or {0, 0, 0, 1}
+    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
+    borderColor:SetFullWidth(true)
+    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(borderColor)
+
+    -- Background Color
+    local bgColor = AceGUI:Create("ColorPicker")
+    bgColor:SetLabel("Background Color")
+    bgColor:SetHasAlpha(true)
+    local bgc = style.backgroundColor or {0, 0, 0, 0.5}
+    bgColor:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
+    bgColor:SetFullWidth(true)
+    bgColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.backgroundColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(bgColor)
+end
+
+local function BuildDisplayTab(container)
+    if not selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+    local style = group.style
+
+    -- Show Cooldown Text
+    local cdTextCb = AceGUI:Create("CheckBox")
+    cdTextCb:SetLabel("Show Cooldown Text")
+    cdTextCb:SetValue(style.showCooldownText or false)
+    cdTextCb:SetFullWidth(true)
+    cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showCooldownText = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(cdTextCb)
+
+    -- Font Size
+    local fontSizeSlider = AceGUI:Create("Slider")
+    fontSizeSlider:SetLabel("Font Size")
+    fontSizeSlider:SetSliderValues(8, 32, 1)
+    fontSizeSlider:SetValue(style.cooldownFontSize or 12)
+    fontSizeSlider:SetFullWidth(true)
+    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.cooldownFontSize = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(fontSizeSlider)
+
+    -- Font dropdown
+    local fontDrop = AceGUI:Create("Dropdown")
+    fontDrop:SetLabel("Font")
+    fontDrop:SetList(fontOptions)
+    fontDrop:SetValue(style.cooldownFont or "Fonts\\FRIZQT__.TTF")
+    fontDrop:SetFullWidth(true)
+    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.cooldownFont = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(fontDrop)
+
+    -- Font Outline
+    local outlineDrop = AceGUI:Create("Dropdown")
+    outlineDrop:SetLabel("Font Outline")
+    outlineDrop:SetList(outlineOptions)
+    outlineDrop:SetValue(style.cooldownFontOutline or "OUTLINE")
+    outlineDrop:SetFullWidth(true)
+    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.cooldownFontOutline = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(outlineDrop)
+
+    -- Desaturate On Cooldown
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(desatCb)
+
+    -- Show Tooltips
+    local tooltipCb = AceGUI:Create("CheckBox")
+    tooltipCb:SetLabel("Show Tooltips")
+    tooltipCb:SetValue(style.showTooltips ~= false)
+    tooltipCb:SetFullWidth(true)
+    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showTooltips = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(tooltipCb)
+end
+
+function RefreshColumn3(container)
+    -- Release previous tab group if stored
+    if container.tabGroup then
+        container.tabGroup:Release()
+        container.tabGroup = nil
+    end
+
+    if not selectedGroup then
+        -- Show placeholder
+        if not container.placeholderLabel then
+            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+            container.placeholderLabel:SetPoint("TOPLEFT", 8, -8)
+        end
+        container.placeholderLabel:SetText("Select a group to configure")
+        container.placeholderLabel:Show()
+        return
+    end
+
+    if container.placeholderLabel then
+        container.placeholderLabel:Hide()
+    end
+
+    local tabGroup = AceGUI:Create("TabGroup")
+    tabGroup:SetTabs({
+        { value = "general",     text = "General" },
+        { value = "positioning", text = "Positioning" },
+        { value = "appearance",  text = "Appearance" },
+        { value = "display",     text = "Display" },
+    })
+    tabGroup:SetLayout("Fill")
+    tabGroup:SelectTab(selectedTab)
+
+    tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+        selectedTab = tab
+        widget:ReleaseChildren()
+
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        widget:AddChild(scroll)
+
+        if tab == "general" then
+            BuildGeneralTab(scroll)
+        elseif tab == "positioning" then
+            BuildPositioningTab(scroll)
+        elseif tab == "appearance" then
+            BuildAppearanceTab(scroll)
+        elseif tab == "display" then
+            BuildDisplayTab(scroll)
+        end
+    end)
+
+    -- Parent the AceGUI widget frame to our raw column frame
+    tabGroup.frame:SetParent(container)
+    tabGroup.frame:ClearAllPoints()
+    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -4)
+    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -4, 4)
+    tabGroup.frame:Show()
+
+    container.tabGroup = tabGroup
+
+    -- Trigger initial tab render
+    tabGroup:SelectTab(selectedTab)
+end
+
+------------------------------------------------------------------------
+-- Profile Bar
+------------------------------------------------------------------------
+function RefreshProfileBar(barFrame)
+    -- Clear existing children
+    for _, child in ipairs({barFrame:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    local db = CooldownCompanion.db
+    local profiles = db:GetProfiles()
+    local currentProfile = db:GetCurrentProfile()
+
+    -- Profile dropdown
+    local profileDropdown = CreateFrame("Frame", "CDCProfileDropdown", barFrame, "UIDropDownMenuTemplate")
+    profileDropdown:SetPoint("LEFT", barFrame, "LEFT", -8, 0)
+    UIDropDownMenu_SetWidth(profileDropdown, 140)
+    UIDropDownMenu_SetText(profileDropdown, currentProfile)
+    UIDropDownMenu_Initialize(profileDropdown, function(self, level)
+        for _, name in ipairs(profiles) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = name
+            info.value = name
+            info.checked = (name == currentProfile)
+            info.func = function(self)
+                db:SetProfile(self.value)
+                UIDropDownMenu_SetText(profileDropdown, self.value)
+                CloseDropDownMenus()
+                -- Reset selection state and refresh
+                selectedGroup = nil
+                selectedButton = nil
+                CooldownCompanion:RefreshConfigPanel()
+                CooldownCompanion:RefreshAllGroups()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+
+    -- New profile edit box
+    local newProfileFrame = CreateFrame("Frame", nil, barFrame)
+    newProfileFrame:SetSize(120, 24)
+    newProfileFrame:SetPoint("LEFT", profileDropdown, "RIGHT", 4, 2)
+
+    local newProfileEdit = CreateFrame("EditBox", nil, newProfileFrame, "InputBoxTemplate")
+    newProfileEdit:SetPoint("TOPLEFT", 6, 0)
+    newProfileEdit:SetPoint("BOTTOMRIGHT", -6, 0)
+    newProfileEdit:SetAutoFocus(false)
+    newProfileEdit:SetFontObject("ChatFontNormal")
+    newProfileEdit:SetScript("OnEnterPressed", function(self)
+        local text = self:GetText()
+        if text and text ~= "" then
+            db:SetProfile(text)
+            self:SetText("")
+            self:ClearFocus()
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        end
+    end)
+    newProfileEdit:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    -- Copy button
+    local xPos = 300
+    local copyBtn = CreateTextButton(barFrame, "Copy", 55, 22, function()
+        -- Show a popup-style dropdown to pick source profile
+        local menuFrame = CreateFrame("Frame", "CDCCopyMenu", barFrame, "UIDropDownMenuTemplate")
+        UIDropDownMenu_Initialize(menuFrame, function(self, level)
+            for _, name in ipairs(profiles) do
+                if name ~= currentProfile then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = name
+                    info.func = function(self)
+                        db:CopyProfile(self.value)
+                        CloseDropDownMenus()
+                        selectedGroup = nil
+                        selectedButton = nil
+                        CooldownCompanion:RefreshConfigPanel()
+                        CooldownCompanion:RefreshAllGroups()
+                    end
+                    info.value = name
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+        end, "MENU")
+        ToggleDropDownMenu(1, nil, menuFrame, copyBtn, 0, 0)
+    end)
+    copyBtn:SetPoint("LEFT", barFrame, "LEFT", xPos, 0)
+
+    -- Delete button
+    local delBtn = CreateTextButton(barFrame, "Delete", 55, 22, function()
+        if currentProfile ~= "Default" then
+            db:DeleteProfile(currentProfile, true)
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        else
+            CooldownCompanion:Print("Cannot delete the Default profile.")
+        end
+    end)
+    delBtn:SetPoint("LEFT", copyBtn, "RIGHT", 4, 0)
+    delBtn:SetBackdropColor(0.4, 0.15, 0.15, 0.8)
+
+    -- Reset button
+    local resetBtn = CreateTextButton(barFrame, "Reset", 55, 22, function()
+        db:ResetProfile()
+        selectedGroup = nil
+        selectedButton = nil
+        CooldownCompanion:RefreshConfigPanel()
+        CooldownCompanion:RefreshAllGroups()
+    end)
+    resetBtn:SetPoint("LEFT", delBtn, "RIGHT", 4, 0)
+end
+
+------------------------------------------------------------------------
+-- Main Panel Creation
+------------------------------------------------------------------------
+local function CreateConfigPanel()
+    if configFrame then return configFrame end
+
+    -- Main AceGUI Frame
+    local frame = AceGUI:Create("Frame")
+    frame:SetTitle("Cooldown Companion")
+    frame:SetStatusText("v1.1.0")
+    frame:SetWidth(900)
+    frame:SetHeight(600)
+    frame:SetLayout(nil) -- manual positioning
+    frame:EnableResize(true)
+
+    -- Store the raw frame for raw child parenting
+    local content = frame.frame
+    -- Get the content area (below the title bar)
+    local contentFrame = frame.content
+
+    -- Prevent AceGUI from releasing on close - just hide
+    frame:SetCallback("OnClose", function(widget)
+        widget.frame:Hide()
+    end)
+
+    -- Profile bar at the top
+    local profileBar = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+    profileBar:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, 0)
+    profileBar:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, 0)
+    profileBar:SetHeight(PROFILE_BAR_HEIGHT)
+    profileBar:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    profileBar:SetBackdropColor(0.15, 0.15, 0.15, 0.5)
+    profileBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
+
+    -- Column containers below profile bar
+    local colParent = CreateFrame("Frame", nil, contentFrame)
+    colParent:SetPoint("TOPLEFT", profileBar, "BOTTOMLEFT", 0, -4)
+    colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 0)
+
+    -- Column 1: Groups (20%)
+    local col1 = CreateColumnFrame(colParent)
+    -- Column 2: Spells/Items (35%)
+    local col2 = CreateColumnFrame(colParent)
+    -- Column 3: Settings (45%)
+    local col3 = CreateColumnFrame(colParent)
+
+    -- Column headers
+    local col1Header = CreateHeaderLabel(col1, "Groups")
+    col1Header:SetPoint("TOPLEFT", col1, "TOPLEFT", 8, -6)
+
+    local col2Header = CreateHeaderLabel(col2, "Spells / Items")
+    col2Header:SetPoint("TOPLEFT", col2, "TOPLEFT", 8, -6)
+
+    -- Info button next to Spells / Items header
+    local infoBtn = CreateFrame("Button", nil, col2)
+    infoBtn:SetSize(16, 16)
+    infoBtn:SetPoint("LEFT", col2Header, "RIGHT", 4, 0)
+    local infoText = infoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    infoText:SetPoint("CENTER")
+    infoText:SetText("|cff66aaff(?)|r")
+    infoBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Spells / Items")
+        GameTooltip:AddLine("Enter a spell or item name/ID in the input box,", 1, 1, 1, true)
+        GameTooltip:AddLine("then click Add Spell or Add Item to track it.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    infoBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    local col3Header = CreateHeaderLabel(col3, "Settings")
+    col3Header:SetPoint("TOPLEFT", col3, "TOPLEFT", 8, -6)
+
+    -- Scroll frames in columns 1 and 2
+    local scrollArea1 = CreateFrame("Frame", nil, col1)
+    scrollArea1:SetPoint("TOPLEFT", col1, "TOPLEFT", 0, -(HEADER_HEIGHT + 4))
+    scrollArea1:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", 0, 0)
+    local scroll1, child1 = CreateScrollFrame(scrollArea1)
+    col1ScrollChild = child1
+
+    local scrollArea2 = CreateFrame("Frame", nil, col2)
+    scrollArea2:SetPoint("TOPLEFT", col2, "TOPLEFT", 0, -(HEADER_HEIGHT + 4))
+    scrollArea2:SetPoint("BOTTOMRIGHT", col2, "BOTTOMRIGHT", 0, 0)
+    local scroll2, child2 = CreateScrollFrame(scrollArea2)
+    col2ScrollChild = child2
+
+    -- Column 3 content area (below header)
+    local col3Content = CreateFrame("Frame", nil, col3)
+    col3Content:SetPoint("TOPLEFT", col3, "TOPLEFT", 0, -(HEADER_HEIGHT + 4))
+    col3Content:SetPoint("BOTTOMRIGHT", col3, "BOTTOMRIGHT", 0, 0)
+    col3Container = col3Content
+
+    -- Layout columns on size change
+    local function LayoutColumns()
+        local w = colParent:GetWidth()
+        local h = colParent:GetHeight()
+        local pad = COLUMN_PADDING
+
+        local col1Width = math.floor(w * 0.20)
+        local col2Width = math.floor(w * 0.35)
+        local col3Width = w - col1Width - col2Width - (pad * 2)
+
+        col1:ClearAllPoints()
+        col1:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
+        col1:SetSize(col1Width, h)
+
+        col2:ClearAllPoints()
+        col2:SetPoint("TOPLEFT", col1, "TOPRIGHT", pad, 0)
+        col2:SetSize(col2Width, h)
+
+        col3:ClearAllPoints()
+        col3:SetPoint("TOPLEFT", col2, "TOPRIGHT", pad, 0)
+        col3:SetSize(col3Width, h)
+    end
+
+    colParent:SetScript("OnSizeChanged", function()
+        LayoutColumns()
+    end)
+
+    -- Do initial layout next frame (after frame sizes are established)
+    C_Timer.After(0, function()
+        LayoutColumns()
+    end)
+
+    -- Store references
+    frame.profileBar = profileBar
+    frame.col1 = col1
+    frame.col2 = col2
+    frame.col3 = col3
+    frame.col2Frame = col2
+    frame.colParent = colParent
+    frame.LayoutColumns = LayoutColumns
+
+    configFrame = frame
+    return frame
+end
+
+------------------------------------------------------------------------
+-- Refresh entire panel
+------------------------------------------------------------------------
+function CooldownCompanion:RefreshConfigPanel()
+    if not configFrame then return end
+    if not configFrame.frame:IsShown() then return end
+
+    RefreshProfileBar(configFrame.profileBar)
+    RefreshColumn1(col1ScrollChild)
+    RefreshColumn2(col2ScrollChild, configFrame.col2Frame)
+    RefreshColumn3(col3Container)
+end
+
+------------------------------------------------------------------------
+-- Toggle config panel open/closed
+------------------------------------------------------------------------
+function CooldownCompanion:ToggleConfig()
+    if not configFrame then
+        CreateConfigPanel()
+    end
+
+    if configFrame.frame:IsShown() then
+        configFrame.frame:Hide()
+    else
+        configFrame.frame:Show()
+        self:RefreshConfigPanel()
+    end
+end
+
+------------------------------------------------------------------------
+-- SetupConfig: Minimal AceConfig registration for Blizzard Settings
+------------------------------------------------------------------------
 function CooldownCompanion:SetupConfig()
+    -- Register a minimal options table so the addon shows in Blizzard's addon list
     local options = {
         name = "Cooldown Companion",
         type = "group",
         args = {
-            general = {
-                name = "General",
-                type = "group",
+            openConfig = {
+                name = "Open Cooldown Companion",
+                desc = "Click to open the configuration panel",
+                type = "execute",
                 order = 1,
-                args = {
-                    description = {
-                        name = "Cooldown Companion allows you to create custom action bar style panels to track spell and item cooldowns.\n\n",
-                        type = "description",
-                        order = 1,
-                        fontSize = "medium",
-                    },
-                    locked = {
-                        name = "Lock Frames",
-                        desc = "Lock all group frames in place",
-                        type = "toggle",
-                        order = 2,
-                        width = "full",
-                        get = function() return self.db.profile.locked end,
-                        set = function(_, val)
-                            self.db.profile.locked = val
-                            if val then
-                                self:LockAllFrames()
-                            else
-                                self:UnlockAllFrames()
-                            end
-                        end,
-                    },
-                    newGroupHeader = {
-                        name = "Create New Group",
-                        type = "header",
-                        order = 10,
-                    },
-                    newGroupName = {
-                        name = "Group Name",
-                        desc = "Enter a name for the new group",
-                        type = "input",
-                        order = 11,
-                        width = "double",
-                        get = function() return ST.newGroupName or "" end,
-                        set = function(_, val) ST.newGroupName = val end,
-                    },
-                    createGroup = {
-                        name = "Create Group",
-                        desc = "Create a new tracking group",
-                        type = "execute",
-                        order = 12,
-                        func = function()
-                            local name = ST.newGroupName or "New Group"
-                            local groupId = self:CreateGroup(name)
-                            ST.newGroupName = ""
-                            self:Print("Created group: " .. name)
-                            -- Refresh config
-                            AceConfigRegistry:NotifyChange(ADDON_NAME)
-                        end,
-                    },
-                },
+                func = function()
+                    -- Close Blizzard settings first
+                    if Settings and Settings.CloseUI then
+                        Settings.CloseUI()
+                    elseif InterfaceOptionsFrame then
+                        InterfaceOptionsFrame:Hide()
+                    end
+                    C_Timer.After(0.1, function()
+                        CooldownCompanion:ToggleConfig()
+                    end)
+                end,
             },
-            groups = {
-                name = "Groups",
-                type = "group",
-                order = 2,
-                args = {
-                    selectGroup = {
-                        name = "Select Group",
-                        desc = "Select a group to configure",
-                        type = "select",
-                        order = 1,
-                        width = "double",
-                        values = function() return GetGroupList() end,
-                        get = function() return selectedGroup end,
-                        set = function(_, val) selectedGroup = val end,
-                    },
-                    groupSettings = {
-                        name = "Group Settings",
-                        type = "group",
-                        order = 2,
-                        inline = true,
-                        hidden = function() return selectedGroup == nil end,
-                        args = {
-                            enabled = {
-                                name = "Enabled",
-                                desc = "Show/hide this group",
-                                type = "toggle",
-                                order = 1,
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    return group and group.enabled
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group then
-                                        group.enabled = val
-                                        self:RefreshGroupFrame(selectedGroup)
-                                    end
-                                end,
-                            },
-                            groupName = {
-                                name = "Group Name",
-                                desc = "Rename this group",
-                                type = "input",
-                                order = 2,
-                                width = "double",
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    return group and group.name or ""
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group then
-                                        group.name = val
-                                        self:RefreshGroupFrame(selectedGroup)
-                                    end
-                                end,
-                            },
-                            deleteGroup = {
-                                name = "Delete Group",
-                                desc = "Permanently delete this group",
-                                type = "execute",
-                                order = 3,
-                                confirm = true,
-                                confirmText = "Are you sure you want to delete this group?",
-                                func = function()
-                                    self:DeleteGroup(selectedGroup)
-                                    selectedGroup = nil
-                                    AceConfigRegistry:NotifyChange(ADDON_NAME)
-                                end,
-                            },
-                            anchorHeader = {
-                                name = "Anchoring",
-                                type = "header",
-                                order = 10,
-                            },
-                            anchorFrame = {
-                                name = "Anchor to Frame",
-                                desc = "Enter the frame name to anchor to (use /fstack to find frame names). Leave empty for free positioning.",
-                                type = "input",
-                                order = 11,
-                                width = "double",
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group and group.anchor.relativeTo ~= "UIParent" then
-                                        return group.anchor.relativeTo
-                                    end
-                                    return ""
-                                end,
-                                set = function(_, val)
-                                    local wasAnchored = false
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group and group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent" then
-                                        wasAnchored = true
-                                    end
-                                    if val == "" then
-                                        -- Un-anchoring from a frame - center it
-                                        self:SetGroupAnchor(selectedGroup, "UIParent", wasAnchored)
-                                    else
-                                        self:SetGroupAnchor(selectedGroup, val)
-                                    end
-                                end,
-                            },
-                            anchorPoint = {
-                                name = "Anchor Point",
-                                desc = "Where on the group frame to anchor",
-                                type = "select",
-                                order = 12,
-                                values = {
-                                    TOPLEFT = "Top Left",
-                                    TOP = "Top",
-                                    TOPRIGHT = "Top Right",
-                                    LEFT = "Left",
-                                    CENTER = "Center",
-                                    RIGHT = "Right",
-                                    BOTTOMLEFT = "Bottom Left",
-                                    BOTTOM = "Bottom",
-                                    BOTTOMRIGHT = "Bottom Right",
-                                },
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    return group and group.anchor.point or "CENTER"
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group then
-                                        group.anchor.point = val
-                                        local frame = self.groupFrames[selectedGroup]
-                                        if frame then
-                                            self:AnchorGroupFrame(frame, group.anchor)
-                                        end
-                                    end
-                                end,
-                            },
-                            relativePoint = {
-                                name = "Relative Point",
-                                desc = "Where on the target frame to attach",
-                                type = "select",
-                                order = 13,
-                                values = {
-                                    TOPLEFT = "Top Left",
-                                    TOP = "Top",
-                                    TOPRIGHT = "Top Right",
-                                    LEFT = "Left",
-                                    CENTER = "Center",
-                                    RIGHT = "Right",
-                                    BOTTOMLEFT = "Bottom Left",
-                                    BOTTOM = "Bottom",
-                                    BOTTOMRIGHT = "Bottom Right",
-                                },
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    return group and group.anchor.relativePoint or "CENTER"
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group then
-                                        group.anchor.relativePoint = val
-                                        local frame = self.groupFrames[selectedGroup]
-                                        if frame then
-                                            self:AnchorGroupFrame(frame, group.anchor)
-                                        end
-                                    end
-                                end,
-                            },
-                            offsetX = {
-                                name = "X Offset",
-                                type = "range",
-                                order = 14,
-                                min = -500,
-                                max = 500,
-                                step = 1,
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    return group and group.anchor.x or 0
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group then
-                                        group.anchor.x = val
-                                        local frame = self.groupFrames[selectedGroup]
-                                        if frame then
-                                            self:AnchorGroupFrame(frame, group.anchor)
-                                        end
-                                    end
-                                end,
-                            },
-                            offsetY = {
-                                name = "Y Offset",
-                                type = "range",
-                                order = 15,
-                                min = -500,
-                                max = 500,
-                                step = 1,
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    return group and group.anchor.y or 0
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    if group then
-                                        group.anchor.y = val
-                                        local frame = self.groupFrames[selectedGroup]
-                                        if frame then
-                                            self:AnchorGroupFrame(frame, group.anchor)
-                                        end
-                                    end
-                                end,
-                            },
-                        },
-                    },
-                    addSpellsHeader = {
-                        name = "Add Spells/Items",
-                        type = "header",
-                        order = 20,
-                        hidden = function() return selectedGroup == nil end,
-                    },
-                    addSpellInput = {
-                        name = "Spell Name or ID",
-                        desc = "Enter a spell name or ID and press Enter to add",
-                        type = "input",
-                        order = 21,
-                        width = "double",
-                        hidden = function() return selectedGroup == nil end,
-                        get = function() return newSpellInput end,
-                        set = function(_, val)
-                            if TryAddSpell(val) then
-                                newSpellInput = ""
-                            else
-                                newSpellInput = val
-                            end
-                            AceConfigRegistry:NotifyChange(ADDON_NAME)
-                        end,
-                    },
-                    addItemInput = {
-                        name = "Item Name or ID",
-                        desc = "Enter an item name or ID and press Enter to add",
-                        type = "input",
-                        order = 25,
-                        width = "double",
-                        hidden = function() return selectedGroup == nil end,
-                        get = function() return newItemInput end,
-                        set = function(_, val)
-                            if TryAddItem(val) then
-                                newItemInput = ""
-                            else
-                                newItemInput = val
-                            end
-                            AceConfigRegistry:NotifyChange(ADDON_NAME)
-                        end,
-                    },
-                    buttonsHeader = {
-                        name = "Current Buttons",
-                        type = "header",
-                        order = 30,
-                        hidden = function() return selectedGroup == nil end,
-                    },
-                    buttonList = {
-                        name = "Tracked Spells/Items",
-                        desc = "Select a button to configure or remove",
-                        type = "select",
-                        order = 31,
-                        width = "double",
-                        hidden = function() return selectedGroup == nil end,
-                        values = function() return GetButtonList(selectedGroup) end,
-                        get = function() return ST.selectedButton end,
-                        set = function(_, val) ST.selectedButton = val end,
-                    },
-                    removeButton = {
-                        name = "Remove Selected",
-                        type = "execute",
-                        order = 32,
-                        hidden = function() return selectedGroup == nil or ST.selectedButton == nil end,
-                        confirm = true,
-                        confirmText = "Remove this spell/item from tracking?",
-                        func = function()
-                            local btnIdx = GetSelectedButtonIndex()
-                            if btnIdx then
-                                self:RemoveButtonFromGroup(selectedGroup, btnIdx)
-                                ST.selectedButton = nil
-                                AceConfigRegistry:NotifyChange(ADDON_NAME)
-                            end
-                        end,
-                    },
-                    buttonSettings = {
-                        name = "Button Settings",
-                        type = "group",
-                        order = 33,
-                        inline = true,
-                        hidden = function() return selectedGroup == nil or ST.selectedButton == nil end,
-                        args = {
-                            showGlow = {
-                                name = "Show Glow",
-                                desc = "Always show a glow effect on this button",
-                                type = "toggle",
-                                order = 1,
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    local btnIdx = GetSelectedButtonIndex()
-                                    if group and btnIdx and group.buttons[btnIdx] then
-                                        return group.buttons[btnIdx].showGlow
-                                    end
-                                    return false
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    local btnIdx = GetSelectedButtonIndex()
-                                    if group and btnIdx and group.buttons[btnIdx] then
-                                        group.buttons[btnIdx].showGlow = val
-                                        self:RefreshGroupFrame(selectedGroup)
-                                    end
-                                end,
-                            },
-                            glowType = {
-                                name = "Glow Type",
-                                desc = "Type of glow effect",
-                                type = "select",
-                                order = 2,
-                                values = {
-                                    pixel = "Pixel Glow",
-                                    action = "Action Glow",
-                                    proc = "Proc Glow",
-                                },
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    local btnIdx = GetSelectedButtonIndex()
-                                    if group and btnIdx and group.buttons[btnIdx] then
-                                        return group.buttons[btnIdx].glowType or "pixel"
-                                    end
-                                    return "pixel"
-                                end,
-                                set = function(_, val)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    local btnIdx = GetSelectedButtonIndex()
-                                    if group and btnIdx and group.buttons[btnIdx] then
-                                        group.buttons[btnIdx].glowType = val
-                                        self:RefreshGroupFrame(selectedGroup)
-                                    end
-                                end,
-                            },
-                            glowColor = {
-                                name = "Glow Color",
-                                desc = "Color of the glow effect",
-                                type = "color",
-                                order = 3,
-                                hasAlpha = true,
-                                get = function()
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    local btnIdx = GetSelectedButtonIndex()
-                                    if group and btnIdx and group.buttons[btnIdx] then
-                                        local c = group.buttons[btnIdx].glowColor or {1, 1, 0, 1}
-                                        return unpack(c)
-                                    end
-                                    return 1, 1, 0, 1
-                                end,
-                                set = function(_, r, g, b, a)
-                                    local group = self.db.profile.groups[selectedGroup]
-                                    local btnIdx = GetSelectedButtonIndex()
-                                    if group and btnIdx and group.buttons[btnIdx] then
-                                        group.buttons[btnIdx].glowColor = {r, g, b, a}
-                                        self:RefreshGroupFrame(selectedGroup)
-                                    end
-                                end,
-                            },
-                        },
-                    },
-                },
-            },
-            style = {
-                name = "Style",
-                type = "group",
-                order = 3,
-                args = {
-                    selectGroupStyle = {
-                        name = "Select Group",
-                        desc = "Select a group to style",
-                        type = "select",
-                        order = 1,
-                        width = "double",
-                        values = function() return GetGroupList() end,
-                        get = function() return ST.styleSelectedGroup end,
-                        set = function(_, val) ST.styleSelectedGroup = val end,
-                    },
-                    styleHeader = {
-                        name = "Button Styling",
-                        type = "header",
-                        order = 10,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                    },
-                    buttonSize = {
-                        name = "Button Size",
-                        desc = "Size of each button in pixels (square icons)",
-                        type = "range",
-                        order = 11,
-                        min = 20,
-                        max = 64,
-                        step = 1,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            -- Show when maintainAspectRatio is checked (square mode)
-                            return group and not group.style.maintainAspectRatio
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.buttonSize or ST.BUTTON_SIZE
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.buttonSize = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    -- Shown when maintainAspectRatio is UNCHECKED (non-square mode)
-                    iconWidth = {
-                        name = "Icon Width",
-                        desc = "Width of icons in pixels",
-                        type = "range",
-                        order = 11,
-                        min = 10,
-                        max = 100,
-                        step = 1,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            -- Show when maintainAspectRatio is unchecked (non-square mode)
-                            return group and group.style.maintainAspectRatio
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                return group.style.iconWidth or (group.style.buttonSize or ST.BUTTON_SIZE)
-                            end
-                            return ST.BUTTON_SIZE
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.iconWidth = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    iconHeight = {
-                        name = "Icon Height",
-                        desc = "Height of icons in pixels",
-                        type = "range",
-                        order = 12,
-                        min = 10,
-                        max = 100,
-                        step = 1,
-                        hidden = function()
-                            if ST.styleSelectedGroup == nil then return true end
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            -- Show when maintainAspectRatio is unchecked (non-square mode)
-                            return group and group.style.maintainAspectRatio
-                        end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                return group.style.iconHeight or (group.style.buttonSize or ST.BUTTON_SIZE)
-                            end
-                            return ST.BUTTON_SIZE
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.iconHeight = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    buttonSpacing = {
-                        name = "Button Spacing",
-                        desc = "Space between buttons in pixels",
-                        type = "range",
-                        order = 13,
-                        min = 0,
-                        max = 10,
-                        step = 1,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.buttonSpacing or ST.BUTTON_SPACING
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.buttonSpacing = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    borderSize = {
-                        name = "Border Size",
-                        desc = "Width of button border in pixels",
-                        type = "range",
-                        order = 14,
-                        min = 0,
-                        max = 5,
-                        step = 0.1,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.borderSize or ST.DEFAULT_BORDER_SIZE
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.borderSize = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    borderColor = {
-                        name = "Border Color",
-                        desc = "Color of button borders",
-                        type = "color",
-                        order = 15,
-                        hasAlpha = true,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group and group.style.borderColor then
-                                return unpack(group.style.borderColor)
-                            end
-                            return 0, 0, 0, 1
-                        end,
-                        set = function(_, r, g, b, a)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.borderColor = {r, g, b, a}
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    backgroundColor = {
-                        name = "Background Color",
-                        desc = "Color behind the button icon",
-                        type = "color",
-                        order = 16,
-                        hasAlpha = true,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group and group.style.backgroundColor then
-                                return unpack(group.style.backgroundColor)
-                            end
-                            return 0, 0, 0, 0.5
-                        end,
-                        set = function(_, r, g, b, a)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.backgroundColor = {r, g, b, a}
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    maintainAspectRatio = {
-                        name = "Square Icons",
-                        desc = "When checked, use a single size for square icons. When unchecked, set width and height independently.",
-                        type = "toggle",
-                        order = 17,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.maintainAspectRatio
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.maintainAspectRatio = val
-                                -- Initialize width/height from buttonSize when switching to non-square mode
-                                if not val then
-                                    local size = group.style.buttonSize or ST.BUTTON_SIZE
-                                    group.style.iconWidth = group.style.iconWidth or size
-                                    group.style.iconHeight = group.style.iconHeight or size
-                                end
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    layoutHeader = {
-                        name = "Layout",
-                        type = "header",
-                        order = 20,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                    },
-                    orientation = {
-                        name = "Orientation",
-                        desc = "Direction buttons flow",
-                        type = "select",
-                        order = 21,
-                        values = {
-                            horizontal = "Horizontal",
-                            vertical = "Vertical",
-                        },
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.orientation or "horizontal"
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.orientation = val
-                                self:RefreshGroupFrame(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    buttonsPerRow = {
-                        name = "Buttons Per Row/Column",
-                        desc = "Maximum buttons before wrapping to next row/column",
-                        type = "range",
-                        order = 22,
-                        min = 1,
-                        max = 24,
-                        step = 1,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.buttonsPerRow or 12
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.buttonsPerRow = val
-                                self:RefreshGroupFrame(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    displayHeader = {
-                        name = "Display Options",
-                        type = "header",
-                        order = 30,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                    },
-                    showCooldownText = {
-                        name = "Show Cooldown Text",
-                        desc = "Display remaining cooldown time on buttons",
-                        type = "toggle",
-                        order = 31,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.showCooldownText
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.showCooldownText = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    cooldownFontSize = {
-                        name = "Cooldown Font Size",
-                        desc = "Size of the cooldown countdown text",
-                        type = "range",
-                        order = 32,
-                        min = 8,
-                        max = 32,
-                        step = 1,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.cooldownFontSize or 12
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.cooldownFontSize = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    cooldownFont = {
-                        name = "Cooldown Font",
-                        desc = "Font face for cooldown countdown text",
-                        type = "select",
-                        order = 33,
-                        values = fontOptions,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.cooldownFont = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    cooldownFontOutline = {
-                        name = "Cooldown Font Outline",
-                        desc = "Outline style for cooldown countdown text",
-                        type = "select",
-                        order = 34,
-                        values = outlineOptions,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.cooldownFontOutline or "OUTLINE"
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.cooldownFontOutline = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    desaturateOnCooldown = {
-                        name = "Desaturate On Cooldown",
-                        desc = "Make icon grayscale while the spell/item is on cooldown",
-                        type = "toggle",
-                        order = 35,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.desaturateOnCooldown
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.desaturateOnCooldown = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                    tooltipHeader = {
-                        name = "Tooltips",
-                        type = "header",
-                        order = 50,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                    },
-                    showTooltips = {
-                        name = "Show Tooltips",
-                        desc = "Display spell/item tooltips when hovering over buttons. When disabled, buttons are automatically click-through.",
-                        type = "toggle",
-                        order = 51,
-                        hidden = function() return ST.styleSelectedGroup == nil end,
-                        get = function()
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            return group and group.style.showTooltips ~= false
-                        end,
-                        set = function(_, val)
-                            local group = self.db.profile.groups[ST.styleSelectedGroup]
-                            if group then
-                                group.style.showTooltips = val
-                                self:UpdateGroupStyle(ST.styleSelectedGroup)
-                            end
-                        end,
-                    },
-                },
-            },
-            profiles = AceDBOptions:GetOptionsTable(self.db),
         },
     }
-    
-    -- Set profile tab order
-    options.args.profiles.order = 100
-    
-    -- Register options
+
     AceConfig:RegisterOptionsTable(ADDON_NAME, options)
     AceConfigDialog:AddToBlizOptions(ADDON_NAME, "Cooldown Companion")
-    
-    -- Store AceConfigRegistry reference
-    _G.AceConfigRegistry = LibStub("AceConfigRegistry-3.0")
+
+    -- Profile callbacks to refresh on profile change
+    self.db.RegisterCallback(self, "OnProfileChanged", function()
+        selectedGroup = nil
+        selectedButton = nil
+        if configFrame and configFrame.frame:IsShown() then
+            self:RefreshConfigPanel()
+        end
+        self:RefreshAllGroups()
+    end)
+    self.db.RegisterCallback(self, "OnProfileCopied", function()
+        selectedGroup = nil
+        selectedButton = nil
+        if configFrame and configFrame.frame:IsShown() then
+            self:RefreshConfigPanel()
+        end
+        self:RefreshAllGroups()
+    end)
+    self.db.RegisterCallback(self, "OnProfileReset", function()
+        selectedGroup = nil
+        selectedButton = nil
+        if configFrame and configFrame.frame:IsShown() then
+            self:RefreshConfigPanel()
+        end
+        self:RefreshAllGroups()
+    end)
 end

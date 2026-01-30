@@ -27,12 +27,7 @@ local minimapButton = LDB:NewDataObject(ADDON_NAME, {
     icon = "Interface\\AddOns\\CooldownCompanion\\Media\\cdcminimap",
     OnClick = function(self, button)
         if button == "LeftButton" then
-            local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-            if AceConfigDialog.OpenFrames[ADDON_NAME] then
-                AceConfigDialog:Close(ADDON_NAME)
-            else
-                AceConfigDialog:Open(ADDON_NAME)
-            end
+            CooldownCompanion:ToggleConfig()
         end
     end,
     OnTooltipShow = function(tooltip)
@@ -183,9 +178,7 @@ function CooldownCompanion:SlashCommand(input)
         self:RefreshAllGroups()
         self:Print("Profile reset.")
     else
-        -- Open config using AceConfigDialog
-        local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-        AceConfigDialog:Open(ADDON_NAME)
+        self:ToggleConfig()
     end
 end
 
