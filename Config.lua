@@ -1258,17 +1258,17 @@ local function CreateConfigPanel()
         widget.frame:Hide()
     end)
 
-    -- Minimize toggle button (AceGUI, top-right of title bar)
-    local minimizeBtn = AceGUI:Create("Button")
-    minimizeBtn:SetWidth(30)
+    -- Minimize toggle button (AceGUI Icon, top-right of title bar)
+    local minimizeBtn = AceGUI:Create("Icon")
+    minimizeBtn:SetImage("Interface\\Buttons\\UI-Panel-CollapseButton-Up")
+    minimizeBtn:SetImageSize(20, 20)
+    minimizeBtn:SetWidth(20)
     minimizeBtn:SetHeight(20)
+    minimizeBtn:SetLabel("")
     minimizeBtn.frame:SetParent(content)
     minimizeBtn.frame:ClearAllPoints()
-    minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -8)
+    minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -6)
     minimizeBtn.frame:Show()
-    -- Set text after width to prevent auto-resize, and force the fontstring visible
-    minimizeBtn.text:SetText("_")
-    minimizeBtn.text:Show()
 
     local isMinimized = false
     local TITLE_BAR_HEIGHT = 40
