@@ -853,6 +853,12 @@ local function BuildAppearanceTab(container)
     if not group then return end
     local style = group.style
 
+    -- Icon Settings header
+    local iconHeading = AceGUI:Create("Heading")
+    iconHeading:SetText("Icon Settings")
+    iconHeading:SetFullWidth(true)
+    container:AddChild(iconHeading)
+
     -- Square Icons toggle
     local squareCb = AceGUI:Create("CheckBox")
     squareCb:SetLabel("Square Icons")
@@ -945,18 +951,11 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(borderColor)
 
-    -- Background Color
-    local bgColor = AceGUI:Create("ColorPicker")
-    bgColor:SetLabel("Background Color")
-    bgColor:SetHasAlpha(true)
-    local bgc = style.backgroundColor or {0, 0, 0, 0.5}
-    bgColor:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
-    bgColor:SetFullWidth(true)
-    bgColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.backgroundColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(bgColor)
+    -- Text Settings header
+    local textHeading = AceGUI:Create("Heading")
+    textHeading:SetText("Text Settings")
+    textHeading:SetFullWidth(true)
+    container:AddChild(textHeading)
 
     -- Show Cooldown Text
     local cdTextCb = AceGUI:Create("CheckBox")
