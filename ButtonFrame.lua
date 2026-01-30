@@ -276,9 +276,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end)
 
-    -- Handle desaturation separately so secret value errors don't reset it.
-    -- When the duration comparison fails (secret values during combat),
-    -- keep the current desaturation state instead of clearing it.
+    -- Handle desaturation separately so secret value errors don't break it.
+    -- Secret values are only returned for non-zero cooldown durations;
+    -- a spell with no cooldown returns 0 (a normal Lua number).
+    -- So if the comparison fails, an active cooldown exists — desaturate.
     if style.desaturateOnCooldown then
         local success, onCooldown = pcall(function()
             if buttonData.type == "spell" then
@@ -292,6 +293,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end)
         if success then
             button.icon:SetDesaturated(onCooldown or false)
+        else
+            button.icon:SetDesaturated(true)
         end
     else
         button.icon:SetDesaturated(false)
