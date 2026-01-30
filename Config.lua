@@ -1030,14 +1030,17 @@ function RefreshProfileBar(barFrame)
     local delBtn = AceGUI:Create("Button")
     delBtn:SetText("Delete")
     delBtn:SetCallback("OnClick", function()
-        if currentProfile ~= "Default" then
+        local active = db:GetCurrentProfile()
+        if currentProfile == active then
+            CooldownCompanion:Print("Cannot delete the active profile.")
+        elseif currentProfile == "Default" then
+            CooldownCompanion:Print("Cannot delete the Default profile.")
+        else
             db:DeleteProfile(currentProfile, true)
             selectedGroup = nil
             selectedButton = nil
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
-        else
-            CooldownCompanion:Print("Cannot delete the Default profile.")
         end
     end)
     delBtn.frame:SetParent(barFrame)
