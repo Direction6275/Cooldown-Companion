@@ -1260,13 +1260,15 @@ local function CreateConfigPanel()
 
     -- Minimize toggle button (AceGUI, top-right of title bar)
     local minimizeBtn = AceGUI:Create("Button")
-    minimizeBtn:SetText("_")
-    minimizeBtn:SetWidth(24)
+    minimizeBtn:SetWidth(30)
     minimizeBtn:SetHeight(20)
     minimizeBtn.frame:SetParent(content)
     minimizeBtn.frame:ClearAllPoints()
     minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -8)
     minimizeBtn.frame:Show()
+    -- Set text after width to prevent auto-resize, and force the fontstring visible
+    minimizeBtn.text:SetText("_")
+    minimizeBtn.text:Show()
 
     local isMinimized = false
     local TITLE_BAR_HEIGHT = 40
