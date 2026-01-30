@@ -308,20 +308,19 @@ function RefreshColumn1()
     for _, groupId in ipairs(groupIds) do
         local group = db.groups[groupId]
         if group then
-            local label = AceGUI:Create("InteractiveLabel")
-            label:SetText(group.name)
-            label:SetFontObject(GameFontHighlight)
-            label:SetFullWidth(true)
-            label:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            local btn = AceGUI:Create("Button")
             if selectedGroup == groupId then
-                label:SetColor(0.3, 1.0, 0.3)
+                btn:SetText("|cff00ff00[ " .. group.name .. " ]|r")
+            else
+                btn:SetText(group.name)
             end
-            label:SetCallback("OnClick", function()
+            btn:SetFullWidth(true)
+            btn:SetCallback("OnClick", function()
                 selectedGroup = groupId
                 selectedButton = nil
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            col1Scroll:AddChild(label)
+            col1Scroll:AddChild(btn)
         end
     end
 
