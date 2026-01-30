@@ -30,6 +30,7 @@ local col3Container = nil
 -- AceGUI widget tracking for cleanup
 local col1BarWidgets = {}
 local profileBarAceWidgets = {}
+local moveMenuFrame = nil
 
 -- Font options for dropdown
 local fontOptions = {
@@ -656,6 +657,39 @@ function RefreshColumn2()
             elseif button == "RightButton" then
                 local name = buttonData.name or "this entry"
                 ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = selectedGroup, buttonIndex = i })
+            elseif button == "MiddleButton" then
+                if not moveMenuFrame then
+                    moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+                end
+                local sourceGroupId = selectedGroup
+                local sourceIndex = i
+                local entryData = buttonData
+                UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+                    local db = CooldownCompanion.db.profile
+                    local groupIds = {}
+                    for id in pairs(db.groups) do
+                        table.insert(groupIds, id)
+                    end
+                    table.sort(groupIds)
+                    for _, gid in ipairs(groupIds) do
+                        if gid ~= sourceGroupId then
+                            local info = UIDropDownMenu_CreateInfo()
+                            info.text = db.groups[gid].name
+                            info.func = function()
+                                table.insert(db.groups[gid].buttons, entryData)
+                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                CooldownCompanion:RefreshGroupFrame(gid)
+                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                selectedButton = nil
+                                CooldownCompanion:RefreshConfigPanel()
+                                CloseDropDownMenus()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+                        end
+                    end
+                end, "MENU")
+                moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+                ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
             end
         end)
         col2Scroll:AddChild(entry)
