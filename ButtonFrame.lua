@@ -207,18 +207,18 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.borderTextures = {}
 
-    -- Create 4 edge textures for border
+    -- Create 4 edge textures for border (opposite-corner anchoring)
     local edges = {
-        {point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = -borderSize}, -- Top
-        {point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = borderSize, x2 = 0, y2 = 0}, -- Bottom
-        {point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = borderSize, y2 = 0}, -- Left
-        {point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = -borderSize, y1 = 0, x2 = 0, y2 = 0}, -- Right
+        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -borderSize},     -- Top
+        {"TOPLEFT", "BOTTOMLEFT", 0, borderSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
+        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", borderSize, 0},     -- Left
+        {"TOPLEFT", "TOPRIGHT", -borderSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
     }
 
     for i, edge in ipairs(edges) do
         local tex = button:CreateTexture(nil, "OVERLAY")
-        tex:SetPoint(edge.point1, button, edge.point1, edge.x1, edge.y1)
-        tex:SetPoint(edge.point2, button, edge.point2, edge.x2, edge.y2)
+        tex:SetPoint(edge[1], button, edge[2], edge[3], edge[4])
+        tex:SetPoint(edge[5], button, edge[6], edge[7], edge[8])
         tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
@@ -421,17 +421,17 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update border textures
     local borderColor = style.borderColor or {0, 0, 0, 1}
     if button.borderTextures then
-        -- Update positions for new border size
+        -- Update positions for new border size (opposite-corner anchoring)
         local edges = {
-            {point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = -borderSize}, -- Top
-            {point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = borderSize, x2 = 0, y2 = 0}, -- Bottom
-            {point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = borderSize, y2 = 0}, -- Left
-            {point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = -borderSize, y1 = 0, x2 = 0, y2 = 0}, -- Right
+            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -borderSize},     -- Top
+            {"TOPLEFT", "BOTTOMLEFT", 0, borderSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
+            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", borderSize, 0},     -- Left
+            {"TOPLEFT", "TOPRIGHT", -borderSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
         }
         for i, tex in ipairs(button.borderTextures) do
             tex:ClearAllPoints()
-            tex:SetPoint(edges[i].point1, button, edges[i].point1, edges[i].x1, edges[i].y1)
-            tex:SetPoint(edges[i].point2, button, edges[i].point2, edges[i].x2, edges[i].y2)
+            tex:SetPoint(edges[i][1], button, edges[i][2], edges[i][3], edges[i][4])
+            tex:SetPoint(edges[i][5], button, edges[i][6], edges[i][7], edges[i][8])
             tex:SetColorTexture(unpack(borderColor))
         end
     end
