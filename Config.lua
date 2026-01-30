@@ -155,7 +155,7 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self)
-        local text = self.editBox:GetText()
+        local text = self.EditBox:GetText()
         if text and text ~= "" then
             local db = CooldownCompanion.db
             db:SetProfile(text)
@@ -171,7 +171,7 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
         parent:Hide()
     end,
     OnShow = function(self)
-        self.editBox:SetFocus()
+        self.EditBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -185,7 +185,7 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = self.editBox:GetText()
+        local newName = self.EditBox:GetText()
         if newName and newName ~= "" and data and data.oldName then
             local db = CooldownCompanion.db
             db:SetProfile(newName)
@@ -203,7 +203,7 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
         parent:Hide()
     end,
     OnShow = function(self)
-        self.editBox:SetFocus()
+        self.EditBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -217,7 +217,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = self.editBox:GetText()
+        local newName = self.EditBox:GetText()
         if newName and newName ~= "" and data and data.source then
             local db = CooldownCompanion.db
             db:SetProfile(newName)
@@ -234,7 +234,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
         parent:Hide()
     end,
     OnShow = function(self)
-        self.editBox:SetFocus()
+        self.EditBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -249,9 +249,9 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     OnShow = function(self)
         local db = CooldownCompanion.db
         local serialized = AceSerializer:Serialize(db.profile)
-        self.editBox:SetText(serialized)
-        self.editBox:HighlightText()
-        self.editBox:SetFocus()
+        self.EditBox:SetText(serialized)
+        self.EditBox:HighlightText()
+        self.EditBox:SetFocus()
     end,
     EditBoxOnEscapePressed = function(self)
         self:GetParent():Hide()
@@ -268,7 +268,7 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self)
-        local text = self.editBox:GetText()
+        local text = self.EditBox:GetText()
         if text and text ~= "" then
             local success, data = AceSerializer:Deserialize(text)
             if success and type(data) == "table" then
@@ -292,7 +292,7 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
         parent:Hide()
     end,
     OnShow = function(self)
-        self.editBox:SetFocus()
+        self.EditBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -1167,14 +1167,14 @@ function RefreshProfileBar(barFrame)
 
     -- Helper to create bar buttons
     local lastAnchor = profileDrop.frame
-    local function AddBarButton(text, onClick)
+    local function AddBarButton(text, width, onClick)
         local btn = AceGUI:Create("Button")
         btn:SetText(text)
         btn:SetCallback("OnClick", onClick)
         btn.frame:SetParent(barFrame)
         btn.frame:ClearAllPoints()
         btn.frame:SetPoint("LEFT", lastAnchor, "RIGHT", 4, 0)
-        btn:SetWidth(70)
+        btn:SetWidth(width)
         btn:SetHeight(24)
         btn.frame:Show()
         table.insert(profileBarAceWidgets, btn)
@@ -1183,12 +1183,12 @@ function RefreshProfileBar(barFrame)
     end
 
     -- New
-    AddBarButton("New", function()
+    AddBarButton("New", 70, function()
         StaticPopup_Show("CDC_NEW_PROFILE")
     end)
 
     -- Rename
-    AddBarButton("Rename", function()
+    AddBarButton("Rename", 80, function()
         local dialog = StaticPopup_Show("CDC_RENAME_PROFILE", currentProfile)
         if dialog then
             dialog.data = { oldName = currentProfile }
@@ -1196,7 +1196,7 @@ function RefreshProfileBar(barFrame)
     end)
 
     -- Duplicate
-    AddBarButton("Duplicate", function()
+    AddBarButton("Duplicate", 80, function()
         local dialog = StaticPopup_Show("CDC_DUPLICATE_PROFILE")
         if dialog then
             dialog.data = { source = currentProfile }
@@ -1204,7 +1204,7 @@ function RefreshProfileBar(barFrame)
     end)
 
     -- Delete
-    AddBarButton("Delete", function()
+    AddBarButton("Delete", 70, function()
         local dialog = StaticPopup_Show("CDC_DELETE_PROFILE", currentProfile)
         if dialog then
             dialog.data = { profileName = currentProfile }
@@ -1212,12 +1212,12 @@ function RefreshProfileBar(barFrame)
     end)
 
     -- Export
-    AddBarButton("Export", function()
+    AddBarButton("Export", 70, function()
         StaticPopup_Show("CDC_EXPORT_PROFILE")
     end)
 
     -- Import
-    AddBarButton("Import", function()
+    AddBarButton("Import", 70, function()
         StaticPopup_Show("CDC_IMPORT_PROFILE")
     end)
 end
