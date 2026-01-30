@@ -207,8 +207,9 @@ function CooldownCompanion:CreateGroup(name)
         style = CopyTable(self.db.profile.globalStyle),
         enabled = true,
         locked = false,
+        order = groupId,
     }
-    
+
     self.db.profile.groups[groupId].style.orientation = "horizontal"
     self.db.profile.groups[groupId].style.buttonsPerRow = 12
     self.db.profile.groups[groupId].style.showCooldownText = true

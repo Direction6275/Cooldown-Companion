@@ -491,14 +491,18 @@ function RefreshColumn1()
 
     local db = CooldownCompanion.db.profile
 
-    -- Sort group IDs for consistent ordering
+    -- Sort group IDs by order field (fallback to groupId)
     local groupIds = {}
     for id in pairs(db.groups) do
         table.insert(groupIds, id)
     end
-    table.sort(groupIds)
+    table.sort(groupIds, function(a, b)
+        local orderA = db.groups[a].order or a
+        local orderB = db.groups[b].order or b
+        return orderA < orderB
+    end)
 
-    for _, groupId in ipairs(groupIds) do
+    for listIndex, groupId in ipairs(groupIds) do
         local group = db.groups[groupId]
         if group then
             local btn = AceGUI:Create("Button")
@@ -508,7 +512,26 @@ function RefreshColumn1()
                 btn:SetText(group.name)
             end
             btn:SetFullWidth(true)
-            btn:SetCallback("OnClick", function()
+            btn.frame:RegisterForClicks("AnyUp")
+            btn:SetCallback("OnClick", function(widget, event, mouseButton)
+                if IsShiftKeyDown() then
+                    if mouseButton == "LeftButton" and listIndex > 1 then
+                        local prevId = groupIds[listIndex - 1]
+                        local prevOrder = db.groups[prevId].order or prevId
+                        local curOrder = group.order or groupId
+                        group.order = prevOrder
+                        db.groups[prevId].order = curOrder
+                        CooldownCompanion:RefreshConfigPanel()
+                    elseif mouseButton == "RightButton" and listIndex < #groupIds then
+                        local nextId = groupIds[listIndex + 1]
+                        local nextOrder = db.groups[nextId].order or nextId
+                        local curOrder = group.order or groupId
+                        group.order = nextOrder
+                        db.groups[nextId].order = curOrder
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                    return
+                end
                 selectedGroup = groupId
                 selectedButton = nil
                 CooldownCompanion:RefreshConfigPanel()
@@ -642,6 +665,22 @@ function RefreshColumn2()
             entry:SetColor(0.4, 0.7, 1.0)
         end
         entry:SetCallback("OnClick", function(widget, event, button)
+            if IsShiftKeyDown() then
+                if button == "LeftButton" and i > 1 then
+                    group.buttons[i], group.buttons[i - 1] = group.buttons[i - 1], group.buttons[i]
+                    if selectedButton == i then selectedButton = i - 1
+                    elseif selectedButton == i - 1 then selectedButton = i end
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                elseif button == "RightButton" and i < #group.buttons then
+                    group.buttons[i], group.buttons[i + 1] = group.buttons[i + 1], group.buttons[i]
+                    if selectedButton == i then selectedButton = i + 1
+                    elseif selectedButton == i + 1 then selectedButton = i end
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                return
+            end
             if button == "LeftButton" then
                 selectedButton = i
                 CooldownCompanion:RefreshConfigPanel()
