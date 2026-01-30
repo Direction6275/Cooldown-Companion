@@ -1265,7 +1265,7 @@ local function CreateConfigPanel()
     minimizeBtn:SetHeight(22)
     minimizeBtn.frame:SetParent(content)
     minimizeBtn.frame:ClearAllPoints()
-    minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -6)
+    minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -12)
     minimizeBtn.frame:Show()
     -- Add collapse icon texture on top of the skinnable button
     local minimizeIcon = minimizeBtn.frame:CreateTexture(nil, "ARTWORK")
