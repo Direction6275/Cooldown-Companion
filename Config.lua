@@ -1258,43 +1258,41 @@ local function CreateConfigPanel()
         widget.frame:Hide()
     end)
 
-    -- Minimize toggle button (top-right of title bar)
-    local minimizeBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-    minimizeBtn:SetSize(20, 20)
-    minimizeBtn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -8)
-    minimizeBtn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    minimizeBtn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    minimizeBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    local minimizeText = minimizeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    minimizeText:SetPoint("CENTER", 0, 1)
-    minimizeText:SetText("\226\128\147") -- en dash as minimize icon
-    minimizeBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
-    end)
-    minimizeBtn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    end)
+    -- Minimize toggle button (AceGUI, top-right of title bar)
+    local minimizeBtn = AceGUI:Create("Button")
+    minimizeBtn:SetText("\226\128\147") -- en dash as minimize icon
+    minimizeBtn:SetWidth(24)
+    minimizeBtn:SetHeight(20)
+    minimizeBtn.frame:SetParent(content)
+    minimizeBtn.frame:ClearAllPoints()
+    minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -8)
+    minimizeBtn.frame:Show()
 
     local isMinimized = false
-    local TITLE_BAR_HEIGHT = 24
+    local TITLE_BAR_HEIGHT = 40
     local fullHeight = 700
 
-    minimizeBtn:RegisterForClicks("AnyUp")
-    minimizeBtn:SetScript("OnClick", function()
+    minimizeBtn:SetCallback("OnClick", function()
+        -- Capture current top-left position before changing height
+        local top = content:GetTop()
+        local left = content:GetLeft()
+
         if isMinimized then
-            -- Expand
+            -- Expand: restore full height, keep top edge in place
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(fullHeight)
+            content:SetWidth(1050)
             contentFrame:Show()
             frame:SetStatusText("v1.1.0")
             isMinimized = false
         else
-            -- Collapse to just the title bar
+            -- Collapse: shrink to title bar only, keep top edge in place
             contentFrame:Hide()
-            content:SetHeight(TITLE_BAR_HEIGHT + 16)
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+            content:SetHeight(TITLE_BAR_HEIGHT)
+            content:SetWidth(1050)
             frame:SetStatusText("")
             isMinimized = true
         end
