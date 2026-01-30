@@ -957,13 +957,6 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(bgColor)
-end
-
-local function BuildDisplayTab(container)
-    if not selectedGroup then return end
-    local group = CooldownCompanion.db.profile.groups[selectedGroup]
-    if not group then return end
-    local style = group.style
 
     -- Show Cooldown Text
     local cdTextCb = AceGUI:Create("CheckBox")
@@ -1061,7 +1054,6 @@ function RefreshColumn3(container)
             { value = "general",     text = "General" },
             { value = "positioning", text = "Positioning" },
             { value = "appearance",  text = "Appearance" },
-            { value = "display",     text = "Display" },
         })
         tabGroup:SetLayout("Fill")
 
@@ -1079,8 +1071,6 @@ function RefreshColumn3(container)
                 BuildPositioningTab(scroll)
             elseif tab == "appearance" then
                 BuildAppearanceTab(scroll)
-            elseif tab == "display" then
-                BuildDisplayTab(scroll)
             end
         end)
 
@@ -1210,7 +1200,7 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("v1.1.0")
-    frame:SetWidth(1050)
+    frame:SetWidth(900)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
     frame:EnableResize(false)
@@ -1274,7 +1264,7 @@ local function CreateConfigPanel()
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(fullHeight)
-            content:SetWidth(1050)
+            content:SetWidth(900)
             contentFrame:Show()
             frame:SetStatusText("v1.1.0")
             if closeButton then closeButton:Show() end
@@ -1286,7 +1276,7 @@ local function CreateConfigPanel()
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(TITLE_BAR_HEIGHT)
-            content:SetWidth(1050)
+            content:SetWidth(900)
             frame:SetStatusText("")
             isMinimized = true
         end
@@ -1384,8 +1374,8 @@ local function CreateConfigPanel()
         local h = colParent:GetHeight()
         local pad = COLUMN_PADDING
 
-        local col1Width = math.floor(w * 0.20)
-        local col2Width = math.floor(w * 0.30)
+        local col1Width = math.floor(w * 0.22)
+        local col2Width = math.floor(w * 0.38)
         local col3Width = w - col1Width - col2Width - (pad * 2)
 
         col1:ClearAllPoints()
