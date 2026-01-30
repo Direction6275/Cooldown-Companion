@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Config
-    Custom 3-column config panel using AceGUI-3.0 Frame + raw WoW frame positioning
+    Custom 3-column config panel using AceGUI-3.0 Frame + InlineGroup columns
 ]]
 
 local ADDON_NAME, ST = ...
@@ -69,7 +69,6 @@ local anchorPointLabels = {
 
 -- Layout constants
 local COLUMN_PADDING = 8
-local HEADER_HEIGHT = 22
 local BUTTON_HEIGHT = 24
 local BUTTON_SPACING = 2
 local PROFILE_BAR_HEIGHT = 36
@@ -401,20 +400,6 @@ local function CreateScrollFrame(parent)
     return scrollFrame, scrollChild
 end
 
-------------------------------------------------------------------------
--- Helper: Create a column backdrop frame
-------------------------------------------------------------------------
-local function CreateColumnFrame(parent)
-    local col = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    col:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    col:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    col:SetBackdropBorderColor(0.15, 0.15, 0.15, 1)
-    return col
-end
 
 ------------------------------------------------------------------------
 -- Helper: Create a text button
@@ -455,15 +440,6 @@ local function CreateTextButton(parent, text, width, height, onClick)
     return btn
 end
 
-------------------------------------------------------------------------
--- Helper: Create a header label
-------------------------------------------------------------------------
-local function CreateHeaderLabel(parent, text)
-    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetText(text)
-    label:SetTextColor(1, 0.82, 0, 1)
-    return label
-end
 
 ------------------------------------------------------------------------
 -- Helper: Embed an AceGUI widget into a raw frame
@@ -1076,8 +1052,8 @@ function RefreshColumn3(container)
         -- Parent the AceGUI widget frame to our raw column frame
         tabGroup.frame:SetParent(container)
         tabGroup.frame:ClearAllPoints()
-        tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -4)
-        tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -4, 4)
+        tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
 
         container.tabGroup = tabGroup
     end
@@ -1282,41 +1258,34 @@ local function CreateConfigPanel()
     end)
 
     -- Profile bar at the top
-    local profileBar = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+    local profileBar = CreateFrame("Frame", nil, contentFrame)
     profileBar:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, 0)
     profileBar:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, 0)
     profileBar:SetHeight(PROFILE_BAR_HEIGHT)
-    profileBar:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    profileBar:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    profileBar:SetBackdropBorderColor(0.15, 0.15, 0.15, 1)
 
     -- Column containers below profile bar
     local colParent = CreateFrame("Frame", nil, contentFrame)
     colParent:SetPoint("TOPLEFT", profileBar, "BOTTOMLEFT", 0, -4)
     colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 0)
 
-    -- Column 1: Groups (20%)
-    local col1 = CreateColumnFrame(colParent)
-    -- Column 2: Spells/Items (35%)
-    local col2 = CreateColumnFrame(colParent)
-    -- Column 3: Settings (45%)
-    local col3 = CreateColumnFrame(colParent)
+    -- Column 1: Groups (AceGUI InlineGroup)
+    local col1 = AceGUI:Create("InlineGroup")
+    col1:SetTitle("Groups")
+    col1:SetLayout("None")
+    col1.frame:SetParent(colParent)
+    col1.frame:Show()
 
-    -- Column headers
-    local col1Header = CreateHeaderLabel(col1, "Groups")
-    col1Header:SetPoint("TOPLEFT", col1, "TOPLEFT", 8, -6)
+    -- Column 2: Spells/Items (AceGUI InlineGroup)
+    local col2 = AceGUI:Create("InlineGroup")
+    col2:SetTitle("Spells / Items")
+    col2:SetLayout("None")
+    col2.frame:SetParent(colParent)
+    col2.frame:Show()
 
-    local col2Header = CreateHeaderLabel(col2, "Spells / Items")
-    col2Header:SetPoint("TOPLEFT", col2, "TOPLEFT", 8, -6)
-
-    -- Info button next to Spells / Items header
-    local infoBtn = CreateFrame("Button", nil, col2)
+    -- Info button next to Spells / Items title
+    local infoBtn = CreateFrame("Button", nil, col2.frame)
     infoBtn:SetSize(16, 16)
-    infoBtn:SetPoint("LEFT", col2Header, "RIGHT", 4, 0)
+    infoBtn:SetPoint("LEFT", col2.titletext, "RIGHT", 4, 0)
     local infoText = infoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     infoText:SetPoint("CENTER")
     infoText:SetText("|cff66aaff(?)|r")
@@ -1332,40 +1301,41 @@ local function CreateConfigPanel()
         GameTooltip:Hide()
     end)
 
-    local col3Header = CreateHeaderLabel(col3, "Settings")
-    col3Header:SetPoint("TOPLEFT", col3, "TOPLEFT", 8, -6)
+    -- Column 3: Settings (AceGUI InlineGroup)
+    local col3 = AceGUI:Create("InlineGroup")
+    col3:SetTitle("Settings")
+    col3:SetLayout("None")
+    col3.frame:SetParent(colParent)
+    col3.frame:Show()
 
     -- Static button bar at bottom of column 1 (New / Delete)
-    local btnBar = CreateFrame("Frame", nil, col1)
-    btnBar:SetPoint("BOTTOMLEFT", col1, "BOTTOMLEFT", 4, 4)
-    btnBar:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", -4, 4)
+    local btnBar = CreateFrame("Frame", nil, col1.content)
+    btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
+    btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
     btnBar:SetHeight(28)
     col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
     local scroll1 = AceGUI:Create("ScrollFrame")
     scroll1:SetLayout("List")
-    scroll1.frame:SetParent(col1)
+    scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
-    scroll1.frame:SetPoint("TOPLEFT", col1, "TOPLEFT", 4, -(HEADER_HEIGHT + 4))
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", -4, 32)
+    scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 28)
     scroll1.frame:Show()
     col1Scroll = scroll1
 
     local scroll2 = AceGUI:Create("ScrollFrame")
     scroll2:SetLayout("List")
-    scroll2.frame:SetParent(col2)
+    scroll2.frame:SetParent(col2.content)
     scroll2.frame:ClearAllPoints()
-    scroll2.frame:SetPoint("TOPLEFT", col2, "TOPLEFT", 4, -(HEADER_HEIGHT + 4))
-    scroll2.frame:SetPoint("BOTTOMRIGHT", col2, "BOTTOMRIGHT", -4, 4)
+    scroll2.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
+    scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
     scroll2.frame:Show()
     col2Scroll = scroll2
 
-    -- Column 3 content area (below header)
-    local col3Content = CreateFrame("Frame", nil, col3)
-    col3Content:SetPoint("TOPLEFT", col3, "TOPLEFT", 0, -(HEADER_HEIGHT + 4))
-    col3Content:SetPoint("BOTTOMRIGHT", col3, "BOTTOMRIGHT", 0, 0)
-    col3Container = col3Content
+    -- Column 3 content area (use InlineGroup's content directly)
+    col3Container = col3.content
 
     -- Layout columns on size change
     local function LayoutColumns()
@@ -1377,17 +1347,17 @@ local function CreateConfigPanel()
         local col2Width = math.floor(w * 0.38)
         local col3Width = w - col1Width - col2Width - (pad * 2)
 
-        col1:ClearAllPoints()
-        col1:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
-        col1:SetSize(col1Width, h)
+        col1.frame:ClearAllPoints()
+        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
+        col1.frame:SetSize(col1Width, h)
 
-        col2:ClearAllPoints()
-        col2:SetPoint("TOPLEFT", col1, "TOPRIGHT", pad, 0)
-        col2:SetSize(col2Width, h)
+        col2.frame:ClearAllPoints()
+        col2.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
+        col2.frame:SetSize(col2Width, h)
 
-        col3:ClearAllPoints()
-        col3:SetPoint("TOPLEFT", col2, "TOPRIGHT", pad, 0)
-        col3:SetSize(col3Width, h)
+        col3.frame:ClearAllPoints()
+        col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
+        col3.frame:SetSize(col3Width, h)
     end
 
     colParent:SetScript("OnSizeChanged", function()
@@ -1404,7 +1374,6 @@ local function CreateConfigPanel()
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
-    frame.col2Frame = col2  -- kept for reference
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
 
