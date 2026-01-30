@@ -557,10 +557,7 @@ function RefreshColumn1()
             if selectedGroup and CooldownCompanion.db.profile.groups[selectedGroup] then
                 local group = CooldownCompanion.db.profile.groups[selectedGroup]
                 local name = group and group.name or "this group"
-                local dialog = StaticPopup_Show("CDC_DELETE_GROUP", name)
-                if dialog then
-                    dialog.data = { groupId = selectedGroup }
-                end
+                ShowPopupAboveConfig("CDC_DELETE_GROUP", name, { groupId = selectedGroup })
             end
         end)
         delBtn.frame:SetParent(col1ButtonBar)
@@ -658,10 +655,7 @@ function RefreshColumn2()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 local name = buttonData.name or "this entry"
-                local dialog = StaticPopup_Show("CDC_DELETE_BUTTON", name)
-                if dialog then
-                    dialog.data = { groupId = selectedGroup, buttonIndex = i }
-                end
+                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = selectedGroup, buttonIndex = i })
             end
         end)
         col2Scroll:AddChild(entry)
