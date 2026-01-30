@@ -381,11 +381,19 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         self:PopulateGroupButtons(groupId)
     end
     
-    -- Update drag handle text
-    if frame.dragHandle and frame.dragHandle.text then
-        frame.dragHandle.text:SetText(group.name)
+    -- Update drag handle text and lock state
+    if frame.dragHandle then
+        if frame.dragHandle.text then
+            frame.dragHandle.text:SetText(group.name)
+        end
+        if group.locked then
+            frame.dragHandle:Hide()
+        else
+            frame.dragHandle:Show()
+        end
     end
-    
+    self:UpdateGroupClickthrough(groupId)
+
     -- Update visibility
     if group.enabled then
         frame:Show()
