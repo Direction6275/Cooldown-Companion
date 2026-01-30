@@ -1258,17 +1258,20 @@ local function CreateConfigPanel()
         widget.frame:Hide()
     end)
 
-    -- Minimize toggle button (AceGUI Icon, top-right of title bar)
-    local minimizeBtn = AceGUI:Create("Icon")
-    minimizeBtn:SetImage("Interface\\Buttons\\UI-Panel-CollapseButton-Up")
-    minimizeBtn:SetImageSize(20, 20)
-    minimizeBtn:SetWidth(20)
-    minimizeBtn:SetHeight(20)
-    minimizeBtn:SetLabel("")
+    -- Minimize toggle button (AceGUI Button with icon texture, top-right of title bar)
+    local minimizeBtn = AceGUI:Create("Button")
+    minimizeBtn:SetText("")
+    minimizeBtn:SetWidth(26)
+    minimizeBtn:SetHeight(22)
     minimizeBtn.frame:SetParent(content)
     minimizeBtn.frame:ClearAllPoints()
     minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -6)
     minimizeBtn.frame:Show()
+    -- Add collapse icon texture on top of the skinnable button
+    local minimizeIcon = minimizeBtn.frame:CreateTexture(nil, "ARTWORK")
+    minimizeIcon:SetTexture("Interface\\Buttons\\UI-Panel-CollapseButton-Up")
+    minimizeIcon:SetSize(18, 18)
+    minimizeIcon:SetPoint("CENTER")
 
     local isMinimized = false
     local TITLE_BAR_HEIGHT = 40
