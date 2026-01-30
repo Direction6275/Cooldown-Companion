@@ -537,15 +537,8 @@ function RefreshColumn1()
                 CooldownCompanion:RefreshConfigPanel()
             end)
             col1Scroll:AddChild(btn)
-
-            -- 4px spacer between buttons
-            if listIndex < #groupIds then
-                local spacer = AceGUI:Create("Label")
-                spacer:SetText("")
-                spacer:SetFullWidth(true)
-                spacer:SetHeight(8)
-                col1Scroll:AddChild(spacer)
-            end
+            -- Add 4px gap below each button via layout height override
+            btn.frame.height = (btn.frame:GetHeight() or 24) + 4
         end
     end
 
