@@ -1232,19 +1232,72 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("v1.1.0")
-    frame:SetWidth(900)
-    frame:SetHeight(600)
+    frame:SetWidth(1050)
+    frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
-    frame:EnableResize(true)
+    frame:EnableResize(false)
 
     -- Store the raw frame for raw child parenting
     local content = frame.frame
     -- Get the content area (below the title bar)
     local contentFrame = frame.content
 
+    -- Hide the AceGUI sizer grip since resize is disabled
+    if frame.sizer_se then
+        frame.sizer_se:Hide()
+    end
+    if frame.sizer_s then
+        frame.sizer_s:Hide()
+    end
+    if frame.sizer_e then
+        frame.sizer_e:Hide()
+    end
+
     -- Prevent AceGUI from releasing on close - just hide
     frame:SetCallback("OnClose", function(widget)
         widget.frame:Hide()
+    end)
+
+    -- Minimize toggle button (top-right of title bar)
+    local minimizeBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    minimizeBtn:SetSize(20, 20)
+    minimizeBtn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -28, -8)
+    minimizeBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    minimizeBtn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    minimizeBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    local minimizeText = minimizeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    minimizeText:SetPoint("CENTER", 0, 1)
+    minimizeText:SetText("\226\128\147") -- en dash as minimize icon
+    minimizeBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
+    end)
+    minimizeBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    end)
+
+    local isMinimized = false
+    local TITLE_BAR_HEIGHT = 24
+    local fullHeight = 700
+
+    minimizeBtn:RegisterForClicks("AnyUp")
+    minimizeBtn:SetScript("OnClick", function()
+        if isMinimized then
+            -- Expand
+            content:SetHeight(fullHeight)
+            contentFrame:Show()
+            frame:SetStatusText("v1.1.0")
+            isMinimized = false
+        else
+            -- Collapse to just the title bar
+            contentFrame:Hide()
+            content:SetHeight(TITLE_BAR_HEIGHT + 16)
+            frame:SetStatusText("")
+            isMinimized = true
+        end
     end)
 
     -- Profile bar at the top
@@ -1340,7 +1393,7 @@ local function CreateConfigPanel()
         local pad = COLUMN_PADDING
 
         local col1Width = math.floor(w * 0.20)
-        local col2Width = math.floor(w * 0.35)
+        local col2Width = math.floor(w * 0.30)
         local col3Width = w - col1Width - col2Width - (pad * 2)
 
         col1:ClearAllPoints()
