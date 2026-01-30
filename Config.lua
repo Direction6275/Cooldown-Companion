@@ -21,12 +21,11 @@ local newInput = ""
 local configFrame = nil
 
 -- Column content frames (for refresh)
-local col1ScrollChild = nil
-local col2ScrollChild = nil
+local col1Scroll = nil  -- AceGUI ScrollFrame
+local col2Scroll = nil  -- AceGUI ScrollFrame
 local col3Container = nil
 
--- AceGUI widget tracking for proper cleanup
-local col1AceWidgets = {}
+-- AceGUI widget tracking for profile bar cleanup
 local profileBarAceWidgets = {}
 
 -- Font options for dropdown
@@ -293,22 +292,11 @@ local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
-function RefreshColumn1(scrollChild)
-    -- Release tracked AceGUI widgets
-    for _, widget in ipairs(col1AceWidgets) do
-        widget:Release()
-    end
-    wipe(col1AceWidgets)
+function RefreshColumn1()
+    if not col1Scroll then return end
+    col1Scroll:ReleaseChildren()
 
-    -- Clear existing children
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-
-    local yOffset = -4
     local db = CooldownCompanion.db.profile
-    local contentWidth = scrollChild:GetWidth() - 8
 
     -- Sort group IDs for consistent ordering
     local groupIds = {}
@@ -320,28 +308,27 @@ function RefreshColumn1(scrollChild)
     for _, groupId in ipairs(groupIds) do
         local group = db.groups[groupId]
         if group then
-            local btn = CreateTextButton(scrollChild, group.name, contentWidth, BUTTON_HEIGHT, function()
+            local label = AceGUI:Create("InteractiveLabel")
+            label:SetText(group.name)
+            label:SetFontObject(GameFontHighlight)
+            label:SetFullWidth(true)
+            label:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            if selectedGroup == groupId then
+                label:SetColor(0.3, 1.0, 0.3)
+            end
+            label:SetCallback("OnClick", function()
                 selectedGroup = groupId
                 selectedButton = nil
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
-            btn:RegisterForClicks("AnyUp")
-
-            -- Highlight selected group
-            if selectedGroup == groupId then
-                btn.isSelected = true
-                btn:SetBackdropColor(0.15, 0.4, 0.15, 0.9)
-                btn:SetBackdropBorderColor(0.3, 0.8, 0.3, 1)
-            end
-
-            yOffset = yOffset - (BUTTON_HEIGHT + BUTTON_SPACING)
+            col1Scroll:AddChild(label)
         end
     end
 
-    -- "New" button (AceGUI)
+    -- "New" button
     local newBtn = AceGUI:Create("Button")
     newBtn:SetText("New")
+    newBtn:SetFullWidth(true)
     newBtn:SetCallback("OnClick", function()
         local name = "Group " .. (CooldownCompanion.db.profile.nextGroupId or 1)
         local groupId = CooldownCompanion:CreateGroup(name)
@@ -349,14 +336,13 @@ function RefreshColumn1(scrollChild)
         selectedButton = nil
         CooldownCompanion:RefreshConfigPanel()
     end)
-    EmbedWidget(newBtn, scrollChild, 4, yOffset, contentWidth, col1AceWidgets)
-    newBtn:SetHeight(BUTTON_HEIGHT)
-    yOffset = yOffset - (BUTTON_HEIGHT + BUTTON_SPACING)
+    col1Scroll:AddChild(newBtn)
 
     -- "Delete" button (only if a group is selected)
     if selectedGroup and CooldownCompanion.db.profile.groups[selectedGroup] then
         local delBtn = AceGUI:Create("Button")
         delBtn:SetText("Delete")
+        delBtn:SetFullWidth(true)
         delBtn:SetCallback("OnClick", function()
             local group = CooldownCompanion.db.profile.groups[selectedGroup]
             local name = group and group.name or "this group"
@@ -365,54 +351,34 @@ function RefreshColumn1(scrollChild)
                 dialog.data = { groupId = selectedGroup }
             end
         end)
-        EmbedWidget(delBtn, scrollChild, 4, yOffset, contentWidth, col1AceWidgets)
-        delBtn:SetHeight(BUTTON_HEIGHT)
-        yOffset = yOffset - (BUTTON_HEIGHT + BUTTON_SPACING)
+        col1Scroll:AddChild(delBtn)
     end
-
-    scrollChild:SetHeight(math.abs(yOffset) + 4)
 end
 
 ------------------------------------------------------------------------
 -- COLUMN 2: Spells / Items
 ------------------------------------------------------------------------
-function RefreshColumn2(scrollChild, col2Frame)
-    -- Clear existing children
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-
-    -- Also clear any AceGUI widgets previously parented to col2Frame
-    if col2Frame.aceWidgets then
-        for _, widget in ipairs(col2Frame.aceWidgets) do
-            widget:Release()
-        end
-    end
-    col2Frame.aceWidgets = {}
+function RefreshColumn2()
+    if not col2Scroll then return end
+    col2Scroll:ReleaseChildren()
 
     if not selectedGroup then
-        local label = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-        label:SetPoint("TOPLEFT", 8, -8)
+        local label = AceGUI:Create("Label")
         label:SetText("Select a group first")
-        scrollChild:SetHeight(30)
+        label:SetFullWidth(true)
+        col2Scroll:AddChild(label)
         return
     end
 
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
-    if not group then
-        scrollChild:SetHeight(30)
-        return
-    end
+    if not group then return end
 
-    local yOffset = -4
-    local contentWidth = scrollChild:GetWidth() - 8
-
-    -- Input editbox (AceGUI)
+    -- Input editbox
     local inputBox = AceGUI:Create("EditBox")
     inputBox:SetLabel("")
     inputBox:SetText(newInput)
     inputBox:DisableButton(true)
+    inputBox:SetFullWidth(true)
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
         newInput = text
     end)
@@ -421,179 +387,114 @@ function RefreshColumn2(scrollChild, col2Frame)
             newInput = self:GetText()
         end
     end)
-    EmbedWidget(inputBox, scrollChild, 4, yOffset, contentWidth, col2Frame.aceWidgets)
+    col2Scroll:AddChild(inputBox)
 
-    yOffset = yOffset - 28
-
-    -- Add Spell / Add Item buttons side by side (AceGUI)
-    local halfWidth = math.floor((contentWidth - 4) / 2)
+    -- Add Spell / Add Item buttons side by side
+    local btnRow = AceGUI:Create("SimpleGroup")
+    btnRow:SetFullWidth(true)
+    btnRow:SetLayout("Flow")
 
     local addSpellBtn = AceGUI:Create("Button")
     addSpellBtn:SetText("Add Spell")
+    addSpellBtn:SetRelativeWidth(0.5)
     addSpellBtn:SetCallback("OnClick", function()
         if TryAddSpell(newInput) then
             newInput = ""
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
-    EmbedWidget(addSpellBtn, scrollChild, 4, yOffset, halfWidth, col2Frame.aceWidgets)
-    addSpellBtn:SetHeight(BUTTON_HEIGHT)
+    btnRow:AddChild(addSpellBtn)
 
     local addItemBtn = AceGUI:Create("Button")
     addItemBtn:SetText("Add Item")
+    addItemBtn:SetRelativeWidth(0.5)
     addItemBtn:SetCallback("OnClick", function()
         if TryAddItem(newInput) then
             newInput = ""
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
-    addItemBtn.frame:SetParent(scrollChild)
-    addItemBtn.frame:ClearAllPoints()
-    addItemBtn.frame:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4 + halfWidth + 4, yOffset)
-    addItemBtn:SetWidth(halfWidth)
-    addItemBtn:SetHeight(BUTTON_HEIGHT)
-    addItemBtn.frame:Show()
-    table.insert(col2Frame.aceWidgets, addItemBtn)
-
-    yOffset = yOffset - (BUTTON_HEIGHT + 6)
+    btnRow:AddChild(addItemBtn)
+    col2Scroll:AddChild(btnRow)
 
     -- Separator
-    local sep = scrollChild:CreateTexture(nil, "ARTWORK")
-    sep:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
-    sep:SetSize(contentWidth, 1)
-    sep:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    yOffset = yOffset - 6
+    local sep = AceGUI:Create("Heading")
+    sep:SetText("")
+    sep:SetFullWidth(true)
+    col2Scroll:AddChild(sep)
 
-    -- Button list
+    -- Spell/Item list
     for i, buttonData in ipairs(group.buttons) do
-        local btnHeight = 26
-        local btn = CreateFrame("Button", nil, scrollChild, "BackdropTemplate")
-        btn:SetSize(contentWidth, btnHeight)
-        btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
-        btn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        btn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-        btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-        btn:RegisterForClicks("AnyUp")
-
-        -- Icon
-        local icon = btn:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(btnHeight - 4, btnHeight - 4)
-        icon:SetPoint("LEFT", 3, 0)
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        icon:SetTexture(GetButtonIcon(buttonData))
-
-        -- Name label
-        local nameLabel = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        nameLabel:SetPoint("LEFT", icon, "RIGHT", 4, 0)
-        nameLabel:SetPoint("RIGHT", btn, "RIGHT", -24, 0)
-        nameLabel:SetJustifyH("LEFT")
-        nameLabel:SetText(buttonData.name or ("Unknown " .. buttonData.type))
-        nameLabel:SetWordWrap(false)
-
-        -- Delete button (X)
-        local delBtn = CreateFrame("Button", nil, btn)
-        delBtn:SetSize(16, 16)
-        delBtn:SetPoint("RIGHT", -4, 0)
-        delBtn:SetNormalFontObject("GameFontNormalSmall")
-        local delText = delBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        delText:SetPoint("CENTER")
-        delText:SetText("|cffff4444X|r")
-        delBtn:SetScript("OnClick", function()
-            local name = buttonData.name or "this entry"
-            local dialog = StaticPopup_Show("CDC_DELETE_BUTTON", name)
-            if dialog then
-                dialog.data = { groupId = selectedGroup, buttonIndex = i }
-            end
-        end)
-
-        -- Selection highlight
+        local entry = AceGUI:Create("InteractiveLabel")
+        entry:SetText(buttonData.name or ("Unknown " .. buttonData.type))
+        entry:SetImage(GetButtonIcon(buttonData))
+        entry:SetImageSize(20, 20)
+        entry:SetFullWidth(true)
+        entry:SetFontObject(GameFontHighlight)
+        entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         if selectedButton == i then
-            btn.isSelected = true
-            btn:SetBackdropColor(0.15, 0.3, 0.5, 0.9)
-            btn:SetBackdropBorderColor(0.3, 0.5, 0.8, 1)
+            entry:SetColor(0.4, 0.7, 1.0)
         end
-
-        btn:SetScript("OnClick", function(self, mouseButton)
-            if mouseButton == "LeftButton" then
+        entry:SetCallback("OnClick", function(widget, event, button)
+            if button == "LeftButton" then
                 selectedButton = i
                 CooldownCompanion:RefreshConfigPanel()
+            elseif button == "RightButton" then
+                local name = buttonData.name or "this entry"
+                local dialog = StaticPopup_Show("CDC_DELETE_BUTTON", name)
+                if dialog then
+                    dialog.data = { groupId = selectedGroup, buttonIndex = i }
+                end
             end
         end)
-        btn:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if self.isSelected then
-                self:SetBackdropColor(0.15, 0.3, 0.5, 0.9)
-            else
-                self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-            end
-        end)
-
-        yOffset = yOffset - (btnHeight + BUTTON_SPACING)
+        col2Scroll:AddChild(entry)
     end
 
     -- Glow settings area (shown when a button is selected)
     if selectedButton and group.buttons[selectedButton] then
         local btnData = group.buttons[selectedButton]
-        yOffset = yOffset - 6
 
-        -- Separator
-        local sep2 = scrollChild:CreateTexture(nil, "ARTWORK")
-        sep2:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, yOffset)
-        sep2:SetSize(contentWidth, 1)
-        sep2:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-        yOffset = yOffset - 8
+        local glowHeading = AceGUI:Create("Heading")
+        glowHeading:SetText("Glow Settings")
+        glowHeading:SetFullWidth(true)
+        col2Scroll:AddChild(glowHeading)
 
-        -- Glow header
-        local glowHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        glowHeader:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, yOffset)
-        glowHeader:SetText("Glow Settings")
-        glowHeader:SetTextColor(1, 0.82, 0, 1)
-        yOffset = yOffset - 18
-
-        -- Show Glow checkbox (AceGUI)
+        -- Show Glow checkbox
         local glowCheck = AceGUI:Create("CheckBox")
         glowCheck:SetLabel("Show Glow")
         glowCheck:SetValue(btnData.showGlow or false)
+        glowCheck:SetFullWidth(true)
         glowCheck:SetCallback("OnValueChanged", function(widget, event, val)
             btnData.showGlow = val
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
         end)
-        EmbedWidget(glowCheck, scrollChild, 4, yOffset, contentWidth, col2Frame.aceWidgets)
-        yOffset = yOffset - 26
+        col2Scroll:AddChild(glowCheck)
 
-        -- Glow Type dropdown (AceGUI)
+        -- Glow Type dropdown
         local typeDrop = AceGUI:Create("Dropdown")
         typeDrop:SetLabel("Glow Type")
         typeDrop:SetList(glowTypeOptions)
         typeDrop:SetValue(btnData.glowType or "pixel")
+        typeDrop:SetFullWidth(true)
         typeDrop:SetCallback("OnValueChanged", function(widget, event, val)
             btnData.glowType = val
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
         end)
-        EmbedWidget(typeDrop, scrollChild, 4, yOffset, contentWidth, col2Frame.aceWidgets)
-        yOffset = yOffset - 44
+        col2Scroll:AddChild(typeDrop)
 
-        -- Glow Color (AceGUI)
+        -- Glow Color
         local gc = btnData.glowColor or {1, 1, 0, 1}
         local colorPicker = AceGUI:Create("ColorPicker")
         colorPicker:SetLabel("Glow Color")
         colorPicker:SetHasAlpha(true)
         colorPicker:SetColor(gc[1], gc[2], gc[3], gc[4])
+        colorPicker:SetFullWidth(true)
         colorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
             btnData.glowColor = {r, g, b, a}
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
         end)
-        EmbedWidget(colorPicker, scrollChild, 4, yOffset, contentWidth, col2Frame.aceWidgets)
-        yOffset = yOffset - 28
+        col2Scroll:AddChild(colorPicker)
     end
-
-    scrollChild:SetHeight(math.abs(yOffset) + 4)
 end
 
 ------------------------------------------------------------------------
@@ -1102,7 +1003,7 @@ function RefreshProfileBar(barFrame)
     copyBtn.frame:SetParent(barFrame)
     copyBtn.frame:ClearAllPoints()
     copyBtn.frame:SetPoint("LEFT", newProfileBox.frame, "RIGHT", 4, 0)
-    copyBtn:SetWidth(60)
+    copyBtn:SetWidth(75)
     copyBtn:SetHeight(24)
     copyBtn.frame:Show()
     table.insert(profileBarAceWidgets, copyBtn)
@@ -1124,7 +1025,7 @@ function RefreshProfileBar(barFrame)
     delBtn.frame:SetParent(barFrame)
     delBtn.frame:ClearAllPoints()
     delBtn.frame:SetPoint("LEFT", copyBtn.frame, "RIGHT", 4, 0)
-    delBtn:SetWidth(60)
+    delBtn:SetWidth(75)
     delBtn:SetHeight(24)
     delBtn.frame:Show()
     table.insert(profileBarAceWidgets, delBtn)
@@ -1142,7 +1043,7 @@ function RefreshProfileBar(barFrame)
     resetBtn.frame:SetParent(barFrame)
     resetBtn.frame:ClearAllPoints()
     resetBtn.frame:SetPoint("LEFT", delBtn.frame, "RIGHT", 4, 0)
-    resetBtn:SetWidth(60)
+    resetBtn:SetWidth(75)
     resetBtn:SetHeight(24)
     resetBtn.frame:Show()
     table.insert(profileBarAceWidgets, resetBtn)
@@ -1217,6 +1118,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Spells / Items")
         GameTooltip:AddLine("Enter a spell or item name/ID in the input box,", 1, 1, 1, true)
         GameTooltip:AddLine("then click Add Spell or Add Item to track it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Right-click an entry to remove it.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     infoBtn:SetScript("OnLeave", function()
@@ -1226,18 +1128,24 @@ local function CreateConfigPanel()
     local col3Header = CreateHeaderLabel(col3, "Settings")
     col3Header:SetPoint("TOPLEFT", col3, "TOPLEFT", 8, -6)
 
-    -- Scroll frames in columns 1 and 2
-    local scrollArea1 = CreateFrame("Frame", nil, col1)
-    scrollArea1:SetPoint("TOPLEFT", col1, "TOPLEFT", 0, -(HEADER_HEIGHT + 4))
-    scrollArea1:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", 0, 0)
-    local scroll1, child1 = CreateScrollFrame(scrollArea1)
-    col1ScrollChild = child1
+    -- AceGUI ScrollFrames in columns 1 and 2
+    local scroll1 = AceGUI:Create("ScrollFrame")
+    scroll1:SetLayout("List")
+    scroll1.frame:SetParent(col1)
+    scroll1.frame:ClearAllPoints()
+    scroll1.frame:SetPoint("TOPLEFT", col1, "TOPLEFT", 4, -(HEADER_HEIGHT + 4))
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", -4, 4)
+    scroll1.frame:Show()
+    col1Scroll = scroll1
 
-    local scrollArea2 = CreateFrame("Frame", nil, col2)
-    scrollArea2:SetPoint("TOPLEFT", col2, "TOPLEFT", 0, -(HEADER_HEIGHT + 4))
-    scrollArea2:SetPoint("BOTTOMRIGHT", col2, "BOTTOMRIGHT", 0, 0)
-    local scroll2, child2 = CreateScrollFrame(scrollArea2)
-    col2ScrollChild = child2
+    local scroll2 = AceGUI:Create("ScrollFrame")
+    scroll2:SetLayout("List")
+    scroll2.frame:SetParent(col2)
+    scroll2.frame:ClearAllPoints()
+    scroll2.frame:SetPoint("TOPLEFT", col2, "TOPLEFT", 4, -(HEADER_HEIGHT + 4))
+    scroll2.frame:SetPoint("BOTTOMRIGHT", col2, "BOTTOMRIGHT", -4, 4)
+    scroll2.frame:Show()
+    col2Scroll = scroll2
 
     -- Column 3 content area (below header)
     local col3Content = CreateFrame("Frame", nil, col3)
@@ -1282,7 +1190,7 @@ local function CreateConfigPanel()
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
-    frame.col2Frame = col2
+    frame.col2Frame = col2  -- kept for reference
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
 
@@ -1298,8 +1206,8 @@ function CooldownCompanion:RefreshConfigPanel()
     if not configFrame.frame:IsShown() then return end
 
     RefreshProfileBar(configFrame.profileBar)
-    RefreshColumn1(col1ScrollChild)
-    RefreshColumn2(col2ScrollChild, configFrame.col2Frame)
+    RefreshColumn1()
+    RefreshColumn2()
     RefreshColumn3(col3Container)
 end
 
@@ -1309,7 +1217,10 @@ end
 function CooldownCompanion:ToggleConfig()
     if not configFrame then
         CreateConfigPanel()
-        self:RefreshConfigPanel()
+        -- Defer first refresh until after column layout is computed (next frame)
+        C_Timer.After(0, function()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
         return -- AceGUI Frame is already shown on creation
     end
 
