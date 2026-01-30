@@ -536,9 +536,11 @@ function RefreshColumn1()
                 selectedButton = nil
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            col1Scroll:AddChild(btn)
-            -- Add 4px gap below each button via layout height override
-            btn.frame.height = (btn.frame:GetHeight() or 24) + 4
+            local row = AceGUI:Create("SimpleGroup")
+            row:SetFullWidth(true)
+            row:SetLayout("Flow")
+            row:AddChild(btn)
+            col1Scroll:AddChild(row)
         end
     end
 
