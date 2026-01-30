@@ -262,31 +262,37 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
-    local isOnCooldown = false
 
-    -- Use pcall and avoid ANY Lua operations on returned values
-    -- Secret values can only be passed directly to Blizzard functions
+    -- SetCooldown handles secret values internally (C-side API)
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
-                -- Pass values directly to SetCooldown - it handles secret values internally
                 button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                -- Check if on cooldown for desaturation (duration > 1.5 to ignore GCD)
-                isOnCooldown = cooldownInfo.duration and cooldownInfo.duration > 1.5
             end
         elseif buttonData.type == "item" then
             local start, duration = C_Item.GetItemCooldown(buttonData.id)
-            -- Pass values directly without any nil checks on the values themselves
             button.cooldown:SetCooldown(start, duration)
-            -- Check if on cooldown for desaturation
-            isOnCooldown = duration and duration > 1.5
         end
     end)
 
-    -- Handle desaturation based on cooldown state
+    -- Handle desaturation separately so secret value errors don't reset it.
+    -- When the duration comparison fails (secret values during combat),
+    -- keep the current desaturation state instead of clearing it.
     if style.desaturateOnCooldown then
-        button.icon:SetDesaturated(isOnCooldown)
+        local success, onCooldown = pcall(function()
+            if buttonData.type == "spell" then
+                local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
+                return cooldownInfo and cooldownInfo.duration and cooldownInfo.duration > 1.5
+            elseif buttonData.type == "item" then
+                local _, duration = C_Item.GetItemCooldown(buttonData.id)
+                return duration and duration > 1.5
+            end
+            return false
+        end)
+        if success then
+            button.icon:SetDesaturated(onCooldown or false)
+        end
     else
         button.icon:SetDesaturated(false)
     end
