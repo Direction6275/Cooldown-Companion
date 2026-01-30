@@ -543,7 +543,7 @@ function RefreshColumn1()
                 local spacer = AceGUI:Create("Label")
                 spacer:SetText("")
                 spacer:SetFullWidth(true)
-                spacer:SetHeight(4)
+                spacer:SetHeight(8)
                 col1Scroll:AddChild(spacer)
             end
         end
