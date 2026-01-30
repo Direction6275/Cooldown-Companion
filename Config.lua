@@ -301,6 +301,21 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
 }
 
 ------------------------------------------------------------------------
+-- Helper: Show a StaticPopup above the config panel
+------------------------------------------------------------------------
+local function ShowPopupAboveConfig(which, text_arg1, data)
+    local dialog = StaticPopup_Show(which, text_arg1)
+    if dialog then
+        dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+        dialog:SetFrameLevel(200)
+        if data then
+            dialog.data = data
+        end
+    end
+    return dialog
+end
+
+------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
 local function TryAddSpell(input)
@@ -1184,41 +1199,32 @@ function RefreshProfileBar(barFrame)
 
     -- New
     AddBarButton("New", 70, function()
-        StaticPopup_Show("CDC_NEW_PROFILE")
+        ShowPopupAboveConfig("CDC_NEW_PROFILE")
     end)
 
     -- Rename
     AddBarButton("Rename", 80, function()
-        local dialog = StaticPopup_Show("CDC_RENAME_PROFILE", currentProfile)
-        if dialog then
-            dialog.data = { oldName = currentProfile }
-        end
+        ShowPopupAboveConfig("CDC_RENAME_PROFILE", currentProfile, { oldName = currentProfile })
     end)
 
     -- Duplicate
     AddBarButton("Duplicate", 90, function()
-        local dialog = StaticPopup_Show("CDC_DUPLICATE_PROFILE")
-        if dialog then
-            dialog.data = { source = currentProfile }
-        end
+        ShowPopupAboveConfig("CDC_DUPLICATE_PROFILE", nil, { source = currentProfile })
     end)
 
     -- Delete
     AddBarButton("Delete", 70, function()
-        local dialog = StaticPopup_Show("CDC_DELETE_PROFILE", currentProfile)
-        if dialog then
-            dialog.data = { profileName = currentProfile }
-        end
+        ShowPopupAboveConfig("CDC_DELETE_PROFILE", currentProfile, { profileName = currentProfile })
     end)
 
     -- Export
     AddBarButton("Export", 70, function()
-        StaticPopup_Show("CDC_EXPORT_PROFILE")
+        ShowPopupAboveConfig("CDC_EXPORT_PROFILE")
     end)
 
     -- Import
     AddBarButton("Import", 70, function()
-        StaticPopup_Show("CDC_IMPORT_PROFILE")
+        ShowPopupAboveConfig("CDC_IMPORT_PROFILE")
     end)
 end
 
