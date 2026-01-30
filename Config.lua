@@ -407,12 +407,13 @@ end
 local function CreateColumnFrame(parent)
     local col = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     col:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 3, right = 3, top = 5, bottom = 3 },
     })
-    col:SetBackdropColor(0.05, 0.05, 0.05, 0.6)
-    col:SetBackdropBorderColor(0, 0, 0, 0.8)
+    col:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+    col:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     return col
 end
 
@@ -1287,12 +1288,13 @@ local function CreateConfigPanel()
     profileBar:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, 0)
     profileBar:SetHeight(PROFILE_BAR_HEIGHT)
     profileBar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 3, right = 3, top = 5, bottom = 3 },
     })
-    profileBar:SetBackdropColor(0.05, 0.05, 0.05, 0.6)
-    profileBar:SetBackdropBorderColor(0, 0, 0, 0.8)
+    profileBar:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+    profileBar:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 
     -- Column containers below profile bar
     local colParent = CreateFrame("Frame", nil, contentFrame)
