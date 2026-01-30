@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - ButtonFrame
-    Individual button frames with cooldown animations and glow effects
+    Individual button frames with cooldown animations
 
     Note: WoW 12.0 "secret value" API blocks direct comparison of cooldown data.
     We pass values directly to SetCooldown and let the internal WoW code handle them.
@@ -97,59 +97,6 @@ local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion
     end
 end
 
--- Glow functions (using LibCustomGlow if available, otherwise fallback)
-local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
-
-local function ShowPixelGlow(frame, color)
-    if LCG then
-        LCG.PixelGlow_Start(frame, color, nil, nil, nil, nil, nil, nil, nil, "CooldownCompanionGlow")
-    else
-        -- Fallback: simple border glow
-        if not frame.glowBorder then
-            frame.glowBorder = frame:CreateTexture(nil, "OVERLAY")
-            frame.glowBorder:SetAllPoints()
-            frame.glowBorder:SetColorTexture(1, 1, 0, 0.5)
-            frame.glowBorder:SetBlendMode("ADD")
-        end
-        frame.glowBorder:Show()
-    end
-end
-
-local function ShowActionGlow(frame, color)
-    if LCG then
-        LCG.AutoCastGlow_Start(frame, color, nil, nil, nil, nil, "CooldownCompanionGlow")
-    else
-        ShowPixelGlow(frame, color)
-    end
-end
-
-local function ShowProcGlow(frame, color)
-    if LCG then
-        LCG.ButtonGlow_Start(frame, color, nil, "CooldownCompanionGlow")
-    else
-        if ActionButton_ShowOverlayGlow then
-            ActionButton_ShowOverlayGlow(frame)
-        else
-            ShowPixelGlow(frame, color)
-        end
-    end
-end
-
-local function HideGlow(frame)
-    if LCG then
-        LCG.PixelGlow_Stop(frame, "CooldownCompanionGlow")
-        LCG.AutoCastGlow_Stop(frame, "CooldownCompanionGlow")
-        LCG.ButtonGlow_Stop(frame, "CooldownCompanionGlow")
-    else
-        if frame.glowBorder then
-            frame.glowBorder:Hide()
-        end
-        if ActionButton_HideOverlayGlow then
-            ActionButton_HideOverlayGlow(frame)
-        end
-    end
-end
-
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
 
@@ -234,17 +181,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
 
-    -- Buff duration overlay (second cooldown frame, layered on top)
-    button.buffCooldown = CreateFrame("Cooldown", button:GetName() .. "BuffCD", button, "CooldownFrameTemplate")
-    button.buffCooldown:SetAllPoints(button.icon)
-    button.buffCooldown:SetDrawEdge(true)
-    button.buffCooldown:SetDrawSwipe(true)
-    button.buffCooldown:SetSwipeColor(1, 1, 1, 0.5)
-    button.buffCooldown:SetHideCountdownNumbers(true)
-    button.buffCooldown:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
-    SetFrameClickThroughRecursive(button.buffCooldown, true, true)
-    button.buffCooldown:Hide()
-
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cooldownFontSize = style.cooldownFontSize or 12
@@ -272,14 +208,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonCooldown(self)
     end
     
-    button.SetGlow = function(self, show)
-        CooldownCompanion:SetButtonGlow(self, show)
-    end
-
-    button.UpdateBuffOverlay = function(self)
-        CooldownCompanion:UpdateButtonBuffOverlay(self)
-    end
-
     button.UpdateStyle = function(self, newStyle)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
@@ -361,64 +289,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.icon:SetDesaturated(isOnCooldown)
     else
         button.icon:SetDesaturated(false)
-    end
-end
-
-function CooldownCompanion:UpdateButtonBuffOverlay(button)
-    local buttonData = button.buttonData
-    if not buttonData.showGlow or buttonData.type ~= "spell" then
-        -- Not tracking buffs for this button, ensure overlay is hidden
-        if button.buffCooldown:IsShown() then
-            button.buffCooldown:Hide()
-            HideGlow(button)
-        end
-        return
-    end
-
-    local aura = C_UnitAuras.GetPlayerAuraBySpellID(buttonData.id)
-    if aura and aura.duration and aura.duration > 0 then
-        -- Buff is active — show glow + buff duration radial
-        local startTime = aura.expirationTime - aura.duration
-        button.buffCooldown:SetCooldown(startTime, aura.duration)
-        if not button.buffCooldown:IsShown() then
-            button.buffCooldown:Show()
-        end
-        -- Show glow using existing glow settings
-        if not button._buffGlowActive then
-            CooldownCompanion:SetButtonGlow(button, true)
-            button._buffGlowActive = true
-        end
-    else
-        -- No buff — hide overlay and glow
-        if button.buffCooldown:IsShown() then
-            button.buffCooldown:SetCooldown(0, 0)
-            button.buffCooldown:Hide()
-        end
-        if button._buffGlowActive then
-            HideGlow(button)
-            button._buffGlowActive = false
-        end
-    end
-end
-
-function CooldownCompanion:SetButtonGlow(button, show)
-    if show == nil then
-        show = button.buttonData.showGlow
-    end
-    
-    if show then
-        local glowType = button.buttonData.glowType or "pixel"
-        local glowColor = button.buttonData.glowColor or {1, 1, 0, 1}
-        
-        if glowType == "pixel" then
-            ShowPixelGlow(button, glowColor)
-        elseif glowType == "action" then
-            ShowActionGlow(button, glowColor)
-        elseif glowType == "proc" then
-            ShowProcGlow(button, glowColor)
-        end
-    else
-        HideGlow(button)
     end
 end
 

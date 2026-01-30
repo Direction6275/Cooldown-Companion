@@ -58,9 +58,6 @@ local defaults = {
                             type = "spell" or "item",
                             id = spellId or itemId,
                             name = "Spell/Item Name",
-                            showGlow = false,
-                            glowType = "pixel", -- "pixel", "action", "proc"
-                            glowColor = {1, 1, 0, 1},
                         }
                     },
                     style = {
@@ -135,9 +132,6 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "UpdateAllCooldowns") -- Entering combat
     self:RegisterEvent("PLAYER_REGEN_ENABLED", "UpdateAllCooldowns")  -- Leaving combat
 
-    -- Buff tracking for buff overlay glow
-    self:RegisterEvent("UNIT_AURA", "OnUnitAura")
-    
     -- Create all group frames
     self:CreateAllGroupFrames()
     
@@ -145,7 +139,6 @@ function CooldownCompanion:OnEnable()
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
         self:UpdateAllCooldowns()
-        self:UpdateAllBuffOverlays()
     end)
 end
 
@@ -165,12 +158,6 @@ end
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         self:UpdateAllCooldowns()
-    end
-end
-
-function CooldownCompanion:OnUnitAura(event, unit)
-    if unit == "player" then
-        self:UpdateAllBuffOverlays()
     end
 end
 
@@ -249,9 +236,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
         type = buttonType,
         id = id,
         name = name,
-        showGlow = false,
-        glowType = "pixel",
-        glowColor = {1, 1, 0, 1},
     }
     
     self:RefreshGroupFrame(groupId)
@@ -282,18 +266,6 @@ function CooldownCompanion:UpdateAllCooldowns()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns then
             frame:UpdateCooldowns()
-        end
-    end
-end
-
-function CooldownCompanion:UpdateAllBuffOverlays()
-    for groupId, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                if button.UpdateBuffOverlay then
-                    button:UpdateBuffOverlay()
-                end
-            end
         end
     end
 end

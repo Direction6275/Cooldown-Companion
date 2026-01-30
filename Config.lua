@@ -67,12 +67,6 @@ local anchorPointLabels = {
     BOTTOMRIGHT = "Bottom Right",
 }
 
-local glowTypeOptions = {
-    pixel = "Pixel Glow",
-    action = "Action Glow",
-    proc = "Proc Glow",
-}
-
 -- Layout constants
 local COLUMN_PADDING = 8
 local HEADER_HEIGHT = 22
@@ -695,51 +689,6 @@ function RefreshColumn2()
         col2Scroll:AddChild(entry)
     end
 
-    -- Glow settings area (shown when a button is selected)
-    if selectedButton and group.buttons[selectedButton] then
-        local btnData = group.buttons[selectedButton]
-
-        local glowHeading = AceGUI:Create("Heading")
-        glowHeading:SetText("Buff Overlay Settings")
-        glowHeading:SetFullWidth(true)
-        col2Scroll:AddChild(glowHeading)
-
-        -- Show Buff Glow checkbox
-        local glowCheck = AceGUI:Create("CheckBox")
-        glowCheck:SetLabel("Show Buff Glow")
-        glowCheck:SetValue(btnData.showGlow or false)
-        glowCheck:SetFullWidth(true)
-        glowCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            btnData.showGlow = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(glowCheck)
-
-        -- Glow Type dropdown
-        local typeDrop = AceGUI:Create("Dropdown")
-        typeDrop:SetLabel("Glow Type")
-        typeDrop:SetList(glowTypeOptions)
-        typeDrop:SetValue(btnData.glowType or "pixel")
-        typeDrop:SetFullWidth(true)
-        typeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            btnData.glowType = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(typeDrop)
-
-        -- Glow Color
-        local gc = btnData.glowColor or {1, 1, 0, 1}
-        local colorPicker = AceGUI:Create("ColorPicker")
-        colorPicker:SetLabel("Glow Color")
-        colorPicker:SetHasAlpha(true)
-        colorPicker:SetColor(gc[1], gc[2], gc[3], gc[4])
-        colorPicker:SetFullWidth(true)
-        colorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            btnData.glowColor = {r, g, b, a}
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(colorPicker)
-    end
 end
 
 ------------------------------------------------------------------------
