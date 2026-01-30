@@ -586,7 +586,8 @@ function RefreshColumn2(scrollChild, col2Frame)
                 hasOpacity = true,
                 swatchFunc = function()
                     local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                    local na = 1 - (ColorPickerFrame:GetColorAlpha and ColorPickerFrame:GetColorAlpha() or OpacitySliderFrame:GetValue())
+                    local getAlpha = ColorPickerFrame.GetColorAlpha
+                    local na = 1 - (getAlpha and getAlpha(ColorPickerFrame) or OpacitySliderFrame:GetValue())
                     btnData.glowColor = {nr, ng, nb, na}
                     colorBtn.tex:SetColorTexture(nr, ng, nb, na)
                     CooldownCompanion:RefreshGroupFrame(selectedGroup)
