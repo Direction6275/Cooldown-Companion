@@ -166,13 +166,17 @@ end
 
 function CooldownCompanion:SlashCommand(input)
     if input == "lock" then
-        self.db.profile.locked = true
+        for _, group in pairs(self.db.profile.groups) do
+            group.locked = true
+        end
         self:LockAllFrames()
-        self:Print("Frames locked.")
+        self:Print("All frames locked.")
     elseif input == "unlock" then
-        self.db.profile.locked = false
+        for _, group in pairs(self.db.profile.groups) do
+            group.locked = false
+        end
         self:UnlockAllFrames()
-        self:Print("Frames unlocked. Drag to move.")
+        self:Print("All frames unlocked. Drag to move.")
     elseif input == "reset" then
         self.db:ResetProfile()
         self:RefreshAllGroups()
@@ -205,6 +209,7 @@ function CooldownCompanion:CreateGroup(name)
         buttons = {},
         style = CopyTable(self.db.profile.globalStyle),
         enabled = true,
+        locked = false,
     }
     
     self.db.profile.groups[groupId].style.orientation = "horizontal"
@@ -274,7 +279,6 @@ end
 function CooldownCompanion:LockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            -- Update clickthrough based on style settings
             self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Hide()
@@ -286,7 +290,6 @@ end
 function CooldownCompanion:UnlockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            -- Update clickthrough based on style settings
             self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Show()

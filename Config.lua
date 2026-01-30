@@ -773,18 +773,14 @@ local function BuildGeneralTab(container)
     end)
     container:AddChild(enabledCb)
 
-    -- Lock Frames toggle (global)
+    -- Lock Frame toggle (per-group)
     local lockCb = AceGUI:Create("CheckBox")
-    lockCb:SetLabel("Lock Frames")
-    lockCb:SetValue(CooldownCompanion.db.profile.locked)
+    lockCb:SetLabel("Lock Frame")
+    lockCb:SetValue(group.locked or false)
     lockCb:SetFullWidth(true)
     lockCb:SetCallback("OnValueChanged", function(widget, event, val)
-        CooldownCompanion.db.profile.locked = val
-        if val then
-            CooldownCompanion:LockAllFrames()
-        else
-            CooldownCompanion:UnlockAllFrames()
-        end
+        group.locked = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end)
     container:AddChild(lockCb)
 end

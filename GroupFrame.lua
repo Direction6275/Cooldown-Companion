@@ -99,7 +99,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     
     -- Make it movable when unlocked
     frame:SetMovable(true)
-    frame:EnableMouse(not self.db.profile.locked)
+    frame:EnableMouse(not group.locked)
     frame:RegisterForDrag("LeftButton")
     
     -- Drag handle (visible when unlocked)
@@ -120,13 +120,14 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle.text:SetText(group.name)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
     
-    if self.db.profile.locked then
+    if group.locked then
         frame.dragHandle:Hide()
     end
     
     -- Drag scripts
     frame:SetScript("OnDragStart", function(self)
-        if not CooldownCompanion.db.profile.locked then
+        local g = CooldownCompanion.db.profile.groups[self.groupId]
+        if g and not g.locked then
             self:StartMoving()
         end
     end)
@@ -140,7 +141,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
-        if not CooldownCompanion.db.profile.locked then
+        local g = CooldownCompanion.db.profile.groups[groupId]
+        if g and not g.locked then
             frame:StartMoving()
         end
     end)
@@ -462,7 +464,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     -- When locked: group container is always fully non-interactive
     -- When unlocked: enable everything for dragging
-    if self.db.profile.locked then
+    if group.locked then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
