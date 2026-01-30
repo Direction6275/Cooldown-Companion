@@ -1031,17 +1031,28 @@ function RefreshProfileBar(barFrame)
     delBtn:SetText("Delete")
     delBtn:SetCallback("OnClick", function()
         local active = db:GetCurrentProfile()
-        if currentProfile == active then
-            CooldownCompanion:Print("Cannot delete the active profile.")
-        elseif currentProfile == "Default" then
-            CooldownCompanion:Print("Cannot delete the Default profile.")
+        if active == currentProfile then
+            -- Deleting the active profile: switch to another first
+            local allProfiles = db:GetProfiles()
+            local nextProfile = nil
+            for _, name in ipairs(allProfiles) do
+                if name ~= currentProfile then
+                    nextProfile = name
+                    break
+                end
+            end
+            if not nextProfile then
+                nextProfile = "Default"
+            end
+            db:SetProfile(nextProfile)
+            db:DeleteProfile(currentProfile, true)
         else
             db:DeleteProfile(currentProfile, true)
-            selectedGroup = nil
-            selectedButton = nil
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
         end
+        selectedGroup = nil
+        selectedButton = nil
+        CooldownCompanion:RefreshConfigPanel()
+        CooldownCompanion:RefreshAllGroups()
     end)
     delBtn.frame:SetParent(barFrame)
     delBtn.frame:ClearAllPoints()
@@ -1050,24 +1061,6 @@ function RefreshProfileBar(barFrame)
     delBtn:SetHeight(24)
     delBtn.frame:Show()
     table.insert(profileBarAceWidgets, delBtn)
-
-    -- Reset button (AceGUI)
-    local resetBtn = AceGUI:Create("Button")
-    resetBtn:SetText("Reset")
-    resetBtn:SetCallback("OnClick", function()
-        db:ResetProfile()
-        selectedGroup = nil
-        selectedButton = nil
-        CooldownCompanion:RefreshConfigPanel()
-        CooldownCompanion:RefreshAllGroups()
-    end)
-    resetBtn.frame:SetParent(barFrame)
-    resetBtn.frame:ClearAllPoints()
-    resetBtn.frame:SetPoint("LEFT", delBtn.frame, "RIGHT", 4, 0)
-    resetBtn:SetWidth(75)
-    resetBtn:SetHeight(24)
-    resetBtn.frame:Show()
-    table.insert(profileBarAceWidgets, resetBtn)
 end
 
 ------------------------------------------------------------------------
