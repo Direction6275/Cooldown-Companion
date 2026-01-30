@@ -1272,6 +1272,15 @@ local function CreateConfigPanel()
     local TITLE_BAR_HEIGHT = 40
     local fullHeight = 700
 
+    -- Find the AceGUI close button (anchored BOTTOMRIGHT, UIPanelButtonTemplate)
+    local closeButton
+    for _, child in ipairs({content:GetChildren()}) do
+        if child:GetObjectType() == "Button" and child:GetText() == CLOSE then
+            closeButton = child
+            break
+        end
+    end
+
     minimizeBtn:SetCallback("OnClick", function()
         -- Capture current top-left position before changing height
         local top = content:GetTop()
@@ -1285,10 +1294,12 @@ local function CreateConfigPanel()
             content:SetWidth(1050)
             contentFrame:Show()
             frame:SetStatusText("v1.1.0")
+            if closeButton then closeButton:Show() end
             isMinimized = false
         else
             -- Collapse: shrink to title bar only, keep top edge in place
             contentFrame:Hide()
+            if closeButton then closeButton:Hide() end
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(TITLE_BAR_HEIGHT)
