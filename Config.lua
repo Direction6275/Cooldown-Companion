@@ -22,10 +22,12 @@ local configFrame = nil
 
 -- Column content frames (for refresh)
 local col1Scroll = nil  -- AceGUI ScrollFrame
+local col1ButtonBar = nil -- Static bar at bottom of column 1
 local col2Scroll = nil  -- AceGUI ScrollFrame
 local col3Container = nil
 
--- AceGUI widget tracking for profile bar cleanup
+-- AceGUI widget tracking for cleanup
+local col1BarWidgets = {}
 local profileBarAceWidgets = {}
 
 -- Font options for dropdown
@@ -324,33 +326,50 @@ function RefreshColumn1()
         end
     end
 
-    -- "New" button
-    local newBtn = AceGUI:Create("Button")
-    newBtn:SetText("New")
-    newBtn:SetFullWidth(true)
-    newBtn:SetCallback("OnClick", function()
-        local name = "Group " .. (CooldownCompanion.db.profile.nextGroupId or 1)
-        local groupId = CooldownCompanion:CreateGroup(name)
-        selectedGroup = groupId
-        selectedButton = nil
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    col1Scroll:AddChild(newBtn)
+    -- Refresh the static button bar at the bottom
+    if col1ButtonBar then
+        -- Release previous bar widgets
+        for _, widget in ipairs(col1BarWidgets) do
+            widget:Release()
+        end
+        wipe(col1BarWidgets)
 
-    -- "Delete" button (only if a group is selected)
-    if selectedGroup and CooldownCompanion.db.profile.groups[selectedGroup] then
+        -- "New" button (left half)
+        local newBtn = AceGUI:Create("Button")
+        newBtn:SetText("New")
+        newBtn:SetCallback("OnClick", function()
+            local name = "Group " .. (CooldownCompanion.db.profile.nextGroupId or 1)
+            local groupId = CooldownCompanion:CreateGroup(name)
+            selectedGroup = groupId
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        newBtn.frame:SetParent(col1ButtonBar)
+        newBtn.frame:ClearAllPoints()
+        newBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOPLEFT", 0, 0)
+        newBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOM", -2, 0)
+        newBtn.frame:Show()
+        table.insert(col1BarWidgets, newBtn)
+
+        -- "Delete" button (right half)
         local delBtn = AceGUI:Create("Button")
         delBtn:SetText("Delete")
-        delBtn:SetFullWidth(true)
         delBtn:SetCallback("OnClick", function()
-            local group = CooldownCompanion.db.profile.groups[selectedGroup]
-            local name = group and group.name or "this group"
-            local dialog = StaticPopup_Show("CDC_DELETE_GROUP", name)
-            if dialog then
-                dialog.data = { groupId = selectedGroup }
+            if selectedGroup and CooldownCompanion.db.profile.groups[selectedGroup] then
+                local group = CooldownCompanion.db.profile.groups[selectedGroup]
+                local name = group and group.name or "this group"
+                local dialog = StaticPopup_Show("CDC_DELETE_GROUP", name)
+                if dialog then
+                    dialog.data = { groupId = selectedGroup }
+                end
             end
         end)
-        col1Scroll:AddChild(delBtn)
+        delBtn.frame:SetParent(col1ButtonBar)
+        delBtn.frame:ClearAllPoints()
+        delBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOP", 2, 0)
+        delBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        delBtn.frame:Show()
+        table.insert(col1BarWidgets, delBtn)
     end
 end
 
@@ -1127,13 +1146,20 @@ local function CreateConfigPanel()
     local col3Header = CreateHeaderLabel(col3, "Settings")
     col3Header:SetPoint("TOPLEFT", col3, "TOPLEFT", 8, -6)
 
+    -- Static button bar at bottom of column 1 (New / Delete)
+    local btnBar = CreateFrame("Frame", nil, col1)
+    btnBar:SetPoint("BOTTOMLEFT", col1, "BOTTOMLEFT", 4, 4)
+    btnBar:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", -4, 4)
+    btnBar:SetHeight(28)
+    col1ButtonBar = btnBar
+
     -- AceGUI ScrollFrames in columns 1 and 2
     local scroll1 = AceGUI:Create("ScrollFrame")
     scroll1:SetLayout("List")
     scroll1.frame:SetParent(col1)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1, "TOPLEFT", 4, -(HEADER_HEIGHT + 4))
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", -4, 4)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1, "BOTTOMRIGHT", -4, 32)
     scroll1.frame:Show()
     col1Scroll = scroll1
 
