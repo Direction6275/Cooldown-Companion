@@ -537,6 +537,15 @@ function RefreshColumn1()
                 CooldownCompanion:RefreshConfigPanel()
             end)
             col1Scroll:AddChild(btn)
+
+            -- 4px spacer between buttons
+            if listIndex < #groupIds then
+                local spacer = AceGUI:Create("Label")
+                spacer:SetText("")
+                spacer:SetFullWidth(true)
+                spacer:SetHeight(4)
+                col1Scroll:AddChild(spacer)
+            end
         end
     end
 
