@@ -411,8 +411,8 @@ local function CreateColumnFrame(parent)
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    col:SetBackdropColor(0.1, 0.1, 0.1, 0.3)
-    col:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
+    col:SetBackdropColor(0.05, 0.05, 0.05, 0.6)
+    col:SetBackdropBorderColor(0, 0, 0, 0.8)
     return col
 end
 
@@ -1291,8 +1291,8 @@ local function CreateConfigPanel()
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    profileBar:SetBackdropColor(0.15, 0.15, 0.15, 0.5)
-    profileBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
+    profileBar:SetBackdropColor(0.05, 0.05, 0.05, 0.6)
+    profileBar:SetBackdropBorderColor(0, 0, 0, 0.8)
 
     -- Column containers below profile bar
     local colParent = CreateFrame("Frame", nil, contentFrame)
