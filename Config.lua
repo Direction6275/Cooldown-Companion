@@ -1057,20 +1057,17 @@ local function BuildDisplayTab(container)
 end
 
 function RefreshColumn3(container)
-    -- Release previous tab group if stored
-    if container.tabGroup then
-        container.tabGroup:Release()
-        container.tabGroup = nil
-    end
-
     if not selectedGroup then
-        -- Show placeholder
+        -- Show placeholder, hide tab group
         if not container.placeholderLabel then
             container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontDisable")
             container.placeholderLabel:SetPoint("TOPLEFT", 8, -8)
         end
         container.placeholderLabel:SetText("Select a group to configure")
         container.placeholderLabel:Show()
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
         return
     end
 
@@ -1078,46 +1075,48 @@ function RefreshColumn3(container)
         container.placeholderLabel:Hide()
     end
 
-    local tabGroup = AceGUI:Create("TabGroup")
-    tabGroup:SetTabs({
-        { value = "general",     text = "General" },
-        { value = "positioning", text = "Positioning" },
-        { value = "appearance",  text = "Appearance" },
-        { value = "display",     text = "Display" },
-    })
-    tabGroup:SetLayout("Fill")
-    tabGroup:SelectTab(selectedTab)
+    -- Create the TabGroup once, reuse on subsequent refreshes
+    if not container.tabGroup then
+        local tabGroup = AceGUI:Create("TabGroup")
+        tabGroup:SetTabs({
+            { value = "general",     text = "General" },
+            { value = "positioning", text = "Positioning" },
+            { value = "appearance",  text = "Appearance" },
+            { value = "display",     text = "Display" },
+        })
+        tabGroup:SetLayout("Fill")
 
-    tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-        selectedTab = tab
-        widget:ReleaseChildren()
+        tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            selectedTab = tab
+            widget:ReleaseChildren()
 
-        local scroll = AceGUI:Create("ScrollFrame")
-        scroll:SetLayout("List")
-        widget:AddChild(scroll)
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            widget:AddChild(scroll)
 
-        if tab == "general" then
-            BuildGeneralTab(scroll)
-        elseif tab == "positioning" then
-            BuildPositioningTab(scroll)
-        elseif tab == "appearance" then
-            BuildAppearanceTab(scroll)
-        elseif tab == "display" then
-            BuildDisplayTab(scroll)
-        end
-    end)
+            if tab == "general" then
+                BuildGeneralTab(scroll)
+            elseif tab == "positioning" then
+                BuildPositioningTab(scroll)
+            elseif tab == "appearance" then
+                BuildAppearanceTab(scroll)
+            elseif tab == "display" then
+                BuildDisplayTab(scroll)
+            end
+        end)
 
-    -- Parent the AceGUI widget frame to our raw column frame
-    tabGroup.frame:SetParent(container)
-    tabGroup.frame:ClearAllPoints()
-    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -4)
-    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -4, 4)
-    tabGroup.frame:Show()
+        -- Parent the AceGUI widget frame to our raw column frame
+        tabGroup.frame:SetParent(container)
+        tabGroup.frame:ClearAllPoints()
+        tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -4)
+        tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -4, 4)
 
-    container.tabGroup = tabGroup
+        container.tabGroup = tabGroup
+    end
 
-    -- Trigger initial tab render
-    tabGroup:SelectTab(selectedTab)
+    -- Show and refresh the tab content
+    container.tabGroup.frame:Show()
+    container.tabGroup:SelectTab(selectedTab)
 end
 
 ------------------------------------------------------------------------
