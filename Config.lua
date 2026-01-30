@@ -118,19 +118,40 @@ StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
     OnAccept = function(self, data)
         if data and data.profileName then
             local db = CooldownCompanion.db
-            local allProfiles = db:GetProfiles()
-            local nextProfile = nil
-            for _, name in ipairs(allProfiles) do
-                if name ~= data.profileName then
-                    nextProfile = name
-                    break
+            if data.isOnly then
+                db:ResetProfile()
+            else
+                local allProfiles = db:GetProfiles()
+                local nextProfile = nil
+                for _, name in ipairs(allProfiles) do
+                    if name ~= data.profileName then
+                        nextProfile = name
+                        break
+                    end
                 end
+                db:SetProfile(nextProfile)
+                db:DeleteProfile(data.profileName, true)
             end
-            if not nextProfile then
-                nextProfile = "Default"
-            end
-            db:SetProfile(nextProfile)
-            db:DeleteProfile(data.profileName, true)
+            selectedGroup = nil
+            selectedButton = nil
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_RESET_PROFILE"] = {
+    text = "Reset profile '%s' to default settings?",
+    button1 = "Reset",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.profileName then
+            local db = CooldownCompanion.db
+            db:ResetProfile()
             selectedGroup = nil
             selectedButton = nil
             CooldownCompanion:RefreshConfigPanel()
@@ -1151,7 +1172,13 @@ function RefreshProfileBar(barFrame)
 
     -- Delete
     AddBarButton("Delete", 70, function()
-        ShowPopupAboveConfig("CDC_DELETE_PROFILE", currentProfile, { profileName = currentProfile })
+        local allProfiles = db:GetProfiles()
+        local isOnly = #allProfiles <= 1
+        if isOnly then
+            ShowPopupAboveConfig("CDC_RESET_PROFILE", currentProfile, { profileName = currentProfile, isOnly = true })
+        else
+            ShowPopupAboveConfig("CDC_DELETE_PROFILE", currentProfile, { profileName = currentProfile })
+        end
     end)
 
     -- Export
