@@ -1196,7 +1196,7 @@ function RefreshProfileBar(barFrame)
     end)
 
     -- Duplicate
-    AddBarButton("Duplicate", 80, function()
+    AddBarButton("Duplicate", 90, function()
         local dialog = StaticPopup_Show("CDC_DUPLICATE_PROFILE")
         if dialog then
             dialog.data = { source = currentProfile }
