@@ -700,13 +700,13 @@ function RefreshColumn2()
         local btnData = group.buttons[selectedButton]
 
         local glowHeading = AceGUI:Create("Heading")
-        glowHeading:SetText("Glow Settings")
+        glowHeading:SetText("Buff Overlay Settings")
         glowHeading:SetFullWidth(true)
         col2Scroll:AddChild(glowHeading)
 
-        -- Show Glow checkbox
+        -- Show Buff Glow checkbox
         local glowCheck = AceGUI:Create("CheckBox")
-        glowCheck:SetLabel("Show Glow")
+        glowCheck:SetLabel("Show Buff Glow")
         glowCheck:SetValue(btnData.showGlow or false)
         glowCheck:SetFullWidth(true)
         glowCheck:SetCallback("OnValueChanged", function(widget, event, val)

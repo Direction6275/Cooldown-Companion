@@ -234,6 +234,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
 
+    -- Buff duration overlay (second cooldown frame, layered on top)
+    button.buffCooldown = CreateFrame("Cooldown", button:GetName() .. "BuffCD", button, "CooldownFrameTemplate")
+    button.buffCooldown:SetAllPoints(button.icon)
+    button.buffCooldown:SetDrawEdge(true)
+    button.buffCooldown:SetDrawSwipe(true)
+    button.buffCooldown:SetSwipeColor(1, 1, 1, 0.5)
+    button.buffCooldown:SetHideCountdownNumbers(true)
+    button.buffCooldown:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+    SetFrameClickThroughRecursive(button.buffCooldown, true, true)
+    button.buffCooldown:Hide()
+
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cooldownFontSize = style.cooldownFontSize or 12
@@ -264,7 +275,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.SetGlow = function(self, show)
         CooldownCompanion:SetButtonGlow(self, show)
     end
-    
+
+    button.UpdateBuffOverlay = function(self)
+        CooldownCompanion:UpdateButtonBuffOverlay(self)
+    end
+
     button.UpdateStyle = function(self, newStyle)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
@@ -346,6 +361,43 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.icon:SetDesaturated(isOnCooldown)
     else
         button.icon:SetDesaturated(false)
+    end
+end
+
+function CooldownCompanion:UpdateButtonBuffOverlay(button)
+    local buttonData = button.buttonData
+    if not buttonData.showGlow or buttonData.type ~= "spell" then
+        -- Not tracking buffs for this button, ensure overlay is hidden
+        if button.buffCooldown:IsShown() then
+            button.buffCooldown:Hide()
+            HideGlow(button)
+        end
+        return
+    end
+
+    local aura = C_UnitAuras.GetPlayerAuraBySpellID(buttonData.id)
+    if aura and aura.duration and aura.duration > 0 then
+        -- Buff is active — show glow + buff duration radial
+        local startTime = aura.expirationTime - aura.duration
+        button.buffCooldown:SetCooldown(startTime, aura.duration)
+        if not button.buffCooldown:IsShown() then
+            button.buffCooldown:Show()
+        end
+        -- Show glow using existing glow settings
+        if not button._buffGlowActive then
+            CooldownCompanion:SetButtonGlow(button, true)
+            button._buffGlowActive = true
+        end
+    else
+        -- No buff — hide overlay and glow
+        if button.buffCooldown:IsShown() then
+            button.buffCooldown:SetCooldown(0, 0)
+            button.buffCooldown:Hide()
+        end
+        if button._buffGlowActive then
+            HideGlow(button)
+            button._buffGlowActive = false
+        end
     end
 end
 
