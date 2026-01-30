@@ -1260,7 +1260,7 @@ local function CreateConfigPanel()
 
     -- Minimize toggle button (AceGUI, top-right of title bar)
     local minimizeBtn = AceGUI:Create("Button")
-    minimizeBtn:SetText("\226\128\147") -- en dash as minimize icon
+    minimizeBtn:SetText("_")
     minimizeBtn:SetWidth(24)
     minimizeBtn:SetHeight(20)
     minimizeBtn.frame:SetParent(content)
