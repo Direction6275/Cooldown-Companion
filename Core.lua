@@ -201,7 +201,6 @@ function CooldownCompanion:OnCombatEnd()
     if self._configWasOpen then
         self._configWasOpen = false
         self:ToggleConfig()
-        self:Print("Config reopened after combat.")
     end
 end
 
