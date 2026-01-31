@@ -1307,7 +1307,15 @@ end
 ------------------------------------------------------------------------
 -- COLUMN 3: Settings (TabGroup)
 ------------------------------------------------------------------------
+local extrasInfoButtons = {}
+
 local function BuildExtrasTab(container)
+    for _, btn in ipairs(extrasInfoButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(extrasInfoButtons)
+
     if not selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
     if not group then return end
@@ -1354,6 +1362,24 @@ local function BuildExtrasTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(unusableCb)
+
+    -- (?) tooltip for unusable dimming
+    local unusableInfo = CreateFrame("Button", nil, unusableCb.frame)
+    unusableInfo:SetSize(16, 16)
+    unusableInfo:SetPoint("LEFT", unusableCb.checkbg, "RIGHT", unusableCb.text:GetStringWidth() + 4, 0)
+    local unusableInfoText = unusableInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    unusableInfoText:SetPoint("CENTER")
+    unusableInfoText:SetText("|cff66aaff(?)|r")
+    unusableInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Unusable Dimming")
+        GameTooltip:AddLine("Tints spell icons when unusable due to insufficient mana, rage, energy, or other resources. Out-of-range tinting takes priority when both apply.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    unusableInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(extrasInfoButtons, unusableInfo)
 
     if style.showUnusable then
         local unusableColor = AceGUI:Create("ColorPicker")
