@@ -418,6 +418,9 @@ local function TryAddSpell(input)
         if info then
             spellId = info.spellID
             spellName = info.name
+        else
+            -- Name lookup failed (spell may not be known); search talent tree
+            spellId, spellName = CooldownCompanion:FindTalentSpellByName(input)
         end
     end
 

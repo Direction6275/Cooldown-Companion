@@ -263,7 +263,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
-    if group.locked then
+    if group.locked or #group.buttons == 0 then
         frame.dragHandle:Hide()
     end
 
@@ -535,11 +535,12 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     
     -- Update drag handle text and lock state
+    local hasButtons = #group.buttons > 0
     if frame.dragHandle then
         if frame.dragHandle.text then
             frame.dragHandle.text:SetText(group.name)
         end
-        if group.locked then
+        if group.locked or not hasButtons then
             frame.dragHandle:Hide()
         else
             frame.dragHandle:Show()
@@ -547,8 +548,8 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility
-    if group.enabled then
+    -- Update visibility — hide if disabled or no buttons added
+    if group.enabled and #group.buttons > 0 then
         frame:Show()
     else
         frame:Hide()

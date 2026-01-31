@@ -337,6 +337,38 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     self:RefreshGroupFrame(groupId)
 end
 
+function CooldownCompanion:FindTalentSpellByName(name)
+    local configID = C_ClassTalents.GetActiveConfigID()
+    if not configID then return nil end
+    local configInfo = C_Traits.GetConfigInfo(configID)
+    if not configInfo or not configInfo.treeIDs then return nil end
+
+    local lowerName = name:lower()
+    for _, treeID in ipairs(configInfo.treeIDs) do
+        local nodes = C_Traits.GetTreeNodes(treeID)
+        if nodes then
+            for _, nodeID in ipairs(nodes) do
+                local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                if nodeInfo and nodeInfo.entryIDs then
+                    for _, entryID in ipairs(nodeInfo.entryIDs) do
+                        local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
+                        if entryInfo and entryInfo.definitionID then
+                            local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
+                            if defInfo and defInfo.spellID then
+                                local spellInfo = C_Spell.GetSpellInfo(defInfo.spellID)
+                                if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
+                                    return defInfo.spellID, spellInfo.name
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
 function CooldownCompanion:IsSpellInTalentTree(spellId)
     local configID = C_ClassTalents.GetActiveConfigID()
     if not configID then return false end
