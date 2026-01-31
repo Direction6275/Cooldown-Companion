@@ -32,6 +32,12 @@ local col1BarWidgets = {}
 local profileBarAceWidgets = {}
 local moveMenuFrame = nil
 
+-- Drag-reorder state
+local dragState = nil
+local dragIndicator = nil
+local dragTracker = nil
+local DRAG_THRESHOLD = 8
+
 -- Font options for dropdown
 local fontOptions = {
     ["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata (Default)",
@@ -508,6 +514,186 @@ local function EmbedWidget(widget, parent, x, y, width, widgetList)
 end
 
 ------------------------------------------------------------------------
+-- Drag-reorder helpers
+------------------------------------------------------------------------
+
+local function GetDragIndicator()
+    if not dragIndicator then
+        dragIndicator = CreateFrame("Frame", nil, UIParent)
+        dragIndicator:SetFrameStrata("TOOLTIP")
+        dragIndicator:SetSize(10, 2)
+        local tex = dragIndicator:CreateTexture(nil, "OVERLAY")
+        tex:SetAllPoints()
+        tex:SetColorTexture(0.2, 0.6, 1.0, 1.0)
+        dragIndicator.tex = tex
+        dragIndicator:Hide()
+    end
+    return dragIndicator
+end
+
+local function HideDragIndicator()
+    if dragIndicator then dragIndicator:Hide() end
+end
+
+local function GetScaledCursorPosition(scrollWidget)
+    local _, cursorY = GetCursorPosition()
+    local scale = scrollWidget.frame:GetEffectiveScale()
+    cursorY = cursorY / scale
+    return cursorY
+end
+
+local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
+    -- childOffset: number of non-draggable children at the start of the scroll (e.g. input box, buttons, separator)
+    -- Iterate draggable children and compare cursor Y to midpoints
+    local children = { scrollWidget.content:GetChildren() }
+    local dropIndex = totalDraggable + 1  -- default: after last
+    local anchorFrame = nil
+    local anchorAbove = true
+
+    for ci = 1, totalDraggable do
+        local child = children[ci + childOffset]
+        if child and child:IsShown() then
+            local top = child:GetTop()
+            local bottom = child:GetBottom()
+            if top and bottom then
+                local mid = (top + bottom) / 2
+                if cursorY > mid then
+                    dropIndex = ci
+                    anchorFrame = child
+                    anchorAbove = true
+                    break
+                end
+                -- Track the last child we passed as potential "below" anchor
+                anchorFrame = child
+                anchorAbove = false
+                dropIndex = ci + 1
+            end
+        end
+    end
+
+    return dropIndex, anchorFrame, anchorAbove
+end
+
+local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
+    if not anchorFrame then
+        HideDragIndicator()
+        return
+    end
+    local ind = GetDragIndicator()
+    local width = parentScrollWidget.content:GetWidth() or 100
+    ind:SetWidth(width)
+    ind:ClearAllPoints()
+    if anchorAbove then
+        ind:SetPoint("BOTTOMLEFT", anchorFrame, "TOPLEFT", 0, 1)
+    else
+        ind:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -1)
+    end
+    ind:Show()
+end
+
+local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
+    if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
+    if sourceIndex == dropIndex then return end
+    local db = CooldownCompanion.db.profile
+    local id = table.remove(groupIds, sourceIndex)
+    table.insert(groupIds, dropIndex, id)
+    -- Reassign .order based on new list position
+    for i, gid in ipairs(groupIds) do
+        db.groups[gid].order = i
+    end
+end
+
+local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
+    if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
+    if sourceIndex == dropIndex then return end
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not group then return end
+    local entry = table.remove(group.buttons, sourceIndex)
+    table.insert(group.buttons, dropIndex, entry)
+    -- Track selectedButton
+    if selectedButton == sourceIndex then
+        selectedButton = dropIndex
+    elseif selectedButton then
+        -- Adjust if the move shifted the selected index
+        if sourceIndex < selectedButton and dropIndex >= selectedButton then
+            selectedButton = selectedButton - 1
+        elseif sourceIndex > selectedButton and dropIndex <= selectedButton then
+            selectedButton = selectedButton + 1
+        end
+    end
+end
+
+local function CancelDrag()
+    if dragState then
+        if dragState.widget then
+            dragState.widget.frame:SetAlpha(1)
+        end
+    end
+    dragState = nil
+    HideDragIndicator()
+    if dragTracker then
+        dragTracker:SetScript("OnUpdate", nil)
+    end
+end
+
+local function FinishDrag()
+    if not dragState or dragState.phase ~= "active" then
+        CancelDrag()
+        return
+    end
+    local state = dragState
+    CancelDrag()
+    if state.kind == "group" then
+        PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
+        CooldownCompanion:RefreshConfigPanel()
+    elseif state.kind == "button" then
+        PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
+        CooldownCompanion:RefreshGroupFrame(state.groupId)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function StartDragTracking()
+    if not dragTracker then
+        dragTracker = CreateFrame("Frame", nil, UIParent)
+    end
+    dragTracker:SetScript("OnUpdate", function()
+        if not dragState then
+            dragTracker:SetScript("OnUpdate", nil)
+            return
+        end
+        if not IsMouseButtonDown("LeftButton") then
+            -- Mouse released
+            if dragState.phase == "active" then
+                FinishDrag()
+            else
+                -- Was just a click, not a drag — clear state
+                CancelDrag()
+            end
+            return
+        end
+        local cursorY = GetScaledCursorPosition(dragState.scrollWidget)
+        if dragState.phase == "pending" then
+            if math.abs(cursorY - dragState.startY) > DRAG_THRESHOLD then
+                dragState.phase = "active"
+                if dragState.widget then
+                    dragState.widget.frame:SetAlpha(0.4)
+                end
+            end
+        end
+        if dragState.phase == "active" then
+            local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
+                dragState.scrollWidget, cursorY,
+                dragState.childOffset or 0,
+                dragState.totalDraggable
+            )
+            dragState.dropIndex = dropIndex
+            ShowDragIndicator(anchorFrame, anchorAbove, dragState.scrollWidget)
+        end
+    end)
+end
+
+------------------------------------------------------------------------
 -- Forward declarations for refresh functions
 ------------------------------------------------------------------------
 local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
@@ -517,6 +703,7 @@ local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
 ------------------------------------------------------------------------
 function RefreshColumn1()
     if not col1Scroll then return end
+    CancelDrag()
     col1Scroll:ReleaseChildren()
 
     local db = CooldownCompanion.db.profile
@@ -558,22 +745,10 @@ function RefreshColumn1()
             btn:SetFullWidth(true)
             btn.frame:RegisterForClicks("AnyUp")
             btn:SetCallback("OnClick", function(widget, event, mouseButton)
+                -- Suppress click if a drag just finished
+                if dragState and dragState.phase == "active" then return end
                 if IsShiftKeyDown() then
-                    if mouseButton == "LeftButton" and listIndex > 1 then
-                        local prevId = groupIds[listIndex - 1]
-                        local prevOrder = db.groups[prevId].order or prevId
-                        local curOrder = group.order or groupId
-                        group.order = prevOrder
-                        db.groups[prevId].order = curOrder
-                        CooldownCompanion:RefreshConfigPanel()
-                    elseif mouseButton == "RightButton" and listIndex < #groupIds then
-                        local nextId = groupIds[listIndex + 1]
-                        local nextOrder = db.groups[nextId].order or nextId
-                        local curOrder = group.order or groupId
-                        group.order = nextOrder
-                        db.groups[nextId].order = curOrder
-                        CooldownCompanion:RefreshConfigPanel()
-                    elseif mouseButton == "MiddleButton" then
+                    if mouseButton == "MiddleButton" then
                         ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
                     end
                     return
@@ -594,11 +769,39 @@ function RefreshColumn1()
                 selectedButton = nil
                 CooldownCompanion:RefreshConfigPanel()
             end)
+
             local row = AceGUI:Create("SimpleGroup")
             row:SetFullWidth(true)
             row:SetLayout("Flow")
             row:AddChild(btn)
             col1Scroll:AddChild(row)
+
+            -- Hold-click drag reorder via handler-table HookScript pattern
+            -- Hook btn.frame (not row.frame) because the Button captures mouse events
+            local btnFrame = btn.frame
+            if not btnFrame._cdcDragHooked then
+                btnFrame._cdcDragHooked = true
+                btnFrame:HookScript("OnMouseDown", function(self, mouseBtn)
+                    if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
+                end)
+            end
+            btnFrame._cdcOnMouseDown = function(self, button)
+                if button == "LeftButton" and not IsShiftKeyDown() then
+                    local cursorY = GetScaledCursorPosition(col1Scroll)
+                    dragState = {
+                        kind = "group",
+                        phase = "pending",
+                        sourceIndex = listIndex,
+                        groupIds = groupIds,
+                        scrollWidget = col1Scroll,
+                        widget = row,
+                        startY = cursorY,
+                        childOffset = 0,
+                        totalDraggable = #groupIds,
+                    }
+                    StartDragTracking()
+                end
+            end
         end
     end
 
@@ -651,6 +854,7 @@ end
 ------------------------------------------------------------------------
 function RefreshColumn2()
     if not col2Scroll then return end
+    CancelDrag()
     col2Scroll:ReleaseChildren()
 
     if not selectedGroup then
@@ -715,6 +919,8 @@ function RefreshColumn2()
     col2Scroll:AddChild(sep)
 
     -- Spell/Item list
+    -- childOffset = 3 (inputBox, btnRow, sep are the first 3 children before draggable entries)
+    local numButtons = #group.buttons
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")
         entry:SetText(buttonData.name or ("Unknown " .. buttonData.type))
@@ -726,23 +932,16 @@ function RefreshColumn2()
         if selectedButton == i then
             entry:SetColor(0.4, 0.7, 1.0)
         end
-        entry:SetCallback("OnClick", function(widget, event, button)
-            if IsShiftKeyDown() then
-                if button == "LeftButton" and i > 1 then
-                    group.buttons[i], group.buttons[i - 1] = group.buttons[i - 1], group.buttons[i]
-                    if selectedButton == i then selectedButton = i - 1
-                    elseif selectedButton == i - 1 then selectedButton = i end
-                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                elseif button == "RightButton" and i < #group.buttons then
-                    group.buttons[i], group.buttons[i + 1] = group.buttons[i + 1], group.buttons[i]
-                    if selectedButton == i then selectedButton = i + 1
-                    elseif selectedButton == i + 1 then selectedButton = i end
-                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                return
-            end
+
+        -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
+        -- so that mousedown doesn't trigger selection; we handle clicks on mouseup instead
+        entry:SetCallback("OnClick", function() end)
+
+        -- Handle clicks via OnMouseUp with drag guard
+        local entryFrame = entry.frame
+        entryFrame:SetScript("OnMouseUp", function(self, button)
+            -- If a drag was active, suppress this click
+            if dragState and dragState.phase == "active" then return end
             if button == "LeftButton" then
                 selectedButton = i
                 CooldownCompanion:RefreshConfigPanel()
@@ -784,7 +983,33 @@ function RefreshColumn2()
                 ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
             end
         end)
+
         col2Scroll:AddChild(entry)
+
+        -- Hold-click drag reorder via handler-table HookScript pattern
+        if not entryFrame._cdcDragHooked then
+            entryFrame._cdcDragHooked = true
+            entryFrame:HookScript("OnMouseDown", function(self, mouseBtn)
+                if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
+            end)
+        end
+        entryFrame._cdcOnMouseDown = function(self, button)
+            if button == "LeftButton" then
+                local cursorY = GetScaledCursorPosition(col2Scroll)
+                dragState = {
+                    kind = "button",
+                    phase = "pending",
+                    sourceIndex = i,
+                    groupId = selectedGroup,
+                    scrollWidget = col2Scroll,
+                    widget = entry,
+                    startY = cursorY,
+                    childOffset = 3,
+                    totalDraggable = numButtons,
+                }
+                StartDragTracking()
+            end
+        end
     end
 
     -- Per-spell settings panel (when a spell is selected)
@@ -1575,7 +1800,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Left-click to select a group.", 1, 1, 1, true)
         GameTooltip:AddLine("Right-click to toggle lock/unlock.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to toggle enable/disable.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Left/Right-click to reorder.", 1, 1, 1, true)
+        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:AddLine("Shift+Middle-click to rename.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
@@ -1602,7 +1827,9 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Spells / Items")
         GameTooltip:AddLine("Enter a spell or item name/ID in the input box,", 1, 1, 1, true)
         GameTooltip:AddLine("then click Add Spell or Add Item to track it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:AddLine("Right-click an entry to remove it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to move to another group.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     infoBtn:SetScript("OnLeave", function()
