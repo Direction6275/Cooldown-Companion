@@ -387,6 +387,10 @@ local function TryAddSpell(input)
     end
 
     if spellId and spellName then
+        if not IsSpellKnownOrOverridesKnown(spellId) and not IsPlayerSpell(spellId) then
+            CooldownCompanion:Print("Spell not known: " .. spellName)
+            return false
+        end
         CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
@@ -413,6 +417,10 @@ local function TryAddItem(input)
     end
 
     if itemId then
+        if C_Item.GetItemCount(itemId, true) == 0 then
+            CooldownCompanion:Print("Item not in inventory: " .. (itemName or itemId))
+            return false
+        end
         CooldownCompanion:AddButtonToGroup(selectedGroup, "item", itemId, itemName or "Unknown Item")
         CooldownCompanion:Print("Added item: " .. (itemName or itemId))
         return true
@@ -876,6 +884,12 @@ function RefreshColumn2()
     inputBox:SetFullWidth(true)
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
         newInput = text
+        if newInput ~= "" and selectedGroup then
+            if TryAddSpell(newInput) or TryAddItem(newInput) then
+                newInput = ""
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end
     end)
     inputBox.editbox:HookScript("OnTextChanged", function(self, userInput)
         if userInput then
@@ -1825,10 +1839,10 @@ local function CreateConfigPanel()
     infoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Spells / Items")
-        GameTooltip:AddLine("Enter a spell or item name/ID in the input box,", 1, 1, 1, true)
-        GameTooltip:AddLine("then click Add Spell or Add Item to track it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Add a spell or item by name or ID.", 1, 1, 1, true)
+        GameTooltip:AddLine("Left-click to select.", 1, 1, 1, true)
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
-        GameTooltip:AddLine("Right-click an entry to remove it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Right-click to remove.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to move to another group.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
