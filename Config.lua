@@ -1299,6 +1299,63 @@ function RefreshColumn2()
             end)
             col2Scroll:AddChild(chargeYSlider)
         end
+
+        -- Aura Tracking per-spell settings
+        local auraHeading = AceGUI:Create("Heading")
+        auraHeading:SetText("Aura Tracking")
+        auraHeading:SetFullWidth(true)
+        col2Scroll:AddChild(auraHeading)
+
+        local auraTrackValues = {
+            default = "Use Group Default",
+            on = "Always On",
+            off = "Always Off",
+        }
+        local auraTrackDrop = AceGUI:Create("Dropdown")
+        auraTrackDrop:SetLabel("Track Aura")
+        auraTrackDrop:SetList(auraTrackValues, {"default", "on", "off"})
+        local currentAuraVal = "default"
+        if buttonData.auraEnabled == true then currentAuraVal = "on"
+        elseif buttonData.auraEnabled == false then currentAuraVal = "off" end
+        auraTrackDrop:SetValue(currentAuraVal)
+        auraTrackDrop:SetFullWidth(true)
+        auraTrackDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if val == "on" then
+                buttonData.auraEnabled = true
+            elseif val == "off" then
+                buttonData.auraEnabled = false
+            else
+                buttonData.auraEnabled = nil
+            end
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(auraTrackDrop)
+
+        local auraUnitValues = {
+            player = "Player",
+            target = "Target",
+        }
+        local auraUnitDrop = AceGUI:Create("Dropdown")
+        auraUnitDrop:SetLabel("Aura Unit")
+        auraUnitDrop:SetList(auraUnitValues, {"player", "target"})
+        auraUnitDrop:SetValue(buttonData.auraUnit or "player")
+        auraUnitDrop:SetFullWidth(true)
+        auraUnitDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraUnit = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(auraUnitDrop)
+
+        local auraIdBox = AceGUI:Create("EditBox")
+        auraIdBox:SetLabel("Aura Spell ID Override")
+        auraIdBox:SetText(buttonData.auraSpellId and tostring(buttonData.auraSpellId) or "")
+        auraIdBox:SetFullWidth(true)
+        auraIdBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            local id = tonumber(text)
+            buttonData.auraSpellId = id
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(auraIdBox)
     end
 
 end
@@ -1342,6 +1399,62 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(rangeCb)
 
+    -- Usability dimming
+    local unusableCb = AceGUI:Create("CheckBox")
+    unusableCb:SetLabel("Show Unusable Dimming")
+    unusableCb:SetValue(style.showUnusable or false)
+    unusableCb:SetFullWidth(true)
+    unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showUnusable = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(unusableCb)
+
+    if style.showUnusable then
+        local unusableColor = AceGUI:Create("ColorPicker")
+        unusableColor:SetLabel("Unusable Tint Color")
+        unusableColor:SetHasAlpha(false)
+        local uc = style.unusableColor or {0.3, 0.3, 0.6}
+        unusableColor:SetColor(uc[1], uc[2], uc[3])
+        unusableColor:SetFullWidth(true)
+        unusableColor:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+            style.unusableColor = {r, g, b}
+        end)
+        unusableColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+            style.unusableColor = {r, g, b}
+        end)
+        container:AddChild(unusableColor)
+    end
+
+    -- Loss of control
+    local locCb = AceGUI:Create("CheckBox")
+    locCb:SetLabel("Show Loss of Control")
+    locCb:SetValue(style.showLossOfControl or false)
+    locCb:SetFullWidth(true)
+    locCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showLossOfControl = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(locCb)
+
+    if style.showLossOfControl then
+        local locColor = AceGUI:Create("ColorPicker")
+        locColor:SetLabel("LoC Overlay Color")
+        locColor:SetHasAlpha(true)
+        local lc = style.lossOfControlColor or {1, 0, 0, 0.5}
+        locColor:SetColor(lc[1], lc[2], lc[3], lc[4])
+        locColor:SetFullWidth(true)
+        locColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.lossOfControlColor = {r, g, b, a}
+        end)
+        locColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.lossOfControlColor = {r, g, b, a}
+        end)
+        container:AddChild(locColor)
+    end
+
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
     tooltipCb:SetValue(style.showTooltips ~= false)
@@ -1351,6 +1464,91 @@ local function BuildExtrasTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(tooltipCb)
+
+    -- Aura Duration section
+    local auraHeading = AceGUI:Create("Heading")
+    auraHeading:SetText("Aura Duration")
+    auraHeading:SetFullWidth(true)
+    container:AddChild(auraHeading)
+
+    local auraCb = AceGUI:Create("CheckBox")
+    auraCb:SetLabel("Show Aura Duration")
+    auraCb:SetValue(style.showAuraDuration or false)
+    auraCb:SetFullWidth(true)
+    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraDuration = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraCb)
+
+    if style.showAuraDuration then
+        local auraTextCb = AceGUI:Create("CheckBox")
+        auraTextCb:SetLabel("Show Duration Text")
+        auraTextCb:SetValue(style.showAuraDurationText ~= false)
+        auraTextCb:SetFullWidth(true)
+        auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showAuraDurationText = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraTextCb)
+
+        local auraFontSlider = AceGUI:Create("Slider")
+        auraFontSlider:SetLabel("Duration Font Size")
+        auraFontSlider:SetSliderValues(6, 24, 1)
+        auraFontSlider:SetValue(style.auraDurationFontSize or 10)
+        auraFontSlider:SetFullWidth(true)
+        auraFontSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraDurationFontSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontSlider)
+
+        local auraSwipeColor = AceGUI:Create("ColorPicker")
+        auraSwipeColor:SetLabel("Swipe Color")
+        auraSwipeColor:SetHasAlpha(true)
+        local sc = style.auraDurationSwipeColor or {0.1, 0.6, 0.1, 0.4}
+        auraSwipeColor:SetColor(sc[1], sc[2], sc[3], sc[4])
+        auraSwipeColor:SetFullWidth(true)
+        auraSwipeColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.auraDurationSwipeColor = {r, g, b, a}
+        end)
+        auraSwipeColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.auraDurationSwipeColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraSwipeColor)
+    end
+
+    -- Proc Glow section
+    local procHeading = AceGUI:Create("Heading")
+    procHeading:SetText("Proc Glow")
+    procHeading:SetFullWidth(true)
+    container:AddChild(procHeading)
+
+    local procCb = AceGUI:Create("CheckBox")
+    procCb:SetLabel("Show Proc Glow")
+    procCb:SetValue(style.showProcGlow ~= false)
+    procCb:SetFullWidth(true)
+    procCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showProcGlow = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(procCb)
+
+    if style.showProcGlow ~= false then
+        local procSizeSlider = AceGUI:Create("Slider")
+        procSizeSlider:SetLabel("Glow Size")
+        procSizeSlider:SetSliderValues(0, 60, 1)
+        procSizeSlider:SetValue(style.procGlowOverhang or 32)
+        procSizeSlider:SetFullWidth(true)
+        procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.procGlowOverhang = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(procSizeSlider)
+    end
 
     -- Assisted Highlight section (last in Extras)
     local assistedHeading = AceGUI:Create("Heading")

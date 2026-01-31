@@ -226,6 +226,162 @@ local function SetAssistedHighlight(button, show)
     end
 end
 
+-- Show or hide loss-of-control overlay on a button.
+-- Caches state to avoid redundant show/hide calls.
+local function UpdateLossOfControl(button)
+    local style = button.style
+    local buttonData = button.buttonData
+    if not button.locOverlay then return end
+    local showLoc = false
+    if style.showLossOfControl and buttonData.type == "spell" then
+        local ok, start, duration = pcall(C_Spell.GetSpellLossOfControlCooldown, buttonData.id)
+        if ok and duration and duration > 0 then
+            showLoc = true
+        end
+    end
+    if button._locActive ~= showLoc then
+        button._locActive = showLoc
+        if showLoc then
+            button.locOverlay:Show()
+        else
+            button.locOverlay:Hide()
+        end
+    end
+end
+
+-- Show or hide proc glow on a button.
+-- Tracks state to avoid restarting animations each tick.
+local function SetProcGlow(button, show)
+    local frame = button.procGlow
+    if not frame then return end
+    if button._procGlowActive == show then return end
+    button._procGlowActive = show
+    if show then
+        frame:Show()
+        -- Skip the intro burst and go straight to the loop
+        if frame.ProcStartFlipbook then
+            frame.ProcStartFlipbook:SetAlpha(0)
+        end
+        if frame.ProcLoopFlipbook then
+            frame.ProcLoopFlipbook:SetAlpha(1)
+        end
+        if frame.ProcLoop then
+            frame.ProcLoop:Play()
+        end
+    else
+        if frame.ProcStartAnim then frame.ProcStartAnim:Stop() end
+        if frame.ProcLoop then frame.ProcLoop:Stop() end
+        frame:Hide()
+    end
+end
+
+-- Format a duration in seconds to a compact string (e.g. "8", "1m", "2h")
+local function FormatAuraDuration(remaining)
+    if remaining >= 3600 then
+        return math.floor(remaining / 3600) .. "h"
+    elseif remaining >= 60 then
+        return math.floor(remaining / 60) .. "m"
+    else
+        return math.floor(remaining + 0.5) .. ""
+    end
+end
+
+-- Update aura duration reverse swipe and time text on a button.
+local function UpdateAuraDuration(button)
+    local style = button.style
+    local buttonData = button.buttonData
+    if not button.auraCooldown then return end
+    if buttonData.type ~= "spell" then
+        if button._auraExpTime ~= 0 then
+            button._auraExpTime = 0
+            button.auraCooldown:Hide()
+            button.auraDurationText:SetText("")
+        end
+        return
+    end
+
+    -- Determine if aura tracking is enabled for this button
+    local enabled
+    if buttonData.auraEnabled == true then
+        enabled = true
+    elseif buttonData.auraEnabled == false then
+        enabled = false
+    else
+        enabled = style.showAuraDuration
+    end
+
+    if not enabled then
+        if button._auraExpTime ~= 0 then
+            button._auraExpTime = 0
+            button.auraCooldown:Hide()
+            button.auraDurationText:SetText("")
+        end
+        return
+    end
+
+    local auraSpellId = buttonData.auraSpellId or buttonData.id
+    local auraUnit = buttonData.auraUnit or "player"
+    local auraData
+
+    if auraUnit == "player" then
+        local ok, result = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraSpellId)
+        if ok then auraData = result end
+    else
+        -- Iterate target auras to find matching spellId
+        pcall(function()
+            for i = 1, 40 do
+                local data = C_UnitAuras.GetAuraDataByIndex("target", i, "HELPFUL")
+                if not data then break end
+                if data.spellId == auraSpellId then
+                    auraData = data
+                    return
+                end
+            end
+            for i = 1, 40 do
+                local data = C_UnitAuras.GetAuraDataByIndex("target", i, "HARMFUL")
+                if not data then break end
+                if data.spellId == auraSpellId then
+                    auraData = data
+                    return
+                end
+            end
+        end)
+    end
+
+    if auraData and auraData.duration and auraData.duration > 0 and auraData.expirationTime then
+        local expTime = auraData.expirationTime
+        if button._auraExpTime ~= expTime then
+            button._auraExpTime = expTime
+            button.auraCooldown:SetCooldown(expTime - auraData.duration, auraData.duration)
+            button.auraCooldown:Show()
+        end
+        -- Update time text every tick
+        if style.showAuraDurationText ~= false then
+            local remaining = expTime - GetTime()
+            if remaining < 0 then remaining = 0 end
+            local text = FormatAuraDuration(remaining)
+            if button._auraDurText ~= text then
+                button._auraDurText = text
+                button.auraDurationText:SetText(text)
+            end
+        else
+            if button._auraDurText ~= "" then
+                button._auraDurText = ""
+                button.auraDurationText:SetText("")
+            end
+        end
+    else
+        if button._auraExpTime ~= 0 then
+            button._auraExpTime = 0
+            button.auraCooldown:Hide()
+        end
+        if button._auraDurText ~= "" then
+            button._auraDurText = ""
+            button.auraDurationText:SetText("")
+        end
+    end
+end
+
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
 
@@ -279,6 +435,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
     
+    -- Loss of control overlay (red tint, above icon)
+    button.locOverlay = button:CreateTexture(nil, "ARTWORK", nil, 1)
+    button.locOverlay:SetAllPoints(button.icon)
+    button.locOverlay:SetColorTexture(unpack(style.lossOfControlColor or {1, 0, 0, 0.5}))
+    button.locOverlay:Hide()
+
     -- Border using textures (not BackdropTemplate which captures mouse)
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.borderTextures = {}
@@ -320,6 +482,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     procFrame:Hide()
     button.assistedHighlight.procFrame = procFrame
 
+    -- Proc glow frame (spell activation, separate from assisted highlight)
+    local procGlowFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procGlowFrame, button, style.procGlowOverhang or 32)
+    SetFrameClickThroughRecursive(procGlowFrame, true, true)
+    procGlowFrame:Hide()
+    button.procGlow = procGlowFrame
+
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
@@ -337,6 +506,26 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+
+    -- Aura duration reverse swipe (above cooldown swipe)
+    local name = button:GetName()
+    button.auraCooldown = CreateFrame("Cooldown", name.."AuraCooldown", button, "CooldownFrameTemplate")
+    button.auraCooldown:SetAllPoints(button.icon)
+    button.auraCooldown:SetDrawEdge(true)
+    button.auraCooldown:SetDrawSwipe(true)
+    button.auraCooldown:SetSwipeColor(unpack(style.auraDurationSwipeColor or {0.1, 0.6, 0.1, 0.4}))
+    button.auraCooldown:SetReverse(true)
+    button.auraCooldown:SetHideCountdownNumbers(true)
+    button.auraCooldown:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+    button.auraCooldown:Hide()
+    SetFrameClickThroughRecursive(button.auraCooldown, true, true)
+
+    -- Aura duration text (top-left)
+    button.auraDurationText = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.auraDurationText:SetFont("Fonts\\FRIZQT__.TTF", style.auraDurationFontSize or 10, "OUTLINE")
+    button.auraDurationText:SetPoint("TOPLEFT", 2, -2)
+    button.auraDurationText:SetTextColor(0.5, 1, 0.5, 1)
+    button.auraDurationText:SetText("")
 
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -401,6 +590,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         if button.assistedHighlight.procFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
         end
+    end
+    if button.procGlow then
+        SetFrameClickThroughRecursive(button.procGlow, true, true)
+    end
+    if button.auraCooldown then
+        SetFrameClickThroughRecursive(button.auraCooldown, true, true)
     end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
@@ -515,12 +710,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Out-of-range tinting (spells only), cached to skip redundant widget calls
+    -- Icon tinting priority: out-of-range red > unusable dimming > normal white
     local r, g, b = 1, 1, 1
     if style.showOutOfRange and buttonData.type == "spell" then
         local inRange = C_Spell.IsSpellInRange(buttonData.id, "target")
         if inRange == false then
             r, g, b = 1, 0.2, 0.2
+        end
+    end
+    if r == 1 and g == 1 and b == 1 and style.showUnusable and buttonData.type == "spell" then
+        local ok, isUsable, insufficientPower = pcall(C_Spell.IsSpellUsable, buttonData.id)
+        if ok and insufficientPower then
+            local uc = style.unusableColor or {0.3, 0.3, 0.6}
+            r, g, b = uc[1], uc[2], uc[3]
         end
     end
     if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
@@ -547,6 +749,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- If pcall failed (secret values), keep current text
     end
 
+    -- Loss of control overlay
+    UpdateLossOfControl(button)
+
     -- Assisted highlight glow
     if button.assistedHighlight then
         local assistedSpellID = CooldownCompanion.assistedSpellID
@@ -557,6 +762,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         SetAssistedHighlight(button, showHighlight)
     end
+
+    -- Proc glow (spell activation overlay, separate from assisted highlight)
+    if button.procGlow then
+        local showProc = false
+        if style.showProcGlow ~= false and buttonData.type == "spell" then
+            local ok, overlayed = pcall(C_SpellActivationOverlay.IsSpellOverlayed, buttonData.id)
+            if ok then showProc = overlayed or false end
+        end
+        SetProcGlow(button, showProc)
+    end
+
+    -- Aura duration reverse swipe + time text
+    UpdateAuraDuration(button)
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
@@ -584,6 +802,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
+    button._locActive = nil
+    button._procGlowActive = nil
+    button._auraExpTime = nil
+    button._auraDurText = nil
 
     button:SetSize(width, height)
 
@@ -668,6 +890,30 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         SetAssistedHighlight(button, false)
     end
 
+    -- Update loss of control overlay color
+    if button.locOverlay then
+        button.locOverlay:SetColorTexture(unpack(style.lossOfControlColor or {1, 0, 0, 0.5}))
+        button.locOverlay:Hide()
+    end
+
+    -- Update proc glow frame
+    if button.procGlow then
+        FitHighlightFrame(button.procGlow, button, style.procGlowOverhang or 32)
+        if button.procGlow.ProcStartAnim then button.procGlow.ProcStartAnim:Stop() end
+        if button.procGlow.ProcLoop then button.procGlow.ProcLoop:Stop() end
+        button.procGlow:Hide()
+    end
+
+    -- Update aura duration overlay
+    if button.auraCooldown then
+        button.auraCooldown:SetSwipeColor(unpack(style.auraDurationSwipeColor or {0.1, 0.6, 0.1, 0.4}))
+        button.auraCooldown:Hide()
+    end
+    if button.auraDurationText then
+        button.auraDurationText:SetFont("Fonts\\FRIZQT__.TTF", style.auraDurationFontSize or 10, "OUTLINE")
+        button.auraDurationText:SetText("")
+    end
+
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips ~= false
@@ -686,6 +932,12 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         if button.assistedHighlight.procFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
         end
+    end
+    if button.procGlow then
+        SetFrameClickThroughRecursive(button.procGlow, true, true)
+    end
+    if button.auraCooldown then
+        SetFrameClickThroughRecursive(button.auraCooldown, true, true)
     end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
