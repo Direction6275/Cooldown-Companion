@@ -276,28 +276,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
 
-    -- SetCooldown handles secret values internally (C-side API)
-    -- When showGCDSwipe is disabled, suppress short cooldowns (GCD ≤ 1.5s)
-    local hideGCD = style.showGCDSwipe == false
+    -- Always set cooldown first (C-side API handles secret values)
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
-                if hideGCD and cooldownInfo.duration and cooldownInfo.duration <= 1.5 then
-                    button.cooldown:SetCooldown(0, 0)
-                else
-                    button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                end
+                button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
             end
         elseif buttonData.type == "item" then
             local start, duration = C_Item.GetItemCooldown(buttonData.id)
-            if hideGCD and duration and duration <= 1.5 then
-                button.cooldown:SetCooldown(0, 0)
-            else
-                button.cooldown:SetCooldown(start, duration)
-            end
+            button.cooldown:SetCooldown(start, duration)
         end
     end)
+
+    -- Suppress GCD swipe separately so secret value errors don't block real cooldowns.
+    -- If the comparison fails (combat), the cooldown set above stays visible.
+    if style.showGCDSwipe == false then
+        pcall(function()
+            if buttonData.type == "spell" then
+                local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
+                if cooldownInfo and cooldownInfo.duration and cooldownInfo.duration <= 1.5 then
+                    button.cooldown:SetCooldown(0, 0)
+                end
+            elseif buttonData.type == "item" then
+                local _, duration = C_Item.GetItemCooldown(buttonData.id)
+                if duration and duration <= 1.5 then
+                    button.cooldown:SetCooldown(0, 0)
+                end
+            end
+        end)
+    end
 
     -- Handle desaturation separately so secret value errors don't break it.
     -- During combat, ALL cooldown values are secret (even for spells not on CD),
