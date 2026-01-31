@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - ButtonFrame
-    Individual button frames with cooldown animations and glow effects
+    Individual button frames with cooldown animations
 
     Note: WoW 12.0 "secret value" API blocks direct comparison of cooldown data.
     We pass values directly to SetCooldown and let the internal WoW code handle them.
@@ -12,78 +12,104 @@ local CooldownCompanion = ST.Addon
 -- Button Frame Pool
 local buttonPool = {}
 
+-- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
+-- Signs: 0 = zero offset, 1 = +size, -1 = -size
+local EDGE_ANCHOR_SPEC = {
+    {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "TOPRIGHT",     0, 0,  0, -1}, -- Top
+    {"TOPLEFT", "BOTTOMLEFT",  "BOTTOMRIGHT", "BOTTOMRIGHT",  0, 1,  0,  0}, -- Bottom
+    {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "BOTTOMLEFT",   0, 0,  1,  0}, -- Left
+    {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, 0,  0,  0}, -- Right
+}
+
+-- Apply edge positions to 4 border/highlight textures using the shared spec
+local function ApplyEdgePositions(textures, button, size)
+    for i, spec in ipairs(EDGE_ANCHOR_SPEC) do
+        local tex = textures[i]
+        tex:ClearAllPoints()
+        tex:SetPoint(spec[1], button, spec[2], spec[5] * size, spec[6] * size)
+        tex:SetPoint(spec[3], button, spec[4], spec[7] * size, spec[8] * size)
+    end
+end
+
 -- Helper function to make a frame click-through
 -- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
 -- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
 local function SetFrameClickThrough(frame, disableClicks, disableMotion)
     if not frame then return end
+    local inCombat = InCombatLockdown()
 
     if disableClicks then
         -- Disable mouse click interaction for camera pass-through
-        if frame.SetMouseClickEnabled then
-            frame:SetMouseClickEnabled(false)
+        -- SetMouseClickEnabled and SetPropagateMouseClicks are protected in combat
+        if not inCombat then
+            if frame.SetMouseClickEnabled then
+                frame:SetMouseClickEnabled(false)
+            end
+            if frame.SetPropagateMouseClicks then
+                frame:SetPropagateMouseClicks(true)
+            end
+            if frame.RegisterForClicks then
+                frame:RegisterForClicks()
+            end
+            if frame.RegisterForDrag then
+                frame:RegisterForDrag()
+            end
         end
-        if frame.SetPropagateMouseClicks then
-            frame:SetPropagateMouseClicks(true)
-        end
-        -- Unregister click/drag events
-        if frame.RegisterForClicks then
-            frame:RegisterForClicks()
-        end
-        if frame.RegisterForDrag then
-            frame:RegisterForDrag()
-        end
-        -- Clear click scripts
         frame:SetScript("OnMouseDown", nil)
         frame:SetScript("OnMouseUp", nil)
     else
-        if frame.SetMouseClickEnabled then
-            frame:SetMouseClickEnabled(true)
-        end
-        if frame.SetPropagateMouseClicks then
-            frame:SetPropagateMouseClicks(false)
+        if not inCombat then
+            if frame.SetMouseClickEnabled then
+                frame:SetMouseClickEnabled(true)
+            end
+            if frame.SetPropagateMouseClicks then
+                frame:SetPropagateMouseClicks(false)
+            end
         end
     end
 
     if disableMotion then
         -- Disable mouse motion (hover) events
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(false)
+        if not inCombat then
+            if frame.SetMouseMotionEnabled then
+                frame:SetMouseMotionEnabled(false)
+            end
+            if frame.SetPropagateMouseMotion then
+                frame:SetPropagateMouseMotion(true)
+            end
         end
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(true)
-        end
-        -- Clear hover scripts
         frame:SetScript("OnEnter", nil)
         frame:SetScript("OnLeave", nil)
     else
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(true)
-        end
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(false)
+        if not inCombat then
+            if frame.SetMouseMotionEnabled then
+                frame:SetMouseMotionEnabled(true)
+            end
+            if frame.SetPropagateMouseMotion then
+                frame:SetPropagateMouseMotion(false)
+            end
         end
     end
 
     -- EnableMouse must be true if we want motion events (tooltips)
     -- Only fully disable if both clicks and motion are disabled
-    if disableClicks and disableMotion then
-        frame:EnableMouse(false)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
-        end
-        frame:EnableKeyboard(false)
-    elseif not disableClicks and not disableMotion then
-        frame:EnableMouse(true)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(0, 0, 0, 0)
-        end
-    else
-        -- Mixed mode: clicks disabled but motion enabled (or vice versa)
-        -- EnableMouse must be true for motion events to fire
-        frame:EnableMouse(true)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(0, 0, 0, 0)
+    if not inCombat then
+        if disableClicks and disableMotion then
+            frame:EnableMouse(false)
+            if frame.SetHitRectInsets then
+                frame:SetHitRectInsets(10000, 10000, 10000, 10000)
+            end
+            frame:EnableKeyboard(false)
+        elseif not disableClicks and not disableMotion then
+            frame:EnableMouse(true)
+            if frame.SetHitRectInsets then
+                frame:SetHitRectInsets(0, 0, 0, 0)
+            end
+        else
+            frame:EnableMouse(true)
+            if frame.SetHitRectInsets then
+                frame:SetHitRectInsets(0, 0, 0, 0)
+            end
         end
     end
 end
@@ -97,55 +123,105 @@ local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion
     end
 end
 
--- Glow functions (using LibCustomGlow if available, otherwise fallback)
-local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
+-- Fit a Blizzard highlight template frame to a button.
+-- The flipbook texture must overhang the button edges to create the border effect.
+-- Original template: 45x45 frame, 66x66 texture => ~23% overhang per side.
+local function FitHighlightFrame(frame, button, overhangPct)
+    local w, h = button:GetSize()
+    local overhang = math.max(w, h) * (overhangPct or 32) / 100
 
-local function ShowPixelGlow(frame, color)
-    if LCG then
-        LCG.PixelGlow_Start(frame, color, nil, nil, nil, nil, nil, nil, nil, "CooldownCompanionGlow")
-    else
-        -- Fallback: simple border glow
-        if not frame.glowBorder then
-            frame.glowBorder = frame:CreateTexture(nil, "OVERLAY")
-            frame.glowBorder:SetAllPoints()
-            frame.glowBorder:SetColorTexture(1, 1, 0, 0.5)
-            frame.glowBorder:SetBlendMode("ADD")
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", button, "CENTER")
+    frame:SetSize(w, h)
+
+    -- Resize child regions (flipbook textures) to overhang the frame edges
+    for _, region in ipairs({frame:GetRegions()}) do
+        if region.ClearAllPoints then
+            region:ClearAllPoints()
+            region:SetPoint("CENTER", frame, "CENTER")
+            region:SetSize(w + overhang * 2, h + overhang * 2)
         end
-        frame.glowBorder:Show()
     end
-end
-
-local function ShowActionGlow(frame, color)
-    if LCG then
-        LCG.AutoCastGlow_Start(frame, color, nil, nil, nil, nil, "CooldownCompanionGlow")
-    else
-        ShowPixelGlow(frame, color)
-    end
-end
-
-local function ShowProcGlow(frame, color)
-    if LCG then
-        LCG.ButtonGlow_Start(frame, color, nil, "CooldownCompanionGlow")
-    else
-        if ActionButton_ShowOverlayGlow then
-            ActionButton_ShowOverlayGlow(frame)
-        else
-            ShowPixelGlow(frame, color)
+    -- Also handle textures nested inside child frames
+    for _, child in ipairs({frame:GetChildren()}) do
+        child:ClearAllPoints()
+        child:SetPoint("CENTER", frame, "CENTER")
+        child:SetSize(w + overhang * 2, h + overhang * 2)
+        for _, region in ipairs({child:GetRegions()}) do
+            if region.ClearAllPoints then
+                region:ClearAllPoints()
+                region:SetAllPoints(child)
+            end
         end
     end
 end
 
-local function HideGlow(frame)
-    if LCG then
-        LCG.PixelGlow_Stop(frame, "CooldownCompanionGlow")
-        LCG.AutoCastGlow_Stop(frame, "CooldownCompanionGlow")
-        LCG.ButtonGlow_Stop(frame, "CooldownCompanionGlow")
-    else
-        if frame.glowBorder then
-            frame.glowBorder:Hide()
+-- Show or hide assisted highlight on a button based on the selected style.
+-- Tracks current state to avoid restarting animations every tick.
+local function SetAssistedHighlight(button, show)
+    local hl = button.assistedHighlight
+    if not hl then return end
+    local highlightStyle = button.style and button.style.assistedHighlightStyle or "blizzard"
+
+    -- Determine desired state, including color in cache key for solid style
+    -- so color changes via settings invalidate the cache
+    local colorKey
+    if show and highlightStyle == "solid" then
+        local c = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        colorKey = string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4])
+    end
+    local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
+
+    -- Skip show/hide if state hasn't changed (prevents animation restarts)
+    if hl.currentState == desiredState then return end
+    hl.currentState = desiredState
+
+    -- Hide all styles (only hide parent frames, not individual textures —
+    -- template animations control alpha on child textures internally)
+    for _, tex in ipairs(hl.solidTextures or {}) do
+        tex:Hide()
+    end
+    if hl.blizzardFrame then
+        if hl.blizzardFrame.Flipbook and hl.blizzardFrame.Flipbook.Anim then
+            hl.blizzardFrame.Flipbook.Anim:Stop()
         end
-        if ActionButton_HideOverlayGlow then
-            ActionButton_HideOverlayGlow(frame)
+        hl.blizzardFrame:Hide()
+    end
+    if hl.procFrame then
+        if hl.procFrame.ProcStartAnim then hl.procFrame.ProcStartAnim:Stop() end
+        if hl.procFrame.ProcLoop then hl.procFrame.ProcLoop:Stop() end
+        hl.procFrame:Hide()
+    end
+
+    if not show then return end
+
+    -- Show the selected style
+    if highlightStyle == "solid" then
+        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        for _, tex in ipairs(hl.solidTextures) do
+            tex:SetColorTexture(unpack(color))
+            tex:Show()
+        end
+    elseif highlightStyle == "blizzard" then
+        if hl.blizzardFrame then
+            hl.blizzardFrame:Show()
+            if hl.blizzardFrame.Flipbook and hl.blizzardFrame.Flipbook.Anim then
+                hl.blizzardFrame.Flipbook.Anim:Play()
+            end
+        end
+    elseif highlightStyle == "proc" then
+        if hl.procFrame then
+            hl.procFrame:Show()
+            -- Skip the intro burst (ProcStartAnim) and go straight to the loop
+            if hl.procFrame.ProcStartFlipbook then
+                hl.procFrame.ProcStartFlipbook:SetAlpha(0)
+            end
+            if hl.procFrame.ProcLoopFlipbook then
+                hl.procFrame.ProcLoopFlipbook:SetAlpha(1)
+            end
+            if hl.procFrame.ProcLoop then
+                hl.procFrame.ProcLoop:Play()
+            end
         end
     end
 end
@@ -207,21 +283,42 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.borderTextures = {}
 
-    -- Create 4 edge textures for border
-    local edges = {
-        {point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = -borderSize}, -- Top
-        {point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = borderSize, x2 = 0, y2 = 0}, -- Bottom
-        {point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = borderSize, y2 = 0}, -- Left
-        {point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = -borderSize, y1 = 0, x2 = 0, y2 = 0}, -- Right
-    }
-
-    for i, edge in ipairs(edges) do
+    -- Create 4 edge textures for border using shared anchor spec
+    for i = 1, 4 do
         local tex = button:CreateTexture(nil, "OVERLAY")
-        tex:SetPoint(edge.point1, button, edge.point1, edge.x1, edge.y1)
-        tex:SetPoint(edge.point2, button, edge.point2, edge.x2, edge.y2)
         tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
+    ApplyEdgePositions(button.borderTextures, button, borderSize)
+
+    -- Assisted highlight overlays (multiple styles, all hidden by default)
+    button.assistedHighlight = {}
+
+    -- Solid border: 4 edge textures
+    local highlightSize = style.assistedHighlightBorderSize or 2
+    local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+    button.assistedHighlight.solidTextures = {}
+    for i = 1, 4 do
+        local tex = button:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:SetColorTexture(unpack(hlColor))
+        tex:Hide()
+        button.assistedHighlight.solidTextures[i] = tex
+    end
+    ApplyEdgePositions(button.assistedHighlight.solidTextures, button, highlightSize)
+
+    -- Blizzard assisted combat highlight (marching ants flipbook)
+    local blizzFrame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatHighlightTemplate")
+    FitHighlightFrame(blizzFrame, button, style.assistedHighlightBlizzardOverhang)
+    SetFrameClickThroughRecursive(blizzFrame, true, true)
+    blizzFrame:Hide()
+    button.assistedHighlight.blizzardFrame = blizzFrame
+
+    -- Proc glow (spell activation alert flipbook)
+    local procFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procFrame, button, style.assistedHighlightProcOverhang)
+    SetFrameClickThroughRecursive(procFrame, true, true)
+    procFrame:Hide()
+    button.assistedHighlight.procFrame = procFrame
 
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
@@ -230,6 +327,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+    -- Clear desaturation when cooldown expires (C-side callback, works during combat)
+    button.cooldown:SetScript("OnCooldownDone", function()
+        if button.style and button.style.desaturateOnCooldown then
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+        end
+    end)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
@@ -245,8 +349,22 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     
     -- Stack count text (for items)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     button.count:SetText("")
+
+    -- Apply custom charge text font/anchor settings from per-button data
+    if buttonData.hasCharges then
+        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFontSize = buttonData.chargeFontSize or 12
+        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+
+        local chargeAnchor = buttonData.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = buttonData.chargeXOffset or -2
+        local chargeYOffset = buttonData.chargeYOffset or 2
+        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    else
+        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
     
     -- Store button data
     button.buttonData = buttonData
@@ -261,10 +379,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonCooldown(self)
     end
     
-    button.SetGlow = function(self, show)
-        CooldownCompanion:SetButtonGlow(self, show)
-    end
-    
     button.UpdateStyle = function(self, newStyle)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
@@ -277,6 +391,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
+    -- Re-apply full click-through on overlay frames (the recursive call above
+    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.assistedHighlight then
+        if button.assistedHighlight.blizzardFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
+        end
+        if button.assistedHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
+        end
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -319,54 +444,104 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
-    local isOnCooldown = false
 
-    -- Use pcall and avoid ANY Lua operations on returned values
-    -- Secret values can only be passed directly to Blizzard functions
+    -- Fetch cooldown values once (may be secret during combat)
+    local cdStart, cdDuration, fetchOk, isOnGCD, isRealCD
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
-                -- Pass values directly to SetCooldown - it handles secret values internally
-                button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                -- Check if on cooldown for desaturation (duration > 1.5 to ignore GCD)
-                isOnCooldown = cooldownInfo.duration and cooldownInfo.duration > 1.5
+                cdStart = cooldownInfo.startTime
+                cdDuration = cooldownInfo.duration
+                isOnGCD = cooldownInfo.isOnGCD
+                isRealCD = cooldownInfo.duration and cooldownInfo.duration > 0
+                    and not cooldownInfo.isOnGCD
+                fetchOk = true
             end
         elseif buttonData.type == "item" then
-            local start, duration = C_Item.GetItemCooldown(buttonData.id)
-            -- Pass values directly without any nil checks on the values themselves
-            button.cooldown:SetCooldown(start, duration)
-            -- Check if on cooldown for desaturation
-            isOnCooldown = duration and duration > 1.5
+            cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+            isRealCD = cdDuration and cdDuration > 1.5
+            fetchOk = true
         end
     end)
 
-    -- Handle desaturation based on cooldown state
-    if style.desaturateOnCooldown then
-        button.icon:SetDesaturated(isOnCooldown)
-    else
-        button.icon:SetDesaturated(false)
-    end
-end
+    if fetchOk then
+        -- Suppress GCD swipe using the isOnGCD flag from the cooldown API.
+        -- This directly indicates the spell's cooldown is the GCD, not a real CD.
+        local suppressGCD = style.showGCDSwipe == false and isOnGCD
 
-function CooldownCompanion:SetButtonGlow(button, show)
-    if show == nil then
-        show = button.buttonData.showGlow
-    end
-    
-    if show then
-        local glowType = button.buttonData.glowType or "pixel"
-        local glowColor = button.buttonData.glowColor or {1, 1, 0, 1}
-        
-        if glowType == "pixel" then
-            ShowPixelGlow(button, glowColor)
-        elseif glowType == "action" then
-            ShowActionGlow(button, glowColor)
-        elseif glowType == "proc" then
-            ShowProcGlow(button, glowColor)
+        if suppressGCD then
+            button.cooldown:Hide()
+        else
+            if not button.cooldown:IsShown() then
+                button.cooldown:Show()
+            end
+            button.cooldown:SetCooldown(cdStart, cdDuration)
         end
+    end
+
+    -- Desaturation: reuse cooldown data from the single fetch above.
+    -- During combat, ALL cooldown values are secret (even for spells not on CD),
+    -- so pcall failure alone can't determine cooldown state. On failure we keep
+    -- the current desaturation state. Spells cast during combat are desaturated
+    -- via OnSpellCast -> DesaturateSpellOnCast instead.
+    if style.desaturateOnCooldown then
+        if fetchOk then
+            local wantDesat = isRealCD or false
+            if button._desaturated ~= wantDesat then
+                button._desaturated = wantDesat
+                button.icon:SetDesaturated(wantDesat)
+            end
+        end
+        -- If fetch failed (secret values), keep current desaturation state
     else
-        HideGlow(button)
+        if button._desaturated ~= false then
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+        end
+    end
+
+    -- Out-of-range tinting (spells only), cached to skip redundant widget calls
+    local r, g, b = 1, 1, 1
+    if style.showOutOfRange and buttonData.type == "spell" then
+        local inRange = C_Spell.IsSpellInRange(buttonData.id, "target")
+        if inRange == false then
+            r, g, b = 1, 0.2, 0.2
+        end
+    end
+    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
+        button._vertexR, button._vertexG, button._vertexB = r, g, b
+        button.icon:SetVertexColor(r, g, b)
+    end
+
+    -- Charge count (spells with hasCharges enabled only)
+    -- Wrapped in pcall because charge fields are secret values during combat
+    if buttonData.type == "spell" and buttonData.hasCharges then
+        local ok, text = pcall(function()
+            local charges = C_Spell.GetSpellCharges(buttonData.id)
+            if charges and charges.maxCharges > 1 then
+                return charges.currentCharges
+            end
+        end)
+        if ok then
+            local newText = text or ""
+            if button._chargeText ~= newText then
+                button._chargeText = newText
+                button.count:SetText(newText)
+            end
+        end
+        -- If pcall failed (secret values), keep current text
+    end
+
+    -- Assisted highlight glow
+    if button.assistedHighlight then
+        local assistedSpellID = CooldownCompanion.assistedSpellID
+        local showHighlight = style.showAssistedHighlight
+            and buttonData.type == "spell"
+            and assistedSpellID
+            and buttonData.id == assistedSpellID
+
+        SetAssistedHighlight(button, showHighlight)
     end
 end
 
@@ -388,6 +563,13 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Store updated style reference
     button.style = style
+
+    -- Invalidate cached widget state so next tick reapplies everything
+    button._desaturated = nil
+    button._vertexR = nil
+    button._vertexG = nil
+    button._vertexB = nil
+    button._chargeText = nil
 
     button:SetSize(width, height)
 
@@ -421,17 +603,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update border textures
     local borderColor = style.borderColor or {0, 0, 0, 1}
     if button.borderTextures then
-        -- Update positions for new border size
-        local edges = {
-            {point1 = "TOPLEFT", point2 = "TOPRIGHT", x1 = 0, y1 = 0, x2 = 0, y2 = -borderSize}, -- Top
-            {point1 = "BOTTOMLEFT", point2 = "BOTTOMRIGHT", x1 = 0, y1 = borderSize, x2 = 0, y2 = 0}, -- Bottom
-            {point1 = "TOPLEFT", point2 = "BOTTOMLEFT", x1 = 0, y1 = 0, x2 = borderSize, y2 = 0}, -- Left
-            {point1 = "TOPRIGHT", point2 = "BOTTOMRIGHT", x1 = -borderSize, y1 = 0, x2 = 0, y2 = 0}, -- Right
-        }
-        for i, tex in ipairs(button.borderTextures) do
-            tex:ClearAllPoints()
-            tex:SetPoint(edges[i].point1, button, edges[i].point1, edges[i].x1, edges[i].y1)
-            tex:SetPoint(edges[i].point2, button, edges[i].point2, edges[i].x2, edges[i].y2)
+        ApplyEdgePositions(button.borderTextures, button, borderSize)
+        for _, tex in ipairs(button.borderTextures) do
             tex:SetColorTexture(unpack(borderColor))
         end
     end
@@ -451,6 +624,36 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
     end
 
+    -- Update charge text font/anchor settings from per-button data
+    button.count:ClearAllPoints()
+    if button.buttonData and button.buttonData.hasCharges then
+        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFontSize = button.buttonData.chargeFontSize or 12
+        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+
+        local chargeAnchor = button.buttonData.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = button.buttonData.chargeXOffset or -2
+        local chargeYOffset = button.buttonData.chargeYOffset or 2
+        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    else
+        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+
+    -- Update highlight overlay positions and hide all
+    if button.assistedHighlight then
+        local highlightSize = style.assistedHighlightBorderSize or 2
+        ApplyEdgePositions(button.assistedHighlight.solidTextures, button, highlightSize)
+        if button.assistedHighlight.blizzardFrame then
+            FitHighlightFrame(button.assistedHighlight.blizzardFrame, button, style.assistedHighlightBlizzardOverhang)
+        end
+        if button.assistedHighlight.procFrame then
+            FitHighlightFrame(button.assistedHighlight.procFrame, button, style.assistedHighlightProcOverhang)
+        end
+        button.assistedHighlight.currentState = nil -- reset so next tick re-applies
+        SetAssistedHighlight(button, false)
+    end
+
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips ~= false
@@ -459,6 +662,17 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
+    -- Re-apply full click-through on overlay frames (the recursive call above
+    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.assistedHighlight then
+        if button.assistedHighlight.blizzardFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
+        end
+        if button.assistedHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
+        end
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then

@@ -81,6 +81,132 @@ local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion
     end
 end
 
+-- Nudger constants
+local NUDGE_BTN_SIZE = 14
+local NUDGE_REPEAT_DELAY = 0.5
+local NUDGE_REPEAT_INTERVAL = 0.05
+
+-- Create 4 pixel-perfect border textures using PixelUtil (replaces backdrop edgeFile)
+local function CreatePixelBorders(frame, r, g, b, a)
+    r, g, b, a = r or 0, g or 0, b or 0, a or 1
+
+    local top = frame:CreateTexture(nil, "BORDER")
+    top:SetColorTexture(r, g, b, a)
+    PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
+    PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    PixelUtil.SetHeight(top, 1, 1)
+
+    local bottom = frame:CreateTexture(nil, "BORDER")
+    bottom:SetColorTexture(r, g, b, a)
+    PixelUtil.SetPoint(bottom, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    PixelUtil.SetPoint(bottom, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    PixelUtil.SetHeight(bottom, 1, 1)
+
+    local left = frame:CreateTexture(nil, "BORDER")
+    left:SetColorTexture(r, g, b, a)
+    PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
+    PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    PixelUtil.SetWidth(left, 1, 1)
+
+    local right = frame:CreateTexture(nil, "BORDER")
+    right:SetColorTexture(r, g, b, a)
+    PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    PixelUtil.SetWidth(right, 1, 1)
+
+    frame.borderTextures = { top, bottom, left, right }
+end
+
+local function CreateNudger(frame, groupId)
+    local NUDGE_GAP = 2
+
+    local nudger = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
+    nudger:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
+    nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
+    nudger:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 5)
+    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    CreatePixelBorders(nudger)
+
+    local directions = {
+        { rotation = math.pi / 2,   anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
+        { rotation = -math.pi / 2,  anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },  -- down
+        { rotation = math.pi,       anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },          -- left
+        { rotation = 0,             anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
+    }
+
+    for _, dir in ipairs(directions) do
+        local btn = CreateFrame("Button", nil, nudger)
+        btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
+        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
+        btn:EnableMouse(true)
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetTexture("Interface\\CHATFRAME\\ChatFrameExpandArrow")
+        arrow:SetAllPoints()
+        arrow:SetRotation(dir.rotation)
+        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        btn.arrow = arrow
+
+        -- Hover highlight
+        btn:SetScript("OnEnter", function(self)
+            self.arrow:SetVertexColor(1, 1, 1, 1)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+            -- Cancel any hold-to-repeat timers
+            if self.nudgeDelayTimer then
+                self.nudgeDelayTimer:Cancel()
+                self.nudgeDelayTimer = nil
+            end
+            if self.nudgeTicker then
+                self.nudgeTicker:Cancel()
+                self.nudgeTicker = nil
+            end
+            CooldownCompanion:SaveGroupPosition(groupId)
+        end)
+
+        local function DoNudge()
+            local group = CooldownCompanion.db.profile.groups[groupId]
+            if not group then return end
+            local gFrame = CooldownCompanion.groupFrames[groupId]
+            if gFrame then
+                gFrame:AdjustPointsOffset(dir.dx, dir.dy)
+                -- Read the actual frame position so display stays in sync
+                local _, _, _, x, y = gFrame:GetPoint()
+                group.anchor.x = x
+                group.anchor.y = y
+                UpdateCoordLabel(gFrame, x, y)
+            end
+        end
+
+        btn:SetScript("OnMouseDown", function(self)
+            DoNudge()
+            -- Start hold-to-repeat after delay
+            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
+                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
+                    DoNudge()
+                end)
+            end)
+        end)
+
+        btn:SetScript("OnMouseUp", function(self)
+            if self.nudgeDelayTimer then
+                self.nudgeDelayTimer:Cancel()
+                self.nudgeDelayTimer = nil
+            end
+            if self.nudgeTicker then
+                self.nudgeTicker:Cancel()
+                self.nudgeTicker = nil
+            end
+            CooldownCompanion:SaveGroupPosition(groupId)
+        end)
+    end
+
+    return nudger
+end
+
 function CooldownCompanion:CreateGroupFrame(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return end
@@ -99,34 +225,46 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     
     -- Make it movable when unlocked
     frame:SetMovable(true)
-    frame:EnableMouse(not self.db.profile.locked)
+    frame:EnableMouse(not group.locked)
     frame:RegisterForDrag("LeftButton")
     
     -- Drag handle (visible when unlocked)
     frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.dragHandle:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 15)
-    frame.dragHandle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 15)
+    frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
+    frame.dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
     frame.dragHandle:SetHeight(15)
-    frame.dragHandle:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
+    frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     frame.dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    frame.dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
+    CreatePixelBorders(frame.dragHandle)
     
     frame.dragHandle.text = frame.dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.dragHandle.text:SetPoint("CENTER")
     frame.dragHandle.text:SetText(group.name)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
     
-    if self.db.profile.locked then
+    -- Pixel nudger (parented to dragHandle, inherits show/hide)
+    frame.nudger = CreateNudger(frame, groupId)
+
+    -- Coordinate label (parented to dragHandle so it hides when locked)
+    frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    frame.coordLabel:SetHeight(15)
+    frame.coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
+    frame.coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
+    frame.coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    frame.coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    CreatePixelBorders(frame.coordLabel)
+    frame.coordLabel.text = frame.coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.coordLabel.text:SetPoint("CENTER")
+    frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
+
+    if group.locked then
         frame.dragHandle:Hide()
     end
-    
+
     -- Drag scripts
     frame:SetScript("OnDragStart", function(self)
-        if not CooldownCompanion.db.profile.locked then
+        local g = CooldownCompanion.db.profile.groups[self.groupId]
+        if g and not g.locked then
             self:StartMoving()
         end
     end)
@@ -140,7 +278,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
-        if not CooldownCompanion.db.profile.locked then
+        local g = CooldownCompanion.db.profile.groups[groupId]
+        if g and not g.locked then
             frame:StartMoving()
         end
     end)
@@ -176,6 +315,12 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     return frame
 end
 
+local function UpdateCoordLabel(frame, x, y)
+    if frame.coordLabel then
+        frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+    end
+end
+
 function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     frame:ClearAllPoints()
 
@@ -190,6 +335,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
         local relativeFrame = _G[relativeTo]
         if relativeFrame then
             frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
+            UpdateCoordLabel(frame, anchor.x, anchor.y)
             -- Store reference for alpha inheritance
             frame.anchoredToParent = relativeFrame
             -- Set up alpha sync
@@ -212,6 +358,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
                         y = 0,
                     }
                 end
+                UpdateCoordLabel(frame, 0, 0)
                 return
             end
         end
@@ -220,6 +367,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     -- Anchor to UIParent using saved position (preserves position across reloads)
     frame:SetAlpha(1)
     frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+    UpdateCoordLabel(frame, anchor.x, anchor.y)
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
@@ -242,11 +390,11 @@ end
 function CooldownCompanion:SaveGroupPosition(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not frame or not group then return end
-    
+
     local point, relativeTo, relativePoint, x, y = frame:GetPoint()
-    
+
     group.anchor = {
         point = point,
         relativeTo = relativeTo and relativeTo:GetName() or "UIParent",
@@ -254,6 +402,7 @@ function CooldownCompanion:SaveGroupPosition(groupId)
         x = x,
         y = y,
     }
+    UpdateCoordLabel(frame, x, y)
 end
 
 function CooldownCompanion:PopulateGroupButtons(groupId)
@@ -379,11 +528,19 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         self:PopulateGroupButtons(groupId)
     end
     
-    -- Update drag handle text
-    if frame.dragHandle and frame.dragHandle.text then
-        frame.dragHandle.text:SetText(group.name)
+    -- Update drag handle text and lock state
+    if frame.dragHandle then
+        if frame.dragHandle.text then
+            frame.dragHandle.text:SetText(group.name)
+        end
+        if group.locked then
+            frame.dragHandle:Hide()
+        else
+            frame.dragHandle:Show()
+        end
     end
-    
+    self:UpdateGroupClickthrough(groupId)
+
     -- Update visibility
     if group.enabled then
         frame:Show()
@@ -462,10 +619,13 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     -- When locked: group container is always fully non-interactive
     -- When unlocked: enable everything for dragging
-    if self.db.profile.locked then
+    if group.locked then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
+        end
+        if frame.nudger then
+            SetFrameClickThrough(frame.nudger, true, true)
         end
     else
         SetFrameClickThrough(frame, false, false)
@@ -474,6 +634,10 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
             frame.dragHandle:RegisterForDrag("LeftButton")
+        end
+        if frame.nudger then
+            SetFrameClickThrough(frame.nudger, false, false)
+            frame.nudger:EnableMouse(true)
         end
     end
 end

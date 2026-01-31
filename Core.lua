@@ -27,12 +27,7 @@ local minimapButton = LDB:NewDataObject(ADDON_NAME, {
     icon = "Interface\\AddOns\\CooldownCompanion\\Media\\cdcminimap",
     OnClick = function(self, button)
         if button == "LeftButton" then
-            local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-            if AceConfigDialog.OpenFrames[ADDON_NAME] then
-                AceConfigDialog:Close(ADDON_NAME)
-            else
-                AceConfigDialog:Open(ADDON_NAME)
-            end
+            CooldownCompanion:ToggleConfig()
         end
     end,
     OnTooltipShow = function(tooltip)
@@ -63,9 +58,6 @@ local defaults = {
                             type = "spell" or "item",
                             id = spellId or itemId,
                             name = "Spell/Item Name",
-                            showGlow = false,
-                            glowType = "pixel", -- "pixel", "action", "proc"
-                            glowColor = {1, 1, 0, 1},
                         }
                     },
                     style = {
@@ -84,6 +76,14 @@ local defaults = {
                         maintainAspectRatio = false, -- Prevent icon image stretching
                         showTooltips = true,
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
+                        showGCDSwipe = true, -- Show GCD swipe animation on icons
+                        showOutOfRange = false, -- Red-tint icons when target is out of range
+                        showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
+                        assistedHighlightStyle = "blizzard", -- "blizzard", "solid", or "proc"
+                        assistedHighlightColor = {0.3, 1, 0.3, 0.9},
+                        assistedHighlightBorderSize = 2,
+                        assistedHighlightBlizzardOverhang = 32, -- % overhang for blizzard style
+                        assistedHighlightProcOverhang = 32, -- % overhang for proc style
                     },
                     enabled = true,
                 }
@@ -102,6 +102,14 @@ local defaults = {
             maintainAspectRatio = false,
             showTooltips = true,
             desaturateOnCooldown = false,
+            showGCDSwipe = true,
+            showOutOfRange = false,
+            showAssistedHighlight = false,
+            assistedHighlightStyle = "blizzard",
+            assistedHighlightColor = {0.3, 1, 0.3, 0.9},
+            assistedHighlightBorderSize = 2,
+            assistedHighlightBlizzardOverhang = 32,
+            assistedHighlightProcOverhang = 32,
         },
         locked = false,
     },
@@ -128,26 +136,44 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Type /cdc for options.")
 end
 
+-- Pre-defined at file scope to avoid creating a closure every tick
+local function FetchAssistedSpell()
+    return C_AssistedCombat and C_AssistedCombat.GetNextCastSpell()
+end
+
 function CooldownCompanion:OnEnable()
-    -- Register events for cooldown updates
-    self:RegisterEvent("SPELL_UPDATE_COOLDOWN", "UpdateAllCooldowns")
-    self:RegisterEvent("BAG_UPDATE_COOLDOWN", "UpdateAllCooldowns")
-    self:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN", "UpdateAllCooldowns")
+    -- Register cooldown events — set dirty flag, let ticker do the actual update.
+    -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
+    -- event-triggered updates — indistinguishable visually since the cooldown
+    -- frame animates independently. This prevents redundant full-update passes
+    -- during event storms.
+    self:RegisterEvent("SPELL_UPDATE_COOLDOWN", "MarkCooldownsDirty")
+    self:RegisterEvent("BAG_UPDATE_COOLDOWN", "MarkCooldownsDirty")
+    self:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN", "MarkCooldownsDirty")
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
-    
+
     -- Combat events to trigger updates
     self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCast")
-    self:RegisterEvent("PLAYER_REGEN_DISABLED", "UpdateAllCooldowns") -- Entering combat
-    self:RegisterEvent("PLAYER_REGEN_ENABLED", "UpdateAllCooldowns")  -- Leaving combat
-    
+    self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnd")
+
     -- Create all group frames
     self:CreateAllGroupFrames()
-    
-    -- Start a ticker to update cooldowns periodically (backup for combat)
+
+    -- Start a ticker to update cooldowns periodically
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
+        -- Fetch assisted combat recommended spell (may not exist on older clients)
+        local ok, spellID = pcall(FetchAssistedSpell)
+        self.assistedSpellID = ok and spellID or nil
+
         self:UpdateAllCooldowns()
+        self._cooldownsDirty = false
     end)
+end
+
+function CooldownCompanion:MarkCooldownsDirty()
+    self._cooldownsDirty = true
 end
 
 function CooldownCompanion:OnDisable()
@@ -166,26 +192,72 @@ end
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         self:UpdateAllCooldowns()
+        -- During combat, secret values prevent cooldown comparison.
+        -- Desaturate tracked spells known to have real cooldowns on cast.
+        if InCombatLockdown() then
+            self:DesaturateSpellOnCast(spellID)
+        end
+    end
+end
+
+function CooldownCompanion:DesaturateSpellOnCast(spellID)
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData
+                   and button.buttonData.type == "spell"
+                   and button.buttonData.id == spellID
+                   and button.style and button.style.desaturateOnCooldown then
+                    button._desaturated = true
+                    button.icon:SetDesaturated(true)
+                end
+            end
+        end
+    end
+end
+
+function CooldownCompanion:OnCombatStart()
+    self:UpdateAllCooldowns()
+    -- Hide config panel during combat to avoid protected frame errors
+    if self._configWasOpen == nil then
+        self._configWasOpen = false
+    end
+    local configFrame = self:GetConfigFrame()
+    if configFrame and configFrame.frame:IsShown() then
+        self._configWasOpen = true
+        configFrame.frame:Hide()
+        self:Print("Config closed for combat.")
+    end
+end
+
+function CooldownCompanion:OnCombatEnd()
+    self:UpdateAllCooldowns()
+    -- Reopen config panel if it was open before combat
+    if self._configWasOpen then
+        self._configWasOpen = false
+        self:ToggleConfig()
     end
 end
 
 function CooldownCompanion:SlashCommand(input)
     if input == "lock" then
-        self.db.profile.locked = true
+        for _, group in pairs(self.db.profile.groups) do
+            group.locked = true
+        end
         self:LockAllFrames()
-        self:Print("Frames locked.")
+        self:Print("All frames locked.")
     elseif input == "unlock" then
-        self.db.profile.locked = false
+        for _, group in pairs(self.db.profile.groups) do
+            group.locked = false
+        end
         self:UnlockAllFrames()
-        self:Print("Frames unlocked. Drag to move.")
+        self:Print("All frames unlocked. Drag to move.")
     elseif input == "reset" then
         self.db:ResetProfile()
         self:RefreshAllGroups()
         self:Print("Profile reset.")
     else
-        -- Open config using AceConfigDialog
-        local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-        AceConfigDialog:Open(ADDON_NAME)
+        self:ToggleConfig()
     end
 end
 
@@ -212,8 +284,10 @@ function CooldownCompanion:CreateGroup(name)
         buttons = {},
         style = CopyTable(self.db.profile.globalStyle),
         enabled = true,
+        locked = false,
+        order = groupId,
     }
-    
+
     self.db.profile.groups[groupId].style.orientation = "horizontal"
     self.db.profile.groups[groupId].style.buttonsPerRow = 12
     self.db.profile.groups[groupId].style.showCooldownText = true
@@ -241,9 +315,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
         type = buttonType,
         id = id,
         name = name,
-        showGlow = false,
-        glowType = "pixel",
-        glowColor = {1, 1, 0, 1},
     }
     
     self:RefreshGroupFrame(groupId)
@@ -281,7 +352,6 @@ end
 function CooldownCompanion:LockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            -- Update clickthrough based on style settings
             self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Hide()
@@ -293,7 +363,6 @@ end
 function CooldownCompanion:UnlockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
-            -- Update clickthrough based on style settings
             self:UpdateGroupClickthrough(groupId)
             if frame.dragHandle then
                 frame.dragHandle:Show()
