@@ -924,16 +924,6 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(rangeCb)
 
-    local assistedCb = AceGUI:Create("CheckBox")
-    assistedCb:SetLabel("Show Assisted Highlight")
-    assistedCb:SetValue(style.showAssistedHighlight or false)
-    assistedCb:SetFullWidth(true)
-    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAssistedHighlight = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(assistedCb)
-
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
     tooltipCb:SetValue(style.showTooltips ~= false)
@@ -943,6 +933,56 @@ local function BuildExtrasTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(tooltipCb)
+
+    -- Assisted Highlight section (last in Extras)
+    local assistedHeading = AceGUI:Create("Heading")
+    assistedHeading:SetText("Assisted Highlight")
+    assistedHeading:SetFullWidth(true)
+    container:AddChild(assistedHeading)
+
+    local assistedCb = AceGUI:Create("CheckBox")
+    assistedCb:SetLabel("Show Assisted Highlight")
+    assistedCb:SetValue(style.showAssistedHighlight or false)
+    assistedCb:SetFullWidth(true)
+    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAssistedHighlight = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(assistedCb)
+
+    if style.showAssistedHighlight then
+        local highlightStyles = {
+            blizzard = "Blizzard (Marching Ants)",
+            proc = "Proc Glow",
+            solid = "Solid Border",
+        }
+        local styleDrop = AceGUI:Create("Dropdown")
+        styleDrop:SetLabel("Highlight Style")
+        styleDrop:SetList(highlightStyles)
+        styleDrop:SetValue(style.assistedHighlightStyle or "blizzard")
+        styleDrop:SetFullWidth(true)
+        styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.assistedHighlightStyle = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(styleDrop)
+
+        if style.assistedHighlightStyle == "solid" then
+            local hlColor = AceGUI:Create("ColorPicker")
+            hlColor:SetLabel("Highlight Color")
+            hlColor:SetHasAlpha(true)
+            local c = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+            hlColor:SetColor(c[1], c[2], c[3], c[4])
+            hlColor:SetFullWidth(true)
+            hlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                style.assistedHighlightColor = {r, g, b, a}
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            container:AddChild(hlColor)
+        end
+    end
 end
 
 local function BuildPositioningTab(container)

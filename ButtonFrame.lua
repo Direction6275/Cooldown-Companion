@@ -104,6 +104,101 @@ local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion
     end
 end
 
+-- Fit a Blizzard highlight template frame to a button.
+-- The flipbook texture must overhang the button edges to create the border effect.
+-- Original template: 45x45 frame, 66x66 texture => ~23% overhang per side.
+local function FitHighlightFrame(frame, button)
+    local w, h = button:GetSize()
+    local overhang = math.max(w, h) * 0.32
+
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", button, "CENTER")
+    frame:SetSize(w, h)
+
+    -- Resize child regions (flipbook textures) to overhang the frame edges
+    for _, region in ipairs({frame:GetRegions()}) do
+        if region.ClearAllPoints then
+            region:ClearAllPoints()
+            region:SetPoint("CENTER", frame, "CENTER")
+            region:SetSize(w + overhang * 2, h + overhang * 2)
+        end
+    end
+    -- Also handle textures nested inside child frames
+    for _, child in ipairs({frame:GetChildren()}) do
+        child:ClearAllPoints()
+        child:SetPoint("CENTER", frame, "CENTER")
+        child:SetSize(w + overhang * 2, h + overhang * 2)
+        for _, region in ipairs({child:GetRegions()}) do
+            if region.ClearAllPoints then
+                region:ClearAllPoints()
+                region:SetAllPoints(child)
+            end
+        end
+    end
+end
+
+-- Show or hide assisted highlight on a button based on the selected style.
+-- Tracks current state to avoid restarting animations every tick.
+local function SetAssistedHighlight(button, show)
+    local hl = button.assistedHighlight
+    if not hl then return end
+    local highlightStyle = button.style and button.style.assistedHighlightStyle or "blizzard"
+
+    -- Determine desired state key (nil when hidden, style name when shown)
+    local desiredState = show and highlightStyle or nil
+
+    -- Skip if state hasn't changed
+    if hl.currentState == desiredState then return end
+    hl.currentState = desiredState
+
+    -- Hide all styles
+    for _, tex in ipairs(hl.solidTextures or {}) do
+        tex:Hide()
+    end
+    if hl.blizzardFrame then
+        if hl.blizzardFrame.Flipbook and hl.blizzardFrame.Flipbook.Anim then
+            hl.blizzardFrame.Flipbook.Anim:Stop()
+        end
+        hl.blizzardFrame:Hide()
+    end
+    if hl.procFrame then
+        if hl.procFrame.ProcStartFlipbook then hl.procFrame.ProcStartFlipbook:Hide() end
+        if hl.procFrame.ProcLoopFlipbook and hl.procFrame.ProcLoopFlipbook.Anim then
+            hl.procFrame.ProcLoopFlipbook.Anim:Stop()
+        end
+        if hl.procFrame.ProcLoopFlipbook then hl.procFrame.ProcLoopFlipbook:Hide() end
+        hl.procFrame:Hide()
+    end
+
+    if not show then return end
+
+    -- Show the selected style
+    if highlightStyle == "solid" then
+        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        for _, tex in ipairs(hl.solidTextures) do
+            tex:SetColorTexture(unpack(color))
+            tex:Show()
+        end
+    elseif highlightStyle == "blizzard" then
+        if hl.blizzardFrame then
+            hl.blizzardFrame:Show()
+            if hl.blizzardFrame.Flipbook and hl.blizzardFrame.Flipbook.Anim then
+                hl.blizzardFrame.Flipbook.Anim:Play()
+            end
+        end
+    elseif highlightStyle == "proc" then
+        if hl.procFrame then
+            hl.procFrame:Show()
+            if hl.procFrame.ProcLoopFlipbook then
+                hl.procFrame.ProcLoopFlipbook:Show()
+                if hl.procFrame.ProcLoopFlipbook.Anim then
+                    hl.procFrame.ProcLoopFlipbook.Anim:Play()
+                end
+            end
+        end
+    end
+end
+
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
 
@@ -177,26 +272,39 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.borderTextures[i] = tex
     end
 
-    -- Assisted highlight overlay (4 edge textures, hidden by default)
-    local highlightSize = 2
-    local highlightColor = {0.3, 1, 0.3, 0.9}
-    button.highlightTextures = {}
+    -- Assisted highlight overlays (multiple styles, all hidden by default)
+    button.assistedHighlight = {}
 
+    -- Solid border: 4 edge textures
+    local highlightSize = 2
+    local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+    button.assistedHighlight.solidTextures = {}
     local hlEdges = {
         {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
         {"TOPLEFT", "BOTTOMLEFT", 0, highlightSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
         {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", highlightSize, 0},     -- Left
         {"TOPLEFT", "TOPRIGHT", -highlightSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
     }
-
     for i, edge in ipairs(hlEdges) do
         local tex = button:CreateTexture(nil, "OVERLAY", nil, 2)
         tex:SetPoint(edge[1], button, edge[2], edge[3], edge[4])
         tex:SetPoint(edge[5], button, edge[6], edge[7], edge[8])
-        tex:SetColorTexture(unpack(highlightColor))
+        tex:SetColorTexture(unpack(hlColor))
         tex:Hide()
-        button.highlightTextures[i] = tex
+        button.assistedHighlight.solidTextures[i] = tex
     end
+
+    -- Blizzard assisted combat highlight (marching ants flipbook)
+    local blizzFrame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatHighlightTemplate")
+    FitHighlightFrame(blizzFrame, button)
+    blizzFrame:Hide()
+    button.assistedHighlight.blizzardFrame = blizzFrame
+
+    -- Proc glow (spell activation alert flipbook)
+    local procFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procFrame, button)
+    procFrame:Hide()
+    button.assistedHighlight.procFrame = procFrame
 
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
@@ -402,20 +510,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Assisted highlight glow
-    if button.highlightTextures then
+    if button.assistedHighlight then
         local assistedSpellID = CooldownCompanion.assistedSpellID
         local showHighlight = style.showAssistedHighlight
             and buttonData.type == "spell"
             and assistedSpellID
             and buttonData.id == assistedSpellID
 
-        for _, tex in ipairs(button.highlightTextures) do
-            if showHighlight then
-                tex:Show()
-            else
-                tex:Hide()
-            end
-        end
+        SetAssistedHighlight(button, showHighlight)
     end
 end
 
@@ -516,8 +618,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
 
-    -- Update highlight texture positions
-    if button.highlightTextures then
+    -- Update highlight overlay positions and hide all
+    if button.assistedHighlight then
         local highlightSize = 2
         local hlEdges = {
             {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
@@ -525,12 +627,19 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
             {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", highlightSize, 0},     -- Left
             {"TOPLEFT", "TOPRIGHT", -highlightSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
         }
-        for i, tex in ipairs(button.highlightTextures) do
+        for i, tex in ipairs(button.assistedHighlight.solidTextures) do
             tex:ClearAllPoints()
             tex:SetPoint(hlEdges[i][1], button, hlEdges[i][2], hlEdges[i][3], hlEdges[i][4])
             tex:SetPoint(hlEdges[i][5], button, hlEdges[i][6], hlEdges[i][7], hlEdges[i][8])
-            tex:Hide()
         end
+        if button.assistedHighlight.blizzardFrame then
+            FitHighlightFrame(button.assistedHighlight.blizzardFrame, button)
+        end
+        if button.assistedHighlight.procFrame then
+            FitHighlightFrame(button.assistedHighlight.procFrame, button)
+        end
+        button.assistedHighlight.currentState = nil -- reset so next tick re-applies
+        SetAssistedHighlight(button, false)
     end
 
     -- Click-through is always enabled (clicks always pass through for camera movement)

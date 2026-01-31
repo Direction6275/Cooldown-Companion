@@ -79,6 +79,8 @@ local defaults = {
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
                         showOutOfRange = false, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
+                        assistedHighlightStyle = "blizzard", -- "blizzard", "solid", or "proc"
+                        assistedHighlightColor = {0.3, 1, 0.3, 0.9}, -- Color for solid border style
                     },
                     enabled = true,
                 }
@@ -100,6 +102,8 @@ local defaults = {
             showGCDSwipe = true,
             showOutOfRange = false,
             showAssistedHighlight = false,
+            assistedHighlightStyle = "blizzard",
+            assistedHighlightColor = {0.3, 1, 0.3, 0.9},
         },
         locked = false,
     },
