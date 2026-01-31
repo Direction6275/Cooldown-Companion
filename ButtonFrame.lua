@@ -276,35 +276,42 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
 
-    -- Always set cooldown first (C-side API handles secret values)
+    -- Fetch cooldown values once (may be secret during combat)
+    local cdStart, cdDuration, fetchOk
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
-                button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                cdStart = cooldownInfo.startTime
+                cdDuration = cooldownInfo.duration
+                fetchOk = true
             end
         elseif buttonData.type == "item" then
-            local start, duration = C_Item.GetItemCooldown(buttonData.id)
-            button.cooldown:SetCooldown(start, duration)
+            cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+            fetchOk = true
         end
     end)
 
-    -- Suppress GCD swipe separately so secret value errors don't block real cooldowns.
-    -- If the comparison fails (combat), the cooldown set above stays visible.
-    if style.showGCDSwipe == false then
-        pcall(function()
-            if buttonData.type == "spell" then
-                local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
-                if cooldownInfo and cooldownInfo.duration and cooldownInfo.duration <= 1.5 then
-                    button.cooldown:SetCooldown(0, 0)
-                end
-            elseif buttonData.type == "item" then
-                local _, duration = C_Item.GetItemCooldown(buttonData.id)
-                if duration and duration <= 1.5 then
-                    button.cooldown:SetCooldown(0, 0)
-                end
+    if fetchOk then
+        -- Check if this is a GCD we should suppress.
+        -- Comparison may fail during combat (secret values); if so, show the
+        -- cooldown anyway — better to show a GCD than hide a real cooldown.
+        local suppressGCD = false
+        if style.showGCDSwipe == false then
+            local ok, isGCD = pcall(function()
+                return cdDuration <= 1.5
+            end)
+            if ok and isGCD then
+                suppressGCD = true
             end
-        end)
+        end
+
+        -- Call SetCooldown exactly once (C-side API handles secret values)
+        if suppressGCD then
+            button.cooldown:SetCooldown(0, 0)
+        else
+            button.cooldown:SetCooldown(cdStart, cdDuration)
+        end
     end
 
     -- Handle desaturation separately so secret value errors don't break it.

@@ -1469,6 +1469,11 @@ end
 -- Toggle config panel open/closed
 ------------------------------------------------------------------------
 function CooldownCompanion:ToggleConfig()
+    if InCombatLockdown() then
+        self:Print("Cannot open config during combat.")
+        return
+    end
+
     if not configFrame then
         CreateConfigPanel()
         -- Defer first refresh until after column layout is computed (next frame)
