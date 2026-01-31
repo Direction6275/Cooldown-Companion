@@ -506,11 +506,25 @@ function RefreshColumn1()
         local group = db.groups[groupId]
         if group then
             local btn = AceGUI:Create("Button")
-            if selectedGroup == groupId then
-                btn:SetText("|cff00ff00[ " .. group.name .. " ]|r")
-            else
-                btn:SetText(group.name)
+
+            -- Build label with status indicators
+            local label = group.name
+            local indicators = {}
+            if group.enabled == false then
+                table.insert(indicators, "|cff888888OFF|r")
             end
+            if not group.locked then
+                table.insert(indicators, "|cffdddd00U|r")
+            end
+            if #indicators > 0 then
+                label = label .. " " .. table.concat(indicators, " ")
+            end
+            if selectedGroup == groupId then
+                btn:SetText("|cff00ff00[ " .. label .. " ]|r")
+            else
+                btn:SetText(label)
+            end
+
             btn:SetFullWidth(true)
             btn.frame:RegisterForClicks("AnyUp")
             btn:SetCallback("OnClick", function(widget, event, mouseButton)
@@ -530,6 +544,18 @@ function RefreshColumn1()
                         db.groups[nextId].order = curOrder
                         CooldownCompanion:RefreshConfigPanel()
                     end
+                    return
+                end
+                if mouseButton == "RightButton" then
+                    group.locked = not group.locked
+                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
+                if mouseButton == "MiddleButton" then
+                    group.enabled = not (group.enabled ~= false)
+                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
                     return
                 end
                 selectedGroup = groupId
@@ -847,27 +873,6 @@ local function BuildGeneralTab(container)
     end)
     container:AddChild(nameBox)
 
-    -- Enabled toggle
-    local enabledCb = AceGUI:Create("CheckBox")
-    enabledCb:SetLabel("Enabled")
-    enabledCb:SetValue(group.enabled ~= false)
-    enabledCb:SetFullWidth(true)
-    enabledCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.enabled = val
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-    end)
-    container:AddChild(enabledCb)
-
-    -- Lock Frame toggle (per-group)
-    local lockCb = AceGUI:Create("CheckBox")
-    lockCb:SetLabel("Lock Frame")
-    lockCb:SetValue(group.locked or false)
-    lockCb:SetFullWidth(true)
-    lockCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.locked = val
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-    end)
-    container:AddChild(lockCb)
 end
 
 local function BuildPositioningTab(container)
@@ -1041,6 +1046,16 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(rangeCb)
+
+    local assistedCb = AceGUI:Create("CheckBox")
+    assistedCb:SetLabel("Show Assisted Highlight")
+    assistedCb:SetValue(style.showAssistedHighlight or false)
+    assistedCb:SetFullWidth(true)
+    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAssistedHighlight = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(assistedCb)
 
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
@@ -1452,6 +1467,26 @@ local function CreateConfigPanel()
     col1:SetLayout("None")
     col1.frame:SetParent(colParent)
     col1.frame:Show()
+
+    -- Info button next to Groups title
+    local groupInfoBtn = CreateFrame("Button", nil, col1.frame)
+    groupInfoBtn:SetSize(16, 16)
+    groupInfoBtn:SetPoint("LEFT", col1.titletext, "RIGHT", 4, 0)
+    local groupInfoText = groupInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    groupInfoText:SetPoint("CENTER")
+    groupInfoText:SetText("|cff66aaff(?)|r")
+    groupInfoBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Groups")
+        GameTooltip:AddLine("Left-click to select a group.", 1, 1, 1, true)
+        GameTooltip:AddLine("Right-click to toggle lock/unlock.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to toggle enable/disable.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Left/Right-click to reorder.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    groupInfoBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
 
     -- Column 2: Spells/Items (AceGUI InlineGroup)
     local col2 = AceGUI:Create("InlineGroup")

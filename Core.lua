@@ -78,6 +78,7 @@ local defaults = {
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
                         showOutOfRange = false, -- Red-tint icons when target is out of range
+                        showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
                     },
                     enabled = true,
                 }
@@ -98,6 +99,7 @@ local defaults = {
             desaturateOnCooldown = false,
             showGCDSwipe = true,
             showOutOfRange = false,
+            showAssistedHighlight = false,
         },
         locked = false,
     },
@@ -142,6 +144,12 @@ function CooldownCompanion:OnEnable()
     -- Start a ticker to update cooldowns periodically (backup for combat)
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
+        -- Fetch assisted combat recommended spell (may not exist on older clients)
+        local ok, spellID = pcall(function()
+            return C_AssistedCombat and C_AssistedCombat.GetNextCastSpell()
+        end)
+        self.assistedSpellID = ok and spellID or nil
+
         self:UpdateAllCooldowns()
     end)
 end

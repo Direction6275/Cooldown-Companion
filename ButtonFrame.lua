@@ -177,6 +177,27 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.borderTextures[i] = tex
     end
 
+    -- Assisted highlight overlay (4 edge textures, hidden by default)
+    local highlightSize = 2
+    local highlightColor = {0.3, 1, 0.3, 0.9}
+    button.highlightTextures = {}
+
+    local hlEdges = {
+        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
+        {"TOPLEFT", "BOTTOMLEFT", 0, highlightSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
+        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", highlightSize, 0},     -- Left
+        {"TOPLEFT", "TOPRIGHT", -highlightSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
+    }
+
+    for i, edge in ipairs(hlEdges) do
+        local tex = button:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:SetPoint(edge[1], button, edge[2], edge[3], edge[4])
+        tex:SetPoint(edge[5], button, edge[6], edge[7], edge[8])
+        tex:SetColorTexture(unpack(highlightColor))
+        tex:Hide()
+        button.highlightTextures[i] = tex
+    end
+
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
@@ -364,12 +385,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Charge count (spells with hasCharges enabled only)
+    -- Wrapped in pcall because charge fields are secret values during combat
     if buttonData.type == "spell" and buttonData.hasCharges then
-        local ok, charges = pcall(C_Spell.GetSpellCharges, buttonData.id)
-        if ok and charges and charges.maxCharges and charges.maxCharges > 1 then
-            button.count:SetText(charges.currentCharges)
-        else
+        local ok, text = pcall(function()
+            local charges = C_Spell.GetSpellCharges(buttonData.id)
+            if charges and charges.maxCharges > 1 then
+                return charges.currentCharges
+            end
+        end)
+        if ok and text then
+            button.count:SetText(text)
+        elseif ok then
             button.count:SetText("")
+        end
+        -- If pcall failed (secret values), keep current text
+    end
+
+    -- Assisted highlight glow
+    if button.highlightTextures then
+        local assistedSpellID = CooldownCompanion.assistedSpellID
+        local showHighlight = style.showAssistedHighlight
+            and buttonData.type == "spell"
+            and assistedSpellID
+            and buttonData.id == assistedSpellID
+
+        for _, tex in ipairs(button.highlightTextures) do
+            if showHighlight then
+                tex:Show()
+            else
+                tex:Hide()
+            end
         end
     end
 end
@@ -469,6 +514,23 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+
+    -- Update highlight texture positions
+    if button.highlightTextures then
+        local highlightSize = 2
+        local hlEdges = {
+            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
+            {"TOPLEFT", "BOTTOMLEFT", 0, highlightSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
+            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", highlightSize, 0},     -- Left
+            {"TOPLEFT", "TOPRIGHT", -highlightSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
+        }
+        for i, tex in ipairs(button.highlightTextures) do
+            tex:ClearAllPoints()
+            tex:SetPoint(hlEdges[i][1], button, hlEdges[i][2], hlEdges[i][3], hlEdges[i][4])
+            tex:SetPoint(hlEdges[i][5], button, hlEdges[i][6], hlEdges[i][7], hlEdges[i][8])
+            tex:Hide()
+        end
     end
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
