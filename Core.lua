@@ -158,6 +158,27 @@ end
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         self:UpdateAllCooldowns()
+        -- During combat, secret values prevent cooldown comparison.
+        -- Desaturate tracked spells known to have real cooldowns on cast.
+        if InCombatLockdown() then
+            self:DesaturateSpellOnCast(spellID)
+        end
+    end
+end
+
+function CooldownCompanion:DesaturateSpellOnCast(spellID)
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData
+                   and button.buttonData.type == "spell"
+                   and button.buttonData.id == spellID
+                   and button.style and button.style.desaturateOnCooldown
+                   and button._hasRealCooldown then
+                    button.icon:SetDesaturated(true)
+                end
+            end
+        end
     end
 end
 
