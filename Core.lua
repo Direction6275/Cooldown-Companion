@@ -78,12 +78,6 @@ local defaults = {
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
                         showOutOfRange = false, -- Red-tint icons when target is out of range
-                        chargeFontSize = 12,
-                        chargeFontOutline = "OUTLINE",
-                        chargeFont = "Fonts\\FRIZQT__.TTF",
-                        chargeAnchor = "BOTTOMRIGHT",
-                        chargeXOffset = -2,
-                        chargeYOffset = 2,
                     },
                     enabled = true,
                 }
@@ -104,12 +98,6 @@ local defaults = {
             desaturateOnCooldown = false,
             showGCDSwipe = true,
             showOutOfRange = false,
-            chargeFontSize = 12,
-            chargeFontOutline = "OUTLINE",
-            chargeFont = "Fonts\\FRIZQT__.TTF",
-            chargeAnchor = "BOTTOMRIGHT",
-            chargeXOffset = -2,
-            chargeYOffset = 2,
         },
         locked = false,
     },

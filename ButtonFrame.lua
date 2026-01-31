@@ -207,17 +207,20 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
-    -- Apply custom charge text font settings
-    local chargeFont = style.chargeFont or "Fonts\\FRIZQT__.TTF"
-    local chargeFontSize = style.chargeFontSize or 12
-    local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
-    button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+    -- Apply custom charge text font/anchor settings from per-button data
+    if buttonData.hasCharges then
+        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFontSize = buttonData.chargeFontSize or 12
+        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
 
-    -- Apply charge text anchor settings
-    local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
-    local chargeXOffset = style.chargeXOffset or -2
-    local chargeYOffset = style.chargeYOffset or 2
-    button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+        local chargeAnchor = buttonData.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = buttonData.chargeXOffset or -2
+        local chargeYOffset = buttonData.chargeYOffset or 2
+        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    else
+        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
     
     -- Store button data
     button.buttonData = buttonData
@@ -360,8 +363,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.icon:SetVertexColor(1, 1, 1)
     end
 
-    -- Charge count (spells only)
-    if buttonData.type == "spell" then
+    -- Charge count (spells with hasCharges enabled only)
+    if buttonData.type == "spell" and buttonData.hasCharges then
         local ok, charges = pcall(C_Spell.GetSpellCharges, buttonData.id)
         if ok and charges and charges.maxCharges and charges.maxCharges > 1 then
             button.count:SetText(charges.currentCharges)
@@ -452,18 +455,21 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
     end
 
-    -- Update charge text font settings
-    local chargeFont = style.chargeFont or "Fonts\\FRIZQT__.TTF"
-    local chargeFontSize = style.chargeFontSize or 12
-    local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
-    button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-
-    -- Update charge text anchor settings
+    -- Update charge text font/anchor settings from per-button data
     button.count:ClearAllPoints()
-    local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
-    local chargeXOffset = style.chargeXOffset or -2
-    local chargeYOffset = style.chargeYOffset or 2
-    button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    if button.buttonData and button.buttonData.hasCharges then
+        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFontSize = button.buttonData.chargeFontSize or 12
+        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+
+        local chargeAnchor = button.buttonData.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = button.buttonData.chargeXOffset or -2
+        local chargeYOffset = button.buttonData.chargeYOffset or 2
+        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    else
+        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on

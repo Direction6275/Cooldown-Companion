@@ -729,6 +729,102 @@ function RefreshColumn2()
         col2Scroll:AddChild(entry)
     end
 
+    -- Per-spell settings panel (when a spell is selected)
+    if selectedButton and group.buttons[selectedButton]
+       and group.buttons[selectedButton].type == "spell" then
+        local buttonData = group.buttons[selectedButton]
+
+        local spellHeading = AceGUI:Create("Heading")
+        spellHeading:SetText("Spell Settings")
+        spellHeading:SetFullWidth(true)
+        col2Scroll:AddChild(spellHeading)
+
+        -- Show Charge Count toggle
+        local chargesCb = AceGUI:Create("CheckBox")
+        chargesCb:SetLabel("Charge Based?")
+        chargesCb:SetValue(buttonData.hasCharges or false)
+        chargesCb:SetFullWidth(true)
+        chargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.hasCharges = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        col2Scroll:AddChild(chargesCb)
+
+        -- Charge text customization controls (only when hasCharges is enabled)
+        if buttonData.hasCharges then
+            local chargeFontSizeSlider = AceGUI:Create("Slider")
+            chargeFontSizeSlider:SetLabel("Font Size")
+            chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+            chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
+            chargeFontSizeSlider:SetFullWidth(true)
+            chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeFontSize = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeFontSizeSlider)
+
+            local chargeFontDrop = AceGUI:Create("Dropdown")
+            chargeFontDrop:SetLabel("Font")
+            chargeFontDrop:SetList(fontOptions)
+            chargeFontDrop:SetValue(buttonData.chargeFont or "Fonts\\FRIZQT__.TTF")
+            chargeFontDrop:SetFullWidth(true)
+            chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeFont = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeFontDrop)
+
+            local chargeOutlineDrop = AceGUI:Create("Dropdown")
+            chargeOutlineDrop:SetLabel("Font Outline")
+            chargeOutlineDrop:SetList(outlineOptions)
+            chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
+            chargeOutlineDrop:SetFullWidth(true)
+            chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeFontOutline = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeOutlineDrop)
+
+            local chargeAnchorValues = {}
+            for _, pt in ipairs(anchorPoints) do
+                chargeAnchorValues[pt] = anchorPointLabels[pt]
+            end
+            local chargeAnchorDrop = AceGUI:Create("Dropdown")
+            chargeAnchorDrop:SetLabel("Anchor Point")
+            chargeAnchorDrop:SetList(chargeAnchorValues)
+            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or "BOTTOMRIGHT")
+            chargeAnchorDrop:SetFullWidth(true)
+            chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeAnchor = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeAnchorDrop)
+
+            local chargeXSlider = AceGUI:Create("Slider")
+            chargeXSlider:SetLabel("X Offset")
+            chargeXSlider:SetSliderValues(-20, 20, 1)
+            chargeXSlider:SetValue(buttonData.chargeXOffset or -2)
+            chargeXSlider:SetFullWidth(true)
+            chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeXOffset = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeXSlider)
+
+            local chargeYSlider = AceGUI:Create("Slider")
+            chargeYSlider:SetLabel("Y Offset")
+            chargeYSlider:SetSliderValues(-20, 20, 1)
+            chargeYSlider:SetValue(buttonData.chargeYOffset or 2)
+            chargeYSlider:SetFullWidth(true)
+            chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeYOffset = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeYSlider)
+        end
+    end
+
 end
 
 ------------------------------------------------------------------------
@@ -1077,87 +1173,6 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(outlineDrop)
 
-    -- Charge Text Settings header
-    local chargeHeading = AceGUI:Create("Heading")
-    chargeHeading:SetText("Charge Text Settings")
-    chargeHeading:SetFullWidth(true)
-    container:AddChild(chargeHeading)
-
-    -- Charge Font Size slider
-    local chargeFontSizeSlider = AceGUI:Create("Slider")
-    chargeFontSizeSlider:SetLabel("Font Size")
-    chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-    chargeFontSizeSlider:SetValue(style.chargeFontSize or 12)
-    chargeFontSizeSlider:SetFullWidth(true)
-    chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.chargeFontSize = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeFontSizeSlider)
-
-    -- Charge Font dropdown
-    local chargeFontDrop = AceGUI:Create("Dropdown")
-    chargeFontDrop:SetLabel("Font")
-    chargeFontDrop:SetList(fontOptions)
-    chargeFontDrop:SetValue(style.chargeFont or "Fonts\\FRIZQT__.TTF")
-    chargeFontDrop:SetFullWidth(true)
-    chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.chargeFont = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeFontDrop)
-
-    -- Charge Font Outline dropdown
-    local chargeOutlineDrop = AceGUI:Create("Dropdown")
-    chargeOutlineDrop:SetLabel("Font Outline")
-    chargeOutlineDrop:SetList(outlineOptions)
-    chargeOutlineDrop:SetValue(style.chargeFontOutline or "OUTLINE")
-    chargeOutlineDrop:SetFullWidth(true)
-    chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.chargeFontOutline = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeOutlineDrop)
-
-    -- Charge Anchor Point dropdown
-    local chargeAnchorValues = {}
-    for _, pt in ipairs(anchorPoints) do
-        chargeAnchorValues[pt] = anchorPointLabels[pt]
-    end
-    local chargeAnchorDrop = AceGUI:Create("Dropdown")
-    chargeAnchorDrop:SetLabel("Anchor Point")
-    chargeAnchorDrop:SetList(chargeAnchorValues)
-    chargeAnchorDrop:SetValue(style.chargeAnchor or "BOTTOMRIGHT")
-    chargeAnchorDrop:SetFullWidth(true)
-    chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.chargeAnchor = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeAnchorDrop)
-
-    -- Charge X Offset slider
-    local chargeXSlider = AceGUI:Create("Slider")
-    chargeXSlider:SetLabel("X Offset")
-    chargeXSlider:SetSliderValues(-20, 20, 1)
-    chargeXSlider:SetValue(style.chargeXOffset or -2)
-    chargeXSlider:SetFullWidth(true)
-    chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.chargeXOffset = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeXSlider)
-
-    -- Charge Y Offset slider
-    local chargeYSlider = AceGUI:Create("Slider")
-    chargeYSlider:SetLabel("Y Offset")
-    chargeYSlider:SetSliderValues(-20, 20, 1)
-    chargeYSlider:SetValue(style.chargeYOffset or 2)
-    chargeYSlider:SetFullWidth(true)
-    chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.chargeYOffset = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeYSlider)
 end
 
 function RefreshColumn3(container)
