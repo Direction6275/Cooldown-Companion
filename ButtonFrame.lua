@@ -293,30 +293,27 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end)
 
     if fetchOk then
-        -- Suppress GCD swipe by making it transparent when disabled.
+        -- Suppress GCD swipe by hiding the cooldown frame entirely during GCD.
         -- Comparison may fail during combat (secret values); if so, keep
-        -- swipe visible as a safe default.
+        -- frame visible as a safe default.
+        local isGCD = false
         if style.showGCDSwipe == false then
-            local isGCD = false
             local ok, result = pcall(function()
-                return cdDuration <= 1.5
+                return cdDuration > 0 and cdDuration <= 1.5
             end)
             if ok and result then
                 isGCD = true
             end
-            if isGCD then
-                button.cooldown:SetSwipeColor(0, 0, 0, 0)
-                button.cooldown:SetDrawEdge(false)
-            else
-                button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
-                button.cooldown:SetDrawEdge(true)
-            end
-        else
-            button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
-            button.cooldown:SetDrawEdge(true)
         end
 
-        button.cooldown:SetCooldown(cdStart, cdDuration)
+        if isGCD then
+            button.cooldown:Hide()
+        else
+            if not button.cooldown:IsShown() then
+                button.cooldown:Show()
+            end
+            button.cooldown:SetCooldown(cdStart, cdDuration)
+        end
     end
 
     -- Handle desaturation separately so secret value errors don't break it.
