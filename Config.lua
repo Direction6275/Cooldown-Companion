@@ -976,11 +976,46 @@ local function BuildExtrasTab(container)
             local c = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
             hlColor:SetColor(c[1], c[2], c[3], c[4])
             hlColor:SetFullWidth(true)
+            hlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                style.assistedHighlightColor = {r, g, b, a}
+            end)
             hlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
                 style.assistedHighlightColor = {r, g, b, a}
-                CooldownCompanion:UpdateGroupStyle(selectedGroup)
             end)
             container:AddChild(hlColor)
+
+            local hlSizeSlider = AceGUI:Create("Slider")
+            hlSizeSlider:SetLabel("Border Size")
+            hlSizeSlider:SetSliderValues(1, 6, 0.5)
+            hlSizeSlider:SetValue(style.assistedHighlightBorderSize or 2)
+            hlSizeSlider:SetFullWidth(true)
+            hlSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.assistedHighlightBorderSize = val
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            container:AddChild(hlSizeSlider)
+        elseif style.assistedHighlightStyle == "blizzard" then
+            local blizzSlider = AceGUI:Create("Slider")
+            blizzSlider:SetLabel("Glow Size")
+            blizzSlider:SetSliderValues(0, 60, 1)
+            blizzSlider:SetValue(style.assistedHighlightBlizzardOverhang or 32)
+            blizzSlider:SetFullWidth(true)
+            blizzSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.assistedHighlightBlizzardOverhang = val
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            container:AddChild(blizzSlider)
+        elseif style.assistedHighlightStyle == "proc" then
+            local procSlider = AceGUI:Create("Slider")
+            procSlider:SetLabel("Glow Size")
+            procSlider:SetSliderValues(0, 60, 1)
+            procSlider:SetValue(style.assistedHighlightProcOverhang or 32)
+            procSlider:SetFullWidth(true)
+            procSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.assistedHighlightProcOverhang = val
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            container:AddChild(procSlider)
         end
     end
 end

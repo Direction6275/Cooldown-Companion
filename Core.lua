@@ -80,7 +80,10 @@ local defaults = {
                         showOutOfRange = false, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
                         assistedHighlightStyle = "blizzard", -- "blizzard", "solid", or "proc"
-                        assistedHighlightColor = {0.3, 1, 0.3, 0.9}, -- Color for solid border style
+                        assistedHighlightColor = {0.3, 1, 0.3, 0.9},
+                        assistedHighlightBorderSize = 2,
+                        assistedHighlightBlizzardOverhang = 32, -- % overhang for blizzard style
+                        assistedHighlightProcOverhang = 32, -- % overhang for proc style
                     },
                     enabled = true,
                 }
@@ -104,6 +107,9 @@ local defaults = {
             showAssistedHighlight = false,
             assistedHighlightStyle = "blizzard",
             assistedHighlightColor = {0.3, 1, 0.3, 0.9},
+            assistedHighlightBorderSize = 2,
+            assistedHighlightBlizzardOverhang = 32,
+            assistedHighlightProcOverhang = 32,
         },
         locked = false,
     },

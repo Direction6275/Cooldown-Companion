@@ -107,9 +107,9 @@ end
 -- Fit a Blizzard highlight template frame to a button.
 -- The flipbook texture must overhang the button edges to create the border effect.
 -- Original template: 45x45 frame, 66x66 texture => ~23% overhang per side.
-local function FitHighlightFrame(frame, button)
+local function FitHighlightFrame(frame, button, overhangPct)
     local w, h = button:GetSize()
-    local overhang = math.max(w, h) * 0.32
+    local overhang = math.max(w, h) * (overhangPct or 32) / 100
 
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", button, "CENTER")
@@ -144,14 +144,23 @@ local function SetAssistedHighlight(button, show)
     if not hl then return end
     local highlightStyle = button.style and button.style.assistedHighlightStyle or "blizzard"
 
-    -- Determine desired state key (nil when hidden, style name when shown)
+    -- Determine desired state (nil when hidden, style name when shown)
     local desiredState = show and highlightStyle or nil
 
-    -- Skip if state hasn't changed
+    -- For solid style, always apply color (cheap operation, avoids stale color)
+    if show and highlightStyle == "solid" then
+        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        for _, tex in ipairs(hl.solidTextures or {}) do
+            tex:SetColorTexture(unpack(color))
+        end
+    end
+
+    -- Skip show/hide if state hasn't changed (prevents animation restarts)
     if hl.currentState == desiredState then return end
     hl.currentState = desiredState
 
-    -- Hide all styles
+    -- Hide all styles (only hide parent frames, not individual textures —
+    -- template animations control alpha on child textures internally)
     for _, tex in ipairs(hl.solidTextures or {}) do
         tex:Hide()
     end
@@ -162,11 +171,8 @@ local function SetAssistedHighlight(button, show)
         hl.blizzardFrame:Hide()
     end
     if hl.procFrame then
-        if hl.procFrame.ProcStartFlipbook then hl.procFrame.ProcStartFlipbook:Hide() end
-        if hl.procFrame.ProcLoopFlipbook and hl.procFrame.ProcLoopFlipbook.Anim then
-            hl.procFrame.ProcLoopFlipbook.Anim:Stop()
-        end
-        if hl.procFrame.ProcLoopFlipbook then hl.procFrame.ProcLoopFlipbook:Hide() end
+        if hl.procFrame.ProcStartAnim then hl.procFrame.ProcStartAnim:Stop() end
+        if hl.procFrame.ProcLoop then hl.procFrame.ProcLoop:Stop() end
         hl.procFrame:Hide()
     end
 
@@ -174,9 +180,7 @@ local function SetAssistedHighlight(button, show)
 
     -- Show the selected style
     if highlightStyle == "solid" then
-        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
         for _, tex in ipairs(hl.solidTextures) do
-            tex:SetColorTexture(unpack(color))
             tex:Show()
         end
     elseif highlightStyle == "blizzard" then
@@ -189,11 +193,15 @@ local function SetAssistedHighlight(button, show)
     elseif highlightStyle == "proc" then
         if hl.procFrame then
             hl.procFrame:Show()
+            -- Skip the intro burst (ProcStartAnim) and go straight to the loop
+            if hl.procFrame.ProcStartFlipbook then
+                hl.procFrame.ProcStartFlipbook:SetAlpha(0)
+            end
             if hl.procFrame.ProcLoopFlipbook then
-                hl.procFrame.ProcLoopFlipbook:Show()
-                if hl.procFrame.ProcLoopFlipbook.Anim then
-                    hl.procFrame.ProcLoopFlipbook.Anim:Play()
-                end
+                hl.procFrame.ProcLoopFlipbook:SetAlpha(1)
+            end
+            if hl.procFrame.ProcLoop then
+                hl.procFrame.ProcLoop:Play()
             end
         end
     end
@@ -276,7 +284,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.assistedHighlight = {}
 
     -- Solid border: 4 edge textures
-    local highlightSize = 2
+    local highlightSize = style.assistedHighlightBorderSize or 2
     local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
     button.assistedHighlight.solidTextures = {}
     local hlEdges = {
@@ -296,13 +304,15 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Blizzard assisted combat highlight (marching ants flipbook)
     local blizzFrame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatHighlightTemplate")
-    FitHighlightFrame(blizzFrame, button)
+    FitHighlightFrame(blizzFrame, button, style.assistedHighlightBlizzardOverhang)
+    SetFrameClickThroughRecursive(blizzFrame, true, true)
     blizzFrame:Hide()
     button.assistedHighlight.blizzardFrame = blizzFrame
 
     -- Proc glow (spell activation alert flipbook)
     local procFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(procFrame, button)
+    FitHighlightFrame(procFrame, button, style.assistedHighlightProcOverhang)
+    SetFrameClickThroughRecursive(procFrame, true, true)
     procFrame:Hide()
     button.assistedHighlight.procFrame = procFrame
 
@@ -376,9 +386,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
-    -- Re-apply full click-through on the cooldown frame (the recursive call above
-    -- re-enables motion on it when tooltips are on, causing it to steal hover events)
+    -- Re-apply full click-through on overlay frames (the recursive call above
+    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.assistedHighlight then
+        if button.assistedHighlight.blizzardFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
+        end
+        if button.assistedHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
+        end
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -620,7 +638,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update highlight overlay positions and hide all
     if button.assistedHighlight then
-        local highlightSize = 2
+        local highlightSize = style.assistedHighlightBorderSize or 2
         local hlEdges = {
             {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
             {"TOPLEFT", "BOTTOMLEFT", 0, highlightSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
@@ -633,10 +651,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
             tex:SetPoint(hlEdges[i][5], button, hlEdges[i][6], hlEdges[i][7], hlEdges[i][8])
         end
         if button.assistedHighlight.blizzardFrame then
-            FitHighlightFrame(button.assistedHighlight.blizzardFrame, button)
+            FitHighlightFrame(button.assistedHighlight.blizzardFrame, button, style.assistedHighlightBlizzardOverhang)
         end
         if button.assistedHighlight.procFrame then
-            FitHighlightFrame(button.assistedHighlight.procFrame, button)
+            FitHighlightFrame(button.assistedHighlight.procFrame, button, style.assistedHighlightProcOverhang)
         end
         button.assistedHighlight.currentState = nil -- reset so next tick re-applies
         SetAssistedHighlight(button, false)
@@ -650,9 +668,17 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
-    -- Re-apply full click-through on the cooldown frame (the recursive call above
-    -- re-enables motion on it when tooltips are on, causing it to steal hover events)
+    -- Re-apply full click-through on overlay frames (the recursive call above
+    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.assistedHighlight then
+        if button.assistedHighlight.blizzardFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
+        end
+        if button.assistedHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
+        end
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
