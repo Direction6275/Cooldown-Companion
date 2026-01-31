@@ -17,73 +17,80 @@ local buttonPool = {}
 -- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
 local function SetFrameClickThrough(frame, disableClicks, disableMotion)
     if not frame then return end
+    local inCombat = InCombatLockdown()
 
     if disableClicks then
         -- Disable mouse click interaction for camera pass-through
-        if frame.SetMouseClickEnabled then
-            frame:SetMouseClickEnabled(false)
+        -- SetMouseClickEnabled and SetPropagateMouseClicks are protected in combat
+        if not inCombat then
+            if frame.SetMouseClickEnabled then
+                frame:SetMouseClickEnabled(false)
+            end
+            if frame.SetPropagateMouseClicks then
+                frame:SetPropagateMouseClicks(true)
+            end
+            if frame.RegisterForClicks then
+                frame:RegisterForClicks()
+            end
+            if frame.RegisterForDrag then
+                frame:RegisterForDrag()
+            end
         end
-        if frame.SetPropagateMouseClicks then
-            frame:SetPropagateMouseClicks(true)
-        end
-        -- Unregister click/drag events
-        if frame.RegisterForClicks then
-            frame:RegisterForClicks()
-        end
-        if frame.RegisterForDrag then
-            frame:RegisterForDrag()
-        end
-        -- Clear click scripts
         frame:SetScript("OnMouseDown", nil)
         frame:SetScript("OnMouseUp", nil)
     else
-        if frame.SetMouseClickEnabled then
-            frame:SetMouseClickEnabled(true)
-        end
-        if frame.SetPropagateMouseClicks then
-            frame:SetPropagateMouseClicks(false)
+        if not inCombat then
+            if frame.SetMouseClickEnabled then
+                frame:SetMouseClickEnabled(true)
+            end
+            if frame.SetPropagateMouseClicks then
+                frame:SetPropagateMouseClicks(false)
+            end
         end
     end
 
     if disableMotion then
         -- Disable mouse motion (hover) events
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(false)
+        if not inCombat then
+            if frame.SetMouseMotionEnabled then
+                frame:SetMouseMotionEnabled(false)
+            end
+            if frame.SetPropagateMouseMotion then
+                frame:SetPropagateMouseMotion(true)
+            end
         end
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(true)
-        end
-        -- Clear hover scripts
         frame:SetScript("OnEnter", nil)
         frame:SetScript("OnLeave", nil)
     else
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(true)
-        end
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(false)
+        if not inCombat then
+            if frame.SetMouseMotionEnabled then
+                frame:SetMouseMotionEnabled(true)
+            end
+            if frame.SetPropagateMouseMotion then
+                frame:SetPropagateMouseMotion(false)
+            end
         end
     end
 
     -- EnableMouse must be true if we want motion events (tooltips)
     -- Only fully disable if both clicks and motion are disabled
-    if disableClicks and disableMotion then
-        frame:EnableMouse(false)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
-        end
-        frame:EnableKeyboard(false)
-    elseif not disableClicks and not disableMotion then
-        frame:EnableMouse(true)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(0, 0, 0, 0)
-        end
-    else
-        -- Mixed mode: clicks disabled but motion enabled (or vice versa)
-        -- EnableMouse must be true for motion events to fire
-        frame:EnableMouse(true)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(0, 0, 0, 0)
+    if not inCombat then
+        if disableClicks and disableMotion then
+            frame:EnableMouse(false)
+            if frame.SetHitRectInsets then
+                frame:SetHitRectInsets(10000, 10000, 10000, 10000)
+            end
+            frame:EnableKeyboard(false)
+        elseif not disableClicks and not disableMotion then
+            frame:EnableMouse(true)
+            if frame.SetHitRectInsets then
+                frame:SetHitRectInsets(0, 0, 0, 0)
+            end
+        else
+            frame:EnableMouse(true)
+            if frame.SetHitRectInsets then
+                frame:SetHitRectInsets(0, 0, 0, 0)
+            end
         end
     end
 end
