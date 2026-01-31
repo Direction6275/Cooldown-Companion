@@ -233,6 +233,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
+    -- Re-apply full click-through on the cooldown frame (the recursive call above
+    -- re-enables motion on it when tooltips are on, causing it to steal hover events)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -333,6 +336,28 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     else
         button.icon:SetDesaturated(false)
     end
+
+    -- Out-of-range tinting (spells only)
+    if style.showOutOfRange and buttonData.type == "spell" then
+        local inRange = C_Spell.IsSpellInRange(buttonData.id, "target")
+        if inRange == false then
+            button.icon:SetVertexColor(1, 0.2, 0.2)
+        else
+            button.icon:SetVertexColor(1, 1, 1)
+        end
+    else
+        button.icon:SetVertexColor(1, 1, 1)
+    end
+
+    -- Charge count (spells only)
+    if buttonData.type == "spell" then
+        local ok, charges = pcall(C_Spell.GetSpellCharges, buttonData.id)
+        if ok and charges and charges.maxCharges and charges.maxCharges > 1 then
+            button.count:SetText(charges.currentCharges)
+        else
+            button.count:SetText("")
+        end
+    end
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
@@ -424,6 +449,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Apply to the button frame and all children recursively
     SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
+    -- Re-apply full click-through on the cooldown frame (the recursive call above
+    -- re-enables motion on it when tooltips are on, causing it to steal hover events)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then

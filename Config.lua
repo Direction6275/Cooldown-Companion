@@ -936,6 +936,16 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(gcdCb)
 
+    local rangeCb = AceGUI:Create("CheckBox")
+    rangeCb:SetLabel("Show Out of Range")
+    rangeCb:SetValue(style.showOutOfRange or false)
+    rangeCb:SetFullWidth(true)
+    rangeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showOutOfRange = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(rangeCb)
+
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
     tooltipCb:SetValue(style.showTooltips ~= false)

@@ -77,6 +77,7 @@ local defaults = {
                         showTooltips = true,
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
+                        showOutOfRange = false, -- Red-tint icons when target is out of range
                     },
                     enabled = true,
                 }
@@ -96,6 +97,7 @@ local defaults = {
             showTooltips = true,
             desaturateOnCooldown = false,
             showGCDSwipe = true,
+            showOutOfRange = false,
         },
         locked = false,
     },
