@@ -15,7 +15,7 @@ local AceSerializer = LibStub("AceSerializer-3.0")
 -- Selection state
 local selectedGroup = nil
 local selectedButton = nil
-local selectedTab = "general"
+local selectedTab = "appearance"
 local newInput = ""
 
 -- Main frame reference
@@ -87,6 +87,36 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
             end
             CooldownCompanion:RefreshConfigPanel()
         end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_RENAME_GROUP"] = {
+    text = "Rename group '%s' to:",
+    button1 = "Rename",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self, data)
+        local newName = self.EditBox:GetText()
+        if newName and newName ~= "" and data and data.groupId then
+            local group = CooldownCompanion.db.profile.groups[data.groupId]
+            if group then
+                group.name = newName
+                CooldownCompanion:RefreshGroupFrame(data.groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_RENAME_GROUP"].OnAccept(parent, parent.data)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        self.EditBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -543,6 +573,8 @@ function RefreshColumn1()
                         group.order = nextOrder
                         db.groups[nextId].order = curOrder
                         CooldownCompanion:RefreshConfigPanel()
+                    elseif mouseButton == "MiddleButton" then
+                        ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
                     end
                     return
                 end
@@ -856,23 +888,61 @@ end
 ------------------------------------------------------------------------
 -- COLUMN 3: Settings (TabGroup)
 ------------------------------------------------------------------------
-local function BuildGeneralTab(container)
+local function BuildExtrasTab(container)
     if not selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
     if not group then return end
+    local style = group.style
 
-    -- Group Name
-    local nameBox = AceGUI:Create("EditBox")
-    nameBox:SetLabel("Group Name")
-    nameBox:SetText(group.name or "")
-    nameBox:SetFullWidth(true)
-    nameBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        group.name = text
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
-    container:AddChild(nameBox)
+    container:AddChild(desatCb)
 
+    local gcdCb = AceGUI:Create("CheckBox")
+    gcdCb:SetLabel("Show GCD Swipe")
+    gcdCb:SetValue(style.showGCDSwipe ~= false)
+    gcdCb:SetFullWidth(true)
+    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showGCDSwipe = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(gcdCb)
+
+    local rangeCb = AceGUI:Create("CheckBox")
+    rangeCb:SetLabel("Show Out of Range")
+    rangeCb:SetValue(style.showOutOfRange or false)
+    rangeCb:SetFullWidth(true)
+    rangeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showOutOfRange = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(rangeCb)
+
+    local assistedCb = AceGUI:Create("CheckBox")
+    assistedCb:SetLabel("Show Assisted Highlight")
+    assistedCb:SetValue(style.showAssistedHighlight or false)
+    assistedCb:SetFullWidth(true)
+    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAssistedHighlight = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(assistedCb)
+
+    local tooltipCb = AceGUI:Create("CheckBox")
+    tooltipCb:SetLabel("Show Tooltips")
+    tooltipCb:SetValue(style.showTooltips ~= false)
+    tooltipCb:SetFullWidth(true)
+    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showTooltips = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(tooltipCb)
 end
 
 local function BuildPositioningTab(container)
@@ -1000,7 +1070,6 @@ local function BuildAppearanceTab(container)
     iconHeading:SetFullWidth(true)
     container:AddChild(iconHeading)
 
-    -- Toggles first
     local squareCb = AceGUI:Create("CheckBox")
     squareCb:SetLabel("Square Icons")
     squareCb:SetValue(style.maintainAspectRatio or false)
@@ -1016,56 +1085,6 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(squareCb)
-
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(desatCb)
-
-    local gcdCb = AceGUI:Create("CheckBox")
-    gcdCb:SetLabel("Show GCD Swipe")
-    gcdCb:SetValue(style.showGCDSwipe ~= false)
-    gcdCb:SetFullWidth(true)
-    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showGCDSwipe = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(gcdCb)
-
-    local rangeCb = AceGUI:Create("CheckBox")
-    rangeCb:SetLabel("Show Out of Range")
-    rangeCb:SetValue(style.showOutOfRange or false)
-    rangeCb:SetFullWidth(true)
-    rangeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showOutOfRange = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(rangeCb)
-
-    local assistedCb = AceGUI:Create("CheckBox")
-    assistedCb:SetLabel("Show Assisted Highlight")
-    assistedCb:SetValue(style.showAssistedHighlight or false)
-    assistedCb:SetFullWidth(true)
-    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAssistedHighlight = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(assistedCb)
-
-    local tooltipCb = AceGUI:Create("CheckBox")
-    tooltipCb:SetLabel("Show Tooltips")
-    tooltipCb:SetValue(style.showTooltips ~= false)
-    tooltipCb:SetFullWidth(true)
-    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showTooltips = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(tooltipCb)
 
     -- Sliders and pickers
     if style.maintainAspectRatio then
@@ -1213,9 +1232,9 @@ function RefreshColumn3(container)
     if not container.tabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
         tabGroup:SetTabs({
-            { value = "general",     text = "General" },
-            { value = "positioning", text = "Positioning" },
             { value = "appearance",  text = "Appearance" },
+            { value = "positioning", text = "Positioning" },
+            { value = "extras",      text = "Extras" },
         })
         tabGroup:SetLayout("Fill")
 
@@ -1227,12 +1246,12 @@ function RefreshColumn3(container)
             scroll:SetLayout("List")
             widget:AddChild(scroll)
 
-            if tab == "general" then
-                BuildGeneralTab(scroll)
+            if tab == "appearance" then
+                BuildAppearanceTab(scroll)
             elseif tab == "positioning" then
                 BuildPositioningTab(scroll)
-            elseif tab == "appearance" then
-                BuildAppearanceTab(scroll)
+            elseif tab == "extras" then
+                BuildExtrasTab(scroll)
             end
         end)
 
@@ -1482,6 +1501,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Right-click to toggle lock/unlock.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to toggle enable/disable.", 1, 1, 1, true)
         GameTooltip:AddLine("Shift+Left/Right-click to reorder.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Middle-click to rename.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
