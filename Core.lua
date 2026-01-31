@@ -229,7 +229,7 @@ function CooldownCompanion:OnCombatStart()
     if configFrame and configFrame.frame:IsShown() then
         self._configWasOpen = true
         configFrame.frame:Hide()
-        self:Print("Config closed for combat.")
+        self:Print("Config closed for combat. It will reopen when combat ends.")
     end
 end
 

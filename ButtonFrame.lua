@@ -445,7 +445,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
 
-    -- Fetch cooldown values once (may be secret during combat)
+    -- Fetch cooldown values once.
+    -- In WoW 12.0+, cooldown fields may be "secret values" during combat that
+    -- error on comparison but can be passed directly to SetCooldown (C-side).
+    -- We capture raw values first, then attempt comparisons separately.
     local cdStart, cdDuration, fetchOk, isOnGCD, isRealCD
     pcall(function()
         if buttonData.type == "spell" then
@@ -454,21 +457,33 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 cdStart = cooldownInfo.startTime
                 cdDuration = cooldownInfo.duration
                 isOnGCD = cooldownInfo.isOnGCD
-                isRealCD = cooldownInfo.duration and cooldownInfo.duration > 0
-                    and not cooldownInfo.isOnGCD
                 fetchOk = true
             end
         elseif buttonData.type == "item" then
             cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-            isRealCD = cdDuration and cdDuration > 1.5
             fetchOk = true
         end
     end)
 
+    -- Determine real-CD vs GCD status (may fail with secret values; that's OK)
     if fetchOk then
-        -- Suppress GCD swipe using the isOnGCD flag from the cooldown API.
-        -- This directly indicates the spell's cooldown is the GCD, not a real CD.
-        local suppressGCD = style.showGCDSwipe == false and isOnGCD
+        pcall(function()
+            if buttonData.type == "spell" then
+                isRealCD = cdDuration > 0 and not isOnGCD
+            elseif buttonData.type == "item" then
+                isRealCD = cdDuration and cdDuration > 1.5
+            end
+        end)
+    end
+
+    if fetchOk then
+        -- GCD suppression (wrapped for secret-value safety)
+        local suppressGCD = false
+        if style.showGCDSwipe == false then
+            pcall(function()
+                suppressGCD = isOnGCD and true or false
+            end)
+        end
 
         if suppressGCD then
             button.cooldown:Hide()
@@ -481,19 +496,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Desaturation: reuse cooldown data from the single fetch above.
-    -- During combat, ALL cooldown values are secret (even for spells not on CD),
-    -- so pcall failure alone can't determine cooldown state. On failure we keep
-    -- the current desaturation state. Spells cast during combat are desaturated
-    -- via OnSpellCast -> DesaturateSpellOnCast instead.
+    -- During combat, cooldown values may be secret so isRealCD stays nil.
+    -- In that case we keep the current desaturation state. Spells cast during
+    -- combat are desaturated via OnSpellCast -> DesaturateSpellOnCast instead.
     if style.desaturateOnCooldown then
-        if fetchOk then
-            local wantDesat = isRealCD or false
+        if fetchOk and isRealCD ~= nil then
+            local wantDesat = isRealCD
             if button._desaturated ~= wantDesat then
                 button._desaturated = wantDesat
                 button.icon:SetDesaturated(wantDesat)
             end
         end
-        -- If fetch failed (secret values), keep current desaturation state
+        -- If isRealCD is nil (secret values), keep current desaturation state
     else
         if button._desaturated ~= false then
             button._desaturated = false

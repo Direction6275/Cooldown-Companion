@@ -2130,7 +2130,8 @@ end
 ------------------------------------------------------------------------
 function CooldownCompanion:ToggleConfig()
     if InCombatLockdown() then
-        self:Print("Cannot open config during combat.")
+        self._configWasOpen = true
+        self:Print("Config will open after combat ends.")
         return
     end
 
