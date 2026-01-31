@@ -277,13 +277,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local style = button.style
 
     -- Fetch cooldown values once (may be secret during combat)
-    local cdStart, cdDuration, fetchOk
+    local cdStart, cdDuration, fetchOk, isOnGCD
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
                 cdStart = cooldownInfo.startTime
                 cdDuration = cooldownInfo.duration
+                isOnGCD = cooldownInfo.isOnGCD
                 fetchOk = true
             end
         elseif buttonData.type == "item" then
@@ -293,20 +294,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end)
 
     if fetchOk then
-        -- Suppress GCD swipe by hiding the cooldown frame entirely during GCD.
-        -- Comparison may fail during combat (secret values); if so, keep
-        -- frame visible as a safe default.
-        local isGCD = false
-        if style.showGCDSwipe == false then
-            local ok, result = pcall(function()
-                return cdDuration > 0 and cdDuration <= 1.5
-            end)
-            if ok and result then
-                isGCD = true
-            end
-        end
+        -- Suppress GCD swipe using the isOnGCD flag from the cooldown API.
+        -- This directly indicates the spell's cooldown is the GCD, not a real CD.
+        local suppressGCD = style.showGCDSwipe == false and isOnGCD
 
-        if isGCD then
+        if suppressGCD then
             button.cooldown:Hide()
         else
             if not button.cooldown:IsShown() then
@@ -321,11 +313,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- so pcall failure alone can't determine cooldown state. On failure we keep
     -- the current desaturation state. Spells cast during combat are desaturated
     -- via OnSpellCast -> DesaturateSpellOnCast instead.
+    -- Uses isOnGCD to ignore GCD-only cooldowns for desaturation.
     if style.desaturateOnCooldown then
         local success, onCooldown = pcall(function()
             if buttonData.type == "spell" then
                 local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
-                return cooldownInfo and cooldownInfo.duration and cooldownInfo.duration > 1.5
+                return cooldownInfo and cooldownInfo.duration and not cooldownInfo.isOnGCD
+                    and cooldownInfo.duration > 0
             elseif buttonData.type == "item" then
                 local _, duration = C_Item.GetItemCooldown(buttonData.id)
                 return duration and duration > 1.5
