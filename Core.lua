@@ -136,13 +136,22 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Type /cdc for options.")
 end
 
+-- Pre-defined at file scope to avoid creating a closure every tick
+local function FetchAssistedSpell()
+    return C_AssistedCombat and C_AssistedCombat.GetNextCastSpell()
+end
+
 function CooldownCompanion:OnEnable()
-    -- Register events for cooldown updates
-    self:RegisterEvent("SPELL_UPDATE_COOLDOWN", "UpdateAllCooldowns")
-    self:RegisterEvent("BAG_UPDATE_COOLDOWN", "UpdateAllCooldowns")
-    self:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN", "UpdateAllCooldowns")
+    -- Register cooldown events — set dirty flag, let ticker do the actual update.
+    -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
+    -- event-triggered updates — indistinguishable visually since the cooldown
+    -- frame animates independently. This prevents redundant full-update passes
+    -- during event storms.
+    self:RegisterEvent("SPELL_UPDATE_COOLDOWN", "MarkCooldownsDirty")
+    self:RegisterEvent("BAG_UPDATE_COOLDOWN", "MarkCooldownsDirty")
+    self:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN", "MarkCooldownsDirty")
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
-    
+
     -- Combat events to trigger updates
     self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCast")
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
@@ -150,18 +159,21 @@ function CooldownCompanion:OnEnable()
 
     -- Create all group frames
     self:CreateAllGroupFrames()
-    
-    -- Start a ticker to update cooldowns periodically (backup for combat)
+
+    -- Start a ticker to update cooldowns periodically
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
         -- Fetch assisted combat recommended spell (may not exist on older clients)
-        local ok, spellID = pcall(function()
-            return C_AssistedCombat and C_AssistedCombat.GetNextCastSpell()
-        end)
+        local ok, spellID = pcall(FetchAssistedSpell)
         self.assistedSpellID = ok and spellID or nil
 
         self:UpdateAllCooldowns()
+        self._cooldownsDirty = false
     end)
+end
+
+function CooldownCompanion:MarkCooldownsDirty()
+    self._cooldownsDirty = true
 end
 
 function CooldownCompanion:OnDisable()
@@ -196,6 +208,7 @@ function CooldownCompanion:DesaturateSpellOnCast(spellID)
                    and button.buttonData.type == "spell"
                    and button.buttonData.id == spellID
                    and button.style and button.style.desaturateOnCooldown then
+                    button._desaturated = true
                     button.icon:SetDesaturated(true)
                 end
             end

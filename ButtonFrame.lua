@@ -12,6 +12,25 @@ local CooldownCompanion = ST.Addon
 -- Button Frame Pool
 local buttonPool = {}
 
+-- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
+-- Signs: 0 = zero offset, 1 = +size, -1 = -size
+local EDGE_ANCHOR_SPEC = {
+    {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "TOPRIGHT",     0, 0,  0, -1}, -- Top
+    {"TOPLEFT", "BOTTOMLEFT",  "BOTTOMRIGHT", "BOTTOMRIGHT",  0, 1,  0,  0}, -- Bottom
+    {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "BOTTOMLEFT",   0, 0,  1,  0}, -- Left
+    {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, 0,  0,  0}, -- Right
+}
+
+-- Apply edge positions to 4 border/highlight textures using the shared spec
+local function ApplyEdgePositions(textures, button, size)
+    for i, spec in ipairs(EDGE_ANCHOR_SPEC) do
+        local tex = textures[i]
+        tex:ClearAllPoints()
+        tex:SetPoint(spec[1], button, spec[2], spec[5] * size, spec[6] * size)
+        tex:SetPoint(spec[3], button, spec[4], spec[7] * size, spec[8] * size)
+    end
+end
+
 -- Helper function to make a frame click-through
 -- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
 -- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
@@ -144,16 +163,14 @@ local function SetAssistedHighlight(button, show)
     if not hl then return end
     local highlightStyle = button.style and button.style.assistedHighlightStyle or "blizzard"
 
-    -- Determine desired state (nil when hidden, style name when shown)
-    local desiredState = show and highlightStyle or nil
-
-    -- For solid style, always apply color (cheap operation, avoids stale color)
+    -- Determine desired state, including color in cache key for solid style
+    -- so color changes via settings invalidate the cache
+    local colorKey
     if show and highlightStyle == "solid" then
-        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
-        for _, tex in ipairs(hl.solidTextures or {}) do
-            tex:SetColorTexture(unpack(color))
-        end
+        local c = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        colorKey = string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4])
     end
+    local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
 
     -- Skip show/hide if state hasn't changed (prevents animation restarts)
     if hl.currentState == desiredState then return end
@@ -180,7 +197,9 @@ local function SetAssistedHighlight(button, show)
 
     -- Show the selected style
     if highlightStyle == "solid" then
+        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
         for _, tex in ipairs(hl.solidTextures) do
+            tex:SetColorTexture(unpack(color))
             tex:Show()
         end
     elseif highlightStyle == "blizzard" then
@@ -264,21 +283,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.borderTextures = {}
 
-    -- Create 4 edge textures for border (opposite-corner anchoring)
-    local edges = {
-        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -borderSize},     -- Top
-        {"TOPLEFT", "BOTTOMLEFT", 0, borderSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
-        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", borderSize, 0},     -- Left
-        {"TOPLEFT", "TOPRIGHT", -borderSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
-    }
-
-    for i, edge in ipairs(edges) do
+    -- Create 4 edge textures for border using shared anchor spec
+    for i = 1, 4 do
         local tex = button:CreateTexture(nil, "OVERLAY")
-        tex:SetPoint(edge[1], button, edge[2], edge[3], edge[4])
-        tex:SetPoint(edge[5], button, edge[6], edge[7], edge[8])
         tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
+    ApplyEdgePositions(button.borderTextures, button, borderSize)
 
     -- Assisted highlight overlays (multiple styles, all hidden by default)
     button.assistedHighlight = {}
@@ -287,20 +298,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local highlightSize = style.assistedHighlightBorderSize or 2
     local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
     button.assistedHighlight.solidTextures = {}
-    local hlEdges = {
-        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
-        {"TOPLEFT", "BOTTOMLEFT", 0, highlightSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
-        {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", highlightSize, 0},     -- Left
-        {"TOPLEFT", "TOPRIGHT", -highlightSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
-    }
-    for i, edge in ipairs(hlEdges) do
+    for i = 1, 4 do
         local tex = button:CreateTexture(nil, "OVERLAY", nil, 2)
-        tex:SetPoint(edge[1], button, edge[2], edge[3], edge[4])
-        tex:SetPoint(edge[5], button, edge[6], edge[7], edge[8])
         tex:SetColorTexture(unpack(hlColor))
         tex:Hide()
         button.assistedHighlight.solidTextures[i] = tex
     end
+    ApplyEdgePositions(button.assistedHighlight.solidTextures, button, highlightSize)
 
     -- Blizzard assisted combat highlight (marching ants flipbook)
     local blizzFrame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatHighlightTemplate")
@@ -326,6 +330,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Clear desaturation when cooldown expires (C-side callback, works during combat)
     button.cooldown:SetScript("OnCooldownDone", function()
         if button.style and button.style.desaturateOnCooldown then
+            button._desaturated = false
             button.icon:SetDesaturated(false)
         end
     end)
@@ -441,7 +446,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local style = button.style
 
     -- Fetch cooldown values once (may be secret during combat)
-    local cdStart, cdDuration, fetchOk, isOnGCD
+    local cdStart, cdDuration, fetchOk, isOnGCD, isRealCD
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
@@ -449,10 +454,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 cdStart = cooldownInfo.startTime
                 cdDuration = cooldownInfo.duration
                 isOnGCD = cooldownInfo.isOnGCD
+                isRealCD = cooldownInfo.duration and cooldownInfo.duration > 0
+                    and not cooldownInfo.isOnGCD
                 fetchOk = true
             end
         elseif buttonData.type == "item" then
             cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+            isRealCD = cdDuration and cdDuration > 1.5
             fetchOk = true
         end
     end)
@@ -472,42 +480,38 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Handle desaturation separately so secret value errors don't break it.
+    -- Desaturation: reuse cooldown data from the single fetch above.
     -- During combat, ALL cooldown values are secret (even for spells not on CD),
     -- so pcall failure alone can't determine cooldown state. On failure we keep
     -- the current desaturation state. Spells cast during combat are desaturated
     -- via OnSpellCast -> DesaturateSpellOnCast instead.
-    -- Uses isOnGCD to ignore GCD-only cooldowns for desaturation.
     if style.desaturateOnCooldown then
-        local success, onCooldown = pcall(function()
-            if buttonData.type == "spell" then
-                local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
-                return cooldownInfo and cooldownInfo.duration and not cooldownInfo.isOnGCD
-                    and cooldownInfo.duration > 0
-            elseif buttonData.type == "item" then
-                local _, duration = C_Item.GetItemCooldown(buttonData.id)
-                return duration and duration > 1.5
+        if fetchOk then
+            local wantDesat = isRealCD or false
+            if button._desaturated ~= wantDesat then
+                button._desaturated = wantDesat
+                button.icon:SetDesaturated(wantDesat)
             end
-            return false
-        end)
-        if success then
-            button.icon:SetDesaturated(onCooldown or false)
         end
-        -- If pcall failed (secret values), keep current desaturation state
+        -- If fetch failed (secret values), keep current desaturation state
     else
-        button.icon:SetDesaturated(false)
+        if button._desaturated ~= false then
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+        end
     end
 
-    -- Out-of-range tinting (spells only)
+    -- Out-of-range tinting (spells only), cached to skip redundant widget calls
+    local r, g, b = 1, 1, 1
     if style.showOutOfRange and buttonData.type == "spell" then
         local inRange = C_Spell.IsSpellInRange(buttonData.id, "target")
         if inRange == false then
-            button.icon:SetVertexColor(1, 0.2, 0.2)
-        else
-            button.icon:SetVertexColor(1, 1, 1)
+            r, g, b = 1, 0.2, 0.2
         end
-    else
-        button.icon:SetVertexColor(1, 1, 1)
+    end
+    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
+        button._vertexR, button._vertexG, button._vertexB = r, g, b
+        button.icon:SetVertexColor(r, g, b)
     end
 
     -- Charge count (spells with hasCharges enabled only)
@@ -519,10 +523,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 return charges.currentCharges
             end
         end)
-        if ok and text then
-            button.count:SetText(text)
-        elseif ok then
-            button.count:SetText("")
+        if ok then
+            local newText = text or ""
+            if button._chargeText ~= newText then
+                button._chargeText = newText
+                button.count:SetText(newText)
+            end
         end
         -- If pcall failed (secret values), keep current text
     end
@@ -558,6 +564,13 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Store updated style reference
     button.style = style
 
+    -- Invalidate cached widget state so next tick reapplies everything
+    button._desaturated = nil
+    button._vertexR = nil
+    button._vertexG = nil
+    button._vertexB = nil
+    button._chargeText = nil
+
     button:SetSize(width, height)
 
     -- Update icon position
@@ -590,17 +603,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update border textures
     local borderColor = style.borderColor or {0, 0, 0, 1}
     if button.borderTextures then
-        -- Update positions for new border size (opposite-corner anchoring)
-        local edges = {
-            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -borderSize},     -- Top
-            {"TOPLEFT", "BOTTOMLEFT", 0, borderSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
-            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", borderSize, 0},     -- Left
-            {"TOPLEFT", "TOPRIGHT", -borderSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
-        }
-        for i, tex in ipairs(button.borderTextures) do
-            tex:ClearAllPoints()
-            tex:SetPoint(edges[i][1], button, edges[i][2], edges[i][3], edges[i][4])
-            tex:SetPoint(edges[i][5], button, edges[i][6], edges[i][7], edges[i][8])
+        ApplyEdgePositions(button.borderTextures, button, borderSize)
+        for _, tex in ipairs(button.borderTextures) do
             tex:SetColorTexture(unpack(borderColor))
         end
     end
@@ -639,17 +643,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update highlight overlay positions and hide all
     if button.assistedHighlight then
         local highlightSize = style.assistedHighlightBorderSize or 2
-        local hlEdges = {
-            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "TOPRIGHT", 0, -highlightSize},     -- Top
-            {"TOPLEFT", "BOTTOMLEFT", 0, highlightSize, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}, -- Bottom
-            {"TOPLEFT", "TOPLEFT", 0, 0, "BOTTOMRIGHT", "BOTTOMLEFT", highlightSize, 0},     -- Left
-            {"TOPLEFT", "TOPRIGHT", -highlightSize, 0, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},  -- Right
-        }
-        for i, tex in ipairs(button.assistedHighlight.solidTextures) do
-            tex:ClearAllPoints()
-            tex:SetPoint(hlEdges[i][1], button, hlEdges[i][2], hlEdges[i][3], hlEdges[i][4])
-            tex:SetPoint(hlEdges[i][5], button, hlEdges[i][6], hlEdges[i][7], hlEdges[i][8])
-        end
+        ApplyEdgePositions(button.assistedHighlight.solidTextures, button, highlightSize)
         if button.assistedHighlight.blizzardFrame then
             FitHighlightFrame(button.assistedHighlight.blizzardFrame, button, style.assistedHighlightBlizzardOverhang)
         end
