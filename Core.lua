@@ -129,8 +129,8 @@ function CooldownCompanion:OnEnable()
     
     -- Combat events to trigger updates
     self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCast")
-    self:RegisterEvent("PLAYER_REGEN_DISABLED", "UpdateAllCooldowns") -- Entering combat
-    self:RegisterEvent("PLAYER_REGEN_ENABLED", "UpdateAllCooldowns")  -- Leaving combat
+    self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnd")
 
     -- Create all group frames
     self:CreateAllGroupFrames()
@@ -178,6 +178,30 @@ function CooldownCompanion:DesaturateSpellOnCast(spellID)
                 end
             end
         end
+    end
+end
+
+function CooldownCompanion:OnCombatStart()
+    self:UpdateAllCooldowns()
+    -- Hide config panel during combat to avoid protected frame errors
+    if self._configWasOpen == nil then
+        self._configWasOpen = false
+    end
+    local configFrame = self:GetConfigFrame()
+    if configFrame and configFrame.frame:IsShown() then
+        self._configWasOpen = true
+        configFrame.frame:Hide()
+        self:Print("Config closed for combat.")
+    end
+end
+
+function CooldownCompanion:OnCombatEnd()
+    self:UpdateAllCooldowns()
+    -- Reopen config panel if it was open before combat
+    if self._configWasOpen then
+        self._configWasOpen = false
+        self:ToggleConfig()
+        self:Print("Config reopened after combat.")
     end
 end
 

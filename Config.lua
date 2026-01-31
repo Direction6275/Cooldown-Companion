@@ -1485,6 +1485,10 @@ function CooldownCompanion:ToggleConfig()
     end
 end
 
+function CooldownCompanion:GetConfigFrame()
+    return configFrame
+end
+
 ------------------------------------------------------------------------
 -- SetupConfig: Minimal AceConfig registration for Blizzard Settings
 ------------------------------------------------------------------------
