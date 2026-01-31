@@ -991,6 +991,28 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(borderColor)
 
+    -- Desaturate On Cooldown
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(desatCb)
+
+    -- Show GCD Swipe
+    local gcdCb = AceGUI:Create("CheckBox")
+    gcdCb:SetLabel("Show GCD Swipe")
+    gcdCb:SetValue(style.showGCDSwipe ~= false)
+    gcdCb:SetFullWidth(true)
+    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showGCDSwipe = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(gcdCb)
+
     -- Text Settings header
     local textHeading = AceGUI:Create("Heading")
     textHeading:SetText("Text Settings")
@@ -1043,17 +1065,6 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(outlineDrop)
-
-    -- Desaturate On Cooldown
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(desatCb)
 
     -- Show Tooltips
     local tooltipCb = AceGUI:Create("CheckBox")

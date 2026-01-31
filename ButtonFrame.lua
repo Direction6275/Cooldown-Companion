@@ -277,15 +277,25 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local style = button.style
 
     -- SetCooldown handles secret values internally (C-side API)
+    -- When showGCDSwipe is disabled, suppress short cooldowns (GCD ≤ 1.5s)
+    local hideGCD = style.showGCDSwipe == false
     pcall(function()
         if buttonData.type == "spell" then
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
-                button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                if hideGCD and cooldownInfo.duration and cooldownInfo.duration <= 1.5 then
+                    button.cooldown:SetCooldown(0, 0)
+                else
+                    button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                end
             end
         elseif buttonData.type == "item" then
             local start, duration = C_Item.GetItemCooldown(buttonData.id)
-            button.cooldown:SetCooldown(start, duration)
+            if hideGCD and duration and duration <= 1.5 then
+                button.cooldown:SetCooldown(0, 0)
+            else
+                button.cooldown:SetCooldown(start, duration)
+            end
         end
     end)
 

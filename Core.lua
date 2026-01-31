@@ -76,6 +76,7 @@ local defaults = {
                         maintainAspectRatio = false, -- Prevent icon image stretching
                         showTooltips = true,
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
+                        showGCDSwipe = true, -- Show GCD swipe animation on icons
                     },
                     enabled = true,
                 }
@@ -94,6 +95,7 @@ local defaults = {
             maintainAspectRatio = false,
             showTooltips = true,
             desaturateOnCooldown = false,
+            showGCDSwipe = true,
         },
         locked = false,
     },
