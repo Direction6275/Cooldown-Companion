@@ -15,6 +15,7 @@ local AceSerializer = LibStub("AceSerializer-3.0")
 -- Selection state
 local selectedGroup = nil
 local selectedButton = nil
+local selectedButtons = {}  -- set of indices for multi-select (ctrl+click)
 local selectedTab = "appearance"
 local newInput = ""
 
@@ -90,6 +91,7 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
             if selectedGroup == data.groupId then
                 selectedGroup = nil
                 selectedButton = nil
+                wipe(selectedButtons)
             end
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -138,6 +140,33 @@ StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
         if data and data.groupId and data.buttonIndex then
             CooldownCompanion:RemoveButtonFromGroup(data.groupId, data.buttonIndex)
             selectedButton = nil
+            wipe(selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
+    text = "Remove %d selected entries from this group?",
+    button1 = "Remove",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.groupId and data.indices then
+            local group = CooldownCompanion.db.profile.groups[data.groupId]
+            if group then
+                -- Remove in reverse order so indices stay valid
+                table.sort(data.indices, function(a, b) return a > b end)
+                for _, idx in ipairs(data.indices) do
+                    table.remove(group.buttons, idx)
+                end
+                CooldownCompanion:RefreshGroupFrame(data.groupId)
+            end
+            selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
@@ -170,6 +199,7 @@ StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
             end
             selectedGroup = nil
             selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -190,6 +220,7 @@ StaticPopupDialogs["CDC_RESET_PROFILE"] = {
             db:ResetProfile()
             selectedGroup = nil
             selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -212,6 +243,7 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
             db:SetProfile(text)
             selectedGroup = nil
             selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -244,6 +276,7 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
             db:DeleteProfile(data.oldName, true)
             selectedGroup = nil
             selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -275,6 +308,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
             db:CopyProfile(data.source)
             selectedGroup = nil
             selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -330,6 +364,7 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
                 end
                 selectedGroup = nil
                 selectedButton = nil
+                wipe(selectedButtons)
                 CooldownCompanion:RefreshConfigPanel()
                 CooldownCompanion:RefreshAllGroups()
             else
@@ -775,6 +810,7 @@ function RefreshColumn1()
                 end
                 selectedGroup = groupId
                 selectedButton = nil
+                wipe(selectedButtons)
                 CooldownCompanion:RefreshConfigPanel()
             end)
 
@@ -825,10 +861,24 @@ function RefreshColumn1()
         local newBtn = AceGUI:Create("Button")
         newBtn:SetText("New")
         newBtn:SetCallback("OnClick", function()
-            local name = "Group " .. (CooldownCompanion.db.profile.nextGroupId or 1)
+            -- Generate a unique "New Group" name
+            local db = CooldownCompanion.db.profile
+            local existing = {}
+            for _, g in pairs(db.groups) do
+                existing[g.name] = true
+            end
+            local name = "New Group"
+            if existing[name] then
+                local n = 1
+                while existing[name .. " " .. n] do
+                    n = n + 1
+                end
+                name = name .. " " .. n
+            end
             local groupId = CooldownCompanion:CreateGroup(name)
             selectedGroup = groupId
             selectedButton = nil
+            wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
         newBtn.frame:SetParent(col1ButtonBar)
@@ -944,7 +994,9 @@ function RefreshColumn2()
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        if selectedButton == i then
+        if selectedButtons[i] then
+            entry:SetColor(0.4, 0.7, 1.0)
+        elseif selectedButton == i then
             entry:SetColor(0.4, 0.7, 1.0)
         elseif not usable then
             entry:SetColor(0.5, 0.5, 0.5)
@@ -987,7 +1039,23 @@ function RefreshColumn2()
             -- If a drag was active, suppress this click
             if dragState and dragState.phase == "active" then return end
             if button == "LeftButton" then
-                selectedButton = i
+                if IsControlKeyDown() then
+                    -- Ctrl+click: toggle multi-select
+                    if selectedButtons[i] then
+                        selectedButtons[i] = nil
+                    else
+                        selectedButtons[i] = true
+                    end
+                    -- Include current selectedButton in multi-select if starting fresh
+                    if selectedButton and not selectedButtons[selectedButton] and next(selectedButtons) then
+                        selectedButtons[selectedButton] = true
+                    end
+                    selectedButton = nil
+                else
+                    -- Normal click: single select, clear multi-select
+                    wipe(selectedButtons)
+                    selectedButton = i
+                end
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 local name = buttonData.name or "this entry"
@@ -1016,6 +1084,7 @@ function RefreshColumn2()
                                 CooldownCompanion:RefreshGroupFrame(gid)
                                 CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                                 selectedButton = nil
+                                wipe(selectedButtons)
                                 CooldownCompanion:RefreshConfigPanel()
                                 CloseDropDownMenus()
                             end
@@ -1038,7 +1107,7 @@ function RefreshColumn2()
             end)
         end
         entryFrame._cdcOnMouseDown = function(self, button)
-            if button == "LeftButton" then
+            if button == "LeftButton" and not IsControlKeyDown() then
                 local cursorY = GetScaledCursorPosition(col2Scroll)
                 dragState = {
                     kind = "button",
@@ -1056,9 +1125,86 @@ function RefreshColumn2()
         end
     end
 
-    -- Per-spell settings panel (when a spell is selected)
-    if selectedButton and group.buttons[selectedButton]
+    -- Count multi-selected entries
+    local multiCount = 0
+    local multiIndices = {}
+    for idx in pairs(selectedButtons) do
+        multiCount = multiCount + 1
+        table.insert(multiIndices, idx)
+    end
+
+    if multiCount >= 2 then
+        -- Multi-select: show Delete Selected button
+        local delHeading = AceGUI:Create("Heading")
+        delHeading:SetText(multiCount .. " Selected")
+        delHeading:SetFullWidth(true)
+        col2Scroll:AddChild(delHeading)
+
+        local delRow = AceGUI:Create("SimpleGroup")
+        delRow:SetFullWidth(true)
+        delRow:SetLayout("Flow")
+        local delBtn = AceGUI:Create("Button")
+        delBtn:SetText("Delete Selected")
+        delBtn:SetFullWidth(true)
+        delBtn:SetCallback("OnClick", function()
+            ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
+                { groupId = selectedGroup, indices = multiIndices })
+        end)
+        delRow:AddChild(delBtn)
+        col2Scroll:AddChild(delRow)
+
+        local moveRow = AceGUI:Create("SimpleGroup")
+        moveRow:SetFullWidth(true)
+        moveRow:SetLayout("Flow")
+        local moveBtn = AceGUI:Create("Button")
+        moveBtn:SetText("Move Selected")
+        moveBtn:SetFullWidth(true)
+        moveBtn:SetCallback("OnClick", function()
+            if not moveMenuFrame then
+                moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+            local sourceGroupId = selectedGroup
+            local indices = multiIndices
+            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+                local db = CooldownCompanion.db.profile
+                local groupIds = {}
+                for id in pairs(db.groups) do
+                    table.insert(groupIds, id)
+                end
+                table.sort(groupIds)
+                for _, gid in ipairs(groupIds) do
+                    if gid ~= sourceGroupId then
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = db.groups[gid].name
+                        info.func = function()
+                            -- Copy entries to target group
+                            for _, idx in ipairs(indices) do
+                                table.insert(db.groups[gid].buttons, group.buttons[idx])
+                            end
+                            -- Remove from source in reverse order
+                            table.sort(indices, function(a, b) return a > b end)
+                            for _, idx in ipairs(indices) do
+                                table.remove(db.groups[sourceGroupId].buttons, idx)
+                            end
+                            CooldownCompanion:RefreshGroupFrame(gid)
+                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                            selectedButton = nil
+                            wipe(selectedButtons)
+                            CooldownCompanion:RefreshConfigPanel()
+                            CloseDropDownMenus()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+            end, "MENU")
+            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
+        end)
+        moveRow:AddChild(moveBtn)
+        col2Scroll:AddChild(moveRow)
+    elseif selectedButton and group.buttons[selectedButton]
        and group.buttons[selectedButton].type == "spell" then
+        -- Per-spell settings panel (when a single spell is selected)
         local buttonData = group.buttons[selectedButton]
 
         local spellHeading = AceGUI:Create("Heading")
@@ -1389,11 +1535,12 @@ local function BuildPositioningTab(container)
     end)
     container:AddChild(orientDrop)
 
-    -- Buttons Per Row
+    -- Buttons Per Row/Column
+    local numButtons = math.max(1, #group.buttons)
     local bprSlider = AceGUI:Create("Slider")
     bprSlider:SetLabel("Buttons Per Row/Column")
-    bprSlider:SetSliderValues(1, 24, 1)
-    bprSlider:SetValue(group.style.buttonsPerRow or 12)
+    bprSlider:SetSliderValues(1, numButtons, 1)
+    bprSlider:SetValue(math.min(group.style.buttonsPerRow or 12, numButtons))
     bprSlider:SetFullWidth(true)
     bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
         group.style.buttonsPerRow = val
@@ -1657,6 +1804,7 @@ function RefreshProfileBar(barFrame)
         db:SetProfile(val)
         selectedGroup = nil
         selectedButton = nil
+        wipe(selectedButtons)
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:RefreshAllGroups()
     end)
@@ -1871,6 +2019,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Spells / Items")
         GameTooltip:AddLine("Add a spell or item by name or ID.", 1, 1, 1, true)
         GameTooltip:AddLine("Left-click to select.", 1, 1, 1, true)
+        GameTooltip:AddLine("Ctrl+left-click to multi-select.", 1, 1, 1, true)
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:AddLine("Right-click to remove.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to move to another group.", 1, 1, 1, true)
@@ -2039,6 +2188,7 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileChanged", function()
         selectedGroup = nil
         selectedButton = nil
+        wipe(selectedButtons)
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -2047,6 +2197,7 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         selectedGroup = nil
         selectedButton = nil
+        wipe(selectedButtons)
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -2055,6 +2206,7 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileReset", function()
         selectedGroup = nil
         selectedButton = nil
+        wipe(selectedButtons)
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end

@@ -281,7 +281,7 @@ function CooldownCompanion:CreateGroup(name)
     self.db.profile.nextGroupId = groupId + 1
     
     self.db.profile.groups[groupId] = {
-        name = name or ("Group " .. groupId),
+        name = name or "New Group",
         anchor = {
             point = "CENTER",
             relativeTo = "UIParent",
