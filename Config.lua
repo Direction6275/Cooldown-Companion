@@ -1300,6 +1300,17 @@ function RefreshColumn2()
             col2Scroll:AddChild(chargeYSlider)
         end
 
+        -- Proc Glow toggle
+        local procCb = AceGUI:Create("CheckBox")
+        procCb:SetLabel("Show Proc Glow")
+        procCb:SetValue(buttonData.procGlow ~= false)
+        procCb:SetFullWidth(true)
+        procCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.procGlow = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(procCb)
+
     end
 
 end

@@ -226,6 +226,34 @@ local function SetAssistedHighlight(button, show)
     end
 end
 
+-- Show or hide proc glow on a button.
+-- Tracks state to avoid restarting animations every tick.
+local function SetProcGlow(button, show)
+    local frame = button.procGlow
+    if not frame then return end
+
+    if button._procGlowActive == show then return end
+    button._procGlowActive = show
+
+    if show then
+        frame:Show()
+        -- Skip the intro burst and go straight to the loop
+        if frame.ProcStartFlipbook then
+            frame.ProcStartFlipbook:SetAlpha(0)
+        end
+        if frame.ProcLoopFlipbook then
+            frame.ProcLoopFlipbook:SetAlpha(1)
+        end
+        if frame.ProcLoop then
+            frame.ProcLoop:Play()
+        end
+    else
+        if frame.ProcStartAnim then frame.ProcStartAnim:Stop() end
+        if frame.ProcLoop then frame.ProcLoop:Stop() end
+        frame:Hide()
+    end
+end
+
 -- Update loss-of-control cooldown on a button.
 -- Uses a CooldownFrame to avoid comparing secret values — the raw start/duration
 -- go directly to SetCooldown which handles them on the C side.
@@ -362,6 +390,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
+    -- Proc glow frame (spell activation alert, separate from assisted highlight)
+    local procGlowFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procGlowFrame, button, style.procGlowOverhang or 32)
+    SetFrameClickThroughRecursive(procGlowFrame, true, true)
+    procGlowFrame:Hide()
+    button.procGlow = procGlowFrame
+
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cooldownFontSize = style.cooldownFontSize or 12
@@ -419,6 +454,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    if button.procGlow then
+        SetFrameClickThroughRecursive(button.procGlow, true, true)
+    end
     if button.assistedHighlight then
         if button.assistedHighlight.blizzardFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
@@ -602,6 +640,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         SetAssistedHighlight(button, showHighlight)
     end
+
+    -- Proc glow (spell activation overlay)
+    if button.procGlow then
+        local showProc = false
+        if buttonData.procGlow ~= false and buttonData.type == "spell" then
+            local ok, overlayed = pcall(C_SpellActivationOverlay.IsSpellOverlayed, buttonData.id)
+            if ok then showProc = overlayed or false end
+        end
+        SetProcGlow(button, showProc)
+    end
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
@@ -629,6 +677,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
+    button._procGlowActive = nil
 
     button:SetSize(width, height)
 
@@ -720,6 +769,12 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.locCooldown:Clear()
     end
 
+    -- Update proc glow frame
+    if button.procGlow then
+        FitHighlightFrame(button.procGlow, button, style.procGlowOverhang or 32)
+        SetProcGlow(button, false)
+    end
+
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips ~= false
@@ -732,6 +787,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    if button.procGlow then
+        SetFrameClickThroughRecursive(button.procGlow, true, true)
+    end
     if button.assistedHighlight then
         if button.assistedHighlight.blizzardFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
