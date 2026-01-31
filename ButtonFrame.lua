@@ -205,7 +205,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     
     -- Stack count text (for items)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     button.count:SetText("")
 
     -- Apply custom charge text font settings
@@ -213,6 +212,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local chargeFontSize = style.chargeFontSize or 12
     local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
     button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+
+    -- Apply charge text anchor settings
+    local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+    local chargeXOffset = style.chargeXOffset or -2
+    local chargeYOffset = style.chargeYOffset or 2
+    button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     
     -- Store button data
     button.buttonData = buttonData
@@ -452,6 +457,13 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local chargeFontSize = style.chargeFontSize or 12
     local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
     button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+
+    -- Update charge text anchor settings
+    button.count:ClearAllPoints()
+    local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+    local chargeXOffset = style.chargeXOffset or -2
+    local chargeYOffset = style.chargeYOffset or 2
+    button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on

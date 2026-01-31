@@ -1118,6 +1118,46 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(chargeOutlineDrop)
+
+    -- Charge Anchor Point dropdown
+    local chargeAnchorValues = {}
+    for _, pt in ipairs(anchorPoints) do
+        chargeAnchorValues[pt] = anchorPointLabels[pt]
+    end
+    local chargeAnchorDrop = AceGUI:Create("Dropdown")
+    chargeAnchorDrop:SetLabel("Anchor Point")
+    chargeAnchorDrop:SetList(chargeAnchorValues)
+    chargeAnchorDrop:SetValue(style.chargeAnchor or "BOTTOMRIGHT")
+    chargeAnchorDrop:SetFullWidth(true)
+    chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.chargeAnchor = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeAnchorDrop)
+
+    -- Charge X Offset slider
+    local chargeXSlider = AceGUI:Create("Slider")
+    chargeXSlider:SetLabel("X Offset")
+    chargeXSlider:SetSliderValues(-20, 20, 1)
+    chargeXSlider:SetValue(style.chargeXOffset or -2)
+    chargeXSlider:SetFullWidth(true)
+    chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.chargeXOffset = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeXSlider)
+
+    -- Charge Y Offset slider
+    local chargeYSlider = AceGUI:Create("Slider")
+    chargeYSlider:SetLabel("Y Offset")
+    chargeYSlider:SetSliderValues(-20, 20, 1)
+    chargeYSlider:SetValue(style.chargeYOffset or 2)
+    chargeYSlider:SetFullWidth(true)
+    chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.chargeYOffset = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeYSlider)
 end
 
 function RefreshColumn3(container)
