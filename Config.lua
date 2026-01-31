@@ -899,7 +899,7 @@ local function BuildAppearanceTab(container)
     iconHeading:SetFullWidth(true)
     container:AddChild(iconHeading)
 
-    -- Square Icons toggle
+    -- Toggles first
     local squareCb = AceGUI:Create("CheckBox")
     squareCb:SetLabel("Square Icons")
     squareCb:SetValue(style.maintainAspectRatio or false)
@@ -916,8 +916,38 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(squareCb)
 
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(desatCb)
+
+    local gcdCb = AceGUI:Create("CheckBox")
+    gcdCb:SetLabel("Show GCD Swipe")
+    gcdCb:SetValue(style.showGCDSwipe ~= false)
+    gcdCb:SetFullWidth(true)
+    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showGCDSwipe = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(gcdCb)
+
+    local tooltipCb = AceGUI:Create("CheckBox")
+    tooltipCb:SetLabel("Show Tooltips")
+    tooltipCb:SetValue(style.showTooltips ~= false)
+    tooltipCb:SetFullWidth(true)
+    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showTooltips = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(tooltipCb)
+
+    -- Sliders and pickers
     if style.maintainAspectRatio then
-        -- Button Size (square)
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Button Size")
         sizeSlider:SetSliderValues(20, 64, 1)
@@ -929,7 +959,6 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(sizeSlider)
     else
-        -- Icon Width
         local wSlider = AceGUI:Create("Slider")
         wSlider:SetLabel("Icon Width")
         wSlider:SetSliderValues(10, 100, 1)
@@ -941,7 +970,6 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(wSlider)
 
-        -- Icon Height
         local hSlider = AceGUI:Create("Slider")
         hSlider:SetLabel("Icon Height")
         hSlider:SetSliderValues(10, 100, 1)
@@ -954,7 +982,6 @@ local function BuildAppearanceTab(container)
         container:AddChild(hSlider)
     end
 
-    -- Button Spacing
     local spacingSlider = AceGUI:Create("Slider")
     spacingSlider:SetLabel("Button Spacing")
     spacingSlider:SetSliderValues(0, 10, 1)
@@ -966,7 +993,6 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(spacingSlider)
 
-    -- Border Size
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")
     borderSlider:SetSliderValues(0, 5, 0.1)
@@ -978,7 +1004,6 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(borderSlider)
 
-    -- Border Color
     local borderColor = AceGUI:Create("ColorPicker")
     borderColor:SetLabel("Border Color")
     borderColor:SetHasAlpha(true)
@@ -991,35 +1016,13 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(borderColor)
 
-    -- Desaturate On Cooldown
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(desatCb)
-
-    -- Show GCD Swipe
-    local gcdCb = AceGUI:Create("CheckBox")
-    gcdCb:SetLabel("Show GCD Swipe")
-    gcdCb:SetValue(style.showGCDSwipe ~= false)
-    gcdCb:SetFullWidth(true)
-    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showGCDSwipe = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(gcdCb)
-
     -- Text Settings header
     local textHeading = AceGUI:Create("Heading")
     textHeading:SetText("Text Settings")
     textHeading:SetFullWidth(true)
     container:AddChild(textHeading)
 
-    -- Show Cooldown Text
+    -- Toggles first
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
     cdTextCb:SetValue(style.showCooldownText or false)
@@ -1030,7 +1033,7 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(cdTextCb)
 
-    -- Font Size
+    -- Sliders and dropdowns
     local fontSizeSlider = AceGUI:Create("Slider")
     fontSizeSlider:SetLabel("Font Size")
     fontSizeSlider:SetSliderValues(8, 32, 1)
@@ -1042,7 +1045,6 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(fontSizeSlider)
 
-    -- Font dropdown
     local fontDrop = AceGUI:Create("Dropdown")
     fontDrop:SetLabel("Font")
     fontDrop:SetList(fontOptions)
@@ -1054,7 +1056,6 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(fontDrop)
 
-    -- Font Outline
     local outlineDrop = AceGUI:Create("Dropdown")
     outlineDrop:SetLabel("Font Outline")
     outlineDrop:SetList(outlineOptions)
@@ -1065,17 +1066,6 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(outlineDrop)
-
-    -- Show Tooltips
-    local tooltipCb = AceGUI:Create("CheckBox")
-    tooltipCb:SetLabel("Show Tooltips")
-    tooltipCb:SetValue(style.showTooltips ~= false)
-    tooltipCb:SetFullWidth(true)
-    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showTooltips = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(tooltipCb)
 end
 
 function RefreshColumn3(container)
