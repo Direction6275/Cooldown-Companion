@@ -1076,6 +1076,48 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(outlineDrop)
+
+    -- Charge Text Settings header
+    local chargeHeading = AceGUI:Create("Heading")
+    chargeHeading:SetText("Charge Text Settings")
+    chargeHeading:SetFullWidth(true)
+    container:AddChild(chargeHeading)
+
+    -- Charge Font Size slider
+    local chargeFontSizeSlider = AceGUI:Create("Slider")
+    chargeFontSizeSlider:SetLabel("Font Size")
+    chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+    chargeFontSizeSlider:SetValue(style.chargeFontSize or 12)
+    chargeFontSizeSlider:SetFullWidth(true)
+    chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.chargeFontSize = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeFontSizeSlider)
+
+    -- Charge Font dropdown
+    local chargeFontDrop = AceGUI:Create("Dropdown")
+    chargeFontDrop:SetLabel("Font")
+    chargeFontDrop:SetList(fontOptions)
+    chargeFontDrop:SetValue(style.chargeFont or "Fonts\\FRIZQT__.TTF")
+    chargeFontDrop:SetFullWidth(true)
+    chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.chargeFont = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeFontDrop)
+
+    -- Charge Font Outline dropdown
+    local chargeOutlineDrop = AceGUI:Create("Dropdown")
+    chargeOutlineDrop:SetLabel("Font Outline")
+    chargeOutlineDrop:SetList(outlineOptions)
+    chargeOutlineDrop:SetValue(style.chargeFontOutline or "OUTLINE")
+    chargeOutlineDrop:SetFullWidth(true)
+    chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.chargeFontOutline = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeOutlineDrop)
 end
 
 function RefreshColumn3(container)

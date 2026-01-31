@@ -207,6 +207,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     button.count:SetText("")
+
+    -- Apply custom charge text font settings
+    local chargeFont = style.chargeFont or "Fonts\\FRIZQT__.TTF"
+    local chargeFontSize = style.chargeFontSize or 12
+    local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
+    button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
     
     -- Store button data
     button.buttonData = buttonData
@@ -440,6 +446,12 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
     end
+
+    -- Update charge text font settings
+    local chargeFont = style.chargeFont or "Fonts\\FRIZQT__.TTF"
+    local chargeFontSize = style.chargeFontSize or 12
+    local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
+    button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
