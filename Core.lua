@@ -173,8 +173,7 @@ function CooldownCompanion:DesaturateSpellOnCast(spellID)
                 if button.buttonData
                    and button.buttonData.type == "spell"
                    and button.buttonData.id == spellID
-                   and button.style and button.style.desaturateOnCooldown
-                   and button._hasRealCooldown then
+                   and button.style and button.style.desaturateOnCooldown then
                     button.icon:SetDesaturated(true)
                 end
             end

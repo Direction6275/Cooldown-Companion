@@ -301,10 +301,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end)
         if success then
             button.icon:SetDesaturated(onCooldown or false)
-            -- Remember that this spell has a real cooldown (not just GCD)
-            if onCooldown then
-                button._hasRealCooldown = true
-            end
         end
         -- If pcall failed (secret values), keep current desaturation state
     else
