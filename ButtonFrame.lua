@@ -293,12 +293,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end)
 
     if fetchOk then
-        -- Always set cooldown first (C-side API handles secret values)
-        button.cooldown:SetCooldown(cdStart, cdDuration)
-
-        -- Override swipe/edge visibility AFTER SetCooldown, which may reset
-        -- draw state internally. Comparison may fail during combat (secret
-        -- values); if so, keep swipe visible as a safe default.
+        -- Suppress GCD swipe by making it transparent when disabled.
+        -- Comparison may fail during combat (secret values); if so, keep
+        -- swipe visible as a safe default.
         if style.showGCDSwipe == false then
             local isGCD = false
             local ok, result = pcall(function()
@@ -307,12 +304,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if ok and result then
                 isGCD = true
             end
-            button.cooldown:SetDrawSwipe(not isGCD)
-            button.cooldown:SetDrawEdge(not isGCD)
+            if isGCD then
+                button.cooldown:SetSwipeColor(0, 0, 0, 0)
+                button.cooldown:SetDrawEdge(false)
+            else
+                button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
+                button.cooldown:SetDrawEdge(true)
+            end
         else
-            button.cooldown:SetDrawSwipe(true)
+            button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
             button.cooldown:SetDrawEdge(true)
         end
+
+        button.cooldown:SetCooldown(cdStart, cdDuration)
     end
 
     -- Handle desaturation separately so secret value errors don't break it.
