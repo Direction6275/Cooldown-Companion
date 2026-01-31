@@ -184,6 +184,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+    -- Clear desaturation when cooldown expires (C-side callback, works during combat)
+    button.cooldown:SetScript("OnCooldownDone", function()
+        if button.style and button.style.desaturateOnCooldown then
+            button.icon:SetDesaturated(false)
+        end
+    end)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
