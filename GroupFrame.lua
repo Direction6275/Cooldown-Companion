@@ -81,6 +81,12 @@ local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion
     end
 end
 
+local function UpdateCoordLabel(frame, x, y)
+    if frame.coordLabel then
+        frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+    end
+end
+
 -- Nudger constants
 local NUDGE_BTN_SIZE = 14
 local NUDGE_REPEAT_DELAY = 0.5
@@ -315,11 +321,6 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     return frame
 end
 
-local function UpdateCoordLabel(frame, x, y)
-    if frame.coordLabel then
-        frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
-    end
-end
 
 function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     frame:ClearAllPoints()
