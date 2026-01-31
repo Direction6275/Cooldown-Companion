@@ -86,14 +86,6 @@ local defaults = {
                         assistedHighlightProcOverhang = 32, -- % overhang for proc style
                         showUnusable = true,
                         unusableColor = {0.3, 0.3, 0.6},
-                        showLossOfControl = true,
-                        lossOfControlColor = {1, 0, 0, 0.5},
-                        showProcGlow = true,
-                        procGlowOverhang = 32,
-                        showAuraDuration = false,
-                        auraDurationSwipeColor = {0.1, 0.6, 0.1, 0.4},
-                        showAuraDurationText = true,
-                        auraDurationFontSize = 10,
                     },
                     enabled = true,
                 }
@@ -122,14 +114,6 @@ local defaults = {
             assistedHighlightProcOverhang = 32,
             showUnusable = true,
             unusableColor = {0.3, 0.3, 0.6},
-            showLossOfControl = true,
-            lossOfControlColor = {1, 0, 0, 0.5},
-            showProcGlow = true,
-            procGlowOverhang = 32,
-            showAuraDuration = false,
-            auraDurationSwipeColor = {0.1, 0.6, 0.1, 0.4},
-            showAuraDurationText = true,
-            auraDurationFontSize = 10,
         },
         locked = false,
     },
@@ -179,17 +163,6 @@ function CooldownCompanion:OnEnable()
 
     -- Power updates for usability dimming
     self:RegisterEvent("UNIT_POWER_FREQUENT", "MarkCooldownsDirty")
-
-    -- Loss of control events
-    self:RegisterEvent("LOSS_OF_CONTROL_ADDED", "MarkCooldownsDirty")
-    self:RegisterEvent("LOSS_OF_CONTROL_UPDATE", "MarkCooldownsDirty")
-
-    -- Spell activation overlay (proc glow)
-    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "MarkCooldownsDirty")
-    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "MarkCooldownsDirty")
-
-    -- Aura duration tracking
-    self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
@@ -273,12 +246,6 @@ function CooldownCompanion:OnCombatEnd()
     if self._configWasOpen then
         self._configWasOpen = false
         self:ToggleConfig()
-    end
-end
-
-function CooldownCompanion:OnUnitAura(event, unit)
-    if unit == "player" or unit == "target" then
-        self:MarkCooldownsDirty()
     end
 end
 
