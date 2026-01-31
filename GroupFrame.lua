@@ -437,27 +437,32 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
     wipe(frame.buttons)
 
-    -- Create new buttons
+    -- Create new buttons (skip untalented spells)
+    local visibleIndex = 0
     for i, buttonData in ipairs(group.buttons) do
-        local button = self:CreateButtonFrame(frame, i, buttonData, style)
+        if self:IsButtonUsable(buttonData) then
+            visibleIndex = visibleIndex + 1
+            local button = self:CreateButtonFrame(frame, i, buttonData, style)
 
-        -- Position the button (use width for horizontal spacing, height for vertical)
-        local row, col
-        if orientation == "horizontal" then
-            row = math.floor((i - 1) / buttonsPerRow)
-            col = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
-        else
-            col = math.floor((i - 1) / buttonsPerRow)
-            row = (i - 1) % buttonsPerRow
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+            -- Position the button using visibleIndex for gap-free layout
+            local row, col
+            if orientation == "horizontal" then
+                row = math.floor((visibleIndex - 1) / buttonsPerRow)
+                col = (visibleIndex - 1) % buttonsPerRow
+                button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+            else
+                col = math.floor((visibleIndex - 1) / buttonsPerRow)
+                row = (visibleIndex - 1) % buttonsPerRow
+                button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+            end
+
+            button:Show()
+            table.insert(frame.buttons, button)
         end
-
-        button:Show()
-        table.insert(frame.buttons, button)
     end
 
-    -- Resize the frame to fit buttons
+    -- Resize the frame to fit visible buttons
+    frame.visibleButtonCount = visibleIndex
     self:ResizeGroupFrame(groupId)
 
     -- Update clickthrough state
@@ -490,7 +495,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
-    local numButtons = #group.buttons
+    local numButtons = frame.visibleButtonCount or #group.buttons
 
     if numButtons == 0 then
         frame:SetSize(buttonWidth, buttonHeight)

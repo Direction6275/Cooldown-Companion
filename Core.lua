@@ -157,6 +157,9 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
     self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnd")
 
+    -- Talent change events — refresh group frames and config panel
+    self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
+
     -- Create all group frames
     self:CreateAllGroupFrames()
 
@@ -261,6 +264,11 @@ function CooldownCompanion:SlashCommand(input)
     end
 end
 
+function CooldownCompanion:OnTalentsChanged()
+    self:RefreshAllGroups()
+    self:RefreshConfigPanel()
+end
+
 function CooldownCompanion:OnPlayerEnteringWorld()
     C_Timer.After(1, function()
         self:RefreshAllGroups()
@@ -327,6 +335,43 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     
     table.remove(group.buttons, buttonIndex)
     self:RefreshGroupFrame(groupId)
+end
+
+function CooldownCompanion:IsSpellInTalentTree(spellId)
+    local configID = C_ClassTalents.GetActiveConfigID()
+    if not configID then return false end
+    local configInfo = C_Traits.GetConfigInfo(configID)
+    if not configInfo or not configInfo.treeIDs then return false end
+
+    for _, treeID in ipairs(configInfo.treeIDs) do
+        local nodes = C_Traits.GetTreeNodes(treeID)
+        if nodes then
+            for _, nodeID in ipairs(nodes) do
+                local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                if nodeInfo and nodeInfo.entryIDs then
+                    for _, entryID in ipairs(nodeInfo.entryIDs) do
+                        local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
+                        if entryInfo and entryInfo.definitionID then
+                            local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
+                            if defInfo and (defInfo.spellID == spellId or defInfo.overriddenSpellID == spellId) then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+function CooldownCompanion:IsButtonUsable(buttonData)
+    if buttonData.type == "spell" then
+        return IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id)
+    elseif buttonData.type == "item" then
+        return true
+    end
+    return true
 end
 
 function CooldownCompanion:CreateAllGroupFrames()

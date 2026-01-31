@@ -387,8 +387,8 @@ local function TryAddSpell(input)
     end
 
     if spellId and spellName then
-        if not IsSpellKnownOrOverridesKnown(spellId) and not IsPlayerSpell(spellId) then
-            CooldownCompanion:Print("Spell not known: " .. spellName)
+        if not IsSpellKnownOrOverridesKnown(spellId) and not IsPlayerSpell(spellId) and not CooldownCompanion:IsSpellInTalentTree(spellId) then
+            CooldownCompanion:Print("Spell not available to your class: " .. spellName)
             return false
         end
         CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
@@ -937,6 +937,7 @@ function RefreshColumn2()
     local numButtons = #group.buttons
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")
+        local usable = CooldownCompanion:IsButtonUsable(buttonData)
         entry:SetText(buttonData.name or ("Unknown " .. buttonData.type))
         entry:SetImage(GetButtonIcon(buttonData))
         entry:SetImageSize(32, 32)
@@ -945,6 +946,35 @@ function RefreshColumn2()
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         if selectedButton == i then
             entry:SetColor(0.4, 0.7, 1.0)
+        elseif not usable then
+            entry:SetColor(0.5, 0.5, 0.5)
+        end
+
+        -- Clean up any recycled warning icon, then create if needed
+        if entry.frame._cdcWarnBtn then
+            entry.frame._cdcWarnBtn:Hide()
+        end
+        if not usable then
+            local warnBtn = entry.frame._cdcWarnBtn
+            if not warnBtn then
+                warnBtn = CreateFrame("Button", nil, entry.frame)
+                warnBtn:SetSize(16, 16)
+                warnBtn:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
+                local warnText = warnBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                warnText:SetPoint("CENTER")
+                warnText:SetText("|cffff4444(!)|r")
+                warnBtn:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Talent not taken", 1, 0.3, 0.3)
+                    GameTooltip:Show()
+                end)
+                warnBtn:SetScript("OnLeave", function()
+                    GameTooltip:Hide()
+                end)
+                entry.frame._cdcWarnBtn = warnBtn
+            end
+            warnBtn:SetFrameLevel(entry.frame:GetFrameLevel() + 5)
+            warnBtn:Show()
         end
 
         -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
