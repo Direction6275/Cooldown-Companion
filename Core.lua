@@ -86,6 +86,8 @@ local defaults = {
                         assistedHighlightProcOverhang = 32, -- % overhang for proc style
                         showUnusable = true,
                         unusableColor = {0.3, 0.3, 0.6},
+                        showLossOfControl = true,
+                        lossOfControlColor = {1, 0, 0, 0.5},
                     },
                     enabled = true,
                 }
@@ -114,6 +116,8 @@ local defaults = {
             assistedHighlightProcOverhang = 32,
             showUnusable = true,
             unusableColor = {0.3, 0.3, 0.6},
+            showLossOfControl = true,
+            lossOfControlColor = {1, 0, 0, 0.5},
         },
         locked = false,
     },
@@ -163,6 +167,10 @@ function CooldownCompanion:OnEnable()
 
     -- Power updates for usability dimming
     self:RegisterEvent("UNIT_POWER_FREQUENT", "MarkCooldownsDirty")
+
+    -- Loss of control events
+    self:RegisterEvent("LOSS_OF_CONTROL_ADDED", "MarkCooldownsDirty")
+    self:RegisterEvent("LOSS_OF_CONTROL_UPDATE", "MarkCooldownsDirty")
 
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")

@@ -226,6 +226,19 @@ local function SetAssistedHighlight(button, show)
     end
 end
 
+-- Update loss-of-control cooldown on a button.
+-- Uses a CooldownFrame to avoid comparing secret values — the raw start/duration
+-- go directly to SetCooldown which handles them on the C side.
+local function UpdateLossOfControl(button)
+    if not button.locCooldown then return end
+
+    if button.style.showLossOfControl and button.buttonData.type == "spell" then
+        pcall(function()
+            button.locCooldown:SetCooldown(C_Spell.GetSpellLossOfControlCooldown(button.buttonData.id))
+        end)
+    end
+end
+
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
 
@@ -338,6 +351,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
 
+    -- Loss of control cooldown frame (red swipe showing lockout duration)
+    button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
+    button.locCooldown:SetAllPoints(button.icon)
+    button.locCooldown:SetDrawEdge(true)
+    button.locCooldown:SetDrawSwipe(true)
+    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
+    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetHideCountdownNumbers(true)
+    button.locCooldown:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
+
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cooldownFontSize = style.cooldownFontSize or 12
@@ -394,6 +418,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Re-apply full click-through on overlay frames (the recursive call above
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.assistedHighlight then
         if button.assistedHighlight.blizzardFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
@@ -564,6 +589,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- If pcall failed (secret values), keep current text
     end
 
+    -- Loss of control overlay
+    UpdateLossOfControl(button)
+
     -- Assisted highlight glow
     if button.assistedHighlight then
         local assistedSpellID = CooldownCompanion.assistedSpellID
@@ -685,6 +713,13 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         SetAssistedHighlight(button, false)
     end
 
+    -- Update loss of control cooldown frame
+    if button.locCooldown then
+        local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
+        button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+        button.locCooldown:Clear()
+    end
+
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips ~= false
@@ -696,6 +731,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Re-apply full click-through on overlay frames (the recursive call above
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.assistedHighlight then
         if button.assistedHighlight.blizzardFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)

@@ -1397,6 +1397,52 @@ local function BuildExtrasTab(container)
         container:AddChild(unusableColor)
     end
 
+    -- Loss of control
+    local locCb = AceGUI:Create("CheckBox")
+    locCb:SetLabel("Show Loss of Control")
+    locCb:SetValue(style.showLossOfControl or false)
+    locCb:SetFullWidth(true)
+    locCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showLossOfControl = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(locCb)
+
+    -- (?) tooltip for loss of control
+    local locInfo = CreateFrame("Button", nil, locCb.frame)
+    locInfo:SetSize(16, 16)
+    locInfo:SetPoint("LEFT", locCb.checkbg, "RIGHT", locCb.text:GetStringWidth() + 4, 0)
+    local locInfoText = locInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    locInfoText:SetPoint("CENTER")
+    locInfoText:SetText("|cff66aaff(?)|r")
+    locInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Loss of Control")
+        GameTooltip:AddLine("Shows a red overlay on spell icons when they are locked out by a stun, interrupt, silence, or other crowd control effect.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    locInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(extrasInfoButtons, locInfo)
+
+    if style.showLossOfControl then
+        local locColor = AceGUI:Create("ColorPicker")
+        locColor:SetLabel("LoC Overlay Color")
+        locColor:SetHasAlpha(true)
+        local lc = style.lossOfControlColor or {1, 0, 0, 0.5}
+        locColor:SetColor(lc[1], lc[2], lc[3], lc[4])
+        locColor:SetFullWidth(true)
+        locColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.lossOfControlColor = {r, g, b, a}
+        end)
+        locColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.lossOfControlColor = {r, g, b, a}
+        end)
+        container:AddChild(locColor)
+    end
+
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
     tooltipCb:SetValue(style.showTooltips ~= false)
