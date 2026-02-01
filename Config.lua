@@ -1303,7 +1303,7 @@ function RefreshColumn2()
         -- Proc Glow toggle
         local procCb = AceGUI:Create("CheckBox")
         procCb:SetLabel("Show Proc Glow")
-        procCb:SetValue(buttonData.procGlow ~= false)
+        procCb:SetValue(buttonData.procGlow == true)
         procCb:SetFullWidth(true)
         procCb:SetCallback("OnValueChanged", function(widget, event, val)
             buttonData.procGlow = val
@@ -1329,7 +1329,7 @@ function RefreshColumn2()
             GameTooltip:Hide()
         end)
 
-        if buttonData.procGlow ~= false then
+        if buttonData.procGlow == true then
             -- Proc Glow color & size (group-wide style settings)
             local procGlowColor = AceGUI:Create("ColorPicker")
             procGlowColor:SetLabel("Glow Color")
@@ -1391,7 +1391,7 @@ local function BuildExtrasTab(container)
 
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")
-    gcdCb:SetValue(style.showGCDSwipe ~= false)
+    gcdCb:SetValue(style.showGCDSwipe == true)
     gcdCb:SetFullWidth(true)
     gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showGCDSwipe = val
@@ -1503,7 +1503,7 @@ local function BuildExtrasTab(container)
 
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
-    tooltipCb:SetValue(style.showTooltips ~= false)
+    tooltipCb:SetValue(style.showTooltips == true)
     tooltipCb:SetFullWidth(true)
     tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showTooltips = val

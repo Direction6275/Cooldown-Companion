@@ -472,7 +472,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips ~= false
+    local showTooltips = style.showTooltips == true
     local disableClicks = true
     local disableMotion = not showTooltips
 
@@ -627,7 +627,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- GCD suppression (wrapped for secret-value safety)
     if fetchOk then
         local suppressGCD = false
-        if style.showGCDSwipe == false then
+        if not style.showGCDSwipe then
             pcall(function()
                 suppressGCD = isOnGCD and true or false
             end)
@@ -753,7 +753,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Proc glow (spell activation overlay)
     if button.procGlow then
         local showProc = false
-        if buttonData.procGlow ~= false and buttonData.type == "spell" then
+        if buttonData.procGlow == true and buttonData.type == "spell" then
             local ok, overlayed = pcall(C_SpellActivationOverlay.IsSpellOverlayed, buttonData.id)
             if ok then showProc = overlayed or false end
         end
@@ -895,7 +895,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips ~= false
+    local showTooltips = style.showTooltips == true
     local disableClicks = true
     local disableMotion = not showTooltips
 
