@@ -31,6 +31,7 @@ local col3Container = nil
 -- AceGUI widget tracking for cleanup
 local col1BarWidgets = {}
 local profileBarAceWidgets = {}
+local col2InfoButtons = {}
 local moveMenuFrame = nil
 
 -- Drag-reorder state
@@ -915,6 +916,12 @@ end
 ------------------------------------------------------------------------
 function RefreshColumn2()
     if not col2Scroll then return end
+    for _, btn in ipairs(col2InfoButtons) do
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(col2InfoButtons)
     CancelDrag()
     col2Scroll:ReleaseChildren()
 
@@ -1328,6 +1335,7 @@ function RefreshColumn2()
         procInfo:SetScript("OnLeave", function()
             GameTooltip:Hide()
         end)
+        table.insert(col2InfoButtons, procInfo)
 
         if buttonData.procGlow == true then
             -- Proc Glow color & size (group-wide style settings)
@@ -1369,6 +1377,7 @@ local extrasInfoButtons = {}
 
 local function BuildExtrasTab(container)
     for _, btn in ipairs(extrasInfoButtons) do
+        btn:ClearAllPoints()
         btn:Hide()
         btn:SetParent(nil)
     end
