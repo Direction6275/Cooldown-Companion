@@ -351,10 +351,6 @@ end
 
 function CooldownCompanion:OnCombatStart()
     self:UpdateAllCooldowns()
-    -- Hide spec popup during combat
-    if CDCSpecPopup and CDCSpecPopup:IsShown() then
-        CDCSpecPopup:Hide()
-    end
     -- Hide config panel during combat to avoid protected frame errors
     if self._configWasOpen == nil then
         self._configWasOpen = false
