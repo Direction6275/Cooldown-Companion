@@ -541,8 +541,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- error on comparison but can be passed directly to SetCooldown (C-side).
     -- We capture raw values first, then attempt comparisons separately.
     local cdStart, cdDuration, fetchOk, isOnGCD, isRealCD
-    pcall(function()
-        if buttonData.type == "spell" then
+    if buttonData.type == "spell" then
+        pcall(function()
             local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
             if cooldownInfo then
                 cdStart = cooldownInfo.startTime
@@ -550,11 +550,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 isOnGCD = cooldownInfo.isOnGCD
                 fetchOk = true
             end
-        elseif buttonData.type == "item" then
-            cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-            fetchOk = true
-        end
-    end)
+        end)
+    elseif buttonData.type == "item" then
+        cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+        fetchOk = true
+    end
 
     -- Determine real-CD vs GCD status.
     -- During combat, numeric comparisons (cdDuration > 0) fail with secret
@@ -680,8 +680,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
     if r == 1 and g == 1 and b == 1 and style.showUnusable and buttonData.type == "spell" then
-        local ok, isUsable, insufficientPower = pcall(C_Spell.IsSpellUsable, buttonData.id)
-        if ok and insufficientPower then
+        local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
+        if insufficientPower then
             local uc = style.unusableColor or {0.3, 0.3, 0.6}
             r, g, b = uc[1], uc[2], uc[3]
         end
@@ -756,17 +756,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        -- Show recharge radial when charges are missing (not just at 0).
-        -- Use estimated _chargeCount for the gate (Lua comparison) and pass
-        -- raw API timing to SetCooldown (C-side, handles secret values).
-        if not skipSetCooldown
-           and button._chargeCount and button._chargeMax
-           and button._chargeCount < button._chargeMax then
+        -- Show recharge radial via charge timing passed directly to
+        -- SetCooldown (C-side, handles secret values). At max charges the
+        -- API returns (0,0) which clears the display — no Lua gate needed.
+        if not skipSetCooldown and charges then
             pcall(function()
-                local c = C_Spell.GetSpellCharges(buttonData.id)
-                if c then
-                    button.cooldown:SetCooldown(c.cooldownStartTime, c.cooldownDuration)
-                end
+                button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
             end)
         end
     end
@@ -789,8 +784,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button.procGlow then
         local showProc = false
         if buttonData.procGlow == true and buttonData.type == "spell" then
-            local ok, overlayed = pcall(C_SpellActivationOverlay.IsSpellOverlayed, buttonData.id)
-            if ok then showProc = overlayed or false end
+            showProc = C_SpellActivationOverlay.IsSpellOverlayed(buttonData.id) or false
         end
         SetProcGlow(button, showProc)
     end
