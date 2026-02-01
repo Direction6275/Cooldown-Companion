@@ -220,8 +220,8 @@ end
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         if InCombatLockdown() then
-            self:DesaturateSpellOnCast(spellID)
             self:DecrementChargeOnCast(spellID)
+            self:DesaturateSpellOnCast(spellID)
         end
         self:UpdateAllCooldowns()
     end
@@ -283,8 +283,23 @@ function CooldownCompanion:DesaturateSpellOnCast(spellID)
                    and button.buttonData.type == "spell"
                    and button.buttonData.id == spellID
                    and button.style and button.style.desaturateOnCooldown then
-                    button._desaturated = true
-                    button.icon:SetDesaturated(true)
+                    -- For charge-based spells, only desaturate when all
+                    -- charges are depleted (the spell is truly on cooldown).
+                    -- DecrementChargeOnCast runs first so _chargeCount is
+                    -- already updated.
+                    if button.buttonData.hasCharges
+                       and button._chargeCount and button._chargeCount > 0 then
+                        -- Still have charges — not on cooldown, skip
+                    else
+                        button._desaturated = true
+                        button.icon:SetDesaturated(true)
+                        -- Allow SetCooldown calls for this new cooldown cycle
+                        button._realCDSet = false
+                        -- Timer fallback for when OnCooldownDone doesn't fire
+                        if button._lastKnownCDDuration and button._lastKnownCDDuration > 0 then
+                            button._desatExpiry = GetTime() + button._lastKnownCDDuration
+                        end
+                    end
                 end
             end
         end

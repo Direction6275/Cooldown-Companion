@@ -398,6 +398,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         if button.style and button.style.desaturateOnCooldown then
             button._desaturated = false
             button.icon:SetDesaturated(false)
+            button._realCDSet = nil
+            button._desatExpiry = nil
         end
     end)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
@@ -554,31 +556,68 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end)
 
     -- Determine real-CD vs GCD status.
-    -- isOnGCD is a boolean and readable during combat (not a secret value).
-    -- Numeric comparisons (cdDuration > 0) may fail with secret values.
-    -- Split into two pcalls so the boolean check succeeds even when numerics fail.
+    -- During combat, numeric comparisons (cdDuration > 0) fail with secret
+    -- values, so isRealCD stays nil and the current desaturation state is
+    -- preserved. Outside combat everything is readable and works normally.
     if fetchOk then
         pcall(function()
-            if buttonData.type == "spell" and isOnGCD then
-                isRealCD = false
+            if buttonData.type == "spell" then
+                isRealCD = cdDuration > 0 and not isOnGCD
+                if isRealCD then
+                    button._lastKnownCDDuration = cdDuration
+                end
+            elseif buttonData.type == "item" then
+                isRealCD = cdDuration and cdDuration > 1.5
+                if isRealCD then
+                    button._lastKnownCDDuration = cdDuration
+                end
             end
         end)
-        if isRealCD == nil then
-            pcall(function()
-                if buttonData.type == "spell" then
-                    isRealCD = cdDuration > 0 and not isOnGCD
-                elseif buttonData.type == "item" then
-                    isRealCD = cdDuration and cdDuration > 1.5
-                end
-            end)
+    end
+
+    -- During combat, repeated SetCooldown calls with secret values can
+    -- preempt OnCooldownDone (SetCooldown(0,0) clears the animation
+    -- without firing it). Once the real-CD animation is set, stop calling
+    -- SetCooldown entirely so it runs to natural completion.
+    -- _realCDSet is only cleared by DesaturateSpellOnCast (new cast of
+    -- this spell), OnCooldownDone, or the GCD-dominance check below.
+    local skipSetCooldown = false
+    if button._desaturated and InCombatLockdown() and button._realCDSet then
+        -- If GCD became the dominant cooldown (isOnGCD flipped to true),
+        -- the real CD will end during this GCD — the spell will be usable
+        -- when GCD ends. Un-desaturate immediately.
+        local onGCD = false
+        pcall(function()
+            onGCD = isOnGCD and true or false
+        end)
+        if onGCD then
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+            button._realCDSet = nil
+            button._desatExpiry = nil
+        else
+            skipSetCooldown = true
         end
     end
 
     -- Cooldown display
-    if fetchOk then
+    if fetchOk and not skipSetCooldown then
         button.cooldown:SetCooldown(cdStart, cdDuration)
 
-        -- GCD suppression (wrapped for secret-value safety)
+        -- After GCD ends, mark that the real CD animation is now set
+        if button._desaturated and InCombatLockdown() then
+            local onGCD = false
+            pcall(function()
+                onGCD = isOnGCD and true or false
+            end)
+            if not onGCD then
+                button._realCDSet = true
+            end
+        end
+    end
+
+    -- GCD suppression (wrapped for secret-value safety)
+    if fetchOk then
         local suppressGCD = false
         if style.showGCDSwipe == false then
             pcall(function()
@@ -599,6 +638,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- During combat, cooldown values may be secret so isRealCD stays nil.
     -- In that case we keep the current desaturation state. Spells cast during
     -- combat are desaturated via OnSpellCast -> DesaturateSpellOnCast instead.
+    -- OnCooldownDone handles un-desaturation when the cooldown expires.
     if style.desaturateOnCooldown then
         if fetchOk and isRealCD ~= nil then
             local wantDesat = isRealCD
@@ -606,8 +646,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._desaturated = wantDesat
                 button.icon:SetDesaturated(wantDesat)
             end
+        elseif button._desaturated and button._desatExpiry
+               and GetTime() >= button._desatExpiry then
+            -- Timer fallback: un-desaturate when the estimated cooldown
+            -- end time is reached. Handles cases where OnCooldownDone
+            -- doesn't fire (e.g. GCD overlapping the end of the real CD).
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+            button._desatExpiry = nil
+            button._realCDSet = nil
         end
-        -- If isRealCD is nil (secret values), keep current desaturation state
     else
         if button._desaturated ~= false then
             button._desaturated = false
@@ -726,6 +774,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
+    button._realCDSet = nil
+    button._desatExpiry = nil
+    button._lastKnownCDDuration = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
