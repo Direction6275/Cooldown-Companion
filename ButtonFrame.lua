@@ -156,6 +156,20 @@ local function FitHighlightFrame(frame, button, overhangPct)
     end
 end
 
+-- Apply a vertex color tint to a proc glow frame (ActionButtonSpellAlertTemplate).
+-- The tint is multiplicative with the base golden texture, so warm colors work
+-- best.  White {1,1,1,1} = default golden glow.
+local function TintProcGlowFrame(frame, color)
+    if not frame then return end
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+    if frame.ProcStartFlipbook then
+        frame.ProcStartFlipbook:SetVertexColor(r, g, b, a)
+    end
+    if frame.ProcLoopFlipbook then
+        frame.ProcLoopFlipbook:SetVertexColor(r, g, b, a)
+    end
+end
+
 -- Show or hide assisted highlight on a button based on the selected style.
 -- Tracks current state to avoid restarting animations every tick.
 local function SetAssistedHighlight(button, show)
@@ -163,11 +177,14 @@ local function SetAssistedHighlight(button, show)
     if not hl then return end
     local highlightStyle = button.style and button.style.assistedHighlightStyle or "blizzard"
 
-    -- Determine desired state, including color in cache key for solid style
+    -- Determine desired state, including color in cache key for solid/proc styles
     -- so color changes via settings invalidate the cache
     local colorKey
     if show and highlightStyle == "solid" then
         local c = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        colorKey = string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4])
+    elseif show and highlightStyle == "proc" then
+        local c = button.style.assistedHighlightProcColor or {1, 1, 1, 1}
         colorKey = string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4])
     end
     local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
@@ -211,6 +228,7 @@ local function SetAssistedHighlight(button, show)
         end
     elseif highlightStyle == "proc" then
         if hl.procFrame then
+            TintProcGlowFrame(hl.procFrame, button.style.assistedHighlightProcColor or {1, 1, 1, 1})
             hl.procFrame:Show()
             -- Skip the intro burst (ProcStartAnim) and go straight to the loop
             if hl.procFrame.ProcStartFlipbook then
@@ -227,15 +245,22 @@ local function SetAssistedHighlight(button, show)
 end
 
 -- Show or hide proc glow on a button.
--- Tracks state to avoid restarting animations every tick.
+-- Tracks state (including color) to avoid restarting animations every tick.
 local function SetProcGlow(button, show)
     local frame = button.procGlow
     if not frame then return end
 
-    if button._procGlowActive == show then return end
-    button._procGlowActive = show
+    -- Build a cache key that includes color so tint changes trigger an update
+    local desiredState
+    if show then
+        local c = button.style and button.style.procGlowColor or {1, 1, 1, 1}
+        desiredState = string.format("on%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4] or 1)
+    end
+    if button._procGlowActive == desiredState then return end
+    button._procGlowActive = desiredState
 
     if show then
+        TintProcGlowFrame(frame, button.style and button.style.procGlowColor or {1, 1, 1, 1})
         frame:Show()
         -- Skip the intro burst and go straight to the loop
         if frame.ProcStartFlipbook then

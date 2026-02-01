@@ -1308,8 +1308,38 @@ function RefreshColumn2()
         procCb:SetCallback("OnValueChanged", function(widget, event, val)
             buttonData.procGlow = val
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
         col2Scroll:AddChild(procCb)
+
+        if buttonData.procGlow ~= false then
+            -- Proc Glow color & size (group-wide style settings)
+            local procGlowColor = AceGUI:Create("ColorPicker")
+            procGlowColor:SetLabel("Glow Color")
+            procGlowColor:SetHasAlpha(true)
+            local pgc = group.style.procGlowColor or {1, 1, 1, 1}
+            procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+            procGlowColor:SetFullWidth(true)
+            procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                group.style.procGlowColor = {r, g, b, a}
+            end)
+            procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                group.style.procGlowColor = {r, g, b, a}
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            col2Scroll:AddChild(procGlowColor)
+
+            local procSizeSlider = AceGUI:Create("Slider")
+            procSizeSlider:SetLabel("Glow Size")
+            procSizeSlider:SetSliderValues(0, 60, 1)
+            procSizeSlider:SetValue(group.style.procGlowOverhang or 32)
+            procSizeSlider:SetFullWidth(true)
+            procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                group.style.procGlowOverhang = val
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            col2Scroll:AddChild(procSizeSlider)
+        end
 
     end
 
@@ -1536,6 +1566,21 @@ local function BuildExtrasTab(container)
             end)
             container:AddChild(blizzSlider)
         elseif style.assistedHighlightStyle == "proc" then
+            local procHlColor = AceGUI:Create("ColorPicker")
+            procHlColor:SetLabel("Glow Color")
+            procHlColor:SetHasAlpha(true)
+            local phc = style.assistedHighlightProcColor or {1, 1, 1, 1}
+            procHlColor:SetColor(phc[1], phc[2], phc[3], phc[4])
+            procHlColor:SetFullWidth(true)
+            procHlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                style.assistedHighlightProcColor = {r, g, b, a}
+            end)
+            procHlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                style.assistedHighlightProcColor = {r, g, b, a}
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            container:AddChild(procHlColor)
+
             local procSlider = AceGUI:Create("Slider")
             procSlider:SetLabel("Glow Size")
             procSlider:SetSliderValues(0, 60, 1)

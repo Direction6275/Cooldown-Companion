@@ -84,11 +84,13 @@ local defaults = {
                         assistedHighlightBorderSize = 2,
                         assistedHighlightBlizzardOverhang = 32, -- % overhang for blizzard style
                         assistedHighlightProcOverhang = 32, -- % overhang for proc style
+                        assistedHighlightProcColor = {1, 1, 1, 1},
                         showUnusable = true,
                         unusableColor = {0.3, 0.3, 0.6},
                         showLossOfControl = true,
                         lossOfControlColor = {1, 0, 0, 0.5},
                         procGlowOverhang = 32,
+                        procGlowColor = {1, 1, 1, 1},
                     },
                     enabled = true,
                 }
@@ -120,6 +122,8 @@ local defaults = {
             showLossOfControl = true,
             lossOfControlColor = {1, 0, 0, 0.5},
             procGlowOverhang = 32,
+            procGlowColor = {1, 1, 1, 1},
+            assistedHighlightProcColor = {1, 1, 1, 1},
         },
         locked = false,
     },
