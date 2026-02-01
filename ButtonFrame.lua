@@ -12,6 +12,45 @@ local CooldownCompanion = ST.Addon
 -- Button Frame Pool
 local buttonPool = {}
 
+-- Apply configurable strata (frame level) ordering to button sub-elements.
+-- order: array of 4 keys {"cooldown","chargeText","procGlow","assistedHighlight"} or nil for default.
+-- Index 1 = lowest layer (baseLevel+1), index 4 = highest (baseLevel+4).
+-- Loss of Control is always baseLevel+5 (above all configurable elements).
+local function ApplyStrataOrder(button, order)
+    if not order or #order ~= 4 then
+        order = ST.DEFAULT_STRATA_ORDER
+    end
+    local baseLevel = button:GetFrameLevel()
+
+    -- Map element keys to their frames
+    local frameMap = {
+        cooldown = {button.cooldown},
+        chargeText = {button.overlayFrame},
+        procGlow = {button.procGlow},
+        assistedHighlight = {
+            button.assistedHighlight and button.assistedHighlight.solidFrame,
+            button.assistedHighlight and button.assistedHighlight.blizzardFrame,
+            button.assistedHighlight and button.assistedHighlight.procFrame,
+        },
+    }
+
+    for i, key in ipairs(order) do
+        local frames = frameMap[key]
+        if frames then
+            for _, frame in ipairs(frames) do
+                if frame then
+                    frame:SetFrameLevel(baseLevel + i)
+                end
+            end
+        end
+    end
+
+    -- LoC always on top
+    if button.locCooldown then
+        button.locCooldown:SetFrameLevel(baseLevel + 5)
+    end
+end
+
 -- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
 -- Signs: 0 = zero offset, 1 = +size, -1 = -size
 local EDGE_ANCHOR_SPEC = {
@@ -314,7 +353,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Create main button frame
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
     button:SetSize(width, height)
-    
+    local baseLevel = button:GetFrameLevel()
+
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
     button.bg:SetAllPoints()
@@ -368,9 +408,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Solid border: 4 edge textures
     local highlightSize = style.assistedHighlightBorderSize or 2
     local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+    button.assistedHighlight.solidFrame = CreateFrame("Frame", nil, button)
+    button.assistedHighlight.solidFrame:SetAllPoints()
+    button.assistedHighlight.solidFrame:EnableMouse(false)
     button.assistedHighlight.solidTextures = {}
     for i = 1, 4 do
-        local tex = button:CreateTexture(nil, "OVERLAY", nil, 2)
+        local tex = button.assistedHighlight.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
         tex:SetColorTexture(unpack(hlColor))
         tex:Hide()
         button.assistedHighlight.solidTextures[i] = tex
@@ -410,7 +453,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
     button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
     button.locCooldown:SetHideCountdownNumbers(true)
-    button.locCooldown:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
     -- Proc glow frame (spell activation alert, separate from assisted highlight)
@@ -432,8 +474,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button._cdTextRegion = region
     end
 
-    -- Stack count text (for items)
-    button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    -- Stack count text (for items) — on overlay frame so it renders above cooldown swipe
+    button.overlayFrame = CreateFrame("Frame", nil, button)
+    button.overlayFrame:SetAllPoints()
+    button.overlayFrame:EnableMouse(false)
+    button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
     -- Apply custom charge text font/anchor settings from per-button data
@@ -452,7 +497,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
-    
+
+    -- Apply configurable strata ordering (LoC always on top)
+    ApplyStrataOrder(button, style.strataOrder)
+
     -- Store button data
     button.buttonData = buttonData
     button.index = index
@@ -873,6 +921,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         FitHighlightFrame(button.procGlow, button, style.procGlowOverhang or 32)
         SetProcGlow(button, false)
     end
+
+    -- Apply configurable strata ordering (LoC always on top)
+    ApplyStrataOrder(button, style.strataOrder)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on

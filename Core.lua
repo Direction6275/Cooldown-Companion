@@ -19,6 +19,7 @@ CooldownCompanion._rangeCheckSpells = {}
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
 ST.DEFAULT_BORDER_SIZE = 1
+ST.DEFAULT_STRATA_ORDER = {"cooldown", "procGlow", "chargeText", "assistedHighlight"}
 
 -- Minimap icon setup using LibDataBroker and LibDBIcon
 local LDB = LibStub("LibDataBroker-1.1")
@@ -95,6 +96,7 @@ local defaults = {
                         lossOfControlColor = {1, 0, 0, 0.5},
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
+                        strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                     },
                     enabled = true,
                 }
@@ -129,6 +131,7 @@ local defaults = {
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
             assistedHighlightProcColor = {1, 1, 1, 1},
+            strataOrder = nil,
         },
         locked = false,
     },
