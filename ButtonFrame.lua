@@ -692,32 +692,41 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Charge count (spells with hasCharges enabled only)
-    -- Wrapped in pcall because charge fields are secret values during combat.
-    -- When pcall fails (combat), we estimate charges from a snapshot taken on the
-    -- last successful read: decrement on cast (DecrementChargeOnCast in Core.lua)
-    -- and increment when enough time has elapsed for a recharge.
+    -- For restricted spells the charge fields are "secret values" during
+    -- combat — they look like numbers but reject Lua arithmetic/comparison.
+    -- C-side widget methods (SetText, SetCooldown) can handle them just
+    -- like print() can, so we pass API values directly to the UI and only
+    -- fall back to Lua-side estimation when the API call itself fails.
     if buttonData.type == "spell" and buttonData.hasCharges then
-        local ok, cur, mx, cdStart, cdDur = pcall(function()
-            local charges = C_Spell.GetSpellCharges(buttonData.id)
-            if charges and charges.maxCharges > 1 then
-                return charges.currentCharges, charges.maxCharges,
-                       charges.cooldownStartTime, charges.cooldownDuration
-            end
+        local charges
+        pcall(function()
+            charges = C_Spell.GetSpellCharges(buttonData.id)
         end)
-        if ok and cur ~= nil then
-            -- After DecrementChargeOnCast, the API may briefly return stale
-            -- (pre-cast) charge counts. Ignore reads during the grace period.
-            local grace = button._chargeDecrementedAt
-                          and (GetTime() - button._chargeDecrementedAt < 0.5)
-            if not grace then
-                button._chargeCount = cur
-                button._chargeMax = mx
-                button._chargeCDStart = cdStart
-                button._chargeCDDuration = cdDur
-                button._chargeDecrementedAt = nil
+
+        -- Try to read charge values as normal Lua numbers (works out of
+        -- combat and for non-restricted spells during combat).
+        local countOk, cur, mx, cdStart, cdDur
+        if charges then
+            countOk, cur, mx, cdStart, cdDur = pcall(function()
+                if charges.maxCharges > 1 then
+                    return charges.currentCharges, charges.maxCharges,
+                           charges.cooldownStartTime, charges.cooldownDuration
+                end
+            end)
+        end
+
+        if countOk and cur ~= nil then
+            -- API fully readable as Lua numbers — update all caches
+            button._chargeCount = cur
+            button._chargeMax = mx
+            button._chargeCDStart = cdStart
+            button._chargeCDDuration = cdDur
+            if cdDur and cdDur > 0 then
+                buttonData.chargeCooldownDuration = cdDur
             end
         elseif button._chargeCount then
-            -- Secret values: estimate charge recovery from snapshot timing
+            -- Values unreadable as Lua numbers: estimate for comparison-
+            -- dependent logic (desaturation, radial gating)
             if button._chargeCount < button._chargeMax
                and button._chargeCDStart and button._chargeCDDuration
                and button._chargeCDDuration > 0 then
@@ -729,23 +738,34 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         end
-        local displayText = button._chargeCount or ""
-        if button._chargeText ~= displayText then
-            button._chargeText = displayText
-            button.count:SetText(displayText)
+
+        -- Display charge text.  Prefer passing the raw API value to SetText
+        -- (C-side, handles secret values like print() does).  Fall back to
+        -- the Lua-side estimated count only when the API table is nil.
+        local textSet = false
+        if charges then
+            textSet = pcall(function()
+                button.count:SetText(charges.currentCharges)
+            end)
+        end
+        if not textSet then
+            local displayText = button._chargeCount or ""
+            if button._chargeText ~= displayText then
+                button._chargeText = displayText
+                button.count:SetText(displayText)
+            end
         end
 
         -- Show recharge radial when charges are missing (not just at 0).
-        -- _chargeCount/_chargeMax are cached Lua numbers so this comparison
-        -- is safe during combat. The charge cooldown values from the API may
-        -- be secret values but SetCooldown handles them (C-side).
+        -- Use estimated _chargeCount for the gate (Lua comparison) and pass
+        -- raw API timing to SetCooldown (C-side, handles secret values).
         if not skipSetCooldown
            and button._chargeCount and button._chargeMax
            and button._chargeCount < button._chargeMax then
             pcall(function()
-                local charges = C_Spell.GetSpellCharges(buttonData.id)
-                if charges then
-                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                local c = C_Spell.GetSpellCharges(buttonData.id)
+                if c then
+                    button.cooldown:SetCooldown(c.cooldownStartTime, c.cooldownDuration)
                 end
             end)
         end
@@ -809,7 +829,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeMax = nil
     button._chargeCDStart = nil
     button._chargeCDDuration = nil
-    button._chargeDecrementedAt = nil
     button._procGlowActive = nil
 
     button:SetSize(width, height)

@@ -178,8 +178,11 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("LOSS_OF_CONTROL_ADDED", "MarkCooldownsDirty")
     self:RegisterEvent("LOSS_OF_CONTROL_UPDATE", "MarkCooldownsDirty")
 
+    -- Charge change events (proc-granted charges, recharges, etc.)
+    self:RegisterEvent("SPELL_UPDATE_CHARGES", "OnChargesChanged")
+
     -- Spell activation overlay (proc glow) events
-    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "MarkCooldownsDirty")
+    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "OnProcGlowShow")
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "MarkCooldownsDirty")
 
     -- Talent change events — refresh group frames and config panel
@@ -214,6 +217,49 @@ function CooldownCompanion:OnDisable()
     -- Hide all frames
     for _, frame in pairs(self.groupFrames) do
         frame:Hide()
+    end
+end
+
+function CooldownCompanion:OnChargesChanged()
+    self:UpdateAllCooldowns()
+end
+
+function CooldownCompanion:OnProcGlowShow(event, spellID)
+    -- A proc overlay appeared for this spell. If it's a charged spell,
+    -- increment the charge count — during combat we can't read charges
+    -- from the API (secret values), so this is our signal that a charge
+    -- was granted by a proc.
+    if InCombatLockdown() then
+        self:IncrementChargeOnProc(spellID)
+    end
+    self:UpdateAllCooldowns()
+end
+
+function CooldownCompanion:IncrementChargeOnProc(spellID)
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData
+                   and button.buttonData.type == "spell"
+                   and button.buttonData.id == spellID
+                   and button.buttonData.hasCharges
+                   and button._chargeCount ~= nil
+                   and button._chargeMax
+                   and button._chargeCount < button._chargeMax then
+                    button._chargeCount = button._chargeCount + 1
+                    -- If now at max, no recharge in progress
+                    if button._chargeCount >= button._chargeMax then
+                        button._chargeCDStart = nil
+                        button._chargeCDDuration = nil
+                    end
+                    -- Don't touch _chargeCDStart when not at max — the
+                    -- existing recharge timer is still running and the
+                    -- estimation loop should continue from where it was.
+                    button._chargeText = button._chargeCount
+                    button.count:SetText(button._chargeCount)
+                end
+            end
+        end
     end
 end
 
@@ -256,6 +302,12 @@ function CooldownCompanion:DecrementChargeOnCast(spellID)
                         -- If we were at max charges, a recharge just started now
                         if button._chargeCount == (button._chargeMax or 0) - 1 then
                             button._chargeCDStart = GetTime()
+                            -- If _chargeCDDuration is 0 (spell was at max charges
+                            -- pre-combat), use the persisted recharge duration
+                            if not button._chargeCDDuration or button._chargeCDDuration == 0 then
+                                button._chargeCDDuration = button.buttonData
+                                    and button.buttonData.chargeCooldownDuration or 0
+                            end
                         end
                     else
                         -- Estimation says 0 but the cast succeeded, so WoW
@@ -263,10 +315,11 @@ function CooldownCompanion:DecrementChargeOnCast(spellID)
                         -- (floating-point imprecision). Net result: 0 charges
                         -- (one recovered, one consumed). New recharge starts now.
                         button._chargeCDStart = GetTime()
+                        if not button._chargeCDDuration or button._chargeCDDuration == 0 then
+                            button._chargeCDDuration = button.buttonData
+                                and button.buttonData.chargeCooldownDuration or 0
+                        end
                     end
-                    -- Grace period: prevent the next few API reads from
-                    -- overwriting with a stale pre-cast charge count.
-                    button._chargeDecrementedAt = GetTime()
                     button._chargeText = button._chargeCount
                     button.count:SetText(button._chargeCount)
                 end
