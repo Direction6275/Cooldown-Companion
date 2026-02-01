@@ -293,8 +293,9 @@ function CooldownCompanion:DesaturateSpellOnCast(spellID)
                     else
                         button._desaturated = true
                         button.icon:SetDesaturated(true)
-                        -- Allow SetCooldown calls for this new cooldown cycle
-                        button._realCDSet = false
+                        -- Reset CD tracking for this new cooldown cycle
+                        button._realCDSet = nil
+                        button._inGCDPhase = nil
                         -- Timer fallback for when OnCooldownDone doesn't fire
                         if button._lastKnownCDDuration and button._lastKnownCDDuration > 0 then
                             button._desatExpiry = GetTime() + button._lastKnownCDDuration

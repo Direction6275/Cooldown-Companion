@@ -399,6 +399,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             button._desaturated = false
             button.icon:SetDesaturated(false)
             button._realCDSet = nil
+            button._inGCDPhase = nil
             button._desatExpiry = nil
         end
     end)
@@ -604,14 +605,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if fetchOk and not skipSetCooldown then
         button.cooldown:SetCooldown(cdStart, cdDuration)
 
-        -- After GCD ends, mark that the real CD animation is now set
+        -- Track GCD-to-real-CD transition for on-GCD spells only.
+        -- Off-GCD spells never have isOnGCD=true, so _inGCDPhase is
+        -- never set and _realCDSet stays nil — keeping the old behavior
+        -- of calling SetCooldown every tick (which works for them).
         if button._desaturated and InCombatLockdown() then
             local onGCD = false
             pcall(function()
                 onGCD = isOnGCD and true or false
             end)
-            if not onGCD then
+            if onGCD then
+                button._inGCDPhase = true
+            elseif button._inGCDPhase then
+                -- GCD just ended, real CD animation is now set
                 button._realCDSet = true
+                button._inGCDPhase = nil
             end
         end
     end
@@ -775,6 +783,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._realCDSet = nil
+    button._inGCDPhase = nil
     button._desatExpiry = nil
     button._lastKnownCDDuration = nil
     button._vertexR = nil
