@@ -722,10 +722,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Assisted highlight glow
     if button.assistedHighlight then
         local assistedSpellID = CooldownCompanion.assistedSpellID
+        local displayId = button._displaySpellId or buttonData.id
         local showHighlight = style.showAssistedHighlight
             and buttonData.type == "spell"
             and assistedSpellID
-            and buttonData.id == assistedSpellID
+            and (displayId == assistedSpellID or buttonData.id == assistedSpellID)
 
         SetAssistedHighlight(button, showHighlight)
     end
