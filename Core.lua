@@ -282,7 +282,6 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         if InCombatLockdown() then
             self:DecrementChargeOnCast(spellID)
-            self:DesaturateSpellOnCast(spellID)
         end
         self:UpdateAllCooldowns()
     end
@@ -343,50 +342,6 @@ function CooldownCompanion:DecrementChargeOnCast(spellID)
     end
 end
 
-function CooldownCompanion:DesaturateSpellOnCast(spellID)
-    -- GetSpellBaseCooldown returns (baseCooldownMS, gcdMS).
-    -- No-CD spells (Moonfire, Swipe) return 0; CD spells (Thrash) return >0.
-    -- Charged spells (Mangle) also return 0 since their CD is charge-based,
-    -- so we can only use this to filter out non-charged no-CD spells.
-    local baseCooldown = GetSpellBaseCooldown(spellID)
-
-    -- Try to read the current cooldown duration for the timer fallback
-    local totalDur
-    local duration = C_Spell.GetSpellCooldownDuration(spellID)
-    if duration and not duration:HasSecretValues() then
-        local ok, val = pcall(function() return duration:GetTotalDuration() end)
-        if ok then totalDur = val end
-    end
-
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                if button.buttonData
-                   and button.buttonData.type == "spell"
-                   and button.buttonData.id == spellID
-                   and button.style and button.style.desaturateOnCooldown then
-                    -- No base cooldown and not charge-based → no-CD spell (e.g. Moonfire)
-                    if (not baseCooldown or baseCooldown == 0) and not button.buttonData.hasCharges then
-                        -- skip
-                    elseif button.buttonData.hasCharges
-                       and button._chargeCount and button._chargeCount > 0 then
-                        -- Still have charges — not on cooldown, skip
-                    else
-                        button._desaturated = true
-                        button.icon:SetDesaturated(true)
-                        button._realCDSet = nil
-                        button._inGCDPhase = nil
-                        -- Timer fallback for when OnCooldownDone doesn't fire
-                        local cdDur = totalDur or button._lastKnownCDDuration
-                        if cdDur and cdDur > 0 then
-                            button._desatExpiry = GetTime() + cdDur
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
 
 function CooldownCompanion:OnCombatStart()
     self:UpdateAllCooldowns()
