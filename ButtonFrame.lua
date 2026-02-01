@@ -427,8 +427,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+        local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
+        region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
     end
-    
+
     -- Stack count text (for items)
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
@@ -439,6 +441,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local chargeFontSize = buttonData.chargeFontSize or 12
         local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+        local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
 
         local chargeAnchor = buttonData.chargeAnchor or "BOTTOMRIGHT"
         local chargeXOffset = buttonData.chargeXOffset or -2
@@ -799,6 +803,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+        local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
+        region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
     end
 
     -- Update charge text font/anchor settings from per-button data
@@ -808,6 +814,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local chargeFontSize = button.buttonData.chargeFontSize or 12
         local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+        local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
 
         local chargeAnchor = button.buttonData.chargeAnchor or "BOTTOMRIGHT"
         local chargeXOffset = button.buttonData.chargeXOffset or -2

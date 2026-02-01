@@ -1330,6 +1330,18 @@ function RefreshColumn2()
             end)
             col2Scroll:AddChild(chargeOutlineDrop)
 
+            local chargeFontColor = AceGUI:Create("ColorPicker")
+            chargeFontColor:SetLabel("Font Color")
+            chargeFontColor:SetHasAlpha(true)
+            local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
+            chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
+            chargeFontColor:SetFullWidth(true)
+            chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColor = {r, g, b, a}
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeFontColor)
+
             local chargeAnchorValues = {}
             for _, pt in ipairs(anchorPoints) do
                 chargeAnchorValues[pt] = anchorPointLabels[pt]
@@ -1944,6 +1956,18 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(outlineDrop)
+
+    local cdFontColor = AceGUI:Create("ColorPicker")
+    cdFontColor:SetLabel("Font Color")
+    cdFontColor:SetHasAlpha(true)
+    local cdc = style.cooldownFontColor or {1, 1, 1, 1}
+    cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
+    cdFontColor:SetFullWidth(true)
+    cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.cooldownFontColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(cdFontColor)
 
 end
 

@@ -75,6 +75,7 @@ local defaults = {
                         cooldownFontSize = 12,
                         cooldownFontOutline = "OUTLINE",
                         cooldownFont = "Fonts\\FRIZQT__.TTF",
+                        cooldownFontColor = {1, 1, 1, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = false, -- Prevent icon image stretching
                         showTooltips = true,
@@ -108,6 +109,7 @@ local defaults = {
             cooldownFontSize = 12,
             cooldownFontOutline = "OUTLINE",
             cooldownFont = "Fonts\\FRIZQT__.TTF",
+            cooldownFontColor = {1, 1, 1, 1},
             iconWidthRatio = 1.0,
             maintainAspectRatio = false,
             showTooltips = false,
