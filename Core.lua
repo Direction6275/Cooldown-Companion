@@ -12,6 +12,9 @@ _G.CooldownCompanion = CooldownCompanion
 -- Expose the private table for other modules
 CooldownCompanion.ST = ST
 
+-- Event-driven range check registry (spellID -> true)
+CooldownCompanion._rangeCheckSpells = {}
+
 -- Constants
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
@@ -185,6 +188,12 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "OnProcGlowShow")
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "MarkCooldownsDirty")
 
+    -- Spell override icon changes (talents, procs morphing spells)
+    self:RegisterEvent("SPELL_UPDATE_ICON", "OnSpellUpdateIcon")
+
+    -- Event-driven range checking (replaces per-tick IsSpellInRange polling)
+    self:RegisterEvent("SPELL_RANGE_CHECK_UPDATE", "OnSpellRangeCheckUpdate")
+
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
 
@@ -213,7 +222,13 @@ function CooldownCompanion:OnDisable()
         self.updateTicker:Cancel()
         self.updateTicker = nil
     end
-    
+
+    -- Disable all range check registrations
+    for spellId in pairs(self._rangeCheckSpells) do
+        C_Spell.EnableSpellRangeCheck(spellId, false)
+    end
+    wipe(self._rangeCheckSpells)
+
     -- Hide all frames
     for _, frame in pairs(self.groupFrames) do
         frame:Hide()
@@ -329,6 +344,20 @@ function CooldownCompanion:DecrementChargeOnCast(spellID)
 end
 
 function CooldownCompanion:DesaturateSpellOnCast(spellID)
+    -- GetSpellBaseCooldown returns (baseCooldownMS, gcdMS).
+    -- No-CD spells (Moonfire, Swipe) return 0; CD spells (Thrash) return >0.
+    -- Charged spells (Mangle) also return 0 since their CD is charge-based,
+    -- so we can only use this to filter out non-charged no-CD spells.
+    local baseCooldown = GetSpellBaseCooldown(spellID)
+
+    -- Try to read the current cooldown duration for the timer fallback
+    local totalDur
+    local duration = C_Spell.GetSpellCooldownDuration(spellID)
+    if duration and not duration:HasSecretValues() then
+        local ok, val = pcall(function() return duration:GetTotalDuration() end)
+        if ok then totalDur = val end
+    end
+
     for _, frame in pairs(self.groupFrames) do
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
@@ -336,22 +365,21 @@ function CooldownCompanion:DesaturateSpellOnCast(spellID)
                    and button.buttonData.type == "spell"
                    and button.buttonData.id == spellID
                    and button.style and button.style.desaturateOnCooldown then
-                    -- For charge-based spells, only desaturate when all
-                    -- charges are depleted (the spell is truly on cooldown).
-                    -- DecrementChargeOnCast runs first so _chargeCount is
-                    -- already updated.
-                    if button.buttonData.hasCharges
+                    -- No base cooldown and not charge-based → no-CD spell (e.g. Moonfire)
+                    if (not baseCooldown or baseCooldown == 0) and not button.buttonData.hasCharges then
+                        -- skip
+                    elseif button.buttonData.hasCharges
                        and button._chargeCount and button._chargeCount > 0 then
                         -- Still have charges — not on cooldown, skip
                     else
                         button._desaturated = true
                         button.icon:SetDesaturated(true)
-                        -- Reset CD tracking for this new cooldown cycle
                         button._realCDSet = nil
                         button._inGCDPhase = nil
                         -- Timer fallback for when OnCooldownDone doesn't fire
-                        if button._lastKnownCDDuration and button._lastKnownCDDuration > 0 then
-                            button._desatExpiry = GetTime() + button._lastKnownCDDuration
+                        local cdDur = totalDur or button._lastKnownCDDuration
+                        if cdDur and cdDur > 0 then
+                            button._desatExpiry = GetTime() + cdDur
                         end
                     end
                 end
@@ -402,6 +430,57 @@ function CooldownCompanion:SlashCommand(input)
         self:Print("Profile reset.")
     else
         self:ToggleConfig()
+    end
+end
+
+function CooldownCompanion:OnSpellUpdateIcon()
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                self:UpdateButtonIcon(button)
+            end
+        end
+    end
+end
+
+function CooldownCompanion:UpdateRangeCheckRegistrations()
+    local newSet = {}
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData.type == "spell"
+                   and button.style and button.style.showOutOfRange then
+                    newSet[button.buttonData.id] = true
+                end
+            end
+        end
+    end
+    -- Enable newly needed range checks
+    for spellId in pairs(newSet) do
+        if not self._rangeCheckSpells[spellId] then
+            C_Spell.EnableSpellRangeCheck(spellId, true)
+        end
+    end
+    -- Disable range checks no longer needed
+    for spellId in pairs(self._rangeCheckSpells) do
+        if not newSet[spellId] then
+            C_Spell.EnableSpellRangeCheck(spellId, false)
+        end
+    end
+    self._rangeCheckSpells = newSet
+end
+
+function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInRange, checksRange)
+    local outOfRange = checksRange and not isInRange
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData.type == "spell"
+                   and button.buttonData.id == spellIdentifier then
+                    button._spellOutOfRange = outOfRange
+                end
+            end
+        end
     end
 end
 
@@ -600,5 +679,9 @@ end
 
 function CooldownCompanion:GetItemInfo(itemId)
     local itemName, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(itemId)
+    if not itemName then
+        local _, _, _, _, icon = C_Item.GetItemInfoInstant(itemId)
+        return nil, icon
+    end
     return itemName, itemIcon
 end

@@ -286,9 +286,14 @@ local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
     if button.style.showLossOfControl and button.buttonData.type == "spell" then
-        pcall(function()
-            button.locCooldown:SetCooldown(C_Spell.GetSpellLossOfControlCooldown(button.buttonData.id))
-        end)
+        local locDuration = C_Spell.GetSpellLossOfControlCooldownDuration(button.buttonData.id)
+        if locDuration then
+            button.locCooldown:SetCooldownFromDurationObject(locDuration)
+        else
+            pcall(function()
+                button.locCooldown:SetCooldown(C_Spell.GetSpellLossOfControlCooldown(button.buttonData.id))
+            end)
+        end
     end
 end
 
@@ -499,7 +504,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button:SetScript("OnEnter", function(self)
             GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
             if self.buttonData.type == "spell" then
-                GameTooltip:SetSpellByID(self.buttonData.id)
+                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
             elseif self.buttonData.type == "item" then
                 GameTooltip:SetItemByID(self.buttonData.id)
             end
@@ -516,15 +521,17 @@ end
 function CooldownCompanion:UpdateButtonIcon(button)
     local buttonData = button.buttonData
     local icon
-    
+    local displayId = buttonData.id
+
     if buttonData.type == "spell" then
-        local name, iconId = self:GetSpellInfo(buttonData.id)
-        icon = iconId
+        displayId = C_Spell.GetOverrideSpell(buttonData.id) or buttonData.id
+        icon = C_Spell.GetSpellTexture(displayId)
     elseif buttonData.type == "item" then
-        local name, iconId = self:GetItemInfo(buttonData.id)
-        icon = iconId
+        icon = C_Item.GetItemIconByID(buttonData.id)
     end
-    
+
+    button._displaySpellId = displayId
+
     if icon then
         button.icon:SetTexture(icon)
     else
@@ -556,24 +563,48 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         fetchOk = true
     end
 
+    -- Fetch LuaDurationObject for spells (not secret-restricted).
+    local spellCooldownDuration
+    if buttonData.type == "spell" then
+        spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+    end
+
     -- Determine real-CD vs GCD status.
-    -- During combat, numeric comparisons (cdDuration > 0) fail with secret
-    -- values, so isRealCD stays nil and the current desaturation state is
-    -- preserved. Outside combat everything is readable and works normally.
+    -- isOnGCD is NeverSecret (always readable even during combat).
+    -- Use it to reliably distinguish real CDs from GCD-only cooldowns.
     if fetchOk then
-        pcall(function()
-            if buttonData.type == "spell" then
-                isRealCD = cdDuration > 0 and not isOnGCD
-                if isRealCD then
-                    button._lastKnownCDDuration = cdDuration
+        if buttonData.type == "spell" then
+            if isOnGCD then
+                -- GCD phase: can't yet distinguish GCD-only from GCD+real-CD.
+                -- Leave isRealCD nil to preserve current desaturation state.
+            elseif spellCooldownDuration then
+                -- Not on GCD. Check if Duration Object represents a real CD.
+                -- IsZero() can return a secret value, so wrap the boolean test.
+                local zeroOk, isNonZero = pcall(function()
+                    return not spellCooldownDuration:IsZero()
+                end)
+                if zeroOk and isNonZero then
+                    isRealCD = true
+                    local ok, val = pcall(function() return spellCooldownDuration:GetTotalDuration() end)
+                    if ok and val then
+                        button._lastKnownCDDuration = val
+                    end
+                elseif zeroOk then
+                    isRealCD = false
                 end
-            elseif buttonData.type == "item" then
+                -- If pcall failed (secret value), leave isRealCD nil
+            else
+                -- Not on GCD and no Duration Object → no spell CD active.
+                isRealCD = false
+            end
+        elseif buttonData.type == "item" then
+            pcall(function()
                 isRealCD = cdDuration and cdDuration > 1.5
                 if isRealCD then
                     button._lastKnownCDDuration = cdDuration
                 end
-            end
-        end)
+            end)
+        end
     end
 
     -- During combat, repeated SetCooldown calls with secret values can
@@ -587,11 +618,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- If GCD became the dominant cooldown (isOnGCD flipped to true),
         -- the real CD will end during this GCD — the spell will be usable
         -- when GCD ends. Un-desaturate immediately.
-        local onGCD = false
-        pcall(function()
-            onGCD = isOnGCD and true or false
-        end)
-        if onGCD then
+        -- isOnGCD is NeverSecret, always readable.
+        if isOnGCD then
             button._desaturated = false
             button.icon:SetDesaturated(false)
             button._realCDSet = nil
@@ -603,18 +631,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Cooldown display
     if fetchOk and not skipSetCooldown then
-        button.cooldown:SetCooldown(cdStart, cdDuration)
+        if spellCooldownDuration then
+            button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+        else
+            button.cooldown:SetCooldown(cdStart, cdDuration)
+        end
 
         -- Track GCD-to-real-CD transition for on-GCD spells only.
         -- Off-GCD spells never have isOnGCD=true, so _inGCDPhase is
         -- never set and _realCDSet stays nil — keeping the old behavior
         -- of calling SetCooldown every tick (which works for them).
         if button._desaturated and InCombatLockdown() then
-            local onGCD = false
-            pcall(function()
-                onGCD = isOnGCD and true or false
-            end)
-            if onGCD then
+            -- isOnGCD is NeverSecret, always readable.
+            if isOnGCD then
                 button._inGCDPhase = true
             elseif button._inGCDPhase then
                 -- GCD just ended, real CD animation is now set
@@ -624,14 +653,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- GCD suppression (wrapped for secret-value safety)
+    -- GCD suppression (isOnGCD is NeverSecret, always readable)
     if fetchOk then
-        local suppressGCD = false
-        if not style.showGCDSwipe then
-            pcall(function()
-                suppressGCD = isOnGCD and true or false
-            end)
-        end
+        local suppressGCD = not style.showGCDSwipe and isOnGCD
 
         if suppressGCD then
             button.cooldown:Hide()
@@ -674,8 +698,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Icon tinting priority: out-of-range red > unusable dimming > normal white
     local r, g, b = 1, 1, 1
     if style.showOutOfRange and buttonData.type == "spell" then
-        local inRange = C_Spell.IsSpellInRange(buttonData.id, "target")
-        if inRange == false then
+        if button._spellOutOfRange then
             r, g, b = 1, 0.2, 0.2
         end
     end
@@ -756,13 +779,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        -- Show recharge radial via charge timing passed directly to
-        -- SetCooldown (C-side, handles secret values). At max charges the
-        -- API returns (0,0) which clears the display — no Lua gate needed.
-        if not skipSetCooldown and charges then
-            pcall(function()
-                button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
-            end)
+        -- Show recharge radial via Duration Object (not secret-restricted).
+        -- Falls back to legacy charge timing when Duration Object unavailable.
+        if not skipSetCooldown then
+            local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
+            if chargeDuration then
+                button.cooldown:SetCooldownFromDurationObject(chargeDuration)
+            elseif charges then
+                pcall(function()
+                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                end)
+            end
         end
     end
 
@@ -824,6 +851,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeCDStart = nil
     button._chargeCDDuration = nil
     button._procGlowActive = nil
+    button._displaySpellId = nil
+    button._spellOutOfRange = nil
 
     button:SetSize(width, height)
 
@@ -950,7 +979,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button:SetScript("OnEnter", function(self)
             GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
             if self.buttonData.type == "spell" then
-                GameTooltip:SetSpellByID(self.buttonData.id)
+                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
             elseif self.buttonData.type == "item" then
                 GameTooltip:SetItemByID(self.buttonData.id)
             end

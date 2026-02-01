@@ -470,6 +470,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Initial cooldown update
     frame:UpdateCooldowns()
+
+    -- Update event-driven range check registrations
+    self:UpdateRangeCheckRegistrations()
 end
 
 function CooldownCompanion:ResizeGroupFrame(groupId)

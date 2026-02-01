@@ -474,11 +474,9 @@ end
 ------------------------------------------------------------------------
 local function GetButtonIcon(buttonData)
     if buttonData.type == "spell" then
-        local info = C_Spell.GetSpellInfo(buttonData.id)
-        return info and info.iconID or 134400
+        return C_Spell.GetSpellTexture(buttonData.id) or 134400
     elseif buttonData.type == "item" then
-        local _, _, _, _, _, _, _, _, _, icon = C_Item.GetItemInfo(buttonData.id)
-        return icon or 134400
+        return C_Item.GetItemIconByID(buttonData.id) or 134400
     end
     return 134400
 end
