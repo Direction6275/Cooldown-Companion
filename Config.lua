@@ -2075,57 +2075,60 @@ local function BuildAppearanceTab(container)
     cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showCooldownText = val
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(cdTextCb)
 
-    -- Sliders and dropdowns
-    local fontSizeSlider = AceGUI:Create("Slider")
-    fontSizeSlider:SetLabel("Font Size")
-    fontSizeSlider:SetSliderValues(8, 32, 1)
-    fontSizeSlider:SetValue(style.cooldownFontSize or 12)
-    fontSizeSlider:SetFullWidth(true)
-    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.cooldownFontSize = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(fontSizeSlider)
+    -- Font settings only shown when cooldown text is enabled
+    if style.showCooldownText then
+        local fontSizeSlider = AceGUI:Create("Slider")
+        fontSizeSlider:SetLabel("Font Size")
+        fontSizeSlider:SetSliderValues(8, 32, 1)
+        fontSizeSlider:SetValue(style.cooldownFontSize or 12)
+        fontSizeSlider:SetFullWidth(true)
+        fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownFontSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(fontSizeSlider)
 
-    local fontDrop = AceGUI:Create("Dropdown")
-    fontDrop:SetLabel("Font")
-    fontDrop:SetList(fontOptions)
-    fontDrop:SetValue(style.cooldownFont or "Fonts\\FRIZQT__.TTF")
-    fontDrop:SetFullWidth(true)
-    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.cooldownFont = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(fontDrop)
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        fontDrop:SetList(fontOptions)
+        fontDrop:SetValue(style.cooldownFont or "Fonts\\FRIZQT__.TTF")
+        fontDrop:SetFullWidth(true)
+        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownFont = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(fontDrop)
 
-    local outlineDrop = AceGUI:Create("Dropdown")
-    outlineDrop:SetLabel("Font Outline")
-    outlineDrop:SetList(outlineOptions)
-    outlineDrop:SetValue(style.cooldownFontOutline or "OUTLINE")
-    outlineDrop:SetFullWidth(true)
-    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.cooldownFontOutline = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(outlineDrop)
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Font Outline")
+        outlineDrop:SetList(outlineOptions)
+        outlineDrop:SetValue(style.cooldownFontOutline or "OUTLINE")
+        outlineDrop:SetFullWidth(true)
+        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(outlineDrop)
 
-    local cdFontColor = AceGUI:Create("ColorPicker")
-    cdFontColor:SetLabel("Font Color")
-    cdFontColor:SetHasAlpha(true)
-    local cdc = style.cooldownFontColor or {1, 1, 1, 1}
-    cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
-    cdFontColor:SetFullWidth(true)
-    cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.cooldownFontColor = {r, g, b, a}
-    end)
-    cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.cooldownFontColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(cdFontColor)
+        local cdFontColor = AceGUI:Create("ColorPicker")
+        cdFontColor:SetLabel("Font Color")
+        cdFontColor:SetHasAlpha(true)
+        local cdc = style.cooldownFontColor or {1, 1, 1, 1}
+        cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
+        cdFontColor:SetFullWidth(true)
+        cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.cooldownFontColor = {r, g, b, a}
+        end)
+        cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.cooldownFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(cdFontColor)
+    end
 
 end
 

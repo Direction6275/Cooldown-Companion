@@ -78,7 +78,7 @@ local defaults = {
                         cooldownFont = "Fonts\\FRIZQT__.TTF",
                         cooldownFontColor = {1, 1, 1, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
-                        maintainAspectRatio = false, -- Prevent icon image stretching
+                        maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = true,
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
@@ -113,7 +113,7 @@ local defaults = {
             cooldownFont = "Fonts\\FRIZQT__.TTF",
             cooldownFontColor = {1, 1, 1, 1},
             iconWidthRatio = 1.0,
-            maintainAspectRatio = false,
+            maintainAspectRatio = true,
             showTooltips = false,
             desaturateOnCooldown = false,
             showGCDSwipe = false,
