@@ -1331,16 +1331,34 @@ function RefreshColumn2()
             col2Scroll:AddChild(chargeOutlineDrop)
 
             local chargeFontColor = AceGUI:Create("ColorPicker")
-            chargeFontColor:SetLabel("Font Color")
+            chargeFontColor:SetLabel("Font Color (Max Charges)")
             chargeFontColor:SetHasAlpha(true)
             local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
             chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
             chargeFontColor:SetFullWidth(true)
+            chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColor = {r, g, b, a}
+            end)
             chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
                 buttonData.chargeFontColor = {r, g, b, a}
                 CooldownCompanion:RefreshGroupFrame(selectedGroup)
             end)
             col2Scroll:AddChild(chargeFontColor)
+
+            local chargeFontColorMissing = AceGUI:Create("ColorPicker")
+            chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
+            chargeFontColorMissing:SetHasAlpha(true)
+            local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
+            chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
+            chargeFontColorMissing:SetFullWidth(true)
+            chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorMissing = {r, g, b, a}
+            end)
+            chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorMissing = {r, g, b, a}
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            col2Scroll:AddChild(chargeFontColorMissing)
 
             local chargeAnchorValues = {}
             for _, pt in ipairs(anchorPoints) do
@@ -1900,6 +1918,9 @@ local function BuildAppearanceTab(container)
     local bc = style.borderColor or {0, 0, 0, 1}
     borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColor:SetFullWidth(true)
+    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+    end)
     borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
         style.borderColor = {r, g, b, a}
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
@@ -1963,6 +1984,9 @@ local function BuildAppearanceTab(container)
     local cdc = style.cooldownFontColor or {1, 1, 1, 1}
     cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
     cdFontColor:SetFullWidth(true)
+    cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.cooldownFontColor = {r, g, b, a}
+    end)
     cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
         style.cooldownFontColor = {r, g, b, a}
         CooldownCompanion:UpdateGroupStyle(selectedGroup)

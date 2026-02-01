@@ -429,6 +429,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        button._cdTextRegion = region
     end
 
     -- Stack count text (for items)
@@ -575,6 +576,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Cooldown text color: reapply each tick because WoW's CooldownFrame
+    -- may reset the internal countdown FontString color during its update.
+    if button._cdTextRegion and style.cooldownFontColor then
+        local cc = style.cooldownFontColor
+        button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+    end
+
     -- Desaturation: driven entirely by the cooldown widget's own state.
     -- GetCooldownTimes() returns non-secret values even during restricted
     -- combat, so we can always reliably check if the widget has an active
@@ -693,6 +701,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
             end)
         end
+    end
+
+    -- Charge text color: applied after charge tracking so _chargeCount is current.
+    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing then
+        local atMax = button._chargeCount and button._chargeMax
+            and button._chargeCount >= button._chargeMax
+        local cc
+        if not atMax and buttonData.chargeFontColorMissing then
+            cc = buttonData.chargeFontColorMissing
+        else
+            cc = buttonData.chargeFontColor or {1, 1, 1, 1}
+        end
+        button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
 
     -- Loss of control overlay
