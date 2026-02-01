@@ -649,11 +649,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end)
         if ok and cur ~= nil then
-            -- Successful read: update snapshot for combat estimation
-            button._chargeCount = cur
-            button._chargeMax = mx
-            button._chargeCDStart = cdStart
-            button._chargeCDDuration = cdDur
+            -- After DecrementChargeOnCast, the API may briefly return stale
+            -- (pre-cast) charge counts. Ignore reads during the grace period.
+            local grace = button._chargeDecrementedAt
+                          and (GetTime() - button._chargeDecrementedAt < 0.5)
+            if not grace then
+                button._chargeCount = cur
+                button._chargeMax = mx
+                button._chargeCDStart = cdStart
+                button._chargeCDDuration = cdDur
+                button._chargeDecrementedAt = nil
+            end
         elseif button._chargeCount then
             -- Secret values: estimate charge recovery from snapshot timing
             if button._chargeCount < button._chargeMax
@@ -728,6 +734,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeMax = nil
     button._chargeCDStart = nil
     button._chargeCDDuration = nil
+    button._chargeDecrementedAt = nil
     button._procGlowActive = nil
 
     button:SetSize(width, height)

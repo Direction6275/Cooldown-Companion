@@ -235,12 +235,38 @@ function CooldownCompanion:DecrementChargeOnCast(spellID)
                    and button.buttonData.type == "spell"
                    and button.buttonData.id == spellID
                    and button.buttonData.hasCharges
-                   and button._chargeCount and button._chargeCount > 0 then
-                    button._chargeCount = button._chargeCount - 1
-                    -- If we were at max charges, a recharge just started now
-                    if button._chargeCount == (button._chargeMax or 0) - 1 then
+                   and button._chargeCount ~= nil then
+                    -- Catch up on any charges that recovered since the last
+                    -- ticker estimation (up to 0.1s stale). Without this, a
+                    -- cast right after a recharge completes would see the old
+                    -- count, skip the decrement, and desync.
+                    if button._chargeCount < (button._chargeMax or 0)
+                       and button._chargeCDStart and button._chargeCDDuration
+                       and button._chargeCDDuration > 0 then
+                        local now = GetTime()
+                        while button._chargeCount < button._chargeMax
+                              and now >= button._chargeCDStart + button._chargeCDDuration do
+                            button._chargeCount = button._chargeCount + 1
+                            button._chargeCDStart = button._chargeCDStart + button._chargeCDDuration
+                        end
+                    end
+                    -- Decrement the charge count.
+                    if button._chargeCount > 0 then
+                        button._chargeCount = button._chargeCount - 1
+                        -- If we were at max charges, a recharge just started now
+                        if button._chargeCount == (button._chargeMax or 0) - 1 then
+                            button._chargeCDStart = GetTime()
+                        end
+                    else
+                        -- Estimation says 0 but the cast succeeded, so WoW
+                        -- must have recovered a charge that our timing missed
+                        -- (floating-point imprecision). Net result: 0 charges
+                        -- (one recovered, one consumed). New recharge starts now.
                         button._chargeCDStart = GetTime()
                     end
+                    -- Grace period: prevent the next few API reads from
+                    -- overwriting with a stale pre-cast charge count.
+                    button._chargeDecrementedAt = GetTime()
                     button._chargeText = button._chargeCount
                     button.count:SetText(button._chargeCount)
                 end
