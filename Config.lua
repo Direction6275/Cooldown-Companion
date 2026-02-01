@@ -1312,6 +1312,23 @@ function RefreshColumn2()
         end)
         col2Scroll:AddChild(procCb)
 
+        -- (?) tooltip for proc glow
+        local procInfo = CreateFrame("Button", nil, procCb.frame)
+        procInfo:SetSize(16, 16)
+        procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
+        local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        procInfoText:SetPoint("CENTER")
+        procInfoText:SetText("|cff66aaff(?)|r")
+        procInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Proc Glow")
+            GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        procInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+
         if buttonData.procGlow ~= false then
             -- Proc Glow color & size (group-wide style settings)
             local procGlowColor = AceGUI:Create("ColorPicker")
