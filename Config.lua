@@ -83,13 +83,17 @@ local function InitPendingStrataOrder(groupId)
     pendingStrataGroup = groupId
     local groups = CooldownCompanion.db.profile.groups
     local group = groups[groupId]
-    if group and group.style and group.style.strataOrder then
+    local saved = group and group.style and group.style.strataOrder
+    if saved and IsStrataOrderComplete(saved) then
         pendingStrataOrder = {}
         for i = 1, 4 do
-            pendingStrataOrder[i] = group.style.strataOrder[i]
+            pendingStrataOrder[i] = saved[i]
         end
     else
-        pendingStrataOrder = {nil, nil, nil, nil}
+        pendingStrataOrder = {}
+        for i = 1, 4 do
+            pendingStrataOrder[i] = ST.DEFAULT_STRATA_ORDER[i]
+        end
     end
 end
 
@@ -1860,6 +1864,100 @@ local function BuildPositioningTab(container)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end)
     container:AddChild(bprSlider)
+
+    -- ================================================================
+    -- Strata (Layer Order)
+    -- ================================================================
+    local strataHeading = AceGUI:Create("Heading")
+    strataHeading:SetText("Strata")
+    strataHeading:SetFullWidth(true)
+    container:AddChild(strataHeading)
+
+    local style = group.style
+    local customStrataEnabled = type(style.strataOrder) == "table"
+
+    local strataToggle = AceGUI:Create("CheckBox")
+    strataToggle:SetLabel("Custom Strata")
+    strataToggle:SetValue(customStrataEnabled)
+    strataToggle:SetFullWidth(true)
+    strataToggle:SetCallback("OnValueChanged", function(widget, event, val)
+        if not val then
+            style.strataOrder = nil
+            pendingStrataOrder = {nil, nil, nil, nil}
+            pendingStrataGroup = selectedGroup
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        else
+            style.strataOrder = style.strataOrder or {}
+            -- Force reinitialize so defaults always appear in dropdowns
+            pendingStrataOrder = nil
+            InitPendingStrataOrder(selectedGroup)
+        end
+        -- Rebuild tab to show/hide dropdowns (toggle is a deliberate action)
+        if col3Container and col3Container.tabGroup then
+            col3Container.tabGroup:SelectTab(selectedTab)
+        end
+    end)
+    container:AddChild(strataToggle)
+
+    if customStrataEnabled then
+        -- Initialize pending state for this group
+        InitPendingStrataOrder(selectedGroup)
+
+        -- Build dropdown list: all 4 element options
+        local strataDropdownList = {}
+        for _, key in ipairs(strataElementKeys) do
+            strataDropdownList[key] = strataElementLabels[key]
+        end
+
+        -- Create 4 dropdowns: position 4 (top) displayed first, position 1 (bottom) last
+        local strataDropdowns = {}
+        for displayIdx = 1, 4 do
+            local pos = 5 - displayIdx  -- 4, 3, 2, 1
+            local label
+            if pos == 4 then
+                label = "Layer 4 (Top)"
+            elseif pos == 1 then
+                label = "Layer 1 (Bottom)"
+            else
+                label = "Layer " .. pos
+            end
+
+            local drop = AceGUI:Create("Dropdown")
+            drop:SetLabel(label)
+            drop:SetList(strataDropdownList)
+            drop:SetValue(pendingStrataOrder[pos])
+            drop:SetFullWidth(true)
+            drop:SetCallback("OnValueChanged", function(widget, event, val)
+                -- Clear this value from any other position (mutual exclusion)
+                for i = 1, 4 do
+                    if i ~= pos and pendingStrataOrder[i] == val then
+                        pendingStrataOrder[i] = nil
+                    end
+                end
+                pendingStrataOrder[pos] = val
+
+                -- Save if all 4 assigned, otherwise nil out the saved order
+                if IsStrataOrderComplete(pendingStrataOrder) then
+                    style.strataOrder = {}
+                    for i = 1, 4 do
+                        style.strataOrder[i] = pendingStrataOrder[i]
+                    end
+                else
+                    style.strataOrder = {}
+                end
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+
+                -- Update sibling dropdowns directly to reflect mutual exclusion
+                for i = 1, 4 do
+                    if strataDropdowns[i] then
+                        strataDropdowns[i]:SetValue(pendingStrataOrder[i])
+                    end
+                end
+            end)
+            container:AddChild(drop)
+            strataDropdowns[pos] = drop
+        end
+    end
 end
 
 local function BuildAppearanceTab(container)
@@ -2028,97 +2126,6 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(cdFontColor)
-
-    -- ================================================================
-    -- Strata (Layer Order)
-    -- ================================================================
-    local strataHeading = AceGUI:Create("Heading")
-    strataHeading:SetText("Strata")
-    strataHeading:SetFullWidth(true)
-    container:AddChild(strataHeading)
-
-    local customStrataEnabled = type(style.strataOrder) == "table"
-
-    local strataToggle = AceGUI:Create("CheckBox")
-    strataToggle:SetLabel("Custom Strata")
-    strataToggle:SetValue(customStrataEnabled)
-    strataToggle:SetFullWidth(true)
-    strataToggle:SetCallback("OnValueChanged", function(widget, event, val)
-        if not val then
-            style.strataOrder = nil
-            pendingStrataOrder = {nil, nil, nil, nil}
-            pendingStrataGroup = selectedGroup
-            CooldownCompanion:UpdateGroupStyle(selectedGroup)
-        else
-            style.strataOrder = style.strataOrder or {}
-            InitPendingStrataOrder(selectedGroup)
-        end
-        -- Rebuild tab to show/hide dropdowns (toggle is a deliberate action)
-        if col3Container and col3Container.tabGroup then
-            col3Container.tabGroup:SelectTab(selectedTab)
-        end
-    end)
-    container:AddChild(strataToggle)
-
-    if customStrataEnabled then
-        -- Initialize pending state for this group
-        InitPendingStrataOrder(selectedGroup)
-
-        -- Build dropdown list: all 4 element options
-        local strataDropdownList = {}
-        for _, key in ipairs(strataElementKeys) do
-            strataDropdownList[key] = strataElementLabels[key]
-        end
-
-        -- Create 4 dropdowns: position 4 (top) displayed first, position 1 (bottom) last
-        local strataDropdowns = {}
-        for displayIdx = 1, 4 do
-            local pos = 5 - displayIdx  -- 4, 3, 2, 1
-            local label
-            if pos == 4 then
-                label = "Layer 4 (Top)"
-            elseif pos == 1 then
-                label = "Layer 1 (Bottom)"
-            else
-                label = "Layer " .. pos
-            end
-
-            local drop = AceGUI:Create("Dropdown")
-            drop:SetLabel(label)
-            drop:SetList(strataDropdownList)
-            drop:SetValue(pendingStrataOrder[pos])
-            drop:SetFullWidth(true)
-            drop:SetCallback("OnValueChanged", function(widget, event, val)
-                -- Clear this value from any other position (mutual exclusion)
-                for i = 1, 4 do
-                    if i ~= pos and pendingStrataOrder[i] == val then
-                        pendingStrataOrder[i] = nil
-                    end
-                end
-                pendingStrataOrder[pos] = val
-
-                -- Save if all 4 assigned, otherwise nil out the saved order
-                if IsStrataOrderComplete(pendingStrataOrder) then
-                    style.strataOrder = {}
-                    for i = 1, 4 do
-                        style.strataOrder[i] = pendingStrataOrder[i]
-                    end
-                else
-                    style.strataOrder = {}
-                end
-                CooldownCompanion:UpdateGroupStyle(selectedGroup)
-
-                -- Update sibling dropdowns directly to reflect mutual exclusion
-                for i = 1, 4 do
-                    if strataDropdowns[i] then
-                        strataDropdowns[i]:SetValue(pendingStrataOrder[i])
-                    end
-                end
-            end)
-            container:AddChild(drop)
-            strataDropdowns[pos] = drop
-        end
-    end
 
 end
 
