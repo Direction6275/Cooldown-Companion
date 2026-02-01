@@ -311,13 +311,18 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on enabled state
-    if group.enabled then
+    -- Show/hide based on enabled state and spec filter
+    local specAllowed = true
+    if group.specs and next(group.specs) then
+        specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
+    end
+
+    if group.enabled and specAllowed then
         frame:Show()
     else
         frame:Hide()
     end
-    
+
     return frame
 end
 
@@ -551,8 +556,14 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — hide if disabled or no buttons added
-    if group.enabled and #group.buttons > 0 then
+    -- Update visibility — hide if disabled, no buttons, or wrong spec
+    local specAllowed = true
+    if group.specs and next(group.specs) then
+        specAllowed = CooldownCompanion._currentSpecId
+            and group.specs[CooldownCompanion._currentSpecId]
+    end
+
+    if group.enabled and #group.buttons > 0 and specAllowed then
         frame:Show()
     else
         frame:Hide()

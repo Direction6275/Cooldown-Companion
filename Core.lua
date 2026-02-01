@@ -197,6 +197,12 @@ function CooldownCompanion:OnEnable()
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
 
+    -- Specialization change events — show/hide groups based on spec filter
+    self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
+
+    -- Cache current spec before creating frames (visibility depends on it)
+    self:CacheCurrentSpec()
+
     -- Create all group frames
     self:CreateAllGroupFrames()
 
@@ -345,6 +351,10 @@ end
 
 function CooldownCompanion:OnCombatStart()
     self:UpdateAllCooldowns()
+    -- Hide spec popup during combat
+    if CDCSpecPopup and CDCSpecPopup:IsShown() then
+        CDCSpecPopup:Hide()
+    end
     -- Hide config panel during combat to avoid protected frame errors
     if self._configWasOpen == nil then
         self._configWasOpen = false
@@ -444,8 +454,23 @@ function CooldownCompanion:OnTalentsChanged()
     self:RefreshConfigPanel()
 end
 
+function CooldownCompanion:CacheCurrentSpec()
+    local specIndex = GetSpecialization()
+    if specIndex then
+        local specId = GetSpecializationInfo(specIndex)
+        self._currentSpecId = specId
+    end
+end
+
+function CooldownCompanion:OnSpecChanged()
+    self:CacheCurrentSpec()
+    self:RefreshAllGroups()
+    self:RefreshConfigPanel()
+end
+
 function CooldownCompanion:OnPlayerEnteringWorld()
     C_Timer.After(1, function()
+        self:CacheCurrentSpec()
         self:RefreshAllGroups()
     end)
 end

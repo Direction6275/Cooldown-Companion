@@ -744,6 +744,150 @@ end
 local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
 
 ------------------------------------------------------------------------
+-- Spec Filter Popup
+------------------------------------------------------------------------
+local specPopupFrame
+
+local function ShowSpecPopup(groupId)
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not group then return end
+
+    -- Create the frame once, reuse on subsequent calls
+    if not specPopupFrame then
+        local f = CreateFrame("Frame", "CDCSpecPopup", UIParent, "BackdropTemplate")
+        f:SetFrameStrata("FULLSCREEN_DIALOG")
+        f:SetFrameLevel(200)
+        f:SetSize(240, 200)
+        f:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 },
+        })
+        f:SetBackdropColor(0, 0, 0, 1)
+        f:SetBackdropBorderColor(1, 1, 1, 1)
+        f:EnableMouse(true)
+        f:SetClampedToScreen(true)
+
+        -- Title
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.title:SetPoint("TOP", 0, -12)
+
+        -- Checkbox container
+        f.checkboxes = {}
+
+        f.clearBtn = CreateTextButton(f, "Clear All", 80, 22)
+        f.closeBtn = CreateTextButton(f, "Close", 80, 22, function()
+            f:Hide()
+        end)
+
+        -- Close on Escape
+        f:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:SetPropagateKeyboardInput(false)
+                self:Hide()
+            else
+                self:SetPropagateKeyboardInput(true)
+            end
+        end)
+
+        specPopupFrame = f
+    end
+
+    local f = specPopupFrame
+
+    -- Hide existing checkboxes
+    for _, cb in ipairs(f.checkboxes) do
+        cb:Hide()
+    end
+
+    -- Populate checkboxes for current class specs
+    local numSpecs = GetNumSpecializations()
+    local CHECKBOX_HEIGHT = 28
+    local TOP_OFFSET = -34
+    local LEFT_OFFSET = 15
+
+    for i = 1, numSpecs do
+        local specId, name, _, icon = GetSpecializationInfo(i)
+
+        local cb = f.checkboxes[i]
+        if not cb then
+            cb = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+            cb:SetSize(24, 24)
+
+            cb.icon = cb:CreateTexture(nil, "ARTWORK")
+            cb.icon:SetSize(20, 20)
+            cb.icon:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+
+            cb.label = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            cb.label:SetPoint("LEFT", cb.icon, "RIGHT", 6, 0)
+
+            f.checkboxes[i] = cb
+        end
+
+        cb:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT_OFFSET, TOP_OFFSET + (i - 1) * -CHECKBOX_HEIGHT)
+        cb.icon:SetTexture(icon)
+        cb.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        cb.label:SetText(name)
+        cb.specId = specId
+
+        local isChecked = group.specs and group.specs[specId] or false
+        cb:SetChecked(isChecked)
+
+        cb:SetScript("OnClick", function(self)
+            if self:GetChecked() then
+                if not group.specs then group.specs = {} end
+                group.specs[specId] = true
+            else
+                if group.specs then
+                    group.specs[specId] = nil
+                    if not next(group.specs) then
+                        group.specs = nil
+                    end
+                end
+            end
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        cb:Show()
+    end
+
+    -- Position buttons below checkboxes
+    local bottomY = TOP_OFFSET + numSpecs * -CHECKBOX_HEIGHT - 10
+
+    f.clearBtn:ClearAllPoints()
+    f.clearBtn:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT_OFFSET, bottomY)
+    f.clearBtn:SetScript("OnClick", function()
+        group.specs = nil
+        for _, cb in ipairs(f.checkboxes) do
+            if cb:IsShown() then cb:SetChecked(false) end
+        end
+        CooldownCompanion:RefreshGroupFrame(groupId)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    f.closeBtn:ClearAllPoints()
+    f.closeBtn:SetPoint("LEFT", f.clearBtn, "RIGHT", 8, 0)
+
+    -- Set frame height dynamically
+    local totalHeight = math.abs(bottomY) + 22 + 18
+    f:SetSize(240, totalHeight)
+
+    f.title:SetText("Spec Filter: " .. group.name)
+
+    -- Position above config frame
+    f:ClearAllPoints()
+    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
+        f:SetPoint("BOTTOM", configFrame.frame, "TOP", 0, 10)
+    else
+        f:SetPoint("CENTER", UIParent, "CENTER")
+    end
+
+    f:Show()
+end
+
+------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
 function RefreshColumn1()
@@ -769,8 +913,21 @@ function RefreshColumn1()
         if group then
             local btn = AceGUI:Create("Button")
 
-            -- Build label with status indicators
-            local label = group.name
+            -- Build label with spec icons and status indicators
+            local specIcons = ""
+            if group.specs and next(group.specs) then
+                local icons = {}
+                for specId in pairs(group.specs) do
+                    local _, _, _, icon = GetSpecializationInfoForSpecID(specId)
+                    if icon then
+                        table.insert(icons, "|T" .. icon .. ":14:14:0:0:64:64:5:59:5:59|t")
+                    end
+                end
+                if #icons > 0 then
+                    specIcons = table.concat(icons, " ") .. " "
+                end
+            end
+            local label = specIcons .. group.name
             local indicators = {}
             if group.enabled == false then
                 table.insert(indicators, "|cff888888OFF|r")
@@ -793,7 +950,9 @@ function RefreshColumn1()
                 -- Suppress click if a drag just finished
                 if dragState and dragState.phase == "active" then return end
                 if IsShiftKeyDown() then
-                    if mouseButton == "MiddleButton" then
+                    if mouseButton == "LeftButton" then
+                        ShowSpecPopup(groupId)
+                    elseif mouseButton == "MiddleButton" then
                         ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
                     end
                     return
@@ -2177,6 +2336,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Right-click to toggle lock/unlock.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to toggle enable/disable.", 1, 1, 1, true)
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
         GameTooltip:AddLine("Shift+Middle-click to rename.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
