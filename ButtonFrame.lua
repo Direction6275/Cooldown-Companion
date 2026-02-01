@@ -734,6 +734,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._chargeText = displayText
             button.count:SetText(displayText)
         end
+
+        -- Show recharge radial when charges are missing (not just at 0).
+        -- _chargeCount/_chargeMax are cached Lua numbers so this comparison
+        -- is safe during combat. The charge cooldown values from the API may
+        -- be secret values but SetCooldown handles them (C-side).
+        if not skipSetCooldown
+           and button._chargeCount and button._chargeMax
+           and button._chargeCount < button._chargeMax then
+            pcall(function()
+                local charges = C_Spell.GetSpellCharges(buttonData.id)
+                if charges then
+                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                end
+            end)
+        end
     end
 
     -- Loss of control overlay
