@@ -1810,10 +1810,26 @@ local function BuildPositioningTab(container)
     end)
     container:AddChild(relPt)
 
+    -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
+    local function HookSliderEditBox(sliderWidget)
+        sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
+            local widget = editbox.obj
+            local value = tonumber(editbox:GetText())
+            if value then
+                value = math.floor(value * 10 + 0.5) / 10
+                value = math.max(widget.min, math.min(widget.max, value))
+                PlaySound(856)
+                widget:SetValue(value)
+                widget:Fire("OnValueChanged", value)
+                widget:Fire("OnMouseUp", value)
+            end
+        end)
+    end
+
     -- X Offset
     local xSlider = AceGUI:Create("Slider")
     xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-500, 500, 1)
+    xSlider:SetSliderValues(-2000, 2000, 1)
     xSlider:SetValue(group.anchor.x or 0)
     xSlider:SetFullWidth(true)
     xSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1823,12 +1839,13 @@ local function BuildPositioningTab(container)
             CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
         end
     end)
+    HookSliderEditBox(xSlider)
     container:AddChild(xSlider)
 
     -- Y Offset
     local ySlider = AceGUI:Create("Slider")
     ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-500, 500, 1)
+    ySlider:SetSliderValues(-2000, 2000, 1)
     ySlider:SetValue(group.anchor.y or 0)
     ySlider:SetFullWidth(true)
     ySlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1838,6 +1855,7 @@ local function BuildPositioningTab(container)
             CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
         end
     end)
+    HookSliderEditBox(ySlider)
     container:AddChild(ySlider)
 
     -- Orientation dropdown

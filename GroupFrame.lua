@@ -181,8 +181,8 @@ local function CreateNudger(frame, groupId)
                 gFrame:AdjustPointsOffset(dir.dx, dir.dy)
                 -- Read the actual frame position so display stays in sync
                 local _, _, _, x, y = gFrame:GetPoint()
-                group.anchor.x = x
-                group.anchor.y = y
+                group.anchor.x = math.floor(x * 10 + 0.5) / 10
+                group.anchor.y = math.floor(y * 10 + 0.5) / 10
                 UpdateCoordLabel(gFrame, x, y)
             end
         end
@@ -399,16 +399,68 @@ function CooldownCompanion:SaveGroupPosition(groupId)
 
     if not frame or not group then return end
 
-    local point, relativeTo, relativePoint, x, y = frame:GetPoint()
+    -- Get the screen-space center of our frame
+    local cx, cy = frame:GetCenter()
+    local fw, fh = frame:GetSize()
 
-    group.anchor = {
-        point = point,
-        relativeTo = relativeTo and relativeTo:GetName() or "UIParent",
-        relativePoint = relativePoint,
-        x = x,
-        y = y,
-    }
-    UpdateCoordLabel(frame, x, y)
+    -- Determine the reference frame and its dimensions
+    local relativeTo = group.anchor.relativeTo
+    local relFrame
+    if relativeTo and relativeTo ~= "UIParent" then
+        relFrame = _G[relativeTo]
+    end
+    if not relFrame then
+        relFrame = UIParent
+        relativeTo = "UIParent"
+    end
+
+    local rw, rh = relFrame:GetSize()
+    local rcx, rcy = relFrame:GetCenter()
+
+    -- Convert our frame center into an offset from the user's chosen anchor/relativePoint
+    local desiredPoint = group.anchor.point
+    local desiredRelPoint = group.anchor.relativePoint
+
+    -- Calculate the reference point on relFrame in screen coords
+    local function AnchorOffset(pt, w, h)
+        -- Returns offset from center for a given anchor point
+        if pt == "TOPLEFT" then return -w/2,  h/2
+        elseif pt == "TOP" then return 0,  h/2
+        elseif pt == "TOPRIGHT" then return  w/2,  h/2
+        elseif pt == "LEFT" then return -w/2, 0
+        elseif pt == "CENTER" then return 0, 0
+        elseif pt == "RIGHT" then return  w/2, 0
+        elseif pt == "BOTTOMLEFT" then return -w/2, -h/2
+        elseif pt == "BOTTOM" then return 0, -h/2
+        elseif pt == "BOTTOMRIGHT" then return  w/2, -h/2
+        else return 0, 0
+        end
+    end
+
+    -- Screen position of our frame's desired anchor point
+    local fax, fay = AnchorOffset(desiredPoint, fw, fh)
+    local framePtX = cx + fax
+    local framePtY = cy + fay
+
+    -- Screen position of the reference frame's desired relative point
+    local rax, ray = AnchorOffset(desiredRelPoint, rw, rh)
+    local refPtX = rcx + rax
+    local refPtY = rcy + ray
+
+    -- The offset is the difference, rounded to 1 decimal place
+    local newX = math.floor((framePtX - refPtX) * 10 + 0.5) / 10
+    local newY = math.floor((framePtY - refPtY) * 10 + 0.5) / 10
+
+    group.anchor.x = newX
+    group.anchor.y = newY
+    group.anchor.relativeTo = relativeTo
+
+    -- Re-anchor with the corrected values so WoW doesn't change our anchor point
+    frame:ClearAllPoints()
+    frame:SetPoint(desiredPoint, relFrame, desiredRelPoint, newX, newY)
+
+    UpdateCoordLabel(frame, newX, newY)
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:PopulateGroupButtons(groupId)
