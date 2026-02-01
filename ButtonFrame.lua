@@ -636,22 +636,42 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Charge count (spells with hasCharges enabled only)
-    -- Wrapped in pcall because charge fields are secret values during combat
+    -- Wrapped in pcall because charge fields are secret values during combat.
+    -- When pcall fails (combat), we estimate charges from a snapshot taken on the
+    -- last successful read: decrement on cast (DecrementChargeOnCast in Core.lua)
+    -- and increment when enough time has elapsed for a recharge.
     if buttonData.type == "spell" and buttonData.hasCharges then
-        local ok, text = pcall(function()
+        local ok, cur, mx, cdStart, cdDur = pcall(function()
             local charges = C_Spell.GetSpellCharges(buttonData.id)
             if charges and charges.maxCharges > 1 then
-                return charges.currentCharges
+                return charges.currentCharges, charges.maxCharges,
+                       charges.cooldownStartTime, charges.cooldownDuration
             end
         end)
-        if ok then
-            local newText = text or ""
-            if button._chargeText ~= newText then
-                button._chargeText = newText
-                button.count:SetText(newText)
+        if ok and cur ~= nil then
+            -- Successful read: update snapshot for combat estimation
+            button._chargeCount = cur
+            button._chargeMax = mx
+            button._chargeCDStart = cdStart
+            button._chargeCDDuration = cdDur
+        elseif button._chargeCount then
+            -- Secret values: estimate charge recovery from snapshot timing
+            if button._chargeCount < button._chargeMax
+               and button._chargeCDStart and button._chargeCDDuration
+               and button._chargeCDDuration > 0 then
+                local now = GetTime()
+                while button._chargeCount < button._chargeMax
+                      and now >= button._chargeCDStart + button._chargeCDDuration do
+                    button._chargeCount = button._chargeCount + 1
+                    button._chargeCDStart = button._chargeCDStart + button._chargeCDDuration
+                end
             end
         end
-        -- If pcall failed (secret values), keep current text
+        local displayText = button._chargeCount or ""
+        if button._chargeText ~= displayText then
+            button._chargeText = displayText
+            button.count:SetText(displayText)
+        end
     end
 
     -- Loss of control overlay
@@ -704,6 +724,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
+    button._chargeCount = nil
+    button._chargeMax = nil
+    button._chargeCDStart = nil
+    button._chargeCDDuration = nil
     button._procGlowActive = nil
 
     button:SetSize(width, height)

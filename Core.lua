@@ -221,8 +221,31 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         if InCombatLockdown() then
             self:DesaturateSpellOnCast(spellID)
+            self:DecrementChargeOnCast(spellID)
         end
         self:UpdateAllCooldowns()
+    end
+end
+
+function CooldownCompanion:DecrementChargeOnCast(spellID)
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData
+                   and button.buttonData.type == "spell"
+                   and button.buttonData.id == spellID
+                   and button.buttonData.hasCharges
+                   and button._chargeCount and button._chargeCount > 0 then
+                    button._chargeCount = button._chargeCount - 1
+                    -- If we were at max charges, a recharge just started now
+                    if button._chargeCount == (button._chargeMax or 0) - 1 then
+                        button._chargeCDStart = GetTime()
+                    end
+                    button._chargeText = button._chargeCount
+                    button.count:SetText(button._chargeCount)
+                end
+            end
+        end
     end
 end
 
