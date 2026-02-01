@@ -549,7 +549,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Cooldown display
     if fetchOk then
+        button.cooldown:SetCooldown(cdStart, cdDuration)
+
         -- GCD suppression (wrapped for secret-value safety)
         local suppressGCD = false
         if style.showGCDSwipe == false then
@@ -564,11 +567,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if not button.cooldown:IsShown() then
                 button.cooldown:Show()
             end
-            button.cooldown:SetCooldown(cdStart, cdDuration)
         end
     end
 
-    -- Desaturation: reuse cooldown data from the single fetch above.
+    -- Desaturation.
     -- During combat, cooldown values may be secret so isRealCD stays nil.
     -- In that case we keep the current desaturation state. Spells cast during
     -- combat are desaturated via OnSpellCast -> DesaturateSpellOnCast instead.

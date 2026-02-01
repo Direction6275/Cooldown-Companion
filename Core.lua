@@ -215,12 +215,10 @@ end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        self:UpdateAllCooldowns()
-        -- During combat, secret values prevent cooldown comparison.
-        -- Desaturate tracked spells known to have real cooldowns on cast.
         if InCombatLockdown() then
             self:DesaturateSpellOnCast(spellID)
         end
+        self:UpdateAllCooldowns()
     end
 end
 

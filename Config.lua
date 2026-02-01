@@ -1464,7 +1464,7 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(tooltipCb)
 
-    -- Assisted Highlight section (last in Extras)
+    -- Assisted Highlight section
     local assistedHeading = AceGUI:Create("Heading")
     assistedHeading:SetText("Assisted Highlight")
     assistedHeading:SetFullWidth(true)
