@@ -1849,6 +1849,27 @@ function RefreshColumn2()
             end)
             col2Scroll:AddChild(previewCb)
 
+            -- (?) tooltip for preview
+            local previewInfo = CreateFrame("Button", nil, previewCb.frame)
+            previewInfo:SetSize(16, 16)
+            previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
+            local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            previewInfoText:SetPoint("CENTER")
+            previewInfoText:SetText("|cff66aaff(?)|r")
+            previewInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Preview")
+                GameTooltip:AddLine("Shows what the proc glow looks like on this icon. You may need to toggle preview off and on to reflect changes to glow size.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            previewInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(col2InfoButtons, previewInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                previewInfo:Hide()
+            end
+
             -- Proc Glow color & size (group-wide style settings)
             local procGlowColor = AceGUI:Create("ColorPicker")
             procGlowColor:SetLabel("Glow Color")
