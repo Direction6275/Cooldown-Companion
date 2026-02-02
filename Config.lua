@@ -1404,6 +1404,12 @@ function RefreshColumn2()
     end)
     col2Scroll:AddChild(inputBox)
 
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(2)
+    spacer.noAutoHeight = true
+    col2Scroll:AddChild(spacer)
+
     local addBtn = AceGUI:Create("Button")
     addBtn:SetText("Add Spell/Item to Track")
     addBtn:SetFullWidth(true)
