@@ -165,9 +165,12 @@ end
 -- Fit a Blizzard highlight template frame to a button.
 -- The flipbook texture must overhang the button edges to create the border effect.
 -- Original template: 45x45 frame, 66x66 texture => ~23% overhang per side.
+-- Per-axis overhang keeps the border flush with non-square icons.
 local function FitHighlightFrame(frame, button, overhangPct)
     local w, h = button:GetSize()
-    local overhang = math.max(w, h) * (overhangPct or 32) / 100
+    local pct = (overhangPct or 32) / 100
+    local overhangW = w * pct
+    local overhangH = h * pct
 
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", button, "CENTER")
@@ -178,14 +181,14 @@ local function FitHighlightFrame(frame, button, overhangPct)
         if region.ClearAllPoints then
             region:ClearAllPoints()
             region:SetPoint("CENTER", frame, "CENTER")
-            region:SetSize(w + overhang * 2, h + overhang * 2)
+            region:SetSize(w + overhangW * 2, h + overhangH * 2)
         end
     end
     -- Also handle textures nested inside child frames
     for _, child in ipairs({frame:GetChildren()}) do
         child:ClearAllPoints()
         child:SetPoint("CENTER", frame, "CENTER")
-        child:SetSize(w + overhang * 2, h + overhang * 2)
+        child:SetSize(w + overhangW * 2, h + overhangH * 2)
         for _, region in ipairs({child:GetRegions()}) do
             if region.ClearAllPoints then
                 region:ClearAllPoints()
