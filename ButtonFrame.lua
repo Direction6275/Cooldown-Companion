@@ -451,7 +451,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawEdge(true)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
-    button.cooldown:SetDrawBling(style.showCooldownBling ~= false)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
@@ -917,9 +916,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
 
-    -- Update cooldown text visibility, bling, and font
+    -- Update cooldown text visibility and font
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
-    button.cooldown:SetDrawBling(style.showCooldownBling ~= false)
 
     -- Update cooldown font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"

@@ -1990,16 +1990,6 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(desatCb)
 
-    local blingCb = AceGUI:Create("CheckBox")
-    blingCb:SetLabel("Cooldown Finish Flash")
-    blingCb:SetValue(style.showCooldownBling ~= false)
-    blingCb:SetFullWidth(true)
-    blingCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showCooldownBling = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(blingCb)
-
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")
     gcdCb:SetValue(style.showGCDSwipe == true)
