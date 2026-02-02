@@ -1938,7 +1938,7 @@ local function BuildPositioningTab(container)
     local currentAnchor = group.anchor.relativeTo
     if currentAnchor == "UIParent" then currentAnchor = "" end
     anchorBox:SetText(currentAnchor)
-    anchorBox:SetRelativeWidth(0.75)
+    anchorBox:SetRelativeWidth(0.72)
     anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
         local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent"
         if text == "" then
