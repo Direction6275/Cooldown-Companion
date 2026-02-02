@@ -2376,6 +2376,14 @@ function RefreshColumn3(container)
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             selectedTab = tab
+            -- Clean up raw (?) info buttons BEFORE releasing children, so they
+            -- don't leak onto recycled AceGUI frames when switching tabs
+            for _, btn in ipairs(extrasInfoButtons) do
+                btn:ClearAllPoints()
+                btn:Hide()
+                btn:SetParent(nil)
+            end
+            wipe(extrasInfoButtons)
             widget:ReleaseChildren()
 
             local scroll = AceGUI:Create("ScrollFrame")
