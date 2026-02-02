@@ -203,6 +203,9 @@ function CooldownCompanion:OnEnable()
     -- Event-driven range checking (replaces per-tick IsSpellInRange polling)
     self:RegisterEvent("SPELL_RANGE_CHECK_UPDATE", "OnSpellRangeCheckUpdate")
 
+    -- Inventory changes — refresh config panel (!) indicators for items
+    self:RegisterEvent("BAG_UPDATE_DELAYED", "OnBagChanged")
+
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
 
@@ -454,6 +457,10 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
     end
 end
 
+function CooldownCompanion:OnBagChanged()
+    self:RefreshConfigPanel()
+end
+
 function CooldownCompanion:OnTalentsChanged()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
@@ -646,7 +653,7 @@ function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
         return IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id)
     elseif buttonData.type == "item" then
-        return true
+        return GetItemCount(buttonData.id) > 0
     end
     return true
 end
