@@ -1720,51 +1720,15 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(rangeCb)
 
-    -- Usability dimming
-    local unusableCb = AceGUI:Create("CheckBox")
-    unusableCb:SetLabel("Show Unusable Dimming")
-    unusableCb:SetValue(style.showUnusable or false)
-    unusableCb:SetFullWidth(true)
-    unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showUnusable = val
+    local tooltipCb = AceGUI:Create("CheckBox")
+    tooltipCb:SetLabel("Show Tooltips")
+    tooltipCb:SetValue(style.showTooltips == true)
+    tooltipCb:SetFullWidth(true)
+    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showTooltips = val
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(unusableCb)
-
-    -- (?) tooltip for unusable dimming
-    local unusableInfo = CreateFrame("Button", nil, unusableCb.frame)
-    unusableInfo:SetSize(16, 16)
-    unusableInfo:SetPoint("LEFT", unusableCb.checkbg, "RIGHT", unusableCb.text:GetStringWidth() + 4, 0)
-    local unusableInfoText = unusableInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    unusableInfoText:SetPoint("CENTER")
-    unusableInfoText:SetText("|cff66aaff(?)|r")
-    unusableInfo:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Unusable Dimming")
-        GameTooltip:AddLine("Tints spell icons when unusable due to insufficient mana, rage, energy, or other resources. Out-of-range tinting takes priority when both apply.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    unusableInfo:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    table.insert(tabInfoButtons, unusableInfo)
-
-    if style.showUnusable then
-        local unusableColor = AceGUI:Create("ColorPicker")
-        unusableColor:SetLabel("Unusable Tint Color")
-        unusableColor:SetHasAlpha(false)
-        local uc = style.unusableColor or {0.3, 0.3, 0.6}
-        unusableColor:SetColor(uc[1], uc[2], uc[3])
-        unusableColor:SetFullWidth(true)
-        unusableColor:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-            style.unusableColor = {r, g, b}
-        end)
-        unusableColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-            style.unusableColor = {r, g, b}
-        end)
-        container:AddChild(unusableColor)
-    end
+    container:AddChild(tooltipCb)
 
     -- Loss of control
     local locCb = AceGUI:Create("CheckBox")
@@ -1812,15 +1776,51 @@ local function BuildExtrasTab(container)
         container:AddChild(locColor)
     end
 
-    local tooltipCb = AceGUI:Create("CheckBox")
-    tooltipCb:SetLabel("Show Tooltips")
-    tooltipCb:SetValue(style.showTooltips == true)
-    tooltipCb:SetFullWidth(true)
-    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showTooltips = val
+    -- Usability dimming
+    local unusableCb = AceGUI:Create("CheckBox")
+    unusableCb:SetLabel("Show Unusable Dimming")
+    unusableCb:SetValue(style.showUnusable or false)
+    unusableCb:SetFullWidth(true)
+    unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showUnusable = val
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(tooltipCb)
+    container:AddChild(unusableCb)
+
+    -- (?) tooltip for unusable dimming
+    local unusableInfo = CreateFrame("Button", nil, unusableCb.frame)
+    unusableInfo:SetSize(16, 16)
+    unusableInfo:SetPoint("LEFT", unusableCb.checkbg, "RIGHT", unusableCb.text:GetStringWidth() + 4, 0)
+    local unusableInfoText = unusableInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    unusableInfoText:SetPoint("CENTER")
+    unusableInfoText:SetText("|cff66aaff(?)|r")
+    unusableInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Unusable Dimming")
+        GameTooltip:AddLine("Tints spell icons when unusable due to insufficient mana, rage, energy, or other resources. Out-of-range tinting takes priority when both apply.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    unusableInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(tabInfoButtons, unusableInfo)
+
+    if style.showUnusable then
+        local unusableColor = AceGUI:Create("ColorPicker")
+        unusableColor:SetLabel("Unusable Tint Color")
+        unusableColor:SetHasAlpha(false)
+        local uc = style.unusableColor or {0.3, 0.3, 0.6}
+        unusableColor:SetColor(uc[1], uc[2], uc[3])
+        unusableColor:SetFullWidth(true)
+        unusableColor:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+            style.unusableColor = {r, g, b}
+        end)
+        unusableColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+            style.unusableColor = {r, g, b}
+        end)
+        container:AddChild(unusableColor)
+    end
 
     -- Assisted Highlight section
     local assistedHeading = AceGUI:Create("Heading")
@@ -2305,6 +2305,7 @@ local function BuildAppearanceTab(container)
     borderColor:SetFullWidth(true)
     borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
         style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
         style.borderColor = {r, g, b, a}
