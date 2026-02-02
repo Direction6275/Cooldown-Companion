@@ -1,6 +1,8 @@
 License
+
 Custom License for: Cooldown Companion
 Copyright © 2025 Cantrelle ("Direction6275")
+
 The contents of this AddOn, excluding third-party libraries and resources, are copyrighted to their respective authors, with all rights reserved.
 This AddOn is free to download and use. The author grants you the following rights:
 

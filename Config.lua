@@ -2948,7 +2948,7 @@ local function CreateConfigPanel()
     -- Main AceGUI Frame
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
-    frame:SetStatusText("v1.1.0")
+    frame:SetStatusText("v1.0")
     frame:SetWidth(900)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
@@ -3016,7 +3016,7 @@ local function CreateConfigPanel()
             content:SetHeight(fullHeight)
             content:SetWidth(900)
             contentFrame:Show()
-            frame:SetStatusText("v1.1.0")
+            frame:SetStatusText("v1.0")
             if closeButton then closeButton:Show() end
             isMinimized = false
         else
