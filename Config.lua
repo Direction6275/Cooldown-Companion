@@ -637,15 +637,15 @@ local function TryAddSpell(input)
     end
 
     if spellId and spellName then
-        if not IsSpellKnownOrOverridesKnown(spellId) and not IsPlayerSpell(spellId) and not CooldownCompanion:IsSpellInTalentTree(spellId) then
-            CooldownCompanion:Print("Spell not available to your class: " .. spellName)
+        if C_Spell.IsSpellPassive(spellId) then
+            CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
             return false
         end
         CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
     else
-        CooldownCompanion:Print("Spell not found: " .. input)
+        CooldownCompanion:Print("Spell not found: " .. input .. ". Try using the spell ID or drag from spellbook.")
         return false
     end
 end
@@ -653,6 +653,18 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add item to selected group
 ------------------------------------------------------------------------
+local function FinalizeAddItem(itemId, groupId)
+    local itemName = C_Item.GetItemNameByID(itemId) or "Unknown Item"
+    local spellName = C_Item.GetItemSpell(itemId)
+    if not spellName then
+        CooldownCompanion:Print("Item has no usable effect: " .. itemName)
+        return false
+    end
+    CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName)
+    CooldownCompanion:Print("Added item: " .. itemName)
+    return true
+end
+
 local function TryAddItem(input)
     if input == "" or not selectedGroup then return false end
 
@@ -666,16 +678,151 @@ local function TryAddItem(input)
         itemId = C_Item.GetItemIDForItemInfo(input)
     end
 
-    if itemId then
-        if C_Item.GetItemCount(itemId, true) == 0 then
-            CooldownCompanion:Print("Item not in inventory: " .. (itemName or itemId))
+    if not itemId then
+        CooldownCompanion:Print("Item not found: " .. input)
+        return false
+    end
+
+    if C_Item.IsItemDataCachedByID(itemId) then
+        return FinalizeAddItem(itemId, selectedGroup)
+    end
+
+    -- Only do async loading for ID-based input (not name-based).
+    -- Name lookups that aren't cached are almost certainly invalid items.
+    if not tonumber(input) then
+        CooldownCompanion:Print("Item not found: " .. input)
+        return false
+    end
+
+    -- Item data not cached yet — request it and wait for callback.
+    -- Cancel any pending item load listener before registering a new one.
+    if CooldownCompanion.pendingItemLoad then
+        CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
+        CooldownCompanion.pendingItemLoad = nil
+    end
+    local capturedGroup = selectedGroup
+    CooldownCompanion.pendingItemLoad = itemId
+    CooldownCompanion:Print("Loading item data...")
+    C_Item.RequestLoadItemDataByID(itemId)
+    CooldownCompanion:RegisterEvent("ITEM_DATA_LOAD_RESULT", function(_, loadedItemId, success)
+        if loadedItemId ~= CooldownCompanion.pendingItemLoad then return end
+        CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
+        CooldownCompanion.pendingItemLoad = nil
+        if not success then
+            CooldownCompanion:Print("Item not found: " .. input)
+            return
+        end
+        if FinalizeAddItem(itemId, capturedGroup) then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    return false
+end
+
+------------------------------------------------------------------------
+-- Unified add: resolve input as spell or item automatically
+------------------------------------------------------------------------
+local function TryAdd(input)
+    if input == "" or not selectedGroup then return false end
+
+    local id = tonumber(input)
+
+    if id then
+        -- ID-based input: check both spell and item
+        local spellInfo = C_Spell.GetSpellInfo(id)
+        local spellFound = spellInfo and spellInfo.name
+        local isPassive = spellFound and C_Spell.IsSpellPassive(id)
+
+        -- Non-passive spell → add it
+        if spellFound and not isPassive then
+            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name)
+            CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+            return true
+        end
+
+        -- Try as item
+        local itemName = C_Item.GetItemNameByID(id)
+        local itemId = C_Item.GetItemIDForItemInfo(id)
+        if itemId then
+            if C_Item.IsItemDataCachedByID(itemId) then
+                local result = FinalizeAddItem(itemId, selectedGroup)
+                if result then return true end
+                -- Item had no use effect; if spell was passive, report that
+                if isPassive then
+                    CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                    return false
+                end
+                -- FinalizeAddItem already printed "no usable effect"
+                return false
+            end
+            -- Item not cached — request async load
+            if CooldownCompanion.pendingItemLoad then
+                CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
+                CooldownCompanion.pendingItemLoad = nil
+            end
+            local capturedGroup = selectedGroup
+            CooldownCompanion.pendingItemLoad = itemId
+            CooldownCompanion:Print("Loading item data...")
+            C_Item.RequestLoadItemDataByID(itemId)
+            CooldownCompanion:RegisterEvent("ITEM_DATA_LOAD_RESULT", function(_, loadedItemId, success)
+                if loadedItemId ~= CooldownCompanion.pendingItemLoad then return end
+                CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
+                CooldownCompanion.pendingItemLoad = nil
+                if not success then
+                    if isPassive then
+                        CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                    else
+                        CooldownCompanion:Print("Not found: " .. input)
+                    end
+                    return
+                end
+                if FinalizeAddItem(itemId, capturedGroup) then
+                    CooldownCompanion:RefreshConfigPanel()
+                elseif isPassive then
+                    CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                end
+            end)
             return false
         end
-        CooldownCompanion:AddButtonToGroup(selectedGroup, "item", itemId, itemName or "Unknown Item")
-        CooldownCompanion:Print("Added item: " .. (itemName or itemId))
-        return true
+
+        -- No item match
+        if isPassive then
+            CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+            return false
+        end
+
+        CooldownCompanion:Print("Not found: " .. input)
+        return false
     else
-        CooldownCompanion:Print("Item not found: " .. input)
+        -- Name-based input: try spell first, then item
+        local spellInfo = C_Spell.GetSpellInfo(input)
+        local spellId, spellName
+        if spellInfo then
+            spellId = spellInfo.spellID
+            spellName = spellInfo.name
+        else
+            spellId, spellName = CooldownCompanion:FindTalentSpellByName(input)
+        end
+
+        if spellId and spellName and not C_Spell.IsSpellPassive(spellId) then
+            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
+            CooldownCompanion:Print("Added spell: " .. spellName)
+            return true
+        end
+
+        -- Try as item
+        local itemId = C_Item.GetItemIDForItemInfo(input)
+        if itemId and C_Item.IsItemDataCachedByID(itemId) then
+            return FinalizeAddItem(itemId, selectedGroup)
+        end
+
+        -- Passive spell, no item match
+        if spellId and spellName then
+            CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
+            return false
+        end
+
+        CooldownCompanion:Print("Not found: " .. input .. ". Try using the spell ID or drag from spellbook.")
         return false
     end
 end
@@ -1244,7 +1391,7 @@ function RefreshColumn2()
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
         newInput = text
         if newInput ~= "" and selectedGroup then
-            if TryAddSpell(newInput) or TryAddItem(newInput) then
+            if TryAdd(newInput) then
                 newInput = ""
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -1257,33 +1404,18 @@ function RefreshColumn2()
     end)
     col2Scroll:AddChild(inputBox)
 
-    -- Add Spell / Add Item buttons side by side
-    local btnRow = AceGUI:Create("SimpleGroup")
-    btnRow:SetFullWidth(true)
-    btnRow:SetLayout("Flow")
-
-    local addSpellBtn = AceGUI:Create("Button")
-    addSpellBtn:SetText("Add Spell")
-    addSpellBtn:SetRelativeWidth(0.5)
-    addSpellBtn:SetCallback("OnClick", function()
-        if TryAddSpell(newInput) then
-            newInput = ""
-            CooldownCompanion:RefreshConfigPanel()
+    local addBtn = AceGUI:Create("Button")
+    addBtn:SetText("Add Spell/Item to Track")
+    addBtn:SetFullWidth(true)
+    addBtn:SetCallback("OnClick", function()
+        if newInput ~= "" and selectedGroup then
+            if TryAdd(newInput) then
+                newInput = ""
+                CooldownCompanion:RefreshConfigPanel()
+            end
         end
     end)
-    btnRow:AddChild(addSpellBtn)
-
-    local addItemBtn = AceGUI:Create("Button")
-    addItemBtn:SetText("Add Item")
-    addItemBtn:SetRelativeWidth(0.5)
-    addItemBtn:SetCallback("OnClick", function()
-        if TryAddItem(newInput) then
-            newInput = ""
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end)
-    btnRow:AddChild(addItemBtn)
-    col2Scroll:AddChild(btnRow)
+    col2Scroll:AddChild(addBtn)
 
     -- Separator
     local sep = AceGUI:Create("Heading")
@@ -1292,7 +1424,7 @@ function RefreshColumn2()
     col2Scroll:AddChild(sep)
 
     -- Spell/Item list
-    -- childOffset = 3 (inputBox, btnRow, sep are the first 3 children before draggable entries)
+    -- childOffset = 3 (inputBox, addBtn, sep are the first 3 children before draggable entries)
     local numButtons = #group.buttons
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")

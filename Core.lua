@@ -538,13 +538,16 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     self:RefreshGroupFrame(groupId)
 end
 
-function CooldownCompanion:FindTalentSpellByName(name)
+-- Walk the class talent tree using the active config, calling visitor(defInfo)
+-- for each definition. The tree is shared across all specs, so the active config
+-- can query nodes for every specialization.
+-- If visitor returns a truthy value, stop and return that value.
+local function WalkTalentTree(visitor)
     local configID = C_ClassTalents.GetActiveConfigID()
     if not configID then return nil end
     local configInfo = C_Traits.GetConfigInfo(configID)
     if not configInfo or not configInfo.treeIDs then return nil end
 
-    local lowerName = name:lower()
     for _, treeID in ipairs(configInfo.treeIDs) do
         local nodes = C_Traits.GetTreeNodes(treeID)
         if nodes then
@@ -555,11 +558,9 @@ function CooldownCompanion:FindTalentSpellByName(name)
                         local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
                         if entryInfo and entryInfo.definitionID then
                             local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
-                            if defInfo and defInfo.spellID then
-                                local spellInfo = C_Spell.GetSpellInfo(defInfo.spellID)
-                                if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
-                                    return defInfo.spellID, spellInfo.name
-                                end
+                            if defInfo then
+                                local result = visitor(defInfo)
+                                if result then return result end
                             end
                         end
                     end
@@ -570,33 +571,72 @@ function CooldownCompanion:FindTalentSpellByName(name)
     return nil
 end
 
-function CooldownCompanion:IsSpellInTalentTree(spellId)
-    local configID = C_ClassTalents.GetActiveConfigID()
-    if not configID then return false end
-    local configInfo = C_Traits.GetConfigInfo(configID)
-    if not configInfo or not configInfo.treeIDs then return false end
-
-    for _, treeID in ipairs(configInfo.treeIDs) do
-        local nodes = C_Traits.GetTreeNodes(treeID)
-        if nodes then
-            for _, nodeID in ipairs(nodes) do
-                local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
-                if nodeInfo and nodeInfo.entryIDs then
-                    for _, entryID in ipairs(nodeInfo.entryIDs) do
-                        local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
-                        if entryInfo and entryInfo.definitionID then
-                            local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
-                            if defInfo and (defInfo.spellID == spellId or defInfo.overriddenSpellID == spellId) then
-                                return true
-                            end
-                        end
-                    end
+-- Search spec display spells (key abilities shown on the spec selection screen)
+-- across all specs for the player's class.
+local function FindDisplaySpell(matcher)
+    local _, _, classID = UnitClass("player")
+    if not classID then return nil end
+    local numSpecs = GetNumSpecializationsForClassID(classID)
+    for specIndex = 1, numSpecs do
+        local specID = GetSpecializationInfoForClassID(classID, specIndex)
+        if specID then
+            local ids = C_SpecializationInfo.GetSpellsDisplay(specID)
+            if ids then
+                for _, spellID in ipairs(ids) do
+                    local result = matcher(spellID)
+                    if result then return result end
                 end
             end
         end
     end
-    return false
+    return nil
 end
+
+-- Search the off-spec spellbook for a spell by name or ID.
+-- Returns spellID, name if found; nil otherwise.
+local function FindOffSpecSpell(spellIdentifier)
+    local slot, bank = C_SpellBook.FindSpellBookSlotForSpell(spellIdentifier, false, true, false, true)
+    if not slot then return nil end
+    local info = C_SpellBook.GetSpellBookItemInfo(slot, bank)
+    if info and info.spellID then
+        return info.spellID, info.name
+    end
+    return nil
+end
+
+function CooldownCompanion:FindTalentSpellByName(name)
+    local lowerName = name:lower()
+
+    -- 1) Search talent tree (covers all talent choices across specs)
+    local result = WalkTalentTree(function(defInfo)
+        if defInfo.spellID then
+            if C_Spell.IsSpellPassive(defInfo.spellID) then return nil end
+            local spellInfo = C_Spell.GetSpellInfo(defInfo.spellID)
+            if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
+                return { defInfo.spellID, spellInfo.name }
+            end
+        end
+    end)
+    if result then return result[1], result[2] end
+
+    -- 2) Search spec display spells (key baseline abilities per spec)
+    result = FindDisplaySpell(function(spellID)
+        local spellInfo = C_Spell.GetSpellInfo(spellID)
+        if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
+            if not C_Spell.IsSpellPassive(spellID) then
+                return { spellID, spellInfo.name }
+            end
+        end
+    end)
+    if result then return result[1], result[2] end
+
+    -- 3) Search off-spec spellbook (covers previously activated specs)
+    local spellID, spellName = FindOffSpecSpell(name)
+    if spellID and spellName then return spellID, spellName end
+
+    return nil
+end
+
 
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
