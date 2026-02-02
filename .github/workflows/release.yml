@@ -23,3 +23,16 @@ jobs:
         uses: BigWigsMods/packager@v2
         with:
           args: -g retail
+
+      - name: Announce on Discord
+        run: |
+          curl -H "Content-Type: application/json" \
+               -d '{
+                 "embeds": [{
+                   "title": "Cooldown Companion '"${{ github.ref_name }}"'",
+                   "description": "A new version has been released!",
+                   "url": "https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}",
+                   "color": 5814783
+                 }]
+               }' \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
