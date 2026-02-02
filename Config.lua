@@ -1334,9 +1334,13 @@ function RefreshColumn2()
                     end
                     selectedButton = nil
                 else
-                    -- Normal click: single select, clear multi-select
+                    -- Normal click: toggle single select, clear multi-select
                     wipe(selectedButtons)
-                    selectedButton = i
+                    if selectedButton == i then
+                        selectedButton = nil
+                    else
+                        selectedButton = i
+                    end
                 end
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
