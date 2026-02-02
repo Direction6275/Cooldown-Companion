@@ -1437,7 +1437,7 @@ function RefreshColumn2()
     col2Scroll:AddChild(sep)
 
     -- Spell/Item list
-    -- childOffset = 3 (inputBox, addBtn, sep are the first 3 children before draggable entries)
+    -- childOffset = 4 (inputBox, spacer, addBtn, sep are the first 4 children before draggable entries)
     local numButtons = #group.buttons
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")
@@ -1584,7 +1584,7 @@ function RefreshColumn2()
                     scrollWidget = col2Scroll,
                     widget = entry,
                     startY = cursorY,
-                    childOffset = 3,
+                    childOffset = 4,
                     totalDraggable = numButtons,
                 }
                 StartDragTracking()
