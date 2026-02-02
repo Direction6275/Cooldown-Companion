@@ -1675,15 +1675,15 @@ end
 ------------------------------------------------------------------------
 -- COLUMN 3: Settings (TabGroup)
 ------------------------------------------------------------------------
-local extrasInfoButtons = {}
+local tabInfoButtons = {}
 
 local function BuildExtrasTab(container)
-    for _, btn in ipairs(extrasInfoButtons) do
+    for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
         btn:Hide()
         btn:SetParent(nil)
     end
-    wipe(extrasInfoButtons)
+    wipe(tabInfoButtons)
 
     if not selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
@@ -1748,7 +1748,7 @@ local function BuildExtrasTab(container)
     unusableInfo:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    table.insert(extrasInfoButtons, unusableInfo)
+    table.insert(tabInfoButtons, unusableInfo)
 
     if style.showUnusable then
         local unusableColor = AceGUI:Create("ColorPicker")
@@ -1794,7 +1794,7 @@ local function BuildExtrasTab(container)
     locInfo:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    table.insert(extrasInfoButtons, locInfo)
+    table.insert(tabInfoButtons, locInfo)
 
     if style.showLossOfControl then
         local locColor = AceGUI:Create("ColorPicker")
@@ -2112,6 +2112,25 @@ local function BuildPositioningTab(container)
     end)
     container:AddChild(strataToggle)
 
+    -- (?) tooltip for custom strata
+    local strataInfo = CreateFrame("Button", nil, strataToggle.frame)
+    strataInfo:SetSize(16, 16)
+    strataInfo:SetPoint("LEFT", strataToggle.checkbg, "RIGHT", strataToggle.text:GetStringWidth() + 4, 0)
+    local strataInfoText = strataInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    strataInfoText:SetPoint("CENTER")
+    strataInfoText:SetText("|cff66aaff(?)|r")
+    strataInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Custom Strata")
+        GameTooltip:AddLine("Controls the draw order of overlays on each icon: Cooldown Swipe, Charge Text, Proc Glow, and Assisted Highlight.", 1, 1, 1, true)
+        GameTooltip:AddLine("Layer 4 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    strataInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(tabInfoButtons, strataInfo)
+
     if customStrataEnabled then
         -- Initialize pending state for this group
         InitPendingStrataOrder(selectedGroup)
@@ -2378,12 +2397,12 @@ function RefreshColumn3(container)
             selectedTab = tab
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs
-            for _, btn in ipairs(extrasInfoButtons) do
+            for _, btn in ipairs(tabInfoButtons) do
                 btn:ClearAllPoints()
                 btn:Hide()
                 btn:SetParent(nil)
             end
-            wipe(extrasInfoButtons)
+            wipe(tabInfoButtons)
             widget:ReleaseChildren()
 
             local scroll = AceGUI:Create("ScrollFrame")
