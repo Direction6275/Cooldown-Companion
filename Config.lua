@@ -1367,6 +1367,7 @@ end
 ------------------------------------------------------------------------
 function RefreshColumn2()
     if not col2Scroll then return end
+    CooldownCompanion:ClearAllProcGlowPreviews()
     for _, btn in ipairs(col2InfoButtons) do
         btn:ClearAllPoints()
         btn:Hide()
@@ -1827,6 +1828,27 @@ function RefreshColumn2()
         end
 
         if buttonData.procGlow == true then
+            -- Preview toggle (transient — not saved)
+            local previewCb = AceGUI:Create("CheckBox")
+            previewCb:SetLabel("Preview")
+            -- Restore preview state from the button frame if it's still active
+            local previewActive = false
+            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+            if gFrame then
+                for _, btn in ipairs(gFrame.buttons) do
+                    if btn.index == selectedButton and btn._procGlowPreview then
+                        previewActive = true
+                        break
+                    end
+                end
+            end
+            previewCb:SetValue(previewActive)
+            previewCb:SetFullWidth(true)
+            previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
+            end)
+            col2Scroll:AddChild(previewCb)
+
             -- Proc Glow color & size (group-wide style settings)
             local procGlowColor = AceGUI:Create("ColorPicker")
             procGlowColor:SetLabel("Glow Color")
@@ -2929,6 +2951,7 @@ local function CreateConfigPanel()
 
     -- Prevent AceGUI from releasing on close - just hide
     frame:SetCallback("OnClose", function(widget)
+        CooldownCompanion:ClearAllProcGlowPreviews()
         widget.frame:Hide()
     end)
 

@@ -834,7 +834,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Proc glow (spell activation overlay)
     if button.procGlow then
         local showProc = false
-        if buttonData.procGlow == true and buttonData.type == "spell" then
+        if button._procGlowPreview then
+            showProc = true
+        elseif buttonData.procGlow == true and buttonData.type == "spell" then
             showProc = C_SpellActivationOverlay.IsSpellOverlayed(buttonData.id) or false
         end
         SetProcGlow(button, showProc)
@@ -1029,5 +1031,27 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button:SetScript("OnLeave", function(self)
             GameTooltip:Hide()
         end)
+    end
+end
+
+-- Set or clear proc glow preview on a specific button.
+-- Used by the config panel to show what the glow looks like.
+function CooldownCompanion:SetProcGlowPreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._procGlowPreview = show or nil
+            return
+        end
+    end
+end
+
+-- Clear all proc glow previews across every group.
+function CooldownCompanion:ClearAllProcGlowPreviews()
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            button._procGlowPreview = nil
+        end
     end
 end
