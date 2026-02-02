@@ -2,7 +2,9 @@
 ## Title: Cooldown Companion
 ## Notes: Track spells and items with customizable action bar style panels
 ## Author: You
-## Version: 1.0
+## Version: @project-version@
+## X-Curse-Project-ID: 1451886
+## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## OptionalDeps: Ace3
 

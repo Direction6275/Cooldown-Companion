@@ -1,0 +1,10 @@
+package-as: CooldownCompanion
+
+curse-project-id: 1451886
+wago-project-id: 4N2kWd6L
+
+ignore:
+  - README.md
+  - CLAUDE.md
+  - LICENSE.txt
+  - .github
