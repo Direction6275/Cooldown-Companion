@@ -1205,23 +1205,27 @@ function RefreshColumn1()
                         end
                         CooldownCompanion:RefreshConfigPanel()
                     elseif mouseButton == "MiddleButton" then
-                        ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                        group.enabled = not (group.enabled ~= false)
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
                     end
                     return
                 end
                 if mouseButton == "RightButton" then
+                    ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                    return
+                end
+                if mouseButton == "MiddleButton" then
                     group.locked = not group.locked
                     CooldownCompanion:RefreshGroupFrame(groupId)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
-                if mouseButton == "MiddleButton" then
-                    group.enabled = not (group.enabled ~= false)
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                    return
+                if selectedGroup == groupId then
+                    selectedGroup = nil
+                else
+                    selectedGroup = groupId
                 end
-                selectedGroup = groupId
                 selectedButton = nil
                 wipe(selectedButtons)
                 CooldownCompanion:RefreshConfigPanel()
@@ -2609,8 +2613,8 @@ function RefreshColumn3(container)
     if not selectedGroup then
         -- Show placeholder, hide tab group
         if not container.placeholderLabel then
-            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-            container.placeholderLabel:SetPoint("TOPLEFT", 8, -8)
+            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            container.placeholderLabel:SetPoint("TOPLEFT", -1, 0)
         end
         container.placeholderLabel:SetText("Select a group to configure")
         container.placeholderLabel:Show()
@@ -2895,19 +2899,21 @@ local function CreateConfigPanel()
     -- Info button next to Groups title
     local groupInfoBtn = CreateFrame("Button", nil, col1.frame)
     groupInfoBtn:SetSize(16, 16)
-    groupInfoBtn:SetPoint("LEFT", col1.titletext, "RIGHT", 4, 0)
+    groupInfoBtn:SetPoint("LEFT", col1.titletext, "RIGHT", -2, 0)
     local groupInfoText = groupInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     groupInfoText:SetPoint("CENTER")
     groupInfoText:SetText("|cff66aaff(?)|r")
     groupInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Groups")
-        GameTooltip:AddLine("Left-click to select a group.", 1, 1, 1, true)
-        GameTooltip:AddLine("Right-click to toggle lock/unlock.", 1, 1, 1, true)
-        GameTooltip:AddLine("Middle-click to toggle enable/disable.", 1, 1, 1, true)
-        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
+        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
+        GameTooltip:AddLine("Right-click to rename.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Middle-click to rename.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Middle-click to toggle on/off.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
@@ -2924,19 +2930,20 @@ local function CreateConfigPanel()
     -- Info button next to Spells / Items title
     local infoBtn = CreateFrame("Button", nil, col2.frame)
     infoBtn:SetSize(16, 16)
-    infoBtn:SetPoint("LEFT", col2.titletext, "RIGHT", 4, 0)
+    infoBtn:SetPoint("LEFT", col2.titletext, "RIGHT", -2, 0)
     local infoText = infoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     infoText:SetPoint("CENTER")
     infoText:SetText("|cff66aaff(?)|r")
     infoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Spells / Items")
-        GameTooltip:AddLine("Add a spell or item by name or ID.", 1, 1, 1, true)
-        GameTooltip:AddLine("Left-click to select.", 1, 1, 1, true)
-        GameTooltip:AddLine("Ctrl+left-click to multi-select.", 1, 1, 1, true)
-        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
+        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
         GameTooltip:AddLine("Right-click to remove.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to move to another group.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     infoBtn:SetScript("OnLeave", function()
@@ -2953,7 +2960,7 @@ local function CreateConfigPanel()
     -- Info button next to Settings title
     local settingsInfoBtn = CreateFrame("Button", nil, col3.frame)
     settingsInfoBtn:SetSize(16, 16)
-    settingsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", 4, 0)
+    settingsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
     local settingsInfoText = settingsInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     settingsInfoText:SetPoint("CENTER")
     settingsInfoText:SetText("|cff66aaff(?)|r")
