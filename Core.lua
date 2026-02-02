@@ -82,6 +82,7 @@ local defaults = {
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = true,
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
+                        showCooldownBling = true, -- Flash animation when cooldown finishes
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
                         showOutOfRange = false, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
@@ -117,6 +118,7 @@ local defaults = {
             maintainAspectRatio = true,
             showTooltips = false,
             desaturateOnCooldown = false,
+            showCooldownBling = true,
             showGCDSwipe = false,
             showOutOfRange = false,
             showAssistedHighlight = false,
@@ -193,6 +195,9 @@ function CooldownCompanion:OnEnable()
     -- Spell activation overlay (proc glow) events
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "OnProcGlowShow")
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "MarkCooldownsDirty")
+
+    -- Item count changes (inventory updates for tracked items)
+    self:RegisterEvent("ITEM_COUNT_CHANGED", "MarkCooldownsDirty")
 
     -- Spell override icon changes (talents, procs morphing spells)
     self:RegisterEvent("SPELL_UPDATE_ICON", "OnSpellUpdateIcon")

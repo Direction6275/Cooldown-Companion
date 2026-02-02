@@ -1855,6 +1855,109 @@ function RefreshColumn2()
             col2Scroll:AddChild(procSizeSlider)
         end
 
+    elseif selectedButton and group.buttons[selectedButton]
+       and group.buttons[selectedButton].type == "item"
+       and not CooldownCompanion.IsItemEquippable(group.buttons[selectedButton]) then
+        -- Per-item settings panel (non-equipment items only — equipment has no count)
+        local buttonData = group.buttons[selectedButton]
+
+        local itemHeading = AceGUI:Create("Heading")
+        itemHeading:SetText("Item Settings")
+        itemHeading:SetFullWidth(true)
+        col2Scroll:AddChild(itemHeading)
+
+        -- Item count font size
+        local itemFontSizeSlider = AceGUI:Create("Slider")
+        itemFontSizeSlider:SetLabel("Item Stack Font Size")
+        itemFontSizeSlider:SetSliderValues(8, 32, 1)
+        itemFontSizeSlider:SetValue(buttonData.itemCountFontSize or 12)
+        itemFontSizeSlider:SetFullWidth(true)
+        itemFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.itemCountFontSize = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemFontSizeSlider)
+
+        -- Item count font
+        local itemFontDrop = AceGUI:Create("Dropdown")
+        itemFontDrop:SetLabel("Font")
+        itemFontDrop:SetList(fontOptions)
+        itemFontDrop:SetValue(buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF")
+        itemFontDrop:SetFullWidth(true)
+        itemFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.itemCountFont = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemFontDrop)
+
+        -- Item count font outline
+        local itemOutlineDrop = AceGUI:Create("Dropdown")
+        itemOutlineDrop:SetLabel("Font Outline")
+        itemOutlineDrop:SetList(outlineOptions)
+        itemOutlineDrop:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
+        itemOutlineDrop:SetFullWidth(true)
+        itemOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.itemCountFontOutline = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemOutlineDrop)
+
+        -- Item count font color
+        local itemFontColor = AceGUI:Create("ColorPicker")
+        itemFontColor:SetLabel("Font Color")
+        itemFontColor:SetHasAlpha(true)
+        local icc = buttonData.itemCountFontColor or {1, 1, 1, 1}
+        itemFontColor:SetColor(icc[1], icc[2], icc[3], icc[4])
+        itemFontColor:SetFullWidth(true)
+        itemFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            buttonData.itemCountFontColor = {r, g, b, a}
+        end)
+        itemFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            buttonData.itemCountFontColor = {r, g, b, a}
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemFontColor)
+
+        -- Item count anchor point
+        local itemAnchorValues = {}
+        for _, pt in ipairs(anchorPoints) do
+            itemAnchorValues[pt] = anchorPointLabels[pt]
+        end
+        local itemAnchorDrop = AceGUI:Create("Dropdown")
+        itemAnchorDrop:SetLabel("Anchor Point")
+        itemAnchorDrop:SetList(itemAnchorValues)
+        itemAnchorDrop:SetValue(buttonData.itemCountAnchor or "BOTTOMRIGHT")
+        itemAnchorDrop:SetFullWidth(true)
+        itemAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.itemCountAnchor = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemAnchorDrop)
+
+        -- Item count X offset
+        local itemXSlider = AceGUI:Create("Slider")
+        itemXSlider:SetLabel("X Offset")
+        itemXSlider:SetSliderValues(-20, 20, 1)
+        itemXSlider:SetValue(buttonData.itemCountXOffset or -2)
+        itemXSlider:SetFullWidth(true)
+        itemXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.itemCountXOffset = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemXSlider)
+
+        -- Item count Y offset
+        local itemYSlider = AceGUI:Create("Slider")
+        itemYSlider:SetLabel("Y Offset")
+        itemYSlider:SetSliderValues(-20, 20, 1)
+        itemYSlider:SetValue(buttonData.itemCountYOffset or 2)
+        itemYSlider:SetFullWidth(true)
+        itemYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.itemCountYOffset = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        col2Scroll:AddChild(itemYSlider)
+
     end
 
 end
@@ -1886,6 +1989,16 @@ local function BuildExtrasTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(desatCb)
+
+    local blingCb = AceGUI:Create("CheckBox")
+    blingCb:SetLabel("Cooldown Finish Flash")
+    blingCb:SetValue(style.showCooldownBling ~= false)
+    blingCb:SetFullWidth(true)
+    blingCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showCooldownBling = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(blingCb)
 
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")
@@ -1985,7 +2098,7 @@ local function BuildExtrasTab(container)
     unusableInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Unusable Dimming")
-        GameTooltip:AddLine("Tints spell icons when unusable due to insufficient mana, rage, energy, or other resources. Out-of-range tinting takes priority when both apply.", 1, 1, 1, true)
+        GameTooltip:AddLine("Tints spell and item icons when unusable due to insufficient resources or other restrictions. Out-of-range tinting takes priority when both apply.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     unusableInfo:SetScript("OnLeave", function()

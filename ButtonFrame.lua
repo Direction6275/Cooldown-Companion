@@ -12,6 +12,14 @@ local CooldownCompanion = ST.Addon
 -- Button Frame Pool
 local buttonPool = {}
 
+-- Returns true if the given item ID is equippable (trinkets, weapons, armor, etc.)
+-- Caches result on buttonData to avoid repeated API calls.
+local function IsItemEquippable(buttonData)
+    local _, _, _, equipLoc = C_Item.GetItemInfoInstant(buttonData.id)
+    return equipLoc ~= nil and equipLoc ~= "" and not equipLoc:find("NON_EQUIP")
+end
+CooldownCompanion.IsItemEquippable = IsItemEquippable
+
 -- Apply configurable strata (frame level) ordering to button sub-elements.
 -- order: array of 4 keys {"cooldown","chargeText","procGlow","assistedHighlight"} or nil for default.
 -- Index 1 = lowest layer (baseLevel+1), index 4 = highest (baseLevel+4).
@@ -443,6 +451,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawEdge(true)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
+    button.cooldown:SetDrawBling(style.showCooldownBling ~= false)
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
@@ -484,7 +493,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
-    -- Apply custom charge text font/anchor settings from per-button data
+    -- Apply custom count text font/anchor settings from per-button data
     if buttonData.hasCharges then
         local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = buttonData.chargeFontSize or 12
@@ -497,6 +506,18 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local chargeXOffset = buttonData.chargeXOffset or -2
         local chargeYOffset = buttonData.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
+        local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFontSize = buttonData.itemCountFontSize or 12
+        local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
+        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
+        local icColor = buttonData.itemCountFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+
+        local itemAnchor = buttonData.itemCountAnchor or "BOTTOMRIGHT"
+        local itemXOffset = buttonData.itemCountXOffset or -2
+        local itemYOffset = buttonData.itemCountYOffset or 2
+        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
@@ -660,16 +681,32 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Icon tinting priority: out-of-range red > unusable dimming > normal white
     local r, g, b = 1, 1, 1
-    if style.showOutOfRange and buttonData.type == "spell" then
-        if button._spellOutOfRange then
-            r, g, b = 1, 0.2, 0.2
+    if style.showOutOfRange then
+        if buttonData.type == "spell" then
+            if button._spellOutOfRange then
+                r, g, b = 1, 0.2, 0.2
+            end
+        elseif buttonData.type == "item" then
+            local inRange = IsItemInRange(buttonData.id, "target")
+            -- inRange is nil when no target or item has no range; only tint on explicit false
+            if inRange == false then
+                r, g, b = 1, 0.2, 0.2
+            end
         end
     end
-    if r == 1 and g == 1 and b == 1 and style.showUnusable and buttonData.type == "spell" then
-        local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
-        if insufficientPower then
-            local uc = style.unusableColor or {0.3, 0.3, 0.6}
-            r, g, b = uc[1], uc[2], uc[3]
+    if r == 1 and g == 1 and b == 1 and style.showUnusable then
+        if buttonData.type == "spell" then
+            local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
+            if insufficientPower then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        elseif buttonData.type == "item" then
+            local usable, noMana = IsUsableItem(buttonData.id)
+            if not usable then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
         end
     end
     if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
@@ -754,6 +791,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Item count display (inventory quantity for non-equipment tracked items)
+    if buttonData.type == "item" and not IsItemEquippable(buttonData) then
+        local count = C_Item.GetItemCount(buttonData.id)
+        if button._itemCount ~= count then
+            button._itemCount = count
+            if count and count > 1 then
+                button.count:SetText(count)
+            else
+                button.count:SetText("")
+            end
+        end
+    end
+
     -- Charge text color: applied after charge tracking so _chargeCount is current.
     if buttonData.chargeFontColor or buttonData.chargeFontColorMissing then
         local atMax = button._chargeCount and button._chargeMax
@@ -824,6 +874,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._procGlowActive = nil
     button._displaySpellId = nil
     button._spellOutOfRange = nil
+    button._itemCount = nil
 
     button:SetSize(width, height)
 
@@ -866,8 +917,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
 
-    -- Update cooldown text visibility and font
+    -- Update cooldown text visibility, bling, and font
     button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+    button.cooldown:SetDrawBling(style.showCooldownBling ~= false)
 
     -- Update cooldown font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -880,7 +932,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
     end
 
-    -- Update charge text font/anchor settings from per-button data
+    -- Update count text font/anchor settings from per-button data
     button.count:ClearAllPoints()
     if button.buttonData and button.buttonData.hasCharges then
         local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
@@ -894,6 +946,19 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local chargeXOffset = button.buttonData.chargeXOffset or -2
         local chargeYOffset = button.buttonData.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    elseif button.buttonData and button.buttonData.type == "item"
+       and not IsItemEquippable(button.buttonData) then
+        local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFontSize = button.buttonData.itemCountFontSize or 12
+        local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
+        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
+        local icColor = button.buttonData.itemCountFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+
+        local itemAnchor = button.buttonData.itemCountAnchor or "BOTTOMRIGHT"
+        local itemXOffset = button.buttonData.itemCountXOffset or -2
+        local itemYOffset = button.buttonData.itemCountYOffset or 2
+        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
