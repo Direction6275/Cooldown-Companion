@@ -1402,6 +1402,7 @@ function RefreshColumn2()
             newInput = self:GetText()
         end
     end)
+    inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
     col2Scroll:AddChild(inputBox)
 
     local spacer = AceGUI:Create("SimpleGroup")
