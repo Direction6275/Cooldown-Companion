@@ -32,6 +32,7 @@ local col3Container = nil
 local col1BarWidgets = {}
 local profileBarAceWidgets = {}
 local col2InfoButtons = {}
+local columnInfoButtons = {}
 local moveMenuFrame = nil
 
 -- Drag-reorder state
@@ -1817,6 +1818,9 @@ function RefreshColumn2()
             GameTooltip:Hide()
         end)
         table.insert(col2InfoButtons, procInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            procInfo:Hide()
+        end
 
         if buttonData.procGlow == true then
             -- Proc Glow color & size (group-wide style settings)
@@ -2100,6 +2104,37 @@ local function BuildExtrasTab(container)
             container:AddChild(procSlider)
         end
     end
+
+    -- Apply "Hide CDC Tooltips" to tab info buttons created above
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        for _, btn in ipairs(tabInfoButtons) do
+            btn:Hide()
+        end
+    end
+
+    -- Other ---------------------------------------------------------------
+    local otherHeading = AceGUI:Create("Heading")
+    otherHeading:SetText("Other")
+    otherHeading:SetFullWidth(true)
+    container:AddChild(otherHeading)
+
+    local hideInfoCb = AceGUI:Create("CheckBox")
+    hideInfoCb:SetLabel("Hide CDC Tooltips")
+    hideInfoCb:SetValue(CooldownCompanion.db.profile.hideInfoButtons or false)
+    hideInfoCb:SetFullWidth(true)
+    hideInfoCb:SetCallback("OnValueChanged", function(widget, event, val)
+        CooldownCompanion.db.profile.hideInfoButtons = val
+        for _, btn in ipairs(columnInfoButtons) do
+            if val then btn:Hide() else btn:Show() end
+        end
+        for _, btn in ipairs(tabInfoButtons) do
+            if val then btn:Hide() else btn:Show() end
+        end
+        for _, btn in ipairs(col2InfoButtons) do
+            if val then btn:Hide() else btn:Show() end
+        end
+    end)
+    container:AddChild(hideInfoCb)
 end
 
 local function BuildPositioningTab(container)
@@ -2386,6 +2421,13 @@ local function BuildPositioningTab(container)
             end)
             container:AddChild(drop)
             strataDropdowns[pos] = drop
+        end
+    end
+
+    -- Apply "Hide CDC Tooltips" to tab info buttons created above
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        for _, btn in ipairs(tabInfoButtons) do
+            btn:Hide()
         end
     end
 end
@@ -2907,6 +2949,34 @@ local function CreateConfigPanel()
     col3:SetLayout("None")
     col3.frame:SetParent(colParent)
     col3.frame:Show()
+
+    -- Info button next to Settings title
+    local settingsInfoBtn = CreateFrame("Button", nil, col3.frame)
+    settingsInfoBtn:SetSize(16, 16)
+    settingsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", 4, 0)
+    local settingsInfoText = settingsInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    settingsInfoText:SetPoint("CENTER")
+    settingsInfoText:SetText("|cff66aaff(?)|r")
+    settingsInfoBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Settings")
+        GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    settingsInfoBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    -- Store column header (?) buttons for toggling via "Hide CDC Tooltips"
+    wipe(columnInfoButtons)
+    columnInfoButtons[1] = groupInfoBtn
+    columnInfoButtons[2] = infoBtn
+    columnInfoButtons[3] = settingsInfoBtn
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        for _, btn in ipairs(columnInfoButtons) do
+            btn:Hide()
+        end
+    end
 
     -- Static button bar at bottom of column 1 (New / Delete)
     local btnBar = CreateFrame("Frame", nil, col1.content)

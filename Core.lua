@@ -46,6 +46,7 @@ local defaults = {
         minimap = {
             hide = false,
         },
+        hideInfoButtons = false,
         groups = {
             --[[
                 [groupId] = {
