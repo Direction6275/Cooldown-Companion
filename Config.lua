@@ -2309,6 +2309,13 @@ local function BuildPositioningTab(container)
     table.insert(tabInfoButtons, pickInfo)
 
     container:AddChild(anchorRow)
+    pickBtn.frame:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", nil)
+        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+        if yOfs then
+            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+        end
+    end)
 
     -- Anchor Point dropdown
     local pointValues = {}
