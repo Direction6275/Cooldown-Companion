@@ -44,6 +44,10 @@ local DRAG_THRESHOLD = 8
 local pendingStrataOrder = nil
 local pendingStrataGroup = nil
 
+-- Pick-frame overlay state
+local pickFrameOverlay = nil
+local pickFrameCallback = nil
+
 -- Font options for dropdown
 local fontOptions = {
     ["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata (Default)",
@@ -440,6 +444,173 @@ local function ShowPopupAboveConfig(which, text_arg1, data)
         end
     end
     return dialog
+end
+
+------------------------------------------------------------------------
+-- Helper: Resolve named frame from mouse focus
+------------------------------------------------------------------------
+local function ResolveNamedFrame(frame)
+    while frame do
+        if frame.IsForbidden and frame:IsForbidden() then
+            return nil, nil
+        end
+        local name = frame:GetName()
+        if name and name ~= "" then
+            return frame, name
+        end
+        frame = frame:GetParent()
+    end
+    return nil, nil
+end
+
+------------------------------------------------------------------------
+-- Helper: Check if frame name belongs to this addon (should be excluded)
+------------------------------------------------------------------------
+local function IsAddonFrame(name)
+    if not name then return true end
+    if name:find("^CooldownCompanion") then return true end
+    if name == "WorldFrame" then return true end
+    -- Exclude the config panel itself (AceGUI frames)
+    if configFrame and configFrame.frame and configFrame.frame:GetName() == name then return true end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Helper: Start pick-frame mode
+------------------------------------------------------------------------
+local function FinishPickFrame(name)
+    if not pickFrameOverlay then return end
+    pickFrameOverlay:Hide()
+    local cb = pickFrameCallback
+    pickFrameCallback = nil
+    if cb then
+        cb(name)
+    end
+end
+
+local function StartPickFrame(callback)
+    pickFrameCallback = callback
+
+    -- Create overlay lazily
+    if not pickFrameOverlay then
+        -- Visual-only overlay: EnableMouse(false) so GetMouseFoci sees through it
+        local overlay = CreateFrame("Frame", "CooldownCompanionPickOverlay", UIParent)
+        overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+        overlay:SetFrameLevel(100)
+        overlay:SetAllPoints(UIParent)
+        overlay:EnableMouse(false)
+        overlay:EnableKeyboard(true)
+
+        -- Semi-transparent dark background
+        local bg = overlay:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.3)
+        overlay.bg = bg
+
+        -- Instruction text at top
+        local instructions = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        instructions:SetPoint("TOP", overlay, "TOP", 0, -30)
+        instructions:SetText("Click a frame to anchor  |  Right-click or Escape to cancel")
+        instructions:SetTextColor(1, 1, 1, 0.9)
+        overlay.instructions = instructions
+
+        -- Cursor-following label showing frame name
+        local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        label:SetTextColor(0.2, 1, 0.2, 1)
+        overlay.label = label
+
+        -- Highlight frame (colored border that outlines hovered frame)
+        local highlight = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+        highlight:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 12,
+        })
+        highlight:SetBackdropBorderColor(0, 1, 0, 0.9)
+        highlight:Hide()
+        overlay.highlight = highlight
+
+        -- OnUpdate: detect frame under cursor (overlay is mouse-transparent)
+        overlay:SetScript("OnUpdate", function(self)
+            local foci = GetMouseFoci()
+            local focus = foci and foci[1]
+
+            if not focus or focus == WorldFrame then
+                self.label:SetText("")
+                self.highlight:Hide()
+                self.currentName = nil
+                return
+            end
+
+            local resolvedFrame, name = ResolveNamedFrame(focus)
+            if not name or IsAddonFrame(name) then
+                self.label:SetText("")
+                self.highlight:Hide()
+                self.currentName = nil
+                return
+            end
+
+            self.currentName = name
+
+            -- Position label near cursor
+            local cx, cy = GetCursorPosition()
+            local scale = UIParent:GetEffectiveScale()
+            cx, cy = cx / scale, cy / scale
+            self.label:ClearAllPoints()
+            self.label:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", cx + 20, cy + 10)
+            self.label:SetText(name)
+
+            -- Position highlight around the resolved frame
+            local left, bottom, width, height = resolvedFrame:GetRect()
+            if left and width and width > 0 and height > 0 then
+                self.highlight:ClearAllPoints()
+                self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+                self.highlight:SetSize(width, height)
+                self.highlight:Show()
+            else
+                self.highlight:Hide()
+            end
+        end)
+
+        -- Detect clicks via GLOBAL_MOUSE_DOWN (overlay is mouse-transparent)
+        overlay:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        overlay:SetScript("OnEvent", function(self, event, button)
+            if event ~= "GLOBAL_MOUSE_DOWN" then return end
+            if button == "LeftButton" then
+                FinishPickFrame(self.currentName)
+            elseif button == "RightButton" then
+                FinishPickFrame(nil)
+            end
+        end)
+
+        -- Escape to cancel
+        overlay:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:SetPropagateKeyboardInput(false)
+                FinishPickFrame(nil)
+            else
+                self:SetPropagateKeyboardInput(true)
+            end
+        end)
+
+        overlay:SetScript("OnHide", function(self)
+            self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+        end)
+
+        overlay:SetScript("OnShow", function(self)
+            self:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        end)
+
+        pickFrameOverlay = overlay
+    end
+
+    -- Hide config panel, show overlay
+    if configFrame and configFrame.frame:IsShown() then
+        configFrame.frame:Hide()
+    end
+    pickFrameOverlay.currentName = nil
+    pickFrameOverlay.label:SetText("")
+    pickFrameOverlay.highlight:Hide()
+    pickFrameOverlay:Show()
 end
 
 ------------------------------------------------------------------------
@@ -1757,13 +1928,17 @@ local function BuildPositioningTab(container)
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
     if not group then return end
 
-    -- Anchor to Frame
+    -- Anchor to Frame (editbox + pick button row)
+    local anchorRow = AceGUI:Create("SimpleGroup")
+    anchorRow:SetFullWidth(true)
+    anchorRow:SetLayout("Flow")
+
     local anchorBox = AceGUI:Create("EditBox")
     anchorBox:SetLabel("Anchor to Frame")
     local currentAnchor = group.anchor.relativeTo
     if currentAnchor == "UIParent" then currentAnchor = "" end
     anchorBox:SetText(currentAnchor)
-    anchorBox:SetFullWidth(true)
+    anchorBox:SetRelativeWidth(0.75)
     anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
         local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent"
         if text == "" then
@@ -1773,7 +1948,27 @@ local function BuildPositioningTab(container)
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(anchorBox)
+    anchorRow:AddChild(anchorBox)
+
+    local pickBtn = AceGUI:Create("Button")
+    pickBtn:SetText("Pick")
+    pickBtn:SetRelativeWidth(0.25)
+    pickBtn:SetCallback("OnClick", function()
+        local grp = selectedGroup
+        StartPickFrame(function(name)
+            -- Re-show config panel
+            if configFrame then
+                configFrame.frame:Show()
+            end
+            if name then
+                CooldownCompanion:SetGroupAnchor(grp, name)
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end)
+    anchorRow:AddChild(pickBtn)
+
+    container:AddChild(anchorRow)
 
     -- Anchor Point dropdown
     local pointValues = {}
