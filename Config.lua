@@ -681,6 +681,33 @@ local function TryAddItem(input)
 end
 
 ------------------------------------------------------------------------
+-- Helper: Receive a spell/item drop from the cursor
+------------------------------------------------------------------------
+local function TryReceiveCursorDrop()
+    local cursorType, cursorID, _, cursorSpellID = GetCursorInfo()
+    if not cursorType then return false end
+
+    if not selectedGroup then
+        CooldownCompanion:Print("Select a group first before dropping spells or items.")
+        ClearCursor()
+        return false
+    end
+
+    local added = false
+    if cursorType == "spell" and cursorSpellID then
+        added = TryAddSpell(tostring(cursorSpellID))
+    elseif cursorType == "item" and cursorID then
+        added = TryAddItem(tostring(cursorID))
+    end
+
+    if added then
+        ClearCursor()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    return added
+end
+
+------------------------------------------------------------------------
 -- Helper: Get icon for a button data entry
 ------------------------------------------------------------------------
 local function GetButtonIcon(buttonData)
@@ -1320,6 +1347,10 @@ function RefreshColumn2()
         entryFrame:SetScript("OnMouseUp", function(self, button)
             -- If a drag was active, suppress this click
             if dragState and dragState.phase == "active" then return end
+            -- If cursor holds a spell/item from spellbook/bags, receive the drop
+            if button == "LeftButton" and GetCursorInfo() then
+                if TryReceiveCursorDrop() then return end
+            end
             if button == "LeftButton" then
                 if IsControlKeyDown() then
                     -- Ctrl+click: toggle multi-select
@@ -1385,6 +1416,9 @@ function RefreshColumn2()
 
         col2Scroll:AddChild(entry)
 
+        -- Accept spell/item drops on each entry frame
+        entryFrame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
+
         -- Hold-click drag reorder via handler-table HookScript pattern
         if not entryFrame._cdcDragHooked then
             entryFrame._cdcDragHooked = true
@@ -1393,6 +1427,8 @@ function RefreshColumn2()
             end)
         end
         entryFrame._cdcOnMouseDown = function(self, button)
+            -- Don't start internal drag-reorder when cursor holds a spell/item
+            if GetCursorInfo() then return end
             if button == "LeftButton" and not IsControlKeyDown() then
                 local cursorY = GetScaledCursorPosition(col2Scroll)
                 dragState = {
@@ -2758,6 +2794,50 @@ local function CreateConfigPanel()
     scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
     scroll2.frame:Show()
     col2Scroll = scroll2
+
+    -- Accept spell/item drops anywhere on the column 2 scroll area
+    scroll2.frame:EnableMouse(true)
+    scroll2.frame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
+    scroll2.content:EnableMouse(true)
+    scroll2.content:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
+
+    -- Drop hint overlay for column 2
+    local dropOverlay = CreateFrame("Frame", nil, col2.frame, "BackdropTemplate")
+    dropOverlay:SetAllPoints(col2.frame)
+    dropOverlay:SetFrameLevel(col2.frame:GetFrameLevel() + 20)
+    dropOverlay:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
+    dropOverlay:SetBackdropColor(0.15, 0.55, 0.85, 0.25)
+    dropOverlay:EnableMouse(true)
+    dropOverlay:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
+    dropOverlay:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and GetCursorInfo() then
+            TryReceiveCursorDrop()
+        end
+    end)
+    dropOverlay:Hide()
+
+    local dropBorder = dropOverlay:CreateTexture(nil, "BORDER")
+    dropBorder:SetAllPoints()
+    dropBorder:SetColorTexture(0.3, 0.7, 1.0, 0.35)
+
+    local dropInner = dropOverlay:CreateTexture(nil, "ARTWORK")
+    dropInner:SetPoint("TOPLEFT", 2, -2)
+    dropInner:SetPoint("BOTTOMRIGHT", -2, 2)
+    dropInner:SetColorTexture(0.05, 0.15, 0.25, 0.6)
+
+    local dropText = dropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    dropText:SetPoint("CENTER", 0, 0)
+    dropText:SetText("|cffAADDFFDrop here to track|r")
+
+    dropOverlay:RegisterEvent("CURSOR_CHANGED")
+    dropOverlay:SetScript("OnEvent", function(self)
+        local cursorType = GetCursorInfo()
+        if (cursorType == "spell" or cursorType == "item") and selectedGroup and col2.frame:IsShown() then
+            self:Show()
+        else
+            self:Hide()
+        end
+    end)
 
     -- Column 3 content area (use InlineGroup's content directly)
     col3Container = col3.content
