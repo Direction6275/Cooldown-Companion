@@ -35,6 +35,7 @@ local profileBarAceWidgets = {}
 local col2InfoButtons = {}
 local columnInfoButtons = {}
 local moveMenuFrame = nil
+local groupContextMenu = nil
 
 -- Drag-reorder state
 local dragState = nil
@@ -1261,41 +1262,68 @@ function RefreshColumn1()
                         specExpandedGroupId = groupId
                     end
                     CooldownCompanion:RefreshConfigPanel()
-                elseif mouseButton == "MiddleButton" then
-                    group.enabled = not (group.enabled ~= false)
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                elseif mouseButton == "RightButton" then
-                    if group.isGlobal and group.specs then
-                        -- Check for foreign specs (from other classes)
-                        local hasForeign = false
-                        local numSpecs = GetNumSpecializations()
-                        local playerSpecIds = {}
-                        for i = 1, numSpecs do
-                            local specId = GetSpecializationInfo(i)
-                            if specId then playerSpecIds[specId] = true end
-                        end
-                        for specId in pairs(group.specs) do
-                            if not playerSpecIds[specId] then
-                                hasForeign = true
-                                break
-                            end
-                        end
-                        if hasForeign then
-                            ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", group.name, { groupId = groupId })
-                        else
-                            CooldownCompanion:ToggleGroupGlobal(groupId)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                    else
-                        CooldownCompanion:ToggleGroupGlobal(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
                 end
                 return
             end
             if mouseButton == "RightButton" then
-                ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                if not groupContextMenu then
+                    groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
+                end
+                UIDropDownMenu_Initialize(groupContextMenu, function(self, level)
+                    -- Rename
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = "Rename"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Toggle Global
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = group.isGlobal and "Make Character-Only" or "Make Global"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        if group.isGlobal and group.specs then
+                            local hasForeign = false
+                            local numSpecs = GetNumSpecializations()
+                            local playerSpecIds = {}
+                            for i = 1, numSpecs do
+                                local specId = GetSpecializationInfo(i)
+                                if specId then playerSpecIds[specId] = true end
+                            end
+                            for specId in pairs(group.specs) do
+                                if not playerSpecIds[specId] then
+                                    hasForeign = true
+                                    break
+                                end
+                            end
+                            if hasForeign then
+                                ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", group.name, { groupId = groupId })
+                                return
+                            end
+                        end
+                        CooldownCompanion:ToggleGroupGlobal(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Toggle On/Off
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = (group.enabled ~= false) and "Disable" or "Enable"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        group.enabled = not (group.enabled ~= false)
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end, "MENU")
+                groupContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                ToggleDropDownMenu(1, nil, groupContextMenu, "cursor", 0, 0)
                 return
             end
             if mouseButton == "MiddleButton" then
@@ -3222,12 +3250,10 @@ local function CreateConfigPanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Groups")
         GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
-        GameTooltip:AddLine("Right-click to rename.", 1, 1, 1, true)
+        GameTooltip:AddLine("Right-click for options.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Middle-click to toggle on/off.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Right-click to toggle global.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:Show()
