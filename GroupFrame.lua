@@ -592,6 +592,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     if not frame then
         frame = self:CreateGroupFrame(groupId)
     else
+        self:AnchorGroupFrame(frame, group.anchor)
         self:PopulateGroupButtons(groupId)
     end
     
