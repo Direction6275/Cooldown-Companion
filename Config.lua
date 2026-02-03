@@ -512,6 +512,56 @@ local function IsAddonFrame(name)
 end
 
 ------------------------------------------------------------------------
+-- Helper: Check if a frame has visible content (not an empty container)
+-- Non-Frame widget types (StatusBar, Button, etc.) inherently render;
+-- plain Frames with mouse disabled need at least one shown region.
+------------------------------------------------------------------------
+local function HasVisibleContent(frame)
+    if frame:GetObjectType() ~= "Frame" then return true end
+    if frame:IsMouseEnabled() then return true end
+    for _, region in pairs({ frame:GetRegions() }) do
+        if region:IsShown() then return true end
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Helper: Find deepest named child frame under cursor
+------------------------------------------------------------------------
+local function FindDeepestNamedChild(frame, cx, cy)
+    local bestFrame, bestName, bestArea = nil, nil, math.huge
+    local children = { frame:GetChildren() }
+    for _, child in ipairs(children) do
+        if not (child.IsForbidden and child:IsForbidden())
+            and child:IsVisible() and child:GetEffectiveAlpha() > 0 then
+            local name = child:GetName()
+            if name and name ~= "" and not IsAddonFrame(name) then
+                -- GetRect may return secret values in restricted combat; pcall to skip
+                local ok, inside, area = pcall(function()
+                    local left, bottom, width, height = child:GetRect()
+                    if not left or not width or width <= 0 or height <= 0 then
+                        return false, 0
+                    end
+                    if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
+                        return true, width * height
+                    end
+                    return false, 0
+                end)
+                if ok and inside and area < bestArea and HasVisibleContent(child) then
+                    bestFrame, bestName, bestArea = child, name, area
+                end
+            end
+            -- Recurse into children regardless of whether this child is named
+            local deeperFrame, deeperName, deeperArea = FindDeepestNamedChild(child, cx, cy)
+            if deeperFrame and deeperArea < bestArea then
+                bestFrame, bestName, bestArea = deeperFrame, deeperName, deeperArea
+            end
+        end
+    end
+    return bestFrame, bestName, bestArea
+end
+
+------------------------------------------------------------------------
 -- Helper: Start pick-frame mode
 ------------------------------------------------------------------------
 local function FinishPickFrame(name)
@@ -566,38 +616,68 @@ local function StartPickFrame(callback)
         overlay.highlight = highlight
 
         -- OnUpdate: detect frame under cursor (overlay is mouse-transparent)
-        overlay:SetScript("OnUpdate", function(self)
+        local scanElapsed = 0
+        overlay:SetScript("OnUpdate", function(self, dt)
+            -- Compute cursor position in UIParent coordinates (needed for all paths)
+            local cx, cy = GetCursorPosition()
+            local scale = UIParent:GetEffectiveScale()
+            cx, cy = cx / scale, cy / scale
+
+            local resolvedFrame, name
+
+            -- Try GetMouseFoci first
             local foci = GetMouseFoci()
             local focus = foci and foci[1]
-
-            if not focus or focus == WorldFrame then
-                self.label:SetText("")
-                self.highlight:Hide()
-                self.currentName = nil
-                return
+            if focus and focus ~= WorldFrame then
+                resolvedFrame, name = ResolveNamedFrame(focus)
             end
 
-            local resolvedFrame, name = ResolveNamedFrame(focus)
+            -- If GetMouseFoci didn't find a useful frame, scan from UIParent
+            -- Throttle the full scan to avoid per-frame cost
             if not name or IsAddonFrame(name) then
+                scanElapsed = scanElapsed + dt
+                if scanElapsed >= 0.05 then
+                    scanElapsed = 0
+                    local scanFrame, scanName, scanArea = FindDeepestNamedChild(UIParent, cx, cy)
+                    if scanFrame and scanName and not IsAddonFrame(scanName) then
+                        -- Reject screen-sized containers (e.g. ElvUIParent)
+                        local uiW, uiH = UIParent:GetSize()
+                        if scanArea <= uiW * uiH * 0.25 then
+                            resolvedFrame, name = scanFrame, scanName
+                        end
+                    end
+                else
+                    -- Between throttle ticks, reuse last result
+                    resolvedFrame = self.lastResolvedFrame
+                    name = self.currentName
+                end
+            else
+                scanElapsed = 0
+                -- GetMouseFoci found a named frame; try to find a deeper child
+                local deepFrame, deepName = FindDeepestNamedChild(resolvedFrame, cx, cy)
+                if deepFrame then
+                    resolvedFrame, name = deepFrame, deepName
+                end
+            end
+
+            if not name then
                 self.label:SetText("")
                 self.highlight:Hide()
                 self.currentName = nil
+                self.lastResolvedFrame = nil
                 return
             end
 
             self.currentName = name
+            self.lastResolvedFrame = resolvedFrame
 
-            -- Position label near cursor
-            local cx, cy = GetCursorPosition()
-            local scale = UIParent:GetEffectiveScale()
-            cx, cy = cx / scale, cy / scale
             self.label:ClearAllPoints()
             self.label:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", cx + 20, cy + 10)
             self.label:SetText(name)
 
             -- Position highlight around the resolved frame
-            local left, bottom, width, height = resolvedFrame:GetRect()
-            if left and width and width > 0 and height > 0 then
+            local ok, left, bottom, width, height = pcall(resolvedFrame.GetRect, resolvedFrame)
+            if ok and left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
                 self.highlight:SetSize(width, height)
