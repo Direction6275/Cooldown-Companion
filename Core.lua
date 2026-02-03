@@ -678,7 +678,7 @@ function CooldownCompanion:ToggleGroupGlobal(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return end
     group.isGlobal = not group.isGlobal
-    if not group.isGlobal and (group.createdBy == "migrated" or group.createdBy == nil) then
+    if not group.isGlobal then
         group.createdBy = self.db.keys.char
     end
     self:RefreshAllGroups()

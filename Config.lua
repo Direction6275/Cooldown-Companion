@@ -432,6 +432,26 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
+    text = "This will remove all spec filters and turn '%s' into a group for your current character. Continue?",
+    button1 = "Continue",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.groupId then
+            local group = CooldownCompanion.db.profile.groups[data.groupId]
+            if group then
+                group.specs = nil
+                CooldownCompanion:ToggleGroupGlobal(data.groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 ------------------------------------------------------------------------
 -- Helper: Show a StaticPopup above the config panel
 ------------------------------------------------------------------------
@@ -1232,8 +1252,31 @@ function RefreshColumn1()
                     CooldownCompanion:RefreshGroupFrame(groupId)
                     CooldownCompanion:RefreshConfigPanel()
                 elseif mouseButton == "RightButton" then
-                    CooldownCompanion:ToggleGroupGlobal(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
+                    if group.isGlobal and group.specs then
+                        -- Check for foreign specs (from other classes)
+                        local hasForeign = false
+                        local numSpecs = GetNumSpecializations()
+                        local playerSpecIds = {}
+                        for i = 1, numSpecs do
+                            local specId = GetSpecializationInfo(i)
+                            if specId then playerSpecIds[specId] = true end
+                        end
+                        for specId in pairs(group.specs) do
+                            if not playerSpecIds[specId] then
+                                hasForeign = true
+                                break
+                            end
+                        end
+                        if hasForeign then
+                            ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", group.name, { groupId = groupId })
+                        else
+                            CooldownCompanion:ToggleGroupGlobal(groupId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                    else
+                        CooldownCompanion:ToggleGroupGlobal(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
                 end
                 return
             end
