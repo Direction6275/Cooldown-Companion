@@ -6,3 +6,5 @@ An addon that allows you to create custom icon panels to track spell and item co
 [LibDBIcon](https://www.wowace.com/projects/libdbicon-1-0)
 
 [LibDataBroker](https://www.wowace.com/projects/libdatabroker-1-1)
+
+[LibDeflate](https://www.wowinterface.com/downloads/fileinfo.php?id=25453)
