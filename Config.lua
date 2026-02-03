@@ -11,6 +11,7 @@ local AceConfig = LibStub("AceConfig-3.0")
 local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local AceDBOptions = LibStub("AceDBOptions-3.0")
 local AceSerializer = LibStub("AceSerializer-3.0")
+local LibDeflate = LibStub("LibDeflate")
 
 -- Selection state
 local selectedGroup = nil
@@ -380,7 +381,9 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     OnShow = function(self)
         local db = CooldownCompanion.db
         local serialized = AceSerializer:Serialize(db.profile)
-        self.EditBox:SetText(serialized)
+        local compressed = LibDeflate:CompressDeflate(serialized)
+        local encoded = LibDeflate:EncodeForPrint(compressed)
+        self.EditBox:SetText(encoded)
         self.EditBox:HighlightText()
         self.EditBox:SetFocus()
     end,
@@ -401,10 +404,21 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
     OnAccept = function(self)
         local text = self.EditBox:GetText()
         if text and text ~= "" then
-            local success, data = AceSerializer:Deserialize(text)
+            local success, data
+            -- Detect format: legacy AceSerialized strings start with "^1"
+            if text:sub(1, 2) == "^1" then
+                success, data = AceSerializer:Deserialize(text)
+            else
+                local decoded = LibDeflate:DecodeForPrint(text)
+                if decoded then
+                    local decompressed = LibDeflate:DecompressDeflate(decoded)
+                    if decompressed then
+                        success, data = AceSerializer:Deserialize(decompressed)
+                    end
+                end
+            end
             if success and type(data) == "table" then
                 local db = CooldownCompanion.db
-                -- Deep-copy imported data into current profile
                 for k, v in pairs(data) do
                     db.profile[k] = v
                 end
