@@ -808,8 +808,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local atMax = button._chargeCount and button._chargeMax
             and button._chargeCount >= button._chargeMax
         local cc
-        if not atMax and buttonData.chargeFontColorMissing then
-            cc = buttonData.chargeFontColorMissing
+        if not atMax then
+            cc = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
         else
             cc = buttonData.chargeFontColor or {1, 1, 1, 1}
         end
