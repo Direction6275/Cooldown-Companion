@@ -293,7 +293,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame:StopMovingOrSizing()
         CooldownCompanion:SaveGroupPosition(groupId)
     end)
-    
+
     -- Update functions
     frame.UpdateCooldowns = function(self)
         for _, button in ipairs(self.buttons) do
@@ -710,6 +710,17 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame.dragHandle, false, false)
             frame.dragHandle:EnableMouse(true)
             frame.dragHandle:RegisterForDrag("LeftButton")
+            frame.dragHandle:SetScript("OnMouseUp", function(_, btn)
+                if btn == "MiddleButton" then
+                    local g = CooldownCompanion.db.profile.groups[groupId]
+                    if g then
+                        g.locked = true
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                        CooldownCompanion:Print(g.name .. " locked.")
+                    end
+                end
+            end)
         end
         if frame.nudger then
             SetFrameClickThrough(frame.nudger, false, false)
