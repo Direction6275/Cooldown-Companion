@@ -215,6 +215,9 @@ function CooldownCompanion:OnEnable()
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
+    -- Migrate legacy groups to have ownership fields
+    self:MigrateGroupOwnership()
+
     -- Create all group frames
     self:CreateAllGroupFrames()
 
@@ -386,14 +389,18 @@ end
 
 function CooldownCompanion:SlashCommand(input)
     if input == "lock" then
-        for _, group in pairs(self.db.profile.groups) do
-            group.locked = true
+        for groupId, group in pairs(self.db.profile.groups) do
+            if self:IsGroupVisibleToCurrentChar(groupId) then
+                group.locked = true
+            end
         end
         self:LockAllFrames()
         self:Print("All frames locked.")
     elseif input == "unlock" then
-        for _, group in pairs(self.db.profile.groups) do
-            group.locked = false
+        for groupId, group in pairs(self.db.profile.groups) do
+            if self:IsGroupVisibleToCurrentChar(groupId) then
+                group.locked = false
+            end
         end
         self:UnlockAllFrames()
         self:Print("All frames unlocked. Drag to move.")
@@ -506,6 +513,8 @@ function CooldownCompanion:CreateGroup(name)
         enabled = true,
         locked = false,
         order = groupId,
+        createdBy = self.db.keys.char,
+        isGlobal = false,
     }
 
     self.db.profile.groups[groupId].style.orientation = "horizontal"
@@ -649,6 +658,32 @@ function CooldownCompanion:FindTalentSpellByName(name)
 end
 
 
+function CooldownCompanion:MigrateGroupOwnership()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.createdBy == nil and group.isGlobal == nil then
+            group.isGlobal = true
+            group.createdBy = "migrated"
+        end
+    end
+end
+
+function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return false end
+    if group.isGlobal then return true end
+    return group.createdBy == self.db.keys.char
+end
+
+function CooldownCompanion:ToggleGroupGlobal(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+    group.isGlobal = not group.isGlobal
+    if not group.isGlobal and (group.createdBy == "migrated" or group.createdBy == nil) then
+        group.createdBy = self.db.keys.char
+    end
+    self:RefreshAllGroups()
+end
+
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
         return IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id)
@@ -660,13 +695,21 @@ end
 
 function CooldownCompanion:CreateAllGroupFrames()
     for groupId, _ in pairs(self.db.profile.groups) do
-        self:CreateGroupFrame(groupId)
+        if self:IsGroupVisibleToCurrentChar(groupId) then
+            self:CreateGroupFrame(groupId)
+        end
     end
 end
 
 function CooldownCompanion:RefreshAllGroups()
     for groupId, _ in pairs(self.db.profile.groups) do
-        self:RefreshGroupFrame(groupId)
+        if self:IsGroupVisibleToCurrentChar(groupId) then
+            self:RefreshGroupFrame(groupId)
+        else
+            if self.groupFrames[groupId] then
+                self.groupFrames[groupId]:Hide()
+            end
+        end
     end
 end
 

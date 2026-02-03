@@ -1143,26 +1143,47 @@ function RefreshColumn1()
     col1Scroll:ReleaseChildren()
 
     local db = CooldownCompanion.db.profile
+    local charKey = CooldownCompanion.db.keys.char
 
-    -- Sort group IDs by order field (fallback to groupId)
-    local groupIds = {}
-    for id in pairs(db.groups) do
-        table.insert(groupIds, id)
+    -- Split groups into global and character-owned, sorted by order
+    local globalIds = {}
+    local charIds = {}
+    for id, group in pairs(db.groups) do
+        if group.isGlobal then
+            table.insert(globalIds, id)
+        elseif group.createdBy == charKey then
+            table.insert(charIds, id)
+        end
     end
-    table.sort(groupIds, function(a, b)
+    local function sortByOrder(a, b)
         local orderA = db.groups[a].order or a
         local orderB = db.groups[b].order or b
         return orderA < orderB
-    end)
+    end
+    table.sort(globalIds, sortByOrder)
+    table.sort(charIds, sortByOrder)
 
-    for listIndex, groupId in ipairs(groupIds) do
+    -- Count current children in scroll widget
+    local function CountScrollChildren()
+        local children = { col1Scroll.content:GetChildren() }
+        return #children
+    end
+
+    -- Helper: render a single group row (reused by both sections)
+    local function RenderGroupRow(groupId, listIndex, sectionGroupIds, sectionChildOffset)
         local group = db.groups[groupId]
-        if group then
-            local btn = AceGUI:Create("Button")
+        if not group then return end
 
-            -- Build label with spec icons and status indicators
-            local specIcons = ""
-            if group.specs and next(group.specs) then
+        local btn = AceGUI:Create("Button")
+
+        -- Build label with spec icons (1-3) or count (4+)
+        local specTag = ""
+        if group.specs and next(group.specs) then
+            local count = 0
+            for _ in pairs(group.specs) do count = count + 1 end
+            if count >= 4 then
+                specTag = "|cffaaaaaa(" .. count .. ")|r "
+            else
                 local icons = {}
                 for specId in pairs(group.specs) do
                     local _, _, _, icon = GetSpecializationInfoForSpecID(specId)
@@ -1171,136 +1192,215 @@ function RefreshColumn1()
                     end
                 end
                 if #icons > 0 then
-                    specIcons = table.concat(icons, " ") .. " "
+                    specTag = table.concat(icons, " ") .. " "
                 end
             end
-            local label = specIcons .. group.name
-            local indicators = {}
-            if group.enabled == false then
-                table.insert(indicators, "|cff888888OFF|r")
+        end
+        local globalTag = group.isGlobal and "|cff66aaff[G]|r " or ""
+        local label = globalTag .. specTag .. group.name
+        local indicators = {}
+        if group.enabled == false then
+            table.insert(indicators, "|cff888888OFF|r")
+        end
+        if not group.locked then
+            table.insert(indicators, "|cffdddd00U|r")
+        end
+        if #indicators > 0 then
+            label = label .. " " .. table.concat(indicators, " ")
+        end
+        if selectedGroup == groupId then
+            btn:SetText("|cff00ff00[ " .. label .. " ]|r")
+        else
+            btn:SetText(label)
+        end
+
+        btn:SetFullWidth(true)
+        btn.frame:RegisterForClicks("AnyUp")
+        btn:SetCallback("OnClick", function(widget, event, mouseButton)
+            -- Suppress click if a drag just finished
+            if dragState and dragState.phase == "active" then return end
+            if IsShiftKeyDown() then
+                if mouseButton == "LeftButton" then
+                    if specExpandedGroupId == groupId then
+                        specExpandedGroupId = nil
+                    else
+                        specExpandedGroupId = groupId
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                elseif mouseButton == "MiddleButton" then
+                    group.enabled = not (group.enabled ~= false)
+                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                elseif mouseButton == "RightButton" then
+                    CooldownCompanion:ToggleGroupGlobal(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                return
             end
-            if not group.locked then
-                table.insert(indicators, "|cffdddd00U|r")
+            if mouseButton == "RightButton" then
+                ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                return
             end
-            if #indicators > 0 then
-                label = label .. " " .. table.concat(indicators, " ")
+            if mouseButton == "MiddleButton" then
+                group.locked = not group.locked
+                CooldownCompanion:RefreshGroupFrame(groupId)
+                CooldownCompanion:RefreshConfigPanel()
+                return
             end
             if selectedGroup == groupId then
-                btn:SetText("|cff00ff00[ " .. label .. " ]|r")
+                selectedGroup = nil
             else
-                btn:SetText(label)
+                selectedGroup = groupId
             end
+            selectedButton = nil
+            wipe(selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
 
-            btn:SetFullWidth(true)
-            btn.frame:RegisterForClicks("AnyUp")
-            btn:SetCallback("OnClick", function(widget, event, mouseButton)
-                -- Suppress click if a drag just finished
-                if dragState and dragState.phase == "active" then return end
-                if IsShiftKeyDown() then
-                    if mouseButton == "LeftButton" then
-                        if specExpandedGroupId == groupId then
-                            specExpandedGroupId = nil
-                        else
-                            specExpandedGroupId = groupId
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    elseif mouseButton == "MiddleButton" then
-                        group.enabled = not (group.enabled ~= false)
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    return
-                end
-                if mouseButton == "RightButton" then
-                    ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
-                    return
-                end
-                if mouseButton == "MiddleButton" then
-                    group.locked = not group.locked
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                    return
-                end
-                if selectedGroup == groupId then
-                    selectedGroup = nil
-                else
-                    selectedGroup = groupId
-                end
-                selectedButton = nil
-                wipe(selectedButtons)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
+        local row = AceGUI:Create("SimpleGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+        row:AddChild(btn)
+        col1Scroll:AddChild(row)
 
-            local row = AceGUI:Create("SimpleGroup")
-            row:SetFullWidth(true)
-            row:SetLayout("Flow")
-            row:AddChild(btn)
-            col1Scroll:AddChild(row)
-
-            -- Inline spec filter panel (expanded via Shift+Left-click)
-            if specExpandedGroupId == groupId then
-                local numSpecs = GetNumSpecializations()
-                for i = 1, numSpecs do
-                    local specId, name, _, icon = GetSpecializationInfo(i)
-                    local cb = AceGUI:Create("CheckBox")
-                    cb:SetLabel(name)
-                    cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
-                    cb:SetFullWidth(true)
-                    cb:SetValue(group.specs and group.specs[specId] or false)
-                    cb:SetCallback("OnValueChanged", function(widget, event, value)
-                        if value then
-                            if not group.specs then group.specs = {} end
-                            group.specs[specId] = true
-                        else
-                            if group.specs then
-                                group.specs[specId] = nil
-                                if not next(group.specs) then
-                                    group.specs = nil
-                                end
+        -- Inline spec filter panel (expanded via Shift+Left-click)
+        if specExpandedGroupId == groupId then
+            local numSpecs = GetNumSpecializations()
+            for i = 1, numSpecs do
+                local specId, name, _, icon = GetSpecializationInfo(i)
+                local cb = AceGUI:Create("CheckBox")
+                cb:SetLabel(name)
+                cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
+                cb:SetFullWidth(true)
+                cb:SetValue(group.specs and group.specs[specId] or false)
+                cb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if value then
+                        if not group.specs then group.specs = {} end
+                        group.specs[specId] = true
+                    else
+                        if group.specs then
+                            group.specs[specId] = nil
+                            if not next(group.specs) then
+                                group.specs = nil
                             end
                         end
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                    col1Scroll:AddChild(cb)
-                end
-                local clearBtn = AceGUI:Create("Button")
-                clearBtn:SetText("Clear All")
-                clearBtn:SetFullWidth(true)
-                clearBtn:SetCallback("OnClick", function()
-                    group.specs = nil
+                    end
                     CooldownCompanion:RefreshGroupFrame(groupId)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                col1Scroll:AddChild(clearBtn)
+                col1Scroll:AddChild(cb)
             end
 
-            -- Hold-click drag reorder via handler-table HookScript pattern
-            -- Hook btn.frame (not row.frame) because the Button captures mouse events
-            local btnFrame = btn.frame
-            if not btnFrame._cdcDragHooked then
-                btnFrame._cdcDragHooked = true
-                btnFrame:HookScript("OnMouseDown", function(self, mouseBtn)
-                    if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
-                end)
+            -- Foreign specs: specs from other classes already toggled on
+            local playerSpecIds = {}
+            for i = 1, numSpecs do
+                local specId = GetSpecializationInfo(i)
+                if specId then playerSpecIds[specId] = true end
             end
-            btnFrame._cdcOnMouseDown = function(self, button)
-                if button == "LeftButton" and not IsShiftKeyDown() then
-                    local cursorY = GetScaledCursorPosition(col1Scroll)
-                    dragState = {
-                        kind = "group",
-                        phase = "pending",
-                        sourceIndex = listIndex,
-                        groupIds = groupIds,
-                        scrollWidget = col1Scroll,
-                        widget = row,
-                        startY = cursorY,
-                        childOffset = 0,
-                        totalDraggable = #groupIds,
-                    }
-                    StartDragTracking()
+
+            local foreignSpecs = {}
+            if group.specs then
+                for specId in pairs(group.specs) do
+                    if not playerSpecIds[specId] then
+                        table.insert(foreignSpecs, specId)
+                    end
                 end
             end
+
+            if #foreignSpecs > 0 then
+                table.sort(foreignSpecs)
+
+                for _, specId in ipairs(foreignSpecs) do
+                    local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
+                    if name then
+                        local fcb = AceGUI:Create("CheckBox")
+                        fcb:SetLabel(name)
+                        if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+                        fcb:SetFullWidth(true)
+                        fcb:SetValue(true)
+                        fcb:SetCallback("OnValueChanged", function(widget, event, value)
+                            if not value then
+                                if group.specs then
+                                    group.specs[specId] = nil
+                                    if not next(group.specs) then
+                                        group.specs = nil
+                                    end
+                                end
+                            else
+                                if not group.specs then group.specs = {} end
+                                group.specs[specId] = true
+                            end
+                            CooldownCompanion:RefreshGroupFrame(groupId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end)
+                        col1Scroll:AddChild(fcb)
+                    end
+                end
+            end
+
+            local clearBtn = AceGUI:Create("Button")
+            clearBtn:SetText("Clear All")
+            clearBtn:SetFullWidth(true)
+            clearBtn:SetCallback("OnClick", function()
+                group.specs = nil
+                CooldownCompanion:RefreshGroupFrame(groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            col1Scroll:AddChild(clearBtn)
+        end
+
+        -- Hold-click drag reorder via handler-table HookScript pattern
+        -- Hook btn.frame (not row.frame) because the Button captures mouse events
+        local btnFrame = btn.frame
+        if not btnFrame._cdcDragHooked then
+            btnFrame._cdcDragHooked = true
+            btnFrame:HookScript("OnMouseDown", function(self, mouseBtn)
+                if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
+            end)
+        end
+        btnFrame._cdcOnMouseDown = function(self, button)
+            if button == "LeftButton" and not IsShiftKeyDown() then
+                local cursorY = GetScaledCursorPosition(col1Scroll)
+                dragState = {
+                    kind = "group",
+                    phase = "pending",
+                    sourceIndex = listIndex,
+                    groupIds = sectionGroupIds,
+                    scrollWidget = col1Scroll,
+                    widget = row,
+                    startY = cursorY,
+                    childOffset = sectionChildOffset,
+                    totalDraggable = #sectionGroupIds,
+                }
+                StartDragTracking()
+            end
+        end
+    end
+
+    -- Render "Global Groups" section
+    if #globalIds > 0 then
+        local globalHeading = AceGUI:Create("Heading")
+        globalHeading:SetText("|cff66aaff" .. "Global Groups" .. "|r")
+        globalHeading:SetFullWidth(true)
+        col1Scroll:AddChild(globalHeading)
+
+        local globalChildOffset = CountScrollChildren()
+        for listIndex, groupId in ipairs(globalIds) do
+            RenderGroupRow(groupId, listIndex, globalIds, globalChildOffset)
+        end
+    end
+
+    -- Render character groups section
+    if #charIds > 0 then
+        local charName = charKey:match("^(.-)%s*%-") or charKey
+        local charHeading = AceGUI:Create("Heading")
+        charHeading:SetText(charName .. "'s Groups")
+        charHeading:SetFullWidth(true)
+        col1Scroll:AddChild(charHeading)
+
+        local charChildOffset = CountScrollChildren()
+        for listIndex, groupId in ipairs(charIds) do
+            RenderGroupRow(groupId, listIndex, charIds, charChildOffset)
         end
     end
 
@@ -1533,7 +1633,9 @@ function RefreshColumn2()
                     local db = CooldownCompanion.db.profile
                     local groupIds = {}
                     for id in pairs(db.groups) do
-                        table.insert(groupIds, id)
+                        if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                            table.insert(groupIds, id)
+                        end
                     end
                     table.sort(groupIds)
                     for _, gid in ipairs(groupIds) do
@@ -1636,7 +1738,9 @@ function RefreshColumn2()
                 local db = CooldownCompanion.db.profile
                 local groupIds = {}
                 for id in pairs(db.groups) do
-                    table.insert(groupIds, id)
+                    if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                        table.insert(groupIds, id)
+                    end
                 end
                 table.sort(groupIds)
                 for _, gid in ipairs(groupIds) do
@@ -3066,6 +3170,7 @@ local function CreateConfigPanel()
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
         GameTooltip:AddLine("Shift+Middle-click to toggle on/off.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Right-click to toggle global.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:Show()
