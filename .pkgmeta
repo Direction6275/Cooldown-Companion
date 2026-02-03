@@ -5,6 +5,5 @@ wago-project-id: 4N2kWd6L
 
 ignore:
   - README.md
-  - CLAUDE.md
   - LICENSE.txt
   - .github
