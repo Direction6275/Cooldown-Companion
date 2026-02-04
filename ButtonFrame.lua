@@ -556,7 +556,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow, true, true)
     end
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
     if button.assistedHighlight then
+        if button.assistedHighlight.solidFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.solidFrame, true, true)
+        end
         if button.assistedHighlight.blizzardFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
         end
@@ -1008,7 +1014,13 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow, true, true)
     end
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
     if button.assistedHighlight then
+        if button.assistedHighlight.solidFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.solidFrame, true, true)
+        end
         if button.assistedHighlight.blizzardFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
         end
