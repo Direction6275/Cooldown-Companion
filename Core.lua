@@ -228,6 +228,9 @@ function CooldownCompanion:OnEnable()
         local ok, spellID = pcall(FetchAssistedSpell)
         self.assistedSpellID = ok and spellID or nil
 
+        -- Check for mount state changes and update group visibility
+        self:CheckMountedVisibility()
+
         self:UpdateAllCooldowns()
         self._cooldownsDirty = false
     end)
@@ -688,6 +691,30 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     if not group then return false end
     if group.isGlobal then return true end
     return group.createdBy == self.db.keys.char
+end
+
+function CooldownCompanion:CheckMountedVisibility()
+    local mounted = IsMounted()
+    if mounted == self._wasMounted then return end
+    self._wasMounted = mounted
+
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.hideWhileMounted and self.groupFrames[groupId] then
+            if mounted then
+                self.groupFrames[groupId]:Hide()
+            else
+                -- Re-evaluate full visibility before showing
+                local specAllowed = true
+                if group.specs and next(group.specs) then
+                    specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
+                end
+                local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
+                if group.enabled and #group.buttons > 0 and specAllowed and charVisible then
+                    self.groupFrames[groupId]:Show()
+                end
+            end
+        end
+    end
 end
 
 function CooldownCompanion:ToggleGroupGlobal(groupId)

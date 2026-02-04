@@ -2292,6 +2292,16 @@ local function BuildExtrasTab(container)
     if not group then return end
     local style = group.style
 
+    local mountedCb = AceGUI:Create("CheckBox")
+    mountedCb:SetLabel("Hide While Mounted")
+    mountedCb:SetValue(group.hideWhileMounted or false)
+    mountedCb:SetFullWidth(true)
+    mountedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.hideWhileMounted = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(mountedCb)
+
     local desatCb = AceGUI:Create("CheckBox")
     desatCb:SetLabel("Desaturate On Cooldown")
     desatCb:SetValue(style.desaturateOnCooldown or false)
