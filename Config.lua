@@ -532,8 +532,12 @@ local function FindDeepestNamedChild(frame, cx, cy)
     local bestFrame, bestName, bestArea = nil, nil, math.huge
     local children = { frame:GetChildren() }
     for _, child in ipairs(children) do
-        if not (child.IsForbidden and child:IsForbidden())
-            and child:IsVisible() and child:GetEffectiveAlpha() > 0 then
+        -- IsVisible/GetEffectiveAlpha may return secret values in restricted combat; pcall to skip
+        local okVis, visible = pcall(function()
+            if child.IsForbidden and child:IsForbidden() then return false end
+            return child:IsVisible() and child:GetEffectiveAlpha() > 0
+        end)
+        if okVis and visible then
             local name = child:GetName()
             if name and name ~= "" and not IsAddonFrame(name) then
                 -- GetRect may return secret values in restricted combat; pcall to skip
