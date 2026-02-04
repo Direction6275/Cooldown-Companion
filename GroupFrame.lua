@@ -311,15 +311,19 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on enabled state, spec filter, character visibility, and mount state
+    -- Show/hide based on enabled state, spec filter, character visibility, and conditions
     local specAllowed = true
     if group.specs and next(group.specs) then
         specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
     end
     local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
-    local mountHidden = group.hideWhileMounted and IsMounted()
+    local conditionHidden =
+        (group.hideWhileMounted and IsMounted()) or
+        (group.hideInCombat and UnitAffectingCombat("player")) or
+        (group.hideOutOfCombat and not UnitAffectingCombat("player")) or
+        (group.hideNoTarget and not UnitExists("target"))
 
-    if group.enabled and specAllowed and charVisible and not mountHidden then
+    if group.enabled and specAllowed and charVisible and not conditionHidden then
         frame:Show()
     else
         frame:Hide()
@@ -611,16 +615,20 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — hide if disabled, no buttons, wrong spec, wrong character, or mounted
+    -- Update visibility — hide if disabled, no buttons, wrong spec, wrong character, or conditions
     local specAllowed = true
     if group.specs and next(group.specs) then
         specAllowed = CooldownCompanion._currentSpecId
             and group.specs[CooldownCompanion._currentSpecId]
     end
     local charVisible = CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
-    local mountHidden = group.hideWhileMounted and IsMounted()
+    local conditionHidden =
+        (group.hideWhileMounted and IsMounted()) or
+        (group.hideInCombat and UnitAffectingCombat("player")) or
+        (group.hideOutOfCombat and not UnitAffectingCombat("player")) or
+        (group.hideNoTarget and not UnitExists("target"))
 
-    if group.enabled and #group.buttons > 0 and specAllowed and charVisible and not mountHidden then
+    if group.enabled and #group.buttons > 0 and specAllowed and charVisible and not conditionHidden then
         frame:Show()
     else
         frame:Hide()

@@ -2296,16 +2296,6 @@ local function BuildExtrasTab(container)
     if not group then return end
     local style = group.style
 
-    local mountedCb = AceGUI:Create("CheckBox")
-    mountedCb:SetLabel("Hide While Mounted")
-    mountedCb:SetValue(group.hideWhileMounted or false)
-    mountedCb:SetFullWidth(true)
-    mountedCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.hideWhileMounted = val
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-    end)
-    container:AddChild(mountedCb)
-
     local desatCb = AceGUI:Create("CheckBox")
     desatCb:SetLabel("Desaturate On Cooldown")
     desatCb:SetValue(style.desaturateOnCooldown or false)
@@ -2335,6 +2325,24 @@ local function BuildExtrasTab(container)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(rangeCb)
+
+    -- (?) tooltip for out of range
+    local rangeInfo = CreateFrame("Button", nil, rangeCb.frame)
+    rangeInfo:SetSize(16, 16)
+    rangeInfo:SetPoint("LEFT", rangeCb.checkbg, "RIGHT", rangeCb.text:GetStringWidth() + 4, 0)
+    local rangeInfoText = rangeInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rangeInfoText:SetPoint("CENTER")
+    rangeInfoText:SetText("|cff66aaff(?)|r")
+    rangeInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Out of Range")
+        GameTooltip:AddLine("Tints spell and item icons red when the target is out of range. Item range checking is unavailable during combat due to Blizzard API restrictions.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    rangeInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(tabInfoButtons, rangeInfo)
 
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
@@ -2537,6 +2545,67 @@ local function BuildExtrasTab(container)
             container:AddChild(procSlider)
         end
     end
+
+    -- "Hide When..." heading
+    local hideHeading = AceGUI:Create("Heading")
+    hideHeading:SetText("Hide When...")
+    hideHeading:SetFullWidth(true)
+    container:AddChild(hideHeading)
+
+    -- Hide While Mounted
+    local mountedCb = AceGUI:Create("CheckBox")
+    mountedCb:SetLabel("Mounted")
+    mountedCb:SetValue(group.hideWhileMounted or false)
+    mountedCb:SetFullWidth(true)
+    mountedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.hideWhileMounted = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(mountedCb)
+
+    -- Forward-declare both so callbacks can cross-reference each other
+    local combatCb, noCombatCb
+
+    -- Hide In Combat (mutually exclusive with Out of Combat)
+    combatCb = AceGUI:Create("CheckBox")
+    combatCb:SetLabel("In Combat")
+    combatCb:SetValue(group.hideInCombat or false)
+    combatCb:SetFullWidth(true)
+    combatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.hideInCombat = val
+        if val and group.hideOutOfCombat then
+            group.hideOutOfCombat = false
+            noCombatCb:SetValue(false)
+        end
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(combatCb)
+
+    -- Hide Out of Combat (mutually exclusive with In Combat)
+    noCombatCb = AceGUI:Create("CheckBox")
+    noCombatCb:SetLabel("Out of Combat")
+    noCombatCb:SetValue(group.hideOutOfCombat or false)
+    noCombatCb:SetFullWidth(true)
+    noCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.hideOutOfCombat = val
+        if val and group.hideInCombat then
+            group.hideInCombat = false
+            combatCb:SetValue(false)
+        end
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(noCombatCb)
+
+    -- Hide With No Target
+    local noTargetCb = AceGUI:Create("CheckBox")
+    noTargetCb:SetLabel("No Target Exists")
+    noTargetCb:SetValue(group.hideNoTarget or false)
+    noTargetCb:SetFullWidth(true)
+    noTargetCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.hideNoTarget = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    container:AddChild(noTargetCb)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons created above
     if CooldownCompanion.db.profile.hideInfoButtons then

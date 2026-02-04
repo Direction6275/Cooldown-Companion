@@ -692,10 +692,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 r, g, b = 1, 0.2, 0.2
             end
         elseif buttonData.type == "item" then
-            local inRange = IsItemInRange(buttonData.id, "target")
-            -- inRange is nil when no target or item has no range; only tint on explicit false
-            if inRange == false then
-                r, g, b = 1, 0.2, 0.2
+            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
+            if not InCombatLockdown() then
+                local inRange = IsItemInRange(buttonData.id, "target")
+                -- inRange is nil when no target or item has no range; only tint on explicit false
+                if inRange == false then
+                    r, g, b = 1, 0.2, 0.2
+                end
             end
         end
     end

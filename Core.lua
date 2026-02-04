@@ -212,6 +212,9 @@ function CooldownCompanion:OnEnable()
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
 
+    -- Target change events — conditional visibility
+    self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
+
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
@@ -228,8 +231,8 @@ function CooldownCompanion:OnEnable()
         local ok, spellID = pcall(FetchAssistedSpell)
         self.assistedSpellID = ok and spellID or nil
 
-        -- Check for mount state changes and update group visibility
-        self:CheckMountedVisibility()
+        -- Check for state changes and update group visibility
+        self:CheckConditionalVisibility()
 
         self:UpdateAllCooldowns()
         self._cooldownsDirty = false
@@ -368,6 +371,7 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
+    self:CheckConditionalVisibility()
     self:UpdateAllCooldowns()
     -- Hide config panel during combat to avoid protected frame errors
     if self._configWasOpen == nil then
@@ -382,12 +386,17 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
+    self:CheckConditionalVisibility()
     self:UpdateAllCooldowns()
     -- Reopen config panel if it was open before combat
     if self._configWasOpen then
         self._configWasOpen = false
         self:ToggleConfig()
     end
+end
+
+function CooldownCompanion:OnTargetChanged()
+    self:CheckConditionalVisibility()
 end
 
 function CooldownCompanion:SlashCommand(input)
@@ -693,14 +702,30 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     return group.createdBy == self.db.keys.char
 end
 
-function CooldownCompanion:CheckMountedVisibility()
+function CooldownCompanion:CheckConditionalVisibility()
     local mounted = IsMounted()
-    if mounted == self._wasMounted then return end
+    local inCombat = UnitAffectingCombat("player")
+    local hasTarget = UnitExists("target")
+
+    -- Early out if nothing changed
+    if mounted == self._wasMounted
+       and inCombat == self._wasInCombat
+       and hasTarget == self._hadTarget then
+        return
+    end
     self._wasMounted = mounted
+    self._wasInCombat = inCombat
+    self._hadTarget = hasTarget
 
     for groupId, group in pairs(self.db.profile.groups) do
-        if group.hideWhileMounted and self.groupFrames[groupId] then
-            if mounted then
+        if self.groupFrames[groupId] then
+            local conditionHidden =
+                (group.hideWhileMounted and mounted) or
+                (group.hideInCombat and inCombat) or
+                (group.hideOutOfCombat and not inCombat) or
+                (group.hideNoTarget and not hasTarget)
+
+            if conditionHidden then
                 self.groupFrames[groupId]:Hide()
             else
                 -- Re-evaluate full visibility before showing
