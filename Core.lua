@@ -156,7 +156,7 @@ function CooldownCompanion:OnInitialize()
     -- Initialize config
     self:SetupConfig()
 
-    self:Print("Cooldown Companion loaded. Type /cdc for options.")
+    self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
 
 -- Pre-defined at file scope to avoid creating a closure every tick
@@ -404,6 +404,22 @@ function CooldownCompanion:SlashCommand(input)
         end
         self:UnlockAllFrames()
         self:Print("All frames unlocked. Drag to move.")
+    elseif input == "minimap" then
+        self.db.profile.minimap.hide = not self.db.profile.minimap.hide
+        if self.db.profile.minimap.hide then
+            LDBIcon:Hide(ADDON_NAME)
+            self:Print("Minimap icon hidden.")
+        else
+            LDBIcon:Show(ADDON_NAME)
+            self:Print("Minimap icon shown.")
+        end
+    elseif input == "help" then
+        self:Print("Cooldown Companion commands:")
+        self:Print("/cdc - Open settings")
+        self:Print("/cdc lock - Lock all group frames")
+        self:Print("/cdc unlock - Unlock all group frames")
+        self:Print("/cdc minimap - Toggle minimap icon")
+        self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "reset" then
         self.db:ResetProfile()
         self:RefreshAllGroups()
