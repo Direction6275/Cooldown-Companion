@@ -307,7 +307,12 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     
     -- Store the frame
     self.groupFrames[groupId] = frame
-    
+
+    -- Create Masque group if enabled
+    if group.masqueEnabled and self.Masque then
+        self:CreateMasqueGroup(groupId)
+    end
+
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
@@ -503,8 +508,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local orientation = style.orientation or "horizontal"
     local buttonsPerRow = style.buttonsPerRow or 12
 
-    -- Clear existing buttons
+    -- Clear existing buttons (remove from Masque first if enabled)
     for _, button in ipairs(frame.buttons) do
+        if group.masqueEnabled then
+            self:RemoveButtonFromMasque(groupId, button)
+        end
         button:Hide()
         button:SetParent(nil)
     end
@@ -531,6 +539,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
             button:Show()
             table.insert(frame.buttons, button)
+
+            -- Add to Masque if enabled (after button is shown and in the list)
+            if group.masqueEnabled then
+                self:AddButtonToMasque(groupId, button)
+            end
         end
     end
 

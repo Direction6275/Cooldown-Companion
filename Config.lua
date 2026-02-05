@@ -2890,6 +2890,7 @@ end
 -- COLUMN 3: Settings (TabGroup)
 ------------------------------------------------------------------------
 local tabInfoButtons = {}
+local appearanceTabElements = {}
 
 local function BuildExtrasTab(container)
     for _, btn in ipairs(tabInfoButtons) do
@@ -2898,6 +2899,12 @@ local function BuildExtrasTab(container)
         btn:SetParent(nil)
     end
     wipe(tabInfoButtons)
+    for _, elem in ipairs(appearanceTabElements) do
+        elem:ClearAllPoints()
+        elem:Hide()
+        elem:SetParent(nil)
+    end
+    wipe(appearanceTabElements)
 
     if not selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
@@ -3345,6 +3352,45 @@ local function BuildExtrasTab(container)
     otherHeading:SetFullWidth(true)
     container:AddChild(otherHeading)
 
+    -- Masque skinning toggle (only show if Masque is installed)
+    if CooldownCompanion.Masque then
+        local masqueCb = AceGUI:Create("CheckBox")
+        masqueCb:SetLabel("Enable Masque Skinning")
+        masqueCb:SetValue(group.masqueEnabled or false)
+        masqueCb:SetFullWidth(true)
+        masqueCb:SetCallback("OnValueChanged", function(widget, event, val)
+            CooldownCompanion:ToggleGroupMasque(selectedGroup, val)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(masqueCb)
+
+        -- (?) info tooltip for Masque
+        local masqueInfo = CreateFrame("Button", nil, masqueCb.frame)
+        masqueInfo:SetSize(16, 16)
+        masqueInfo:SetPoint("LEFT", masqueCb.checkbg, "RIGHT", masqueCb.text:GetStringWidth() + 4, 0)
+        local masqueInfoText = masqueInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        masqueInfoText:SetPoint("CENTER")
+        masqueInfoText:SetText("|cff66aaff(?)|r")
+        masqueInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Masque Skinning")
+            GameTooltip:AddLine("Uses the Masque addon to apply custom button skins to this group. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Overridden Settings:", 1, 0.82, 0)
+            GameTooltip:AddLine("Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true)
+            GameTooltip:Show()
+        end)
+        masqueInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(tabInfoButtons, masqueInfo)
+
+        -- Hide info button if setting is enabled
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            masqueInfo:Hide()
+        end
+    end
+
     local hideInfoCb = AceGUI:Create("CheckBox")
     hideInfoCb:SetLabel("Hide CDC Tooltips")
     hideInfoCb:SetValue(CooldownCompanion.db.profile.hideInfoButtons or false)
@@ -3365,6 +3411,13 @@ local function BuildExtrasTab(container)
 end
 
 local function BuildPositioningTab(container)
+    for _, elem in ipairs(appearanceTabElements) do
+        elem:ClearAllPoints()
+        elem:Hide()
+        elem:SetParent(nil)
+    end
+    wipe(appearanceTabElements)
+
     if not selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
     if not group then return end
@@ -3667,6 +3720,14 @@ local function BuildPositioningTab(container)
 end
 
 local function BuildAppearanceTab(container)
+    -- Clean up elements from previous build
+    for _, elem in ipairs(appearanceTabElements) do
+        elem:ClearAllPoints()
+        elem:Hide()
+        elem:SetParent(nil)
+    end
+    wipe(appearanceTabElements)
+
     if not selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
     if not group then return end
@@ -3682,6 +3743,15 @@ local function BuildAppearanceTab(container)
     squareCb:SetLabel("Square Icons")
     squareCb:SetValue(style.maintainAspectRatio or false)
     squareCb:SetFullWidth(true)
+    -- Disable when Masque is enabled (forces square icons)
+    if group.masqueEnabled then
+        squareCb:SetDisabled(true)
+        -- Add green "Masque skinning is active" label
+        local masqueLabel = squareCb.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        masqueLabel:SetPoint("LEFT", squareCb.checkbg, "RIGHT", squareCb.text:GetStringWidth() + 8, 0)
+        masqueLabel:SetText("|cff00ff00(Masque skinning is active)|r")
+        table.insert(appearanceTabElements, masqueLabel)
+    end
     squareCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.maintainAspectRatio = val
         if not val then
@@ -3746,6 +3816,10 @@ local function BuildAppearanceTab(container)
     borderSlider:SetSliderValues(0, 5, 0.1)
     borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
     borderSlider:SetFullWidth(true)
+    -- Disable when Masque is enabled (Masque provides its own border)
+    if group.masqueEnabled then
+        borderSlider:SetDisabled(true)
+    end
     borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
         style.borderSize = val
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
@@ -3758,6 +3832,10 @@ local function BuildAppearanceTab(container)
     local bc = style.borderColor or {0, 0, 0, 1}
     borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColor:SetFullWidth(true)
+    -- Disable when Masque is enabled (Masque provides its own border)
+    if group.masqueEnabled then
+        borderColor:SetDisabled(true)
+    end
     borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
         style.borderColor = {r, g, b, a}
         CooldownCompanion:UpdateGroupStyle(selectedGroup)

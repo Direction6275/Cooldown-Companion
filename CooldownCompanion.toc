@@ -7,7 +7,7 @@
 ## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: Ace3
+## OptionalDeps: Ace3, Masque
 
 # Libraries - LibStub must be first
 Libs\Ace3\LibStub\LibStub.lua

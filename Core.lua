@@ -25,6 +25,13 @@ ST.DEFAULT_STRATA_ORDER = {"cooldown", "assistedHighlight", "chargeText", "procG
 local LDB = LibStub("LibDataBroker-1.1")
 local LDBIcon = LibStub("LibDBIcon-1.0")
 
+-- Masque skinning support (optional)
+local Masque = LibStub("Masque", true)
+local MasqueGroups = {} -- Maps groupId -> Masque Group object
+
+CooldownCompanion.Masque = Masque
+CooldownCompanion.MasqueGroups = MasqueGroups
+
 local minimapButton = LDB:NewDataObject(ADDON_NAME, {
     type = "launcher",
     text = "Cooldown Companion",
@@ -241,6 +248,9 @@ function CooldownCompanion:OnEnable()
 
     -- Migrate old hide-when fields to alpha system
     self:MigrateAlphaSystem()
+
+    -- Migrate groups to have masqueEnabled field
+    self:MigrateMasqueField()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -687,6 +697,122 @@ function CooldownCompanion:OnPlayerEnteringWorld()
     end)
 end
 
+-- Masque Helper Functions
+function CooldownCompanion:CreateMasqueGroup(groupId)
+    if not Masque then return end
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+
+    -- Use groupId as the static ID so Masque settings persist across sessions
+    local masqueGroup = Masque:Group(ADDON_NAME, group.name or ("Group " .. groupId), tostring(groupId))
+    MasqueGroups[groupId] = masqueGroup
+    return masqueGroup
+end
+
+function CooldownCompanion:DeleteMasqueGroup(groupId)
+    if not Masque then return end
+    local masqueGroup = MasqueGroups[groupId]
+    if masqueGroup then
+        masqueGroup:Delete()
+        MasqueGroups[groupId] = nil
+    end
+end
+
+function CooldownCompanion:GetMasqueRegions(button)
+    -- Return the regions table Masque needs for skinning
+    -- CC buttons are plain Frames, so we must explicitly pass regions
+    return {
+        Icon = button.icon,
+        Cooldown = button.cooldown,
+        Count = button.count,
+    }
+end
+
+function CooldownCompanion:AddButtonToMasque(groupId, button)
+    if not Masque then return end
+    local masqueGroup = MasqueGroups[groupId]
+    if not masqueGroup then return end
+
+    local regions = self:GetMasqueRegions(button)
+    -- Type "Action" is standard for action-bar-like buttons
+    -- Strict=true tells Masque to only use the regions we provide
+    masqueGroup:AddButton(button, regions, "Action", true)
+
+    -- Hide CC's custom border/bg when Masque is active
+    self:SetButtonBorderVisible(button, false)
+end
+
+function CooldownCompanion:RemoveButtonFromMasque(groupId, button)
+    if not Masque then return end
+    local masqueGroup = MasqueGroups[groupId]
+    if not masqueGroup then return end
+
+    masqueGroup:RemoveButton(button)
+
+    -- Restore CC's custom border/bg
+    self:SetButtonBorderVisible(button, true)
+end
+
+function CooldownCompanion:SetButtonBorderVisible(button, visible)
+    if not button then return end
+
+    -- Show/hide background
+    if button.bg then
+        if visible then
+            button.bg:Show()
+        else
+            button.bg:Hide()
+        end
+    end
+
+    -- Show/hide border textures
+    if button.borderTextures then
+        for _, tex in ipairs(button.borderTextures) do
+            if visible then
+                tex:Show()
+            else
+                tex:Hide()
+            end
+        end
+    end
+end
+
+function CooldownCompanion:ToggleGroupMasque(groupId, enable)
+    if not Masque then return end
+
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+
+    group.masqueEnabled = enable
+
+    if enable then
+        -- Force square icons when Masque is enabled (non-square causes stretching)
+        group.style.maintainAspectRatio = true
+
+        -- Create Masque group if it doesn't exist
+        if not MasqueGroups[groupId] then
+            self:CreateMasqueGroup(groupId)
+        end
+        -- Add all existing buttons to Masque
+        local frame = self.groupFrames[groupId]
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                self:AddButtonToMasque(groupId, button)
+            end
+        end
+    else
+        -- Remove all buttons from Masque and restore borders
+        local frame = self.groupFrames[groupId]
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                self:RemoveButtonFromMasque(groupId, button)
+            end
+        end
+        -- Delete the Masque group
+        self:DeleteMasqueGroup(groupId)
+    end
+end
+
 -- Group Management Functions
 function CooldownCompanion:CreateGroup(name)
     local groupId = self.db.profile.nextGroupId
@@ -719,7 +845,10 @@ function CooldownCompanion:CreateGroup(name)
     self.db.profile.groups[groupId].fadeDelay = 1
     self.db.profile.groups[groupId].fadeInDuration = 0.2
     self.db.profile.groups[groupId].fadeOutDuration = 0.2
-    
+
+    -- Masque defaults
+    self.db.profile.groups[groupId].masqueEnabled = false
+
     -- Create the frame for this group
     self:CreateGroupFrame(groupId)
     
@@ -727,6 +856,9 @@ function CooldownCompanion:CreateGroup(name)
 end
 
 function CooldownCompanion:DeleteGroup(groupId)
+    -- Clean up Masque group before deleting
+    self:DeleteMasqueGroup(groupId)
+
     if self.groupFrames[groupId] then
         self.groupFrames[groupId]:Hide()
         self.groupFrames[groupId] = nil
@@ -881,6 +1013,18 @@ function CooldownCompanion:MigrateAlphaSystem()
         if group.fadeDelay == nil then group.fadeDelay = 1 end
         if group.fadeInDuration == nil then group.fadeInDuration = 0.2 end
         if group.fadeOutDuration == nil then group.fadeOutDuration = 0.2 end
+    end
+end
+
+function CooldownCompanion:MigrateMasqueField()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.masqueEnabled == nil then
+            group.masqueEnabled = false
+        end
+        -- If Masque addon is not available but group had it enabled, disable it
+        if group.masqueEnabled and not Masque then
+            group.masqueEnabled = false
+        end
     end
 end
 
