@@ -1844,6 +1844,7 @@ function RefreshColumn2()
                     -- Duplicate option
                     local dupInfo = UIDropDownMenu_CreateInfo()
                     dupInfo.text = "Duplicate"
+                    dupInfo.notCheckable = true
                     dupInfo.func = function()
                         -- Deep copy the button data
                         local copy = {}
@@ -1867,6 +1868,7 @@ function RefreshColumn2()
                     -- Remove option
                     local removeInfo = UIDropDownMenu_CreateInfo()
                     removeInfo.text = "Remove"
+                    removeInfo.notCheckable = true
                     removeInfo.func = function()
                         CloseDropDownMenus()
                         local name = entryData.name or "this entry"
