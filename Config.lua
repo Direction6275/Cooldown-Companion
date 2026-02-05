@@ -763,6 +763,10 @@ local function TryAddSpell(input)
             CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
             return false
         end
+        if spellName == "Single-Button Assistant" then
+            CooldownCompanion:Print("Cannot track Single-Button Assistant")
+            return false
+        end
         CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
