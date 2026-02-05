@@ -2925,13 +2925,6 @@ end
 ------------------------------------------------------------------------
 local function RefreshButtonSettingsColumn()
     if not buttonSettingsScroll then return end
-
-    -- Save scroll position before rebuilding
-    local savedScroll = 0
-    if buttonSettingsScroll.scrollframe then
-        savedScroll = buttonSettingsScroll.scrollframe:GetVerticalScroll()
-    end
-
     CooldownCompanion:ClearAllProcGlowPreviews()
     CooldownCompanion:ClearAllAuraGlowPreviews()
     for _, btn in ipairs(buttonSettingsInfoButtons) do
@@ -2982,15 +2975,6 @@ local function RefreshButtonSettingsColumn()
         for _, btn in ipairs(buttonSettingsInfoButtons) do
             btn:Hide()
         end
-    end
-
-    -- Restore scroll position after layout settles
-    if savedScroll > 0 and buttonSettingsScroll.scrollframe then
-        C_Timer.After(0, function()
-            if buttonSettingsScroll and buttonSettingsScroll.scrollframe then
-                buttonSettingsScroll.scrollframe:SetVerticalScroll(savedScroll)
-            end
-        end)
     end
 end
 
