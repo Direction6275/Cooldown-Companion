@@ -149,6 +149,7 @@ local defaults = {
             strataOrder = nil,
         },
         locked = false,
+        auraDurationCache = {},
     },
 }
 
@@ -546,17 +547,31 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                         if button._auraPendingSince
                            and now - button._auraPendingSince < 2
                            and not button._auraInstanceID then
-                            -- Try each candidate; pick the one with the longest duration
-                            local bestInstId, bestDur = nil, 0
+                            -- Try each candidate; prefer closest to cached expected
+                            -- duration, fall back to longest if no cache exists
+                            local expected = button._auraSpellID and self.db.profile.auraDurationCache[button._auraSpellID]
+                            local bestInstId, bestScore = nil, nil
                             for _, instId in ipairs(unmatchedInstIds) do
                                 if not consumed[instId] then
                                     local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", instId)
                                     if ok and durObj then
                                         button.cooldown:SetCooldownFromDurationObject(durObj)
                                         local _, widgetDurMs = button.cooldown:GetCooldownTimes()
-                                        if widgetDurMs and widgetDurMs > bestDur then
-                                            bestDur = widgetDurMs
-                                            bestInstId = instId
+                                        if widgetDurMs and widgetDurMs > 0 then
+                                            if expected and expected > 0 then
+                                                -- Lower distance = better match
+                                                local dist = math.abs(widgetDurMs - expected)
+                                                if not bestScore or dist < bestScore then
+                                                    bestScore = dist
+                                                    bestInstId = instId
+                                                end
+                                            else
+                                                -- No cache: fall back to longest duration
+                                                if not bestScore or widgetDurMs > bestScore then
+                                                    bestScore = widgetDurMs
+                                                    bestInstId = instId
+                                                end
+                                            end
                                         end
                                     end
                                 end
@@ -585,6 +600,8 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if buttonData.type == "spell" then
         local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
         if auraId and auraId ~= 0 then return auraId end
+        -- Many spells share the same ID for cast and buff; fall back to the spell's own ID
+        return buttonData.id
     end
     return nil
 end

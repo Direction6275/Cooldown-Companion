@@ -300,16 +300,18 @@ local function SetProcGlow(button, show)
     local frame = button.procGlow
     if not frame then return end
 
-    -- Build a cache key that includes color so tint changes trigger an update
+    -- Build a cache key that includes color and size so changes trigger an update
     local desiredState
     if show then
         local c = button.style and button.style.procGlowColor or {1, 1, 1, 1}
-        desiredState = string.format("on%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4] or 1)
+        local sz = button.style and button.style.procGlowOverhang or 32
+        desiredState = string.format("on%.2f%.2f%.2f%.2f%d", c[1], c[2], c[3], c[4] or 1, sz)
     end
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
 
     if show then
+        FitHighlightFrame(frame, button, button.style and button.style.procGlowOverhang or 32)
         TintProcGlowFrame(frame, button.style and button.style.procGlowColor or {1, 1, 1, 1})
         frame:Show()
         -- Skip the intro burst and go straight to the loop
@@ -326,6 +328,70 @@ local function SetProcGlow(button, show)
         if frame.ProcStartAnim then frame.ProcStartAnim:Stop() end
         if frame.ProcLoop then frame.ProcLoop:Stop() end
         frame:Hide()
+    end
+end
+
+-- Show or hide aura active glow on a button.
+-- Supports "solid" (colored border) and "glow" (animated proc-style) styles.
+-- Tracks state (style + color + size) to avoid restarting animations every tick.
+local function SetAuraGlow(button, show)
+    local ag = button.auraGlow
+    if not ag then return end
+
+    -- Build cache key from style + color + size
+    local desiredState
+    if show then
+        local bd = button.buttonData
+        local style = bd.auraGlowStyle or "none"
+        if style ~= "none" then
+            local c = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+            local sz = bd.auraGlowSize or (style == "solid" and 2 or 32)
+            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d", style, c[1], c[2], c[3], c[4] or 0.9, sz)
+        end
+    end
+
+    if button._auraGlowActive == desiredState then return end
+    button._auraGlowActive = desiredState
+
+    -- Hide all styles
+    for _, tex in ipairs(ag.solidTextures) do
+        tex:Hide()
+    end
+    if ag.procFrame then
+        if ag.procFrame.ProcStartAnim then ag.procFrame.ProcStartAnim:Stop() end
+        if ag.procFrame.ProcLoop then ag.procFrame.ProcLoop:Stop() end
+        ag.procFrame:Hide()
+    end
+
+    if not desiredState then return end
+
+    local bd = button.buttonData
+    local style = bd.auraGlowStyle
+    local color = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+    local size = bd.auraGlowSize
+
+    if style == "solid" then
+        size = size or 2
+        ApplyEdgePositions(ag.solidTextures, button, size)
+        for _, tex in ipairs(ag.solidTextures) do
+            tex:SetColorTexture(color[1], color[2], color[3], color[4] or 0.9)
+            tex:Show()
+        end
+    elseif style == "glow" then
+        size = size or 32
+        FitHighlightFrame(ag.procFrame, button, size)
+        TintProcGlowFrame(ag.procFrame, color)
+        ag.procFrame:Show()
+        -- Skip intro burst, go straight to loop
+        if ag.procFrame.ProcStartFlipbook then
+            ag.procFrame.ProcStartFlipbook:SetAlpha(0)
+        end
+        if ag.procFrame.ProcLoopFlipbook then
+            ag.procFrame.ProcLoopFlipbook:SetAlpha(1)
+        end
+        if ag.procFrame.ProcLoop then
+            ag.procFrame.ProcLoop:Play()
+        end
     end
 end
 
@@ -473,6 +539,32 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     procGlowFrame:Hide()
     button.procGlow = procGlowFrame
 
+    -- Aura active glow elements (solid border + animated glow)
+    button.auraGlow = {}
+
+    -- Solid border: 4 edge textures
+    button.auraGlow.solidFrame = CreateFrame("Frame", nil, button)
+    button.auraGlow.solidFrame:SetAllPoints()
+    button.auraGlow.solidFrame:EnableMouse(false)
+    button.auraGlow.solidTextures = {}
+    for i = 1, 4 do
+        local tex = button.auraGlow.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:Hide()
+        button.auraGlow.solidTextures[i] = tex
+    end
+
+    -- Proc-style animated glow
+    local auraGlowProcFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(auraGlowProcFrame, button, 32)
+    SetFrameClickThroughRecursive(auraGlowProcFrame, true, true)
+    auraGlowProcFrame:Hide()
+    button.auraGlow.procFrame = auraGlowProcFrame
+
+    -- Frame levels: just above cooldown
+    local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
+    button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
+    button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
+
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cooldownFontSize = style.cooldownFontSize or 12
@@ -576,6 +668,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
         end
     end
+    if button.auraGlow then
+        if button.auraGlow.solidFrame then
+            SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
+        end
+        if button.auraGlow.procFrame then
+            SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
+        end
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -628,15 +728,39 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura tracking: check for active buff and override cooldown swipe
     local auraOverrideActive = false
     if buttonData.auraTracking and button._auraSpellID then
+        -- Primary path: GetPlayerAuraBySpellID returns full aura data outside
+        -- restricted combat.  The arithmetic is wrapped in pcall because
+        -- expirationTime / duration may be secret values during M+/PvP.
         local auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
         if auraData then
-            local currentTime = GetTime()
-            local timeUntilExpire = auraData.expirationTime - currentTime
-            local howMuchTimeHasPassed = auraData.duration - timeUntilExpire
-            button.cooldown:SetCooldown(currentTime - howMuchTimeHasPassed, auraData.duration, auraData.timeMod)
-            button._auraInstanceID = auraData.auraInstanceID
-            auraOverrideActive = true
-            fetchOk = true
+            local ok = pcall(function()
+                local currentTime = GetTime()
+                local timeUntilExpire = auraData.expirationTime - currentTime
+                local howMuchTimeHasPassed = auraData.duration - timeUntilExpire
+                button.cooldown:SetCooldown(currentTime - howMuchTimeHasPassed, auraData.duration, auraData.timeMod)
+            end)
+            if ok then
+                button._auraInstanceID = auraData.auraInstanceID
+                -- Cache full duration (ms) for secret-path heuristic (shared across buttons)
+                local _, widgetDurMs = button.cooldown:GetCooldownTimes()
+                if widgetDurMs and widgetDurMs > 0 then
+                    CooldownCompanion.db.profile.auraDurationCache[button._auraSpellID] = widgetDurMs
+                end
+                auraOverrideActive = true
+                fetchOk = true
+            else
+                -- Arithmetic failed (secret values) — try the duration object fallback
+                local instId = auraData.auraInstanceID
+                if instId then
+                    local dok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "player", instId)
+                    if dok and durationObj then
+                        button.cooldown:SetCooldownFromDurationObject(durationObj)
+                        button._auraInstanceID = instId
+                        auraOverrideActive = true
+                        fetchOk = true
+                    end
+                end
+            end
         elseif button._auraInstanceID then
             local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "player", button._auraInstanceID)
             if ok and durationObj then
@@ -703,6 +827,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if fetchOk and not isOnGCD then
             local _, widgetDuration = button.cooldown:GetCooldownTimes()
             wantDesat = widgetDuration and widgetDuration > 0
+        end
+        if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
+            wantDesat = false
         end
         -- When isOnGCD is true, wantDesat stays false. This clears
         -- desaturation the moment GCD takes over from a real cooldown,
@@ -885,6 +1012,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
         SetProcGlow(button, showProc)
     end
+
+    -- Aura active glow indicator
+    if button.auraGlow then
+        local showAuraGlow = false
+        if button._auraGlowPreview then
+            showAuraGlow = true
+        elseif button._auraActive
+            and buttonData.auraGlowStyle
+            and buttonData.auraGlowStyle ~= "none" then
+            showAuraGlow = true
+        end
+        SetAuraGlow(button, showAuraGlow)
+    end
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
@@ -917,6 +1057,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeCDStart = nil
     button._chargeCDDuration = nil
     button._procGlowActive = nil
+    button._auraGlowActive = nil
     button._displaySpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
@@ -1038,6 +1179,14 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         SetProcGlow(button, false)
     end
 
+    -- Update aura glow frames
+    if button.auraGlow then
+        button.auraGlow.solidFrame:SetAllPoints()
+        ApplyEdgePositions(button.auraGlow.solidTextures, button, button.buttonData.auraGlowSize or 2)
+        FitHighlightFrame(button.auraGlow.procFrame, button, button.buttonData.auraGlowSize or 32)
+        SetAuraGlow(button, false)
+    end
+
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
 
@@ -1069,6 +1218,21 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         if button.assistedHighlight.procFrame then
             SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
         end
+    end
+    if button.auraGlow then
+        if button.auraGlow.solidFrame then
+            SetFrameClickThroughRecursive(button.auraGlow.solidFrame, true, true)
+        end
+        if button.auraGlow.procFrame then
+            SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
+        end
+    end
+
+    -- Re-set aura glow frame levels after strata order
+    if button.auraGlow then
+        local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
+        button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
+        button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
     end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
@@ -1107,5 +1271,49 @@ function CooldownCompanion:ClearAllProcGlowPreviews()
         for _, button in ipairs(frame.buttons) do
             button._procGlowPreview = nil
         end
+    end
+end
+
+-- Set or clear aura glow preview on a specific button.
+function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._auraGlowPreview = show or nil
+            return
+        end
+    end
+end
+
+-- Clear all aura glow previews across every group.
+function CooldownCompanion:ClearAllAuraGlowPreviews()
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            button._auraGlowPreview = nil
+        end
+    end
+end
+
+-- Invalidate aura glow cache on a specific button so the next tick re-applies.
+-- Used by config sliders to update glow appearance without recreating buttons.
+function CooldownCompanion:InvalidateAuraGlow(groupId, buttonIndex)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._auraGlowActive = nil
+            return
+        end
+    end
+end
+
+-- Invalidate proc glow cache on all buttons in a group.
+-- Used by the proc glow size/color sliders to update without recreating buttons.
+function CooldownCompanion:InvalidateGroupProcGlow(groupId)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._procGlowActive = nil
     end
 end
