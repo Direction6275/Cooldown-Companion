@@ -38,6 +38,7 @@ local buttonSettingsScroll = nil
 local columnInfoButtons = {}
 local moveMenuFrame = nil
 local groupContextMenu = nil
+local buttonContextMenu = nil
 
 -- Drag-reorder state
 local dragState = nil
@@ -1833,8 +1834,48 @@ function RefreshColumn2()
                 end
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
-                local name = buttonData.name or "this entry"
-                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = selectedGroup, buttonIndex = i })
+                if not buttonContextMenu then
+                    buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
+                end
+                local sourceGroupId = selectedGroup
+                local sourceIndex = i
+                local entryData = buttonData
+                UIDropDownMenu_Initialize(buttonContextMenu, function(self, level)
+                    -- Duplicate option
+                    local dupInfo = UIDropDownMenu_CreateInfo()
+                    dupInfo.text = "Duplicate"
+                    dupInfo.func = function()
+                        -- Deep copy the button data
+                        local copy = {}
+                        for k, v in pairs(entryData) do
+                            if type(v) == "table" then
+                                copy[k] = {}
+                                for k2, v2 in pairs(v) do
+                                    copy[k][k2] = v2
+                                end
+                            else
+                                copy[k] = v
+                            end
+                        end
+                        -- Insert after current position
+                        table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                        CloseDropDownMenus()
+                    end
+                    UIDropDownMenu_AddButton(dupInfo, level)
+                    -- Remove option
+                    local removeInfo = UIDropDownMenu_CreateInfo()
+                    removeInfo.text = "Remove"
+                    removeInfo.func = function()
+                        CloseDropDownMenus()
+                        local name = entryData.name or "this entry"
+                        ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
+                    end
+                    UIDropDownMenu_AddButton(removeInfo, level)
+                end, "MENU")
+                buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                ToggleDropDownMenu(1, nil, buttonContextMenu, "cursor", 0, 0)
             elseif button == "MiddleButton" then
                 if not moveMenuFrame then
                     moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
