@@ -454,22 +454,34 @@ end
 
 
 function CooldownCompanion:SlashCommand(input)
-    if input == "lock" then
+    if input == "lock" or input == "unlock" then
+        -- Toggle: if any visible group is unlocked, lock all; otherwise unlock all
+        local anyUnlocked = false
         for groupId, group in pairs(self.db.profile.groups) do
-            if self:IsGroupVisibleToCurrentChar(groupId) then
-                group.locked = true
+            if self:IsGroupVisibleToCurrentChar(groupId) and not group.locked then
+                anyUnlocked = true
+                break
             end
         end
-        self:LockAllFrames()
-        self:Print("All frames locked.")
-    elseif input == "unlock" then
-        for groupId, group in pairs(self.db.profile.groups) do
-            if self:IsGroupVisibleToCurrentChar(groupId) then
-                group.locked = false
+        if anyUnlocked then
+            for groupId, group in pairs(self.db.profile.groups) do
+                if self:IsGroupVisibleToCurrentChar(groupId) then
+                    group.locked = true
+                end
             end
+            self:LockAllFrames()
+            self:RefreshConfigPanel()
+            self:Print("All frames locked.")
+        else
+            for groupId, group in pairs(self.db.profile.groups) do
+                if self:IsGroupVisibleToCurrentChar(groupId) then
+                    group.locked = false
+                end
+            end
+            self:UnlockAllFrames()
+            self:RefreshConfigPanel()
+            self:Print("All frames unlocked. Drag to move.")
         end
-        self:UnlockAllFrames()
-        self:Print("All frames unlocked. Drag to move.")
     elseif input == "minimap" then
         self.db.profile.minimap.hide = not self.db.profile.minimap.hide
         if self.db.profile.minimap.hide then
@@ -482,8 +494,7 @@ function CooldownCompanion:SlashCommand(input)
     elseif input == "help" then
         self:Print("Cooldown Companion commands:")
         self:Print("/cdc - Open settings")
-        self:Print("/cdc lock - Lock all group frames")
-        self:Print("/cdc unlock - Unlock all group frames")
+        self:Print("/cdc lock - Toggle lock/unlock all group frames")
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "reset" then
