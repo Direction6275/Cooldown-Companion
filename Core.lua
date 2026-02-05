@@ -1141,6 +1141,18 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         self.alphaState[groupId] = state
     end
 
+    -- Force 100% alpha while group is unlocked for easier positioning
+    if not group.locked then
+        if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 then
+            frame:SetAlpha(1)
+            state.currentAlpha = 1
+            state.desiredAlpha = 1
+            state.fadeDuration = 0
+            state.lastAlpha = 1
+        end
+        return
+    end
+
     -- Skip processing when feature is entirely unused (baseline=1, no forceHide toggles)
     local hasForceHide = group.forceHideInCombat or group.forceHideOutOfCombat
         or group.forceHideMounted
@@ -1296,6 +1308,8 @@ function CooldownCompanion:UnlockAllFrames()
             if frame.dragHandle then
                 frame.dragHandle:Show()
             end
+            -- Force 100% alpha while unlocked for easier positioning
+            frame:SetAlpha(1)
         end
     end
 end

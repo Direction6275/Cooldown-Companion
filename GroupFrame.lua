@@ -406,9 +406,9 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     -- Sync alpha every frame to match parent's fade animations
     frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
         if frame.anchoredToParent then
-            -- Skip sync if alpha system is active for this group
+            -- Skip sync if alpha system is active or group is unlocked
             local grp = CooldownCompanion.db.profile.groups[frame.groupId]
-            if grp and grp.baselineAlpha < 1 then return end
+            if grp and (grp.baselineAlpha < 1 or not grp.locked) then return end
             frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
         end
     end)
@@ -648,10 +648,15 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     if group.enabled and #group.buttons > 0 and specAllowed and charVisible then
         frame:Show()
+        -- Force 100% alpha while unlocked for easier positioning
+        if not group.locked then
+            frame:SetAlpha(1)
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
-        local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
-        if alphaState and alphaState.currentAlpha and group.baselineAlpha < 1 then
-            frame:SetAlpha(alphaState.currentAlpha)
+        elseif group.baselineAlpha < 1 then
+            local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
+            if alphaState and alphaState.currentAlpha then
+                frame:SetAlpha(alphaState.currentAlpha)
+            end
         end
     else
         frame:Hide()
