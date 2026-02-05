@@ -25,14 +25,42 @@ jobs:
           args: -g retail
 
       - name: Announce on Discord
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          TAG="${{ github.ref_name }}"
+
+          # Fetch release notes from the GitHub release
+          RELEASE_BODY=$(curl -s \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
+            | jq -r '.body // empty')
+
+          # Fallback if no release notes found
+          if [ -z "$RELEASE_BODY" ]; then
+            RELEASE_BODY="A new version has been released!"
+          fi
+
+          # Truncate to Discord's embed description limit (4096 chars)
+          RELEASE_BODY=$(echo "$RELEASE_BODY" | head -c 4000)
+
+          # Escape for JSON
+          RELEASE_BODY_JSON=$(echo "$RELEASE_BODY" | jq -Rs .)
+
+          # Build and send the payload
+          PAYLOAD=$(jq -n \
+            --arg title "Cooldown Companion $TAG" \
+            --arg url "https://github.com/${{ github.repository }}/releases/tag/$TAG" \
+            --argjson desc "$RELEASE_BODY_JSON" \
+            '{
+              "embeds": [{
+                "title": $title,
+                "description": $desc,
+                "url": $url,
+                "color": 5814783
+              }]
+            }')
+
           curl -H "Content-Type: application/json" \
-               -d '{
-                 "embeds": [{
-                   "title": "Cooldown Companion '"${{ github.ref_name }}"'",
-                   "description": "A new version has been released!",
-                   "url": "https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}",
-                   "color": 5814783
-                 }]
-               }' \
+               -d "$PAYLOAD" \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
