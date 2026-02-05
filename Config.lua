@@ -1330,7 +1330,7 @@ function RefreshColumn1()
             label = label .. " " .. table.concat(indicators, " ")
         end
         if selectedGroup == groupId then
-            btn:SetText("|cff00ff00[ " .. label .. " ]|r")
+            btn:SetText("|cff00ff00" .. label .. "|r")
         else
             btn:SetText(label)
         end
