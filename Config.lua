@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Config
-    Custom 3-column config panel using AceGUI-3.0 Frame + InlineGroup columns
+    Custom 4-column config panel using AceGUI-3.0 Frame + InlineGroup columns
 ]]
 
 local ADDON_NAME, ST = ...
@@ -33,7 +33,8 @@ local col3Scroll = nil    -- Current AceGUI ScrollFrame in column 3
 -- AceGUI widget tracking for cleanup
 local col1BarWidgets = {}
 local profileBarAceWidgets = {}
-local col2InfoButtons = {}
+local buttonSettingsInfoButtons = {}
+local buttonSettingsScroll = nil
 local columnInfoButtons = {}
 local moveMenuFrame = nil
 local groupContextMenu = nil
@@ -1637,14 +1638,6 @@ end
 ------------------------------------------------------------------------
 function RefreshColumn2()
     if not col2Scroll then return end
-    CooldownCompanion:ClearAllProcGlowPreviews()
-    CooldownCompanion:ClearAllAuraGlowPreviews()
-    for _, btn in ipairs(col2InfoButtons) do
-        btn:ClearAllPoints()
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(col2InfoButtons)
     CancelDrag()
     col2Scroll:ReleaseChildren()
 
@@ -1944,901 +1937,953 @@ function RefreshColumn2()
         end)
         moveRow:AddChild(moveBtn)
         col2Scroll:AddChild(moveRow)
-    elseif selectedButton and group.buttons[selectedButton]
-       and group.buttons[selectedButton].type == "spell" then
-        -- Per-spell settings panel (when a single spell is selected)
-        local buttonData = group.buttons[selectedButton]
+    end
 
-        local spellHeading = AceGUI:Create("Heading")
-        spellHeading:SetText("Spell Settings")
-        spellHeading:SetFullWidth(true)
-        col2Scroll:AddChild(spellHeading)
+end
 
-        -- Show Charge Count toggle
-        local chargesCb = AceGUI:Create("CheckBox")
-        chargesCb:SetLabel("Charge Based?")
-        chargesCb:SetValue(buttonData.hasCharges or false)
-        chargesCb:SetFullWidth(true)
-        chargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.hasCharges = val
+------------------------------------------------------------------------
+-- BUTTON SETTINGS BUILDERS
+------------------------------------------------------------------------
+local function BuildSpellSettings(scroll, buttonData, infoButtons)
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+
+    local spellHeading = AceGUI:Create("Heading")
+    spellHeading:SetText("Spell Settings")
+    spellHeading:SetFullWidth(true)
+    scroll:AddChild(spellHeading)
+
+    -- Show Charge Count toggle
+    local chargesCb = AceGUI:Create("CheckBox")
+    chargesCb:SetLabel("Charge Based?")
+    chargesCb:SetValue(buttonData.hasCharges or false)
+    chargesCb:SetFullWidth(true)
+    chargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.hasCharges = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(chargesCb)
+
+    -- Charge text customization controls (only when hasCharges is enabled)
+    if buttonData.hasCharges then
+        local chargeFontSizeSlider = AceGUI:Create("Slider")
+        chargeFontSizeSlider:SetLabel("Font Size")
+        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+        chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
+        chargeFontSizeSlider:SetFullWidth(true)
+        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.chargeFontSize = val
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
         end)
-        col2Scroll:AddChild(chargesCb)
+        scroll:AddChild(chargeFontSizeSlider)
 
-        -- Charge text customization controls (only when hasCharges is enabled)
-        if buttonData.hasCharges then
-            local chargeFontSizeSlider = AceGUI:Create("Slider")
-            chargeFontSizeSlider:SetLabel("Font Size")
-            chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-            chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
-            chargeFontSizeSlider:SetFullWidth(true)
-            chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontSize = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeFontSizeSlider)
+        local chargeFontDrop = AceGUI:Create("Dropdown")
+        chargeFontDrop:SetLabel("Font")
+        chargeFontDrop:SetList(fontOptions)
+        chargeFontDrop:SetValue(buttonData.chargeFont or "Fonts\\FRIZQT__.TTF")
+        chargeFontDrop:SetFullWidth(true)
+        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.chargeFont = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        scroll:AddChild(chargeFontDrop)
 
-            local chargeFontDrop = AceGUI:Create("Dropdown")
-            chargeFontDrop:SetLabel("Font")
-            chargeFontDrop:SetList(fontOptions)
-            chargeFontDrop:SetValue(buttonData.chargeFont or "Fonts\\FRIZQT__.TTF")
-            chargeFontDrop:SetFullWidth(true)
-            chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFont = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeFontDrop)
+        local chargeOutlineDrop = AceGUI:Create("Dropdown")
+        chargeOutlineDrop:SetLabel("Font Outline")
+        chargeOutlineDrop:SetList(outlineOptions)
+        chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
+        chargeOutlineDrop:SetFullWidth(true)
+        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.chargeFontOutline = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        scroll:AddChild(chargeOutlineDrop)
 
-            local chargeOutlineDrop = AceGUI:Create("Dropdown")
-            chargeOutlineDrop:SetLabel("Font Outline")
-            chargeOutlineDrop:SetList(outlineOptions)
-            chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
-            chargeOutlineDrop:SetFullWidth(true)
-            chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontOutline = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeOutlineDrop)
+        local chargeFontColor = AceGUI:Create("ColorPicker")
+        chargeFontColor:SetLabel("Font Color (Max Charges)")
+        chargeFontColor:SetHasAlpha(true)
+        local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
+        chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
+        chargeFontColor:SetFullWidth(true)
+        chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            buttonData.chargeFontColor = {r, g, b, a}
+        end)
+        chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            buttonData.chargeFontColor = {r, g, b, a}
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        scroll:AddChild(chargeFontColor)
 
-            local chargeFontColor = AceGUI:Create("ColorPicker")
-            chargeFontColor:SetLabel("Font Color (Max Charges)")
-            chargeFontColor:SetHasAlpha(true)
-            local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
-            chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
-            chargeFontColor:SetFullWidth(true)
-            chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-            end)
-            chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeFontColor)
+        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
+        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
+        chargeFontColorMissing:SetHasAlpha(true)
+        local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
+        chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
+        chargeFontColorMissing:SetFullWidth(true)
+        chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            buttonData.chargeFontColorMissing = {r, g, b, a}
+        end)
+        chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            buttonData.chargeFontColorMissing = {r, g, b, a}
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        scroll:AddChild(chargeFontColorMissing)
 
-            local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-            chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-            chargeFontColorMissing:SetHasAlpha(true)
-            local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
-            chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
-            chargeFontColorMissing:SetFullWidth(true)
-            chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-            end)
-            chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeFontColorMissing)
-
-            local chargeAnchorValues = {}
-            for _, pt in ipairs(anchorPoints) do
-                chargeAnchorValues[pt] = anchorPointLabels[pt]
-            end
-            local chargeAnchorDrop = AceGUI:Create("Dropdown")
-            chargeAnchorDrop:SetLabel("Anchor Point")
-            chargeAnchorDrop:SetList(chargeAnchorValues)
-            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or "BOTTOMRIGHT")
-            chargeAnchorDrop:SetFullWidth(true)
-            chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeAnchor = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeAnchorDrop)
-
-            local chargeXSlider = AceGUI:Create("Slider")
-            chargeXSlider:SetLabel("X Offset")
-            chargeXSlider:SetSliderValues(-20, 20, 1)
-            chargeXSlider:SetValue(buttonData.chargeXOffset or -2)
-            chargeXSlider:SetFullWidth(true)
-            chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeXOffset = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeXSlider)
-
-            local chargeYSlider = AceGUI:Create("Slider")
-            chargeYSlider:SetLabel("Y Offset")
-            chargeYSlider:SetSliderValues(-20, 20, 1)
-            chargeYSlider:SetValue(buttonData.chargeYOffset or 2)
-            chargeYSlider:SetFullWidth(true)
-            chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeYOffset = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            col2Scroll:AddChild(chargeYSlider)
+        local chargeAnchorValues = {}
+        for _, pt in ipairs(anchorPoints) do
+            chargeAnchorValues[pt] = anchorPointLabels[pt]
         end
-
-        -- Proc Glow toggle
-        local procCb = AceGUI:Create("CheckBox")
-        procCb:SetLabel("Show Proc Glow")
-        procCb:SetValue(buttonData.procGlow == true)
-        procCb:SetFullWidth(true)
-        procCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.procGlow = val
+        local chargeAnchorDrop = AceGUI:Create("Dropdown")
+        chargeAnchorDrop:SetLabel("Anchor Point")
+        chargeAnchorDrop:SetList(chargeAnchorValues)
+        chargeAnchorDrop:SetValue(buttonData.chargeAnchor or "BOTTOMRIGHT")
+        chargeAnchorDrop:SetFullWidth(true)
+        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.chargeAnchor = val
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
         end)
-        col2Scroll:AddChild(procCb)
+        scroll:AddChild(chargeAnchorDrop)
 
-        -- (?) tooltip for proc glow
-        local procInfo = CreateFrame("Button", nil, procCb.frame)
-        procInfo:SetSize(16, 16)
-        procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
-        local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        procInfoText:SetPoint("CENTER")
-        procInfoText:SetText("|cff66aaff(?)|r")
-        procInfo:SetScript("OnEnter", function(self)
+        local chargeXSlider = AceGUI:Create("Slider")
+        chargeXSlider:SetLabel("X Offset")
+        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetValue(buttonData.chargeXOffset or -2)
+        chargeXSlider:SetFullWidth(true)
+        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.chargeXOffset = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        scroll:AddChild(chargeXSlider)
+
+        local chargeYSlider = AceGUI:Create("Slider")
+        chargeYSlider:SetLabel("Y Offset")
+        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetValue(buttonData.chargeYOffset or 2)
+        chargeYSlider:SetFullWidth(true)
+        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.chargeYOffset = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        scroll:AddChild(chargeYSlider)
+    end
+
+    -- Proc Glow toggle
+    local procCb = AceGUI:Create("CheckBox")
+    procCb:SetLabel("Show Proc Glow")
+    procCb:SetValue(buttonData.procGlow == true)
+    procCb:SetFullWidth(true)
+    procCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.procGlow = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(procCb)
+
+    -- (?) tooltip for proc glow
+    local procInfo = CreateFrame("Button", nil, procCb.frame)
+    procInfo:SetSize(16, 16)
+    procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
+    local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    procInfoText:SetPoint("CENTER")
+    procInfoText:SetText("|cff66aaff(?)|r")
+    procInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Proc Glow")
+        GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    procInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, procInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        procInfo:Hide()
+    end
+
+    if buttonData.procGlow == true then
+        -- Preview toggle (transient — not saved)
+        local previewCb = AceGUI:Create("CheckBox")
+        previewCb:SetLabel("Preview")
+        -- Restore preview state from the button frame if it's still active
+        local previewActive = false
+        local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+        if gFrame then
+            for _, btn in ipairs(gFrame.buttons) do
+                if btn.index == selectedButton and btn._procGlowPreview then
+                    previewActive = true
+                    break
+                end
+            end
+        end
+        previewCb:SetValue(previewActive)
+        previewCb:SetFullWidth(true)
+        previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+            CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
+        end)
+        scroll:AddChild(previewCb)
+
+        -- (?) tooltip for preview
+        local previewInfo = CreateFrame("Button", nil, previewCb.frame)
+        previewInfo:SetSize(16, 16)
+        previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
+        local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        previewInfoText:SetPoint("CENTER")
+        previewInfoText:SetText("|cff66aaff(?)|r")
+        previewInfo:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Proc Glow")
-            GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
+            GameTooltip:AddLine("Preview")
+            GameTooltip:AddLine("Shows what the proc glow looks like on this icon. You may need to toggle preview off and on to reflect changes to glow size.", 1, 1, 1, true)
             GameTooltip:Show()
         end)
-        procInfo:SetScript("OnLeave", function()
+        previewInfo:SetScript("OnLeave", function()
             GameTooltip:Hide()
         end)
-        table.insert(col2InfoButtons, procInfo)
+        table.insert(infoButtons, previewInfo)
         if CooldownCompanion.db.profile.hideInfoButtons then
-            procInfo:Hide()
+            previewInfo:Hide()
         end
 
-        if buttonData.procGlow == true then
-            -- Preview toggle (transient — not saved)
-            local previewCb = AceGUI:Create("CheckBox")
-            previewCb:SetLabel("Preview")
-            -- Restore preview state from the button frame if it's still active
-            local previewActive = false
+        -- Proc Glow color & size (group-wide style settings)
+        local procGlowColor = AceGUI:Create("ColorPicker")
+        procGlowColor:SetLabel("Glow Color")
+        procGlowColor:SetHasAlpha(true)
+        local pgc = group.style.procGlowColor or {1, 1, 1, 1}
+        procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+        procGlowColor:SetFullWidth(true)
+        procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            group.style.procGlowColor = {r, g, b, a}
+        end)
+        procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            group.style.procGlowColor = {r, g, b, a}
+            CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
+        end)
+        scroll:AddChild(procGlowColor)
+
+        local procSizeSlider = AceGUI:Create("Slider")
+        procSizeSlider:SetLabel("Glow Size")
+        procSizeSlider:SetSliderValues(0, 60, 1)
+        procSizeSlider:SetValue(group.style.procGlowOverhang or 32)
+        procSizeSlider:SetFullWidth(true)
+        procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            group.style.procGlowOverhang = val
+            CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
+        end)
+        scroll:AddChild(procSizeSlider)
+    end
+
+    local auraCb = AceGUI:Create("CheckBox")
+    auraCb:SetLabel("Track Buff Duration")
+    auraCb:SetValue(buttonData.auraTracking == true)
+    auraCb:SetFullWidth(true)
+    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.auraTracking = val or nil
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(auraCb)
+
+    -- (?) tooltip for aura tracking
+    local auraInfo = CreateFrame("Button", nil, auraCb.frame)
+    auraInfo:SetSize(16, 16)
+    auraInfo:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
+    local auraInfoText = auraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    auraInfoText:SetPoint("CENTER")
+    auraInfoText:SetText("|cff66aaff(?)|r")
+    auraInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Aura Tracking")
+        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura associated with this spell instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    auraInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, auraInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        auraInfo:Hide()
+    end
+
+    -- Yellow (?) warning tooltip for aura tracking combat limitations
+    local auraWarn = CreateFrame("Button", nil, auraCb.frame)
+    auraWarn:SetSize(16, 16)
+    auraWarn:SetPoint("LEFT", auraInfo, "RIGHT", 2, 0)
+    local auraWarnText = auraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    auraWarnText:SetPoint("CENTER")
+    auraWarnText:SetText("|cffffcc00(?)|r")
+    auraWarn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Combat Limitations")
+        GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\n If you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    auraWarn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, auraWarn)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        auraWarn:Hide()
+    end
+
+    if buttonData.auraTracking then
+        -- Show resolved aura info
+        local autoAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+        local autoLabel = AceGUI:Create("Label")
+        if autoAuraId and autoAuraId ~= 0 then
+            local auraInfo = C_Spell.GetSpellInfo(autoAuraId)
+            local auraName = auraInfo and auraInfo.name or ("Spell " .. autoAuraId)
+            autoLabel:SetText("|cff88ff88Detected aura:|r " .. auraName .. " (ID: " .. autoAuraId .. ")")
+        else
+            local spellInfo = C_Spell.GetSpellInfo(buttonData.id)
+            local spellName = spellInfo and spellInfo.name or ("Spell " .. buttonData.id)
+            autoLabel:SetText("|cff88ff88Tracking aura:|r " .. spellName .. " (ID: " .. buttonData.id .. ")")
+        end
+        autoLabel:SetFullWidth(true)
+        scroll:AddChild(autoLabel)
+
+        -- Manual override edit box
+        local auraEditBox = AceGUI:Create("EditBox")
+        auraEditBox:SetLabel("Aura Spell ID Override")
+        auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+        auraEditBox:SetFullWidth(true)
+        auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            local id = tonumber(text)
+            buttonData.auraSpellID = id
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(auraEditBox)
+
+        -- (?) tooltip for override
+        local overrideInfo = CreateFrame("Button", nil, auraEditBox.frame)
+        overrideInfo:SetSize(16, 16)
+        overrideInfo:SetPoint("LEFT", auraEditBox.editbox, "RIGHT", 4, 0)
+        local overrideInfoText = overrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        overrideInfoText:SetPoint("CENTER")
+        overrideInfoText:SetText("|cff66aaff(?)|r")
+        overrideInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Aura Spell ID Override")
+            GameTooltip:AddLine("Enter a spell ID to track a specific aura instead of the auto-detected one. Leave blank to use auto-detection. You can find spell IDs on Wowhead.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        overrideInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(infoButtons, overrideInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            overrideInfo:Hide()
+        end
+
+        local auraNoDesatCb = AceGUI:Create("CheckBox")
+        auraNoDesatCb:SetLabel("Don't Desaturate While Active")
+        auraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
+        auraNoDesatCb:SetFullWidth(true)
+        auraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraNoDesaturate = val or nil
+        end)
+        scroll:AddChild(auraNoDesatCb)
+
+        -- Active buff indicator controls
+        local auraGlowDrop = AceGUI:Create("Dropdown")
+        auraGlowDrop:SetLabel("Active Buff Indicator")
+        auraGlowDrop:SetList({
+            ["none"] = "None",
+            ["solid"] = "Solid Border",
+            ["glow"] = "Glow",
+        }, {"none", "solid", "glow"})
+        auraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
+        auraGlowDrop:SetFullWidth(true)
+        auraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraGlowStyle = (val ~= "none") and val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(auraGlowDrop)
+
+        if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+            local auraGlowColorPicker = AceGUI:Create("ColorPicker")
+            auraGlowColorPicker:SetLabel("Indicator Color")
+            local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
+            auraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
+            auraGlowColorPicker:SetHasAlpha(true)
+            auraGlowColorPicker:SetFullWidth(true)
+            auraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.auraGlowColor = {r, g, b, a}
+            end)
+            auraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.auraGlowColor = {r, g, b, a}
+                CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+            end)
+            scroll:AddChild(auraGlowColorPicker)
+
+            if buttonData.auraGlowStyle == "solid" then
+                local auraGlowSizeSlider = AceGUI:Create("Slider")
+                auraGlowSizeSlider:SetLabel("Border Size")
+                auraGlowSizeSlider:SetSliderValues(1, 8, 1)
+                auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
+                auraGlowSizeSlider:SetFullWidth(true)
+                auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.auraGlowSize = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(auraGlowSizeSlider)
+            elseif buttonData.auraGlowStyle == "glow" then
+                local auraGlowSizeSlider = AceGUI:Create("Slider")
+                auraGlowSizeSlider:SetLabel("Glow Size")
+                auraGlowSizeSlider:SetSliderValues(0, 60, 1)
+                auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
+                auraGlowSizeSlider:SetFullWidth(true)
+                auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.auraGlowSize = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(auraGlowSizeSlider)
+            end
+
+            -- Preview toggle
+            local auraGlowPreviewCb = AceGUI:Create("CheckBox")
+            auraGlowPreviewCb:SetLabel("Preview")
+            local auraGlowPreviewActive = false
             local gFrame = CooldownCompanion.groupFrames[selectedGroup]
             if gFrame then
                 for _, btn in ipairs(gFrame.buttons) do
-                    if btn.index == selectedButton and btn._procGlowPreview then
-                        previewActive = true
+                    if btn.index == selectedButton and btn._auraGlowPreview then
+                        auraGlowPreviewActive = true
                         break
                     end
                 end
             end
-            previewCb:SetValue(previewActive)
-            previewCb:SetFullWidth(true)
-            previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
+            auraGlowPreviewCb:SetValue(auraGlowPreviewActive)
+            auraGlowPreviewCb:SetFullWidth(true)
+            auraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                CooldownCompanion:SetAuraGlowPreview(selectedGroup, selectedButton, val)
             end)
-            col2Scroll:AddChild(previewCb)
-
-            -- (?) tooltip for preview
-            local previewInfo = CreateFrame("Button", nil, previewCb.frame)
-            previewInfo:SetSize(16, 16)
-            previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
-            local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            previewInfoText:SetPoint("CENTER")
-            previewInfoText:SetText("|cff66aaff(?)|r")
-            previewInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Preview")
-                GameTooltip:AddLine("Shows what the proc glow looks like on this icon. You may need to toggle preview off and on to reflect changes to glow size.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            previewInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(col2InfoButtons, previewInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                previewInfo:Hide()
-            end
-
-            -- Proc Glow color & size (group-wide style settings)
-            local procGlowColor = AceGUI:Create("ColorPicker")
-            procGlowColor:SetLabel("Glow Color")
-            procGlowColor:SetHasAlpha(true)
-            local pgc = group.style.procGlowColor or {1, 1, 1, 1}
-            procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-            procGlowColor:SetFullWidth(true)
-            procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                group.style.procGlowColor = {r, g, b, a}
-            end)
-            procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                group.style.procGlowColor = {r, g, b, a}
-                CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
-            end)
-            col2Scroll:AddChild(procGlowColor)
-
-            local procSizeSlider = AceGUI:Create("Slider")
-            procSizeSlider:SetLabel("Glow Size")
-            procSizeSlider:SetSliderValues(0, 60, 1)
-            procSizeSlider:SetValue(group.style.procGlowOverhang or 32)
-            procSizeSlider:SetFullWidth(true)
-            procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                group.style.procGlowOverhang = val
-                CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
-            end)
-            col2Scroll:AddChild(procSizeSlider)
+            scroll:AddChild(auraGlowPreviewCb)
         end
+    end
+end
 
-        local auraCb = AceGUI:Create("CheckBox")
-        auraCb:SetLabel("Track Buff Duration")
-        auraCb:SetValue(buttonData.auraTracking == true)
-        auraCb:SetFullWidth(true)
-        auraCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.auraTracking = val or nil
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        col2Scroll:AddChild(auraCb)
+local function BuildItemSettings(scroll, buttonData, infoButtons)
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
 
-        -- (?) tooltip for aura tracking
-        local auraInfo = CreateFrame("Button", nil, auraCb.frame)
-        auraInfo:SetSize(16, 16)
-        auraInfo:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
-        local auraInfoText = auraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        auraInfoText:SetPoint("CENTER")
-        auraInfoText:SetText("|cff66aaff(?)|r")
-        auraInfo:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Aura Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura associated with this spell instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        auraInfo:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        table.insert(col2InfoButtons, auraInfo)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            auraInfo:Hide()
-        end
+    local itemHeading = AceGUI:Create("Heading")
+    itemHeading:SetText("Item Settings")
+    itemHeading:SetFullWidth(true)
+    scroll:AddChild(itemHeading)
 
-        -- Yellow (?) warning tooltip for aura tracking combat limitations
-        local auraWarn = CreateFrame("Button", nil, auraCb.frame)
-        auraWarn:SetSize(16, 16)
-        auraWarn:SetPoint("LEFT", auraInfo, "RIGHT", 2, 0)
-        local auraWarnText = auraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        auraWarnText:SetPoint("CENTER")
-        auraWarnText:SetText("|cffffcc00(?)|r")
-        auraWarn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Combat Limitations")
-            GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\n If you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
-            GameTooltip:Show()
-        end)
-        auraWarn:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        table.insert(col2InfoButtons, auraWarn)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            auraWarn:Hide()
-        end
+    -- Item count font size
+    local itemFontSizeSlider = AceGUI:Create("Slider")
+    itemFontSizeSlider:SetLabel("Item Stack Font Size")
+    itemFontSizeSlider:SetSliderValues(8, 32, 1)
+    itemFontSizeSlider:SetValue(buttonData.itemCountFontSize or 12)
+    itemFontSizeSlider:SetFullWidth(true)
+    itemFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.itemCountFontSize = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemFontSizeSlider)
 
-        if buttonData.auraTracking then
-            -- Show resolved aura info
-            local autoAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-            local autoLabel = AceGUI:Create("Label")
-            if autoAuraId and autoAuraId ~= 0 then
-                local auraInfo = C_Spell.GetSpellInfo(autoAuraId)
-                local auraName = auraInfo and auraInfo.name or ("Spell " .. autoAuraId)
-                autoLabel:SetText("|cff88ff88Detected aura:|r " .. auraName .. " (ID: " .. autoAuraId .. ")")
-            else
-                local spellInfo = C_Spell.GetSpellInfo(buttonData.id)
-                local spellName = spellInfo and spellInfo.name or ("Spell " .. buttonData.id)
-                autoLabel:SetText("|cff88ff88Tracking aura:|r " .. spellName .. " (ID: " .. buttonData.id .. ")")
-            end
-            autoLabel:SetFullWidth(true)
-            col2Scroll:AddChild(autoLabel)
+    -- Item count font
+    local itemFontDrop = AceGUI:Create("Dropdown")
+    itemFontDrop:SetLabel("Font")
+    itemFontDrop:SetList(fontOptions)
+    itemFontDrop:SetValue(buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF")
+    itemFontDrop:SetFullWidth(true)
+    itemFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.itemCountFont = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemFontDrop)
 
-            -- Manual override edit box
-            local auraEditBox = AceGUI:Create("EditBox")
-            auraEditBox:SetLabel("Aura Spell ID Override")
-            auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
-            auraEditBox:SetFullWidth(true)
-            auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
-                local id = tonumber(text)
-                buttonData.auraSpellID = id
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col2Scroll:AddChild(auraEditBox)
+    -- Item count font outline
+    local itemOutlineDrop = AceGUI:Create("Dropdown")
+    itemOutlineDrop:SetLabel("Font Outline")
+    itemOutlineDrop:SetList(outlineOptions)
+    itemOutlineDrop:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
+    itemOutlineDrop:SetFullWidth(true)
+    itemOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.itemCountFontOutline = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemOutlineDrop)
 
-            -- (?) tooltip for override
-            local overrideInfo = CreateFrame("Button", nil, auraEditBox.frame)
-            overrideInfo:SetSize(16, 16)
-            overrideInfo:SetPoint("LEFT", auraEditBox.editbox, "RIGHT", 4, 0)
-            local overrideInfoText = overrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            overrideInfoText:SetPoint("CENTER")
-            overrideInfoText:SetText("|cff66aaff(?)|r")
-            overrideInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Aura Spell ID Override")
-                GameTooltip:AddLine("Enter a spell ID to track a specific aura instead of the auto-detected one. Leave blank to use auto-detection. You can find spell IDs on Wowhead.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            overrideInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(col2InfoButtons, overrideInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                overrideInfo:Hide()
-            end
+    -- Item count font color
+    local itemFontColor = AceGUI:Create("ColorPicker")
+    itemFontColor:SetLabel("Font Color")
+    itemFontColor:SetHasAlpha(true)
+    local icc = buttonData.itemCountFontColor or {1, 1, 1, 1}
+    itemFontColor:SetColor(icc[1], icc[2], icc[3], icc[4])
+    itemFontColor:SetFullWidth(true)
+    itemFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        buttonData.itemCountFontColor = {r, g, b, a}
+    end)
+    itemFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        buttonData.itemCountFontColor = {r, g, b, a}
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemFontColor)
 
-            local auraNoDesatCb = AceGUI:Create("CheckBox")
-            auraNoDesatCb:SetLabel("Don't Desaturate While Active")
-            auraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
-            auraNoDesatCb:SetFullWidth(true)
-            auraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraNoDesaturate = val or nil
-            end)
-            col2Scroll:AddChild(auraNoDesatCb)
+    -- Item count anchor point
+    local itemAnchorValues = {}
+    for _, pt in ipairs(anchorPoints) do
+        itemAnchorValues[pt] = anchorPointLabels[pt]
+    end
+    local itemAnchorDrop = AceGUI:Create("Dropdown")
+    itemAnchorDrop:SetLabel("Anchor Point")
+    itemAnchorDrop:SetList(itemAnchorValues)
+    itemAnchorDrop:SetValue(buttonData.itemCountAnchor or "BOTTOMRIGHT")
+    itemAnchorDrop:SetFullWidth(true)
+    itemAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.itemCountAnchor = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemAnchorDrop)
 
-            -- Active buff indicator controls
-            local auraGlowDrop = AceGUI:Create("Dropdown")
-            auraGlowDrop:SetLabel("Active Buff Indicator")
-            auraGlowDrop:SetList({
-                ["none"] = "None",
-                ["solid"] = "Solid Border",
-                ["glow"] = "Glow",
-            }, {"none", "solid", "glow"})
-            auraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
-            auraGlowDrop:SetFullWidth(true)
-            auraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraGlowStyle = (val ~= "none") and val or nil
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col2Scroll:AddChild(auraGlowDrop)
+    -- Item count X offset
+    local itemXSlider = AceGUI:Create("Slider")
+    itemXSlider:SetLabel("X Offset")
+    itemXSlider:SetSliderValues(-20, 20, 1)
+    itemXSlider:SetValue(buttonData.itemCountXOffset or -2)
+    itemXSlider:SetFullWidth(true)
+    itemXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.itemCountXOffset = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemXSlider)
 
-            if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
-                local auraGlowColorPicker = AceGUI:Create("ColorPicker")
-                auraGlowColorPicker:SetLabel("Indicator Color")
-                local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
-                auraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
-                auraGlowColorPicker:SetHasAlpha(true)
-                auraGlowColorPicker:SetFullWidth(true)
-                auraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                end)
-                auraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                end)
-                col2Scroll:AddChild(auraGlowColorPicker)
+    -- Item count Y offset
+    local itemYSlider = AceGUI:Create("Slider")
+    itemYSlider:SetLabel("Y Offset")
+    itemYSlider:SetSliderValues(-20, 20, 1)
+    itemYSlider:SetValue(buttonData.itemCountYOffset or 2)
+    itemYSlider:SetFullWidth(true)
+    itemYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.itemCountYOffset = val
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    end)
+    scroll:AddChild(itemYSlider)
 
-                if buttonData.auraGlowStyle == "solid" then
-                    local auraGlowSizeSlider = AceGUI:Create("Slider")
-                    auraGlowSizeSlider:SetLabel("Border Size")
-                    auraGlowSizeSlider:SetSliderValues(1, 8, 1)
-                    auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
-                    auraGlowSizeSlider:SetFullWidth(true)
-                    auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                    end)
-                    col2Scroll:AddChild(auraGlowSizeSlider)
-                elseif buttonData.auraGlowStyle == "glow" then
-                    local auraGlowSizeSlider = AceGUI:Create("Slider")
-                    auraGlowSizeSlider:SetLabel("Glow Size")
-                    auraGlowSizeSlider:SetSliderValues(0, 60, 1)
-                    auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
-                    auraGlowSizeSlider:SetFullWidth(true)
-                    auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                    end)
-                    col2Scroll:AddChild(auraGlowSizeSlider)
-                end
+    local itemAuraCb = AceGUI:Create("CheckBox")
+    itemAuraCb:SetLabel("Track Buff Duration")
+    itemAuraCb:SetValue(buttonData.auraTracking == true)
+    itemAuraCb:SetFullWidth(true)
+    itemAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.auraTracking = val or nil
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(itemAuraCb)
 
-                -- Preview toggle
-                local auraGlowPreviewCb = AceGUI:Create("CheckBox")
-                auraGlowPreviewCb:SetLabel("Preview")
-                local auraGlowPreviewActive = false
-                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
-                if gFrame then
-                    for _, btn in ipairs(gFrame.buttons) do
-                        if btn.index == selectedButton and btn._auraGlowPreview then
-                            auraGlowPreviewActive = true
-                            break
-                        end
-                    end
-                end
-                auraGlowPreviewCb:SetValue(auraGlowPreviewActive)
-                auraGlowPreviewCb:SetFullWidth(true)
-                auraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    CooldownCompanion:SetAuraGlowPreview(selectedGroup, selectedButton, val)
-                end)
-                col2Scroll:AddChild(auraGlowPreviewCb)
-            end
-        end
-
-    elseif selectedButton and group.buttons[selectedButton]
-       and group.buttons[selectedButton].type == "item"
-       and not CooldownCompanion.IsItemEquippable(group.buttons[selectedButton]) then
-        -- Per-item settings panel (non-equipment items only — equipment has no count)
-        local buttonData = group.buttons[selectedButton]
-
-        local itemHeading = AceGUI:Create("Heading")
-        itemHeading:SetText("Item Settings")
-        itemHeading:SetFullWidth(true)
-        col2Scroll:AddChild(itemHeading)
-
-        -- Item count font size
-        local itemFontSizeSlider = AceGUI:Create("Slider")
-        itemFontSizeSlider:SetLabel("Item Stack Font Size")
-        itemFontSizeSlider:SetSliderValues(8, 32, 1)
-        itemFontSizeSlider:SetValue(buttonData.itemCountFontSize or 12)
-        itemFontSizeSlider:SetFullWidth(true)
-        itemFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.itemCountFontSize = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemFontSizeSlider)
-
-        -- Item count font
-        local itemFontDrop = AceGUI:Create("Dropdown")
-        itemFontDrop:SetLabel("Font")
-        itemFontDrop:SetList(fontOptions)
-        itemFontDrop:SetValue(buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF")
-        itemFontDrop:SetFullWidth(true)
-        itemFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.itemCountFont = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemFontDrop)
-
-        -- Item count font outline
-        local itemOutlineDrop = AceGUI:Create("Dropdown")
-        itemOutlineDrop:SetLabel("Font Outline")
-        itemOutlineDrop:SetList(outlineOptions)
-        itemOutlineDrop:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
-        itemOutlineDrop:SetFullWidth(true)
-        itemOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.itemCountFontOutline = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemOutlineDrop)
-
-        -- Item count font color
-        local itemFontColor = AceGUI:Create("ColorPicker")
-        itemFontColor:SetLabel("Font Color")
-        itemFontColor:SetHasAlpha(true)
-        local icc = buttonData.itemCountFontColor or {1, 1, 1, 1}
-        itemFontColor:SetColor(icc[1], icc[2], icc[3], icc[4])
-        itemFontColor:SetFullWidth(true)
-        itemFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            buttonData.itemCountFontColor = {r, g, b, a}
-        end)
-        itemFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            buttonData.itemCountFontColor = {r, g, b, a}
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemFontColor)
-
-        -- Item count anchor point
-        local itemAnchorValues = {}
-        for _, pt in ipairs(anchorPoints) do
-            itemAnchorValues[pt] = anchorPointLabels[pt]
-        end
-        local itemAnchorDrop = AceGUI:Create("Dropdown")
-        itemAnchorDrop:SetLabel("Anchor Point")
-        itemAnchorDrop:SetList(itemAnchorValues)
-        itemAnchorDrop:SetValue(buttonData.itemCountAnchor or "BOTTOMRIGHT")
-        itemAnchorDrop:SetFullWidth(true)
-        itemAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.itemCountAnchor = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemAnchorDrop)
-
-        -- Item count X offset
-        local itemXSlider = AceGUI:Create("Slider")
-        itemXSlider:SetLabel("X Offset")
-        itemXSlider:SetSliderValues(-20, 20, 1)
-        itemXSlider:SetValue(buttonData.itemCountXOffset or -2)
-        itemXSlider:SetFullWidth(true)
-        itemXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.itemCountXOffset = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemXSlider)
-
-        -- Item count Y offset
-        local itemYSlider = AceGUI:Create("Slider")
-        itemYSlider:SetLabel("Y Offset")
-        itemYSlider:SetSliderValues(-20, 20, 1)
-        itemYSlider:SetValue(buttonData.itemCountYOffset or 2)
-        itemYSlider:SetFullWidth(true)
-        itemYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.itemCountYOffset = val
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        end)
-        col2Scroll:AddChild(itemYSlider)
-
-
-
-        local itemAuraCb = AceGUI:Create("CheckBox")
-        itemAuraCb:SetLabel("Track Buff Duration")
-        itemAuraCb:SetValue(buttonData.auraTracking == true)
-        itemAuraCb:SetFullWidth(true)
-        itemAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.auraTracking = val or nil
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        col2Scroll:AddChild(itemAuraCb)
-
-        -- (?) tooltip for aura tracking (items)
-        local itemAuraInfo = CreateFrame("Button", nil, itemAuraCb.frame)
-        itemAuraInfo:SetSize(16, 16)
-        itemAuraInfo:SetPoint("LEFT", itemAuraCb.checkbg, "RIGHT", itemAuraCb.text:GetStringWidth() + 4, 0)
-        local itemAuraInfoText = itemAuraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        itemAuraInfoText:SetPoint("CENTER")
-        itemAuraInfoText:SetText("|cff66aaff(?)|r")
-        itemAuraInfo:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Aura Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        itemAuraInfo:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        table.insert(col2InfoButtons, itemAuraInfo)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            itemAuraInfo:Hide()
-        end
-
-        -- Yellow (?) warning tooltip for aura tracking combat limitations (items)
-        local itemAuraWarn = CreateFrame("Button", nil, itemAuraCb.frame)
-        itemAuraWarn:SetSize(16, 16)
-        itemAuraWarn:SetPoint("LEFT", itemAuraInfo, "RIGHT", 2, 0)
-        local itemAuraWarnText = itemAuraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        itemAuraWarnText:SetPoint("CENTER")
-        itemAuraWarnText:SetText("|cffffcc00(?)|r")
-        itemAuraWarn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Combat Limitations")
-            GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\n If you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
-            GameTooltip:Show()
-        end)
-        itemAuraWarn:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        table.insert(col2InfoButtons, itemAuraWarn)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            itemAuraWarn:Hide()
-        end
-
-        if buttonData.auraTracking then
-            local itemAutoLabel = AceGUI:Create("Label")
-            itemAutoLabel:SetText("|cffaaaaaaAuto-detection not available for items.|r Use the override field below.")
-            itemAutoLabel:SetFullWidth(true)
-            col2Scroll:AddChild(itemAutoLabel)
-
-            local itemAuraEditBox = AceGUI:Create("EditBox")
-            itemAuraEditBox:SetLabel("Aura Spell ID Override")
-            itemAuraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
-            itemAuraEditBox:SetFullWidth(true)
-            itemAuraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
-                local id = tonumber(text)
-                buttonData.auraSpellID = id
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col2Scroll:AddChild(itemAuraEditBox)
-
-            -- (?) tooltip for item override
-            local itemOverrideInfo = CreateFrame("Button", nil, itemAuraEditBox.frame)
-            itemOverrideInfo:SetSize(16, 16)
-            itemOverrideInfo:SetPoint("LEFT", itemAuraEditBox.editbox, "RIGHT", 4, 0)
-            local itemOverrideInfoText = itemOverrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            itemOverrideInfoText:SetPoint("CENTER")
-            itemOverrideInfoText:SetText("|cff66aaff(?)|r")
-            itemOverrideInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Aura Spell ID Override")
-                GameTooltip:AddLine("Enter the spell ID of the buff/aura this item applies. You can find spell IDs on Wowhead.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            itemOverrideInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(col2InfoButtons, itemOverrideInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                itemOverrideInfo:Hide()
-            end
-
-            local itemAuraNoDesatCb = AceGUI:Create("CheckBox")
-            itemAuraNoDesatCb:SetLabel("Don't Desaturate While Active")
-            itemAuraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
-            itemAuraNoDesatCb:SetFullWidth(true)
-            itemAuraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraNoDesaturate = val or nil
-            end)
-            col2Scroll:AddChild(itemAuraNoDesatCb)
-
-            -- Active buff indicator controls (non-equip items)
-            local itemAuraGlowDrop = AceGUI:Create("Dropdown")
-            itemAuraGlowDrop:SetLabel("Active Buff Indicator")
-            itemAuraGlowDrop:SetList({
-                ["none"] = "None",
-                ["solid"] = "Solid Border",
-                ["glow"] = "Glow",
-            }, {"none", "solid", "glow"})
-            itemAuraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
-            itemAuraGlowDrop:SetFullWidth(true)
-            itemAuraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraGlowStyle = (val ~= "none") and val or nil
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col2Scroll:AddChild(itemAuraGlowDrop)
-
-            if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
-                local itemAuraGlowColorPicker = AceGUI:Create("ColorPicker")
-                itemAuraGlowColorPicker:SetLabel("Indicator Color")
-                local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
-                itemAuraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
-                itemAuraGlowColorPicker:SetHasAlpha(true)
-                itemAuraGlowColorPicker:SetFullWidth(true)
-                itemAuraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                end)
-                itemAuraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                end)
-                col2Scroll:AddChild(itemAuraGlowColorPicker)
-
-                if buttonData.auraGlowStyle == "solid" then
-                    local itemAuraGlowSizeSlider = AceGUI:Create("Slider")
-                    itemAuraGlowSizeSlider:SetLabel("Border Size")
-                    itemAuraGlowSizeSlider:SetSliderValues(1, 8, 1)
-                    itemAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
-                    itemAuraGlowSizeSlider:SetFullWidth(true)
-                    itemAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                    end)
-                    col2Scroll:AddChild(itemAuraGlowSizeSlider)
-                elseif buttonData.auraGlowStyle == "glow" then
-                    local itemAuraGlowSizeSlider = AceGUI:Create("Slider")
-                    itemAuraGlowSizeSlider:SetLabel("Glow Size")
-                    itemAuraGlowSizeSlider:SetSliderValues(0, 60, 1)
-                    itemAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
-                    itemAuraGlowSizeSlider:SetFullWidth(true)
-                    itemAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                    end)
-                    col2Scroll:AddChild(itemAuraGlowSizeSlider)
-                end
-
-                -- Preview toggle
-                local itemAuraGlowPreviewCb = AceGUI:Create("CheckBox")
-                itemAuraGlowPreviewCb:SetLabel("Preview")
-                local itemAuraGlowPreviewActive = false
-                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
-                if gFrame then
-                    for _, btn in ipairs(gFrame.buttons) do
-                        if btn.index == selectedButton and btn._auraGlowPreview then
-                            itemAuraGlowPreviewActive = true
-                            break
-                        end
-                    end
-                end
-                itemAuraGlowPreviewCb:SetValue(itemAuraGlowPreviewActive)
-                itemAuraGlowPreviewCb:SetFullWidth(true)
-                itemAuraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    CooldownCompanion:SetAuraGlowPreview(selectedGroup, selectedButton, val)
-                end)
-                col2Scroll:AddChild(itemAuraGlowPreviewCb)
-            end
-        end
-
-    elseif selectedButton and group.buttons[selectedButton]
-       and group.buttons[selectedButton].type == "item"
-       and CooldownCompanion.IsItemEquippable(group.buttons[selectedButton]) then
-        -- Per-item settings panel (equippable items — trinkets, etc.)
-        local buttonData = group.buttons[selectedButton]
-
-
-
-        local eqAuraCb = AceGUI:Create("CheckBox")
-        eqAuraCb:SetLabel("Track Buff Duration")
-        eqAuraCb:SetValue(buttonData.auraTracking == true)
-        eqAuraCb:SetFullWidth(true)
-        eqAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.auraTracking = val or nil
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        col2Scroll:AddChild(eqAuraCb)
-
-        -- (?) tooltip for aura tracking (equippable items)
-        local eqAuraInfo = CreateFrame("Button", nil, eqAuraCb.frame)
-        eqAuraInfo:SetSize(16, 16)
-        eqAuraInfo:SetPoint("LEFT", eqAuraCb.checkbg, "RIGHT", eqAuraCb.text:GetStringWidth() + 4, 0)
-        local eqAuraInfoText = eqAuraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        eqAuraInfoText:SetPoint("CENTER")
-        eqAuraInfoText:SetText("|cff66aaff(?)|r")
-        eqAuraInfo:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Aura Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        eqAuraInfo:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        table.insert(col2InfoButtons, eqAuraInfo)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            eqAuraInfo:Hide()
-        end
-
-        -- Yellow (?) warning tooltip for aura tracking combat limitations (equippable items)
-        local eqAuraWarn = CreateFrame("Button", nil, eqAuraCb.frame)
-        eqAuraWarn:SetSize(16, 16)
-        eqAuraWarn:SetPoint("LEFT", eqAuraInfo, "RIGHT", 2, 0)
-        local eqAuraWarnText = eqAuraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        eqAuraWarnText:SetPoint("CENTER")
-        eqAuraWarnText:SetText("|cffffcc00(?)|r")
-        eqAuraWarn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Combat Limitations")
-            GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\n If you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
-            GameTooltip:Show()
-        end)
-        eqAuraWarn:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        table.insert(col2InfoButtons, eqAuraWarn)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            eqAuraWarn:Hide()
-        end
-
-        if buttonData.auraTracking then
-            local eqAutoLabel = AceGUI:Create("Label")
-            eqAutoLabel:SetText("|cffaaaaaaAuto-detection not available for items.|r Use the override field below.")
-            eqAutoLabel:SetFullWidth(true)
-            col2Scroll:AddChild(eqAutoLabel)
-
-            local eqAuraEditBox = AceGUI:Create("EditBox")
-            eqAuraEditBox:SetLabel("Aura Spell ID Override")
-            eqAuraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
-            eqAuraEditBox:SetFullWidth(true)
-            eqAuraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
-                local id = tonumber(text)
-                buttonData.auraSpellID = id
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col2Scroll:AddChild(eqAuraEditBox)
-
-            -- (?) tooltip for equippable item override
-            local eqOverrideInfo = CreateFrame("Button", nil, eqAuraEditBox.frame)
-            eqOverrideInfo:SetSize(16, 16)
-            eqOverrideInfo:SetPoint("LEFT", eqAuraEditBox.editbox, "RIGHT", 4, 0)
-            local eqOverrideInfoText = eqOverrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            eqOverrideInfoText:SetPoint("CENTER")
-            eqOverrideInfoText:SetText("|cff66aaff(?)|r")
-            eqOverrideInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Aura Spell ID Override")
-                GameTooltip:AddLine("Enter the spell ID of the buff/aura this item applies. You can find spell IDs on Wowhead.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            eqOverrideInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(col2InfoButtons, eqOverrideInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                eqOverrideInfo:Hide()
-            end
-
-            local eqAuraNoDesatCb = AceGUI:Create("CheckBox")
-            eqAuraNoDesatCb:SetLabel("Don't Desaturate While Active")
-            eqAuraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
-            eqAuraNoDesatCb:SetFullWidth(true)
-            eqAuraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraNoDesaturate = val or nil
-            end)
-            col2Scroll:AddChild(eqAuraNoDesatCb)
-
-            -- Active buff indicator controls (equippable items)
-            local eqAuraGlowDrop = AceGUI:Create("Dropdown")
-            eqAuraGlowDrop:SetLabel("Active Buff Indicator")
-            eqAuraGlowDrop:SetList({
-                ["none"] = "None",
-                ["solid"] = "Solid Border",
-                ["glow"] = "Glow",
-            }, {"none", "solid", "glow"})
-            eqAuraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
-            eqAuraGlowDrop:SetFullWidth(true)
-            eqAuraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraGlowStyle = (val ~= "none") and val or nil
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col2Scroll:AddChild(eqAuraGlowDrop)
-
-            if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
-                local eqAuraGlowColorPicker = AceGUI:Create("ColorPicker")
-                eqAuraGlowColorPicker:SetLabel("Indicator Color")
-                local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
-                eqAuraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
-                eqAuraGlowColorPicker:SetHasAlpha(true)
-                eqAuraGlowColorPicker:SetFullWidth(true)
-                eqAuraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                end)
-                eqAuraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                end)
-                col2Scroll:AddChild(eqAuraGlowColorPicker)
-
-                if buttonData.auraGlowStyle == "solid" then
-                    local eqAuraGlowSizeSlider = AceGUI:Create("Slider")
-                    eqAuraGlowSizeSlider:SetLabel("Border Size")
-                    eqAuraGlowSizeSlider:SetSliderValues(1, 8, 1)
-                    eqAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
-                    eqAuraGlowSizeSlider:SetFullWidth(true)
-                    eqAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                    end)
-                    col2Scroll:AddChild(eqAuraGlowSizeSlider)
-                elseif buttonData.auraGlowStyle == "glow" then
-                    local eqAuraGlowSizeSlider = AceGUI:Create("Slider")
-                    eqAuraGlowSizeSlider:SetLabel("Glow Size")
-                    eqAuraGlowSizeSlider:SetSliderValues(0, 60, 1)
-                    eqAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
-                    eqAuraGlowSizeSlider:SetFullWidth(true)
-                    eqAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
-                    end)
-                    col2Scroll:AddChild(eqAuraGlowSizeSlider)
-                end
-
-                -- Preview toggle
-                local eqAuraGlowPreviewCb = AceGUI:Create("CheckBox")
-                eqAuraGlowPreviewCb:SetLabel("Preview")
-                local eqAuraGlowPreviewActive = false
-                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
-                if gFrame then
-                    for _, btn in ipairs(gFrame.buttons) do
-                        if btn.index == selectedButton and btn._auraGlowPreview then
-                            eqAuraGlowPreviewActive = true
-                            break
-                        end
-                    end
-                end
-                eqAuraGlowPreviewCb:SetValue(eqAuraGlowPreviewActive)
-                eqAuraGlowPreviewCb:SetFullWidth(true)
-                eqAuraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    CooldownCompanion:SetAuraGlowPreview(selectedGroup, selectedButton, val)
-                end)
-                col2Scroll:AddChild(eqAuraGlowPreviewCb)
-            end
-        end
-
+    -- (?) tooltip for aura tracking (items)
+    local itemAuraInfo = CreateFrame("Button", nil, itemAuraCb.frame)
+    itemAuraInfo:SetSize(16, 16)
+    itemAuraInfo:SetPoint("LEFT", itemAuraCb.checkbg, "RIGHT", itemAuraCb.text:GetStringWidth() + 4, 0)
+    local itemAuraInfoText = itemAuraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    itemAuraInfoText:SetPoint("CENTER")
+    itemAuraInfoText:SetText("|cff66aaff(?)|r")
+    itemAuraInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Aura Tracking")
+        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    itemAuraInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, itemAuraInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        itemAuraInfo:Hide()
     end
 
+    -- Yellow (?) warning tooltip for aura tracking combat limitations (items)
+    local itemAuraWarn = CreateFrame("Button", nil, itemAuraCb.frame)
+    itemAuraWarn:SetSize(16, 16)
+    itemAuraWarn:SetPoint("LEFT", itemAuraInfo, "RIGHT", 2, 0)
+    local itemAuraWarnText = itemAuraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    itemAuraWarnText:SetPoint("CENTER")
+    itemAuraWarnText:SetText("|cffffcc00(?)|r")
+    itemAuraWarn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Combat Limitations")
+        GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\n If you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    itemAuraWarn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, itemAuraWarn)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        itemAuraWarn:Hide()
+    end
+
+    if buttonData.auraTracking then
+        local itemAutoLabel = AceGUI:Create("Label")
+        itemAutoLabel:SetText("|cffaaaaaaAuto-detection not available for items.|r Use the override field below.")
+        itemAutoLabel:SetFullWidth(true)
+        scroll:AddChild(itemAutoLabel)
+
+        local itemAuraEditBox = AceGUI:Create("EditBox")
+        itemAuraEditBox:SetLabel("Aura Spell ID Override")
+        itemAuraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+        itemAuraEditBox:SetFullWidth(true)
+        itemAuraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            local id = tonumber(text)
+            buttonData.auraSpellID = id
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(itemAuraEditBox)
+
+        -- (?) tooltip for item override
+        local itemOverrideInfo = CreateFrame("Button", nil, itemAuraEditBox.frame)
+        itemOverrideInfo:SetSize(16, 16)
+        itemOverrideInfo:SetPoint("LEFT", itemAuraEditBox.editbox, "RIGHT", 4, 0)
+        local itemOverrideInfoText = itemOverrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        itemOverrideInfoText:SetPoint("CENTER")
+        itemOverrideInfoText:SetText("|cff66aaff(?)|r")
+        itemOverrideInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Aura Spell ID Override")
+            GameTooltip:AddLine("Enter the spell ID of the buff/aura this item applies. You can find spell IDs on Wowhead.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        itemOverrideInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(infoButtons, itemOverrideInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            itemOverrideInfo:Hide()
+        end
+
+        local itemAuraNoDesatCb = AceGUI:Create("CheckBox")
+        itemAuraNoDesatCb:SetLabel("Don't Desaturate While Active")
+        itemAuraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
+        itemAuraNoDesatCb:SetFullWidth(true)
+        itemAuraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraNoDesaturate = val or nil
+        end)
+        scroll:AddChild(itemAuraNoDesatCb)
+
+        -- Active buff indicator controls (non-equip items)
+        local itemAuraGlowDrop = AceGUI:Create("Dropdown")
+        itemAuraGlowDrop:SetLabel("Active Buff Indicator")
+        itemAuraGlowDrop:SetList({
+            ["none"] = "None",
+            ["solid"] = "Solid Border",
+            ["glow"] = "Glow",
+        }, {"none", "solid", "glow"})
+        itemAuraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
+        itemAuraGlowDrop:SetFullWidth(true)
+        itemAuraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraGlowStyle = (val ~= "none") and val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(itemAuraGlowDrop)
+
+        if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+            local itemAuraGlowColorPicker = AceGUI:Create("ColorPicker")
+            itemAuraGlowColorPicker:SetLabel("Indicator Color")
+            local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
+            itemAuraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
+            itemAuraGlowColorPicker:SetHasAlpha(true)
+            itemAuraGlowColorPicker:SetFullWidth(true)
+            itemAuraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.auraGlowColor = {r, g, b, a}
+            end)
+            itemAuraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.auraGlowColor = {r, g, b, a}
+                CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+            end)
+            scroll:AddChild(itemAuraGlowColorPicker)
+
+            if buttonData.auraGlowStyle == "solid" then
+                local itemAuraGlowSizeSlider = AceGUI:Create("Slider")
+                itemAuraGlowSizeSlider:SetLabel("Border Size")
+                itemAuraGlowSizeSlider:SetSliderValues(1, 8, 1)
+                itemAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
+                itemAuraGlowSizeSlider:SetFullWidth(true)
+                itemAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.auraGlowSize = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(itemAuraGlowSizeSlider)
+            elseif buttonData.auraGlowStyle == "glow" then
+                local itemAuraGlowSizeSlider = AceGUI:Create("Slider")
+                itemAuraGlowSizeSlider:SetLabel("Glow Size")
+                itemAuraGlowSizeSlider:SetSliderValues(0, 60, 1)
+                itemAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
+                itemAuraGlowSizeSlider:SetFullWidth(true)
+                itemAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.auraGlowSize = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(itemAuraGlowSizeSlider)
+            end
+
+            -- Preview toggle
+            local itemAuraGlowPreviewCb = AceGUI:Create("CheckBox")
+            itemAuraGlowPreviewCb:SetLabel("Preview")
+            local itemAuraGlowPreviewActive = false
+            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+            if gFrame then
+                for _, btn in ipairs(gFrame.buttons) do
+                    if btn.index == selectedButton and btn._auraGlowPreview then
+                        itemAuraGlowPreviewActive = true
+                        break
+                    end
+                end
+            end
+            itemAuraGlowPreviewCb:SetValue(itemAuraGlowPreviewActive)
+            itemAuraGlowPreviewCb:SetFullWidth(true)
+            itemAuraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                CooldownCompanion:SetAuraGlowPreview(selectedGroup, selectedButton, val)
+            end)
+            scroll:AddChild(itemAuraGlowPreviewCb)
+        end
+    end
+end
+
+local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
+    local eqAuraCb = AceGUI:Create("CheckBox")
+    eqAuraCb:SetLabel("Track Buff Duration")
+    eqAuraCb:SetValue(buttonData.auraTracking == true)
+    eqAuraCb:SetFullWidth(true)
+    eqAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.auraTracking = val or nil
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(eqAuraCb)
+
+    -- (?) tooltip for aura tracking (equippable items)
+    local eqAuraInfo = CreateFrame("Button", nil, eqAuraCb.frame)
+    eqAuraInfo:SetSize(16, 16)
+    eqAuraInfo:SetPoint("LEFT", eqAuraCb.checkbg, "RIGHT", eqAuraCb.text:GetStringWidth() + 4, 0)
+    local eqAuraInfoText = eqAuraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    eqAuraInfoText:SetPoint("CENTER")
+    eqAuraInfoText:SetText("|cff66aaff(?)|r")
+    eqAuraInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Aura Tracking")
+        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    eqAuraInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, eqAuraInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        eqAuraInfo:Hide()
+    end
+
+    -- Yellow (?) warning tooltip for aura tracking combat limitations (equippable items)
+    local eqAuraWarn = CreateFrame("Button", nil, eqAuraCb.frame)
+    eqAuraWarn:SetSize(16, 16)
+    eqAuraWarn:SetPoint("LEFT", eqAuraInfo, "RIGHT", 2, 0)
+    local eqAuraWarnText = eqAuraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    eqAuraWarnText:SetPoint("CENTER")
+    eqAuraWarnText:SetText("|cffffcc00(?)|r")
+    eqAuraWarn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Combat Limitations")
+        GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\n If you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    eqAuraWarn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, eqAuraWarn)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        eqAuraWarn:Hide()
+    end
+
+    if buttonData.auraTracking then
+        local eqAutoLabel = AceGUI:Create("Label")
+        eqAutoLabel:SetText("|cffaaaaaaAuto-detection not available for items.|r Use the override field below.")
+        eqAutoLabel:SetFullWidth(true)
+        scroll:AddChild(eqAutoLabel)
+
+        local eqAuraEditBox = AceGUI:Create("EditBox")
+        eqAuraEditBox:SetLabel("Aura Spell ID Override")
+        eqAuraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+        eqAuraEditBox:SetFullWidth(true)
+        eqAuraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            local id = tonumber(text)
+            buttonData.auraSpellID = id
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(eqAuraEditBox)
+
+        -- (?) tooltip for equippable item override
+        local eqOverrideInfo = CreateFrame("Button", nil, eqAuraEditBox.frame)
+        eqOverrideInfo:SetSize(16, 16)
+        eqOverrideInfo:SetPoint("LEFT", eqAuraEditBox.editbox, "RIGHT", 4, 0)
+        local eqOverrideInfoText = eqOverrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        eqOverrideInfoText:SetPoint("CENTER")
+        eqOverrideInfoText:SetText("|cff66aaff(?)|r")
+        eqOverrideInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Aura Spell ID Override")
+            GameTooltip:AddLine("Enter the spell ID of the buff/aura this item applies. You can find spell IDs on Wowhead.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        eqOverrideInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(infoButtons, eqOverrideInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            eqOverrideInfo:Hide()
+        end
+
+        local eqAuraNoDesatCb = AceGUI:Create("CheckBox")
+        eqAuraNoDesatCb:SetLabel("Don't Desaturate While Active")
+        eqAuraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
+        eqAuraNoDesatCb:SetFullWidth(true)
+        eqAuraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraNoDesaturate = val or nil
+        end)
+        scroll:AddChild(eqAuraNoDesatCb)
+
+        -- Active buff indicator controls (equippable items)
+        local eqAuraGlowDrop = AceGUI:Create("Dropdown")
+        eqAuraGlowDrop:SetLabel("Active Buff Indicator")
+        eqAuraGlowDrop:SetList({
+            ["none"] = "None",
+            ["solid"] = "Solid Border",
+            ["glow"] = "Glow",
+        }, {"none", "solid", "glow"})
+        eqAuraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
+        eqAuraGlowDrop:SetFullWidth(true)
+        eqAuraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraGlowStyle = (val ~= "none") and val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(eqAuraGlowDrop)
+
+        if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+            local eqAuraGlowColorPicker = AceGUI:Create("ColorPicker")
+            eqAuraGlowColorPicker:SetLabel("Indicator Color")
+            local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
+            eqAuraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
+            eqAuraGlowColorPicker:SetHasAlpha(true)
+            eqAuraGlowColorPicker:SetFullWidth(true)
+            eqAuraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.auraGlowColor = {r, g, b, a}
+            end)
+            eqAuraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.auraGlowColor = {r, g, b, a}
+                CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+            end)
+            scroll:AddChild(eqAuraGlowColorPicker)
+
+            if buttonData.auraGlowStyle == "solid" then
+                local eqAuraGlowSizeSlider = AceGUI:Create("Slider")
+                eqAuraGlowSizeSlider:SetLabel("Border Size")
+                eqAuraGlowSizeSlider:SetSliderValues(1, 8, 1)
+                eqAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
+                eqAuraGlowSizeSlider:SetFullWidth(true)
+                eqAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.auraGlowSize = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(eqAuraGlowSizeSlider)
+            elseif buttonData.auraGlowStyle == "glow" then
+                local eqAuraGlowSizeSlider = AceGUI:Create("Slider")
+                eqAuraGlowSizeSlider:SetLabel("Glow Size")
+                eqAuraGlowSizeSlider:SetSliderValues(0, 60, 1)
+                eqAuraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
+                eqAuraGlowSizeSlider:SetFullWidth(true)
+                eqAuraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.auraGlowSize = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(eqAuraGlowSizeSlider)
+            end
+
+            -- Preview toggle
+            local eqAuraGlowPreviewCb = AceGUI:Create("CheckBox")
+            eqAuraGlowPreviewCb:SetLabel("Preview")
+            local eqAuraGlowPreviewActive = false
+            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+            if gFrame then
+                for _, btn in ipairs(gFrame.buttons) do
+                    if btn.index == selectedButton and btn._auraGlowPreview then
+                        eqAuraGlowPreviewActive = true
+                        break
+                    end
+                end
+            end
+            eqAuraGlowPreviewCb:SetValue(eqAuraGlowPreviewActive)
+            eqAuraGlowPreviewCb:SetFullWidth(true)
+            eqAuraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                CooldownCompanion:SetAuraGlowPreview(selectedGroup, selectedButton, val)
+            end)
+            scroll:AddChild(eqAuraGlowPreviewCb)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- BUTTON SETTINGS COLUMN: Refresh
+------------------------------------------------------------------------
+local function RefreshButtonSettingsColumn()
+    if not buttonSettingsScroll then return end
+    CooldownCompanion:ClearAllProcGlowPreviews()
+    CooldownCompanion:ClearAllAuraGlowPreviews()
+    for _, btn in ipairs(buttonSettingsInfoButtons) do
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(buttonSettingsInfoButtons)
+    buttonSettingsScroll:ReleaseChildren()
+
+    if not selectedGroup then
+        local label = AceGUI:Create("Label")
+        label:SetText("Select a spell or item to configure")
+        label:SetFullWidth(true)
+        buttonSettingsScroll:AddChild(label)
+        return
+    end
+
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+
+    -- Only show settings when a single button is selected (not multi-select)
+    local multiCount = 0
+    for _ in pairs(selectedButtons) do
+        multiCount = multiCount + 1
+    end
+
+    if multiCount >= 2 or not selectedButton or not group.buttons[selectedButton] then
+        local label = AceGUI:Create("Label")
+        label:SetText("Select a spell or item to configure")
+        label:SetFullWidth(true)
+        buttonSettingsScroll:AddChild(label)
+        return
+    end
+
+    local buttonData = group.buttons[selectedButton]
+
+    if buttonData.type == "spell" then
+        BuildSpellSettings(buttonSettingsScroll, buttonData, buttonSettingsInfoButtons)
+    elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
+        BuildItemSettings(buttonSettingsScroll, buttonData, buttonSettingsInfoButtons)
+    elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
+        BuildEquipItemSettings(buttonSettingsScroll, buttonData, buttonSettingsInfoButtons)
+    end
+
+    -- Apply hideInfoButtons setting
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        for _, btn in ipairs(buttonSettingsInfoButtons) do
+            btn:Hide()
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -3312,7 +3357,7 @@ local function BuildExtrasTab(container)
         for _, btn in ipairs(tabInfoButtons) do
             if val then btn:Hide() else btn:Show() end
         end
-        for _, btn in ipairs(col2InfoButtons) do
+        for _, btn in ipairs(buttonSettingsInfoButtons) do
             if val then btn:Hide() else btn:Show() end
         end
     end)
@@ -3997,7 +4042,7 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("v1.1")
-    frame:SetWidth(900)
+    frame:SetWidth(1150)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
     frame:EnableResize(false)
@@ -4063,7 +4108,7 @@ local function CreateConfigPanel()
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(fullHeight)
-            content:SetWidth(900)
+            content:SetWidth(1150)
             contentFrame:Show()
             frame:SetStatusText("v1.1")
             if closeButton then closeButton:Show() end
@@ -4075,7 +4120,7 @@ local function CreateConfigPanel()
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(TITLE_BAR_HEIGHT)
-            content:SetWidth(900)
+            content:SetWidth(1150)
             frame:SetStatusText("")
             isMinimized = true
         end
@@ -4154,14 +4199,38 @@ local function CreateConfigPanel()
         GameTooltip:Hide()
     end)
 
+    -- Button Settings column (between Spells/Items and Group Settings)
+    local buttonSettingsCol = AceGUI:Create("InlineGroup")
+    buttonSettingsCol:SetTitle("Button Settings")
+    buttonSettingsCol:SetLayout("None")
+    buttonSettingsCol.frame:SetParent(colParent)
+    buttonSettingsCol.frame:Show()
+
+    -- Info button next to Button Settings title
+    local bsInfoBtn = CreateFrame("Button", nil, buttonSettingsCol.frame)
+    bsInfoBtn:SetSize(16, 16)
+    bsInfoBtn:SetPoint("LEFT", buttonSettingsCol.titletext, "RIGHT", -2, 0)
+    local bsInfoText = bsInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bsInfoText:SetPoint("CENTER")
+    bsInfoText:SetText("|cff66aaff(?)|r")
+    bsInfoBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Button Settings")
+        GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    bsInfoBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
     -- Column 3: Settings (AceGUI InlineGroup)
     local col3 = AceGUI:Create("InlineGroup")
-    col3:SetTitle("Settings")
+    col3:SetTitle("Group Settings")
     col3:SetLayout("None")
     col3.frame:SetParent(colParent)
     col3.frame:Show()
 
-    -- Info button next to Settings title
+    -- Info button next to Group Settings title
     local settingsInfoBtn = CreateFrame("Button", nil, col3.frame)
     settingsInfoBtn:SetSize(16, 16)
     settingsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
@@ -4170,7 +4239,7 @@ local function CreateConfigPanel()
     settingsInfoText:SetText("|cff66aaff(?)|r")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Settings")
+        GameTooltip:AddLine("Group Settings")
         GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
@@ -4182,7 +4251,8 @@ local function CreateConfigPanel()
     wipe(columnInfoButtons)
     columnInfoButtons[1] = groupInfoBtn
     columnInfoButtons[2] = infoBtn
-    columnInfoButtons[3] = settingsInfoBtn
+    columnInfoButtons[3] = bsInfoBtn
+    columnInfoButtons[4] = settingsInfoBtn
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(columnInfoButtons) do
             btn:Hide()
@@ -4214,6 +4284,15 @@ local function CreateConfigPanel()
     scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
     scroll2.frame:Show()
     col2Scroll = scroll2
+
+    local bsScroll = AceGUI:Create("ScrollFrame")
+    bsScroll:SetLayout("List")
+    bsScroll.frame:SetParent(buttonSettingsCol.content)
+    bsScroll.frame:ClearAllPoints()
+    bsScroll.frame:SetPoint("TOPLEFT", buttonSettingsCol.content, "TOPLEFT", 0, 0)
+    bsScroll.frame:SetPoint("BOTTOMRIGHT", buttonSettingsCol.content, "BOTTOMRIGHT", 0, 0)
+    bsScroll.frame:Show()
+    buttonSettingsScroll = bsScroll
 
     -- Accept spell/item drops anywhere on the column 2 scroll area
     scroll2.frame:EnableMouse(true)
@@ -4268,9 +4347,10 @@ local function CreateConfigPanel()
         local h = colParent:GetHeight()
         local pad = COLUMN_PADDING
 
-        local col1Width = math.floor(w * 0.22)
-        local col2Width = math.floor(w * 0.38)
-        local col3Width = w - col1Width - col2Width - (pad * 2)
+        local col1Width = math.floor(w * 0.15)
+        local col2Width = math.floor(w * 0.25)
+        local bsWidth   = math.floor(w * 0.28)
+        local col3Width  = w - col1Width - col2Width - bsWidth - (pad * 3)
 
         col1.frame:ClearAllPoints()
         col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
@@ -4280,8 +4360,12 @@ local function CreateConfigPanel()
         col2.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
         col2.frame:SetSize(col2Width, h)
 
+        buttonSettingsCol.frame:ClearAllPoints()
+        buttonSettingsCol.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
+        buttonSettingsCol.frame:SetSize(bsWidth, h)
+
         col3.frame:ClearAllPoints()
-        col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
+        col3.frame:SetPoint("TOPLEFT", buttonSettingsCol.frame, "TOPRIGHT", pad, 0)
         col3.frame:SetSize(col3Width, h)
     end
 
@@ -4298,6 +4382,7 @@ local function CreateConfigPanel()
     frame.profileBar = profileBar
     frame.col1 = col1
     frame.col2 = col2
+    frame.buttonSettingsCol = buttonSettingsCol
     frame.col3 = col3
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
@@ -4316,6 +4401,7 @@ function CooldownCompanion:RefreshConfigPanel()
     RefreshProfileBar(configFrame.profileBar)
     RefreshColumn1()
     RefreshColumn2()
+    RefreshButtonSettingsColumn()
     RefreshColumn3(col3Container)
 end
 
