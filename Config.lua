@@ -28,6 +28,7 @@ local col1Scroll = nil  -- AceGUI ScrollFrame
 local col1ButtonBar = nil -- Static bar at bottom of column 1
 local col2Scroll = nil  -- AceGUI ScrollFrame
 local col3Container = nil
+local col3Scroll = nil    -- Current AceGUI ScrollFrame in column 3
 
 -- AceGUI widget tracking for cleanup
 local col1BarWidgets = {}
@@ -2546,66 +2547,183 @@ local function BuildExtrasTab(container)
         end
     end
 
-    -- "Hide When..." heading
-    local hideHeading = AceGUI:Create("Heading")
-    hideHeading:SetText("Hide When...")
-    hideHeading:SetFullWidth(true)
-    container:AddChild(hideHeading)
+    -- "Alpha" heading with (?) info button
+    local alphaHeading = AceGUI:Create("Heading")
+    alphaHeading:SetText("Alpha")
+    alphaHeading:SetFullWidth(true)
+    container:AddChild(alphaHeading)
 
-    -- Hide While Mounted
-    local mountedCb = AceGUI:Create("CheckBox")
-    mountedCb:SetLabel("Mounted")
-    mountedCb:SetValue(group.hideWhileMounted or false)
-    mountedCb:SetFullWidth(true)
-    mountedCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.hideWhileMounted = val
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+    local alphaInfo = CreateFrame("Button", nil, alphaHeading.frame)
+    alphaInfo:SetSize(16, 16)
+    alphaInfo:SetPoint("LEFT", alphaHeading.label, "RIGHT", 4, 0)
+    alphaHeading.right:SetPoint("LEFT", alphaInfo, "RIGHT", 4, 0)
+    local alphaInfoText = alphaInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    alphaInfoText:SetPoint("CENTER")
+    alphaInfoText:SetText("|cff66aaff(?)|r")
+    alphaInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Alpha")
+        GameTooltip:AddLine("Controls the transparency of this group. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nSetting baseline alpha below 1 reveals visibility override options.\n\nThe first three options (In Combat, Out of Combat, Mounted) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true)
+        GameTooltip:Show()
     end)
-    container:AddChild(mountedCb)
+    alphaInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(tabInfoButtons, alphaInfo)
 
-    -- Forward-declare both so callbacks can cross-reference each other
-    local combatCb, noCombatCb
-
-    -- Hide In Combat (mutually exclusive with Out of Combat)
-    combatCb = AceGUI:Create("CheckBox")
-    combatCb:SetLabel("In Combat")
-    combatCb:SetValue(group.hideInCombat or false)
-    combatCb:SetFullWidth(true)
-    combatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.hideInCombat = val
-        if val and group.hideOutOfCombat then
-            group.hideOutOfCombat = false
-            noCombatCb:SetValue(false)
+    -- Baseline Alpha slider
+    local baseAlphaSlider = AceGUI:Create("Slider")
+    baseAlphaSlider:SetLabel("Baseline Alpha")
+    baseAlphaSlider:SetSliderValues(0, 1, 0.05)
+    baseAlphaSlider:SetValue(group.baselineAlpha or 1)
+    baseAlphaSlider:SetFullWidth(true)
+    baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        group.baselineAlpha = val
+        -- Apply alpha immediately for live preview
+        local frame = CooldownCompanion.groupFrames[selectedGroup]
+        if frame and frame:IsShown() then
+            frame:SetAlpha(val)
         end
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-    end)
-    container:AddChild(combatCb)
-
-    -- Hide Out of Combat (mutually exclusive with In Combat)
-    noCombatCb = AceGUI:Create("CheckBox")
-    noCombatCb:SetLabel("Out of Combat")
-    noCombatCb:SetValue(group.hideOutOfCombat or false)
-    noCombatCb:SetFullWidth(true)
-    noCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.hideOutOfCombat = val
-        if val and group.hideInCombat then
-            group.hideInCombat = false
-            combatCb:SetValue(false)
+        -- Sync alpha state in-place so the OnUpdate loop doesn't fight the slider
+        local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[selectedGroup]
+        if state then
+            state.currentAlpha = val
+            state.desiredAlpha = val
+            state.lastAlpha = val
+            state.fadeDuration = 0
         end
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end)
-    container:AddChild(noCombatCb)
+    baseAlphaSlider:SetCallback("OnMouseUp", function()
+        -- Rebuild UI when crossing the 1.0 boundary to show/hide conditional section
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(baseAlphaSlider)
 
-    -- Hide With No Target
-    local noTargetCb = AceGUI:Create("CheckBox")
-    noTargetCb:SetLabel("No Target Exists")
-    noTargetCb:SetValue(group.hideNoTarget or false)
-    noTargetCb:SetFullWidth(true)
-    noTargetCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.hideNoTarget = val
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-    end)
-    container:AddChild(noTargetCb)
+    -- Conditional section: visible when baselineAlpha < 1 OR any forceHide toggle is active
+    local showConditional = (group.baselineAlpha or 1) < 1
+        or group.forceHideInCombat or group.forceHideOutOfCombat
+        or group.forceHideMounted
+    if showConditional then
+        -- Helper: convert forceAlpha/forceHide pair to tristate value
+        -- true = Force Visible, nil = Force Hidden, false = Disabled
+        local function GetTriState(visibleKey, hiddenKey)
+            if group[hiddenKey] then return nil end
+            if group[visibleKey] then return true end
+            return false
+        end
+
+        -- Helper: build label with colored state suffix
+        local function TriStateLabel(base, value)
+            if value == true then
+                return base .. " - |cff00ff00Fully Visible|r"
+            elseif value == nil then
+                return base .. " - |cffff0000Fully Hidden|r"
+            end
+            return base
+        end
+
+        -- Helper: create a 3-way tristate checkbox (Disabled / Force Visible / Force Hidden)
+        local function CreateTriStateToggle(label, visibleKey, hiddenKey)
+            local val = GetTriState(visibleKey, hiddenKey)
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetTriState(true)
+            cb:SetLabel(TriStateLabel(label, val))
+            cb:SetValue(val)
+            cb:SetFullWidth(true)
+            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+                -- Cycle: false (disabled) → true (visible) → nil (hidden) → false
+                group[visibleKey] = (newVal == true)
+                group[hiddenKey] = (newVal == nil)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            return cb
+        end
+
+        -- Heading
+        local overridesHeading = AceGUI:Create("Heading")
+        overridesHeading:SetText("Visibility Overrides")
+        overridesHeading:SetFullWidth(true)
+        container:AddChild(overridesHeading)
+
+        -- 3-way tristate toggles (Disabled / Force Visible / Force Hidden)
+        container:AddChild(CreateTriStateToggle("In Combat", "forceAlphaInCombat", "forceHideInCombat"))
+        container:AddChild(CreateTriStateToggle("Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat"))
+        container:AddChild(CreateTriStateToggle("Mounted", "forceAlphaMounted", "forceHideMounted"))
+
+        -- Target Exists checkbox (force-visible only)
+        local targetVal = group.forceAlphaTargetExists or false
+        local targetCb = AceGUI:Create("CheckBox")
+        targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
+        targetCb:SetValue(targetVal)
+        targetCb:SetFullWidth(true)
+        targetCb:SetCallback("OnValueChanged", function(widget, event, val)
+            group.forceAlphaTargetExists = val
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(targetCb)
+
+        -- Mouseover checkbox (force-visible only, overrides all other conditions)
+        local mouseoverVal = group.forceAlphaMouseover or false
+        local mouseoverCb = AceGUI:Create("CheckBox")
+        mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
+        mouseoverCb:SetValue(mouseoverVal)
+        mouseoverCb:SetFullWidth(true)
+        mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
+            group.forceAlphaMouseover = val
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(mouseoverCb)
+
+        local mouseoverInfo = CreateFrame("Button", nil, mouseoverCb.frame)
+        mouseoverInfo:SetSize(16, 16)
+        mouseoverInfo:SetPoint("LEFT", mouseoverCb.text, "RIGHT", 4, 0)
+        local mouseoverInfoText = mouseoverInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        mouseoverInfoText:SetPoint("CENTER")
+        mouseoverInfoText:SetText("|cff66aaff(?)|r")
+        mouseoverInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Mouseover")
+            GameTooltip:AddLine("When enabled, mousing over the group forces it to full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        mouseoverInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(tabInfoButtons, mouseoverInfo)
+
+        -- Fade Delay slider
+        local fadeDelaySlider = AceGUI:Create("Slider")
+        fadeDelaySlider:SetLabel("Fade Delay (seconds)")
+        fadeDelaySlider:SetSliderValues(0, 5, 0.1)
+        fadeDelaySlider:SetValue(group.fadeDelay or 1)
+        fadeDelaySlider:SetFullWidth(true)
+        fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            group.fadeDelay = val
+        end)
+        container:AddChild(fadeDelaySlider)
+
+        -- Fade In Duration slider
+        local fadeInSlider = AceGUI:Create("Slider")
+        fadeInSlider:SetLabel("Fade In Duration (seconds)")
+        fadeInSlider:SetSliderValues(0, 5, 0.1)
+        fadeInSlider:SetValue(group.fadeInDuration or 0.2)
+        fadeInSlider:SetFullWidth(true)
+        fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            group.fadeInDuration = val
+        end)
+        container:AddChild(fadeInSlider)
+
+        -- Fade Out Duration slider
+        local fadeOutSlider = AceGUI:Create("Slider")
+        fadeOutSlider:SetLabel("Fade Out Duration (seconds)")
+        fadeOutSlider:SetSliderValues(0, 5, 0.1)
+        fadeOutSlider:SetValue(group.fadeOutDuration or 0.2)
+        fadeOutSlider:SetFullWidth(true)
+        fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            group.fadeOutDuration = val
+        end)
+        container:AddChild(fadeOutSlider)
+    end
 
     -- Apply "Hide CDC Tooltips" to tab info buttons created above
     if CooldownCompanion.db.profile.hideInfoButtons then
@@ -3158,6 +3276,7 @@ function RefreshColumn3(container)
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             widget:AddChild(scroll)
+            col3Scroll = scroll
 
             if tab == "appearance" then
                 BuildAppearanceTab(scroll)
@@ -3177,9 +3296,24 @@ function RefreshColumn3(container)
         container.tabGroup = tabGroup
     end
 
+    -- Save scroll position before re-selecting tab
+    local savedScroll = 0
+    if col3Scroll and col3Scroll.scrollframe then
+        savedScroll = col3Scroll.scrollframe:GetVerticalScroll()
+    end
+
     -- Show and refresh the tab content
     container.tabGroup.frame:Show()
     container.tabGroup:SelectTab(selectedTab)
+
+    -- Restore scroll position after layout settles
+    if savedScroll > 0 and col3Scroll and col3Scroll.scrollframe then
+        C_Timer.After(0, function()
+            if col3Scroll and col3Scroll.scrollframe then
+                col3Scroll.scrollframe:SetVerticalScroll(savedScroll)
+            end
+        end)
+    end
 end
 
 ------------------------------------------------------------------------

@@ -311,20 +311,20 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on enabled state, spec filter, character visibility, and conditions
+    -- Show/hide based on enabled state, spec filter, and character visibility
     local specAllowed = true
     if group.specs and next(group.specs) then
         specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
     end
     local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
-    local conditionHidden =
-        (group.hideWhileMounted and IsMounted()) or
-        (group.hideInCombat and UnitAffectingCombat("player")) or
-        (group.hideOutOfCombat and not UnitAffectingCombat("player")) or
-        (group.hideNoTarget and not UnitExists("target"))
 
-    if group.enabled and specAllowed and charVisible and not conditionHidden then
+    if group.enabled and specAllowed and charVisible then
         frame:Show()
+        -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
+        local alphaState = self.alphaState and self.alphaState[groupId]
+        if alphaState and alphaState.currentAlpha and group.baselineAlpha < 1 then
+            frame:SetAlpha(alphaState.currentAlpha)
+        end
     else
         frame:Hide()
     end
@@ -388,12 +388,22 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
     end
 
+    -- If this group has baseline alpha < 1, the alpha fade system takes priority
+    local group = self.db.profile.groups[frame.groupId]
+    if group and group.baselineAlpha < 1 then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+        return
+    end
+
     -- Sync alpha immediately
     frame:SetAlpha(parentFrame:GetEffectiveAlpha())
 
     -- Sync alpha every frame to match parent's fade animations
     frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
         if frame.anchoredToParent then
+            -- Skip sync if alpha system is active for this group
+            local grp = CooldownCompanion.db.profile.groups[frame.groupId]
+            if grp and grp.baselineAlpha < 1 then return end
             frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
         end
     end)
@@ -615,21 +625,21 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — hide if disabled, no buttons, wrong spec, wrong character, or conditions
+    -- Update visibility — hide if disabled, no buttons, wrong spec, or wrong character
     local specAllowed = true
     if group.specs and next(group.specs) then
         specAllowed = CooldownCompanion._currentSpecId
             and group.specs[CooldownCompanion._currentSpecId]
     end
     local charVisible = CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
-    local conditionHidden =
-        (group.hideWhileMounted and IsMounted()) or
-        (group.hideInCombat and UnitAffectingCombat("player")) or
-        (group.hideOutOfCombat and not UnitAffectingCombat("player")) or
-        (group.hideNoTarget and not UnitExists("target"))
 
-    if group.enabled and #group.buttons > 0 and specAllowed and charVisible and not conditionHidden then
+    if group.enabled and #group.buttons > 0 and specAllowed and charVisible then
         frame:Show()
+        -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
+        local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
+        if alphaState and alphaState.currentAlpha and group.baselineAlpha < 1 then
+            frame:SetAlpha(alphaState.currentAlpha)
+        end
     else
         frame:Hide()
     end

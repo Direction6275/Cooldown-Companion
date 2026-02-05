@@ -100,6 +100,20 @@ local defaults = {
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                     },
                     enabled = true,
+                    -- Alpha fade system
+                    baselineAlpha = 1,        -- alpha when no force conditions met (0-1)
+                    forceAlphaInCombat = false,
+                    forceAlphaOutOfCombat = false,
+                    forceAlphaMounted = false,
+                    forceAlphaTargetExists = false,
+                    forceAlphaMouseover = false,
+                    -- Force-hidden conditions (drive alpha to 0)
+                    forceHideInCombat = false,
+                    forceHideOutOfCombat = false,
+                    forceHideMounted = false,
+                    fadeDelay = 1,            -- seconds before fading after mouseover ends
+                    fadeInDuration = 0.2,     -- fade-in animation seconds
+                    fadeOutDuration = 0.2,    -- fade-out animation seconds
                 }
             ]]
         },
@@ -212,14 +226,20 @@ function CooldownCompanion:OnEnable()
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
 
-    -- Target change events — conditional visibility
-    self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
+    -- Target change events — alpha system handles this via OnUpdate polling
+    -- (kept for potential future use but no longer drives visibility)
 
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
     -- Migrate legacy groups to have ownership fields
     self:MigrateGroupOwnership()
+
+    -- Migrate old hide-when fields to alpha system
+    self:MigrateAlphaSystem()
+
+    -- Initialize alpha fade state (runtime only, not saved)
+    self.alphaState = {}
 
     -- Create all group frames
     self:CreateAllGroupFrames()
@@ -231,12 +251,12 @@ function CooldownCompanion:OnEnable()
         local ok, spellID = pcall(FetchAssistedSpell)
         self.assistedSpellID = ok and spellID or nil
 
-        -- Check for state changes and update group visibility
-        self:CheckConditionalVisibility()
-
         self:UpdateAllCooldowns()
         self._cooldownsDirty = false
     end)
+
+    -- Start the alpha fade OnUpdate frame (~30Hz for smooth fading)
+    self:InitAlphaUpdateFrame()
 end
 
 function CooldownCompanion:MarkCooldownsDirty()
@@ -248,6 +268,12 @@ function CooldownCompanion:OnDisable()
     if self.updateTicker then
         self.updateTicker:Cancel()
         self.updateTicker = nil
+    end
+
+    -- Stop the alpha fade frame
+    if self._alphaFrame then
+        self._alphaFrame:SetScript("OnUpdate", nil)
+        self._alphaFrame = nil
     end
 
     -- Disable all range check registrations
@@ -371,7 +397,6 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
-    self:CheckConditionalVisibility()
     self:UpdateAllCooldowns()
     -- Hide config panel during combat to avoid protected frame errors
     if self._configWasOpen == nil then
@@ -386,7 +411,6 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
-    self:CheckConditionalVisibility()
     self:UpdateAllCooldowns()
     -- Reopen config panel if it was open before combat
     if self._configWasOpen then
@@ -395,9 +419,6 @@ function CooldownCompanion:OnCombatEnd()
     end
 end
 
-function CooldownCompanion:OnTargetChanged()
-    self:CheckConditionalVisibility()
-end
 
 function CooldownCompanion:SlashCommand(input)
     if input == "lock" then
@@ -548,6 +569,12 @@ function CooldownCompanion:CreateGroup(name)
     self.db.profile.groups[groupId].style.orientation = "horizontal"
     self.db.profile.groups[groupId].style.buttonsPerRow = 12
     self.db.profile.groups[groupId].style.showCooldownText = true
+
+    -- Alpha fade defaults
+    self.db.profile.groups[groupId].baselineAlpha = 1
+    self.db.profile.groups[groupId].fadeDelay = 1
+    self.db.profile.groups[groupId].fadeInDuration = 0.2
+    self.db.profile.groups[groupId].fadeOutDuration = 0.2
     
     -- Create the frame for this group
     self:CreateGroupFrame(groupId)
@@ -695,6 +722,24 @@ function CooldownCompanion:MigrateGroupOwnership()
     end
 end
 
+function CooldownCompanion:MigrateAlphaSystem()
+    for groupId, group in pairs(self.db.profile.groups) do
+        -- Remove old hide fields
+        group.hideWhileMounted = nil
+        group.hideInCombat = nil
+        group.hideOutOfCombat = nil
+        group.hideNoTarget = nil
+        -- Remove deprecated force-hide fields (replaced by force-visible-only checkboxes)
+        group.forceHideTargetExists = nil
+        group.forceHideMouseover = nil
+        -- Ensure new defaults exist
+        if group.baselineAlpha == nil then group.baselineAlpha = 1 end
+        if group.fadeDelay == nil then group.fadeDelay = 1 end
+        if group.fadeInDuration == nil then group.fadeInDuration = 0.2 end
+        if group.fadeOutDuration == nil then group.fadeOutDuration = 0.2 end
+    end
+end
+
 function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
@@ -702,44 +747,161 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     return group.createdBy == self.db.keys.char
 end
 
-function CooldownCompanion:CheckConditionalVisibility()
-    local mounted = IsMounted()
-    local inCombat = UnitAffectingCombat("player")
-    local hasTarget = UnitExists("target")
+-- Alpha fade system: per-group runtime state
+-- self.alphaState[groupId] = {
+--     currentAlpha   - current interpolated alpha
+--     desiredAlpha   - target alpha (1.0 or baselineAlpha)
+--     fadeStartAlpha - alpha at start of current fade
+--     fadeDuration   - duration of current fade
+--     fadeStartTime  - GetTime() when current fade began
+--     hoverExpire    - GetTime() when mouseover grace period ends
+-- }
 
-    -- Early out if nothing changed
-    if mounted == self._wasMounted
-       and inCombat == self._wasInCombat
-       and hasTarget == self._hadTarget then
-        return
+local function UpdateFadedAlpha(state, desired, now, fadeInDur, fadeOutDur)
+    -- Initialize on first call
+    if state.currentAlpha == nil then
+        state.currentAlpha = 1.0
+        state.desiredAlpha = 1.0
+        state.fadeDuration = 0
     end
-    self._wasMounted = mounted
-    self._wasInCombat = inCombat
-    self._hadTarget = hasTarget
 
-    for groupId, group in pairs(self.db.profile.groups) do
-        if self.groupFrames[groupId] then
-            local conditionHidden =
-                (group.hideWhileMounted and mounted) or
-                (group.hideInCombat and inCombat) or
-                (group.hideOutOfCombat and not inCombat) or
-                (group.hideNoTarget and not hasTarget)
+    -- Start a new fade when desired target changes
+    if state.desiredAlpha ~= desired then
+        state.fadeStartAlpha = state.currentAlpha
+        state.desiredAlpha = desired
+        state.fadeStartTime = now
 
-            if conditionHidden then
-                self.groupFrames[groupId]:Hide()
-            else
-                -- Re-evaluate full visibility before showing
-                local specAllowed = true
-                if group.specs and next(group.specs) then
-                    specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
-                end
-                local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
-                if group.enabled and #group.buttons > 0 and specAllowed and charVisible then
-                    self.groupFrames[groupId]:Show()
-                end
-            end
+        local dur = 0
+        if desired > state.currentAlpha then
+            dur = fadeInDur or 0
+        else
+            dur = fadeOutDur or 0
+        end
+        state.fadeDuration = dur or 0
+
+        -- Instant snap when duration is zero
+        if state.fadeDuration <= 0 then
+            state.currentAlpha = desired
+            return desired
         end
     end
+
+    -- Actively fading
+    if state.fadeDuration and state.fadeDuration > 0 then
+        local t = (now - (state.fadeStartTime or now)) / state.fadeDuration
+        if t >= 1 then
+            state.currentAlpha = state.desiredAlpha
+            state.fadeDuration = 0
+        elseif t < 0 then
+            t = 0
+        end
+
+        if state.fadeDuration > 0 then
+            local startAlpha = state.fadeStartAlpha or state.currentAlpha
+            state.currentAlpha = startAlpha + (state.desiredAlpha - startAlpha) * t
+        end
+    else
+        state.currentAlpha = desired
+    end
+
+    return state.currentAlpha
+end
+
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted)
+    local state = self.alphaState[groupId]
+    if not state then
+        state = {}
+        self.alphaState[groupId] = state
+    end
+
+    -- Skip processing when feature is entirely unused (baseline=1, no forceHide toggles)
+    local hasForceHide = group.forceHideInCombat or group.forceHideOutOfCombat
+        or group.forceHideMounted
+    if group.baselineAlpha == 1 and not hasForceHide then
+        -- Reset state so it doesn't carry stale values if settings change later
+        if state.currentAlpha and state.currentAlpha ~= 1 then
+            frame:SetAlpha(1)
+            state.currentAlpha = 1
+            state.desiredAlpha = 1
+            state.fadeDuration = 0
+        end
+        return
+    end
+
+    -- Check force-hidden conditions
+    local forceHidden = false
+    if group.forceHideInCombat and inCombat then
+        forceHidden = true
+    elseif group.forceHideOutOfCombat and not inCombat then
+        forceHidden = true
+    elseif group.forceHideMounted and mounted then
+        forceHidden = true
+    end
+
+    -- Check force-visible conditions (priority: visible > hidden > baseline)
+    local forceFull = false
+    if group.forceAlphaInCombat and inCombat then
+        forceFull = true
+    elseif group.forceAlphaOutOfCombat and not inCombat then
+        forceFull = true
+    elseif group.forceAlphaMounted and mounted then
+        forceFull = true
+    elseif group.forceAlphaTargetExists and hasTarget then
+        forceFull = true
+    end
+
+    -- Mouseover check (geometric, works even when click-through)
+    if not forceFull and group.forceAlphaMouseover then
+        local isHovering = frame:IsMouseOver()
+        if isHovering then
+            forceFull = true
+            state.hoverExpire = now + (group.fadeDelay or 1)
+        elseif state.hoverExpire and now < state.hoverExpire then
+            forceFull = true
+        end
+    end
+
+    local desired = forceFull and 1 or (forceHidden and 0 or group.baselineAlpha)
+    local alpha = UpdateFadedAlpha(state, desired, now, group.fadeInDuration, group.fadeOutDuration)
+
+    -- Only call SetAlpha when value actually changes
+    if state.lastAlpha ~= alpha then
+        frame:SetAlpha(alpha)
+        state.lastAlpha = alpha
+    end
+end
+
+function CooldownCompanion:InitAlphaUpdateFrame()
+    if self._alphaFrame then return end
+
+    local alphaFrame = CreateFrame("Frame")
+    self._alphaFrame = alphaFrame
+    local accumulator = 0
+    local UPDATE_INTERVAL = 1 / 30 -- ~30Hz for smooth fading
+
+    local function GroupNeedsAlphaUpdate(group)
+        if group.baselineAlpha < 1 then return true end
+        return group.forceHideInCombat or group.forceHideOutOfCombat
+            or group.forceHideMounted
+    end
+
+    alphaFrame:SetScript("OnUpdate", function(_, dt)
+        accumulator = accumulator + (dt or 0)
+        if accumulator < UPDATE_INTERVAL then return end
+        accumulator = 0
+
+        local now = GetTime()
+        local inCombat = InCombatLockdown()
+        local hasTarget = UnitExists("target")
+        local mounted = IsMounted()
+
+        for groupId, group in pairs(self.db.profile.groups) do
+            local frame = self.groupFrames[groupId]
+            if frame and frame:IsShown() and GroupNeedsAlphaUpdate(group) then
+                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted)
+            end
+        end
+    end)
 end
 
 function CooldownCompanion:ToggleGroupGlobal(groupId)
