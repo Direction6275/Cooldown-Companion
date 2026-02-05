@@ -866,6 +866,34 @@ function CooldownCompanion:DeleteGroup(groupId)
     self.db.profile.groups[groupId] = nil
 end
 
+function CooldownCompanion:DuplicateGroup(groupId)
+    local sourceGroup = self.db.profile.groups[groupId]
+    if not sourceGroup then return nil end
+
+    local newGroupId = self.db.profile.nextGroupId
+    self.db.profile.nextGroupId = newGroupId + 1
+
+    -- Deep copy the entire group
+    local newGroup = CopyTable(sourceGroup)
+
+    -- Change the name
+    newGroup.name = sourceGroup.name .. " (Copy)"
+
+    -- Assign new order (place after source group)
+    newGroup.order = newGroupId
+
+    -- Set ownership to current character
+    newGroup.createdBy = self.db.keys.char
+    newGroup.isGlobal = false
+
+    self.db.profile.groups[newGroupId] = newGroup
+
+    -- Create the frame for the new group
+    self:CreateGroupFrame(newGroupId)
+
+    return newGroupId
+end
+
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
     local group = self.db.profile.groups[groupId]
     if not group then return end

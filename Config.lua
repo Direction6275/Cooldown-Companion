@@ -1329,29 +1329,43 @@ function RefreshColumn1()
         if #indicators > 0 then
             label = label .. " " .. table.concat(indicators, " ")
         end
-        if selectedGroup == groupId then
-            btn:SetText("|cff00ff00" .. label .. "|r")
-        else
-            btn:SetText(label)
-        end
-
+        btn:SetText(label)
         btn:SetFullWidth(true)
+
         -- Auto-height: enable word wrap and resize if text is too long
         local btnText = btn.frame:GetFontString()
         if btnText and col1Scroll then
             btnText:SetWordWrap(true)
             btnText:SetNonSpaceWrap(true)
             -- Pre-calculate height based on scroll container width
-            local scrollWidth = col1Scroll.content:GetWidth()
-            if scrollWidth and scrollWidth > 20 then
-                local padding = 20  -- button internal padding
-                btnText:SetWidth(scrollWidth - padding)
-                local textHeight = btnText:GetStringHeight()
-                local minHeight = 24
-                if textHeight and textHeight > minHeight then
-                    btn:SetHeight(textHeight + 8)
+            local function AdjustButtonHeight()
+                local scrollWidth = col1Scroll.content:GetWidth()
+                if scrollWidth and scrollWidth > 20 then
+                    local padding = 20  -- button internal padding
+                    btnText:SetWidth(scrollWidth - padding)
+                    local textHeight = btnText:GetStringHeight()
+                    local minHeight = 24
+                    if textHeight and textHeight > minHeight then
+                        btn:SetHeight(textHeight + 8)
+                    end
+                    return true
                 end
+                return false
             end
+            -- Try immediately, fall back to deferred if width not ready
+            if not AdjustButtonHeight() then
+                C_Timer.After(0, function()
+                    if btn.frame and col1Scroll then
+                        AdjustButtonHeight()
+                        col1Scroll:DoLayout()
+                    end
+                end)
+            end
+        end
+
+        -- Apply green color for selected group (after height measurement)
+        if selectedGroup == groupId then
+            btn:SetText("|cff00ff00" .. label .. "|r")
         end
         btn.frame:RegisterForClicks("AnyUp")
         btn:SetCallback("OnClick", function(widget, event, mouseButton)
@@ -1422,6 +1436,20 @@ function RefreshColumn1()
                         group.enabled = not (group.enabled ~= false)
                         CooldownCompanion:RefreshGroupFrame(groupId)
                         CooldownCompanion:RefreshConfigPanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Duplicate
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Duplicate"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local newGroupId = CooldownCompanion:DuplicateGroup(groupId)
+                        if newGroupId then
+                            selectedGroup = newGroupId
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end, "MENU")
