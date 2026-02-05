@@ -1336,6 +1336,23 @@ function RefreshColumn1()
         end
 
         btn:SetFullWidth(true)
+        -- Auto-height: enable word wrap and resize if text is too long
+        local btnText = btn.frame:GetFontString()
+        if btnText and col1Scroll then
+            btnText:SetWordWrap(true)
+            btnText:SetNonSpaceWrap(true)
+            -- Pre-calculate height based on scroll container width
+            local scrollWidth = col1Scroll.content:GetWidth()
+            if scrollWidth and scrollWidth > 20 then
+                local padding = 20  -- button internal padding
+                btnText:SetWidth(scrollWidth - padding)
+                local textHeight = btnText:GetStringHeight()
+                local minHeight = 24
+                if textHeight and textHeight > minHeight then
+                    btn:SetHeight(textHeight + 8)
+                end
+            end
+        end
         btn.frame:RegisterForClicks("AnyUp")
         btn:SetCallback("OnClick", function(widget, event, mouseButton)
             -- Suppress click if a drag just finished
