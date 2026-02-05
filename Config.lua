@@ -2172,6 +2172,93 @@ function RefreshColumn2()
             col2Scroll:AddChild(procSizeSlider)
         end
 
+        -- Aura Tracking section
+        local auraHeading = AceGUI:Create("Heading")
+        auraHeading:SetText("Aura Tracking")
+        auraHeading:SetFullWidth(true)
+        col2Scroll:AddChild(auraHeading)
+
+        local auraCb = AceGUI:Create("CheckBox")
+        auraCb:SetLabel("Track Buff Duration")
+        auraCb:SetValue(buttonData.auraTracking == true)
+        auraCb:SetFullWidth(true)
+        auraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraTracking = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        col2Scroll:AddChild(auraCb)
+
+        -- (?) tooltip for aura tracking
+        local auraInfo = CreateFrame("Button", nil, auraCb.frame)
+        auraInfo:SetSize(16, 16)
+        auraInfo:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
+        local auraInfoText = auraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        auraInfoText:SetPoint("CENTER")
+        auraInfoText:SetText("|cff66aaff(?)|r")
+        auraInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Aura Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura associated with this spell instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        auraInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(col2InfoButtons, auraInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            auraInfo:Hide()
+        end
+
+        if buttonData.auraTracking then
+            -- Show auto-detected aura info
+            local autoAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+            local autoLabel = AceGUI:Create("Label")
+            if autoAuraId and autoAuraId ~= 0 then
+                local auraInfo = C_Spell.GetSpellInfo(autoAuraId)
+                local auraName = auraInfo and auraInfo.name or ("Spell " .. autoAuraId)
+                autoLabel:SetText("|cff88ff88Auto-detected aura:|r " .. auraName .. " (ID: " .. autoAuraId .. ")")
+            else
+                autoLabel:SetText("|cffff8888No auto-detected aura.|r Use the override field below.")
+            end
+            autoLabel:SetFullWidth(true)
+            col2Scroll:AddChild(autoLabel)
+
+            -- Manual override edit box
+            local auraEditBox = AceGUI:Create("EditBox")
+            auraEditBox:SetLabel("Aura Spell ID Override")
+            auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+            auraEditBox:SetFullWidth(true)
+            auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                local id = tonumber(text)
+                buttonData.auraSpellID = id
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            col2Scroll:AddChild(auraEditBox)
+
+            -- (?) tooltip for override
+            local overrideInfo = CreateFrame("Button", nil, auraEditBox.frame)
+            overrideInfo:SetSize(16, 16)
+            overrideInfo:SetPoint("LEFT", auraEditBox.editbox, "RIGHT", 4, 0)
+            local overrideInfoText = overrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            overrideInfoText:SetPoint("CENTER")
+            overrideInfoText:SetText("|cff66aaff(?)|r")
+            overrideInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Aura Spell ID Override")
+                GameTooltip:AddLine("Enter a spell ID to track a specific aura instead of the auto-detected one. Leave blank to use auto-detection. You can find spell IDs on Wowhead.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            overrideInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(col2InfoButtons, overrideInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                overrideInfo:Hide()
+            end
+        end
+
     elseif selectedButton and group.buttons[selectedButton]
        and group.buttons[selectedButton].type == "item"
        and not CooldownCompanion.IsItemEquippable(group.buttons[selectedButton]) then
@@ -2274,6 +2361,168 @@ function RefreshColumn2()
             CooldownCompanion:RefreshGroupFrame(selectedGroup)
         end)
         col2Scroll:AddChild(itemYSlider)
+
+        -- Aura Tracking section (items — manual override only)
+        local itemAuraHeading = AceGUI:Create("Heading")
+        itemAuraHeading:SetText("Aura Tracking")
+        itemAuraHeading:SetFullWidth(true)
+        col2Scroll:AddChild(itemAuraHeading)
+
+        local itemAuraCb = AceGUI:Create("CheckBox")
+        itemAuraCb:SetLabel("Track Buff Duration")
+        itemAuraCb:SetValue(buttonData.auraTracking == true)
+        itemAuraCb:SetFullWidth(true)
+        itemAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraTracking = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        col2Scroll:AddChild(itemAuraCb)
+
+        -- (?) tooltip for aura tracking (items)
+        local itemAuraInfo = CreateFrame("Button", nil, itemAuraCb.frame)
+        itemAuraInfo:SetSize(16, 16)
+        itemAuraInfo:SetPoint("LEFT", itemAuraCb.checkbg, "RIGHT", itemAuraCb.text:GetStringWidth() + 4, 0)
+        local itemAuraInfoText = itemAuraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        itemAuraInfoText:SetPoint("CENTER")
+        itemAuraInfoText:SetText("|cff66aaff(?)|r")
+        itemAuraInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Aura Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        itemAuraInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(col2InfoButtons, itemAuraInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            itemAuraInfo:Hide()
+        end
+
+        if buttonData.auraTracking then
+            local itemAutoLabel = AceGUI:Create("Label")
+            itemAutoLabel:SetText("|cffaaaaaaAuto-detection not available for items.|r Use the override field below.")
+            itemAutoLabel:SetFullWidth(true)
+            col2Scroll:AddChild(itemAutoLabel)
+
+            local itemAuraEditBox = AceGUI:Create("EditBox")
+            itemAuraEditBox:SetLabel("Aura Spell ID Override")
+            itemAuraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+            itemAuraEditBox:SetFullWidth(true)
+            itemAuraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                local id = tonumber(text)
+                buttonData.auraSpellID = id
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            col2Scroll:AddChild(itemAuraEditBox)
+
+            -- (?) tooltip for item override
+            local itemOverrideInfo = CreateFrame("Button", nil, itemAuraEditBox.frame)
+            itemOverrideInfo:SetSize(16, 16)
+            itemOverrideInfo:SetPoint("LEFT", itemAuraEditBox.editbox, "RIGHT", 4, 0)
+            local itemOverrideInfoText = itemOverrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            itemOverrideInfoText:SetPoint("CENTER")
+            itemOverrideInfoText:SetText("|cff66aaff(?)|r")
+            itemOverrideInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Aura Spell ID Override")
+                GameTooltip:AddLine("Enter the spell ID of the buff/aura this item applies. You can find spell IDs on Wowhead.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            itemOverrideInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(col2InfoButtons, itemOverrideInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                itemOverrideInfo:Hide()
+            end
+        end
+
+    elseif selectedButton and group.buttons[selectedButton]
+       and group.buttons[selectedButton].type == "item"
+       and CooldownCompanion.IsItemEquippable(group.buttons[selectedButton]) then
+        -- Per-item settings panel (equippable items — trinkets, etc.)
+        local buttonData = group.buttons[selectedButton]
+
+        -- Aura Tracking section (equippable items — manual override only)
+        local eqAuraHeading = AceGUI:Create("Heading")
+        eqAuraHeading:SetText("Aura Tracking")
+        eqAuraHeading:SetFullWidth(true)
+        col2Scroll:AddChild(eqAuraHeading)
+
+        local eqAuraCb = AceGUI:Create("CheckBox")
+        eqAuraCb:SetLabel("Track Buff Duration")
+        eqAuraCb:SetValue(buttonData.auraTracking == true)
+        eqAuraCb:SetFullWidth(true)
+        eqAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraTracking = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        col2Scroll:AddChild(eqAuraCb)
+
+        -- (?) tooltip for aura tracking (equippable items)
+        local eqAuraInfo = CreateFrame("Button", nil, eqAuraCb.frame)
+        eqAuraInfo:SetSize(16, 16)
+        eqAuraInfo:SetPoint("LEFT", eqAuraCb.checkbg, "RIGHT", eqAuraCb.text:GetStringWidth() + 4, 0)
+        local eqAuraInfoText = eqAuraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        eqAuraInfoText:SetPoint("CENTER")
+        eqAuraInfoText:SetText("|cff66aaff(?)|r")
+        eqAuraInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Aura Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        eqAuraInfo:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        table.insert(col2InfoButtons, eqAuraInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            eqAuraInfo:Hide()
+        end
+
+        if buttonData.auraTracking then
+            local eqAutoLabel = AceGUI:Create("Label")
+            eqAutoLabel:SetText("|cffaaaaaaAuto-detection not available for items.|r Use the override field below.")
+            eqAutoLabel:SetFullWidth(true)
+            col2Scroll:AddChild(eqAutoLabel)
+
+            local eqAuraEditBox = AceGUI:Create("EditBox")
+            eqAuraEditBox:SetLabel("Aura Spell ID Override")
+            eqAuraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+            eqAuraEditBox:SetFullWidth(true)
+            eqAuraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                local id = tonumber(text)
+                buttonData.auraSpellID = id
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            col2Scroll:AddChild(eqAuraEditBox)
+
+            -- (?) tooltip for equippable item override
+            local eqOverrideInfo = CreateFrame("Button", nil, eqAuraEditBox.frame)
+            eqOverrideInfo:SetSize(16, 16)
+            eqOverrideInfo:SetPoint("LEFT", eqAuraEditBox.editbox, "RIGHT", 4, 0)
+            local eqOverrideInfoText = eqOverrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            eqOverrideInfoText:SetPoint("CENTER")
+            eqOverrideInfoText:SetText("|cff66aaff(?)|r")
+            eqOverrideInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Aura Spell ID Override")
+                GameTooltip:AddLine("Enter the spell ID of the buff/aura this item applies. You can find spell IDs on Wowhead.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            eqOverrideInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(col2InfoButtons, eqOverrideInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                eqOverrideInfo:Hide()
+            end
+        end
 
     end
 

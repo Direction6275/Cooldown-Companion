@@ -528,6 +528,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.buttonData = buttonData
     button.index = index
     button.style = style
+
+    -- Aura tracking runtime state
+    button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    button._auraActive = false
+    button._auraInstanceID = nil
+    button._auraPendingSince = nil
     
     -- Set icon
     self:UpdateButtonIcon(button)
@@ -618,26 +624,54 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
-    if buttonData.type == "spell" then
-        local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
-        if spellCooldownDuration then
-            button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+
+    -- Aura tracking: check for active buff and override cooldown swipe
+    local auraOverrideActive = false
+    if buttonData.auraTracking and button._auraSpellID then
+        local auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
+        if auraData then
+            local currentTime = GetTime()
+            local timeUntilExpire = auraData.expirationTime - currentTime
+            local howMuchTimeHasPassed = auraData.duration - timeUntilExpire
+            button.cooldown:SetCooldown(currentTime - howMuchTimeHasPassed, auraData.duration, auraData.timeMod)
+            button._auraInstanceID = auraData.auraInstanceID
+            auraOverrideActive = true
             fetchOk = true
+        elseif button._auraInstanceID then
+            local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "player", button._auraInstanceID)
+            if ok and durationObj then
+                button.cooldown:SetCooldownFromDurationObject(durationObj)
+                auraOverrideActive = true
+                fetchOk = true
+            else
+                button._auraInstanceID = nil
+            end
         end
-        pcall(function()
-            local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
-            if cooldownInfo then
-                isOnGCD = cooldownInfo.isOnGCD
-                if not fetchOk then
-                    button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                end
+        button._auraActive = auraOverrideActive
+    end
+
+    if not auraOverrideActive then
+        if buttonData.type == "spell" then
+            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            if spellCooldownDuration then
+                button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
                 fetchOk = true
             end
-        end)
-    elseif buttonData.type == "item" then
-        local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-        button.cooldown:SetCooldown(cdStart, cdDuration)
-        fetchOk = true
+            pcall(function()
+                local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
+                if cooldownInfo then
+                    isOnGCD = cooldownInfo.isOnGCD
+                    if not fetchOk then
+                        button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                    end
+                    fetchOk = true
+                end
+            end)
+        elseif buttonData.type == "item" then
+            local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+            button.cooldown:SetCooldown(cdStart, cdDuration)
+            fetchOk = true
+        end
     end
 
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
@@ -787,15 +821,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        -- Show recharge radial via Duration Object (not secret-restricted).
-        -- Falls back to legacy charge timing when Duration Object unavailable.
-        local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
-        if chargeDuration then
-            button.cooldown:SetCooldownFromDurationObject(chargeDuration)
-        elseif charges then
-            pcall(function()
-                button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
-            end)
+        -- Show recharge radial — skip when aura override is active
+        if not auraOverrideActive then
+            local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
+            if chargeDuration then
+                button.cooldown:SetCooldownFromDurationObject(chargeDuration)
+            elseif charges then
+                pcall(function()
+                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                end)
+            end
         end
     end
 
@@ -885,6 +920,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._displaySpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
+    button._auraActive = nil
+    button._auraInstanceID = nil
+    button._auraPendingSince = nil
+    button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
 
     button:SetSize(width, height)
 
