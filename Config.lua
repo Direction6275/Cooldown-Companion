@@ -1746,6 +1746,13 @@ function RefreshColumn2()
             end
         end
     end)
+    -- Right-click to toggle spellbook
+    addBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    addBtn.frame:HookScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            PlayerSpellsUtil.ToggleSpellBookFrame()
+        end
+    end)
     col2Scroll:AddChild(addBtn)
 
     -- Separator
@@ -4541,6 +4548,8 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Drag a spell or item from your spellbook or inventory into this column to add it.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Right-click the Add button to toggle the spellbook.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     infoBtn:SetScript("OnLeave", function()
