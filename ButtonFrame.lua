@@ -18,6 +18,7 @@ local UpdateBarDisplay
 local SetBarAuraEffect
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local UpdateBarFill
+local EnsureChargeBars
 
 -- Anchor charge/item count text on bar buttons: relative to icon when visible, relative to bar otherwise.
 local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
@@ -815,11 +816,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Bar mode: update bar display and skip icon-only sections
+    -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate)
     if button._isBar then
-        -- GCD suppression for bars: flag checked by UpdateBarFill OnUpdate
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
-        UpdateBarDisplay(button, fetchOk)
     end
 
     if not button._isBar then
@@ -1011,6 +1010,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             cc = buttonData.chargeFontColor or {1, 1, 1, 1}
         end
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+    end
+
+    -- Bar mode: update bar display after charges are resolved
+    if button._isBar then
+        UpdateBarDisplay(button, fetchOk)
     end
 
     if not button._isBar then
@@ -1393,8 +1397,122 @@ FormatBarTime = function(seconds)
     return ""
 end
 
+-- Create/recreate charge sub-bar StatusBars for multi-charge spells.
+-- Sub-bars are positioned within the statusBar region of the button.
+EnsureChargeBars = function(button, numBars)
+    if button._chargeBarCount == numBars then return end
+
+    -- Destroy old sub-bars
+    if button.chargeBars then
+        for _, bar in ipairs(button.chargeBars) do
+            bar:Hide()
+            bar:SetParent(nil)
+        end
+    end
+
+    if numBars <= 1 then
+        button.chargeBars = nil
+        button._chargeBarCount = 0
+        return
+    end
+
+    button.chargeBars = {}
+    local sb = button.statusBar
+    local sbLevel = sb:GetFrameLevel()
+    local gap = 1
+
+    for i = 1, numBars do
+        local bar = CreateFrame("StatusBar", nil, button)
+        bar:SetMinMaxValues(0, 1)
+        bar:SetValue(0)
+        bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        bar:SetFrameLevel(sbLevel - 1)
+        bar:EnableMouse(false)
+        button.chargeBars[i] = bar
+    end
+
+    button._chargeBarCount = numBars
+    button._chargeBarsDirty = true
+end
+
+-- Position charge sub-bars within the statusBar region.
+-- Called when sub-bars are created or when button size changes.
+local function LayoutChargeBars(button)
+    if not button.chargeBars then return end
+    local sb = button.statusBar
+    local totalWidth = sb:GetWidth()
+    local totalHeight = sb:GetHeight()
+    local numBars = #button.chargeBars
+    local gap = button.style.barChargeGap or 1
+    local barWidth = (totalWidth - (numBars - 1) * gap) / numBars
+    if barWidth < 1 then barWidth = 1 end
+
+    for i, bar in ipairs(button.chargeBars) do
+        bar:ClearAllPoints()
+        bar:SetSize(barWidth, totalHeight)
+        local xOffset = (i - 1) * (barWidth + gap)
+        bar:SetPoint("TOPLEFT", sb, "TOPLEFT", xOffset, 0)
+    end
+    button._chargeBarsDirty = false
+end
+
 -- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
 UpdateBarFill = function(button)
+    -- Charge sub-bar path: drive individual sub-bars from _chargeCount/_chargeCDStart/_chargeCDDuration
+    if button.chargeBars and button._chargeBarCount > 0 and not button._auraActive then
+        if button._chargeBarsDirty then
+            LayoutChargeBars(button)
+        end
+        local chargeCount = button._chargeCount or 0
+        local chargeMax = button._chargeMax or button._chargeBarCount
+        local cdStart = button._chargeCDStart
+        local cdDur = button._chargeCDDuration
+        local now = GetTime()
+
+        -- Compute recharge fraction for the recharging charge
+        local rechargeFraction = 0
+        local remaining = 0
+        if cdStart and cdDur and cdDur > 0 and chargeCount < chargeMax then
+            local elapsed = now - cdStart
+            rechargeFraction = elapsed / cdDur
+            if rechargeFraction > 1 then rechargeFraction = 1 end
+            if rechargeFraction < 0 then rechargeFraction = 0 end
+            remaining = cdDur - elapsed
+            if remaining < 0 then remaining = 0 end
+        end
+
+        for i, bar in ipairs(button.chargeBars) do
+            if i <= chargeCount then
+                bar:SetValue(1) -- available
+            elseif i == chargeCount + 1 then
+                bar:SetValue(rechargeFraction) -- recharging
+            else
+                bar:SetValue(0) -- spent
+            end
+        end
+
+        -- Time text: show recharge remaining
+        if button.style.showCooldownText then
+            if remaining > 0 then
+                button.timeText:SetText(FormatBarTime(remaining))
+            elseif chargeCount >= chargeMax then
+                if button.style.showBarReadyText then
+                    button.timeText:SetText(button.style.barReadyText or "Ready")
+                else
+                    button.timeText:SetText("")
+                end
+            else
+                button.timeText:SetText("")
+            end
+        elseif chargeCount >= chargeMax and button.style.showBarReadyText then
+            button.timeText:SetText(button.style.barReadyText or "Ready")
+        else
+            button.timeText:SetText("")
+        end
+        return -- skip single-bar path
+    end
+
+    -- Single-bar path
     local startMs, durationMs = button.cooldown:GetCooldownTimes()
     local now = GetTime() * 1000
 
@@ -1439,9 +1557,23 @@ UpdateBarDisplay = function(button, fetchOk)
     local style = button.style
     local _, durationMs = button.cooldown:GetCooldownTimes()
 
-    local onCooldown = durationMs and durationMs > 0
-    if onCooldown and button._barGCDSuppressed then
-        onCooldown = false
+    -- Lazy create/destroy charge sub-bars
+    local hasChargeBars = button._chargeMax and button._chargeMax > 1 and not button._auraActive
+    local wantCount = hasChargeBars and button._chargeMax or 0
+    if wantCount ~= (button._chargeBarCount or 0) then
+        EnsureChargeBars(button, wantCount)
+    end
+
+    local onCooldown
+    if button.chargeBars and button._chargeBarCount > 0 then
+        -- For charge sub-bars, "on cooldown" means any charge is missing
+        onCooldown = button._chargeCount and button._chargeMax
+            and button._chargeCount < button._chargeMax
+    else
+        onCooldown = durationMs and durationMs > 0
+        if onCooldown and button._barGCDSuppressed then
+            onCooldown = false
+        end
     end
 
     -- Time text color: switch between cooldown and ready colors
@@ -1457,19 +1589,49 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Bar color: switch between ready and cooldown colors
-    local wantCdColor = onCooldown and style.barCooldownColor
-    if button._barCdColor ~= wantCdColor then
-        button._barCdColor = wantCdColor
-        local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
-        button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+    -- Charge sub-bar colors and statusBar transparency
+    if button.chargeBars and button._chargeBarCount > 0 then
+        local readyColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
+        local cdColor = style.barCooldownColor or readyColor
+        local chargeCount = button._chargeCount or 0
+        for i, bar in ipairs(button.chargeBars) do
+            if i <= chargeCount then
+                bar:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
+            else
+                bar:SetStatusBarColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+            end
+            bar:Show()
+        end
+        -- Make main statusBar transparent so sub-bars show through; text stays visible
+        button.statusBar:SetStatusBarColor(0, 0, 0, 0)
+        button._barCdColor = "charge-sub-bars"
+    else
+        -- Hide charge sub-bars if they exist (aura override case)
+        if button.chargeBars then
+            for _, bar in ipairs(button.chargeBars) do
+                bar:Hide()
+            end
+        end
+
+        -- Bar color: switch between ready and cooldown colors
+        local wantCdColor = onCooldown and style.barCooldownColor or nil
+        if button._barCdColor ~= wantCdColor then
+            button._barCdColor = wantCdColor
+            local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        end
     end
 
     -- Icon desaturation
     if style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk then
-            wantDesat = durationMs and durationMs > 0
+            if button.chargeBars and button._chargeBarCount > 0 then
+                wantDesat = button._chargeCount and button._chargeMax
+                    and button._chargeCount < button._chargeMax
+            else
+                wantDesat = durationMs and durationMs > 0
+            end
         end
         if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
             wantDesat = false
@@ -1492,8 +1654,14 @@ UpdateBarDisplay = function(button, fetchOk)
         if not wantAuraColor then
             -- Reset to normal color immediately (don't wait for next tick)
             button._barCdColor = nil
-            local c = (onCooldown and style.barCooldownColor) or style.barColor or {0.2, 0.6, 1.0, 1.0}
-            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            if button.chargeBars and button._chargeBarCount > 0 then
+                -- Sub-bars will be re-shown on next tick
+                button.statusBar:SetStatusBarColor(0, 0, 0, 0)
+            else
+                local resetColor = onCooldown and style.barCooldownColor or nil
+                local c = resetColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+                button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            end
         end
     end
     if wantAuraColor then
@@ -1701,7 +1869,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local showIcon = style.showBarIcon ~= false
 
     local iconSize = barHeight
-    local barAreaLeft = showIcon and iconSize or 0
+    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
+    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
 
     -- Main bar frame
     local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent)
@@ -1726,6 +1895,10 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.icon:SetSize(1, 1)
         button.icon:SetAlpha(0)
     end
+
+    -- Charge sub-bars (created lazily in UpdateBarDisplay when charge count is known)
+    button.chargeBars = nil
+    button._chargeBarCount = 0
 
     -- StatusBar (right of icon)
     button.statusBar = CreateFrame("StatusBar", nil, button)
@@ -1838,8 +2011,14 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
                 self._auraActive = false
                 self._barAuraColor = nil
                 self._barAuraEffectActive = nil
-                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                -- If charge sub-bars exist, make statusBar transparent so sub-bars show
+                if self._chargeMax and self._chargeMax > 1 then
+                    self.statusBar:SetStatusBarColor(0, 0, 0, 0)
+                    self._barCdColor = nil
+                else
+                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                end
                 SetBarAuraEffect(self, false)
             end
         end
@@ -1951,7 +2130,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
     local showIcon = newStyle.showBarIcon ~= false
     local iconSize = barHeight
-    local barAreaLeft = showIcon and iconSize or 0
+    local iconOffset = showIcon and (newStyle.barIconOffset or 0) or 0
+    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
 
     button.style = newStyle
 
@@ -1965,8 +2145,13 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
                 self._auraActive = false
                 self._barAuraColor = nil
                 self._barAuraEffectActive = nil
-                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                if self._chargeMax and self._chargeMax > 1 then
+                    self.statusBar:SetStatusBarColor(0, 0, 0, 0)
+                    self._barCdColor = nil
+                else
+                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                end
                 SetBarAuraEffect(self, false)
             end
         end
@@ -2012,6 +2197,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.icon:SetSize(1, 1)
         button.icon:SetAlpha(0)
     end
+
+    -- Force sub-bar rebuild on next tick
+    button._chargeBarCount = 0
 
     -- Update status bar
     button.statusBar:ClearAllPoints()

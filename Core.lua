@@ -272,6 +272,9 @@ function CooldownCompanion:OnEnable()
     -- Migrate groups to have masqueEnabled field
     self:MigrateMasqueField()
 
+    -- Remove orphaned barChargeMissingColor/barChargeSwipe fields (replaced by charge sub-bars)
+    self:MigrateRemoveBarChargeOldFields()
+
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
 
@@ -1094,6 +1097,17 @@ function CooldownCompanion:MigrateMasqueField()
         -- If Masque addon is not available but group had it enabled, disable it
         if group.masqueEnabled and not Masque then
             group.masqueEnabled = false
+        end
+    end
+end
+
+function CooldownCompanion:MigrateRemoveBarChargeOldFields()
+    for _, group in pairs(self.db.profile.groups) do
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                bd.barChargeMissingColor = nil
+                bd.barChargeSwipe = nil
+            end
         end
     end
 end

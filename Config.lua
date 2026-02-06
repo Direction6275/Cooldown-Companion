@@ -4478,6 +4478,19 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showIconCb)
 
+    if style.showBarIcon ~= false then
+        local iconOffsetSlider = AceGUI:Create("Slider")
+        iconOffsetSlider:SetLabel("Icon Offset")
+        iconOffsetSlider:SetSliderValues(-5, 20, 1)
+        iconOffsetSlider:SetValue(style.barIconOffset or 0)
+        iconOffsetSlider:SetFullWidth(true)
+        iconOffsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barIconOffset = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(iconOffsetSlider)
+    end
+
     local spacingSlider = AceGUI:Create("Slider")
     spacingSlider:SetLabel("Bar Spacing")
     spacingSlider:SetSliderValues(0, 10, 0.1)
@@ -4488,6 +4501,17 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(spacingSlider)
+
+    local chargeGapSlider = AceGUI:Create("Slider")
+    chargeGapSlider:SetLabel("Charge Bar Gap")
+    chargeGapSlider:SetSliderValues(0, 10, 1)
+    chargeGapSlider:SetValue(style.barChargeGap or 1)
+    chargeGapSlider:SetFullWidth(true)
+    chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barChargeGap = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(chargeGapSlider)
 
     local updateFreqSlider = AceGUI:Create("Slider")
     updateFreqSlider:SetLabel("Update Frequency (Hz)")
