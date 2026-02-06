@@ -941,7 +941,15 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
         id = id,
         name = name,
     }
-    
+
+    -- Auto-detect charges for spells
+    if buttonType == "spell" then
+        local charges = C_Spell.GetSpellCharges(id)
+        if charges and charges.maxCharges and charges.maxCharges > 1 then
+            group.buttons[buttonIndex].hasCharges = true
+        end
+    end
+
     self:RefreshGroupFrame(groupId)
     return buttonIndex
 end

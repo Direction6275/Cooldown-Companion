@@ -2074,31 +2074,28 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     spellHeading:SetFullWidth(true)
     scroll:AddChild(spellHeading)
 
-    -- Show Charge Count toggle
-    local chargesCb = AceGUI:Create("CheckBox")
-    chargesCb:SetLabel("Charge Based?")
-    chargesCb:SetValue(buttonData.hasCharges or false)
-    chargesCb:SetFullWidth(true)
-    chargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.hasCharges = val
-        if val then
-            collapsedSections[selectedGroup .. "_" .. selectedButton .. "_charges"] = nil
-        end
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(chargesCb)
-
-    -- Charge text customization controls (only when hasCharges is enabled)
+    -- Charge text customization controls (only for charge-based spells)
     if buttonData.hasCharges then
+        local showChargeTextCb = AceGUI:Create("CheckBox")
+        showChargeTextCb:SetLabel("Show Charge Count")
+        showChargeTextCb:SetValue(buttonData.showChargeText or false)
+        showChargeTextCb:SetFullWidth(true)
+        showChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.showChargeText = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(showChargeTextCb)
+
+        if buttonData.showChargeText then
         local chargeKey = selectedGroup .. "_" .. selectedButton .. "_charges"
         local chargesCollapsed = collapsedSections[chargeKey]
 
         -- Collapse toggle button
-        local chargeCollapseBtn = CreateFrame("Button", nil, chargesCb.frame)
+        local chargeCollapseBtn = CreateFrame("Button", nil, showChargeTextCb.frame)
         table.insert(buttonSettingsCollapseButtons, chargeCollapseBtn)
         chargeCollapseBtn:SetSize(16, 16)
-        chargeCollapseBtn:SetPoint("LEFT", chargesCb.checkbg, "RIGHT", chargesCb.text:GetStringWidth() + 6, 0)
+        chargeCollapseBtn:SetPoint("LEFT", showChargeTextCb.checkbg, "RIGHT", showChargeTextCb.text:GetStringWidth() + 6, 0)
         local chargeCollapseArrow = chargeCollapseBtn:CreateTexture(nil, "ARTWORK")
         chargeCollapseArrow:SetSize(12, 12)
         chargeCollapseArrow:SetPoint("CENTER")
@@ -2118,18 +2115,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         chargeCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         if not chargesCollapsed then
-            local hideChargeTextCb = AceGUI:Create("CheckBox")
-            hideChargeTextCb:SetLabel("Hide Charge Text")
-            hideChargeTextCb:SetValue(buttonData.hideChargeText or false)
-            hideChargeTextCb:SetFullWidth(true)
-            hideChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.hideChargeText = val or nil
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(hideChargeTextCb)
-
-            if not buttonData.hideChargeText then
             local chargeFontSizeSlider = AceGUI:Create("Slider")
             chargeFontSizeSlider:SetLabel("Font Size")
             chargeFontSizeSlider:SetSliderValues(8, 32, 1)
@@ -2239,9 +2224,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             chargeBreak:SetText("")
             chargeBreak:SetFullWidth(true)
             scroll:AddChild(chargeBreak)
-            end -- not hideChargeText
-        end
-    end
+        end -- not chargesCollapsed
+        end -- showChargeText
+    end -- hasCharges
 
     -- Proc Glow toggle (hidden for bar mode)
     if group.displayMode ~= "bars" then
@@ -2741,7 +2726,12 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
-    if group.displayMode == "bars" then
+    if buttonData.hasCharges and group.displayMode == "bars" then
+        local chargeBarBreak = AceGUI:Create("Heading")
+        chargeBarBreak:SetText("")
+        chargeBarBreak:SetFullWidth(true)
+        scroll:AddChild(chargeBarBreak)
+
         local chargeGapSlider = AceGUI:Create("Slider")
         chargeGapSlider:SetLabel("Charge Bar Gap")
         chargeGapSlider:SetSliderValues(0, 20, 1)
@@ -4527,6 +4517,7 @@ local function BuildBarAppearanceTab(container, group, style)
     showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showBarIcon = val
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(showIconCb)
 
@@ -4543,16 +4534,18 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(iconOffsetSlider)
     end
 
-    local spacingSlider = AceGUI:Create("Slider")
-    spacingSlider:SetLabel("Bar Spacing")
-    spacingSlider:SetSliderValues(0, 10, 0.1)
-    spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
-    spacingSlider:SetFullWidth(true)
-    spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.buttonSpacing = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(spacingSlider)
+    if group.buttons and #group.buttons > 1 then
+        local spacingSlider = AceGUI:Create("Slider")
+        spacingSlider:SetLabel("Bar Spacing")
+        spacingSlider:SetSliderValues(0, 10, 0.1)
+        spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
+        spacingSlider:SetFullWidth(true)
+        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.buttonSpacing = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(spacingSlider)
+    end
 
     local updateFreqSlider = AceGUI:Create("Slider")
     updateFreqSlider:SetLabel("Update Frequency (Hz)")
@@ -4904,16 +4897,18 @@ local function BuildAppearanceTab(container)
         container:AddChild(hSlider)
     end
 
-    local spacingSlider = AceGUI:Create("Slider")
-    spacingSlider:SetLabel("Button Spacing")
-    spacingSlider:SetSliderValues(0, 10, 0.1)
-    spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
-    spacingSlider:SetFullWidth(true)
-    spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.buttonSpacing = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(spacingSlider)
+    if group.buttons and #group.buttons > 1 then
+        local spacingSlider = AceGUI:Create("Slider")
+        spacingSlider:SetLabel("Button Spacing")
+        spacingSlider:SetSliderValues(0, 10, 0.1)
+        spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
+        spacingSlider:SetFullWidth(true)
+        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.buttonSpacing = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(spacingSlider)
+    end
 
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")
