@@ -1490,8 +1490,10 @@ UpdateBarDisplay = function(button, fetchOk)
     if button._barAuraColor ~= wantAuraColor then
         button._barAuraColor = wantAuraColor
         if not wantAuraColor then
-            -- Reset to normal color (cd or ready) by invalidating _barCdColor cache
+            -- Reset to normal color immediately (don't wait for next tick)
             button._barCdColor = nil
+            local c = (onCooldown and style.barCooldownColor) or style.barColor or {0.2, 0.6, 1.0, 1.0}
+            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
         end
     end
     if wantAuraColor then
@@ -1829,6 +1831,18 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._barFillElapsed = 0
     local barInterval = style.barUpdateInterval or 0.025
     button:SetScript("OnUpdate", function(self, elapsed)
+        -- Detect aura expiry every frame (not throttled) to avoid color flicker
+        if self._auraActive then
+            local sMs, dMs = self.cooldown:GetCooldownTimes()
+            if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
+                self._auraActive = false
+                self._barAuraColor = nil
+                self._barAuraEffectActive = nil
+                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                SetBarAuraEffect(self, false)
+            end
+        end
         self._barFillElapsed = self._barFillElapsed + elapsed
         if self._barFillElapsed >= barInterval then
             self._barFillElapsed = 0
@@ -1945,6 +1959,17 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barInterval = newStyle.barUpdateInterval or 0.025
     button._barFillElapsed = 0
     button:SetScript("OnUpdate", function(self, elapsed)
+        if self._auraActive then
+            local sMs, dMs = self.cooldown:GetCooldownTimes()
+            if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
+                self._auraActive = false
+                self._barAuraColor = nil
+                self._barAuraEffectActive = nil
+                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                SetBarAuraEffect(self, false)
+            end
+        end
         self._barFillElapsed = self._barFillElapsed + elapsed
         if self._barFillElapsed >= barInterval then
             self._barFillElapsed = 0
