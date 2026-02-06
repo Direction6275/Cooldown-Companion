@@ -710,8 +710,21 @@ function CooldownCompanion:OnBagChanged()
 end
 
 function CooldownCompanion:OnTalentsChanged()
+    self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
+end
+
+-- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
+function CooldownCompanion:RefreshChargeFlags()
+    for _, group in pairs(self.db.profile.groups) do
+        for _, buttonData in ipairs(group.buttons) do
+            if buttonData.type == "spell" then
+                local charges = C_Spell.GetSpellCharges(buttonData.id)
+                buttonData.hasCharges = (charges and charges.maxCharges and charges.maxCharges > 1) or nil
+            end
+        end
+    end
 end
 
 function CooldownCompanion:CacheCurrentSpec()
@@ -724,6 +737,7 @@ end
 
 function CooldownCompanion:OnSpecChanged()
     self:CacheCurrentSpec()
+    self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
 end
@@ -731,6 +745,7 @@ end
 function CooldownCompanion:OnPlayerEnteringWorld()
     C_Timer.After(1, function()
         self:CacheCurrentSpec()
+        self:RefreshChargeFlags()
         self:RefreshAllGroups()
     end)
 end
