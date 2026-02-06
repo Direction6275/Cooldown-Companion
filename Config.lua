@@ -2226,6 +2226,29 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(chargeBreak)
         end -- not chargesCollapsed
         end -- showChargeText
+
+        if group.displayMode == "bars" then
+            if group.style and group.style.showCooldownText then
+                local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
+                cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
+                cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
+                cdTextOnRechargeCb:SetFullWidth(true)
+                cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.barCdTextOnRechargeBar = val
+                end)
+                scroll:AddChild(cdTextOnRechargeCb)
+            end
+
+            local reverseChargesCb = AceGUI:Create("CheckBox")
+            reverseChargesCb:SetLabel("Flip Charge Order")
+            reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
+            reverseChargesCb:SetFullWidth(true)
+            reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.barReverseCharges = val or nil
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            scroll:AddChild(reverseChargesCb)
+        end
     end -- hasCharges
 
     -- Proc Glow toggle (hidden for bar mode)
@@ -2742,17 +2765,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         scroll:AddChild(chargeGapSlider)
-
-        if group.style and group.style.showCooldownText then
-            local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
-            cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
-            cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
-            cdTextOnRechargeCb:SetFullWidth(true)
-            cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.barCdTextOnRechargeBar = val
-            end)
-            scroll:AddChild(cdTextOnRechargeCb)
-        end
     end
 end
 
@@ -3218,6 +3230,16 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         scroll:AddChild(chargeGapSlider)
+
+        local reverseChargesCb = AceGUI:Create("CheckBox")
+        reverseChargesCb:SetLabel("Flip Charge Order")
+        reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
+        reverseChargesCb:SetFullWidth(true)
+        reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.barReverseCharges = val or nil
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        scroll:AddChild(reverseChargesCb)
     end
 end
 
@@ -3581,6 +3603,16 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         scroll:AddChild(chargeGapSlider)
+
+        local reverseChargesCb = AceGUI:Create("CheckBox")
+        reverseChargesCb:SetLabel("Flip Charge Order")
+        reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
+        reverseChargesCb:SetFullWidth(true)
+        reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.barReverseCharges = val or nil
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        scroll:AddChild(reverseChargesCb)
     end
 end
 
@@ -4344,17 +4376,55 @@ local function BuildPositioningTab(container)
     HookSliderEditBox(ySlider)
     container:AddChild(ySlider)
 
-    -- Orientation dropdown
-    local orientDrop = AceGUI:Create("Dropdown")
-    orientDrop:SetLabel("Orientation")
-    orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
-    orientDrop:SetValue(group.style.orientation or "horizontal")
-    orientDrop:SetFullWidth(true)
-    orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        group.style.orientation = val
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-    end)
-    container:AddChild(orientDrop)
+    -- Orientation / Layout controls (mode-dependent)
+    if group.displayMode == "bars" then
+        -- Vertical Bar Fill checkbox
+        local vertFillCheck = AceGUI:Create("CheckBox")
+        vertFillCheck:SetLabel("Vertical Bar Fill")
+        vertFillCheck:SetValue(group.style.barFillVertical or false)
+        vertFillCheck:SetFullWidth(true)
+        vertFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            group.style.barFillVertical = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(vertFillCheck)
+
+        -- Flip Fill/Drain Direction checkbox
+        local reverseFillCheck = AceGUI:Create("CheckBox")
+        reverseFillCheck:SetLabel("Flip Fill/Drain Direction")
+        reverseFillCheck:SetValue(group.style.barReverseFill or false)
+        reverseFillCheck:SetFullWidth(true)
+        reverseFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            group.style.barReverseFill = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        container:AddChild(reverseFillCheck)
+
+        -- Horizontal Bar Layout checkbox (only when >1 button)
+        if #group.buttons > 1 then
+            local horzLayoutCheck = AceGUI:Create("CheckBox")
+            horzLayoutCheck:SetLabel("Horizontal Bar Layout")
+            horzLayoutCheck:SetValue((group.style.orientation or "vertical") == "horizontal")
+            horzLayoutCheck:SetFullWidth(true)
+            horzLayoutCheck:SetCallback("OnValueChanged", function(widget, event, val)
+                group.style.orientation = val and "horizontal" or "vertical"
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            container:AddChild(horzLayoutCheck)
+        end
+    else
+        local orientDrop = AceGUI:Create("Dropdown")
+        orientDrop:SetLabel("Orientation")
+        orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
+        orientDrop:SetValue(group.style.orientation or "horizontal")
+        orientDrop:SetFullWidth(true)
+        orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            group.style.orientation = val
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        end)
+        container:AddChild(orientDrop)
+    end
 
     -- Buttons Per Row/Column
     local numButtons = math.max(1, #group.buttons)

@@ -1434,6 +1434,8 @@ EnsureChargeBars = function(button, numBars)
         bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
         bar:SetFrameLevel(sbLevel - 1)
         bar:EnableMouse(false)
+        if button._isVertical then bar:SetOrientation("VERTICAL") end
+        if button.style and button.style.barReverseFill then bar:SetReverseFill(true) end
 
         -- Background (BACKGROUND layer = behind fill)
         bar.bg = bar:CreateTexture(nil, "BACKGROUND")
@@ -1459,33 +1461,53 @@ local function LayoutChargeBars(button)
     local style = button.style
     local showIcon = style.showBarIcon ~= false
     local barHeight = style.barHeight or 20
+    local barLength = style.barLength or 180
     local iconSize = barHeight
     local iconOffset = showIcon and (style.barIconOffset or 0) or 0
-    local startX = showIcon and (iconSize + iconOffset) or 0
-    local totalWidth = (style.barLength or 180) - startX
-    local totalHeight = barHeight
     local numBars = #button.chargeBars
     local gap = button.buttonData and button.buttonData.barChargeGap or 2
-    local barWidth = (totalWidth - (numBars - 1) * gap) / numBars
-    if barWidth < 1 then barWidth = 1 end
 
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
     local borderColor = style.borderColor or {0, 0, 0, 1}
 
-    for i, bar in ipairs(button.chargeBars) do
-        bar:ClearAllPoints()
-        bar:SetSize(barWidth, totalHeight)
-        local xOffset = startX + (i - 1) * (barWidth + gap)
-        bar:SetPoint("TOPLEFT", button, "TOPLEFT", xOffset, 0)
+    if button._isVertical then
+        -- Vertical: stack sub-bars top-to-bottom
+        local startY = showIcon and (iconSize + iconOffset) or 0
+        local totalHeight = barLength - startY
+        local subBarHeight = (totalHeight - (numBars - 1) * gap) / numBars
+        if subBarHeight < 1 then subBarHeight = 1 end
 
-        -- Bg color
-        bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+        for i, bar in ipairs(button.chargeBars) do
+            bar:ClearAllPoints()
+            bar:SetSize(barHeight, subBarHeight)
+            local yOffset = startY + (i - 1) * (subBarHeight + gap)
+            bar:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -yOffset)
 
-        -- Border positions and colors
-        ApplyEdgePositions(bar.borderTextures, bar, borderSize)
-        for _, tex in ipairs(bar.borderTextures) do
-            tex:SetColorTexture(unpack(borderColor))
+            bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+            ApplyEdgePositions(bar.borderTextures, bar, borderSize)
+            for _, tex in ipairs(bar.borderTextures) do
+                tex:SetColorTexture(unpack(borderColor))
+            end
+        end
+    else
+        -- Horizontal: stack sub-bars left-to-right
+        local startX = showIcon and (iconSize + iconOffset) or 0
+        local totalWidth = barLength - startX
+        local subBarWidth = (totalWidth - (numBars - 1) * gap) / numBars
+        if subBarWidth < 1 then subBarWidth = 1 end
+
+        for i, bar in ipairs(button.chargeBars) do
+            bar:ClearAllPoints()
+            bar:SetSize(subBarWidth, barHeight)
+            local xOffset = startX + (i - 1) * (subBarWidth + gap)
+            bar:SetPoint("TOPLEFT", button, "TOPLEFT", xOffset, 0)
+
+            bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+            ApplyEdgePositions(bar.borderTextures, bar, borderSize)
+            for _, tex in ipairs(bar.borderTextures) do
+                tex:SetColorTexture(unpack(borderColor))
+            end
         end
     end
     button._chargeBarsDirty = false
@@ -1516,10 +1538,13 @@ UpdateBarFill = function(button)
             if remaining < 0 then remaining = 0 end
         end
 
+        local reverseCharges = button.buttonData and button.buttonData.barReverseCharges
+        local numBars = button._chargeBarCount
         for i, bar in ipairs(button.chargeBars) do
-            if i <= chargeCount then
+            local ci = reverseCharges and (numBars - i + 1) or i
+            if ci <= chargeCount then
                 bar:SetValue(1) -- available
-            elseif i == chargeCount + 1 then
+            elseif ci == chargeCount + 1 then
                 bar:SetValue(rechargeFraction) -- recharging
             else
                 bar:SetValue(0) -- spent
@@ -1549,7 +1574,8 @@ UpdateBarFill = function(button)
         if button.buttonData.barCdTextOnRechargeBar and button.chargeBars then
             local targetBar
             if chargeCount < chargeMax then
-                targetBar = chargeCount + 1
+                local logicalBar = chargeCount + 1
+                targetBar = reverseCharges and (numBars - logicalBar + 1) or logicalBar
             else
                 targetBar = 0 -- all full → anchor back to statusBar
             end
@@ -1561,18 +1587,30 @@ UpdateBarFill = function(button)
                 local nmOX = st.barNameTextOffsetX or 0
                 local nmOY = st.barNameTextOffsetY or 0
                 button.timeText:ClearAllPoints()
-                if targetBar > 0 and button.chargeBars[targetBar] then
-                    button.timeText:SetPoint("RIGHT", button.chargeBars[targetBar], "RIGHT", -3 + cdOX, cdOY)
-                    -- Detach name truncation from timeText so it doesn't follow
-                    button.nameText:ClearAllPoints()
-                    button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
-                    button.nameText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3, 0)
+                if button._isVertical then
+                    if targetBar > 0 and button.chargeBars[targetBar] then
+                        button.timeText:SetPoint("TOP", button.chargeBars[targetBar], "TOP", cdOX, -3 + cdOY)
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+                    else
+                        button.timeText:SetPoint("TOP", button.statusBar, "TOP", cdOX, -3 + cdOY)
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+                    end
                 else
-                    button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
-                    -- Restore name truncation against timeText
-                    button.nameText:ClearAllPoints()
-                    button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
-                    button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+                    if targetBar > 0 and button.chargeBars[targetBar] then
+                        button.timeText:SetPoint("RIGHT", button.chargeBars[targetBar], "RIGHT", -3 + cdOX, cdOY)
+                        -- Detach name truncation from timeText so it doesn't follow
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                        button.nameText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3, 0)
+                    else
+                        button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+                        -- Restore name truncation against timeText
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+                    end
                 end
             end
         elseif button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
@@ -1584,10 +1622,16 @@ UpdateBarFill = function(button)
             local nmOX = st.barNameTextOffsetX or 0
             local nmOY = st.barNameTextOffsetY or 0
             button.timeText:ClearAllPoints()
-            button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
-            button.nameText:ClearAllPoints()
-            button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
-            button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+            if button._isVertical then
+                button.timeText:SetPoint("TOP", button.statusBar, "TOP", cdOX, -3 + cdOY)
+                button.nameText:ClearAllPoints()
+                button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+            else
+                button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+                button.nameText:ClearAllPoints()
+                button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+            end
         end
 
         return -- skip single-bar path
@@ -1602,10 +1646,16 @@ UpdateBarFill = function(button)
         local nmOX = st.barNameTextOffsetX or 0
         local nmOY = st.barNameTextOffsetY or 0
         button.timeText:ClearAllPoints()
-        button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
-        button.nameText:ClearAllPoints()
-        button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
-        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+        if button._isVertical then
+            button.timeText:SetPoint("TOP", button.statusBar, "TOP", cdOX, -3 + cdOY)
+            button.nameText:ClearAllPoints()
+            button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+        else
+            button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+            button.nameText:ClearAllPoints()
+            button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+            button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+        end
     end
 
     -- Single-bar path
@@ -1690,8 +1740,11 @@ UpdateBarDisplay = function(button, fetchOk)
         local readyColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
         local cdColor = style.barCooldownColor or readyColor
         local chargeCount = button._chargeCount or 0
+        local reverseCharges = button.buttonData and button.buttonData.barReverseCharges
+        local numBars = button._chargeBarCount
         for i, bar in ipairs(button.chargeBars) do
-            if i <= chargeCount then
+            local ci = reverseCharges and (numBars - i + 1) or i
+            if ci <= chargeCount then
                 bar:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
             else
                 bar:SetStatusBarColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
@@ -1979,32 +2032,49 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local barHeight = style.barHeight or 20
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local showIcon = style.showBarIcon ~= false
+    local isVertical = style.barFillVertical or false
 
     local iconSize = barHeight
     local iconOffset = showIcon and (style.barIconOffset or 0) or 0
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
+    local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
     -- Main bar frame
     local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent)
-    button:SetSize(barLength, barHeight)
+    if isVertical then
+        button:SetSize(barHeight, barLength)
+    else
+        button:SetSize(barLength, barHeight)
+    end
     button._isBar = true
+    button._isVertical = isVertical
 
     -- Background — covers bar area only when icon is shown (icon has its own iconBg)
     local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
     button.bg = button:CreateTexture(nil, "BACKGROUND")
     if showIcon then
-        button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
-        button.bg:SetPoint("BOTTOMRIGHT")
+        if isVertical then
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        else
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        end
     else
         button.bg:SetAllPoints()
     end
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
 
-    -- Icon (left side, square)
+    -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
     if showIcon then
-        button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-        button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - borderSize, borderSize)
+        if isVertical then
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", -borderSize, -(iconSize - borderSize))
+        else
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - borderSize, borderSize)
+        end
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     else
         -- Hidden 1x1 icon (still needed for UpdateButtonIcon)
@@ -2020,15 +2090,25 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Icon background + border (always shown when icon visible)
     button.iconBg = button:CreateTexture(nil, "BACKGROUND")
-    button.iconBg:SetPoint("TOPLEFT", 0, 0)
-    button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    if isVertical then
+        button.iconBg:SetPoint("TOPLEFT", 0, 0)
+        button.iconBg:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+    else
+        button.iconBg:SetPoint("TOPLEFT", 0, 0)
+        button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    end
     button.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
     if not showIcon then button.iconBg:Hide() end
 
     button._iconBounds = CreateFrame("Frame", nil, button)
     button._iconBounds:EnableMouse(false)
-    button._iconBounds:SetPoint("TOPLEFT", 0, 0)
-    button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    if isVertical then
+        button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+        button._iconBounds:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+    else
+        button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+        button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    end
 
     button.iconBorderTextures = {}
     local borderColor = style.borderColor or {0, 0, 0, 1}
@@ -2044,24 +2124,36 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._barBounds = CreateFrame("Frame", nil, button)
     button._barBounds:EnableMouse(false)
     if showIcon then
-        button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
-        button._barBounds:SetPoint("BOTTOMRIGHT")
+        if isVertical then
+            button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+            button._barBounds:SetPoint("BOTTOMRIGHT")
+        else
+            button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+            button._barBounds:SetPoint("BOTTOMRIGHT")
+        end
     else
         button._barBounds:SetAllPoints()
     end
 
-    -- StatusBar (right of icon)
+    -- StatusBar
     button.statusBar = CreateFrame("StatusBar", nil, button)
-    button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
-    button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+    if isVertical then
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", borderSize, -(barAreaTop + borderSize))
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+        button.statusBar:SetOrientation("VERTICAL")
+    else
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+    end
     button.statusBar:SetMinMaxValues(0, 1)
     button.statusBar:SetValue(1)
+    button.statusBar:SetReverseFill(style.barReverseFill or false)
     button.statusBar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
     local barColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
     button.statusBar:EnableMouse(false)
 
-    -- Name text (left-aligned on status bar)
+    -- Name text
     button.nameText = button.statusBar:CreateFontString(nil, "OVERLAY")
     local nameFont = style.barNameFont or "Fonts\\FRIZQT__.TTF"
     local nameFontSize = style.barNameFontSize or 10
@@ -2071,13 +2163,18 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
     local nameOffX = style.barNameTextOffsetX or 0
     local nameOffY = style.barNameTextOffsetY or 0
-    button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
-    button.nameText:SetJustifyH("LEFT")
+    if isVertical then
+        button.nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
+        button.nameText:SetJustifyH("CENTER")
+    else
+        button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
+        button.nameText:SetJustifyH("LEFT")
+    end
     if style.showBarNameText ~= false then
         button.nameText:SetText(buttonData.name or "")
     end
 
-    -- Time text (right-aligned on status bar)
+    -- Time text
     button.timeText = button.statusBar:CreateFontString(nil, "OVERLAY")
     local cdFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cdFontSize = style.cooldownFontSize or 12
@@ -2087,11 +2184,18 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
     local cdOffX = style.barCdTextOffsetX or 0
     local cdOffY = style.barCdTextOffsetY or 0
-    button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
-    button.timeText:SetJustifyH("RIGHT")
+    if isVertical then
+        button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
+        button.timeText:SetJustifyH("CENTER")
+    else
+        button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
+        button.timeText:SetJustifyH("RIGHT")
+    end
 
-    -- Truncate name text so it doesn't overlap time text
-    button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+    -- Truncate name text so it doesn't overlap time text (horizontal only)
+    if not isVertical then
+        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+    end
 
     -- Border textures (around bar area, not full button)
     button.borderTextures = {}
@@ -2282,11 +2386,14 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barHeight = newStyle.barHeight or 20
     local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
     local showIcon = newStyle.showBarIcon ~= false
+    local isVertical = newStyle.barFillVertical or false
     local iconSize = barHeight
     local iconOffset = showIcon and (newStyle.barIconOffset or 0) or 0
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
+    local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
     button.style = newStyle
+    button._isVertical = isVertical
 
     -- Update bar fill OnUpdate interval
     local barInterval = newStyle.barUpdateInterval or 0.025
@@ -2337,13 +2444,22 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barAuraEffectActive = nil
     button._timeTextAnchoredBar = nil
 
-    button:SetSize(barLength, barHeight)
+    if isVertical then
+        button:SetSize(barHeight, barLength)
+    else
+        button:SetSize(barLength, barHeight)
+    end
 
     -- Update icon
     button.icon:ClearAllPoints()
     if showIcon then
-        button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-        button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - borderSize, borderSize)
+        if isVertical then
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", -borderSize, -(iconSize - borderSize))
+        else
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - borderSize, borderSize)
+        end
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         button.icon:SetAlpha(1)
     else
@@ -2359,8 +2475,13 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._chargeBarsBgActive = false
     button.bg:ClearAllPoints()
     if showIcon then
-        button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
-        button.bg:SetPoint("BOTTOMRIGHT")
+        if isVertical then
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        else
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        end
     else
         button.bg:SetAllPoints()
     end
@@ -2369,14 +2490,24 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Icon bg + border: always shown when icon visible
     if button.iconBg then
         button.iconBg:ClearAllPoints()
-        button.iconBg:SetPoint("TOPLEFT", 0, 0)
-        button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+        if isVertical then
+            button.iconBg:SetPoint("TOPLEFT", 0, 0)
+            button.iconBg:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+        else
+            button.iconBg:SetPoint("TOPLEFT", 0, 0)
+            button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+        end
         if showIcon then button.iconBg:Show() else button.iconBg:Hide() end
     end
     if button._iconBounds then
         button._iconBounds:ClearAllPoints()
-        button._iconBounds:SetPoint("TOPLEFT", 0, 0)
-        button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+        if isVertical then
+            button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+            button._iconBounds:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+        else
+            button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+            button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+        end
     end
     if button.iconBorderTextures then
         ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize)
@@ -2389,8 +2520,13 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     if button._barBounds then
         button._barBounds:ClearAllPoints()
         if showIcon then
-            button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
-            button._barBounds:SetPoint("BOTTOMRIGHT")
+            if isVertical then
+                button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+                button._barBounds:SetPoint("BOTTOMRIGHT")
+            else
+                button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+                button._barBounds:SetPoint("BOTTOMRIGHT")
+            end
         else
             button._barBounds:SetAllPoints()
         end
@@ -2398,8 +2534,16 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     -- Update status bar
     button.statusBar:ClearAllPoints()
-    button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
-    button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+    if isVertical then
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", borderSize, -(barAreaTop + borderSize))
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+        button.statusBar:SetOrientation("VERTICAL")
+    else
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+        button.statusBar:SetOrientation("HORIZONTAL")
+    end
+    button.statusBar:SetReverseFill(newStyle.barReverseFill or false)
     local barColor = newStyle.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
 
@@ -2425,7 +2569,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         end
     end
 
-    -- Update name text font
+    -- Update name text font and position
     if newStyle.showBarNameText ~= false then
         local nameFont = newStyle.barNameFont or "Fonts\\FRIZQT__.TTF"
         local nameFontSize = newStyle.barNameFontSize or 10
@@ -2445,6 +2589,27 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
     local cdColor = newStyle.cooldownFontColor or {1, 1, 1, 1}
     button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+
+    -- Re-anchor name and time text for orientation
+    local nameOffX = newStyle.barNameTextOffsetX or 0
+    local nameOffY = newStyle.barNameTextOffsetY or 0
+    local cdOffX = newStyle.barCdTextOffsetX or 0
+    local cdOffY = newStyle.barCdTextOffsetY or 0
+    button.nameText:ClearAllPoints()
+    button.timeText:ClearAllPoints()
+    if isVertical then
+        button.nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
+        button.nameText:SetJustifyH("CENTER")
+        button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
+        button.timeText:SetJustifyH("CENTER")
+    else
+        button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
+        button.nameText:SetJustifyH("LEFT")
+        button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
+        button.timeText:SetJustifyH("RIGHT")
+        -- Truncate name text so it doesn't overlap time text
+        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+    end
 
     -- Update charge/item count font and anchor to icon or bar center
     local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"

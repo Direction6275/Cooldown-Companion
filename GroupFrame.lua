@@ -497,6 +497,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if isBarMode then
         buttonWidth = style.barLength or 180
         buttonHeight = style.barHeight or 20
+        if style.barFillVertical then
+            buttonWidth, buttonHeight = buttonHeight, buttonWidth
+        end
     elseif style.maintainAspectRatio then
         -- Square mode: use buttonSize for both dimensions
         local size = style.buttonSize or ST.BUTTON_SIZE
@@ -583,6 +586,9 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     if isBarMode then
         buttonWidth = style.barLength or 180
         buttonHeight = style.barHeight or 20
+        if style.barFillVertical then
+            buttonWidth, buttonHeight = buttonHeight, buttonWidth
+        end
     elseif style.maintainAspectRatio then
         -- Square mode: use buttonSize for both dimensions
         local size = style.buttonSize or ST.BUTTON_SIZE
