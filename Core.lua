@@ -107,6 +107,7 @@ local defaults = {
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                     },
                     enabled = true,
+                    displayMode = "icons",    -- "icons" or "bars"
                     -- Alpha fade system
                     baselineAlpha = 1,        -- alpha when no force conditions met (0-1)
                     forceAlphaInCombat = false,
@@ -154,6 +155,21 @@ local defaults = {
             procGlowColor = {1, 1, 1, 1},
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
+            -- Bar display mode defaults
+            barLength = 180,
+            barHeight = 20,
+            barColor = {0.2, 0.6, 1.0, 1.0},
+            barCooldownColor = {0.6, 0.6, 0.6, 1.0},
+            barBgColor = {0.1, 0.1, 0.1, 0.8},
+            showBarIcon = true,
+            showBarNameText = true,
+            barNameFont = "Fonts\\FRIZQT__.TTF",
+            barNameFontSize = 10,
+            barNameFontOutline = "OUTLINE",
+            barNameFontColor = {1, 1, 1, 1},
+            showBarReadyText = false,
+            barReadyText = "Ready",
+            barReadyTextColor = {0.2, 1.0, 0.2, 1.0},
         },
         locked = false,
         auraDurationCache = {},
@@ -248,6 +264,9 @@ function CooldownCompanion:OnEnable()
 
     -- Migrate old hide-when fields to alpha system
     self:MigrateAlphaSystem()
+
+    -- Migrate groups to have displayMode field
+    self:MigrateDisplayMode()
 
     -- Migrate groups to have masqueEnabled field
     self:MigrateMasqueField()
@@ -857,6 +876,9 @@ function CooldownCompanion:CreateGroup(name)
     self.db.profile.groups[groupId].fadeInDuration = 0.2
     self.db.profile.groups[groupId].fadeOutDuration = 0.2
 
+    -- Display mode default
+    self.db.profile.groups[groupId].displayMode = "icons"
+
     -- Masque defaults
     self.db.profile.groups[groupId].masqueEnabled = false
 
@@ -1052,6 +1074,14 @@ function CooldownCompanion:MigrateAlphaSystem()
         if group.fadeDelay == nil then group.fadeDelay = 1 end
         if group.fadeInDuration == nil then group.fadeInDuration = 0.2 end
         if group.fadeOutDuration == nil then group.fadeOutDuration = 0.2 end
+    end
+end
+
+function CooldownCompanion:MigrateDisplayMode()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.displayMode == nil then
+            group.displayMode = "icons"
+        end
     end
 end
 

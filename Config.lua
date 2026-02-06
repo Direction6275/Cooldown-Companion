@@ -1335,6 +1335,9 @@ function RefreshColumn1()
         if not group.locked then
             table.insert(indicators, "|cffdddd00U|r")
         end
+        if group.displayMode == "bars" then
+            table.insert(indicators, "|cff66ccffBAR|r")
+        end
         if #indicators > 0 then
             label = label .. " " .. table.concat(indicators, " ")
         end
@@ -1459,6 +1462,21 @@ function RefreshColumn1()
                             selectedGroup = newGroupId
                             CooldownCompanion:RefreshConfigPanel()
                         end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Switch display mode
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = group.displayMode == "bars" and "Switch to Icons" or "Switch to Bars"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        group.displayMode = (group.displayMode == "bars") and "icons" or "bars"
+                        if group.displayMode == "bars" and group.masqueEnabled then
+                            CooldownCompanion:ToggleGroupMasque(groupId, false)
+                        end
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end, "MENU")
@@ -2207,7 +2225,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
-    -- Proc Glow toggle
+    -- Proc Glow toggle (hidden for bar mode)
+    if group.displayMode ~= "bars" then
     local procCb = AceGUI:Create("CheckBox")
     procCb:SetLabel("Show Proc Glow")
     procCb:SetValue(buttonData.procGlow == true)
@@ -2346,6 +2365,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(procBreak)
         end
     end
+    end -- not bars (proc glow)
 
     local auraCb = AceGUI:Create("CheckBox")
     auraCb:SetLabel("Track Buff Duration")
@@ -2489,7 +2509,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(auraNoDesatCb)
 
-            -- Active buff indicator controls
+            -- Active buff indicator controls (hidden for bar mode)
+            if group.displayMode ~= "bars" then
             local auraGlowDrop = AceGUI:Create("Dropdown")
             auraGlowDrop:SetLabel("Active Buff Indicator")
             auraGlowDrop:SetList({
@@ -2566,6 +2587,139 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 end)
                 scroll:AddChild(auraGlowPreviewCb)
             end
+            else -- bars: bar-specific aura effect controls
+                local barAuraColorPicker = AceGUI:Create("ColorPicker")
+                barAuraColorPicker:SetLabel("Bar Color While Active")
+                barAuraColorPicker:SetHasAlpha(true)
+                local bac = buttonData.barAuraColor or {0.2, 1.0, 0.2, 1.0}
+                barAuraColorPicker:SetColor(bac[1], bac[2], bac[3], bac[4])
+                barAuraColorPicker:SetFullWidth(true)
+                barAuraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                    buttonData.barAuraColor = {r, g, b, a}
+                end)
+                barAuraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                    buttonData.barAuraColor = {r, g, b, a}
+                end)
+                scroll:AddChild(barAuraColorPicker)
+
+                local barAuraEffectDrop = AceGUI:Create("Dropdown")
+                barAuraEffectDrop:SetLabel("Bar Active Effect")
+                barAuraEffectDrop:SetList({
+                    ["none"] = "None",
+                    ["pixel"] = "Pixel Glow",
+                    ["solid"] = "Solid Border",
+                    ["glow"] = "Proc Glow",
+                }, {"none", "pixel", "solid", "glow"})
+                barAuraEffectDrop:SetValue(buttonData.barAuraEffect or "none")
+                barAuraEffectDrop:SetFullWidth(true)
+                barAuraEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.barAuraEffect = (val ~= "none") and val or nil
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                scroll:AddChild(barAuraEffectDrop)
+
+                if buttonData.barAuraEffect and buttonData.barAuraEffect ~= "none" then
+                    local barAuraEffectColorPicker = AceGUI:Create("ColorPicker")
+                    barAuraEffectColorPicker:SetLabel("Effect Color")
+                    local baec = buttonData.barAuraEffectColor or {1, 0.84, 0, 0.9}
+                    barAuraEffectColorPicker:SetColor(baec[1], baec[2], baec[3], baec[4] or 0.9)
+                    barAuraEffectColorPicker:SetHasAlpha(true)
+                    barAuraEffectColorPicker:SetFullWidth(true)
+                    barAuraEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                        buttonData.barAuraEffectColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    barAuraEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                        buttonData.barAuraEffectColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    scroll:AddChild(barAuraEffectColorPicker)
+
+                    if buttonData.barAuraEffect == "solid" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Border Size")
+                        barAuraEffectSizeSlider:SetSliderValues(1, 8, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 2)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                    elseif buttonData.barAuraEffect == "pixel" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Line Length")
+                        barAuraEffectSizeSlider:SetSliderValues(2, 12, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 4)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                        local barAuraEffectThicknessSlider = AceGUI:Create("Slider")
+                        barAuraEffectThicknessSlider:SetLabel("Line Thickness")
+                        barAuraEffectThicknessSlider:SetSliderValues(1, 6, 1)
+                        barAuraEffectThicknessSlider:SetValue(buttonData.barAuraEffectThickness or 2)
+                        barAuraEffectThicknessSlider:SetFullWidth(true)
+                        barAuraEffectThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectThickness = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectThicknessSlider)
+                        local barAuraEffectSpeedSlider = AceGUI:Create("Slider")
+                        barAuraEffectSpeedSlider:SetLabel("Speed")
+                        barAuraEffectSpeedSlider:SetSliderValues(10, 200, 5)
+                        barAuraEffectSpeedSlider:SetValue(buttonData.barAuraEffectSpeed or 60)
+                        barAuraEffectSpeedSlider:SetFullWidth(true)
+                        barAuraEffectSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSpeed = val
+                            -- Update speed live without invalidating (no visual state change)
+                            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                            if gFrame then
+                                for _, btn in ipairs(gFrame.buttons) do
+                                    if btn.index == selectedButton and btn.barAuraEffect and btn.barAuraEffect.pixelFrame then
+                                        btn.barAuraEffect.pixelFrame._speed = val
+                                    end
+                                end
+                            end
+                        end)
+                        scroll:AddChild(barAuraEffectSpeedSlider)
+                    elseif buttonData.barAuraEffect == "glow" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Glow Size")
+                        barAuraEffectSizeSlider:SetSliderValues(0, 60, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 32)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                    end
+
+                    -- Preview toggle
+                    local barAuraPreviewCb = AceGUI:Create("CheckBox")
+                    barAuraPreviewCb:SetLabel("Preview")
+                    local barAuraPreviewActive = false
+                    local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                    if gFrame then
+                        for _, btn in ipairs(gFrame.buttons) do
+                            if btn.index == selectedButton and btn._barAuraEffectPreview then
+                                barAuraPreviewActive = true
+                                break
+                            end
+                        end
+                    end
+                    barAuraPreviewCb:SetValue(barAuraPreviewActive)
+                    barAuraPreviewCb:SetFullWidth(true)
+                    barAuraPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        CooldownCompanion:SetBarAuraEffectPreview(selectedGroup, selectedButton, val)
+                    end)
+                    scroll:AddChild(barAuraPreviewCb)
+                end
+            end -- bars/icons aura effect branch
         end
     end
 end
@@ -2802,7 +2956,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(itemAuraNoDesatCb)
 
-            -- Active buff indicator controls (non-equip items)
+            -- Active buff indicator controls (non-equip items, hidden for bar mode)
+            if group.displayMode ~= "bars" then
             local itemAuraGlowDrop = AceGUI:Create("Dropdown")
             itemAuraGlowDrop:SetLabel("Active Buff Indicator")
             itemAuraGlowDrop:SetList({
@@ -2879,11 +3034,147 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
                 end)
                 scroll:AddChild(itemAuraGlowPreviewCb)
             end
+            else -- bars: bar-specific aura effect controls
+                local barAuraColorPicker = AceGUI:Create("ColorPicker")
+                barAuraColorPicker:SetLabel("Bar Color While Active")
+                barAuraColorPicker:SetHasAlpha(true)
+                local bac = buttonData.barAuraColor or {0.2, 1.0, 0.2, 1.0}
+                barAuraColorPicker:SetColor(bac[1], bac[2], bac[3], bac[4])
+                barAuraColorPicker:SetFullWidth(true)
+                barAuraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                    buttonData.barAuraColor = {r, g, b, a}
+                end)
+                barAuraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                    buttonData.barAuraColor = {r, g, b, a}
+                end)
+                scroll:AddChild(barAuraColorPicker)
+
+                local barAuraEffectDrop = AceGUI:Create("Dropdown")
+                barAuraEffectDrop:SetLabel("Bar Active Effect")
+                barAuraEffectDrop:SetList({
+                    ["none"] = "None",
+                    ["pixel"] = "Pixel Glow",
+                    ["solid"] = "Solid Border",
+                    ["glow"] = "Proc Glow",
+                }, {"none", "pixel", "solid", "glow"})
+                barAuraEffectDrop:SetValue(buttonData.barAuraEffect or "none")
+                barAuraEffectDrop:SetFullWidth(true)
+                barAuraEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.barAuraEffect = (val ~= "none") and val or nil
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                scroll:AddChild(barAuraEffectDrop)
+
+                if buttonData.barAuraEffect and buttonData.barAuraEffect ~= "none" then
+                    local barAuraEffectColorPicker = AceGUI:Create("ColorPicker")
+                    barAuraEffectColorPicker:SetLabel("Effect Color")
+                    local baec = buttonData.barAuraEffectColor or {1, 0.84, 0, 0.9}
+                    barAuraEffectColorPicker:SetColor(baec[1], baec[2], baec[3], baec[4] or 0.9)
+                    barAuraEffectColorPicker:SetHasAlpha(true)
+                    barAuraEffectColorPicker:SetFullWidth(true)
+                    barAuraEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                        buttonData.barAuraEffectColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    barAuraEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                        buttonData.barAuraEffectColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    scroll:AddChild(barAuraEffectColorPicker)
+
+                    if buttonData.barAuraEffect == "solid" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Border Size")
+                        barAuraEffectSizeSlider:SetSliderValues(1, 8, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 2)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                    elseif buttonData.barAuraEffect == "pixel" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Line Length")
+                        barAuraEffectSizeSlider:SetSliderValues(2, 12, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 4)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                        local barAuraEffectThicknessSlider = AceGUI:Create("Slider")
+                        barAuraEffectThicknessSlider:SetLabel("Line Thickness")
+                        barAuraEffectThicknessSlider:SetSliderValues(1, 6, 1)
+                        barAuraEffectThicknessSlider:SetValue(buttonData.barAuraEffectThickness or 2)
+                        barAuraEffectThicknessSlider:SetFullWidth(true)
+                        barAuraEffectThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectThickness = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectThicknessSlider)
+                        local barAuraEffectSpeedSlider = AceGUI:Create("Slider")
+                        barAuraEffectSpeedSlider:SetLabel("Speed")
+                        barAuraEffectSpeedSlider:SetSliderValues(10, 200, 5)
+                        barAuraEffectSpeedSlider:SetValue(buttonData.barAuraEffectSpeed or 60)
+                        barAuraEffectSpeedSlider:SetFullWidth(true)
+                        barAuraEffectSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSpeed = val
+                            -- Update speed live without invalidating (no visual state change)
+                            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                            if gFrame then
+                                for _, btn in ipairs(gFrame.buttons) do
+                                    if btn.index == selectedButton and btn.barAuraEffect and btn.barAuraEffect.pixelFrame then
+                                        btn.barAuraEffect.pixelFrame._speed = val
+                                    end
+                                end
+                            end
+                        end)
+                        scroll:AddChild(barAuraEffectSpeedSlider)
+                    elseif buttonData.barAuraEffect == "glow" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Glow Size")
+                        barAuraEffectSizeSlider:SetSliderValues(0, 60, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 32)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                    end
+
+                    -- Preview toggle
+                    local barAuraPreviewCb = AceGUI:Create("CheckBox")
+                    barAuraPreviewCb:SetLabel("Preview")
+                    local barAuraPreviewActive = false
+                    local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                    if gFrame then
+                        for _, btn in ipairs(gFrame.buttons) do
+                            if btn.index == selectedButton and btn._barAuraEffectPreview then
+                                barAuraPreviewActive = true
+                                break
+                            end
+                        end
+                    end
+                    barAuraPreviewCb:SetValue(barAuraPreviewActive)
+                    barAuraPreviewCb:SetFullWidth(true)
+                    barAuraPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        CooldownCompanion:SetBarAuraEffectPreview(selectedGroup, selectedButton, val)
+                    end)
+                    scroll:AddChild(barAuraPreviewCb)
+                end
+            end -- bars/icons aura effect branch
         end
     end
 end
 
 local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
+    local group = CooldownCompanion.db.profile.groups[selectedGroup]
+    if not group then return end
+
     local eqAuraCb = AceGUI:Create("CheckBox")
     eqAuraCb:SetLabel("Track Buff Duration")
     eqAuraCb:SetValue(buttonData.auraTracking == true)
@@ -3015,7 +3306,8 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(eqAuraNoDesatCb)
 
-            -- Active buff indicator controls (equippable items)
+            -- Active buff indicator controls (equippable items, hidden for bar mode)
+            if group.displayMode ~= "bars" then
             local eqAuraGlowDrop = AceGUI:Create("Dropdown")
             eqAuraGlowDrop:SetLabel("Active Buff Indicator")
             eqAuraGlowDrop:SetList({
@@ -3092,6 +3384,139 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
                 end)
                 scroll:AddChild(eqAuraGlowPreviewCb)
             end
+            else -- bars: bar-specific aura effect controls
+                local barAuraColorPicker = AceGUI:Create("ColorPicker")
+                barAuraColorPicker:SetLabel("Bar Color While Active")
+                barAuraColorPicker:SetHasAlpha(true)
+                local bac = buttonData.barAuraColor or {0.2, 1.0, 0.2, 1.0}
+                barAuraColorPicker:SetColor(bac[1], bac[2], bac[3], bac[4])
+                barAuraColorPicker:SetFullWidth(true)
+                barAuraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                    buttonData.barAuraColor = {r, g, b, a}
+                end)
+                barAuraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                    buttonData.barAuraColor = {r, g, b, a}
+                end)
+                scroll:AddChild(barAuraColorPicker)
+
+                local barAuraEffectDrop = AceGUI:Create("Dropdown")
+                barAuraEffectDrop:SetLabel("Bar Active Effect")
+                barAuraEffectDrop:SetList({
+                    ["none"] = "None",
+                    ["pixel"] = "Pixel Glow",
+                    ["solid"] = "Solid Border",
+                    ["glow"] = "Proc Glow",
+                }, {"none", "pixel", "solid", "glow"})
+                barAuraEffectDrop:SetValue(buttonData.barAuraEffect or "none")
+                barAuraEffectDrop:SetFullWidth(true)
+                barAuraEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.barAuraEffect = (val ~= "none") and val or nil
+                    CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                scroll:AddChild(barAuraEffectDrop)
+
+                if buttonData.barAuraEffect and buttonData.barAuraEffect ~= "none" then
+                    local barAuraEffectColorPicker = AceGUI:Create("ColorPicker")
+                    barAuraEffectColorPicker:SetLabel("Effect Color")
+                    local baec = buttonData.barAuraEffectColor or {1, 0.84, 0, 0.9}
+                    barAuraEffectColorPicker:SetColor(baec[1], baec[2], baec[3], baec[4] or 0.9)
+                    barAuraEffectColorPicker:SetHasAlpha(true)
+                    barAuraEffectColorPicker:SetFullWidth(true)
+                    barAuraEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                        buttonData.barAuraEffectColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    barAuraEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                        buttonData.barAuraEffectColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    scroll:AddChild(barAuraEffectColorPicker)
+
+                    if buttonData.barAuraEffect == "solid" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Border Size")
+                        barAuraEffectSizeSlider:SetSliderValues(1, 8, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 2)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                    elseif buttonData.barAuraEffect == "pixel" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Line Length")
+                        barAuraEffectSizeSlider:SetSliderValues(2, 12, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 4)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                        local barAuraEffectThicknessSlider = AceGUI:Create("Slider")
+                        barAuraEffectThicknessSlider:SetLabel("Line Thickness")
+                        barAuraEffectThicknessSlider:SetSliderValues(1, 6, 1)
+                        barAuraEffectThicknessSlider:SetValue(buttonData.barAuraEffectThickness or 2)
+                        barAuraEffectThicknessSlider:SetFullWidth(true)
+                        barAuraEffectThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectThickness = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectThicknessSlider)
+                        local barAuraEffectSpeedSlider = AceGUI:Create("Slider")
+                        barAuraEffectSpeedSlider:SetLabel("Speed")
+                        barAuraEffectSpeedSlider:SetSliderValues(10, 200, 5)
+                        barAuraEffectSpeedSlider:SetValue(buttonData.barAuraEffectSpeed or 60)
+                        barAuraEffectSpeedSlider:SetFullWidth(true)
+                        barAuraEffectSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSpeed = val
+                            -- Update speed live without invalidating (no visual state change)
+                            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                            if gFrame then
+                                for _, btn in ipairs(gFrame.buttons) do
+                                    if btn.index == selectedButton and btn.barAuraEffect and btn.barAuraEffect.pixelFrame then
+                                        btn.barAuraEffect.pixelFrame._speed = val
+                                    end
+                                end
+                            end
+                        end)
+                        scroll:AddChild(barAuraEffectSpeedSlider)
+                    elseif buttonData.barAuraEffect == "glow" then
+                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
+                        barAuraEffectSizeSlider:SetLabel("Glow Size")
+                        barAuraEffectSizeSlider:SetSliderValues(0, 60, 1)
+                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 32)
+                        barAuraEffectSizeSlider:SetFullWidth(true)
+                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            buttonData.barAuraEffectSize = val
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(barAuraEffectSizeSlider)
+                    end
+
+                    -- Preview toggle
+                    local barAuraPreviewCb = AceGUI:Create("CheckBox")
+                    barAuraPreviewCb:SetLabel("Preview")
+                    local barAuraPreviewActive = false
+                    local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                    if gFrame then
+                        for _, btn in ipairs(gFrame.buttons) do
+                            if btn.index == selectedButton and btn._barAuraEffectPreview then
+                                barAuraPreviewActive = true
+                                break
+                            end
+                        end
+                    end
+                    barAuraPreviewCb:SetValue(barAuraPreviewActive)
+                    barAuraPreviewCb:SetFullWidth(true)
+                    barAuraPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        CooldownCompanion:SetBarAuraEffectPreview(selectedGroup, selectedButton, val)
+                    end)
+                    scroll:AddChild(barAuraPreviewCb)
+                end
+            end -- bars/icons aura effect branch
         end
     end
 end
@@ -3185,6 +3610,8 @@ local function BuildExtrasTab(container)
     if not group then return end
     local style = group.style
 
+    local isBarMode = group.displayMode == "bars"
+
     local desatCb = AceGUI:Create("CheckBox")
     desatCb:SetLabel("Desaturate On Cooldown")
     desatCb:SetValue(style.desaturateOnCooldown or false)
@@ -3195,6 +3622,7 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(desatCb)
 
+    if not isBarMode then
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")
     gcdCb:SetValue(style.showGCDSwipe == true)
@@ -3232,6 +3660,7 @@ local function BuildExtrasTab(container)
         GameTooltip:Hide()
     end)
     table.insert(tabInfoButtons, rangeInfo)
+    end -- not isBarMode
 
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
@@ -3243,6 +3672,7 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(tooltipCb)
 
+    if not isBarMode then
     -- Loss of control
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
@@ -3434,6 +3864,7 @@ local function BuildExtrasTab(container)
             container:AddChild(procSlider)
         end
     end
+    end -- not isBarMode
 
     -- "Alpha" heading with (?) info button
     local alphaHeading = AceGUI:Create("Heading")
@@ -3626,8 +4057,8 @@ local function BuildExtrasTab(container)
     otherHeading:SetFullWidth(true)
     container:AddChild(otherHeading)
 
-    -- Masque skinning toggle (only show if Masque is installed)
-    if CooldownCompanion.Masque then
+    -- Masque skinning toggle (only show if Masque is installed, not in bar mode)
+    if CooldownCompanion.Masque and not isBarMode then
         local masqueCb = AceGUI:Create("CheckBox")
         masqueCb:SetLabel("Enable Masque Skinning")
         masqueCb:SetValue(group.masqueEnabled or false)
@@ -3850,7 +4281,8 @@ local function BuildPositioningTab(container)
     HookSliderEditBox(ySlider)
     container:AddChild(ySlider)
 
-    -- Orientation dropdown
+    -- Orientation dropdown (hidden for bars — bars are always vertical)
+    if group.displayMode ~= "bars" then
     local orientDrop = AceGUI:Create("Dropdown")
     orientDrop:SetLabel("Orientation")
     orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
@@ -3861,6 +4293,7 @@ local function BuildPositioningTab(container)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end)
     container:AddChild(orientDrop)
+    end
 
     -- Buttons Per Row/Column
     local numButtons = math.max(1, #group.buttons)
@@ -3876,8 +4309,9 @@ local function BuildPositioningTab(container)
     container:AddChild(bprSlider)
 
     -- ================================================================
-    -- Strata (Layer Order)
+    -- Strata (Layer Order) — hidden for bar mode
     -- ================================================================
+    if group.displayMode ~= "bars" then
     local strataHeading = AceGUI:Create("Heading")
     strataHeading:SetText("Strata")
     strataHeading:SetFullWidth(true)
@@ -3987,12 +4421,314 @@ local function BuildPositioningTab(container)
             strataDropdowns[pos] = drop
         end
     end
+    end -- not bars (strata)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons created above
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
             btn:Hide()
         end
+    end
+end
+
+local function BuildBarAppearanceTab(container, group, style)
+    -- Bar Settings header
+    local barHeading = AceGUI:Create("Heading")
+    barHeading:SetText("Bar Settings")
+    barHeading:SetFullWidth(true)
+    container:AddChild(barHeading)
+
+    local lengthSlider = AceGUI:Create("Slider")
+    lengthSlider:SetLabel("Bar Length")
+    lengthSlider:SetSliderValues(50, 400, 1)
+    lengthSlider:SetValue(style.barLength or 180)
+    lengthSlider:SetFullWidth(true)
+    lengthSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barLength = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(lengthSlider)
+
+    local heightSlider = AceGUI:Create("Slider")
+    heightSlider:SetLabel("Bar Height")
+    heightSlider:SetSliderValues(10, 50, 1)
+    heightSlider:SetValue(style.barHeight or 20)
+    heightSlider:SetFullWidth(true)
+    heightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barHeight = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(heightSlider)
+
+    local showIconCb = AceGUI:Create("CheckBox")
+    showIconCb:SetLabel("Show Icon")
+    showIconCb:SetValue(style.showBarIcon ~= false)
+    showIconCb:SetFullWidth(true)
+    showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showBarIcon = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(showIconCb)
+
+    local spacingSlider = AceGUI:Create("Slider")
+    spacingSlider:SetLabel("Bar Spacing")
+    spacingSlider:SetSliderValues(0, 10, 0.1)
+    spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
+    spacingSlider:SetFullWidth(true)
+    spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.buttonSpacing = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(spacingSlider)
+
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.borderSize = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(borderSlider)
+
+    local borderColor = AceGUI:Create("ColorPicker")
+    borderColor:SetLabel("Border Color")
+    borderColor:SetHasAlpha(true)
+    local bc = style.borderColor or {0, 0, 0, 1}
+    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
+    borderColor:SetFullWidth(true)
+    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(borderColor)
+
+    local barColorPicker = AceGUI:Create("ColorPicker")
+    barColorPicker:SetLabel("Bar Color")
+    barColorPicker:SetHasAlpha(true)
+    local brc = style.barColor or {0.2, 0.6, 1.0, 1.0}
+    barColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
+    barColorPicker:SetFullWidth(true)
+    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.barColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.barColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(barColorPicker)
+
+    local barCdColorPicker = AceGUI:Create("ColorPicker")
+    barCdColorPicker:SetLabel("Bar Cooldown Color")
+    barCdColorPicker:SetHasAlpha(true)
+    local bcc = style.barCooldownColor or {0.6, 0.6, 0.6, 1.0}
+    barCdColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
+    barCdColorPicker:SetFullWidth(true)
+    barCdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.barCooldownColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    barCdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.barCooldownColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(barCdColorPicker)
+
+    local barBgColorPicker = AceGUI:Create("ColorPicker")
+    barBgColorPicker:SetLabel("Bar Background Color")
+    barBgColorPicker:SetHasAlpha(true)
+    local bbg = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
+    barBgColorPicker:SetColor(bbg[1], bbg[2], bbg[3], bbg[4])
+    barBgColorPicker:SetFullWidth(true)
+    barBgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.barBgColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    barBgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.barBgColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(barBgColorPicker)
+
+    -- Name Text heading
+    local nameHeading = AceGUI:Create("Heading")
+    nameHeading:SetText("Name Text")
+    nameHeading:SetFullWidth(true)
+    container:AddChild(nameHeading)
+
+    local showNameCb = AceGUI:Create("CheckBox")
+    showNameCb:SetLabel("Show Name Text")
+    showNameCb:SetValue(style.showBarNameText ~= false)
+    showNameCb:SetFullWidth(true)
+    showNameCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showBarNameText = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(showNameCb)
+
+    if style.showBarNameText ~= false then
+        local nameFontSizeSlider = AceGUI:Create("Slider")
+        nameFontSizeSlider:SetLabel("Font Size")
+        nameFontSizeSlider:SetSliderValues(6, 24, 1)
+        nameFontSizeSlider:SetValue(style.barNameFontSize or 10)
+        nameFontSizeSlider:SetFullWidth(true)
+        nameFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barNameFontSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(nameFontSizeSlider)
+
+        local nameFontDrop = AceGUI:Create("Dropdown")
+        nameFontDrop:SetLabel("Font")
+        nameFontDrop:SetList(fontOptions)
+        nameFontDrop:SetValue(style.barNameFont or "Fonts\\FRIZQT__.TTF")
+        nameFontDrop:SetFullWidth(true)
+        nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barNameFont = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(nameFontDrop)
+
+        local nameOutlineDrop = AceGUI:Create("Dropdown")
+        nameOutlineDrop:SetLabel("Font Outline")
+        nameOutlineDrop:SetList(outlineOptions)
+        nameOutlineDrop:SetValue(style.barNameFontOutline or "OUTLINE")
+        nameOutlineDrop:SetFullWidth(true)
+        nameOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barNameFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(nameOutlineDrop)
+
+        local nameFontColor = AceGUI:Create("ColorPicker")
+        nameFontColor:SetLabel("Font Color")
+        nameFontColor:SetHasAlpha(true)
+        local nfc = style.barNameFontColor or {1, 1, 1, 1}
+        nameFontColor:SetColor(nfc[1], nfc[2], nfc[3], nfc[4])
+        nameFontColor:SetFullWidth(true)
+        nameFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.barNameFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        nameFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.barNameFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(nameFontColor)
+    end
+
+    -- Time Text heading
+    local timeHeading = AceGUI:Create("Heading")
+    timeHeading:SetText("Time Text")
+    timeHeading:SetFullWidth(true)
+    container:AddChild(timeHeading)
+
+    local cdTextCb = AceGUI:Create("CheckBox")
+    cdTextCb:SetLabel("Show Cooldown Text")
+    cdTextCb:SetValue(style.showCooldownText or false)
+    cdTextCb:SetFullWidth(true)
+    cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showCooldownText = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(cdTextCb)
+
+    if style.showCooldownText then
+        local fontSizeSlider = AceGUI:Create("Slider")
+        fontSizeSlider:SetLabel("Font Size")
+        fontSizeSlider:SetSliderValues(6, 24, 1)
+        fontSizeSlider:SetValue(style.cooldownFontSize or 12)
+        fontSizeSlider:SetFullWidth(true)
+        fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownFontSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(fontSizeSlider)
+
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        fontDrop:SetList(fontOptions)
+        fontDrop:SetValue(style.cooldownFont or "Fonts\\FRIZQT__.TTF")
+        fontDrop:SetFullWidth(true)
+        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownFont = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(fontDrop)
+
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Font Outline")
+        outlineDrop:SetList(outlineOptions)
+        outlineDrop:SetValue(style.cooldownFontOutline or "OUTLINE")
+        outlineDrop:SetFullWidth(true)
+        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(outlineDrop)
+
+        local cdFontColor = AceGUI:Create("ColorPicker")
+        cdFontColor:SetLabel("Font Color")
+        cdFontColor:SetHasAlpha(true)
+        local cdc = style.cooldownFontColor or {1, 1, 1, 1}
+        cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
+        cdFontColor:SetFullWidth(true)
+        cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.cooldownFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.cooldownFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(cdFontColor)
+    end
+
+    local showReadyCb = AceGUI:Create("CheckBox")
+    showReadyCb:SetLabel("Show Ready Text")
+    showReadyCb:SetValue(style.showBarReadyText or false)
+    showReadyCb:SetFullWidth(true)
+    showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showBarReadyText = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(showReadyCb)
+
+    if style.showBarReadyText then
+        local readyTextBox = AceGUI:Create("EditBox")
+        readyTextBox:SetLabel("Ready Text")
+        readyTextBox:SetText(style.barReadyText or "Ready")
+        readyTextBox:SetFullWidth(true)
+        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
+            style.barReadyText = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(readyTextBox)
+
+        local readyColorPicker = AceGUI:Create("ColorPicker")
+        readyColorPicker:SetLabel("Ready Text Color")
+        readyColorPicker:SetHasAlpha(true)
+        local rtc = style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
+        readyColorPicker:SetColor(rtc[1], rtc[2], rtc[3], rtc[4])
+        readyColorPicker:SetFullWidth(true)
+        readyColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.barReadyTextColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        readyColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.barReadyTextColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(readyColorPicker)
     end
 end
 
@@ -4009,6 +4745,12 @@ local function BuildAppearanceTab(container)
     local group = CooldownCompanion.db.profile.groups[selectedGroup]
     if not group then return end
     local style = group.style
+
+    -- Branch for bar mode
+    if group.displayMode == "bars" then
+        BuildBarAppearanceTab(container, group, style)
+        return
+    end
 
     -- Icon Settings header
     local iconHeading = AceGUI:Create("Heading")
@@ -4184,6 +4926,7 @@ local function BuildAppearanceTab(container)
         cdFontColor:SetFullWidth(true)
         cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
             style.cooldownFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
             style.cooldownFontColor = {r, g, b, a}
