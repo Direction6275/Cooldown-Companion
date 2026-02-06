@@ -454,6 +454,10 @@ end
 
 function CooldownCompanion:OnCombatStart()
     self:UpdateAllCooldowns()
+    -- Close spellbook during combat to avoid Blizzard secret value errors
+    if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
+        HideUIPanel(PlayerSpellsFrame)
+    end
     -- Hide config panel during combat to avoid protected frame errors
     if self._configWasOpen == nil then
         self._configWasOpen = false

@@ -1756,19 +1756,21 @@ function RefreshColumn2()
     local addBtn = AceGUI:Create("Button")
     addBtn:SetText("Add Spell/Item to Track")
     addBtn:SetFullWidth(true)
-    addBtn:SetCallback("OnClick", function()
+    addBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    addBtn:SetCallback("OnClick", function(_, _, button)
+        if button == "RightButton" then
+            if InCombatLockdown() then
+                CooldownCompanion:Print("Cannot open spellbook during combat.")
+                return
+            end
+            PlayerSpellsUtil.ToggleSpellBookFrame()
+            return
+        end
         if newInput ~= "" and selectedGroup then
             if TryAdd(newInput) then
                 newInput = ""
                 CooldownCompanion:RefreshConfigPanel()
             end
-        end
-    end)
-    -- Right-click to toggle spellbook
-    addBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    addBtn.frame:HookScript("OnClick", function(self, button)
-        if button == "RightButton" then
-            PlayerSpellsUtil.ToggleSpellBookFrame()
         end
     end)
     col2Scroll:AddChild(addBtn)
