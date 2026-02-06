@@ -2742,6 +2742,17 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         scroll:AddChild(chargeGapSlider)
+
+        if group.style and group.style.showCooldownText then
+            local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
+            cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
+            cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
+            cdTextOnRechargeCb:SetFullWidth(true)
+            cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.barCdTextOnRechargeBar = val
+            end)
+            scroll:AddChild(cdTextOnRechargeCb)
+        end
     end
 end
 
@@ -4700,6 +4711,28 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         container:AddChild(nameFontColor)
+
+        local nameOffXSlider = AceGUI:Create("Slider")
+        nameOffXSlider:SetLabel("X Offset")
+        nameOffXSlider:SetSliderValues(-50, 50, 1)
+        nameOffXSlider:SetValue(style.barNameTextOffsetX or 0)
+        nameOffXSlider:SetFullWidth(true)
+        nameOffXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barNameTextOffsetX = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(nameOffXSlider)
+
+        local nameOffYSlider = AceGUI:Create("Slider")
+        nameOffYSlider:SetLabel("Y Offset")
+        nameOffYSlider:SetSliderValues(-50, 50, 1)
+        nameOffYSlider:SetValue(style.barNameTextOffsetY or 0)
+        nameOffYSlider:SetFullWidth(true)
+        nameOffYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barNameTextOffsetY = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(nameOffYSlider)
     end
 
     -- Time Text heading
@@ -4768,6 +4801,28 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         container:AddChild(cdFontColor)
+
+        local cdOffXSlider = AceGUI:Create("Slider")
+        cdOffXSlider:SetLabel("X Offset")
+        cdOffXSlider:SetSliderValues(-50, 50, 1)
+        cdOffXSlider:SetValue(style.barCdTextOffsetX or 0)
+        cdOffXSlider:SetFullWidth(true)
+        cdOffXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barCdTextOffsetX = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(cdOffXSlider)
+
+        local cdOffYSlider = AceGUI:Create("Slider")
+        cdOffYSlider:SetLabel("Y Offset")
+        cdOffYSlider:SetSliderValues(-50, 50, 1)
+        cdOffYSlider:SetValue(style.barCdTextOffsetY or 0)
+        cdOffYSlider:SetFullWidth(true)
+        cdOffYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barCdTextOffsetY = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(cdOffYSlider)
     end
 
     local showReadyCb = AceGUI:Create("CheckBox")

@@ -1544,7 +1544,68 @@ UpdateBarFill = function(button)
         else
             button.timeText:SetText("")
         end
+
+        -- Anchor cooldown text to the recharging sub-bar when enabled
+        if button.buttonData.barCdTextOnRechargeBar and button.chargeBars then
+            local targetBar
+            if chargeCount < chargeMax then
+                targetBar = chargeCount + 1
+            else
+                targetBar = 0 -- all full → anchor back to statusBar
+            end
+            if button._timeTextAnchoredBar ~= targetBar then
+                button._timeTextAnchoredBar = targetBar
+                local st = button.style
+                local cdOX = st.barCdTextOffsetX or 0
+                local cdOY = st.barCdTextOffsetY or 0
+                local nmOX = st.barNameTextOffsetX or 0
+                local nmOY = st.barNameTextOffsetY or 0
+                button.timeText:ClearAllPoints()
+                if targetBar > 0 and button.chargeBars[targetBar] then
+                    button.timeText:SetPoint("RIGHT", button.chargeBars[targetBar], "RIGHT", -3 + cdOX, cdOY)
+                    -- Detach name truncation from timeText so it doesn't follow
+                    button.nameText:ClearAllPoints()
+                    button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                    button.nameText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3, 0)
+                else
+                    button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+                    -- Restore name truncation against timeText
+                    button.nameText:ClearAllPoints()
+                    button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                    button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+                end
+            end
+        elseif button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
+            -- Option disabled — reset back to statusBar
+            button._timeTextAnchoredBar = 0
+            local st = button.style
+            local cdOX = st.barCdTextOffsetX or 0
+            local cdOY = st.barCdTextOffsetY or 0
+            local nmOX = st.barNameTextOffsetX or 0
+            local nmOY = st.barNameTextOffsetY or 0
+            button.timeText:ClearAllPoints()
+            button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+            button.nameText:ClearAllPoints()
+            button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+            button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+        end
+
         return -- skip single-bar path
+    end
+
+    -- Reset text anchor if previously on a charge bar
+    if button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
+        button._timeTextAnchoredBar = 0
+        local st = button.style
+        local cdOX = st.barCdTextOffsetX or 0
+        local cdOY = st.barCdTextOffsetY or 0
+        local nmOX = st.barNameTextOffsetX or 0
+        local nmOY = st.barNameTextOffsetY or 0
+        button.timeText:ClearAllPoints()
+        button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+        button.nameText:ClearAllPoints()
+        button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
     end
 
     -- Single-bar path
@@ -2008,7 +2069,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
     local nameColor = style.barNameFontColor or {1, 1, 1, 1}
     button.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
-    button.nameText:SetPoint("LEFT", 3, 0)
+    local nameOffX = style.barNameTextOffsetX or 0
+    local nameOffY = style.barNameTextOffsetY or 0
+    button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
     button.nameText:SetJustifyH("LEFT")
     if style.showBarNameText ~= false then
         button.nameText:SetText(buttonData.name or "")
@@ -2022,7 +2085,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
     local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
     button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
-    button.timeText:SetPoint("RIGHT", -3, 0)
+    local cdOffX = style.barCdTextOffsetX or 0
+    local cdOffY = style.barCdTextOffsetY or 0
+    button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
     button.timeText:SetJustifyH("RIGHT")
 
     -- Truncate name text so it doesn't overlap time text
@@ -2270,6 +2335,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barReadyTextColor = nil
     button._barAuraColor = nil
     button._barAuraEffectActive = nil
+    button._timeTextAnchoredBar = nil
 
     button:SetSize(barLength, barHeight)
 
