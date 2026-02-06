@@ -2079,7 +2079,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     -- Charge text customization controls (only for charge-based spells)
     if buttonData.hasCharges then
         local showChargeTextCb = AceGUI:Create("CheckBox")
-        showChargeTextCb:SetLabel("Show Charge Count")
+        showChargeTextCb:SetLabel("Show Charge Count Text")
         showChargeTextCb:SetValue(buttonData.showChargeText or false)
         showChargeTextCb:SetFullWidth(true)
         showChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4896,6 +4896,11 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(cdOffYSlider)
     end
+
+    local readySep = AceGUI:Create("Heading")
+    readySep:SetText("")
+    readySep:SetFullWidth(true)
+    container:AddChild(readySep)
 
     local showReadyCb = AceGUI:Create("CheckBox")
     showReadyCb:SetLabel("Show Ready Text")
