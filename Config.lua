@@ -5449,7 +5449,7 @@ local function CreateConfigPanel()
     local collapseIcon = collapseBtn.frame:CreateTexture(nil, "ARTWORK")
     collapseIcon:SetAtlas("questlog-icon-shrink")
     collapseIcon:SetSize(18, 18)
-    collapseIcon:SetPoint("CENTER", 0, -1)
+    collapseIcon:SetPoint("CENTER", 1, -1)
 
     -- Gear button — left of Collapse
     local gearBtn = AceGUI:Create("Button")
