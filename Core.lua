@@ -54,6 +54,7 @@ local defaults = {
             hide = false,
         },
         hideInfoButtons = false,
+        escClosesConfig = true,
         groups = {
             --[[
                 [groupId] = {

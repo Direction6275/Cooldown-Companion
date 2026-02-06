@@ -5380,10 +5380,30 @@ local function CreateConfigPanel()
 
     -- Prevent AceGUI from releasing on close - just hide
     frame:SetCallback("OnClose", function(widget)
+        widget.frame:Hide()
+    end)
+
+    -- Cleanup on hide (covers ESC, X button, OnClose, ToggleConfig)
+    -- isCollapsing flag prevents cleanup when collapsing (vs truly closing)
+    local isCollapsing = false
+    content:HookScript("OnHide", function()
+        if isCollapsing then return end
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CloseDropDownMenus()
-        widget.frame:Hide()
+    end)
+
+    -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
+    content:EnableKeyboard(true)
+    content:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" and CooldownCompanion.db.profile.escClosesConfig then
+            if not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(false)
+            end
+            self:Hide()
+        elseif not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(true)
+        end
     end)
 
     -- Permanently hide the AceGUI bottom close button
@@ -5396,7 +5416,6 @@ local function CreateConfigPanel()
     end
 
     local isMinimized = false
-    local TITLE_BAR_HEIGHT = 40
     local fullHeight = 700
 
     -- Title bar buttons: [Gear] [Collapse] [X] at top-right
@@ -5415,9 +5434,6 @@ local function CreateConfigPanel()
     closeIcon:SetSize(16, 16)
     closeIcon:SetPoint("CENTER")
     closeBtn:SetCallback("OnClick", function()
-        CooldownCompanion:ClearAllProcGlowPreviews()
-        CooldownCompanion:ClearAllAuraGlowPreviews()
-        CloseDropDownMenus()
         content:Hide()
     end)
 
@@ -5474,40 +5490,126 @@ local function CreateConfigPanel()
                 end
             end
             UIDropDownMenu_AddButton(info, level)
+
+            local info2 = UIDropDownMenu_CreateInfo()
+            info2.text = "  Close on ESC"
+            info2.checked = function() return CooldownCompanion.db.profile.escClosesConfig end
+            info2.isNotRadio = true
+            info2.keepShownOnClick = true
+            info2.func = function()
+                CooldownCompanion.db.profile.escClosesConfig = not CooldownCompanion.db.profile.escClosesConfig
+            end
+            UIDropDownMenu_AddButton(info2, level)
         end, "MENU")
         gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, gearDropdownFrame, gearBtn.frame, 0, 0)
     end)
 
+    -- Mini frame for collapsed state
+    local miniFrame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    miniFrame:SetSize(58, 52)
+    miniFrame:SetMovable(true)
+    miniFrame:EnableMouse(true)
+    miniFrame:RegisterForDrag("LeftButton")
+    miniFrame:SetScript("OnDragStart", miniFrame.StartMoving)
+    miniFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    miniFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    miniFrame:SetToplevel(true)
+    miniFrame:Hide()
+
+    -- Copy backdrop from the main AceGUI frame so skin addons are respected
+    local function ApplyMiniFrameBackdrop()
+        local backdrop = content.GetBackdrop and content:GetBackdrop()
+        if backdrop then
+            local copy = {}
+            for k, v in pairs(backdrop) do
+                if type(v) == "table" then
+                    copy[k] = {}
+                    for k2, v2 in pairs(v) do copy[k][k2] = v2 end
+                else
+                    copy[k] = v
+                end
+            end
+            -- Cap edge size so borders don't overlap on the small frame
+            local maxEdge = math.min(miniFrame:GetWidth(), miniFrame:GetHeight()) / 2
+            if copy.edgeSize and copy.edgeSize > maxEdge then
+                copy.edgeSize = maxEdge
+            end
+            miniFrame:SetBackdrop(copy)
+            miniFrame:SetBackdropColor(content:GetBackdropColor())
+            miniFrame:SetBackdropBorderColor(content:GetBackdropBorderColor())
+        else
+            miniFrame:SetBackdrop({
+                bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true, tileSize = 16, edgeSize = 16,
+                insets = { left = 4, right = 4, top = 4, bottom = 4 },
+            })
+            miniFrame:SetBackdropColor(0, 0, 0, 0.9)
+        end
+    end
+
+    -- Reset collapse state whenever mini frame is hidden (ESC, /cdc toggle, expand)
+    miniFrame:SetScript("OnHide", function()
+        isMinimized = false
+        collapseIcon:SetAtlas("questlog-icon-shrink")
+        collapseBtn.frame:SetParent(content)
+        collapseBtn.frame:ClearAllPoints()
+        collapseBtn.frame:SetPoint("RIGHT", closeBtn.frame, "LEFT", -2, 0)
+    end)
+
+    -- ESC handler for mini frame
+    miniFrame:EnableKeyboard(true)
+    miniFrame:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" and CooldownCompanion.db.profile.escClosesConfig then
+            if not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(false)
+            end
+            self:Hide()
+        elseif not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+
+    frame._miniFrame = miniFrame
+
     -- Collapse button callback
     collapseBtn:SetCallback("OnClick", function()
-        local top = content:GetTop()
-        local left = content:GetLeft()
-
         if isMinimized then
-            -- Expand
+            -- Expand: read mini frame position before hiding
+            local miniLeft = miniFrame:GetLeft()
+            local miniTop = miniFrame:GetTop()
+            miniFrame:Hide() -- OnHide resets state and reparents collapse button
+
+            -- Position main frame so its top-right aligns near where the mini frame was
             content:ClearAllPoints()
-            content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+            content:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", miniLeft + 58, miniTop)
             content:SetHeight(fullHeight)
             content:SetWidth(1150)
-            contentFrame:Show()
-            frame:SetStatusText("v1.2")
-            gearBtn.frame:Show()
-            closeBtn.frame:Show()
-            collapseIcon:SetAtlas("questlog-icon-shrink")
-            isMinimized = false
+            content:Show()
+            CooldownCompanion:RefreshConfigPanel()
         else
-            -- Collapse
+            -- Collapse: hide main frame, show mini frame at collapse button position
             CloseDropDownMenus()
-            contentFrame:Hide()
-            gearBtn.frame:Hide()
-            closeBtn.frame:Hide()
+
+            local btnLeft = collapseBtn.frame:GetLeft()
+            local btnBottom = collapseBtn.frame:GetBottom()
+
+            isCollapsing = true
+            content:Hide()
+            isCollapsing = false
+
+            ApplyMiniFrameBackdrop()
+            miniFrame:ClearAllPoints()
+            miniFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", btnLeft - 18, btnBottom - 17)
+            miniFrame:Show()
+
+            -- Reparent collapse button to mini frame
+            collapseBtn.frame:SetParent(miniFrame)
+            collapseBtn.frame:ClearAllPoints()
+            collapseBtn.frame:SetPoint("CENTER")
+
             collapseIcon:SetAtlas("questlog-icon-expand")
-            content:ClearAllPoints()
-            content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
-            content:SetHeight(TITLE_BAR_HEIGHT)
-            content:SetWidth(1150)
-            frame:SetStatusText("")
             isMinimized = true
         end
     end)
@@ -5810,6 +5912,12 @@ function CooldownCompanion:ToggleConfig()
             CooldownCompanion:RefreshConfigPanel()
         end)
         return -- AceGUI Frame is already shown on creation
+    end
+
+    -- If minimized, close everything and reset state
+    if configFrame._miniFrame and configFrame._miniFrame:IsShown() then
+        configFrame._miniFrame:Hide()
+        return
     end
 
     if configFrame.frame:IsShown() then
