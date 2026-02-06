@@ -491,9 +491,16 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if not frame or not group then return end
 
     local style = group.style or {}
+    local isBarMode = group.displayMode == "bars"
     local buttonWidth, buttonHeight
 
-    if style.maintainAspectRatio then
+    if isBarMode then
+        buttonWidth = style.barLength or 180
+        buttonHeight = style.barHeight or 20
+        if style.barFillVertical then
+            buttonWidth, buttonHeight = buttonHeight, buttonWidth
+        end
+    elseif style.maintainAspectRatio then
         -- Square mode: use buttonSize for both dimensions
         local size = style.buttonSize or ST.BUTTON_SIZE
         buttonWidth = size
@@ -505,7 +512,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
 
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or "horizontal"
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
 
     -- Clear existing buttons (remove from Masque first if enabled)
@@ -523,7 +530,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     for i, buttonData in ipairs(group.buttons) do
         if self:IsButtonUsable(buttonData) then
             visibleIndex = visibleIndex + 1
-            local button = self:CreateButtonFrame(frame, i, buttonData, style)
+            local button
+            if isBarMode then
+                button = self:CreateBarFrame(frame, i, buttonData, style)
+            else
+                button = self:CreateButtonFrame(frame, i, buttonData, style)
+            end
 
             -- Position the button using visibleIndex for gap-free layout
             local row, col
@@ -540,8 +552,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             button:Show()
             table.insert(frame.buttons, button)
 
-            -- Add to Masque if enabled (after button is shown and in the list)
-            if group.masqueEnabled then
+            -- Add to Masque if enabled (after button is shown and in the list, icons only)
+            if not isBarMode and group.masqueEnabled then
                 self:AddButtonToMasque(groupId, button)
             end
         end
@@ -568,9 +580,16 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     if not frame or not group then return end
 
     local style = group.style or {}
+    local isBarMode = group.displayMode == "bars"
     local buttonWidth, buttonHeight
 
-    if style.maintainAspectRatio then
+    if isBarMode then
+        buttonWidth = style.barLength or 180
+        buttonHeight = style.barHeight or 20
+        if style.barFillVertical then
+            buttonWidth, buttonHeight = buttonHeight, buttonWidth
+        end
+    elseif style.maintainAspectRatio then
         -- Square mode: use buttonSize for both dimensions
         local size = style.buttonSize or ST.BUTTON_SIZE
         buttonWidth = size
@@ -582,7 +601,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or "horizontal"
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount or #group.buttons
 

@@ -12,6 +12,24 @@ local CooldownCompanion = ST.Addon
 -- Button Frame Pool
 local buttonPool = {}
 
+-- Forward declarations for bar mode functions (defined at end of file)
+local FormatBarTime
+local UpdateBarDisplay
+local SetBarAuraEffect
+local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
+local UpdateBarFill
+local EnsureChargeBars
+
+-- Anchor charge/item count text on bar buttons: relative to icon when visible, relative to bar otherwise.
+local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
+    button.count:ClearAllPoints()
+    if showIcon then
+        button.count:SetPoint(anchor, button.icon, anchor, xOff, yOff)
+    else
+        button.count:SetPoint(anchor, button, anchor, xOff, yOff)
+    end
+end
+
 -- Returns true if the given item ID is equippable (trinkets, weapons, armor, etc.)
 -- Caches result on buttonData to avoid repeated API calls.
 local function IsItemEquippable(buttonData)
@@ -798,89 +816,96 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- GCD suppression (isOnGCD is NeverSecret, always readable)
-    if fetchOk then
-        local suppressGCD = not style.showGCDSwipe and isOnGCD
-
-        if suppressGCD then
-            button.cooldown:Hide()
-        else
-            if not button.cooldown:IsShown() then
-                button.cooldown:Show()
-            end
-        end
+    -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate)
+    if button._isBar then
+        button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
     end
 
-    -- Cooldown text color: reapply each tick because WoW's CooldownFrame
-    -- may reset the internal countdown FontString color during its update.
-    if button._cdTextRegion and style.cooldownFontColor then
-        local cc = style.cooldownFontColor
-        button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-    end
+    if not button._isBar then
+        -- GCD suppression (isOnGCD is NeverSecret, always readable)
+        if fetchOk then
+            local suppressGCD = not style.showGCDSwipe and isOnGCD
 
-    -- Desaturation: driven entirely by the cooldown widget's own state.
-    -- GetCooldownTimes() returns non-secret values even during restricted
-    -- combat, so we can always reliably check if the widget has an active
-    -- cooldown. This replaces all previous state-tracking approaches.
-    if style.desaturateOnCooldown then
-        local wantDesat = false
-        if fetchOk and not isOnGCD then
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            wantDesat = widgetDuration and widgetDuration > 0
-        end
-        if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
-            wantDesat = false
-        end
-        -- When isOnGCD is true, wantDesat stays false. This clears
-        -- desaturation the moment GCD takes over from a real cooldown,
-        -- and is a no-op after a fresh cast (already un-desaturated).
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    else
-        if button._desaturated ~= false then
-            button._desaturated = false
-            button.icon:SetDesaturated(false)
-        end
-    end
-
-    -- Icon tinting priority: out-of-range red > unusable dimming > normal white
-    local r, g, b = 1, 1, 1
-    if style.showOutOfRange then
-        if buttonData.type == "spell" then
-            if button._spellOutOfRange then
-                r, g, b = 1, 0.2, 0.2
-            end
-        elseif buttonData.type == "item" then
-            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
-            if not InCombatLockdown() then
-                local inRange = IsItemInRange(buttonData.id, "target")
-                -- inRange is nil when no target or item has no range; only tint on explicit false
-                if inRange == false then
-                    r, g, b = 1, 0.2, 0.2
+            if suppressGCD then
+                button.cooldown:Hide()
+            else
+                if not button.cooldown:IsShown() then
+                    button.cooldown:Show()
                 end
             end
         end
-    end
-    if r == 1 and g == 1 and b == 1 and style.showUnusable then
-        if buttonData.type == "spell" then
-            local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
-            if insufficientPower then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
+
+        -- Cooldown text color: reapply each tick because WoW's CooldownFrame
+        -- may reset the internal countdown FontString color during its update.
+        if button._cdTextRegion and style.cooldownFontColor then
+            local cc = style.cooldownFontColor
+            button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        end
+
+        -- Desaturation: driven entirely by the cooldown widget's own state.
+        -- GetCooldownTimes() returns non-secret values even during restricted
+        -- combat, so we can always reliably check if the widget has an active
+        -- cooldown. This replaces all previous state-tracking approaches.
+        if style.desaturateOnCooldown then
+            local wantDesat = false
+            if fetchOk and not isOnGCD then
+                local _, widgetDuration = button.cooldown:GetCooldownTimes()
+                wantDesat = widgetDuration and widgetDuration > 0
             end
-        elseif buttonData.type == "item" then
-            local usable, noMana = IsUsableItem(buttonData.id)
-            if not usable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
+            if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
+                wantDesat = false
+            end
+            -- When isOnGCD is true, wantDesat stays false. This clears
+            -- desaturation the moment GCD takes over from a real cooldown,
+            -- and is a no-op after a fresh cast (already un-desaturated).
+            if button._desaturated ~= wantDesat then
+                button._desaturated = wantDesat
+                button.icon:SetDesaturated(wantDesat)
+            end
+        else
+            if button._desaturated ~= false then
+                button._desaturated = false
+                button.icon:SetDesaturated(false)
             end
         end
-    end
-    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
-        button._vertexR, button._vertexG, button._vertexB = r, g, b
-        button.icon:SetVertexColor(r, g, b)
+
+        -- Icon tinting priority: out-of-range red > unusable dimming > normal white
+        local r, g, b = 1, 1, 1
+        if style.showOutOfRange then
+            if buttonData.type == "spell" then
+                if button._spellOutOfRange then
+                    r, g, b = 1, 0.2, 0.2
+                end
+            elseif buttonData.type == "item" then
+                -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
+                if not InCombatLockdown() then
+                    local inRange = IsItemInRange(buttonData.id, "target")
+                    -- inRange is nil when no target or item has no range; only tint on explicit false
+                    if inRange == false then
+                        r, g, b = 1, 0.2, 0.2
+                    end
+                end
+            end
+        end
+        if r == 1 and g == 1 and b == 1 and style.showUnusable then
+            if buttonData.type == "spell" then
+                local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
+                if insufficientPower then
+                    local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                    r, g, b = uc[1], uc[2], uc[3]
+                end
+            elseif buttonData.type == "item" then
+                local usable, noMana = IsUsableItem(buttonData.id)
+                if not usable then
+                    local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                    r, g, b = uc[1], uc[2], uc[3]
+                end
+            end
+        end
+        if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
+            button._vertexR, button._vertexG, button._vertexB = r, g, b
+            button.icon:SetVertexColor(r, g, b)
+        end
     end
 
     -- Charge count (spells with hasCharges enabled only)
@@ -934,22 +959,29 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Display charge text.  Prefer passing the raw API value to SetText
         -- (C-side, handles secret values like print() does).  Fall back to
         -- the Lua-side estimated count only when the API table is nil.
-        local textSet = false
-        if charges then
-            textSet = pcall(function()
-                button.count:SetText(charges.currentCharges)
-            end)
-        end
-        if not textSet then
-            local displayText = button._chargeCount or ""
-            if button._chargeText ~= displayText then
-                button._chargeText = displayText
-                button.count:SetText(displayText)
+        if not buttonData.showChargeText then
+            if button._chargeText ~= "" then
+                button._chargeText = ""
+                button.count:SetText("")
+            end
+        else
+            local textSet = false
+            if charges then
+                textSet = pcall(function()
+                    button.count:SetText(charges.currentCharges)
+                end)
+            end
+            if not textSet then
+                local displayText = button._chargeCount or ""
+                if button._chargeText ~= displayText then
+                    button._chargeText = displayText
+                    button.count:SetText(displayText)
+                end
             end
         end
 
-        -- Show recharge radial — skip when aura override is active
-        if not auraOverrideActive then
+        -- Show recharge radial — skip for bars and when aura override is active
+        if not button._isBar and not auraOverrideActive then
             local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
             if chargeDuration then
                 button.cooldown:SetCooldownFromDurationObject(chargeDuration)
@@ -987,43 +1019,50 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
 
-    -- Loss of control overlay
-    UpdateLossOfControl(button)
-
-    -- Assisted highlight glow
-    if button.assistedHighlight then
-        local assistedSpellID = CooldownCompanion.assistedSpellID
-        local displayId = button._displaySpellId or buttonData.id
-        local showHighlight = style.showAssistedHighlight
-            and buttonData.type == "spell"
-            and assistedSpellID
-            and (displayId == assistedSpellID or buttonData.id == assistedSpellID)
-
-        SetAssistedHighlight(button, showHighlight)
+    -- Bar mode: update bar display after charges are resolved
+    if button._isBar then
+        UpdateBarDisplay(button, fetchOk)
     end
 
-    -- Proc glow (spell activation overlay)
-    if button.procGlow then
-        local showProc = false
-        if button._procGlowPreview then
-            showProc = true
-        elseif buttonData.procGlow == true and buttonData.type == "spell" then
-            showProc = C_SpellActivationOverlay.IsSpellOverlayed(buttonData.id) or false
-        end
-        SetProcGlow(button, showProc)
-    end
+    if not button._isBar then
+        -- Loss of control overlay
+        UpdateLossOfControl(button)
 
-    -- Aura active glow indicator
-    if button.auraGlow then
-        local showAuraGlow = false
-        if button._auraGlowPreview then
-            showAuraGlow = true
-        elseif button._auraActive
-            and buttonData.auraGlowStyle
-            and buttonData.auraGlowStyle ~= "none" then
-            showAuraGlow = true
+        -- Assisted highlight glow
+        if button.assistedHighlight then
+            local assistedSpellID = CooldownCompanion.assistedSpellID
+            local displayId = button._displaySpellId or buttonData.id
+            local showHighlight = style.showAssistedHighlight
+                and buttonData.type == "spell"
+                and assistedSpellID
+                and (displayId == assistedSpellID or buttonData.id == assistedSpellID)
+
+            SetAssistedHighlight(button, showHighlight)
         end
-        SetAuraGlow(button, showAuraGlow)
+
+        -- Proc glow (spell activation overlay)
+        if button.procGlow then
+            local showProc = false
+            if button._procGlowPreview then
+                showProc = true
+            elseif buttonData.procGlow == true and buttonData.type == "spell" then
+                showProc = C_SpellActivationOverlay.IsSpellOverlayed(buttonData.id) or false
+            end
+            SetProcGlow(button, showProc)
+        end
+
+        -- Aura active glow indicator
+        if button.auraGlow then
+            local showAuraGlow = false
+            if button._auraGlowPreview then
+                showAuraGlow = true
+            elseif button._auraActive
+                and buttonData.auraGlowStyle
+                and buttonData.auraGlowStyle ~= "none" then
+                showAuraGlow = true
+            end
+            SetAuraGlow(button, showAuraGlow)
+        end
     end
 end
 
@@ -1295,6 +1334,37 @@ function CooldownCompanion:ClearAllAuraGlowPreviews()
     end
 end
 
+-- Set or clear bar aura effect preview on a specific button.
+function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._barAuraEffectPreview = show or nil
+            if not show then
+                -- Call directly — cache still holds old state so the
+                -- mismatch will trigger the hide path inside SetBarAuraEffect
+                SetBarAuraEffect(button, button._auraActive)
+            else
+                button._barAuraEffectActive = nil -- force re-evaluate on next tick
+            end
+            return
+        end
+    end
+end
+
+-- Invalidate bar aura effect cache on a specific button so the next tick re-applies.
+function CooldownCompanion:InvalidateBarAuraEffect(groupId, buttonIndex)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._barAuraEffectActive = nil
+            return
+        end
+    end
+end
+
 -- Invalidate aura glow cache on a specific button so the next tick re-applies.
 -- Used by config sliders to update glow appearance without recreating buttons.
 function CooldownCompanion:InvalidateAuraGlow(groupId, buttonIndex)
@@ -1315,5 +1385,1298 @@ function CooldownCompanion:InvalidateGroupProcGlow(groupId)
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
         button._procGlowActive = nil
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar Display Mode
+--------------------------------------------------------------------------------
+
+-- Format remaining seconds for bar time text display
+FormatBarTime = function(seconds)
+    if seconds >= 60 then
+        return string.format("%d:%02d", math.floor(seconds / 60), math.floor(seconds % 60))
+    elseif seconds >= 10 then
+        return string.format("%d", math.floor(seconds))
+    elseif seconds > 0 then
+        return string.format("%.1f", seconds)
+    end
+    return ""
+end
+
+-- Create/recreate charge sub-bars for multi-charge spells.
+-- Each sub-bar is a self-contained StatusBar with its own bg + border + fill.
+EnsureChargeBars = function(button, numBars)
+    if button._chargeBarCount == numBars then return end
+
+    -- Destroy old sub-bars
+    if button.chargeBars then
+        for _, bar in ipairs(button.chargeBars) do
+            bar:Hide()
+            bar:SetParent(nil)
+        end
+    end
+
+    if numBars <= 1 then
+        button.chargeBars = nil
+        button._chargeBarCount = 0
+        return
+    end
+
+    button.chargeBars = {}
+    local sb = button.statusBar
+    local sbLevel = sb:GetFrameLevel()
+
+    for i = 1, numBars do
+        local bar = CreateFrame("StatusBar", nil, button)
+        bar:SetMinMaxValues(0, 1)
+        bar:SetValue(0)
+        bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        bar:SetFrameLevel(sbLevel - 1)
+        bar:EnableMouse(false)
+        if button._isVertical then bar:SetOrientation("VERTICAL") end
+        if button.style and button.style.barReverseFill then bar:SetReverseFill(true) end
+
+        -- Background (BACKGROUND layer = behind fill)
+        bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+        bar.bg:SetAllPoints()
+
+        -- Border textures (OVERLAY layer = on top of fill)
+        bar.borderTextures = {}
+        for j = 1, 4 do
+            bar.borderTextures[j] = bar:CreateTexture(nil, "OVERLAY")
+        end
+
+        button.chargeBars[i] = bar
+    end
+
+    button._chargeBarCount = numBars
+    button._chargeBarsDirty = true
+end
+
+-- Position charge sub-bars side-by-side relative to the button frame.
+-- Each bar spans full button height with its own bg, border, and fill.
+local function LayoutChargeBars(button)
+    if not button.chargeBars then return end
+    local style = button.style
+    local showIcon = style.showBarIcon ~= false
+    local barHeight = style.barHeight or 20
+    local barLength = style.barLength or 180
+    local iconSize = barHeight
+    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
+    local numBars = #button.chargeBars
+    local gap = button.buttonData and button.buttonData.barChargeGap or 2
+
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
+    local borderColor = style.borderColor or {0, 0, 0, 1}
+
+    if button._isVertical then
+        -- Vertical: stack sub-bars top-to-bottom
+        local startY = showIcon and (iconSize + iconOffset) or 0
+        local totalHeight = barLength - startY
+        local subBarHeight = (totalHeight - (numBars - 1) * gap) / numBars
+        if subBarHeight < 1 then subBarHeight = 1 end
+
+        for i, bar in ipairs(button.chargeBars) do
+            bar:ClearAllPoints()
+            bar:SetSize(barHeight, subBarHeight)
+            local yOffset = startY + (i - 1) * (subBarHeight + gap)
+            bar:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -yOffset)
+
+            bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+            ApplyEdgePositions(bar.borderTextures, bar, borderSize)
+            for _, tex in ipairs(bar.borderTextures) do
+                tex:SetColorTexture(unpack(borderColor))
+            end
+        end
+    else
+        -- Horizontal: stack sub-bars left-to-right
+        local startX = showIcon and (iconSize + iconOffset) or 0
+        local totalWidth = barLength - startX
+        local subBarWidth = (totalWidth - (numBars - 1) * gap) / numBars
+        if subBarWidth < 1 then subBarWidth = 1 end
+
+        for i, bar in ipairs(button.chargeBars) do
+            bar:ClearAllPoints()
+            bar:SetSize(subBarWidth, barHeight)
+            local xOffset = startX + (i - 1) * (subBarWidth + gap)
+            bar:SetPoint("TOPLEFT", button, "TOPLEFT", xOffset, 0)
+
+            bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+            ApplyEdgePositions(bar.borderTextures, bar, borderSize)
+            for _, tex in ipairs(bar.borderTextures) do
+                tex:SetColorTexture(unpack(borderColor))
+            end
+        end
+    end
+    button._chargeBarsDirty = false
+end
+
+-- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
+UpdateBarFill = function(button)
+    -- Charge sub-bar path: drive individual sub-bars from _chargeCount/_chargeCDStart/_chargeCDDuration
+    if button.chargeBars and button._chargeBarCount > 0 and not button._auraActive then
+        if button._chargeBarsDirty then
+            LayoutChargeBars(button)
+        end
+        local chargeCount = button._chargeCount or 0
+        local chargeMax = button._chargeMax or button._chargeBarCount
+        local cdStart = button._chargeCDStart
+        local cdDur = button._chargeCDDuration
+        local now = GetTime()
+
+        -- Compute recharge fraction for the recharging charge
+        local rechargeFraction = 0
+        local remaining = 0
+        if cdStart and cdDur and cdDur > 0 and chargeCount < chargeMax then
+            local elapsed = now - cdStart
+            rechargeFraction = elapsed / cdDur
+            if rechargeFraction > 1 then rechargeFraction = 1 end
+            if rechargeFraction < 0 then rechargeFraction = 0 end
+            remaining = cdDur - elapsed
+            if remaining < 0 then remaining = 0 end
+        end
+
+        local reverseCharges = button.buttonData and button.buttonData.barReverseCharges
+        local numBars = button._chargeBarCount
+        for i, bar in ipairs(button.chargeBars) do
+            local ci = reverseCharges and (numBars - i + 1) or i
+            if ci <= chargeCount then
+                bar:SetValue(1) -- available
+            elseif ci == chargeCount + 1 then
+                bar:SetValue(rechargeFraction) -- recharging
+            else
+                bar:SetValue(0) -- spent
+            end
+        end
+
+        -- Time text: show recharge remaining
+        if button.style.showCooldownText then
+            if remaining > 0 then
+                button.timeText:SetText(FormatBarTime(remaining))
+            elseif chargeCount >= chargeMax then
+                if button.style.showBarReadyText then
+                    button.timeText:SetText(button.style.barReadyText or "Ready")
+                else
+                    button.timeText:SetText("")
+                end
+            else
+                button.timeText:SetText("")
+            end
+        elseif chargeCount >= chargeMax and button.style.showBarReadyText then
+            button.timeText:SetText(button.style.barReadyText or "Ready")
+        else
+            button.timeText:SetText("")
+        end
+
+        -- Anchor cooldown text to the recharging sub-bar when enabled
+        if button.buttonData.barCdTextOnRechargeBar and button.chargeBars then
+            local targetBar
+            if chargeCount < chargeMax then
+                local logicalBar = chargeCount + 1
+                targetBar = reverseCharges and (numBars - logicalBar + 1) or logicalBar
+            else
+                targetBar = 0 -- all full → anchor back to statusBar
+            end
+            if button._timeTextAnchoredBar ~= targetBar then
+                button._timeTextAnchoredBar = targetBar
+                local st = button.style
+                local cdOX = st.barCdTextOffsetX or 0
+                local cdOY = st.barCdTextOffsetY or 0
+                local nmOX = st.barNameTextOffsetX or 0
+                local nmOY = st.barNameTextOffsetY or 0
+                button.timeText:ClearAllPoints()
+                if button._isVertical then
+                    if targetBar > 0 and button.chargeBars[targetBar] then
+                        button.timeText:SetPoint("TOP", button.chargeBars[targetBar], "TOP", cdOX, -3 + cdOY)
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+                    else
+                        button.timeText:SetPoint("TOP", button.statusBar, "TOP", cdOX, -3 + cdOY)
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+                    end
+                else
+                    if targetBar > 0 and button.chargeBars[targetBar] then
+                        button.timeText:SetPoint("RIGHT", button.chargeBars[targetBar], "RIGHT", -3 + cdOX, cdOY)
+                        -- Detach name truncation from timeText so it doesn't follow
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                        button.nameText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3, 0)
+                    else
+                        button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+                        -- Restore name truncation against timeText
+                        button.nameText:ClearAllPoints()
+                        button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+                    end
+                end
+            end
+        elseif button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
+            -- Option disabled — reset back to statusBar
+            button._timeTextAnchoredBar = 0
+            local st = button.style
+            local cdOX = st.barCdTextOffsetX or 0
+            local cdOY = st.barCdTextOffsetY or 0
+            local nmOX = st.barNameTextOffsetX or 0
+            local nmOY = st.barNameTextOffsetY or 0
+            button.timeText:ClearAllPoints()
+            if button._isVertical then
+                button.timeText:SetPoint("TOP", button.statusBar, "TOP", cdOX, -3 + cdOY)
+                button.nameText:ClearAllPoints()
+                button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+            else
+                button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+                button.nameText:ClearAllPoints()
+                button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+                button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+            end
+        end
+
+        return -- skip single-bar path
+    end
+
+    -- Reset text anchor if previously on a charge bar
+    if button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
+        button._timeTextAnchoredBar = 0
+        local st = button.style
+        local cdOX = st.barCdTextOffsetX or 0
+        local cdOY = st.barCdTextOffsetY or 0
+        local nmOX = st.barNameTextOffsetX or 0
+        local nmOY = st.barNameTextOffsetY or 0
+        button.timeText:ClearAllPoints()
+        if button._isVertical then
+            button.timeText:SetPoint("TOP", button.statusBar, "TOP", cdOX, -3 + cdOY)
+            button.nameText:ClearAllPoints()
+            button.nameText:SetPoint("BOTTOM", button.statusBar, "BOTTOM", nmOX, 3 + nmOY)
+        else
+            button.timeText:SetPoint("RIGHT", button.statusBar, "RIGHT", -3 + cdOX, cdOY)
+            button.nameText:ClearAllPoints()
+            button.nameText:SetPoint("LEFT", button.statusBar, "LEFT", 3 + nmOX, nmOY)
+            button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+        end
+    end
+
+    -- Single-bar path
+    local startMs, durationMs = button.cooldown:GetCooldownTimes()
+    local now = GetTime() * 1000
+
+    local onCooldown = durationMs and durationMs > 0
+    -- Suppress GCD: treat as off-cooldown when only the GCD is active
+    if onCooldown and button._barGCDSuppressed then
+        onCooldown = false
+    end
+    if onCooldown then
+        local elapsed = now - startMs
+        local remaining = (durationMs - elapsed) / 1000
+        local fraction
+        if button._auraActive then
+            fraction = 1 - (elapsed / durationMs)
+            if fraction < 0 then fraction = 0 end
+        else
+            fraction = elapsed / durationMs
+            if fraction > 1 then fraction = 1 end
+        end
+        button.statusBar:SetValue(fraction)
+
+        if button.style.showCooldownText then
+            if remaining > 0 then
+                button.timeText:SetText(FormatBarTime(remaining))
+            else
+                button.timeText:SetText("")
+            end
+        end
+    else
+        button.statusBar:SetValue(1)
+        if button.style.showBarReadyText then
+            button.timeText:SetText(button.style.barReadyText or "Ready")
+        else
+            button.timeText:SetText("")
+        end
+    end
+end
+
+-- Update bar-specific display elements (colors, desaturation, aura effects).
+-- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
+UpdateBarDisplay = function(button, fetchOk)
+    local style = button.style
+    local _, durationMs = button.cooldown:GetCooldownTimes()
+
+    -- Lazy create/destroy charge sub-bars
+    local hasChargeBars = button._chargeMax and button._chargeMax > 1 and not button._auraActive
+    local wantCount = hasChargeBars and button._chargeMax or 0
+    if wantCount ~= (button._chargeBarCount or 0) then
+        EnsureChargeBars(button, wantCount)
+    end
+
+    local onCooldown
+    if button.chargeBars and button._chargeBarCount > 0 then
+        -- For charge sub-bars, "on cooldown" means any charge is missing
+        onCooldown = button._chargeCount and button._chargeMax
+            and button._chargeCount < button._chargeMax
+    else
+        onCooldown = durationMs and durationMs > 0
+        if onCooldown and button._barGCDSuppressed then
+            onCooldown = false
+        end
+    end
+
+    -- Time text color: switch between cooldown and ready colors
+    local wantReadyTextColor = not onCooldown and style.showBarReadyText
+    if button._barReadyTextColor ~= wantReadyTextColor then
+        button._barReadyTextColor = wantReadyTextColor
+        if wantReadyTextColor then
+            local rc = style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
+            button.timeText:SetTextColor(rc[1], rc[2], rc[3], rc[4])
+        else
+            local cc = style.cooldownFontColor or {1, 1, 1, 1}
+            button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        end
+    end
+
+    -- Charge sub-bar colors and statusBar transparency
+    if button.chargeBars and button._chargeBarCount > 0 then
+        local readyColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
+        local cdColor = style.barCooldownColor or readyColor
+        local chargeCount = button._chargeCount or 0
+        local reverseCharges = button.buttonData and button.buttonData.barReverseCharges
+        local numBars = button._chargeBarCount
+        for i, bar in ipairs(button.chargeBars) do
+            local ci = reverseCharges and (numBars - i + 1) or i
+            if ci <= chargeCount then
+                bar:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
+            else
+                bar:SetStatusBarColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+            end
+            bar:Show()
+        end
+        -- Make main statusBar transparent so sub-bars show through; text stays visible
+        button.statusBar:SetStatusBarColor(0, 0, 0, 0)
+        button._barCdColor = "charge-sub-bars"
+
+        -- Hide bar area bg/border when charge sub-bars are active (they have their own)
+        if not button._chargeBarsBgActive then
+            button._chargeBarsBgActive = true
+            button.bg:Hide()
+            for _, tex in ipairs(button.borderTextures) do tex:Hide() end
+        end
+    else
+        -- Hide charge sub-bars if they exist (aura override case)
+        if button.chargeBars then
+            for _, bar in ipairs(button.chargeBars) do
+                bar:Hide()
+            end
+        end
+
+        -- Restore bar area bg/border when charge bars are inactive
+        if button._chargeBarsBgActive then
+            button._chargeBarsBgActive = false
+            button.bg:Show()
+            local borderSz = style.borderSize or ST.DEFAULT_BORDER_SIZE
+            ApplyEdgePositions(button.borderTextures, button._barBounds, borderSz)
+            for _, tex in ipairs(button.borderTextures) do tex:Show() end
+        end
+
+        -- Bar color: switch between ready and cooldown colors
+        local wantCdColor = onCooldown and style.barCooldownColor or nil
+        if button._barCdColor ~= wantCdColor then
+            button._barCdColor = wantCdColor
+            local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        end
+    end
+
+    -- Icon desaturation
+    if style.desaturateOnCooldown then
+        local wantDesat = false
+        if fetchOk then
+            if button.chargeBars and button._chargeBarCount > 0 then
+                wantDesat = button._chargeCount and button._chargeMax
+                    and button._chargeCount < button._chargeMax
+            else
+                wantDesat = durationMs and durationMs > 0
+            end
+        end
+        if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
+            wantDesat = false
+        end
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    else
+        if button._desaturated ~= false then
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+        end
+    end
+
+    -- Bar aura color: override bar fill when aura is active
+    local wantAuraColor = button._auraActive and (button.buttonData.barAuraColor or DEFAULT_BAR_AURA_COLOR)
+    if button._barAuraColor ~= wantAuraColor then
+        button._barAuraColor = wantAuraColor
+        if not wantAuraColor then
+            -- Reset to normal color immediately (don't wait for next tick)
+            button._barCdColor = nil
+            if button.chargeBars and button._chargeBarCount > 0 then
+                -- Sub-bars will be re-shown on next tick
+                button.statusBar:SetStatusBarColor(0, 0, 0, 0)
+            else
+                local resetColor = onCooldown and style.barCooldownColor or nil
+                local c = resetColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+                button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            end
+        end
+    end
+    if wantAuraColor then
+        button.statusBar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4])
+    end
+
+    -- Bar aura effect
+    SetBarAuraEffect(button, button._auraActive or button._barAuraEffectPreview)
+
+    -- Keep the cooldown widget hidden — SetCooldown auto-shows it
+    if button.cooldown:IsShown() then
+        button.cooldown:Hide()
+    end
+end
+
+-- Apply bar-specific aura effect (solid border, pixel glow, proc glow)
+SetBarAuraEffect = function(button, show)
+    local ae = button.barAuraEffect
+    if not ae then return end
+
+    local desiredState
+    if show then
+        local bd = button.buttonData
+        local effect = bd.barAuraEffect or "none"
+        if effect ~= "none" then
+            local c = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+            local sz = bd.barAuraEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
+            local th = (effect == "pixel") and (bd.barAuraEffectThickness or 2) or 0
+            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th)
+        end
+    end
+
+    if button._barAuraEffectActive == desiredState then return end
+    button._barAuraEffectActive = desiredState
+
+    -- Hide all styles
+    for _, tex in ipairs(ae.solidTextures) do
+        tex:Hide()
+    end
+    if ae.procFrame then
+        if ae.procFrame.ProcStartAnim then ae.procFrame.ProcStartAnim:Stop() end
+        if ae.procFrame.ProcLoop then ae.procFrame.ProcLoop:Stop() end
+        ae.procFrame:Hide()
+    end
+    if ae.pixelFrame then
+        ae.pixelFrame:SetScript("OnUpdate", nil)
+        ae.pixelFrame:Hide()
+    end
+
+    if not desiredState then return end
+
+    local bd = button.buttonData
+    local effect = bd.barAuraEffect
+    local color = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+    local size = bd.barAuraEffectSize
+
+    if effect == "solid" then
+        size = size or 2
+        ApplyEdgePositions(ae.solidTextures, button, size)
+        for _, tex in ipairs(ae.solidTextures) do
+            tex:SetColorTexture(color[1], color[2], color[3], color[4] or 0.9)
+            tex:Show()
+        end
+    elseif effect == "pixel" then
+        local pf = ae.pixelFrame
+        local particles = pf.particles
+        local lineLength = size or 4
+        local lineThickness = bd.barAuraEffectThickness or 2
+        local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
+        for _, px in ipairs(particles) do
+            px[1]:SetColorTexture(r, g, b, a)
+            px[2]:SetColorTexture(r, g, b, a)
+        end
+        pf._elapsed = 0
+        pf._speed = bd.barAuraEffectSpeed or 60 -- pixels per second
+        pf._lineLength = lineLength
+        pf._lineThickness = lineThickness
+        pf._parentButton = button
+        pf:SetScript("OnUpdate", function(self, elapsed)
+            self._elapsed = self._elapsed + elapsed
+            local btn = self._parentButton
+            local w, h = btn:GetSize()
+            local perimeter = 2 * (w + h)
+            local numParticles = #self.particles
+            local spacing = perimeter / numParticles
+            local offset = (self._elapsed * self._speed) % perimeter
+            local ll = self._lineLength
+            local lt = self._lineThickness
+
+            -- Edge boundaries: top=0..w, right=w..w+h, bottom=w+h..2w+h, left=2w+h..perimeter
+            local wh = w + h
+            local ww = 2 * w + h
+            local edgeBounds = {w, wh, ww, perimeter}
+            local edgeStarts = {0, w, wh, ww}
+
+            for i, px in ipairs(self.particles) do
+                local center = (offset + (i - 1) * spacing) % perimeter
+                local sPos = (center - ll / 2) % perimeter
+                local ePos = sPos + ll
+
+                -- Find which edge sPos is on
+                local sEdge
+                if sPos < w then sEdge = 0
+                elseif sPos < wh then sEdge = 1
+                elseif sPos < ww then sEdge = 2
+                else sEdge = 3 end
+
+                local sLocal = sPos - edgeStarts[sEdge + 1]
+                local sEdgeBound = edgeBounds[sEdge + 1]
+
+                if ePos <= sEdgeBound then
+                    -- Entirely on one edge
+                    local eLocal = ePos - edgeStarts[sEdge + 1]
+                    local segLen = eLocal - sLocal
+                    px[1]:ClearAllPoints()
+                    if sEdge == 0 then
+                        px[1]:SetSize(segLen, lt)
+                        px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", sLocal, 0)
+                    elseif sEdge == 1 then
+                        px[1]:SetSize(lt, segLen)
+                        px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, -sLocal)
+                    elseif sEdge == 2 then
+                        px[1]:SetSize(segLen, lt)
+                        px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -sLocal, 0)
+                    else
+                        px[1]:SetSize(lt, segLen)
+                        px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, sLocal)
+                    end
+                    px[1]:Show()
+                    px[2]:Hide()
+                else
+                    -- Crosses a corner: split into two segments
+                    local edgeLen = sEdgeBound - edgeStarts[sEdge + 1]
+                    local firstLen = edgeLen - sLocal
+                    local nextEdge = (sEdge + 1) % 4
+                    local secondLen = ePos - sEdgeBound
+                    if secondLen > perimeter then secondLen = secondLen - perimeter end
+
+                    -- First segment: from sLocal to end of current edge
+                    px[1]:ClearAllPoints()
+                    if firstLen > 0 then
+                        if sEdge == 0 then
+                            px[1]:SetSize(firstLen, lt)
+                            px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
+                        elseif sEdge == 1 then
+                            px[1]:SetSize(lt, firstLen)
+                            px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                        elseif sEdge == 2 then
+                            px[1]:SetSize(firstLen, lt)
+                            px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+                        else
+                            px[1]:SetSize(lt, firstLen)
+                            px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                        end
+                        px[1]:Show()
+                    else
+                        px[1]:Hide()
+                    end
+
+                    -- Second segment: from start of next edge
+                    px[2]:ClearAllPoints()
+                    if secondLen > 0 then
+                        if nextEdge == 0 then
+                            px[2]:SetSize(secondLen, lt)
+                            px[2]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                        elseif nextEdge == 1 then
+                            px[2]:SetSize(lt, secondLen)
+                            px[2]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
+                        elseif nextEdge == 2 then
+                            px[2]:SetSize(secondLen, lt)
+                            px[2]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                        else
+                            px[2]:SetSize(lt, secondLen)
+                            px[2]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+                        end
+                        px[2]:Show()
+                    else
+                        px[2]:Hide()
+                    end
+                end
+            end
+        end)
+        pf:Show()
+    elseif effect == "glow" then
+        size = size or 32
+        FitHighlightFrame(ae.procFrame, button, size)
+        TintProcGlowFrame(ae.procFrame, color)
+        ae.procFrame:Show()
+        if ae.procFrame.ProcStartFlipbook then
+            ae.procFrame.ProcStartFlipbook:SetAlpha(0)
+        end
+        if ae.procFrame.ProcLoopFlipbook then
+            ae.procFrame.ProcLoopFlipbook:SetAlpha(1)
+        end
+        if ae.procFrame.ProcLoop then
+            ae.procFrame.ProcLoop:Play()
+        end
+    end
+end
+
+function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
+    local barLength = style.barLength or 180
+    local barHeight = style.barHeight or 20
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local showIcon = style.showBarIcon ~= false
+    local isVertical = style.barFillVertical or false
+
+    local iconSize = barHeight
+    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
+    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
+    local barAreaTop = showIcon and (iconSize + iconOffset) or 0
+
+    -- Main bar frame
+    local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent)
+    if isVertical then
+        button:SetSize(barHeight, barLength)
+    else
+        button:SetSize(barLength, barHeight)
+    end
+    button._isBar = true
+    button._isVertical = isVertical
+
+    -- Background — covers bar area only when icon is shown (icon has its own iconBg)
+    local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
+    button.bg = button:CreateTexture(nil, "BACKGROUND")
+    if showIcon then
+        if isVertical then
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        else
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        end
+    else
+        button.bg:SetAllPoints()
+    end
+    button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+    -- Icon
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    if showIcon then
+        if isVertical then
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", -borderSize, -(iconSize - borderSize))
+        else
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - borderSize, borderSize)
+        end
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    else
+        -- Hidden 1x1 icon (still needed for UpdateButtonIcon)
+        button.icon:SetPoint("TOPLEFT", 0, 0)
+        button.icon:SetSize(1, 1)
+        button.icon:SetAlpha(0)
+    end
+
+    -- Charge sub-bars (created lazily in UpdateBarDisplay when charge count is known)
+    button.chargeBars = nil
+    button._chargeBarCount = 0
+    button._chargeBarsBgActive = false
+
+    -- Icon background + border (always shown when icon visible)
+    button.iconBg = button:CreateTexture(nil, "BACKGROUND")
+    if isVertical then
+        button.iconBg:SetPoint("TOPLEFT", 0, 0)
+        button.iconBg:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+    else
+        button.iconBg:SetPoint("TOPLEFT", 0, 0)
+        button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    end
+    button.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+    if not showIcon then button.iconBg:Hide() end
+
+    button._iconBounds = CreateFrame("Frame", nil, button)
+    button._iconBounds:EnableMouse(false)
+    if isVertical then
+        button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+        button._iconBounds:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+    else
+        button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+        button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    end
+
+    button.iconBorderTextures = {}
+    local borderColor = style.borderColor or {0, 0, 0, 1}
+    for i = 1, 4 do
+        local tex = button:CreateTexture(nil, "OVERLAY")
+        tex:SetColorTexture(unpack(borderColor))
+        if not showIcon then tex:Hide() end
+        button.iconBorderTextures[i] = tex
+    end
+    ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize)
+
+    -- Bar area bounds (for border positioning separate from icon)
+    button._barBounds = CreateFrame("Frame", nil, button)
+    button._barBounds:EnableMouse(false)
+    if showIcon then
+        if isVertical then
+            button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+            button._barBounds:SetPoint("BOTTOMRIGHT")
+        else
+            button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+            button._barBounds:SetPoint("BOTTOMRIGHT")
+        end
+    else
+        button._barBounds:SetAllPoints()
+    end
+
+    -- StatusBar
+    button.statusBar = CreateFrame("StatusBar", nil, button)
+    if isVertical then
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", borderSize, -(barAreaTop + borderSize))
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+        button.statusBar:SetOrientation("VERTICAL")
+    else
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+    end
+    button.statusBar:SetMinMaxValues(0, 1)
+    button.statusBar:SetValue(1)
+    button.statusBar:SetReverseFill(style.barReverseFill or false)
+    button.statusBar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+    local barColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
+    button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
+    button.statusBar:EnableMouse(false)
+
+    -- Name text
+    button.nameText = button.statusBar:CreateFontString(nil, "OVERLAY")
+    local nameFont = style.barNameFont or "Fonts\\FRIZQT__.TTF"
+    local nameFontSize = style.barNameFontSize or 10
+    local nameFontOutline = style.barNameFontOutline or "OUTLINE"
+    button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
+    local nameColor = style.barNameFontColor or {1, 1, 1, 1}
+    button.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
+    local nameOffX = style.barNameTextOffsetX or 0
+    local nameOffY = style.barNameTextOffsetY or 0
+    if isVertical then
+        button.nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
+        button.nameText:SetJustifyH("CENTER")
+    else
+        button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
+        button.nameText:SetJustifyH("LEFT")
+    end
+    if style.showBarNameText ~= false then
+        button.nameText:SetText(buttonData.name or "")
+    end
+
+    -- Time text
+    button.timeText = button.statusBar:CreateFontString(nil, "OVERLAY")
+    local cdFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cdFontSize = style.cooldownFontSize or 12
+    local cdFontOutline = style.cooldownFontOutline or "OUTLINE"
+    button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
+    local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
+    button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+    local cdOffX = style.barCdTextOffsetX or 0
+    local cdOffY = style.barCdTextOffsetY or 0
+    if isVertical then
+        button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
+        button.timeText:SetJustifyH("CENTER")
+    else
+        button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
+        button.timeText:SetJustifyH("RIGHT")
+    end
+
+    -- Truncate name text so it doesn't overlap time text (horizontal only)
+    if not isVertical then
+        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+    end
+
+    -- Border textures (around bar area, not full button)
+    button.borderTextures = {}
+    for i = 1, 4 do
+        local tex = button:CreateTexture(nil, "OVERLAY")
+        tex:SetColorTexture(unpack(borderColor))
+        button.borderTextures[i] = tex
+    end
+    ApplyEdgePositions(button.borderTextures, button._barBounds, borderSize)
+
+    -- Hidden cooldown frame for GetCooldownTimes() reads
+    button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
+    button.cooldown:SetSize(1, 1)
+    button.cooldown:SetPoint("CENTER")
+    button.cooldown:SetDrawSwipe(false)
+    button.cooldown:SetHideCountdownNumbers(true)
+    button.cooldown:Hide()
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+
+    -- Charge/item count text (overlay)
+    button.overlayFrame = CreateFrame("Frame", nil, button)
+    button.overlayFrame:SetAllPoints()
+    button.overlayFrame:EnableMouse(false)
+    button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.count:SetText("")
+
+    -- Apply charge/item count font settings and anchor to icon or bar center
+    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
+    local defXOff = showIcon and -2 or 0
+    local defYOff = 2
+    if buttonData.hasCharges then
+        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFontSize = buttonData.chargeFontSize or 12
+        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+        local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
+        local chargeAnchor = buttonData.chargeAnchor or defAnchor
+        local chargeXOffset = buttonData.chargeXOffset or defXOff
+        local chargeYOffset = buttonData.chargeYOffset or defYOff
+        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
+    elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
+        local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFontSize = buttonData.itemCountFontSize or 12
+        local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
+        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
+        local icColor = buttonData.itemCountFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+        local itemAnchor = buttonData.itemCountAnchor or defAnchor
+        local itemXOffset = buttonData.itemCountXOffset or defXOff
+        local itemYOffset = buttonData.itemCountYOffset or defYOff
+        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
+    else
+        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
+    end
+
+    -- Store button data
+    button.buttonData = buttonData
+    button.index = index
+    button.style = style
+
+    -- Bar fill interpolation OnUpdate
+    button._barFillElapsed = 0
+    local barInterval = style.barUpdateInterval or 0.025
+    button:SetScript("OnUpdate", function(self, elapsed)
+        -- Detect aura expiry every frame (not throttled) to avoid color flicker
+        if self._auraActive then
+            local sMs, dMs = self.cooldown:GetCooldownTimes()
+            if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
+                self._auraActive = false
+                self._barAuraColor = nil
+                self._barAuraEffectActive = nil
+                -- If charge sub-bars exist, make statusBar transparent so sub-bars show
+                if self._chargeMax and self._chargeMax > 1 then
+                    self.statusBar:SetStatusBarColor(0, 0, 0, 0)
+                    self._barCdColor = nil
+                else
+                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                end
+                SetBarAuraEffect(self, false)
+            end
+        end
+        self._barFillElapsed = self._barFillElapsed + elapsed
+        if self._barFillElapsed >= barInterval then
+            self._barFillElapsed = 0
+            UpdateBarFill(self)
+        end
+    end)
+
+    -- Aura tracking runtime state
+    button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    button._auraActive = false
+    button._auraInstanceID = nil
+    button._auraPendingSince = nil
+
+    -- Aura effect frames (solid border, pixel glow, proc glow)
+    button.barAuraEffect = {}
+    button.barAuraEffect.solidFrame = CreateFrame("Frame", nil, button)
+    button.barAuraEffect.solidFrame:SetAllPoints()
+    button.barAuraEffect.solidFrame:EnableMouse(false)
+    button.barAuraEffect.solidTextures = {}
+    for i = 1, 4 do
+        local tex = button.barAuraEffect.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:Hide()
+        button.barAuraEffect.solidTextures[i] = tex
+    end
+    local barAuraProcFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(barAuraProcFrame, button, 32)
+    SetFrameClickThroughRecursive(barAuraProcFrame, true, true)
+    barAuraProcFrame:Hide()
+    button.barAuraEffect.procFrame = barAuraProcFrame
+    -- Pixel glow frame with particle textures (2 textures each for corner wrapping)
+    local pixelFrame = CreateFrame("Frame", nil, button)
+    pixelFrame:SetAllPoints()
+    pixelFrame:EnableMouse(false)
+    pixelFrame:Hide()
+    pixelFrame.particles = {}
+    local NUM_PIXELS = 12
+    for i = 1, NUM_PIXELS do
+        local t1 = pixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        t1:SetColorTexture(1, 1, 1, 1)
+        local t2 = pixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        t2:SetColorTexture(1, 1, 1, 1)
+        t2:Hide()
+        pixelFrame.particles[i] = {t1, t2}
+    end
+    pixelFrame._elapsed = 0
+    button.barAuraEffect.pixelFrame = pixelFrame
+    SetFrameClickThroughRecursive(button.barAuraEffect.solidFrame, true, true)
+    SetFrameClickThroughRecursive(button.barAuraEffect.procFrame, true, true)
+    SetFrameClickThroughRecursive(pixelFrame, true, true)
+
+    -- Set icon
+    self:UpdateButtonIcon(button)
+
+    -- Set name text from resolved spell/item name
+    if style.showBarNameText ~= false then
+        local displayName = buttonData.name
+        if buttonData.type == "spell" then
+            local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
+            if spellName then displayName = spellName end
+        elseif buttonData.type == "item" then
+            local itemName = C_Item.GetItemNameByID(buttonData.id)
+            if itemName then displayName = itemName end
+        end
+        button.nameText:SetText(displayName or "")
+    end
+
+    -- Methods
+    button.UpdateCooldown = function(self)
+        CooldownCompanion:UpdateButtonCooldown(self)
+    end
+
+    button.UpdateStyle = function(self, newStyle)
+        CooldownCompanion:UpdateBarStyle(self, newStyle)
+    end
+
+    -- Click-through
+    local showTooltips = style.showTooltips == true
+    SetFrameClickThroughRecursive(button, true, not showTooltips)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+
+    -- Tooltip scripts
+    if showTooltips then
+        button:SetScript("OnEnter", function(self)
+            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+            if self.buttonData.type == "spell" then
+                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
+            elseif self.buttonData.type == "item" then
+                GameTooltip:SetItemByID(self.buttonData.id)
+            end
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
+    end
+
+    return button
+end
+
+function CooldownCompanion:UpdateBarStyle(button, newStyle)
+    local barLength = newStyle.barLength or 180
+    local barHeight = newStyle.barHeight or 20
+    local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
+    local showIcon = newStyle.showBarIcon ~= false
+    local isVertical = newStyle.barFillVertical or false
+    local iconSize = barHeight
+    local iconOffset = showIcon and (newStyle.barIconOffset or 0) or 0
+    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
+    local barAreaTop = showIcon and (iconSize + iconOffset) or 0
+
+    button.style = newStyle
+    button._isVertical = isVertical
+
+    -- Update bar fill OnUpdate interval
+    local barInterval = newStyle.barUpdateInterval or 0.025
+    button._barFillElapsed = 0
+    button:SetScript("OnUpdate", function(self, elapsed)
+        if self._auraActive then
+            local sMs, dMs = self.cooldown:GetCooldownTimes()
+            if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
+                self._auraActive = false
+                self._barAuraColor = nil
+                self._barAuraEffectActive = nil
+                if self._chargeMax and self._chargeMax > 1 then
+                    self.statusBar:SetStatusBarColor(0, 0, 0, 0)
+                    self._barCdColor = nil
+                else
+                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                end
+                SetBarAuraEffect(self, false)
+            end
+        end
+        self._barFillElapsed = self._barFillElapsed + elapsed
+        if self._barFillElapsed >= barInterval then
+            self._barFillElapsed = 0
+            UpdateBarFill(self)
+        end
+    end)
+
+    -- Invalidate cached state
+    button._desaturated = nil
+    button._vertexR = nil
+    button._vertexG = nil
+    button._vertexB = nil
+    button._chargeText = nil
+    button._chargeCount = nil
+    button._chargeMax = nil
+    button._chargeCDStart = nil
+    button._chargeCDDuration = nil
+    button._displaySpellId = nil
+    button._itemCount = nil
+    button._auraActive = nil
+    button._auraInstanceID = nil
+    button._auraPendingSince = nil
+    button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
+    button._barCdColor = nil
+    button._barReadyTextColor = nil
+    button._barAuraColor = nil
+    button._barAuraEffectActive = nil
+    button._timeTextAnchoredBar = nil
+
+    if isVertical then
+        button:SetSize(barHeight, barLength)
+    else
+        button:SetSize(barLength, barHeight)
+    end
+
+    -- Update icon
+    button.icon:ClearAllPoints()
+    if showIcon then
+        if isVertical then
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", -borderSize, -(iconSize - borderSize))
+        else
+            button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+            button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - borderSize, borderSize)
+        end
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        button.icon:SetAlpha(1)
+    else
+        button.icon:SetPoint("TOPLEFT", 0, 0)
+        button.icon:SetSize(1, 1)
+        button.icon:SetAlpha(0)
+    end
+
+    -- Force sub-bar rebuild on next tick
+    button._chargeBarCount = 0
+
+    -- Restore bar area bg/border (charge bars may have altered these)
+    button._chargeBarsBgActive = false
+    button.bg:ClearAllPoints()
+    if showIcon then
+        if isVertical then
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        else
+            button.bg:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+            button.bg:SetPoint("BOTTOMRIGHT")
+        end
+    else
+        button.bg:SetAllPoints()
+    end
+    button.bg:Show()
+
+    -- Icon bg + border: always shown when icon visible
+    if button.iconBg then
+        button.iconBg:ClearAllPoints()
+        if isVertical then
+            button.iconBg:SetPoint("TOPLEFT", 0, 0)
+            button.iconBg:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+        else
+            button.iconBg:SetPoint("TOPLEFT", 0, 0)
+            button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+        end
+        if showIcon then button.iconBg:Show() else button.iconBg:Hide() end
+    end
+    if button._iconBounds then
+        button._iconBounds:ClearAllPoints()
+        if isVertical then
+            button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+            button._iconBounds:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", 0, -iconSize)
+        else
+            button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+            button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+        end
+    end
+    if button.iconBorderTextures then
+        ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize)
+        for _, tex in ipairs(button.iconBorderTextures) do
+            if showIcon then tex:Show() else tex:Hide() end
+        end
+    end
+
+    -- Bar area bounds
+    if button._barBounds then
+        button._barBounds:ClearAllPoints()
+        if showIcon then
+            if isVertical then
+                button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -barAreaTop)
+                button._barBounds:SetPoint("BOTTOMRIGHT")
+            else
+                button._barBounds:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft, 0)
+                button._barBounds:SetPoint("BOTTOMRIGHT")
+            end
+        else
+            button._barBounds:SetAllPoints()
+        end
+    end
+
+    -- Update status bar
+    button.statusBar:ClearAllPoints()
+    if isVertical then
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", borderSize, -(barAreaTop + borderSize))
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+        button.statusBar:SetOrientation("VERTICAL")
+    else
+        button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
+        button.statusBar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -borderSize, borderSize)
+        button.statusBar:SetOrientation("HORIZONTAL")
+    end
+    button.statusBar:SetReverseFill(newStyle.barReverseFill or false)
+    local barColor = newStyle.barColor or {0.2, 0.6, 1.0, 1.0}
+    button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
+
+    -- Update background
+    local bgColor = newStyle.barBgColor or {0.1, 0.1, 0.1, 0.8}
+    button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+    if button.iconBg then
+        button.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+    end
+
+    -- Update border
+    local borderColor = newStyle.borderColor or {0, 0, 0, 1}
+    if button.borderTextures then
+        ApplyEdgePositions(button.borderTextures, button._barBounds or button, borderSize)
+        for _, tex in ipairs(button.borderTextures) do
+            tex:SetColorTexture(unpack(borderColor))
+            tex:Show()
+        end
+    end
+    if button.iconBorderTextures then
+        for _, tex in ipairs(button.iconBorderTextures) do
+            tex:SetColorTexture(unpack(borderColor))
+        end
+    end
+
+    -- Update name text font and position
+    if newStyle.showBarNameText ~= false then
+        local nameFont = newStyle.barNameFont or "Fonts\\FRIZQT__.TTF"
+        local nameFontSize = newStyle.barNameFontSize or 10
+        local nameFontOutline = newStyle.barNameFontOutline or "OUTLINE"
+        button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
+        local nameColor = newStyle.barNameFontColor or {1, 1, 1, 1}
+        button.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
+        button.nameText:Show()
+    else
+        button.nameText:Hide()
+    end
+
+    -- Update time text font
+    local cdFont = newStyle.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cdFontSize = newStyle.cooldownFontSize or 12
+    local cdFontOutline = newStyle.cooldownFontOutline or "OUTLINE"
+    button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
+    local cdColor = newStyle.cooldownFontColor or {1, 1, 1, 1}
+    button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+
+    -- Re-anchor name and time text for orientation
+    local nameOffX = newStyle.barNameTextOffsetX or 0
+    local nameOffY = newStyle.barNameTextOffsetY or 0
+    local cdOffX = newStyle.barCdTextOffsetX or 0
+    local cdOffY = newStyle.barCdTextOffsetY or 0
+    button.nameText:ClearAllPoints()
+    button.timeText:ClearAllPoints()
+    if isVertical then
+        button.nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
+        button.nameText:SetJustifyH("CENTER")
+        button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
+        button.timeText:SetJustifyH("CENTER")
+    else
+        button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
+        button.nameText:SetJustifyH("LEFT")
+        button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
+        button.timeText:SetJustifyH("RIGHT")
+        -- Truncate name text so it doesn't overlap time text
+        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
+    end
+
+    -- Update charge/item count font and anchor to icon or bar center
+    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
+    local defXOff = showIcon and -2 or 0
+    local defYOff = 2
+    if button.buttonData and button.buttonData.hasCharges then
+        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFontSize = button.buttonData.chargeFontSize or 12
+        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
+        local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
+        local chargeAnchor = button.buttonData.chargeAnchor or defAnchor
+        local chargeXOffset = button.buttonData.chargeXOffset or defXOff
+        local chargeYOffset = button.buttonData.chargeYOffset or defYOff
+        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
+    elseif button.buttonData and button.buttonData.type == "item"
+       and not IsItemEquippable(button.buttonData) then
+        local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFontSize = button.buttonData.itemCountFontSize or 12
+        local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
+        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
+        local icColor = button.buttonData.itemCountFontColor or {1, 1, 1, 1}
+        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+        local itemAnchor = button.buttonData.itemCountAnchor or defAnchor
+        local itemXOffset = button.buttonData.itemCountXOffset or defXOff
+        local itemYOffset = button.buttonData.itemCountYOffset or defYOff
+        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
+    else
+        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
+    end
+
+    -- Update spell name text
+    self:UpdateButtonIcon(button)
+    if newStyle.showBarNameText ~= false then
+        local displayName = button.buttonData.name
+        if button.buttonData.type == "spell" then
+            local spellName = C_Spell.GetSpellName(button._displaySpellId or button.buttonData.id)
+            if spellName then displayName = spellName end
+        elseif button.buttonData.type == "item" then
+            local itemName = C_Item.GetItemNameByID(button.buttonData.id)
+            if itemName then displayName = itemName end
+        end
+        button.nameText:SetText(displayName or "")
+    end
+
+    -- Update click-through
+    local showTooltips = newStyle.showTooltips == true
+    SetFrameClickThroughRecursive(button, true, not showTooltips)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+
+    -- Tooltip scripts
+    if showTooltips then
+        button:SetScript("OnEnter", function(self)
+            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+            if self.buttonData.type == "spell" then
+                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
+            elseif self.buttonData.type == "item" then
+                GameTooltip:SetItemByID(self.buttonData.id)
+            end
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
     end
 end

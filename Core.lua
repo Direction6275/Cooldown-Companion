@@ -54,6 +54,7 @@ local defaults = {
             hide = false,
         },
         hideInfoButtons = false,
+        escClosesConfig = true,
         groups = {
             --[[
                 [groupId] = {
@@ -107,6 +108,7 @@ local defaults = {
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                     },
                     enabled = true,
+                    displayMode = "icons",    -- "icons" or "bars"
                     -- Alpha fade system
                     baselineAlpha = 1,        -- alpha when no force conditions met (0-1)
                     forceAlphaInCombat = false,
@@ -154,6 +156,22 @@ local defaults = {
             procGlowColor = {1, 1, 1, 1},
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
+            -- Bar display mode defaults
+            barLength = 180,
+            barHeight = 20,
+            barColor = {0.2, 0.6, 1.0, 1.0},
+            barCooldownColor = {0.6, 0.13, 0.18, 1.0},
+            barBgColor = {0.1, 0.1, 0.1, 0.8},
+            showBarIcon = true,
+            showBarNameText = true,
+            barNameFont = "Fonts\\FRIZQT__.TTF",
+            barNameFontSize = 10,
+            barNameFontOutline = "OUTLINE",
+            barNameFontColor = {1, 1, 1, 1},
+            showBarReadyText = false,
+            barReadyText = "Ready",
+            barReadyTextColor = {0.2, 1.0, 0.2, 1.0},
+            barUpdateInterval = 0.025,  -- seconds between bar fill updates (~40Hz default)
         },
         locked = false,
         auraDurationCache = {},
@@ -249,8 +267,14 @@ function CooldownCompanion:OnEnable()
     -- Migrate old hide-when fields to alpha system
     self:MigrateAlphaSystem()
 
+    -- Migrate groups to have displayMode field
+    self:MigrateDisplayMode()
+
     -- Migrate groups to have masqueEnabled field
     self:MigrateMasqueField()
+
+    -- Remove orphaned barChargeMissingColor/barChargeSwipe fields (replaced by charge sub-bars)
+    self:MigrateRemoveBarChargeOldFields()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -431,6 +455,10 @@ end
 
 function CooldownCompanion:OnCombatStart()
     self:UpdateAllCooldowns()
+    -- Close spellbook during combat to avoid Blizzard secret value errors
+    if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
+        HideUIPanel(PlayerSpellsFrame)
+    end
     -- Hide config panel during combat to avoid protected frame errors
     if self._configWasOpen == nil then
         self._configWasOpen = false
@@ -683,8 +711,21 @@ function CooldownCompanion:OnBagChanged()
 end
 
 function CooldownCompanion:OnTalentsChanged()
+    self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
+end
+
+-- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
+function CooldownCompanion:RefreshChargeFlags()
+    for _, group in pairs(self.db.profile.groups) do
+        for _, buttonData in ipairs(group.buttons) do
+            if buttonData.type == "spell" then
+                local charges = C_Spell.GetSpellCharges(buttonData.id)
+                buttonData.hasCharges = (charges and charges.maxCharges and charges.maxCharges > 1) or nil
+            end
+        end
+    end
 end
 
 function CooldownCompanion:CacheCurrentSpec()
@@ -697,6 +738,7 @@ end
 
 function CooldownCompanion:OnSpecChanged()
     self:CacheCurrentSpec()
+    self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
 end
@@ -704,6 +746,7 @@ end
 function CooldownCompanion:OnPlayerEnteringWorld()
     C_Timer.After(1, function()
         self:CacheCurrentSpec()
+        self:RefreshChargeFlags()
         self:RefreshAllGroups()
     end)
 end
@@ -857,6 +900,9 @@ function CooldownCompanion:CreateGroup(name)
     self.db.profile.groups[groupId].fadeInDuration = 0.2
     self.db.profile.groups[groupId].fadeOutDuration = 0.2
 
+    -- Display mode default
+    self.db.profile.groups[groupId].displayMode = "icons"
+
     -- Masque defaults
     self.db.profile.groups[groupId].masqueEnabled = false
 
@@ -915,7 +961,15 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
         id = id,
         name = name,
     }
-    
+
+    -- Auto-detect charges for spells
+    if buttonType == "spell" then
+        local charges = C_Spell.GetSpellCharges(id)
+        if charges and charges.maxCharges and charges.maxCharges > 1 then
+            group.buttons[buttonIndex].hasCharges = true
+        end
+    end
+
     self:RefreshGroupFrame(groupId)
     return buttonIndex
 end
@@ -1055,6 +1109,14 @@ function CooldownCompanion:MigrateAlphaSystem()
     end
 end
 
+function CooldownCompanion:MigrateDisplayMode()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.displayMode == nil then
+            group.displayMode = "icons"
+        end
+    end
+end
+
 function CooldownCompanion:MigrateMasqueField()
     for groupId, group in pairs(self.db.profile.groups) do
         if group.masqueEnabled == nil then
@@ -1063,6 +1125,20 @@ function CooldownCompanion:MigrateMasqueField()
         -- If Masque addon is not available but group had it enabled, disable it
         if group.masqueEnabled and not Masque then
             group.masqueEnabled = false
+        end
+    end
+end
+
+function CooldownCompanion:MigrateRemoveBarChargeOldFields()
+    for _, group in pairs(self.db.profile.groups) do
+        if group.style then
+            group.style.barChargeGap = nil
+        end
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                bd.barChargeMissingColor = nil
+                bd.barChargeSwipe = nil
+            end
         end
     end
 end
