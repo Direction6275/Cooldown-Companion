@@ -16,6 +16,18 @@ local buttonPool = {}
 local FormatBarTime
 local UpdateBarDisplay
 local SetBarAuraEffect
+local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
+local UpdateBarFill
+
+-- Anchor charge/item count text on bar buttons: relative to icon when visible, relative to bar otherwise.
+local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
+    button.count:ClearAllPoints()
+    if showIcon then
+        button.count:SetPoint(anchor, button.icon, anchor, xOff, yOff)
+    else
+        button.count:SetPoint(anchor, button, anchor, xOff, yOff)
+    end
+end
 
 -- Returns true if the given item ID is equippable (trinkets, weapons, armor, etc.)
 -- Caches result on buttonData to avoid repeated API calls.
@@ -805,6 +817,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Bar mode: update bar display and skip icon-only sections
     if button._isBar then
+        -- GCD suppression for bars: flag checked by UpdateBarFill OnUpdate
+        button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
         UpdateBarDisplay(button, fetchOk)
     end
 
@@ -960,8 +974,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        -- Show recharge radial — skip when aura override is active
-        if not auraOverrideActive then
+        -- Show recharge radial — skip for bars and when aura override is active
+        if not button._isBar and not auraOverrideActive then
             local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
             if chargeDuration then
                 button.cooldown:SetCooldownFromDurationObject(chargeDuration)
@@ -1316,7 +1330,13 @@ function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
     for _, button in ipairs(frame.buttons) do
         if button.index == buttonIndex then
             button._barAuraEffectPreview = show or nil
-            button._barAuraEffectActive = nil -- force re-evaluate
+            if not show then
+                -- Call directly — cache still holds old state so the
+                -- mismatch will trigger the hide path inside SetBarAuraEffect
+                SetBarAuraEffect(button, button._auraActive)
+            else
+                button._barAuraEffectActive = nil -- force re-evaluate on next tick
+            end
             return
         end
     end
@@ -1373,47 +1393,55 @@ FormatBarTime = function(seconds)
     return ""
 end
 
--- Update bar-specific display elements (fill, time text, icon desaturation)
-UpdateBarDisplay = function(button, fetchOk)
-    local style = button.style
+-- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
+UpdateBarFill = function(button)
     local startMs, durationMs = button.cooldown:GetCooldownTimes()
     local now = GetTime() * 1000
 
-    -- Bar fill and color
     local onCooldown = durationMs and durationMs > 0
+    -- Suppress GCD: treat as off-cooldown when only the GCD is active
+    if onCooldown and button._barGCDSuppressed then
+        onCooldown = false
+    end
     if onCooldown then
         local elapsed = now - startMs
         local remaining = (durationMs - elapsed) / 1000
         local fraction
         if button._auraActive then
-            -- Aura: drain from full to empty
             fraction = 1 - (elapsed / durationMs)
             if fraction < 0 then fraction = 0 end
         else
-            -- Cooldown: fill from empty to full
             fraction = elapsed / durationMs
             if fraction > 1 then fraction = 1 end
         end
         button.statusBar:SetValue(fraction)
 
-        -- Time text
-        if style.showCooldownText then
+        if button.style.showCooldownText then
             if remaining > 0 then
                 button.timeText:SetText(FormatBarTime(remaining))
             else
                 button.timeText:SetText("")
             end
-        else
-            button.timeText:SetText("")
         end
     else
         button.statusBar:SetValue(1)
-        -- Ready text
-        if style.showBarReadyText then
-            button.timeText:SetText(style.barReadyText or "Ready")
+        if button.style.showBarReadyText then
+            button.timeText:SetText(button.style.barReadyText or "Ready")
         else
             button.timeText:SetText("")
         end
+    end
+end
+
+-- Update bar-specific display elements (colors, desaturation, aura effects).
+-- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
+UpdateBarDisplay = function(button, fetchOk)
+    local style = button.style
+    local _, durationMs = button.cooldown:GetCooldownTimes()
+
+    local onCooldown = durationMs and durationMs > 0
+    if onCooldown and button._barGCDSuppressed then
+        onCooldown = false
     end
 
     -- Time text color: switch between cooldown and ready colors
@@ -1458,7 +1486,7 @@ UpdateBarDisplay = function(button, fetchOk)
     end
 
     -- Bar aura color: override bar fill when aura is active
-    local wantAuraColor = button._auraActive and button.buttonData.barAuraColor
+    local wantAuraColor = button._auraActive and (button.buttonData.barAuraColor or DEFAULT_BAR_AURA_COLOR)
     if button._barAuraColor ~= wantAuraColor then
         button._barAuraColor = wantAuraColor
         if not wantAuraColor then
@@ -1762,7 +1790,10 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
-    -- Apply charge/item count font settings
+    -- Apply charge/item count font settings and anchor to icon or bar center
+    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
+    local defXOff = showIcon and -2 or 0
+    local defYOff = 2
     if buttonData.hasCharges then
         local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = buttonData.chargeFontSize or 12
@@ -1770,10 +1801,10 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
         local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = buttonData.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = buttonData.chargeXOffset or -2
-        local chargeYOffset = buttonData.chargeYOffset or 2
-        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+        local chargeAnchor = buttonData.chargeAnchor or defAnchor
+        local chargeXOffset = buttonData.chargeXOffset or defXOff
+        local chargeYOffset = buttonData.chargeYOffset or defYOff
+        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
         local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
         local itemFontSize = buttonData.itemCountFontSize or 12
@@ -1781,18 +1812,29 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
         local icColor = buttonData.itemCountFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
-        local itemAnchor = buttonData.itemCountAnchor or "BOTTOMRIGHT"
-        local itemXOffset = buttonData.itemCountXOffset or -2
-        local itemYOffset = buttonData.itemCountYOffset or 2
-        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
+        local itemAnchor = buttonData.itemCountAnchor or defAnchor
+        local itemXOffset = buttonData.itemCountXOffset or defXOff
+        local itemYOffset = buttonData.itemCountYOffset or defYOff
+        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
     else
-        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
     end
 
     -- Store button data
     button.buttonData = buttonData
     button.index = index
     button.style = style
+
+    -- Bar fill interpolation OnUpdate
+    button._barFillElapsed = 0
+    local barInterval = style.barUpdateInterval or 0.025
+    button:SetScript("OnUpdate", function(self, elapsed)
+        self._barFillElapsed = self._barFillElapsed + elapsed
+        if self._barFillElapsed >= barInterval then
+            self._barFillElapsed = 0
+            UpdateBarFill(self)
+        end
+    end)
 
     -- Aura tracking runtime state
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
@@ -1899,6 +1941,17 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     button.style = newStyle
 
+    -- Update bar fill OnUpdate interval
+    local barInterval = newStyle.barUpdateInterval or 0.025
+    button._barFillElapsed = 0
+    button:SetScript("OnUpdate", function(self, elapsed)
+        self._barFillElapsed = self._barFillElapsed + elapsed
+        if self._barFillElapsed >= barInterval then
+            self._barFillElapsed = 0
+            UpdateBarFill(self)
+        end
+    end)
+
     -- Invalidate cached state
     button._desaturated = nil
     button._vertexR = nil
@@ -1976,8 +2029,10 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local cdColor = newStyle.cooldownFontColor or {1, 1, 1, 1}
     button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
 
-    -- Update charge/item count font
-    button.count:ClearAllPoints()
+    -- Update charge/item count font and anchor to icon or bar center
+    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
+    local defXOff = showIcon and -2 or 0
+    local defYOff = 2
     if button.buttonData and button.buttonData.hasCharges then
         local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = button.buttonData.chargeFontSize or 12
@@ -1985,10 +2040,10 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
         local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = button.buttonData.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = button.buttonData.chargeXOffset or -2
-        local chargeYOffset = button.buttonData.chargeYOffset or 2
-        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+        local chargeAnchor = button.buttonData.chargeAnchor or defAnchor
+        local chargeXOffset = button.buttonData.chargeXOffset or defXOff
+        local chargeYOffset = button.buttonData.chargeYOffset or defYOff
+        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
         local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
@@ -1997,12 +2052,12 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
         local icColor = button.buttonData.itemCountFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
-        local itemAnchor = button.buttonData.itemCountAnchor or "BOTTOMRIGHT"
-        local itemXOffset = button.buttonData.itemCountXOffset or -2
-        local itemYOffset = button.buttonData.itemCountYOffset or 2
-        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
+        local itemAnchor = button.buttonData.itemCountAnchor or defAnchor
+        local itemXOffset = button.buttonData.itemCountXOffset or defXOff
+        local itemYOffset = button.buttonData.itemCountYOffset or defYOff
+        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
     else
-        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
     end
 
     -- Update spell name text

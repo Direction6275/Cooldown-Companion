@@ -2181,6 +2181,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(chargeFontColorMissing)
 
+            local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
+            local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
+            local defChargeX = barNoIcon and 0 or -2
+            local defChargeY = 2
+
             local chargeAnchorValues = {}
             for _, pt in ipairs(anchorPoints) do
                 chargeAnchorValues[pt] = anchorPointLabels[pt]
@@ -2188,7 +2193,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             local chargeAnchorDrop = AceGUI:Create("Dropdown")
             chargeAnchorDrop:SetLabel("Anchor Point")
             chargeAnchorDrop:SetList(chargeAnchorValues)
-            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or "BOTTOMRIGHT")
+            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or defChargeAnchor)
             chargeAnchorDrop:SetFullWidth(true)
             chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 buttonData.chargeAnchor = val
@@ -2199,7 +2204,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             local chargeXSlider = AceGUI:Create("Slider")
             chargeXSlider:SetLabel("X Offset")
             chargeXSlider:SetSliderValues(-20, 20, 1)
-            chargeXSlider:SetValue(buttonData.chargeXOffset or -2)
+            chargeXSlider:SetValue(buttonData.chargeXOffset or defChargeX)
             chargeXSlider:SetFullWidth(true)
             chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
                 buttonData.chargeXOffset = val
@@ -2210,7 +2215,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             local chargeYSlider = AceGUI:Create("Slider")
             chargeYSlider:SetLabel("Y Offset")
             chargeYSlider:SetSliderValues(-20, 20, 1)
-            chargeYSlider:SetValue(buttonData.chargeYOffset or 2)
+            chargeYSlider:SetValue(buttonData.chargeYOffset or defChargeY)
             chargeYSlider:SetFullWidth(true)
             chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
                 buttonData.chargeYOffset = val
@@ -2786,6 +2791,11 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(itemFontColor)
 
     -- Item count anchor point
+    local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
+    local defItemAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
+    local defItemX = barNoIcon and 0 or -2
+    local defItemY = 2
+
     local itemAnchorValues = {}
     for _, pt in ipairs(anchorPoints) do
         itemAnchorValues[pt] = anchorPointLabels[pt]
@@ -2793,7 +2803,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local itemAnchorDrop = AceGUI:Create("Dropdown")
     itemAnchorDrop:SetLabel("Anchor Point")
     itemAnchorDrop:SetList(itemAnchorValues)
-    itemAnchorDrop:SetValue(buttonData.itemCountAnchor or "BOTTOMRIGHT")
+    itemAnchorDrop:SetValue(buttonData.itemCountAnchor or defItemAnchor)
     itemAnchorDrop:SetFullWidth(true)
     itemAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.itemCountAnchor = val
@@ -2805,7 +2815,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local itemXSlider = AceGUI:Create("Slider")
     itemXSlider:SetLabel("X Offset")
     itemXSlider:SetSliderValues(-20, 20, 1)
-    itemXSlider:SetValue(buttonData.itemCountXOffset or -2)
+    itemXSlider:SetValue(buttonData.itemCountXOffset or defItemX)
     itemXSlider:SetFullWidth(true)
     itemXSlider:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.itemCountXOffset = val
@@ -2817,7 +2827,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local itemYSlider = AceGUI:Create("Slider")
     itemYSlider:SetLabel("Y Offset")
     itemYSlider:SetSliderValues(-20, 20, 1)
-    itemYSlider:SetValue(buttonData.itemCountYOffset or 2)
+    itemYSlider:SetValue(buttonData.itemCountYOffset or defItemY)
     itemYSlider:SetFullWidth(true)
     itemYSlider:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.itemCountYOffset = val
@@ -3622,9 +3632,8 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(desatCb)
 
-    if not isBarMode then
     local gcdCb = AceGUI:Create("CheckBox")
-    gcdCb:SetLabel("Show GCD Swipe")
+    gcdCb:SetLabel(isBarMode and "Show GCD" or "Show GCD Swipe")
     gcdCb:SetValue(style.showGCDSwipe == true)
     gcdCb:SetFullWidth(true)
     gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3633,6 +3642,7 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(gcdCb)
 
+    if not isBarMode then
     local rangeCb = AceGUI:Create("CheckBox")
     rangeCb:SetLabel("Show Out of Range")
     rangeCb:SetValue(style.showOutOfRange or false)
@@ -4281,8 +4291,7 @@ local function BuildPositioningTab(container)
     HookSliderEditBox(ySlider)
     container:AddChild(ySlider)
 
-    -- Orientation dropdown (hidden for bars — bars are always vertical)
-    if group.displayMode ~= "bars" then
+    -- Orientation dropdown
     local orientDrop = AceGUI:Create("Dropdown")
     orientDrop:SetLabel("Orientation")
     orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
@@ -4293,7 +4302,6 @@ local function BuildPositioningTab(container)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end)
     container:AddChild(orientDrop)
-    end
 
     -- Buttons Per Row/Column
     local numButtons = math.max(1, #group.buttons)
@@ -4480,6 +4488,18 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(spacingSlider)
+
+    local updateFreqSlider = AceGUI:Create("Slider")
+    updateFreqSlider:SetLabel("Update Frequency (Hz)")
+    updateFreqSlider:SetSliderValues(10, 60, 1)
+    local curInterval = style.barUpdateInterval or 0.025
+    updateFreqSlider:SetValue(math.floor(1 / curInterval + 0.5))
+    updateFreqSlider:SetFullWidth(true)
+    updateFreqSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barUpdateInterval = 1 / val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+    end)
+    container:AddChild(updateFreqSlider)
 
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")

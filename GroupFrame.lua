@@ -509,7 +509,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
 
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = isBarMode and "vertical" or (style.orientation or "horizontal")
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
 
     -- Clear existing buttons (remove from Masque first if enabled)
@@ -595,7 +595,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = isBarMode and "vertical" or (style.orientation or "horizontal")
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount or #group.buttons
 

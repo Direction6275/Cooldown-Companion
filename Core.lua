@@ -170,6 +170,7 @@ local defaults = {
             showBarReadyText = false,
             barReadyText = "Ready",
             barReadyTextColor = {0.2, 1.0, 0.2, 1.0},
+            barUpdateInterval = 0.025,  -- seconds between bar fill updates (~40Hz default)
         },
         locked = false,
         auraDurationCache = {},
