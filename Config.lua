@@ -5340,7 +5340,7 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("")
-    frame:SetWidth(1150)
+    frame:SetWidth(1160)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
     frame:EnableResize(false)
@@ -5851,9 +5851,10 @@ local function CreateConfigPanel()
         local h = colParent:GetHeight()
         local pad = COLUMN_PADDING
 
-        local col1Width = math.floor(w * 0.18)
-        local col2Width = math.floor(w * 0.25)
-        local bsWidth   = math.floor(w * 0.28)
+        local baseW = w - 10
+        local col1Width = math.floor(baseW * 0.18)
+        local col2Width = math.floor(baseW * 0.25)
+        local bsWidth   = math.floor(baseW * 0.28)
         local col3Width  = w - col1Width - col2Width - bsWidth - (pad * 3)
 
         col1.frame:ClearAllPoints()
