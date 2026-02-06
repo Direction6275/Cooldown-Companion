@@ -5410,6 +5410,8 @@ local function CreateConfigPanel()
 
     local isMinimized = false
     local fullHeight = 700
+    local savedFrameRight, savedFrameTop
+    local savedOffsetRight, savedOffsetTop
 
     -- Title bar buttons: [Gear] [Collapse] [X] at top-right
 
@@ -5504,8 +5506,12 @@ local function CreateConfigPanel()
     miniFrame:SetMovable(true)
     miniFrame:EnableMouse(true)
     miniFrame:RegisterForDrag("LeftButton")
+    local miniWasDragged = false
     miniFrame:SetScript("OnDragStart", miniFrame.StartMoving)
-    miniFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    miniFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        miniWasDragged = true
+    end)
     miniFrame:SetFrameStrata("FULLSCREEN_DIALOG")
     miniFrame:SetToplevel(true)
     miniFrame:Hide()
@@ -5569,21 +5575,31 @@ local function CreateConfigPanel()
     -- Collapse button callback
     collapseBtn:SetCallback("OnClick", function()
         if isMinimized then
-            -- Expand: read mini frame position before hiding
-            local miniLeft = miniFrame:GetLeft()
-            local miniTop = miniFrame:GetTop()
+            local expandRight, expandTop
+            if miniWasDragged then
+                -- User dragged mini frame — apply saved offset to new mini frame position
+                expandRight = miniFrame:GetLeft() + savedOffsetRight
+                expandTop = miniFrame:GetTop() + savedOffsetTop
+            else
+                -- No drag — restore exact saved position
+                expandRight = savedFrameRight
+                expandTop = savedFrameTop
+            end
             miniFrame:Hide() -- OnHide resets state and reparents collapse button
+            miniWasDragged = false
 
-            -- Position main frame so its top-right aligns near where the mini frame was
             content:ClearAllPoints()
-            content:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", miniLeft + 58, miniTop)
+            content:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", expandRight, expandTop)
             content:SetHeight(fullHeight)
             content:SetWidth(1150)
             content:Show()
             CooldownCompanion:RefreshConfigPanel()
         else
-            -- Collapse: hide main frame, show mini frame at collapse button position
+            -- Collapse: save main frame position, then show mini frame at collapse button position
             CloseDropDownMenus()
+
+            savedFrameRight = content:GetRight()
+            savedFrameTop = content:GetTop()
 
             local btnLeft = collapseBtn.frame:GetLeft()
             local btnBottom = collapseBtn.frame:GetBottom()
@@ -5596,6 +5612,10 @@ local function CreateConfigPanel()
             miniFrame:ClearAllPoints()
             miniFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", btnLeft - 18, btnBottom - 17)
             miniFrame:Show()
+
+            -- Save offset between main frame TOPRIGHT and mini frame position (for drag expand)
+            savedOffsetRight = savedFrameRight - miniFrame:GetLeft()
+            savedOffsetTop = savedFrameTop - miniFrame:GetTop()
 
             -- Reparent collapse button to mini frame
             collapseBtn.frame:SetParent(miniFrame)
