@@ -1479,6 +1479,17 @@ function RefreshColumn1()
                         CooldownCompanion:RefreshConfigPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
+
+                    -- Delete
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "|cffff4444Delete|r"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local name = group and group.name or "this group"
+                        ShowPopupAboveConfig("CDC_DELETE_GROUP", name, { groupId = groupId })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
                 end, "MENU")
                 groupContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
                 ToggleDropDownMenu(1, nil, groupContextMenu, "cursor", 0, 0)
@@ -1655,17 +1666,14 @@ function RefreshColumn1()
         end
         wipe(col1BarWidgets)
 
-        -- "New" button (left half)
-        local newBtn = AceGUI:Create("Button")
-        newBtn:SetText("New")
-        newBtn:SetCallback("OnClick", function()
-            -- Generate a unique "New Group" name
+        -- Helper: generate a unique group name with the given base
+        local function GenerateGroupName(base)
             local db = CooldownCompanion.db.profile
             local existing = {}
             for _, g in pairs(db.groups) do
                 existing[g.name] = true
             end
-            local name = "New Group"
+            local name = base
             if existing[name] then
                 local n = 1
                 while existing[name .. " " .. n] do
@@ -1673,35 +1681,48 @@ function RefreshColumn1()
                 end
                 name = name .. " " .. n
             end
-            local groupId = CooldownCompanion:CreateGroup(name)
+            return name
+        end
+
+        -- "New Icon Group" button (left half)
+        local newIconBtn = AceGUI:Create("Button")
+        newIconBtn:SetText("New Icon Group")
+        newIconBtn:SetCallback("OnClick", function()
+            local groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             selectedGroup = groupId
             selectedButton = nil
             wipe(selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        newBtn.frame:SetParent(col1ButtonBar)
-        newBtn.frame:ClearAllPoints()
-        newBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOPLEFT", 0, 0)
-        newBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOM", -2, 0)
-        newBtn.frame:Show()
-        table.insert(col1BarWidgets, newBtn)
+        newIconBtn.frame:SetParent(col1ButtonBar)
+        newIconBtn.frame:ClearAllPoints()
+        newIconBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOPLEFT", 0, 0)
+        newIconBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOM", -2, 0)
+        newIconBtn.frame:Show()
+        table.insert(col1BarWidgets, newIconBtn)
 
-        -- "Delete" button (right half)
-        local delBtn = AceGUI:Create("Button")
-        delBtn:SetText("Delete")
-        delBtn:SetCallback("OnClick", function()
-            if selectedGroup and CooldownCompanion.db.profile.groups[selectedGroup] then
-                local group = CooldownCompanion.db.profile.groups[selectedGroup]
-                local name = group and group.name or "this group"
-                ShowPopupAboveConfig("CDC_DELETE_GROUP", name, { groupId = selectedGroup })
+        -- "New Bar Group" button (right half)
+        local newBarBtn = AceGUI:Create("Button")
+        newBarBtn:SetText("New Bar Group")
+        newBarBtn:SetCallback("OnClick", function()
+            local groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+            local group = CooldownCompanion.db.profile.groups[groupId]
+            group.displayMode = "bars"
+            if group.masqueEnabled then
+                CooldownCompanion:ToggleGroupMasque(groupId, false)
             end
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            selectedGroup = groupId
+            selectedButton = nil
+            wipe(selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
         end)
-        delBtn.frame:SetParent(col1ButtonBar)
-        delBtn.frame:ClearAllPoints()
-        delBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOP", 2, 0)
-        delBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOMRIGHT", 0, 0)
-        delBtn.frame:Show()
-        table.insert(col1BarWidgets, delBtn)
+        newBarBtn.frame:SetParent(col1ButtonBar)
+        newBarBtn.frame:ClearAllPoints()
+        newBarBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOP", 2, 0)
+        newBarBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        newBarBtn.frame:Show()
+        table.insert(col1BarWidgets, newBarBtn)
     end
 end
 
@@ -5659,7 +5680,7 @@ local function CreateConfigPanel()
         local h = colParent:GetHeight()
         local pad = COLUMN_PADDING
 
-        local col1Width = math.floor(w * 0.15)
+        local col1Width = math.floor(w * 0.18)
         local col2Width = math.floor(w * 0.25)
         local bsWidth   = math.floor(w * 0.28)
         local col3Width  = w - col1Width - col2Width - bsWidth - (pad * 3)
