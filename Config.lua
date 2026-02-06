@@ -40,6 +40,7 @@ local columnInfoButtons = {}
 local moveMenuFrame = nil
 local groupContextMenu = nil
 local buttonContextMenu = nil
+local gearDropdownFrame = nil
 
 -- Drag-reorder state
 local dragState = nil
@@ -4214,23 +4215,6 @@ local function BuildExtrasTab(container)
         end
     end
 
-    local hideInfoCb = AceGUI:Create("CheckBox")
-    hideInfoCb:SetLabel("Hide CDC Tooltips")
-    hideInfoCb:SetValue(CooldownCompanion.db.profile.hideInfoButtons or false)
-    hideInfoCb:SetFullWidth(true)
-    hideInfoCb:SetCallback("OnValueChanged", function(widget, event, val)
-        CooldownCompanion.db.profile.hideInfoButtons = val
-        for _, btn in ipairs(columnInfoButtons) do
-            if val then btn:Hide() else btn:Show() end
-        end
-        for _, btn in ipairs(tabInfoButtons) do
-            if val then btn:Hide() else btn:Show() end
-        end
-        for _, btn in ipairs(buttonSettingsInfoButtons) do
-            if val then btn:Hide() else btn:Show() end
-        end
-    end)
-    container:AddChild(hideInfoCb)
 end
 
 local function BuildPositioningTab(container)
@@ -5398,56 +5382,127 @@ local function CreateConfigPanel()
     frame:SetCallback("OnClose", function(widget)
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
+        CloseDropDownMenus()
         widget.frame:Hide()
     end)
 
-    -- Minimize toggle button (AceGUI Button with icon texture, top-right of title bar)
-    local minimizeBtn = AceGUI:Create("Button")
-    minimizeBtn:SetText("")
-    minimizeBtn:SetWidth(22)
-    minimizeBtn:SetHeight(18)
-    minimizeBtn.frame:SetParent(content)
-    minimizeBtn.frame:ClearAllPoints()
-    minimizeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, -5)
-    minimizeBtn.frame:Show()
-    -- Add collapse icon texture on top of the skinnable button
-    local minimizeIcon = minimizeBtn.frame:CreateTexture(nil, "ARTWORK")
-    minimizeIcon:SetTexture("Interface\\Buttons\\UI-Panel-CollapseButton-Up")
-    minimizeIcon:SetSize(18, 18)
-    minimizeIcon:SetPoint("CENTER")
+    -- Permanently hide the AceGUI bottom close button
+    for _, child in ipairs({content:GetChildren()}) do
+        if child:GetObjectType() == "Button" and child:GetText() == CLOSE then
+            child:Hide()
+            child:SetScript("OnShow", child.Hide)
+            break
+        end
+    end
 
     local isMinimized = false
     local TITLE_BAR_HEIGHT = 40
     local fullHeight = 700
 
-    -- Find the AceGUI close button (anchored BOTTOMRIGHT, UIPanelButtonTemplate)
-    local closeButton
-    for _, child in ipairs({content:GetChildren()}) do
-        if child:GetObjectType() == "Button" and child:GetText() == CLOSE then
-            closeButton = child
-            break
-        end
-    end
+    -- Title bar buttons: [Gear] [Collapse] [X] at top-right
 
-    minimizeBtn:SetCallback("OnClick", function()
-        -- Capture current top-left position before changing height
+    -- X (close) button — rightmost
+    local closeBtn = AceGUI:Create("Button")
+    closeBtn:SetText("")
+    closeBtn:SetWidth(22)
+    closeBtn:SetHeight(18)
+    closeBtn.frame:SetParent(content)
+    closeBtn.frame:ClearAllPoints()
+    closeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, -5)
+    closeBtn.frame:Show()
+    local closeIcon = closeBtn.frame:CreateTexture(nil, "ARTWORK")
+    closeIcon:SetAtlas("common-icon-redx")
+    closeIcon:SetSize(16, 16)
+    closeIcon:SetPoint("CENTER")
+    closeBtn:SetCallback("OnClick", function()
+        CooldownCompanion:ClearAllProcGlowPreviews()
+        CooldownCompanion:ClearAllAuraGlowPreviews()
+        CloseDropDownMenus()
+        content:Hide()
+    end)
+
+    -- Collapse button — left of X
+    local collapseBtn = AceGUI:Create("Button")
+    collapseBtn:SetText("")
+    collapseBtn:SetWidth(22)
+    collapseBtn:SetHeight(18)
+    collapseBtn.frame:SetParent(content)
+    collapseBtn.frame:ClearAllPoints()
+    collapseBtn.frame:SetPoint("RIGHT", closeBtn.frame, "LEFT", -2, 0)
+    collapseBtn.frame:Show()
+    local collapseIcon = collapseBtn.frame:CreateTexture(nil, "ARTWORK")
+    collapseIcon:SetAtlas("questlog-icon-shrink")
+    collapseIcon:SetSize(18, 18)
+    collapseIcon:SetPoint("CENTER", 0, -1)
+
+    -- Gear button — left of Collapse
+    local gearBtn = AceGUI:Create("Button")
+    gearBtn:SetText("")
+    gearBtn:SetWidth(22)
+    gearBtn:SetHeight(18)
+    gearBtn.frame:SetParent(content)
+    gearBtn.frame:ClearAllPoints()
+    gearBtn.frame:SetPoint("RIGHT", collapseBtn.frame, "LEFT", -2, 0)
+    gearBtn.frame:Show()
+    local gearIcon = gearBtn.frame:CreateTexture(nil, "ARTWORK")
+    gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
+    gearIcon:SetSize(16, 16)
+    gearIcon:SetPoint("CENTER")
+
+    -- Gear dropdown menu
+    gearBtn:SetCallback("OnClick", function()
+        if not gearDropdownFrame then
+            gearDropdownFrame = CreateFrame("Frame", "CDCGearDropdown", UIParent, "UIDropDownMenuTemplate")
+        end
+        UIDropDownMenu_Initialize(gearDropdownFrame, function(self, level)
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "  Hide CDC Tooltips"
+            info.checked = function() return CooldownCompanion.db.profile.hideInfoButtons end
+            info.isNotRadio = true
+            info.keepShownOnClick = true
+            info.func = function()
+                local val = not CooldownCompanion.db.profile.hideInfoButtons
+                CooldownCompanion.db.profile.hideInfoButtons = val
+                for _, btn in ipairs(columnInfoButtons) do
+                    if val then btn:Hide() else btn:Show() end
+                end
+                for _, btn in ipairs(tabInfoButtons) do
+                    if val then btn:Hide() else btn:Show() end
+                end
+                for _, btn in ipairs(buttonSettingsInfoButtons) do
+                    if val then btn:Hide() else btn:Show() end
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end, "MENU")
+        gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, gearDropdownFrame, gearBtn.frame, 0, 0)
+    end)
+
+    -- Collapse button callback
+    collapseBtn:SetCallback("OnClick", function()
         local top = content:GetTop()
         local left = content:GetLeft()
 
         if isMinimized then
-            -- Expand: restore full height, keep top edge in place
+            -- Expand
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(fullHeight)
             content:SetWidth(1150)
             contentFrame:Show()
             frame:SetStatusText("v1.2")
-            if closeButton then closeButton:Show() end
+            gearBtn.frame:Show()
+            closeBtn.frame:Show()
+            collapseIcon:SetAtlas("questlog-icon-shrink")
             isMinimized = false
         else
-            -- Collapse: shrink to title bar only, keep top edge in place
+            -- Collapse
+            CloseDropDownMenus()
             contentFrame:Hide()
-            if closeButton then closeButton:Hide() end
+            gearBtn.frame:Hide()
+            closeBtn.frame:Hide()
+            collapseIcon:SetAtlas("questlog-icon-expand")
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
             content:SetHeight(TITLE_BAR_HEIGHT)
