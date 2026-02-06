@@ -4171,13 +4171,13 @@ local function BuildExtrasTab(container)
     end
 
     -- Other ---------------------------------------------------------------
-    local otherHeading = AceGUI:Create("Heading")
-    otherHeading:SetText("Other")
-    otherHeading:SetFullWidth(true)
-    container:AddChild(otherHeading)
-
     -- Masque skinning toggle (only show if Masque is installed, not in bar mode)
     if CooldownCompanion.Masque and not isBarMode then
+        local otherHeading = AceGUI:Create("Heading")
+        otherHeading:SetText("Other")
+        otherHeading:SetFullWidth(true)
+        container:AddChild(otherHeading)
+
         local masqueCb = AceGUI:Create("CheckBox")
         masqueCb:SetLabel("Enable Masque Skinning")
         masqueCb:SetValue(group.masqueEnabled or false)
@@ -4239,7 +4239,7 @@ local function BuildPositioningTab(container)
     local currentAnchor = group.anchor.relativeTo
     if currentAnchor == "UIParent" then currentAnchor = "" end
     anchorBox:SetText(currentAnchor)
-    anchorBox:SetRelativeWidth(0.72)
+    anchorBox:SetRelativeWidth(0.68)
     anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
         local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent"
         if text == "" then
@@ -4253,7 +4253,7 @@ local function BuildPositioningTab(container)
 
     local pickBtn = AceGUI:Create("Button")
     pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.20)
+    pickBtn:SetRelativeWidth(0.24)
     pickBtn:SetCallback("OnClick", function()
         local grp = selectedGroup
         StartPickFrame(function(name)
@@ -5241,31 +5241,16 @@ end
 ------------------------------------------------------------------------
 -- Profile Bar
 ------------------------------------------------------------------------
-function RefreshProfileBar(barFrame)
+local function RefreshProfileBar(bar)
     -- Release tracked AceGUI widgets
     for _, widget in ipairs(profileBarAceWidgets) do
         widget:Release()
     end
     wipe(profileBarAceWidgets)
 
-    -- Clear existing children (FontStrings are regions, not children, so clear both)
-    for _, child in ipairs({barFrame:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-    if barFrame.profileLabel then
-        barFrame.profileLabel:Hide()
-    end
-
     local db = CooldownCompanion.db
     local profiles = db:GetProfiles()
     local currentProfile = db:GetCurrentProfile()
-
-    -- "Profile:" label
-    local label = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("LEFT", barFrame, "LEFT", 8, 0)
-    label:SetText("Profile:")
-    barFrame.profileLabel = label
 
     -- Build ordered profile list for AceGUI Dropdown
     local profileList = {}
@@ -5273,11 +5258,12 @@ function RefreshProfileBar(barFrame)
         profileList[name] = name
     end
 
-    -- Profile dropdown (AceGUI)
+    -- Profile dropdown (no label, compact)
     local profileDrop = AceGUI:Create("Dropdown")
     profileDrop:SetLabel("")
     profileDrop:SetList(profileList, profiles)
     profileDrop:SetValue(currentProfile)
+    profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
         db:SetProfile(val)
         selectedGroup = nil
@@ -5286,46 +5272,41 @@ function RefreshProfileBar(barFrame)
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:RefreshAllGroups()
     end)
-    profileDrop.frame:SetParent(barFrame)
+    profileDrop.frame:SetParent(bar)
     profileDrop.frame:ClearAllPoints()
-    profileDrop.frame:SetPoint("LEFT", label, "RIGHT", 4, 0)
-    profileDrop:SetWidth(160)
+    profileDrop.frame:SetPoint("LEFT", bar, "LEFT", 0, 0)
     profileDrop.frame:Show()
     table.insert(profileBarAceWidgets, profileDrop)
 
-    -- Helper to create bar buttons
+    -- Helper to create horizontally chained buttons
     local lastAnchor = profileDrop.frame
     local function AddBarButton(text, width, onClick)
         local btn = AceGUI:Create("Button")
         btn:SetText(text)
+        btn:SetWidth(width)
         btn:SetCallback("OnClick", onClick)
-        btn.frame:SetParent(barFrame)
+        btn.frame:SetParent(bar)
         btn.frame:ClearAllPoints()
         btn.frame:SetPoint("LEFT", lastAnchor, "RIGHT", 4, 0)
-        btn:SetWidth(width)
-        btn:SetHeight(24)
+        btn:SetHeight(22)
         btn.frame:Show()
         table.insert(profileBarAceWidgets, btn)
         lastAnchor = btn.frame
         return btn
     end
 
-    -- New
-    AddBarButton("New", 70, function()
+    AddBarButton("New", 55, function()
         ShowPopupAboveConfig("CDC_NEW_PROFILE")
     end)
 
-    -- Rename
     AddBarButton("Rename", 80, function()
         ShowPopupAboveConfig("CDC_RENAME_PROFILE", currentProfile, { oldName = currentProfile })
     end)
 
-    -- Duplicate
     AddBarButton("Duplicate", 90, function()
         ShowPopupAboveConfig("CDC_DUPLICATE_PROFILE", nil, { source = currentProfile })
     end)
 
-    -- Delete
     AddBarButton("Delete", 70, function()
         local allProfiles = db:GetProfiles()
         local isOnly = #allProfiles <= 1
@@ -5336,13 +5317,11 @@ function RefreshProfileBar(barFrame)
         end
     end)
 
-    -- Export
-    AddBarButton("Export", 70, function()
+    AddBarButton("Export", 75, function()
         ShowPopupAboveConfig("CDC_EXPORT_PROFILE")
     end)
 
-    -- Import
-    AddBarButton("Import", 70, function()
+    AddBarButton("Import", 75, function()
         ShowPopupAboveConfig("CDC_IMPORT_PROFILE")
     end)
 end
@@ -5356,7 +5335,7 @@ local function CreateConfigPanel()
     -- Main AceGUI Frame
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
-    frame:SetStatusText("v1.2")
+    frame:SetStatusText("")
     frame:SetWidth(1150)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
@@ -5377,6 +5356,16 @@ local function CreateConfigPanel()
     if frame.sizer_e then
         frame.sizer_e:Hide()
     end
+
+    -- Hide the AceGUI status bar and add version text at bottom-right
+    if frame.statustext then
+        local statusbg = frame.statustext:GetParent()
+        if statusbg then statusbg:Hide() end
+    end
+    local versionText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    versionText:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 20, 25)
+    versionText:SetText("v1.3  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default"))
+    versionText:SetTextColor(1, 0.82, 0)
 
     -- Prevent AceGUI from releasing on close - just hide
     frame:SetCallback("OnClose", function(widget)
@@ -5614,16 +5603,37 @@ local function CreateConfigPanel()
         end
     end)
 
-    -- Profile bar at the top
-    local profileBar = CreateFrame("Frame", nil, contentFrame)
-    profileBar:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, 0)
-    profileBar:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, 0)
-    profileBar:SetHeight(PROFILE_BAR_HEIGHT)
+    -- Profile gear icon next to version/profile text at bottom-left
+    local profileGear = CreateFrame("Button", nil, content)
+    profileGear:SetSize(16, 16)
+    profileGear:SetPoint("LEFT", versionText, "RIGHT", 6, 0)
+    local profileGearIcon = profileGear:CreateTexture(nil, "ARTWORK")
+    profileGearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
+    profileGearIcon:SetVertexColor(1, 0.9, 0.5)
+    profileGearIcon:SetAllPoints()
+    profileGear:SetHighlightTexture("Interface\\WorldMap\\GEAR_64GREY")
+    profileGear:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Column containers below profile bar
+    -- Profile bar (expands to the right of gear in bottom dead space)
+    local profileBar = CreateFrame("Frame", nil, content)
+    profileBar:SetHeight(30)
+    profileBar:SetPoint("LEFT", profileGear, "RIGHT", 8, 0)
+    profileBar:SetPoint("RIGHT", content, "RIGHT", -20, 0)
+    profileBar:Hide()
+
+    profileGear:SetScript("OnClick", function()
+        if profileBar:IsShown() then
+            profileBar:Hide()
+        else
+            RefreshProfileBar(profileBar)
+            profileBar:Show()
+        end
+    end)
+
+    -- Column containers fill the content area
     local colParent = CreateFrame("Frame", nil, contentFrame)
-    colParent:SetPoint("TOPLEFT", profileBar, "BOTTOMLEFT", 0, -4)
-    colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 0)
+    colParent:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -11)
+    colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 11)
 
     -- Column 1: Groups (AceGUI InlineGroup)
     local col1 = AceGUI:Create("InlineGroup")
@@ -5870,6 +5880,7 @@ local function CreateConfigPanel()
 
     -- Store references
     frame.profileBar = profileBar
+    frame.versionText = versionText
     frame.col1 = col1
     frame.col2 = col2
     frame.buttonSettingsCol = buttonSettingsCol
@@ -5888,7 +5899,10 @@ function CooldownCompanion:RefreshConfigPanel()
     if not configFrame then return end
     if not configFrame.frame:IsShown() then return end
 
-    RefreshProfileBar(configFrame.profileBar)
+    if configFrame.profileBar:IsShown() then
+        RefreshProfileBar(configFrame.profileBar)
+    end
+    configFrame.versionText:SetText("v1.3  |  " .. (self.db:GetCurrentProfile() or "Default"))
     RefreshColumn1()
     RefreshColumn2()
     RefreshButtonSettingsColumn()
