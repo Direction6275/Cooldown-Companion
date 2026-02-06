@@ -2118,6 +2118,18 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         chargeCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         if not chargesCollapsed then
+            local hideChargeTextCb = AceGUI:Create("CheckBox")
+            hideChargeTextCb:SetLabel("Hide Charge Text")
+            hideChargeTextCb:SetValue(buttonData.hideChargeText or false)
+            hideChargeTextCb:SetFullWidth(true)
+            hideChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.hideChargeText = val or nil
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(hideChargeTextCb)
+
+            if not buttonData.hideChargeText then
             local chargeFontSizeSlider = AceGUI:Create("Slider")
             chargeFontSizeSlider:SetLabel("Font Size")
             chargeFontSizeSlider:SetSliderValues(8, 32, 1)
@@ -2227,6 +2239,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             chargeBreak:SetText("")
             chargeBreak:SetFullWidth(true)
             scroll:AddChild(chargeBreak)
+            end -- not hideChargeText
         end
     end
 

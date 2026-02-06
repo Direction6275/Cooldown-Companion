@@ -959,17 +959,24 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Display charge text.  Prefer passing the raw API value to SetText
         -- (C-side, handles secret values like print() does).  Fall back to
         -- the Lua-side estimated count only when the API table is nil.
-        local textSet = false
-        if charges then
-            textSet = pcall(function()
-                button.count:SetText(charges.currentCharges)
-            end)
-        end
-        if not textSet then
-            local displayText = button._chargeCount or ""
-            if button._chargeText ~= displayText then
-                button._chargeText = displayText
-                button.count:SetText(displayText)
+        if buttonData.hideChargeText then
+            if button._chargeText ~= "" then
+                button._chargeText = ""
+                button.count:SetText("")
+            end
+        else
+            local textSet = false
+            if charges then
+                textSet = pcall(function()
+                    button.count:SetText(charges.currentCharges)
+                end)
+            end
+            if not textSet then
+                local displayText = button._chargeCount or ""
+                if button._chargeText ~= displayText then
+                    button._chargeText = displayText
+                    button.count:SetText(displayText)
+                end
             end
         end
 
