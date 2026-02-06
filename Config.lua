@@ -2083,7 +2083,6 @@ function RefreshColumn2()
         moveRow:AddChild(moveBtn)
         col2Scroll:AddChild(moveRow)
     end
-
 end
 
 ------------------------------------------------------------------------
@@ -5151,7 +5150,6 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(cdFontColor)
     end
-
 end
 
 function RefreshColumn3(container)
@@ -5218,23 +5216,29 @@ function RefreshColumn3(container)
         container.tabGroup = tabGroup
     end
 
-    -- Save scroll position before re-selecting tab
-    local savedScroll = 0
-    if col3Scroll and col3Scroll.scrollframe then
-        savedScroll = col3Scroll.scrollframe:GetVerticalScroll()
+    -- Save AceGUI scroll state before tab re-select (old col3Scroll will be released)
+    local savedOffset, savedScrollvalue
+    if col3Scroll then
+        local s = col3Scroll.status or col3Scroll.localstatus
+        if s and s.offset and s.offset > 0 then
+            savedOffset = s.offset
+            savedScrollvalue = s.scrollvalue
+        end
     end
 
-    -- Show and refresh the tab content
+    -- Show and refresh the tab content (SelectTab fires callback synchronously,
+    -- which releases old col3Scroll and creates a new one)
     container.tabGroup.frame:Show()
     container.tabGroup:SelectTab(selectedTab)
 
-    -- Restore scroll position after layout settles
-    if savedScroll > 0 and col3Scroll and col3Scroll.scrollframe then
-        C_Timer.After(0, function()
-            if col3Scroll and col3Scroll.scrollframe then
-                col3Scroll.scrollframe:SetVerticalScroll(savedScroll)
-            end
-        end)
+    -- Restore scroll state on the new col3Scroll widget.  LayoutFinished has already
+    -- scheduled FixScrollOnUpdate for next frame — it will read these values.
+    if savedOffset and col3Scroll then
+        local s = col3Scroll.status or col3Scroll.localstatus
+        if s then
+            s.offset = savedOffset
+            s.scrollvalue = savedScrollvalue
+        end
     end
 end
 
@@ -5899,6 +5903,29 @@ function CooldownCompanion:RefreshConfigPanel()
     if not configFrame then return end
     if not configFrame.frame:IsShown() then return end
 
+    -- Save AceGUI scroll state before any column rebuilds.
+    -- AceGUI ScrollFrame uses localstatus.offset/scrollvalue internally (not WoW's
+    -- GetVerticalScroll), and FixScroll reads from these on every layout/OnUpdate.
+    local function saveScroll(widget)
+        if not widget then return nil end
+        local s = widget.status or widget.localstatus
+        if s and s.offset and s.offset > 0 then
+            return { offset = s.offset, scrollvalue = s.scrollvalue }
+        end
+    end
+    local function restoreScroll(widget, saved)
+        if not saved or not widget then return end
+        local s = widget.status or widget.localstatus
+        if s then
+            s.offset = saved.offset
+            s.scrollvalue = saved.scrollvalue
+        end
+    end
+
+    local saved1   = saveScroll(col1Scroll)
+    local saved2   = saveScroll(col2Scroll)
+    local savedBtn = saveScroll(buttonSettingsScroll)
+
     if configFrame.profileBar:IsShown() then
         RefreshProfileBar(configFrame.profileBar)
     end
@@ -5907,6 +5934,14 @@ function CooldownCompanion:RefreshConfigPanel()
     RefreshColumn2()
     RefreshButtonSettingsColumn()
     RefreshColumn3(col3Container)
+
+    -- Restore AceGUI scroll state. LayoutFinished schedules a FixScrollOnUpdate for
+    -- next frame, which reads from status.offset — so we write our saved values back
+    -- before that fires.
+    restoreScroll(col1Scroll, saved1)
+    restoreScroll(col2Scroll, saved2)
+    restoreScroll(buttonSettingsScroll, savedBtn)
+
 end
 
 ------------------------------------------------------------------------
