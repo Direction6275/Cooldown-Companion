@@ -2727,6 +2727,19 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- bars/icons aura effect branch
         end
     end
+
+    if group.displayMode == "bars" then
+        local chargeGapSlider = AceGUI:Create("Slider")
+        chargeGapSlider:SetLabel("Charge Bar Gap")
+        chargeGapSlider:SetSliderValues(0, 20, 1)
+        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
+        chargeGapSlider:SetFullWidth(true)
+        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.barChargeGap = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        scroll:AddChild(chargeGapSlider)
+    end
 end
 
 local function BuildItemSettings(scroll, buttonData, infoButtons)
@@ -3179,6 +3192,19 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
             end -- bars/icons aura effect branch
         end
     end
+
+    if group.displayMode == "bars" then
+        local chargeGapSlider = AceGUI:Create("Slider")
+        chargeGapSlider:SetLabel("Charge Bar Gap")
+        chargeGapSlider:SetSliderValues(0, 20, 1)
+        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
+        chargeGapSlider:SetFullWidth(true)
+        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.barChargeGap = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        scroll:AddChild(chargeGapSlider)
+    end
 end
 
 local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
@@ -3528,6 +3554,19 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
                 end
             end -- bars/icons aura effect branch
         end
+    end
+
+    if group.displayMode == "bars" then
+        local chargeGapSlider = AceGUI:Create("Slider")
+        chargeGapSlider:SetLabel("Charge Bar Gap")
+        chargeGapSlider:SetSliderValues(0, 20, 1)
+        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
+        chargeGapSlider:SetFullWidth(true)
+        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.barChargeGap = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        scroll:AddChild(chargeGapSlider)
     end
 end
 
@@ -4501,17 +4540,6 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(selectedGroup)
     end)
     container:AddChild(spacingSlider)
-
-    local chargeGapSlider = AceGUI:Create("Slider")
-    chargeGapSlider:SetLabel("Charge Bar Gap")
-    chargeGapSlider:SetSliderValues(0, 10, 1)
-    chargeGapSlider:SetValue(style.barChargeGap or 1)
-    chargeGapSlider:SetFullWidth(true)
-    chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barChargeGap = val
-        CooldownCompanion:UpdateGroupStyle(selectedGroup)
-    end)
-    container:AddChild(chargeGapSlider)
 
     local updateFreqSlider = AceGUI:Create("Slider")
     updateFreqSlider:SetLabel("Update Frequency (Hz)")

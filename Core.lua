@@ -1103,6 +1103,9 @@ end
 
 function CooldownCompanion:MigrateRemoveBarChargeOldFields()
     for _, group in pairs(self.db.profile.groups) do
+        if group.style then
+            group.style.barChargeGap = nil
+        end
         if group.buttons then
             for _, bd in ipairs(group.buttons) do
                 bd.barChargeMissingColor = nil

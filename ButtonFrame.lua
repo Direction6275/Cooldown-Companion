@@ -1397,8 +1397,8 @@ FormatBarTime = function(seconds)
     return ""
 end
 
--- Create/recreate charge sub-bar StatusBars for multi-charge spells.
--- Sub-bars are positioned within the statusBar region of the button.
+-- Create/recreate charge sub-bars for multi-charge spells.
+-- Each sub-bar is a self-contained StatusBar with its own bg + border + fill.
 EnsureChargeBars = function(button, numBars)
     if button._chargeBarCount == numBars then return end
 
@@ -1419,7 +1419,6 @@ EnsureChargeBars = function(button, numBars)
     button.chargeBars = {}
     local sb = button.statusBar
     local sbLevel = sb:GetFrameLevel()
-    local gap = 1
 
     for i = 1, numBars do
         local bar = CreateFrame("StatusBar", nil, button)
@@ -1428,6 +1427,17 @@ EnsureChargeBars = function(button, numBars)
         bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
         bar:SetFrameLevel(sbLevel - 1)
         bar:EnableMouse(false)
+
+        -- Background (BACKGROUND layer = behind fill)
+        bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+        bar.bg:SetAllPoints()
+
+        -- Border textures (OVERLAY layer = on top of fill)
+        bar.borderTextures = {}
+        for j = 1, 4 do
+            bar.borderTextures[j] = bar:CreateTexture(nil, "OVERLAY")
+        end
+
         button.chargeBars[i] = bar
     end
 
@@ -1435,23 +1445,41 @@ EnsureChargeBars = function(button, numBars)
     button._chargeBarsDirty = true
 end
 
--- Position charge sub-bars within the statusBar region.
--- Called when sub-bars are created or when button size changes.
+-- Position charge sub-bars side-by-side relative to the button frame.
+-- Each bar spans full button height with its own bg, border, and fill.
 local function LayoutChargeBars(button)
     if not button.chargeBars then return end
-    local sb = button.statusBar
-    local totalWidth = sb:GetWidth()
-    local totalHeight = sb:GetHeight()
+    local style = button.style
+    local showIcon = style.showBarIcon ~= false
+    local barHeight = style.barHeight or 20
+    local iconSize = barHeight
+    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
+    local startX = showIcon and (iconSize + iconOffset) or 0
+    local totalWidth = (style.barLength or 180) - startX
+    local totalHeight = barHeight
     local numBars = #button.chargeBars
-    local gap = button.style.barChargeGap or 1
+    local gap = button.buttonData and button.buttonData.barChargeGap or 2
     local barWidth = (totalWidth - (numBars - 1) * gap) / numBars
     if barWidth < 1 then barWidth = 1 end
+
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
+    local borderColor = style.borderColor or {0, 0, 0, 1}
 
     for i, bar in ipairs(button.chargeBars) do
         bar:ClearAllPoints()
         bar:SetSize(barWidth, totalHeight)
-        local xOffset = (i - 1) * (barWidth + gap)
-        bar:SetPoint("TOPLEFT", sb, "TOPLEFT", xOffset, 0)
+        local xOffset = startX + (i - 1) * (barWidth + gap)
+        bar:SetPoint("TOPLEFT", button, "TOPLEFT", xOffset, 0)
+
+        -- Bg color
+        bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+        -- Border positions and colors
+        ApplyEdgePositions(bar.borderTextures, bar, borderSize)
+        for _, tex in ipairs(bar.borderTextures) do
+            tex:SetColorTexture(unpack(borderColor))
+        end
     end
     button._chargeBarsDirty = false
 end
@@ -1605,12 +1633,52 @@ UpdateBarDisplay = function(button, fetchOk)
         -- Make main statusBar transparent so sub-bars show through; text stays visible
         button.statusBar:SetStatusBarColor(0, 0, 0, 0)
         button._barCdColor = "charge-sub-bars"
+
+        -- Switch button bg/border to icon-only mode (charge bars have their own)
+        if not button._chargeBarsBgActive then
+            button._chargeBarsBgActive = true
+            button.bg:Hide()
+            for _, tex in ipairs(button.borderTextures) do tex:Hide() end
+            local showIcon = style.showBarIcon ~= false
+            if showIcon then
+                local iconSize = style.barHeight or 20
+                local borderSz = style.borderSize or ST.DEFAULT_BORDER_SIZE
+                local bgC = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
+                local bdC = style.borderColor or {0, 0, 0, 1}
+                button.iconBg:ClearAllPoints()
+                button.iconBg:SetPoint("TOPLEFT", 0, 0)
+                button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+                button.iconBg:SetColorTexture(bgC[1], bgC[2], bgC[3], bgC[4])
+                button.iconBg:Show()
+                button._iconBounds:ClearAllPoints()
+                button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+                button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+                ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSz)
+                for _, tex in ipairs(button.iconBorderTextures) do
+                    tex:SetColorTexture(unpack(bdC))
+                    tex:Show()
+                end
+            end
+        end
     else
         -- Hide charge sub-bars if they exist (aura override case)
         if button.chargeBars then
             for _, bar in ipairs(button.chargeBars) do
                 bar:Hide()
             end
+        end
+
+        -- Restore full-button bg/border when charge bars are inactive
+        if button._chargeBarsBgActive then
+            button._chargeBarsBgActive = false
+            button.bg:ClearAllPoints()
+            button.bg:SetAllPoints()
+            button.bg:Show()
+            local borderSz = style.borderSize or ST.DEFAULT_BORDER_SIZE
+            ApplyEdgePositions(button.borderTextures, button, borderSz)
+            for _, tex in ipairs(button.borderTextures) do tex:Show() end
+            button.iconBg:Hide()
+            for _, tex in ipairs(button.iconBorderTextures) do tex:Hide() end
         end
 
         -- Bar color: switch between ready and cooldown colors
@@ -1899,6 +1967,29 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Charge sub-bars (created lazily in UpdateBarDisplay when charge count is known)
     button.chargeBars = nil
     button._chargeBarCount = 0
+    button._chargeBarsBgActive = false
+
+    -- Icon-only background + border (shown when charge sub-bars split the button)
+    button.iconBg = button:CreateTexture(nil, "BACKGROUND")
+    button.iconBg:SetPoint("TOPLEFT", 0, 0)
+    button.iconBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+    button.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+    button.iconBg:Hide()
+
+    button._iconBounds = CreateFrame("Frame", nil, button)
+    button._iconBounds:EnableMouse(false)
+    button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+    button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
+
+    button.iconBorderTextures = {}
+    local borderColor = style.borderColor or {0, 0, 0, 1}
+    for i = 1, 4 do
+        local tex = button:CreateTexture(nil, "OVERLAY")
+        tex:SetColorTexture(unpack(borderColor))
+        tex:Hide()
+        button.iconBorderTextures[i] = tex
+    end
+    ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize)
 
     -- StatusBar (right of icon)
     button.statusBar = CreateFrame("StatusBar", nil, button)
@@ -1939,8 +2030,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Truncate name text so it doesn't overlap time text
     button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
 
-    -- Border textures
-    local borderColor = style.borderColor or {0, 0, 0, 1}
+    -- Border textures (borderColor declared above for iconBorderTextures)
     button.borderTextures = {}
     for i = 1, 4 do
         local tex = button:CreateTexture(nil, "OVERLAY")
@@ -2201,6 +2291,16 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Force sub-bar rebuild on next tick
     button._chargeBarCount = 0
 
+    -- Restore full-button bg/border (charge bars may have altered these)
+    button._chargeBarsBgActive = false
+    button.bg:ClearAllPoints()
+    button.bg:SetAllPoints()
+    button.bg:Show()
+    if button.iconBg then button.iconBg:Hide() end
+    if button.iconBorderTextures then
+        for _, tex in ipairs(button.iconBorderTextures) do tex:Hide() end
+    end
+
     -- Update status bar
     button.statusBar:ClearAllPoints()
     button.statusBar:SetPoint("TOPLEFT", button, "TOPLEFT", barAreaLeft + borderSize, -borderSize)
@@ -2218,7 +2318,15 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         ApplyEdgePositions(button.borderTextures, button, borderSize)
         for _, tex in ipairs(button.borderTextures) do
             tex:SetColorTexture(unpack(borderColor))
+            tex:Show()
         end
+    end
+
+    -- Update icon bounds for charge bar mode
+    if button._iconBounds then
+        button._iconBounds:ClearAllPoints()
+        button._iconBounds:SetPoint("TOPLEFT", 0, 0)
+        button._iconBounds:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize, 0)
     end
 
     -- Update name text font
