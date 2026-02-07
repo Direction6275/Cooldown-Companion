@@ -183,6 +183,7 @@ local defaults = {
         },
         locked = false,
         auraDurationCache = {},
+        cdmHidden = false,
     },
 }
 
@@ -613,6 +614,16 @@ local VIEWER_NAMES = {
     "BuffBarCooldownViewer",
 }
 
+function CooldownCompanion:ApplyCdmAlpha()
+    local alpha = self.db.profile.cdmHidden and 0 or 1
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            viewer:SetAlpha(alpha)
+        end
+    end
+end
+
 -- Build a mapping from spellID → Blizzard cooldown viewer child frame.
 -- The viewer frames (EssentialCooldownViewer, UtilityCooldownViewer, etc.)
 -- run untainted code that reads secret aura data and stores the result
@@ -807,6 +818,7 @@ function CooldownCompanion:OnPlayerEnteringWorld()
         self:RefreshChargeFlags()
         self:RefreshAllGroups()
         self:BuildViewerAuraMap()
+        self:ApplyCdmAlpha()
     end)
 end
 

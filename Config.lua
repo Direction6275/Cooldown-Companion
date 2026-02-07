@@ -2545,6 +2545,17 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
 
     if buttonData.auraTracking then
+        local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
+        local cdmToggleBtn = AceGUI:Create("Button")
+        cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
+        cdmToggleBtn:SetFullWidth(true)
+        cdmToggleBtn:SetCallback("OnClick", function()
+            local current = GetCVarBool("cooldownViewerEnabled")
+            SetCVar("cooldownViewerEnabled", current and "0" or "1")
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(cdmToggleBtn)
+
         local auraKey = selectedGroup .. "_" .. selectedButton .. "_aura"
         local auraCollapsed = collapsedSections[auraKey]
 
@@ -2572,6 +2583,38 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         auraCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         if not auraCollapsed then
+            -- Cooldown Manager controls
+            local cdmRow = AceGUI:Create("SimpleGroup")
+            cdmRow:SetFullWidth(true)
+            cdmRow:SetLayout("Flow")
+
+            local openCdmBtn = AceGUI:Create("Button")
+            openCdmBtn:SetText("CDM Settings")
+            openCdmBtn:SetRelativeWidth(0.5)
+            openCdmBtn:SetCallback("OnClick", function()
+                CooldownViewerSettings:TogglePanel()
+            end)
+            cdmRow:AddChild(openCdmBtn)
+
+            local db = CooldownCompanion.db
+            local hideCdmBtn = AceGUI:Create("Button")
+            hideCdmBtn:SetText("CDM Display")
+            hideCdmBtn:SetRelativeWidth(0.5)
+            hideCdmBtn:SetCallback("OnClick", function()
+                db.profile.cdmHidden = not db.profile.cdmHidden
+                CooldownCompanion:ApplyCdmAlpha()
+            end)
+            hideCdmBtn.frame:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:AddLine("Toggle CDM Display")
+                GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen. Aura tracking will continue to work regardless.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            hideCdmBtn.frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            cdmRow:AddChild(hideCdmBtn)
+
+            scroll:AddChild(cdmRow)
+
             -- Aura unit: harmful spells track on target, non-harmful track on player.
             -- Viewer only supports player + target, so no dropdown is needed for spells.
             if isHarmful then
