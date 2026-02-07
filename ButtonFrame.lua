@@ -720,18 +720,10 @@ function CooldownCompanion:UpdateButtonIcon(button)
     local displayId = buttonData.id
 
     if buttonData.type == "spell" then
-        -- Prefer the viewer child's overrideSpellID — Blizzard's untainted code
-        -- keeps it current for ALL forms of a transforming spell (base or override).
-        -- GetOverrideSpell only works base→override, so it fails for override forms.
+        -- Look up viewer child for current override info (icon, display name).
+        -- buttonData.id is always the base spell (normalized at add time), so
+        -- it maps directly to the viewer child's cooldownInfo.spellID.
         local child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-        -- If not found directly, resolve via GetBaseSpell (AllowedWhenTainted,
-        -- combat-safe) for non-current override forms (e.g. Lunar Eclipse → base).
-        if not child then
-            local baseID = C_Spell.GetBaseSpell(buttonData.id)
-            if baseID and baseID ~= buttonData.id then
-                child = CooldownCompanion.viewerAuraFrames[baseID]
-            end
-        end
         if child and child.cooldownInfo then
             -- Track the current override for display name and aura lookups
             if child.cooldownInfo.overrideSpellID then
@@ -809,13 +801,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             viewerFrame = CooldownCompanion.viewerAuraFrames[button._auraSpellID]
                 or CooldownCompanion.viewerAuraFrames[buttonData.id]
                 or (button._displaySpellId and CooldownCompanion.viewerAuraFrames[button._displaySpellId])
-        end
-        -- Resolve non-current override forms via override chain in both directions.
-        if not viewerFrame then
-            local baseID = C_Spell.GetBaseSpell(buttonData.id)
-            if baseID and baseID ~= buttonData.id then
-                viewerFrame = CooldownCompanion.viewerAuraFrames[baseID]
-            end
         end
         if viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID

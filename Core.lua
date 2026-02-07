@@ -667,8 +667,7 @@ end
 
 -- Scan viewer children to find one that tracks a given spellID.
 -- Checks spellID, overrideSpellID, overrideTooltipSpellID on each child,
--- then uses GetBaseSpell to resolve non-current override forms back to
--- their base spell for lookup (e.g. Lunar Eclipse → Eclipse base).
+-- then uses GetBaseSpell to resolve override forms back to their base spell.
 -- Returns the child frame if found, nil otherwise.
 function CooldownCompanion:FindViewerChildForSpell(spellID)
     for _, name in ipairs(VIEWER_NAMES) do
@@ -685,21 +684,10 @@ function CooldownCompanion:FindViewerChildForSpell(spellID)
             end
         end
     end
-    -- Try resolving the override chain in both directions.
-    -- GetBaseSpell (AllowedWhenTainted): override → base
+    -- GetBaseSpell (AllowedWhenTainted): resolve override → base, then check map.
     local baseSpellID = C_Spell.GetBaseSpell(spellID)
     if baseSpellID and baseSpellID ~= spellID then
         local child = self.viewerAuraFrames[baseSpellID]
-        if child then
-            return child
-        end
-    end
-    -- GetOverrideSpell (AllowedWhenUntainted, pcall required): base → current override.
-    -- If spellID is a non-current override form, GetOverrideSpell may return the
-    -- current active form which IS in the viewer map.
-    local ok, overrideSpellID = pcall(C_Spell.GetOverrideSpell, spellID)
-    if ok and overrideSpellID and overrideSpellID ~= spellID then
-        local child = self.viewerAuraFrames[overrideSpellID]
         if child then
             return child
         end
@@ -1405,20 +1393,10 @@ function CooldownCompanion:IsButtonUsable(buttonData)
         if IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id) then
             return true
         end
-        -- For non-current override forms (e.g. Lunar Eclipse when Solar is active),
-        -- resolve to the base spell via GetBaseSpell (AllowedWhenTainted) and check that.
+        -- Safety net for override forms (pre-existing data before add-time normalization).
         local baseID = C_Spell.GetBaseSpell(buttonData.id)
         if baseID and baseID ~= buttonData.id then
-            if IsSpellKnownOrOverridesKnown(baseID) or IsPlayerSpell(baseID) then
-                return true
-            end
-        end
-        -- If the spell has a viewer child in the CDM, it's usable
-        if self.viewerAuraFrames[buttonData.id] then
-            return true
-        end
-        if baseID and baseID ~= buttonData.id and self.viewerAuraFrames[baseID] then
-            return true
+            return IsSpellKnownOrOverridesKnown(baseID) or IsPlayerSpell(baseID)
         end
         return false
     elseif buttonData.type == "item" then

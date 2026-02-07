@@ -999,11 +999,6 @@ end
 ------------------------------------------------------------------------
 local function GetButtonIcon(buttonData)
     if buttonData.type == "spell" then
-        -- For override forms, resolve to base spell whose texture tracks current form
-        local baseID = C_Spell.GetBaseSpell(buttonData.id)
-        if baseID and baseID ~= buttonData.id then
-            return C_Spell.GetSpellTexture(baseID) or C_Spell.GetSpellTexture(buttonData.id) or 134400
-        end
         return C_Spell.GetSpellTexture(buttonData.id) or 134400
     elseif buttonData.type == "item" then
         return C_Item.GetItemIconByID(buttonData.id) or 134400
@@ -1826,12 +1821,6 @@ function RefreshColumn2()
         local entryName = buttonData.name
         if buttonData.type == "spell" then
             local child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-            if not child then
-                local baseID = C_Spell.GetBaseSpell(buttonData.id)
-                if baseID and baseID ~= buttonData.id then
-                    child = CooldownCompanion.viewerAuraFrames[baseID]
-                end
-            end
             if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
                 local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
                 if spellName then entryName = spellName end
