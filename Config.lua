@@ -2510,42 +2510,21 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(auraCb)
 
     -- (?) tooltip for aura tracking
-    local auraInfo = CreateFrame("Button", nil, auraCb.frame)
-    auraInfo:SetSize(16, 16)
-    auraInfo:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
-    local auraInfoText = auraInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    auraInfoText:SetPoint("CENTER")
-    auraInfoText:SetText("|cff66aaff(?)|r")
-    auraInfo:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if isHarmful then
-            GameTooltip:AddLine("Debuff Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the debuff or DoT on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nRequires this spell to be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The Cooldown Manager must be active and visible.", 1, 1, 1, true)
-        else
-            GameTooltip:AddLine("Buff Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nRequires this spell to be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The Cooldown Manager must be active and visible.", 1, 1, 1, true)
-        end
-        GameTooltip:Show()
-    end)
-    auraInfo:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    table.insert(infoButtons, auraInfo)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        auraInfo:Hide()
-    end
-
-    -- Yellow (?) warning tooltip for aura tracking combat limitations
     local auraWarn = CreateFrame("Button", nil, auraCb.frame)
     auraWarn:SetSize(16, 16)
-    auraWarn:SetPoint("LEFT", auraInfo, "RIGHT", 2, 0)
+    auraWarn:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
     local auraWarnText = auraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     auraWarnText:SetPoint("CENTER")
     auraWarnText:SetText("|cffffcc00(?)|r")
     auraWarn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Cooldown Manager Required")
-        GameTooltip:AddLine("Aura tracking reads data from the Blizzard Cooldown Manager's viewer frames. The Cooldown Manager must be visible and this spell must be tracked in it as a Buff or Debuff (not just as a Cooldown) for aura tracking to work during combat.\n\nThe addon tracks player buffs and target debuffs. Focus and custom unit tracking are not supported.", 0.7, 0.7, 0.7, true)
+        if isHarmful then
+            GameTooltip:AddLine("Debuff Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe shows the remaining debuff or DoT duration on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Buff Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe shows the remaining buff duration on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     auraWarn:SetScript("OnLeave", function()

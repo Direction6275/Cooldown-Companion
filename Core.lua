@@ -272,6 +272,7 @@ function CooldownCompanion:OnEnable()
     EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
         C_Timer.After(0.2, function()
             self:BuildViewerAuraMap()
+            self:RefreshConfigPanel()
         end)
     end, self)
 
