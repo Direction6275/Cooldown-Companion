@@ -261,6 +261,13 @@ function CooldownCompanion:OnEnable()
     -- Target change event — clear stale aura state so viewer picks up new target
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
+    -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
+    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        C_Timer.After(0.2, function()
+            self:BuildViewerAuraMap()
+        end)
+    end, self)
+
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
@@ -565,7 +572,6 @@ end
 
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end
-    if buttonData.auraSpellID then return buttonData.auraSpellID end
     if buttonData.type == "spell" then
         local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
         if auraId and auraId ~= 0 then return auraId end
