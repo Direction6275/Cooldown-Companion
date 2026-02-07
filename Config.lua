@@ -2462,7 +2462,14 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
-    local hasViewerFrame = viewerFrame ~= nil
+    -- Only treat as aura-capable if viewer is from BuffIcon or BuffBar
+    -- (Essential and Utility viewers track cooldowns only, not auras)
+    local hasViewerFrame = false
+    if viewerFrame then
+        local parent = viewerFrame:GetParent()
+        local parentName = parent and parent:GetName()
+        hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
+    end
 
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
@@ -2475,11 +2482,16 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end
 
-    if hasViewerFrame then -- only show aura section when viewer supports aura tracking for this spell
     local auraCb = AceGUI:Create("CheckBox")
-    auraCb:SetLabel(isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration"))
+    local auraLabel = isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration")
+    local auraActive = hasViewerFrame and buttonData.auraTracking == true
+    auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
+    auraCb:SetLabel(auraLabel)
     auraCb:SetValue(buttonData.auraTracking == true)
     auraCb:SetFullWidth(true)
+    if not hasViewerFrame then
+        auraCb:SetDisabled(true)
+    end
     auraCb:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.auraTracking = val and true or false
         if val then
@@ -2508,10 +2520,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if isHarmful then
             GameTooltip:AddLine("Debuff Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the debuff or DoT on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nRequires the Blizzard Cooldown Manager to be active with this spell tracked.", 1, 1, 1, true)
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the debuff or DoT on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nRequires this spell to be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The Cooldown Manager must be active and visible.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Buff Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nRequires the Blizzard Cooldown Manager to be active with this spell tracked.", 1, 1, 1, true)
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nRequires this spell to be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The Cooldown Manager must be active and visible.", 1, 1, 1, true)
         end
         GameTooltip:Show()
     end)
@@ -2533,7 +2545,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraWarn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Cooldown Manager Required")
-        GameTooltip:AddLine("Aura tracking reads data from the Blizzard Cooldown Manager's viewer frames. The Cooldown Manager must be visible and this spell must be tracked in it for aura tracking to work during combat.\n\nThe addon tracks player buffs and target debuffs. Focus and custom unit tracking are not supported.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Aura tracking reads data from the Blizzard Cooldown Manager's viewer frames. The Cooldown Manager must be visible and this spell must be tracked in it as a Buff or Debuff (not just as a Cooldown) for aura tracking to work during combat.\n\nThe addon tracks player buffs and target debuffs. Focus and custom unit tracking are not supported.", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     auraWarn:SetScript("OnLeave", function()
@@ -2544,17 +2556,59 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         auraWarn:Hide()
     end
 
-    if buttonData.auraTracking then
-        local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
-        local cdmToggleBtn = AceGUI:Create("Button")
-        cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
-        cdmToggleBtn:SetFullWidth(true)
-        cdmToggleBtn:SetCallback("OnClick", function()
-            local current = GetCVarBool("cooldownViewerEnabled")
-            SetCVar("cooldownViewerEnabled", current and "0" or "1")
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(cdmToggleBtn)
+    if not hasViewerFrame then
+        local auraDisabledLabel = AceGUI:Create("Label")
+        auraDisabledLabel:SetText("|cff888888This spell is not tracked as a Buff or Debuff in the Blizzard Cooldown Manager. Add it as a tracked buff or debuff in the CDM to enable aura tracking.|r")
+        auraDisabledLabel:SetFullWidth(true)
+        scroll:AddChild(auraDisabledLabel)
+    end
+
+    local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
+    local cdmToggleBtn = AceGUI:Create("Button")
+    cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
+    cdmToggleBtn:SetFullWidth(true)
+    cdmToggleBtn:SetCallback("OnClick", function()
+        local current = GetCVarBool("cooldownViewerEnabled")
+        SetCVar("cooldownViewerEnabled", current and "0" or "1")
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(cdmToggleBtn)
+
+    -- Cooldown Manager controls (always visible)
+    local cdmRow = AceGUI:Create("SimpleGroup")
+    cdmRow:SetFullWidth(true)
+    cdmRow:SetLayout("Flow")
+
+    local openCdmBtn = AceGUI:Create("Button")
+    openCdmBtn:SetText("CDM Settings")
+    openCdmBtn:SetRelativeWidth(0.5)
+    openCdmBtn:SetCallback("OnClick", function()
+        CooldownViewerSettings:TogglePanel()
+    end)
+    cdmRow:AddChild(openCdmBtn)
+
+    local db = CooldownCompanion.db
+    local hideCdmBtn = AceGUI:Create("Button")
+    hideCdmBtn:SetText("CDM Display")
+    hideCdmBtn:SetRelativeWidth(0.5)
+    hideCdmBtn:SetCallback("OnClick", function()
+        db.profile.cdmHidden = not db.profile.cdmHidden
+        CooldownCompanion:ApplyCdmAlpha()
+    end)
+    hideCdmBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        GameTooltip:AddLine("Toggle CDM Display")
+        GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen. Aura tracking will continue to work regardless.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    hideCdmBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    cdmRow:AddChild(hideCdmBtn)
+
+    scroll:AddChild(cdmRow)
+
+    if hasViewerFrame and buttonData.auraTracking then
 
         local auraKey = selectedGroup .. "_" .. selectedButton .. "_aura"
         local auraCollapsed = collapsedSections[auraKey]
@@ -2583,40 +2637,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         auraCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         if not auraCollapsed then
-            -- Cooldown Manager controls
-            local cdmRow = AceGUI:Create("SimpleGroup")
-            cdmRow:SetFullWidth(true)
-            cdmRow:SetLayout("Flow")
-
-            local openCdmBtn = AceGUI:Create("Button")
-            openCdmBtn:SetText("CDM Settings")
-            openCdmBtn:SetRelativeWidth(0.5)
-            openCdmBtn:SetCallback("OnClick", function()
-                CooldownViewerSettings:TogglePanel()
-            end)
-            cdmRow:AddChild(openCdmBtn)
-
-            local db = CooldownCompanion.db
-            local hideCdmBtn = AceGUI:Create("Button")
-            hideCdmBtn:SetText("CDM Display")
-            hideCdmBtn:SetRelativeWidth(0.5)
-            hideCdmBtn:SetCallback("OnClick", function()
-                db.profile.cdmHidden = not db.profile.cdmHidden
-                CooldownCompanion:ApplyCdmAlpha()
-            end)
-            hideCdmBtn:SetCallback("OnEnter", function(widget)
-                GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-                GameTooltip:AddLine("Toggle CDM Display")
-                GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen. Aura tracking will continue to work regardless.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            hideCdmBtn:SetCallback("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            cdmRow:AddChild(hideCdmBtn)
-
-            scroll:AddChild(cdmRow)
-
             -- Aura unit: harmful spells track on target, non-harmful track on player.
             -- Viewer only supports player + target, so no dropdown is needed for spells.
             if isHarmful then
@@ -2993,8 +3013,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 end -- pandemicCapable (bar)
             end -- bars/icons aura effect branch
         end
-    end
-    end -- hasViewerFrame
+    end -- hasViewerFrame and auraTracking
 
     if buttonData.hasCharges and group.displayMode == "bars" then
         local chargeBarBreak = AceGUI:Create("Heading")
