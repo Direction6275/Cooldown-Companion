@@ -2494,14 +2494,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     local canTrackAura = hasViewerFrame
         or buffTrackableSpells[buttonData.id]
-    if not canTrackAura and buttonData.type == "spell" then
-        if buttonData.auraSpellID and buttonData.auraSpellID ~= "" then
-            canTrackAura = true
-        else
-            local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-            canTrackAura = auraId and auraId ~= 0
-        end
-    end
+        or (buttonData.auraSpellID and buttonData.auraSpellID ~= "")
 
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
