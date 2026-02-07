@@ -641,10 +641,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Aura tracking runtime state
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
     button._auraInstanceID = nil
-    button._auraPendingSince = nil
-    
+
     -- Set icon
     self:UpdateButtonIcon(button)
     
@@ -743,50 +743,32 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
 
-    -- Aura tracking: check for active buff and override cooldown swipe
+    -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
     if buttonData.auraTracking and button._auraSpellID then
-        -- Primary path: GetPlayerAuraBySpellID returns full aura data outside
-        -- restricted combat.  The arithmetic is wrapped in pcall because
-        -- expirationTime / duration may be secret values during M+/PvP.
-        local auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
-        if auraData then
-            local ok = pcall(function()
-                local currentTime = GetTime()
-                local timeUntilExpire = auraData.expirationTime - currentTime
-                local howMuchTimeHasPassed = auraData.duration - timeUntilExpire
-                button.cooldown:SetCooldown(currentTime - howMuchTimeHasPassed, auraData.duration, auraData.timeMod)
-            end)
-            if ok then
-                button._auraInstanceID = auraData.auraInstanceID
-                -- Cache full duration (ms) for secret-path heuristic (shared across buttons)
-                local _, widgetDurMs = button.cooldown:GetCooldownTimes()
-                if widgetDurMs and widgetDurMs > 0 then
-                    CooldownCompanion.db.profile.auraDurationCache[button._auraSpellID] = widgetDurMs
+        local auraUnit = button._auraUnit or "player"
+
+        -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
+        -- untainted code that matches spell IDs to auras during combat and
+        -- stores auraInstanceID + auraDataUnit as plain readable properties.
+        -- Requires the Blizzard Cooldown Manager to be visible with this spell.
+        local viewerFrame = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        if viewerFrame and (auraUnit == "player" or auraUnit == "target") then
+            local viewerInstId = viewerFrame.auraInstanceID
+            if viewerInstId then
+                local unit = viewerFrame.auraDataUnit or auraUnit
+                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, viewerInstId)
+                if ok and durationObj then
+                    button.cooldown:SetCooldownFromDurationObject(durationObj)
+                    button._auraInstanceID = viewerInstId
+                    auraOverrideActive = true
+                    fetchOk = true
                 end
-                auraOverrideActive = true
-                fetchOk = true
             else
-                -- Arithmetic failed (secret values) — try the duration object fallback
-                local instId = auraData.auraInstanceID
-                if instId then
-                    local dok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "player", instId)
-                    if dok and durationObj then
-                        button.cooldown:SetCooldownFromDurationObject(durationObj)
-                        button._auraInstanceID = instId
-                        auraOverrideActive = true
-                        fetchOk = true
-                    end
+                -- Viewer says no aura active — clear tracked instance
+                if button._auraInstanceID then
+                    button._auraInstanceID = nil
                 end
-            end
-        elseif button._auraInstanceID then
-            local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "player", button._auraInstanceID)
-            if ok and durationObj then
-                button.cooldown:SetCooldownFromDurationObject(durationObj)
-                auraOverrideActive = true
-                fetchOk = true
-            else
-                button._auraInstanceID = nil
             end
         end
         button._auraActive = auraOverrideActive
@@ -1102,8 +1084,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._itemCount = nil
     button._auraActive = nil
     button._auraInstanceID = nil
-    button._auraPendingSince = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
+    button._auraUnit = button.buttonData.auraUnit or "player"
 
     button:SetSize(width, height)
 
@@ -2288,9 +2270,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Aura tracking runtime state
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
     button._auraInstanceID = nil
-    button._auraPendingSince = nil
 
     -- Aura effect frames (solid border, pixel glow, proc glow)
     button.barAuraEffect = {}
@@ -2436,8 +2418,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._itemCount = nil
     button._auraActive = nil
     button._auraInstanceID = nil
-    button._auraPendingSince = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
+    button._auraUnit = button.buttonData.auraUnit or "player"
     button._barCdColor = nil
     button._barReadyTextColor = nil
     button._barAuraColor = nil

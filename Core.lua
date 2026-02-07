@@ -15,6 +15,9 @@ CooldownCompanion.ST = ST
 -- Event-driven range check registry (spellID -> true)
 CooldownCompanion._rangeCheckSpells = {}
 
+-- Viewer-based aura tracking: spellID → cooldown viewer child frame
+CooldownCompanion.viewerAuraFrames = {}
+
 -- Constants
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
@@ -255,8 +258,8 @@ function CooldownCompanion:OnEnable()
     -- Aura (buff/debuff) changes — drives aura tracking overlay
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
-    -- Target change events — alpha system handles this via OnUpdate polling
-    -- (kept for potential future use but no longer drives visibility)
+    -- Target change event — clear stale aura state so viewer picks up new target
+    self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
@@ -374,26 +377,7 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
         if InCombatLockdown() then
             self:DecrementChargeOnCast(spellID)
         end
-        -- Mark aura-tracking buttons as pending for event-driven instance ID capture
-        self:MarkButtonsAuraPending(spellID)
         self:UpdateAllCooldowns()
-    end
-end
-
-function CooldownCompanion:MarkButtonsAuraPending(spellID)
-    local now = GetTime()
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                if button.buttonData
-                   and button.buttonData.auraTracking
-                   and button._auraSpellID
-                   and (button.buttonData.id == spellID
-                        or button._displaySpellId == spellID) then
-                    button._auraPendingSince = now
-                end
-            end
-        end
     end
 end
 
@@ -535,7 +519,6 @@ function CooldownCompanion:SlashCommand(input)
 end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
-    if unit ~= "player" then return end
     self._cooldownsDirty = true
     if not updateInfo then return end
 
@@ -545,7 +528,8 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
             for _, frame in pairs(self.groupFrames) do
                 if frame and frame.buttons then
                     for _, button in ipairs(frame.buttons) do
-                        if button._auraInstanceID == instId then
+                        if button._auraInstanceID == instId
+                           and button._auraUnit == unit then
                             button._auraInstanceID = nil
                             button._auraActive = false
                         end
@@ -555,92 +539,28 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
         end
     end
 
-    -- Process added auras: match by readable spellId, or by cast-hint for secret auras
-    if updateInfo.addedAuras then
-        local unmatchedInstIds
-        for _, auraData in ipairs(updateInfo.addedAuras) do
-            local instId = auraData.auraInstanceID
-            if instId then
-                local spellId = auraData.spellId
-                -- Test if spellId is a normal Lua value (not secret) by attempting a comparison
-                local canCompare = spellId and pcall(function() return spellId == 0 end)
-                if canCompare then
-                    -- Readable spellId: match directly to tracked buttons
-                    for _, frame in pairs(self.groupFrames) do
-                        if frame and frame.buttons then
-                            for _, button in ipairs(frame.buttons) do
-                                if button.buttonData
-                                   and button.buttonData.auraTracking
-                                   and button._auraSpellID == spellId then
-                                    button._auraInstanceID = instId
-                                    button._auraPendingSince = nil
-                                end
-                            end
-                        end
-                    end
-                else
-                    -- Secret spellId: pool for cast-hint matching
-                    if not unmatchedInstIds then unmatchedInstIds = {} end
-                    table.insert(unmatchedInstIds, instId)
-                end
-            end
-        end
+end
 
-        -- Assign unmatched (secret) instance IDs to buttons pending from a recent cast
-        if unmatchedInstIds then
-            local now = GetTime()
-            local consumed = {}
-            for _, frame in pairs(self.groupFrames) do
-                if frame and frame.buttons then
-                    for _, button in ipairs(frame.buttons) do
-                        if button._auraPendingSince
-                           and now - button._auraPendingSince < 2
-                           and not button._auraInstanceID then
-                            -- Try each candidate; prefer closest to cached expected
-                            -- duration, fall back to longest if no cache exists
-                            local expected = button._auraSpellID and self.db.profile.auraDurationCache[button._auraSpellID]
-                            local bestInstId, bestScore = nil, nil
-                            for _, instId in ipairs(unmatchedInstIds) do
-                                if not consumed[instId] then
-                                    local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", instId)
-                                    if ok and durObj then
-                                        button.cooldown:SetCooldownFromDurationObject(durObj)
-                                        local _, widgetDurMs = button.cooldown:GetCooldownTimes()
-                                        if widgetDurMs and widgetDurMs > 0 then
-                                            if expected and expected > 0 then
-                                                -- Lower distance = better match
-                                                local dist = math.abs(widgetDurMs - expected)
-                                                if not bestScore or dist < bestScore then
-                                                    bestScore = dist
-                                                    bestInstId = instId
-                                                end
-                                            else
-                                                -- No cache: fall back to longest duration
-                                                if not bestScore or widgetDurMs > bestScore then
-                                                    bestScore = widgetDurMs
-                                                    bestInstId = instId
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                            if bestInstId then
-                                -- Re-set cooldown to the best candidate (the loop may have overwritten it)
-                                local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", bestInstId)
-                                if ok and durObj then
-                                    button.cooldown:SetCooldownFromDurationObject(durObj)
-                                end
-                                button._auraInstanceID = bestInstId
-                                button._auraPendingSince = nil
-                                consumed[bestInstId] = true
-                            end
-                        end
-                    end
+-- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
+-- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
+function CooldownCompanion:ClearAuraUnit(unitToken)
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData
+                   and button.buttonData.auraTracking
+                   and button._auraUnit == unitToken then
+                    button._auraInstanceID = nil
+                    button._auraActive = false
                 end
             end
         end
     end
+    self._cooldownsDirty = true
+end
+
+function CooldownCompanion:OnTargetChanged()
+    self:ClearAuraUnit("target")
 end
 
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
@@ -653,6 +573,36 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return buttonData.id
     end
     return nil
+end
+
+-- Build a mapping from spellID → Blizzard cooldown viewer child frame.
+-- The viewer frames (EssentialCooldownViewer, UtilityCooldownViewer, etc.)
+-- run untainted code that reads secret aura data and stores the result
+-- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
+function CooldownCompanion:BuildViewerAuraMap()
+    wipe(self.viewerAuraFrames)
+    local viewers = {
+        EssentialCooldownViewer,
+        UtilityCooldownViewer,
+        BuffIconCooldownViewer,
+        BuffBarCooldownViewer,
+    }
+    for _, viewer in ipairs(viewers) do
+        if viewer then
+            for _, child in pairs({viewer:GetChildren()}) do
+                if child.cooldownInfo then
+                    local spellID = child.cooldownInfo.spellID
+                    if spellID then
+                        self.viewerAuraFrames[spellID] = child
+                    end
+                    local override = child.cooldownInfo.overrideSpellID
+                    if override then
+                        self.viewerAuraFrames[override] = child
+                    end
+                end
+            end
+        end
+    end
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
@@ -741,6 +691,10 @@ function CooldownCompanion:OnSpecChanged()
     self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
+    -- Rebuild viewer map after a short delay to let the viewer re-populate
+    C_Timer.After(1, function()
+        self:BuildViewerAuraMap()
+    end)
 end
 
 function CooldownCompanion:OnPlayerEnteringWorld()
@@ -748,6 +702,7 @@ function CooldownCompanion:OnPlayerEnteringWorld()
         self:CacheCurrentSpec()
         self:RefreshChargeFlags()
         self:RefreshAllGroups()
+        self:BuildViewerAuraMap()
     end)
 end
 

@@ -2416,13 +2416,28 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
     end -- not bars (proc glow)
 
+    local isHarmful = buttonData.type == "spell" and C_Spell.IsSpellHarmful(buttonData.id)
+    local hasDebuff = false
+    if isHarmful then
+        local desc = C_Spell.GetSpellDescription(buttonData.id)
+        hasDebuff = desc and (desc:find("over %d+ sec") or desc:find("damage over time") or desc:find("for %d+ sec"))
+    end
+
+    if not isHarmful or hasDebuff then -- hide aura section for harmful spells with no debuff
     local auraCb = AceGUI:Create("CheckBox")
-    auraCb:SetLabel("Track Buff Duration")
+    auraCb:SetLabel(isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration"))
     auraCb:SetValue(buttonData.auraTracking == true)
     auraCb:SetFullWidth(true)
     auraCb:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.auraTracking = val or nil
         if val then
+            if isHarmful then
+                if not buttonData.auraUnit or buttonData.auraUnit == "player" then
+                    buttonData.auraUnit = "target"
+                end
+            elseif buttonData.type == "spell" then
+                buttonData.auraUnit = nil
+            end
             collapsedSections[selectedGroup .. "_" .. selectedButton .. "_aura"] = nil
         end
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
@@ -2439,8 +2454,13 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraInfoText:SetText("|cff66aaff(?)|r")
     auraInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Aura Tracking")
-        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura associated with this spell instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.", 1, 1, 1, true)
+        if isHarmful then
+            GameTooltip:AddLine("Debuff Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the debuff or DoT on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nRequires the Blizzard Cooldown Manager to be active with this spell tracked.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Buff Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nRequires the Blizzard Cooldown Manager to be active with this spell tracked.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     auraInfo:SetScript("OnLeave", function()
@@ -2460,8 +2480,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraWarnText:SetText("|cffffcc00(?)|r")
     auraWarn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Combat Limitations")
-        GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\nIf you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Cooldown Manager Required")
+        GameTooltip:AddLine("Aura tracking reads data from the Blizzard Cooldown Manager's viewer frames. The Cooldown Manager must be visible and this spell must be tracked in it for aura tracking to work during combat.\n\nThe addon tracks player buffs and target debuffs. Focus and custom unit tracking are not supported.", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     auraWarn:SetScript("OnLeave", function()
@@ -2500,6 +2520,15 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         auraCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         if not auraCollapsed then
+            -- Viewer availability note
+            local hasViewerFrame = CooldownCompanion.viewerAuraFrames[buttonData.id] ~= nil
+            if not hasViewerFrame then
+                local viewerNote = AceGUI:Create("Label")
+                viewerNote:SetText("|cffff6666Note:|r The Blizzard Cooldown Manager must be visible with this spell tracked for aura tracking to work during combat.")
+                viewerNote:SetFullWidth(true)
+                scroll:AddChild(viewerNote)
+            end
+
             -- Show resolved aura info
             local autoAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
             local autoLabel = AceGUI:Create("Label")
@@ -2549,6 +2578,18 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 overrideInfo:Hide()
             end
 
+            -- Aura unit: harmful spells track on target, non-harmful track on player.
+            -- Viewer only supports player + target, so no dropdown is needed for spells.
+            if isHarmful then
+                -- Migrate any legacy auraUnit to "target"
+                if not buttonData.auraUnit or (buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target") then
+                    buttonData.auraUnit = "target"
+                end
+            elseif buttonData.type == "spell" then
+                -- Non-harmful spell: always tracks on player
+                buttonData.auraUnit = nil
+            end
+
             local auraNoDesatCb = AceGUI:Create("CheckBox")
             auraNoDesatCb:SetLabel("Don't Desaturate While Active")
             auraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
@@ -2558,10 +2599,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(auraNoDesatCb)
 
-            -- Active buff indicator controls (hidden for bar mode)
+            -- Active buff/debuff indicator controls (hidden for bar mode)
             if group.displayMode ~= "bars" then
             local auraGlowDrop = AceGUI:Create("Dropdown")
-            auraGlowDrop:SetLabel("Active Buff Indicator")
+            auraGlowDrop:SetLabel(isHarmful and "Active Debuff Indicator" or "Active Buff Indicator")
             auraGlowDrop:SetList({
                 ["none"] = "None",
                 ["solid"] = "Solid Border",
@@ -2638,7 +2679,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end
             else -- bars: bar-specific aura effect controls
                 local barAuraColorPicker = AceGUI:Create("ColorPicker")
-                barAuraColorPicker:SetLabel("Bar Color While Active")
+                barAuraColorPicker:SetLabel(isHarmful and "Bar Color While Debuff Active" or "Bar Color While Buff Active")
                 barAuraColorPicker:SetHasAlpha(true)
                 local bac = buttonData.barAuraColor or {0.2, 1.0, 0.2, 1.0}
                 barAuraColorPicker:SetColor(bac[1], bac[2], bac[3], bac[4])
@@ -2771,6 +2812,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- bars/icons aura effect branch
         end
     end
+    end -- not isHarmful or hasDebuff
 
     if buttonData.hasCharges and group.displayMode == "bars" then
         local chargeBarBreak = AceGUI:Create("Heading")
@@ -2898,7 +2940,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(itemYSlider)
 
     local itemAuraCb = AceGUI:Create("CheckBox")
-    itemAuraCb:SetLabel("Track Buff Duration")
+    itemAuraCb:SetLabel("Track Aura Duration")
     itemAuraCb:SetValue(buttonData.auraTracking == true)
     itemAuraCb:SetFullWidth(true)
     itemAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2921,7 +2963,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     itemAuraInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Aura Tracking")
-        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
+        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff or debuff instead of the item's cooldown. You can track auras on yourself or your target. For items, you must provide the aura spell ID manually.\n\nRequires the Blizzard Cooldown Manager to be active with this spell tracked.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     itemAuraInfo:SetScript("OnLeave", function()
@@ -2941,8 +2983,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     itemAuraWarnText:SetText("|cffffcc00(?)|r")
     itemAuraWarn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Combat Limitations")
-        GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\nIf you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Cooldown Manager Required")
+        GameTooltip:AddLine("Aura tracking reads data from the Blizzard Cooldown Manager's viewer frames. The Cooldown Manager must be visible and this spell must be tracked in it for aura tracking to work during combat.\n\nThe addon tracks player buffs and target debuffs. Focus and custom unit tracking are not supported.", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     itemAuraWarn:SetScript("OnLeave", function()
@@ -3018,6 +3060,31 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
             if CooldownCompanion.db.profile.hideInfoButtons then
                 itemOverrideInfo:Hide()
             end
+
+            -- Aura unit dropdown (non-equip items: player or target only)
+            -- Migrate legacy focus/custom values to player
+            if buttonData.auraUnit and buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then
+                buttonData.auraUnit = nil
+            end
+            local itemAuraUnitVal = buttonData.auraUnit or "player"
+            local itemAuraUnitDrop = AceGUI:Create("Dropdown")
+            itemAuraUnitDrop:SetLabel("Track Aura On")
+            itemAuraUnitDrop:SetList({
+                ["player"] = "Self (Buffs)",
+                ["target"] = "Target",
+            }, {"player", "target"})
+            itemAuraUnitDrop:SetValue(itemAuraUnitVal)
+            itemAuraUnitDrop:SetFullWidth(true)
+            itemAuraUnitDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                if val == "player" then
+                    buttonData.auraUnit = nil
+                else
+                    buttonData.auraUnit = val
+                end
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(itemAuraUnitDrop)
 
             local itemAuraNoDesatCb = AceGUI:Create("CheckBox")
             itemAuraNoDesatCb:SetLabel("Don't Desaturate While Active")
@@ -3271,7 +3338,7 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
     if not group then return end
 
     local eqAuraCb = AceGUI:Create("CheckBox")
-    eqAuraCb:SetLabel("Track Buff Duration")
+    eqAuraCb:SetLabel("Track Aura Duration")
     eqAuraCb:SetValue(buttonData.auraTracking == true)
     eqAuraCb:SetFullWidth(true)
     eqAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3294,7 +3361,7 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
     eqAuraInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Aura Tracking")
-        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff/aura instead of the item's cooldown. For items, you must provide the aura spell ID manually.", 1, 1, 1, true)
+        GameTooltip:AddLine("When enabled, the cooldown swipe will show the remaining duration of the buff or debuff instead of the item's cooldown. You can track auras on yourself or your target. For items, you must provide the aura spell ID manually.\n\nRequires the Blizzard Cooldown Manager to be active with this spell tracked.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     eqAuraInfo:SetScript("OnLeave", function()
@@ -3314,8 +3381,8 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
     eqAuraWarnText:SetText("|cffffcc00(?)|r")
     eqAuraWarn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Combat Limitations")
-        GameTooltip:AddLine("During combat, aura data is restricted by the game client. The addon uses an alternative tracking method that matches auras by comparing their duration to the last known duration observed outside of combat. Each aura can only be reliably tracked by one button at a time. If the same spell appears on multiple buttons, only one will track the aura correctly.\n\nIf you don't use the ability outside of combat at least once after toggling this option on, the cache will not populate and a fallback heuristic will be used in order to match the button to the correct aura.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Cooldown Manager Required")
+        GameTooltip:AddLine("Aura tracking reads data from the Blizzard Cooldown Manager's viewer frames. The Cooldown Manager must be visible and this spell must be tracked in it for aura tracking to work during combat.\n\nThe addon tracks player buffs and target debuffs. Focus and custom unit tracking are not supported.", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     eqAuraWarn:SetScript("OnLeave", function()
@@ -3391,6 +3458,31 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
             if CooldownCompanion.db.profile.hideInfoButtons then
                 eqOverrideInfo:Hide()
             end
+
+            -- Aura unit dropdown (equippable items: player or target only)
+            -- Migrate legacy focus/custom values to player
+            if buttonData.auraUnit and buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then
+                buttonData.auraUnit = nil
+            end
+            local eqAuraUnitVal = buttonData.auraUnit or "player"
+            local eqAuraUnitDrop = AceGUI:Create("Dropdown")
+            eqAuraUnitDrop:SetLabel("Track Aura On")
+            eqAuraUnitDrop:SetList({
+                ["player"] = "Self (Buffs)",
+                ["target"] = "Target",
+            }, {"player", "target"})
+            eqAuraUnitDrop:SetValue(eqAuraUnitVal)
+            eqAuraUnitDrop:SetFullWidth(true)
+            eqAuraUnitDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                if val == "player" then
+                    buttonData.auraUnit = nil
+                else
+                    buttonData.auraUnit = val
+                end
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(eqAuraUnitDrop)
 
             local eqAuraNoDesatCb = AceGUI:Create("CheckBox")
             eqAuraNoDesatCb:SetLabel("Don't Desaturate While Active")
