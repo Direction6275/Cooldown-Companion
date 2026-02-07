@@ -2613,6 +2613,27 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     scroll:AddChild(cdmRow)
 
+    -- Aura tracking status confirmation
+    local auraStatusSpacer1 = AceGUI:Create("Label")
+    auraStatusSpacer1:SetText(" ")
+    auraStatusSpacer1:SetFullWidth(true)
+    scroll:AddChild(auraStatusSpacer1)
+
+    local auraStatusLabel = AceGUI:Create("Label")
+    if buttonData.auraTracking and cdmEnabled then
+        auraStatusLabel:SetText("|cff00ff00Aura tracking is active and ready.|r")
+    else
+        auraStatusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
+    end
+    auraStatusLabel:SetFullWidth(true)
+    auraStatusLabel:SetJustifyH("CENTER")
+    scroll:AddChild(auraStatusLabel)
+
+    local auraStatusSpacer2 = AceGUI:Create("Label")
+    auraStatusSpacer2:SetText(" ")
+    auraStatusSpacer2:SetFullWidth(true)
+    scroll:AddChild(auraStatusSpacer2)
+
     if hasViewerFrame and buttonData.auraTracking then
 
         local auraKey = selectedGroup .. "_" .. selectedButton .. "_aura"
