@@ -1058,7 +1058,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if button._procGlowPreview then
                 showProc = true
             elseif buttonData.procGlow == true and buttonData.type == "spell" then
-                showProc = C_SpellActivationOverlay.IsSpellOverlayed(buttonData.id) or false
+                showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
             end
             SetProcGlow(button, showProc)
         end

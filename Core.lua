@@ -18,6 +18,11 @@ CooldownCompanion._rangeCheckSpells = {}
 -- Viewer-based aura tracking: spellID → cooldown viewer child frame
 CooldownCompanion.viewerAuraFrames = {}
 
+-- Event-driven proc glow tracking: spellID → true when overlay active
+-- Replaces per-tick C_SpellActivationOverlay.IsSpellOverlayed polling
+-- (that API is AllowedWhenUntainted and cannot be called from addon code in combat)
+CooldownCompanion.procOverlaySpells = {}
+
 -- Constants
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
@@ -202,10 +207,9 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
 
--- Pre-defined at file scope to avoid creating a closure every tick
-local function FetchAssistedSpell()
-    return C_AssistedCombat and C_AssistedCombat.GetNextCastSpell()
-end
+-- Assisted combat highlight: updated via EventRegistry callback instead of
+-- per-tick polling. C_AssistedCombat.GetNextCastSpell is AllowedWhenUntainted
+-- and cannot be called from addon code during combat without causing taint.
 
 function CooldownCompanion:OnEnable()
     -- Register cooldown events — set dirty flag, let ticker do the actual update.
@@ -234,8 +238,10 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("SPELL_UPDATE_CHARGES", "OnChargesChanged")
 
     -- Spell activation overlay (proc glow) events
+    -- Track state via events instead of polling IsSpellOverlayed
+    -- (that API is AllowedWhenUntainted — calling from addon code causes taint)
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "OnProcGlowShow")
-    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "MarkCooldownsDirty")
+    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "OnProcGlowHide")
 
     -- Item count changes (inventory updates for tracked items)
     self:RegisterEvent("ITEM_COUNT_CHANGED", "MarkCooldownsDirty")
@@ -271,6 +277,15 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
+    -- Assisted combat highlight: track via EventRegistry instead of polling
+    -- C_AssistedCombat.GetNextCastSpell (AllowedWhenUntainted — causes taint from addon code)
+    if AssistedCombatManager then
+        EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
+            self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
+            self._cooldownsDirty = true
+        end, self)
+    end
+
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
@@ -298,10 +313,6 @@ function CooldownCompanion:OnEnable()
     -- Start a ticker to update cooldowns periodically
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
-        -- Fetch assisted combat recommended spell (may not exist on older clients)
-        local ok, spellID = pcall(FetchAssistedSpell)
-        self.assistedSpellID = ok and spellID or nil
-
         self:UpdateAllCooldowns()
         self._cooldownsDirty = false
     end)
@@ -344,6 +355,7 @@ function CooldownCompanion:OnChargesChanged()
 end
 
 function CooldownCompanion:OnProcGlowShow(event, spellID)
+    self.procOverlaySpells[spellID] = true
     -- A proc overlay appeared for this spell. If it's a charged spell,
     -- increment the charge count — during combat we can't read charges
     -- from the API (secret values), so this is our signal that a charge
@@ -352,6 +364,11 @@ function CooldownCompanion:OnProcGlowShow(event, spellID)
         self:IncrementChargeOnProc(spellID)
     end
     self:UpdateAllCooldowns()
+end
+
+function CooldownCompanion:OnProcGlowHide(event, spellID)
+    self.procOverlaySpells[spellID] = nil
+    self._cooldownsDirty = true
 end
 
 function CooldownCompanion:IncrementChargeOnProc(spellID)
