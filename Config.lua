@@ -2750,6 +2750,62 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 end)
                 scroll:AddChild(auraGlowPreviewCb)
             end
+
+            -- Pandemic indicator controls (icon mode)
+            -- Only shown if Blizzard flags this spell as pandemic-capable in the CDM.
+            -- CanTriggerAlertType reads the cached validAlertTypes table (populated by
+            -- Blizzard's untainted code); pcall guards against cache not yet populated.
+            local pandemicOk, pandemicCapable = pcall(function()
+                return viewerFrame and viewerFrame.CanTriggerAlertType
+                    and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
+            end)
+            if pandemicOk and pandemicCapable then
+            local pandemicHeading = AceGUI:Create("Heading")
+            pandemicHeading:SetText("Pandemic Indicator")
+            pandemicHeading:SetFullWidth(true)
+            scroll:AddChild(pandemicHeading)
+
+            local pandemicCb = AceGUI:Create("CheckBox")
+            pandemicCb:SetLabel("Enable Pandemic Glow")
+            pandemicCb:SetValue(buttonData.pandemicGlow == true)
+            pandemicCb:SetFullWidth(true)
+            pandemicCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.pandemicGlow = val or nil
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(pandemicCb)
+
+            if buttonData.pandemicGlow then
+                local pandemicStyleDrop = AceGUI:Create("Dropdown")
+                pandemicStyleDrop:SetLabel("Pandemic Glow Style")
+                pandemicStyleDrop:SetList({
+                    ["solid"] = "Solid Border",
+                    ["glow"] = "Glow",
+                }, {"solid", "glow"})
+                pandemicStyleDrop:SetValue(buttonData.pandemicGlowStyle or buttonData.auraGlowStyle or "solid")
+                pandemicStyleDrop:SetFullWidth(true)
+                pandemicStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.pandemicGlowStyle = val
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(pandemicStyleDrop)
+
+                local pandemicColorPicker = AceGUI:Create("ColorPicker")
+                pandemicColorPicker:SetLabel("Pandemic Glow Color")
+                local pgc = buttonData.pandemicGlowColor or {1, 0.5, 0, 1}
+                pandemicColorPicker:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+                pandemicColorPicker:SetHasAlpha(true)
+                pandemicColorPicker:SetFullWidth(true)
+                pandemicColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                    buttonData.pandemicGlowColor = {r, g, b, a}
+                end)
+                pandemicColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                    buttonData.pandemicGlowColor = {r, g, b, a}
+                    CooldownCompanion:InvalidateAuraGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(pandemicColorPicker)
+            end
+            end -- pandemicCapable (icon)
             else -- bars: bar-specific aura effect controls
                 local barAuraColorPicker = AceGUI:Create("ColorPicker")
                 barAuraColorPicker:SetLabel(isHarmful and "Bar Color While Debuff Active" or "Bar Color While Buff Active")
@@ -2882,6 +2938,59 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                     end)
                     scroll:AddChild(barAuraPreviewCb)
                 end
+                -- Pandemic indicator controls (bar mode)
+                -- Only shown if Blizzard flags this spell as pandemic-capable in the CDM.
+                local pandemicOk, pandemicCapable = pcall(function()
+                    return viewerFrame and viewerFrame.CanTriggerAlertType
+                        and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
+                end)
+                if pandemicOk and pandemicCapable then
+                local pandemicHeading = AceGUI:Create("Heading")
+                pandemicHeading:SetText("Pandemic Indicator")
+                pandemicHeading:SetFullWidth(true)
+                scroll:AddChild(pandemicHeading)
+
+                local pandemicCb = AceGUI:Create("CheckBox")
+                pandemicCb:SetLabel("Enable Pandemic Indicator")
+                pandemicCb:SetValue(buttonData.pandemicGlow == true)
+                pandemicCb:SetFullWidth(true)
+                pandemicCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.pandemicGlow = val or nil
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                scroll:AddChild(pandemicCb)
+
+                if buttonData.pandemicGlow then
+                    local pandemicBarColorPicker = AceGUI:Create("ColorPicker")
+                    pandemicBarColorPicker:SetLabel("Pandemic Bar Color")
+                    local bpc = buttonData.barPandemicColor or {1, 0.5, 0, 1}
+                    pandemicBarColorPicker:SetColor(bpc[1], bpc[2], bpc[3], bpc[4])
+                    pandemicBarColorPicker:SetHasAlpha(true)
+                    pandemicBarColorPicker:SetFullWidth(true)
+                    pandemicBarColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                        buttonData.barPandemicColor = {r, g, b, a}
+                    end)
+                    pandemicBarColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                        buttonData.barPandemicColor = {r, g, b, a}
+                    end)
+                    scroll:AddChild(pandemicBarColorPicker)
+
+                    local pandemicEffectColorPicker = AceGUI:Create("ColorPicker")
+                    pandemicEffectColorPicker:SetLabel("Pandemic Effect Color")
+                    local pgc = buttonData.pandemicGlowColor or {1, 0.5, 0, 1}
+                    pandemicEffectColorPicker:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+                    pandemicEffectColorPicker:SetHasAlpha(true)
+                    pandemicEffectColorPicker:SetFullWidth(true)
+                    pandemicEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                        buttonData.pandemicGlowColor = {r, g, b, a}
+                    end)
+                    pandemicEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                        buttonData.pandemicGlowColor = {r, g, b, a}
+                        CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                    end)
+                    scroll:AddChild(pandemicEffectColorPicker)
+                end
+                end -- pandemicCapable (bar)
             end -- bars/icons aura effect branch
         end
     end

@@ -17,6 +17,7 @@ local FormatBarTime
 local UpdateBarDisplay
 local SetBarAuraEffect
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
+local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local UpdateBarFill
 local EnsureChargeBars
 
@@ -352,19 +353,26 @@ end
 -- Show or hide aura active glow on a button.
 -- Supports "solid" (colored border) and "glow" (animated proc-style) styles.
 -- Tracks state (style + color + size) to avoid restarting animations every tick.
-local function SetAuraGlow(button, show)
+local function SetAuraGlow(button, show, pandemicOverride)
     local ag = button.auraGlow
     if not ag then return end
 
-    -- Build cache key from style + color + size
+    -- Build cache key from style + color + size + pandemic state
     local desiredState
     if show then
         local bd = button.buttonData
-        local style = bd.auraGlowStyle or "none"
+        local style
+        local c
+        if pandemicOverride then
+            style = bd.pandemicGlowStyle or bd.auraGlowStyle or "solid"
+            c = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+        else
+            style = bd.auraGlowStyle or "none"
+            c = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+        end
         if style ~= "none" then
-            local c = bd.auraGlowColor or {1, 0.84, 0, 0.9}
             local sz = bd.auraGlowSize or (style == "solid" and 2 or 32)
-            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d", style, c[1], c[2], c[3], c[4] or 0.9, sz)
+            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, pandemicOverride and "P" or "")
         end
     end
 
@@ -384,8 +392,14 @@ local function SetAuraGlow(button, show)
     if not desiredState then return end
 
     local bd = button.buttonData
-    local style = bd.auraGlowStyle
-    local color = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+    local style, color
+    if pandemicOverride then
+        style = bd.pandemicGlowStyle or bd.auraGlowStyle or "solid"
+        color = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+    else
+        style = bd.auraGlowStyle
+        color = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+    end
     local size = bd.auraGlowSize
 
     if style == "solid" then
@@ -832,6 +846,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
         button._auraActive = auraOverrideActive
+
+        -- Pandemic window check: read Blizzard's PandemicIcon from the viewer frame.
+        -- Blizzard calculates the exact per-spell pandemic window internally and
+        -- shows/hides PandemicIcon accordingly. IsShown() is a widget method (non-secret).
+        local inPandemic = false
+        if auraOverrideActive and buttonData.pandemicGlow and viewerFrame then
+            local pi = viewerFrame.PandemicIcon
+            if pi and pi:IsShown() then
+                inPandemic = true
+            end
+        end
+        button._inPandemic = inPandemic
     end
 
     if not auraOverrideActive then
@@ -1096,14 +1122,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Aura active glow indicator
         if button.auraGlow then
             local showAuraGlow = false
+            local pandemicOverride = false
             if button._auraGlowPreview then
                 showAuraGlow = true
-            elseif button._auraActive
-                and buttonData.auraGlowStyle
-                and buttonData.auraGlowStyle ~= "none" then
-                showAuraGlow = true
+            elseif button._auraActive then
+                if button._inPandemic then
+                    showAuraGlow = true
+                    pandemicOverride = true
+                elseif buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+                    showAuraGlow = true
+                end
             end
-            SetAuraGlow(button, showAuraGlow)
+            SetAuraGlow(button, showAuraGlow, pandemicOverride)
         end
     end
 end
@@ -1144,6 +1174,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._itemCount = nil
     button._auraActive = nil
     button._auraInstanceID = nil
+    button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
 
@@ -1854,8 +1885,15 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Bar aura color: override bar fill when aura is active
-    local wantAuraColor = button._auraActive and (button.buttonData.barAuraColor or DEFAULT_BAR_AURA_COLOR)
+    -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
+    local wantAuraColor
+    if button._auraActive then
+        if button._inPandemic then
+            wantAuraColor = button.buttonData.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
+        else
+            wantAuraColor = button.buttonData.barAuraColor or DEFAULT_BAR_AURA_COLOR
+        end
+    end
     if button._barAuraColor ~= wantAuraColor then
         button._barAuraColor = wantAuraColor
         if not wantAuraColor then
@@ -1875,8 +1913,9 @@ UpdateBarDisplay = function(button, fetchOk)
         button.statusBar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4])
     end
 
-    -- Bar aura effect
-    SetBarAuraEffect(button, button._auraActive or button._barAuraEffectPreview)
+    -- Bar aura effect (pandemic overrides effect color)
+    local barAuraEffectPandemic = button._auraActive and button._inPandemic and button.buttonData.pandemicGlow
+    SetBarAuraEffect(button, button._auraActive or button._barAuraEffectPreview, barAuraEffectPandemic or false)
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
     if button.cooldown:IsShown() then
@@ -1885,7 +1924,7 @@ UpdateBarDisplay = function(button, fetchOk)
 end
 
 -- Apply bar-specific aura effect (solid border, pixel glow, proc glow)
-SetBarAuraEffect = function(button, show)
+SetBarAuraEffect = function(button, show, pandemicOverride)
     local ae = button.barAuraEffect
     if not ae then return end
 
@@ -1894,10 +1933,15 @@ SetBarAuraEffect = function(button, show)
         local bd = button.buttonData
         local effect = bd.barAuraEffect or "none"
         if effect ~= "none" then
-            local c = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+            local c
+            if pandemicOverride then
+                c = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+            else
+                c = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+            end
             local sz = bd.barAuraEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
             local th = (effect == "pixel") and (bd.barAuraEffectThickness or 2) or 0
-            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th)
+            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, pandemicOverride and "P" or "")
         end
     end
 
@@ -1922,7 +1966,12 @@ SetBarAuraEffect = function(button, show)
 
     local bd = button.buttonData
     local effect = bd.barAuraEffect
-    local color = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+    local color
+    if pandemicOverride then
+        color = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+    else
+        color = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+    end
     local size = bd.barAuraEffectSize
 
     if effect == "solid" then
@@ -2308,6 +2357,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
             local sMs, dMs = self.cooldown:GetCooldownTimes()
             if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
                 self._auraActive = false
+                self._inPandemic = false
                 self._barAuraColor = nil
                 self._barAuraEffectActive = nil
                 -- If charge sub-bars exist, make statusBar transparent so sub-bars show
@@ -2445,6 +2495,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
             local sMs, dMs = self.cooldown:GetCooldownTimes()
             if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
                 self._auraActive = false
+                self._inPandemic = false
                 self._barAuraColor = nil
                 self._barAuraEffectActive = nil
                 if self._chargeMax and self._chargeMax > 1 then
@@ -2478,6 +2529,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._itemCount = nil
     button._auraActive = nil
     button._auraInstanceID = nil
+    button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._barCdColor = nil

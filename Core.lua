@@ -560,6 +560,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                            and button._auraUnit == unit then
                             button._auraInstanceID = nil
                             button._auraActive = false
+                            button._inPandemic = false
                         end
                     end
                 end
@@ -580,6 +581,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                    and button._auraUnit == unitToken then
                     button._auraInstanceID = nil
                     button._auraActive = false
+                    button._inPandemic = false
                 end
             end
         end
