@@ -605,19 +605,22 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+-- Viewer frame list used by BuildViewerAuraMap and FindViewerChildForSpell.
+local VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+    "BuffBarCooldownViewer",
+}
+
 -- Build a mapping from spellID → Blizzard cooldown viewer child frame.
 -- The viewer frames (EssentialCooldownViewer, UtilityCooldownViewer, etc.)
 -- run untainted code that reads secret aura data and stores the result
 -- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
 function CooldownCompanion:BuildViewerAuraMap()
     wipe(self.viewerAuraFrames)
-    local viewers = {
-        EssentialCooldownViewer,
-        UtilityCooldownViewer,
-        BuffIconCooldownViewer,
-        BuffBarCooldownViewer,
-    }
-    for _, viewer in ipairs(viewers) do
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
         if viewer then
             for _, child in pairs({viewer:GetChildren()}) do
                 if child.cooldownInfo then
@@ -637,16 +640,85 @@ function CooldownCompanion:BuildViewerAuraMap()
             end
         end
     end
+    -- Ensure tracked buttons can find their viewer child even if
+    -- buttonData.id is a non-current override form of a transforming spell.
+    self:MapButtonSpellsToViewers()
+end
+
+-- For each tracked button, ensure viewerAuraFrames contains an entry
+-- for buttonData.id. Handles the case where the spell was added while
+-- in one form (e.g. Solar Eclipse) but the map was rebuilt while the
+-- spell is in a different form (e.g. Lunar Eclipse).
+function CooldownCompanion:MapButtonSpellsToViewers()
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local id = button.buttonData.id
+                if id and button.buttonData.type == "spell" and not self.viewerAuraFrames[id] then
+                    local child = self:FindViewerChildForSpell(id)
+                    if child then
+                        self.viewerAuraFrames[id] = child
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Scan viewer children to find one that tracks a given spellID.
+-- Checks spellID, overrideSpellID, overrideTooltipSpellID on each child,
+-- then uses GetBaseSpell to resolve non-current override forms back to
+-- their base spell for lookup (e.g. Lunar Eclipse → Eclipse base).
+-- Returns the child frame if found, nil otherwise.
+function CooldownCompanion:FindViewerChildForSpell(spellID)
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            for _, child in pairs({viewer:GetChildren()}) do
+                if child.cooldownInfo then
+                    if child.cooldownInfo.spellID == spellID
+                       or child.cooldownInfo.overrideSpellID == spellID
+                       or child.cooldownInfo.overrideTooltipSpellID == spellID then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    -- Try resolving the override chain in both directions.
+    -- GetBaseSpell (AllowedWhenTainted): override → base
+    local baseSpellID = C_Spell.GetBaseSpell(spellID)
+    if baseSpellID and baseSpellID ~= spellID then
+        local child = self.viewerAuraFrames[baseSpellID]
+        if child then
+            return child
+        end
+    end
+    -- GetOverrideSpell (AllowedWhenUntainted, pcall required): base → current override.
+    -- If spellID is a non-current override form, GetOverrideSpell may return the
+    -- current active form which IS in the viewer map.
+    local ok, overrideSpellID = pcall(C_Spell.GetOverrideSpell, spellID)
+    if ok and overrideSpellID and overrideSpellID ~= spellID then
+        local child = self.viewerAuraFrames[overrideSpellID]
+        if child then
+            return child
+        end
+    end
+    return nil
 end
 
 -- When a spell transforms (e.g. Solar Eclipse → Lunar Eclipse), map the new
 -- override spell ID to the same viewer child frame so lookups work for both forms.
 function CooldownCompanion:OnViewerSpellOverrideUpdated(event, baseSpellID, overrideSpellID)
     if not baseSpellID then return end
-    local frame = self.viewerAuraFrames[baseSpellID]
-    if frame and overrideSpellID then
-        self.viewerAuraFrames[overrideSpellID] = frame
+    local child = self.viewerAuraFrames[baseSpellID]
+    if child and overrideSpellID then
+        self.viewerAuraFrames[overrideSpellID] = child
     end
+    -- Refresh icons/names now that the viewer child's overrideSpellID is current
+    self:OnSpellUpdateIcon()
+    -- Update config panel if open (name, icon, usability may have changed)
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
@@ -1330,7 +1402,25 @@ end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
-        return IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id)
+        if IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id) then
+            return true
+        end
+        -- For non-current override forms (e.g. Lunar Eclipse when Solar is active),
+        -- resolve to the base spell via GetBaseSpell (AllowedWhenTainted) and check that.
+        local baseID = C_Spell.GetBaseSpell(buttonData.id)
+        if baseID and baseID ~= buttonData.id then
+            if IsSpellKnownOrOverridesKnown(baseID) or IsPlayerSpell(baseID) then
+                return true
+            end
+        end
+        -- If the spell has a viewer child in the CDM, it's usable
+        if self.viewerAuraFrames[buttonData.id] then
+            return true
+        end
+        if baseID and baseID ~= buttonData.id and self.viewerAuraFrames[baseID] then
+            return true
+        end
+        return false
     elseif buttonData.type == "item" then
         return GetItemCount(buttonData.id) > 0
     end

@@ -720,18 +720,53 @@ function CooldownCompanion:UpdateButtonIcon(button)
     local displayId = buttonData.id
 
     if buttonData.type == "spell" then
-        displayId = C_Spell.GetOverrideSpell(buttonData.id) or buttonData.id
-        icon = C_Spell.GetSpellTexture(displayId)
+        -- Prefer the viewer child's overrideSpellID — Blizzard's untainted code
+        -- keeps it current for ALL forms of a transforming spell (base or override).
+        -- GetOverrideSpell only works base→override, so it fails for override forms.
+        local child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        -- If not found directly, resolve via GetBaseSpell (AllowedWhenTainted,
+        -- combat-safe) for non-current override forms (e.g. Lunar Eclipse → base).
+        if not child then
+            local baseID = C_Spell.GetBaseSpell(buttonData.id)
+            if baseID and baseID ~= buttonData.id then
+                child = CooldownCompanion.viewerAuraFrames[baseID]
+            end
+        end
+        if child and child.cooldownInfo then
+            -- Track the current override for display name and aura lookups
+            if child.cooldownInfo.overrideSpellID then
+                displayId = child.cooldownInfo.overrideSpellID
+            end
+            -- Use the base spellID for texture — GetSpellTexture on a base spell
+            -- dynamically returns the current override's icon, unlike override IDs
+            -- which always return their own static icon.
+            local baseSpellId = child.cooldownInfo.spellID
+            if baseSpellId then
+                icon = C_Spell.GetSpellTexture(baseSpellId)
+            end
+        end
+        if not icon then
+            icon = C_Spell.GetSpellTexture(displayId)
+        end
     elseif buttonData.type == "item" then
         icon = C_Item.GetItemIconByID(buttonData.id)
     end
 
+    local prevDisplayId = button._displaySpellId
     button._displaySpellId = displayId
 
     if icon then
         button.icon:SetTexture(icon)
     else
         button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    end
+
+    -- Update bar name text when the display spell changes (e.g. transform)
+    if button.nameText and buttonData.type == "spell" and displayId ~= prevDisplayId then
+        local spellName = C_Spell.GetSpellName(displayId)
+        if spellName then
+            button.nameText:SetText(spellName)
+        end
     end
 end
 
@@ -767,10 +802,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         end
-        -- Fall back to resolved aura ID, then ability ID
+        -- Fall back to resolved aura ID, then ability ID, then current override form.
+        -- _displaySpellId tracks the current override (e.g. Solar → Lunar Eclipse)
+        -- and is always present in the viewer map after BuildViewerAuraMap.
         if not viewerFrame then
             viewerFrame = CooldownCompanion.viewerAuraFrames[button._auraSpellID]
                 or CooldownCompanion.viewerAuraFrames[buttonData.id]
+                or (button._displaySpellId and CooldownCompanion.viewerAuraFrames[button._displaySpellId])
+        end
+        -- Resolve non-current override forms via override chain in both directions.
+        if not viewerFrame then
+            local baseID = C_Spell.GetBaseSpell(buttonData.id)
+            if baseID and baseID ~= buttonData.id then
+                viewerFrame = CooldownCompanion.viewerAuraFrames[baseID]
+            end
         end
         if viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID
