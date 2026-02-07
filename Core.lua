@@ -268,6 +268,9 @@ function CooldownCompanion:OnEnable()
         end)
     end, self)
 
+    -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
+    self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
+
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
@@ -572,6 +575,10 @@ end
 
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end
+    if buttonData.auraSpellID then
+        local first = tostring(buttonData.auraSpellID):match("%d+")
+        return first and tonumber(first)
+    end
     if buttonData.type == "spell" then
         local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
         if auraId and auraId ~= 0 then return auraId end
@@ -605,9 +612,23 @@ function CooldownCompanion:BuildViewerAuraMap()
                     if override then
                         self.viewerAuraFrames[override] = child
                     end
+                    local tooltipOverride = child.cooldownInfo.overrideTooltipSpellID
+                    if tooltipOverride then
+                        self.viewerAuraFrames[tooltipOverride] = child
+                    end
                 end
             end
         end
+    end
+end
+
+-- When a spell transforms (e.g. Solar Eclipse → Lunar Eclipse), map the new
+-- override spell ID to the same viewer child frame so lookups work for both forms.
+function CooldownCompanion:OnViewerSpellOverrideUpdated(event, baseSpellID, overrideSpellID)
+    if not baseSpellID then return end
+    local frame = self.viewerAuraFrames[baseSpellID]
+    if frame and overrideSpellID then
+        self.viewerAuraFrames[overrideSpellID] = frame
     end
 end
 

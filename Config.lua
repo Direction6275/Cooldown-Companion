@@ -2417,7 +2417,50 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end -- not bars (proc glow)
 
     local isHarmful = buttonData.type == "spell" and C_Spell.IsSpellHarmful(buttonData.id)
-    local hasViewerFrame = CooldownCompanion.viewerAuraFrames[buttonData.id] ~= nil
+    -- Look up viewer frame: try override IDs first, then resolved aura ID, then ability ID
+    local viewerFrame
+    if buttonData.auraSpellID then
+        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+            viewerFrame = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+            if viewerFrame then break end
+        end
+    end
+    if not viewerFrame then
+        local resolvedAuraId = buttonData.type == "spell"
+            and C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+        viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
+                and CooldownCompanion.viewerAuraFrames[resolvedAuraId])
+            or CooldownCompanion.viewerAuraFrames[buttonData.id]
+    end
+
+    -- Fallback scan for transforming spells whose override hasn't fired yet
+    if not viewerFrame and buttonData.type == "spell" then
+        local viewers = {
+            EssentialCooldownViewer,
+            UtilityCooldownViewer,
+            BuffIconCooldownViewer,
+            BuffBarCooldownViewer,
+        }
+        for _, viewer in ipairs(viewers) do
+            if viewer then
+                for _, child in pairs({viewer:GetChildren()}) do
+                    if child.cooldownInfo then
+                        local ci = child.cooldownInfo
+                        if ci.spellID == buttonData.id
+                           or ci.overrideSpellID == buttonData.id
+                           or ci.overrideTooltipSpellID == buttonData.id then
+                            CooldownCompanion.viewerAuraFrames[buttonData.id] = child
+                            viewerFrame = child
+                            break
+                        end
+                    end
+                end
+            end
+            if viewerFrame then break end
+        end
+    end
+
+    local hasViewerFrame = viewerFrame ~= nil
 
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
@@ -2430,7 +2473,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end
 
-    if hasViewerFrame then -- only show aura section when spell is in the Cooldown Manager
+    if hasViewerFrame then -- only show aura section when viewer supports aura tracking for this spell
     local auraCb = AceGUI:Create("CheckBox")
     auraCb:SetLabel(isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration"))
     auraCb:SetValue(buttonData.auraTracking == true)
@@ -2537,6 +2580,40 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             elseif buttonData.type == "spell" then
                 -- Non-harmful spell: always tracks on player
                 buttonData.auraUnit = nil
+            end
+
+            -- Buff spell ID override (for spells whose buff ID differs from ability ID)
+            local auraEditBox = AceGUI:Create("EditBox")
+            auraEditBox:SetLabel("Buff Spell ID Override")
+            auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+            auraEditBox:SetFullWidth(true)
+            auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                text = text:gsub("%s", "")
+                buttonData.auraSpellID = text ~= "" and text or nil
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(auraEditBox)
+
+            -- (?) tooltip for override
+            local overrideInfo = CreateFrame("Button", nil, auraEditBox.frame)
+            overrideInfo:SetSize(16, 16)
+            overrideInfo:SetPoint("LEFT", auraEditBox.editbox, "RIGHT", 4, 0)
+            local overrideInfoText = overrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            overrideInfoText:SetPoint("CENTER")
+            overrideInfoText:SetText("|cff66aaff(?)|r")
+            overrideInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Buff Spell ID Override")
+                GameTooltip:AddLine("Some spells have a different spell ID for the buff they apply than the ability itself. Enter the buff's spell ID here if tracking isn't working automatically. Use commas to track multiple buffs (e.g. 48517,48518 for both Eclipse forms). You can find buff spell IDs on Wowhead or by inspecting your buffs.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            overrideInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(infoButtons, overrideInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                overrideInfo:Hide()
             end
 
             local auraNoDesatCb = AceGUI:Create("CheckBox")

@@ -752,7 +752,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- untainted code that matches spell IDs to auras during combat and
         -- stores auraInstanceID + auraDataUnit as plain readable properties.
         -- Requires the Blizzard Cooldown Manager to be visible with this spell.
-        local viewerFrame = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        local viewerFrame
+        -- Try each override ID (comma-separated), prefer one with active aura
+        if buttonData.auraSpellID then
+            for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+                local f = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+                if f then
+                    if f.auraInstanceID then
+                        viewerFrame = f
+                        break
+                    elseif not viewerFrame then
+                        viewerFrame = f
+                    end
+                end
+            end
+        end
+        -- Fall back to resolved aura ID, then ability ID
+        if not viewerFrame then
+            viewerFrame = CooldownCompanion.viewerAuraFrames[button._auraSpellID]
+                or CooldownCompanion.viewerAuraFrames[buttonData.id]
+        end
         if viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
@@ -765,7 +784,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     fetchOk = true
                 end
             else
-                -- Viewer says no aura active — clear tracked instance
+                -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
+                -- Covers spells where the viewer tracks the buff duration internally
+                -- (auraDataUnit set by GetAuraData) but doesn't expose auraInstanceID.
+                local viewerCooldown = viewerFrame.Cooldown
+                if viewerFrame.auraDataUnit and viewerCooldown then
+                    local startMs, durMs = viewerCooldown:GetCooldownTimes()
+                    if startMs and durMs and durMs > 0 then
+                        button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                        auraOverrideActive = true
+                        fetchOk = true
+                    end
+                end
                 if button._auraInstanceID then
                     button._auraInstanceID = nil
                 end
