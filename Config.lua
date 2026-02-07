@@ -2471,6 +2471,38 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
     end
 
+    -- Determine if this spell could theoretically track a buff/debuff.
+    -- Query the CDM's authoritative category lists for TrackedBuff and TrackedBar.
+    local buffTrackableSpells = {}
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            for _, cdID in ipairs(ids) do
+                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if ok2 and info then
+                    buffTrackableSpells[info.spellID] = true
+                    if info.overrideSpellID then
+                        buffTrackableSpells[info.overrideSpellID] = true
+                    end
+                    if info.overrideTooltipSpellID then
+                        buffTrackableSpells[info.overrideTooltipSpellID] = true
+                    end
+                end
+            end
+        end
+    end
+
+    local canTrackAura = hasViewerFrame
+        or buffTrackableSpells[buttonData.id]
+    if not canTrackAura and buttonData.type == "spell" then
+        if buttonData.auraSpellID and buttonData.auraSpellID ~= "" then
+            canTrackAura = true
+        else
+            local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+            canTrackAura = auraId and auraId ~= 0
+        end
+    end
+
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
         buttonData.auraTracking = true
@@ -2482,6 +2514,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end
 
+    if canTrackAura then
     local auraCb = AceGUI:Create("CheckBox")
     local auraLabel = isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration")
     local auraActive = hasViewerFrame and buttonData.auraTracking == true
@@ -2993,6 +3026,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- bars/icons aura effect branch
         end
     end -- hasViewerFrame and auraTracking
+    end -- canTrackAura
 
     if buttonData.hasCharges and group.displayMode == "bars" then
         local chargeBarBreak = AceGUI:Create("Heading")
