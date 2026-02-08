@@ -393,14 +393,17 @@ function CooldownCompanion:IncrementChargeOnProc(spellID)
                    and button._chargeMax
                    and button._chargeCount < button._chargeMax then
                     button._chargeCount = button._chargeCount + 1
-                    -- If now at max, no recharge in progress
                     if button._chargeCount >= button._chargeMax then
+                        -- At max: no recharge in progress
                         button._chargeCDStart = nil
                         button._chargeCDDuration = nil
+                    else
+                        -- Mark approximate new-recharge start so the catch-up
+                        -- loop in DecrementChargeOnCast doesn't re-detect this
+                        -- recovery. The ticker readback corrects to the real
+                        -- value on the same UpdateAllCooldowns pass.
+                        button._chargeCDStart = GetTime()
                     end
-                    -- Don't touch _chargeCDStart when not at max — the
-                    -- existing recharge timer is still running and the
-                    -- estimation loop should continue from where it was.
                     button._chargeText = button._chargeCount
                     button.count:SetText(button._chargeCount)
                 end

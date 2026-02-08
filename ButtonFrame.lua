@@ -21,6 +21,11 @@ local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local UpdateBarFill
 local EnsureChargeBars
 
+-- Scratch cooldown for reading back DurationObjects as non-secret ms values.
+local scratchParent = CreateFrame("Frame")
+scratchParent:Hide()
+local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
+
 -- Anchor charge/item count text on bar buttons: relative to icon when visible, relative to bar otherwise.
 local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
     button.count:ClearAllPoints()
@@ -1323,21 +1328,96 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._chargeMax = mx
             button._chargeCDStart = cdStart
             button._chargeCDDuration = cdDur
+            button._nilConfirmPending = nil
             if cdDur and cdDur > 0 then
                 buttonData.chargeCooldownDuration = cdDur
             end
         elseif button._chargeCount then
-            -- Values unreadable as Lua numbers: estimate for comparison-
-            -- dependent logic (desaturation, radial gating)
-            if button._chargeCount < button._chargeMax
-               and button._chargeCDStart and button._chargeCDDuration
-               and button._chargeCDDuration > 0 then
-                local now = GetTime()
-                while button._chargeCount < button._chargeMax
-                      and now >= button._chargeCDStart + button._chargeCDDuration do
-                    button._chargeCount = button._chargeCount + 1
-                    button._chargeCDStart = button._chargeCDStart + button._chargeCDDuration
+            -- CDR readback: sync recharge start/duration with real values.
+            -- Charge COUNT is determined by hard constraints from
+            -- GetSpellChargeDuration + GetSpellCooldownDuration state.
+            local durationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
+
+            -- Read back charge recharge; filter out GCD (≤2s).
+            local isRealRecharge = false
+            if durationObj then
+                scratchCooldown:SetCooldownFromDurationObject(durationObj)
+                local startMs, durMs = scratchCooldown:GetCooldownTimes()
+                if startMs and durMs and durMs > 2000 then
+                    isRealRecharge = true
+                    local realStart = startMs / 1000
+                    local realDur = durMs / 1000
+
+                    -- Detect intermediate charge recovery: recharge start
+                    -- jumped forward.  CDR doesn't change start, so a jump
+                    -- means the old recharge completed and a new one began.
+                    if button._chargeCDStart
+                       and button._chargeCount < button._chargeMax
+                       and realStart > button._chargeCDStart + 0.5 then
+                        button._chargeCount = button._chargeCount + 1
+                    end
+
+                    button._chargeCDStart = realStart
+                    button._chargeCDDuration = realDur
+                    buttonData.chargeCooldownDuration = realDur
                 end
+            end
+
+            if isRealRecharge then
+                -- HARD CONSTRAINT: recharge active means count < max.
+                if button._chargeCount >= button._chargeMax then
+                    button._chargeCount = button._chargeMax - 1
+                end
+
+                -- CONSTRAINT: spell main cooldown distinguishes 0 vs 1+.
+                -- GetSpellCooldownDuration returns a non-secret DurationObject
+                -- for the spell's availability cooldown.  For charge spells:
+                --   0 charges → spell on cooldown → non-nil, long duration
+                --   1+ charges → spell usable → nil (or brief GCD ≤2s)
+                local spellCD = C_Spell.GetSpellCooldownDuration(buttonData.id)
+                local spellOnCD = false
+                if spellCD then
+                    scratchCooldown:SetCooldownFromDurationObject(spellCD)
+                    local _, cdDurMs = scratchCooldown:GetCooldownTimes()
+                    spellOnCD = cdDurMs and cdDurMs > 2000
+                end
+                if spellOnCD then
+                    button._chargeCount = 0
+                elseif button._chargeCount < 1 then
+                    -- Only raise 0→1 when recharge has significant time
+                    -- left.  Near the end (<1s), GetSpellCooldownDuration
+                    -- may report nil slightly before GetSpellChargeDuration,
+                    -- creating a brief false "spell usable" window.
+                    local cdEnd = (button._chargeCDStart or 0)
+                        + (button._chargeCDDuration or 0)
+                    if cdEnd - GetTime() > 1 then
+                        button._chargeCount = 1
+                    end
+                end
+
+                button._nilConfirmPending = nil
+            elseif button._chargeCount < button._chargeMax then
+                -- No real recharge active (nil or GCD only).  Require two
+                -- consecutive ticks to confirm, then increment by 1 (not
+                -- jump to max) to avoid flashing all bars on intermediate
+                -- recoveries.
+                if not button._nilConfirmPending then
+                    button._nilConfirmPending = true
+                else
+                    button._nilConfirmPending = nil
+                    button._chargeCount = button._chargeCount + 1
+                    if button._chargeCount >= button._chargeMax then
+                        button._chargeCDStart = nil
+                        button._chargeCDDuration = nil
+                    else
+                        -- Reset recharge start so bar fill doesn't flash
+                        -- from stale old-recharge values.  The readback
+                        -- corrects to the real start on the next tick.
+                        button._chargeCDStart = GetTime()
+                    end
+                end
+            else
+                button._nilConfirmPending = nil
             end
         end
 
@@ -1487,6 +1567,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeMax = nil
     button._chargeCDStart = nil
     button._chargeCDDuration = nil
+    button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil
     button._displaySpellId = nil
@@ -2880,6 +2961,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._chargeMax = nil
     button._chargeCDStart = nil
     button._chargeCDDuration = nil
+    button._nilConfirmPending = nil
     button._displaySpellId = nil
     button._itemCount = nil
     button._auraActive = nil
