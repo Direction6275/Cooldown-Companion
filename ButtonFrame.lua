@@ -56,6 +56,7 @@ local function ApplyStrataOrder(button, order)
         procGlow = {
             button.procGlow and button.procGlow.solidFrame,
             button.procGlow and button.procGlow.procFrame,
+            button.procGlow and button.procGlow.pixelFrame,
         },
         assistedHighlight = {
             button.assistedHighlight and button.assistedHighlight.solidFrame,
@@ -316,8 +317,114 @@ local function SetAssistedHighlight(button, show)
     end
 end
 
+-- Shared pixel glow OnUpdate animation (used by icon proc glow and bar aura effect)
+local function PixelGlowOnUpdate(self, elapsed)
+    self._elapsed = self._elapsed + elapsed
+    local btn = self._parentButton
+    local w, h = btn:GetSize()
+    local perimeter = 2 * (w + h)
+    local numParticles = #self.particles
+    local spacing = perimeter / numParticles
+    local offset = (self._elapsed * self._speed) % perimeter
+    local ll = self._lineLength
+    local lt = self._lineThickness
+
+    -- Edge boundaries: top=0..w, right=w..w+h, bottom=w+h..2w+h, left=2w+h..perimeter
+    local wh = w + h
+    local ww = 2 * w + h
+    local edgeBounds = {w, wh, ww, perimeter}
+    local edgeStarts = {0, w, wh, ww}
+
+    for i, px in ipairs(self.particles) do
+        local center = (offset + (i - 1) * spacing) % perimeter
+        local sPos = (center - ll / 2) % perimeter
+        local ePos = sPos + ll
+
+        -- Find which edge sPos is on
+        local sEdge
+        if sPos < w then sEdge = 0
+        elseif sPos < wh then sEdge = 1
+        elseif sPos < ww then sEdge = 2
+        else sEdge = 3 end
+
+        local sLocal = sPos - edgeStarts[sEdge + 1]
+        local sEdgeBound = edgeBounds[sEdge + 1]
+
+        if ePos <= sEdgeBound then
+            -- Entirely on one edge
+            local eLocal = ePos - edgeStarts[sEdge + 1]
+            local segLen = eLocal - sLocal
+            px[1]:ClearAllPoints()
+            if sEdge == 0 then
+                px[1]:SetSize(segLen, lt)
+                px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", sLocal, 0)
+            elseif sEdge == 1 then
+                px[1]:SetSize(lt, segLen)
+                px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, -sLocal)
+            elseif sEdge == 2 then
+                px[1]:SetSize(segLen, lt)
+                px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -sLocal, 0)
+            else
+                px[1]:SetSize(lt, segLen)
+                px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, sLocal)
+            end
+            px[1]:Show()
+            px[2]:Hide()
+        else
+            -- Crosses a corner: split into two segments
+            local edgeLen = sEdgeBound - edgeStarts[sEdge + 1]
+            local firstLen = edgeLen - sLocal
+            local nextEdge = (sEdge + 1) % 4
+            local secondLen = ePos - sEdgeBound
+            if secondLen > perimeter then secondLen = secondLen - perimeter end
+
+            -- First segment: from sLocal to end of current edge
+            px[1]:ClearAllPoints()
+            if firstLen > 0 then
+                if sEdge == 0 then
+                    px[1]:SetSize(firstLen, lt)
+                    px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
+                elseif sEdge == 1 then
+                    px[1]:SetSize(lt, firstLen)
+                    px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                elseif sEdge == 2 then
+                    px[1]:SetSize(firstLen, lt)
+                    px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+                else
+                    px[1]:SetSize(lt, firstLen)
+                    px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                end
+                px[1]:Show()
+            else
+                px[1]:Hide()
+            end
+
+            -- Second segment: from start of next edge
+            px[2]:ClearAllPoints()
+            if secondLen > 0 then
+                if nextEdge == 0 then
+                    px[2]:SetSize(secondLen, lt)
+                    px[2]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                elseif nextEdge == 1 then
+                    px[2]:SetSize(lt, secondLen)
+                    px[2]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
+                elseif nextEdge == 2 then
+                    px[2]:SetSize(secondLen, lt)
+                    px[2]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                else
+                    px[2]:SetSize(lt, secondLen)
+                    px[2]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+                end
+                px[2]:Show()
+            else
+                px[2]:Hide()
+            end
+        end
+    end
+end
+
 -- Show or hide proc glow on a button.
--- Supports "solid" (colored border) and "glow" (animated proc-style) styles.
+-- Supports "solid" (colored border), "pixel" (animated pixel glow), and "glow" (animated proc-style) styles.
 -- Tracks state (style + color + size) to avoid restarting animations every tick.
 local function SetProcGlow(button, show)
     local pg = button.procGlow
@@ -329,13 +436,17 @@ local function SetProcGlow(button, show)
         local bd = button.buttonData
         local glowStyle = bd.procGlowStyle or "glow"
         local c = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
-        local sz
+        local sz, th
         if glowStyle == "solid" then
             sz = bd.procGlowSize or 2
+        elseif glowStyle == "pixel" then
+            sz = bd.procGlowSize or 4
         else
             sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
         end
-        desiredState = string.format("%s%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz)
+        th = (glowStyle == "pixel") and (bd.procGlowThickness or 2) or 0
+        local spd = (glowStyle == "pixel") and (bd.procGlowSpeed or 60) or 0
+        desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
     end
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
@@ -346,6 +457,10 @@ local function SetProcGlow(button, show)
         if pg.procFrame.ProcStartAnim then pg.procFrame.ProcStartAnim:Stop() end
         if pg.procFrame.ProcLoop then pg.procFrame.ProcLoop:Stop() end
         pg.procFrame:Hide()
+    end
+    if pg.pixelFrame then
+        pg.pixelFrame:SetScript("OnUpdate", nil)
+        pg.pixelFrame:Hide()
     end
 
     if not desiredState then return end
@@ -361,6 +476,22 @@ local function SetProcGlow(button, show)
             tex:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
             tex:Show()
         end
+    elseif glowStyle == "pixel" then
+        local pf = pg.pixelFrame
+        local lineLength = bd.procGlowSize or 4
+        local lineThickness = bd.procGlowThickness or 2
+        local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+        for _, px in ipairs(pf.particles) do
+            px[1]:SetColorTexture(r, g, b, a)
+            px[2]:SetColorTexture(r, g, b, a)
+        end
+        pf._elapsed = 0
+        pf._speed = bd.procGlowSpeed or 60
+        pf._lineLength = lineLength
+        pf._lineThickness = lineThickness
+        pf._parentButton = button
+        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
+        pf:Show()
     elseif glowStyle == "glow" then
         local size = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
         FitHighlightFrame(pg.procFrame, button, size)
@@ -400,8 +531,17 @@ local function SetAuraGlow(button, show, pandemicOverride)
             c = bd.auraGlowColor or {1, 0.84, 0, 0.9}
         end
         if style ~= "none" then
-            local sz = bd.auraGlowSize or (style == "solid" and 2 or 32)
-            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, pandemicOverride and "P" or "")
+            local sz, th, spd
+            if pandemicOverride then
+                sz = bd.pandemicGlowSize or bd.auraGlowSize or (style == "solid" and 2 or style == "pixel" and 4 or 32)
+                th = (style == "pixel") and (bd.pandemicGlowThickness or bd.auraGlowThickness or 2) or 0
+                spd = (style == "pixel") and (bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60) or 0
+            else
+                sz = bd.auraGlowSize or (style == "solid" and 2 or style == "pixel" and 4 or 32)
+                th = (style == "pixel") and (bd.auraGlowThickness or 2) or 0
+                spd = (style == "pixel") and (bd.auraGlowSpeed or 60) or 0
+            end
+            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
         end
     end
 
@@ -417,6 +557,10 @@ local function SetAuraGlow(button, show, pandemicOverride)
         if ag.procFrame.ProcLoop then ag.procFrame.ProcLoop:Stop() end
         ag.procFrame:Hide()
     end
+    if ag.pixelFrame then
+        ag.pixelFrame:SetScript("OnUpdate", nil)
+        ag.pixelFrame:Hide()
+    end
 
     if not desiredState then return end
 
@@ -429,7 +573,12 @@ local function SetAuraGlow(button, show, pandemicOverride)
         style = bd.auraGlowStyle
         color = bd.auraGlowColor or {1, 0.84, 0, 0.9}
     end
-    local size = bd.auraGlowSize
+    local size
+    if pandemicOverride then
+        size = bd.pandemicGlowSize or bd.auraGlowSize
+    else
+        size = bd.auraGlowSize
+    end
 
     if style == "solid" then
         size = size or 2
@@ -438,6 +587,29 @@ local function SetAuraGlow(button, show, pandemicOverride)
             tex:SetColorTexture(color[1], color[2], color[3], color[4] or 0.9)
             tex:Show()
         end
+    elseif style == "pixel" then
+        local pf = ag.pixelFrame
+        local lineLength = size or 4
+        local lineThickness, lineSpeed
+        if pandemicOverride then
+            lineThickness = bd.pandemicGlowThickness or bd.auraGlowThickness or 2
+            lineSpeed = bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60
+        else
+            lineThickness = bd.auraGlowThickness or 2
+            lineSpeed = bd.auraGlowSpeed or 60
+        end
+        local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
+        for _, px in ipairs(pf.particles) do
+            px[1]:SetColorTexture(r, g, b, a)
+            px[2]:SetColorTexture(r, g, b, a)
+        end
+        pf._elapsed = 0
+        pf._speed = lineSpeed
+        pf._lineLength = lineLength
+        pf._lineThickness = lineThickness
+        pf._parentButton = button
+        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
+        pf:Show()
     elseif style == "glow" then
         size = size or 32
         FitHighlightFrame(ag.procFrame, button, size)
@@ -614,6 +786,24 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     procGlowProcFrame:Hide()
     button.procGlow.procFrame = procGlowProcFrame
 
+    -- Pixel glow: frame with 12 particle pairs for animated border
+    local procPixelFrame = CreateFrame("Frame", nil, button)
+    procPixelFrame:SetAllPoints()
+    procPixelFrame:EnableMouse(false)
+    procPixelFrame:Hide()
+    procPixelFrame.particles = {}
+    for i = 1, 12 do
+        local t1 = procPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        t1:SetColorTexture(1, 1, 1, 1)
+        local t2 = procPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        t2:SetColorTexture(1, 1, 1, 1)
+        t2:Hide()
+        procPixelFrame.particles[i] = {t1, t2}
+    end
+    procPixelFrame._elapsed = 0
+    SetFrameClickThroughRecursive(procPixelFrame, true, true)
+    button.procGlow.pixelFrame = procPixelFrame
+
     -- Aura active glow elements (solid border + animated glow)
     button.auraGlow = {}
 
@@ -635,10 +825,29 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     auraGlowProcFrame:Hide()
     button.auraGlow.procFrame = auraGlowProcFrame
 
+    -- Pixel glow: frame with 12 particle pairs for animated border
+    local auraPixelFrame = CreateFrame("Frame", nil, button)
+    auraPixelFrame:SetAllPoints()
+    auraPixelFrame:EnableMouse(false)
+    auraPixelFrame:Hide()
+    auraPixelFrame.particles = {}
+    for i = 1, 12 do
+        local t1 = auraPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        t1:SetColorTexture(1, 1, 1, 1)
+        local t2 = auraPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        t2:SetColorTexture(1, 1, 1, 1)
+        t2:Hide()
+        auraPixelFrame.particles[i] = {t1, t2}
+    end
+    auraPixelFrame._elapsed = 0
+    SetFrameClickThroughRecursive(auraPixelFrame, true, true)
+    button.auraGlow.pixelFrame = auraPixelFrame
+
     -- Frame levels: just above cooldown
     local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
     button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
     button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
+    button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
 
     -- Apply custom cooldown text font settings
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
@@ -729,6 +938,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
         SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
+        if button.procGlow.pixelFrame then
+            SetFrameClickThroughRecursive(button.procGlow.pixelFrame, true, true)
+        end
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
@@ -750,6 +962,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         end
         if button.auraGlow.procFrame then
             SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
+        end
+        if button.auraGlow.pixelFrame then
+            SetFrameClickThroughRecursive(button.auraGlow.pixelFrame, true, true)
         end
     end
 
@@ -1352,6 +1567,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.procGlow.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.procGlow.solidTextures, button, button.buttonData.procGlowSize or 2)
         FitHighlightFrame(button.procGlow.procFrame, button, button.buttonData.procGlowSize or (style.procGlowOverhang or 32))
+        if button.procGlow.pixelFrame then
+            button.procGlow.pixelFrame:SetAllPoints()
+        end
         SetProcGlow(button, false)
     end
 
@@ -1360,6 +1578,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.auraGlow.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.auraGlow.solidTextures, button, button.buttonData.auraGlowSize or 2)
         FitHighlightFrame(button.auraGlow.procFrame, button, button.buttonData.auraGlowSize or 32)
+        if button.auraGlow.pixelFrame then
+            button.auraGlow.pixelFrame:SetAllPoints()
+        end
         SetAuraGlow(button, false)
     end
 
@@ -1381,6 +1602,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
         SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
+        if button.procGlow.pixelFrame then
+            SetFrameClickThroughRecursive(button.procGlow.pixelFrame, true, true)
+        end
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
@@ -1403,6 +1627,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         if button.auraGlow.procFrame then
             SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
         end
+        if button.auraGlow.pixelFrame then
+            SetFrameClickThroughRecursive(button.auraGlow.pixelFrame, true, true)
+        end
     end
 
     -- Re-set aura glow frame levels after strata order
@@ -1410,6 +1637,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
         button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
         button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
+        button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
     end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
@@ -2125,110 +2353,7 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
         pf._lineLength = lineLength
         pf._lineThickness = lineThickness
         pf._parentButton = button
-        pf:SetScript("OnUpdate", function(self, elapsed)
-            self._elapsed = self._elapsed + elapsed
-            local btn = self._parentButton
-            local w, h = btn:GetSize()
-            local perimeter = 2 * (w + h)
-            local numParticles = #self.particles
-            local spacing = perimeter / numParticles
-            local offset = (self._elapsed * self._speed) % perimeter
-            local ll = self._lineLength
-            local lt = self._lineThickness
-
-            -- Edge boundaries: top=0..w, right=w..w+h, bottom=w+h..2w+h, left=2w+h..perimeter
-            local wh = w + h
-            local ww = 2 * w + h
-            local edgeBounds = {w, wh, ww, perimeter}
-            local edgeStarts = {0, w, wh, ww}
-
-            for i, px in ipairs(self.particles) do
-                local center = (offset + (i - 1) * spacing) % perimeter
-                local sPos = (center - ll / 2) % perimeter
-                local ePos = sPos + ll
-
-                -- Find which edge sPos is on
-                local sEdge
-                if sPos < w then sEdge = 0
-                elseif sPos < wh then sEdge = 1
-                elseif sPos < ww then sEdge = 2
-                else sEdge = 3 end
-
-                local sLocal = sPos - edgeStarts[sEdge + 1]
-                local sEdgeBound = edgeBounds[sEdge + 1]
-
-                if ePos <= sEdgeBound then
-                    -- Entirely on one edge
-                    local eLocal = ePos - edgeStarts[sEdge + 1]
-                    local segLen = eLocal - sLocal
-                    px[1]:ClearAllPoints()
-                    if sEdge == 0 then
-                        px[1]:SetSize(segLen, lt)
-                        px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", sLocal, 0)
-                    elseif sEdge == 1 then
-                        px[1]:SetSize(lt, segLen)
-                        px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, -sLocal)
-                    elseif sEdge == 2 then
-                        px[1]:SetSize(segLen, lt)
-                        px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -sLocal, 0)
-                    else
-                        px[1]:SetSize(lt, segLen)
-                        px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, sLocal)
-                    end
-                    px[1]:Show()
-                    px[2]:Hide()
-                else
-                    -- Crosses a corner: split into two segments
-                    local edgeLen = sEdgeBound - edgeStarts[sEdge + 1]
-                    local firstLen = edgeLen - sLocal
-                    local nextEdge = (sEdge + 1) % 4
-                    local secondLen = ePos - sEdgeBound
-                    if secondLen > perimeter then secondLen = secondLen - perimeter end
-
-                    -- First segment: from sLocal to end of current edge
-                    px[1]:ClearAllPoints()
-                    if firstLen > 0 then
-                        if sEdge == 0 then
-                            px[1]:SetSize(firstLen, lt)
-                            px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
-                        elseif sEdge == 1 then
-                            px[1]:SetSize(lt, firstLen)
-                            px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-                        elseif sEdge == 2 then
-                            px[1]:SetSize(firstLen, lt)
-                            px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-                        else
-                            px[1]:SetSize(lt, firstLen)
-                            px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-                        end
-                        px[1]:Show()
-                    else
-                        px[1]:Hide()
-                    end
-
-                    -- Second segment: from start of next edge
-                    px[2]:ClearAllPoints()
-                    if secondLen > 0 then
-                        if nextEdge == 0 then
-                            px[2]:SetSize(secondLen, lt)
-                            px[2]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-                        elseif nextEdge == 1 then
-                            px[2]:SetSize(lt, secondLen)
-                            px[2]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
-                        elseif nextEdge == 2 then
-                            px[2]:SetSize(secondLen, lt)
-                            px[2]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-                        else
-                            px[2]:SetSize(lt, secondLen)
-                            px[2]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-                        end
-                        px[2]:Show()
-                    else
-                        px[2]:Hide()
-                    end
-                end
-            end
-        end)
+        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
         pf:Show()
     elseif effect == "glow" then
         size = size or 32
