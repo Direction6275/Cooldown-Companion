@@ -12,16 +12,18 @@ Spell/item cooldown tracker with QoL enhancements: cooldown swipes, GCD indicato
 
 **Before writing ANY code, verify APIs exist in local reference files.** Do NOT guess signatures or assume APIs exist.
 
-### Local API References
+### Local References
 
 | Reference | Path | Contents |
 |-----------|------|----------|
-| **Blizzard API Docs** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\Blizzard_APIDocumentationGenerated` | All C_* namespace APIs, events, enums, signatures |
+| **Blizzard UI Source (primary)** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\` | Complete Blizzard addon source — frame structure, mixins, data providers, templates, XML. **First place to look** for understanding any Blizzard system (CDM, action bars, auras, edit mode, etc.). |
+| **Blizzard API Docs** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\Blizzard_APIDocumentationGenerated` | Specifically for C_* namespace API calls, events, enums, and function signatures. A subset of the above — use this when you need an API signature, not for frame/mixin investigation. |
 | **Legacy Global Functions** | `C:\Users\nicho\Desktop\global and widget api\WoW_Legacy_Global_Functions_Reference.md` | Unit functions, action bar APIs, combat, secure hooking |
 | **Widget API Reference** | `C:\Users\nicho\Desktop\global and widget api\WoW_Widget_API_Reference.md` | Frame/widget methods, script handlers, positioning |
 | **Lua Utilities Reference** | `C:\Users\nicho\Desktop\global and widget api\WoW_Lua_Utilities_Reference.md` | Table utils, colors, slash commands, SavedVariables |
 
 **Lookup rules:**
+- Blizzard frame structure, mixins, data flow, templates → **Blizzard UI Source** (read the `.lua`/`.xml` files directly)
 - `C_Spell`, `C_Item`, etc. → Blizzard API Docs (`{SystemName}Documentation.lua`)
 - `UnitHealth`, `GetActionCooldown`, etc. → Legacy Global Functions
 - Frame methods → Widget API Reference
@@ -36,7 +38,6 @@ Spell/item cooldown tracker with QoL enhancements: cooldown swipes, GCD indicato
 - **Community wiki:** `https://warcraft.wiki.gg/wiki/API_{FunctionName}` — ask me if retrieval fails
 - **Ketho's resources:** `https://github.com/Ketho/BlizzardInterfaceResources` (mainline)
 - **Amadeus Dev Guide:** `https://github.com/Amadeus-/WoWAddonDevGuide`
-- **Local Blizzard source:** `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\`
 - **FrameAlphaTweaks:** `C:\Users\nicho\Desktop\FrameAlphaTweaks` (personal addon, reference on request)
 
 ---
