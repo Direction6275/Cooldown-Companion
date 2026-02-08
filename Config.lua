@@ -5218,6 +5218,74 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(cdOffYSlider)
     end
 
+    -- Aura Text section
+    local auraTextHeading = AceGUI:Create("Heading")
+    auraTextHeading:SetText("Aura Text")
+    auraTextHeading:SetFullWidth(true)
+    container:AddChild(auraTextHeading)
+
+    local auraTextCb = AceGUI:Create("CheckBox")
+    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetValue(style.showAuraText ~= false)
+    auraTextCb:SetFullWidth(true)
+    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraText = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraTextCb)
+
+    if style.showAuraText ~= false then
+        local auraFontSizeSlider = AceGUI:Create("Slider")
+        auraFontSizeSlider:SetLabel("Font Size")
+        auraFontSizeSlider:SetSliderValues(6, 24, 1)
+        auraFontSizeSlider:SetValue(style.auraTextFontSize or 12)
+        auraFontSizeSlider:SetFullWidth(true)
+        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFontSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontSizeSlider)
+
+        local auraFontDrop = AceGUI:Create("Dropdown")
+        auraFontDrop:SetLabel("Font")
+        auraFontDrop:SetList(fontOptions)
+        auraFontDrop:SetValue(style.auraTextFont or "Fonts\\FRIZQT__.TTF")
+        auraFontDrop:SetFullWidth(true)
+        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFont = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontDrop)
+
+        local auraOutlineDrop = AceGUI:Create("Dropdown")
+        auraOutlineDrop:SetLabel("Font Outline")
+        auraOutlineDrop:SetList(outlineOptions)
+        auraOutlineDrop:SetValue(style.auraTextFontOutline or "OUTLINE")
+        auraOutlineDrop:SetFullWidth(true)
+        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraOutlineDrop)
+
+        local auraFontColor = AceGUI:Create("ColorPicker")
+        auraFontColor:SetLabel("Font Color")
+        auraFontColor:SetHasAlpha(true)
+        local ac = style.auraTextFontColor or {1, 1, 1, 1}
+        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
+        auraFontColor:SetFullWidth(true)
+        auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.auraTextFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        auraFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.auraTextFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontColor)
+    end
+
     local readySep = AceGUI:Create("Heading")
     readySep:SetText("")
     readySep:SetFullWidth(true)
@@ -5467,6 +5535,74 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(selectedGroup)
         end)
         container:AddChild(cdFontColor)
+    end
+
+    -- Aura Text section
+    local auraTextHeading = AceGUI:Create("Heading")
+    auraTextHeading:SetText("Aura Text")
+    auraTextHeading:SetFullWidth(true)
+    container:AddChild(auraTextHeading)
+
+    local auraTextCb = AceGUI:Create("CheckBox")
+    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetValue(style.showAuraText ~= false)
+    auraTextCb:SetFullWidth(true)
+    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraText = val
+        CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraTextCb)
+
+    if style.showAuraText ~= false then
+        local auraFontSizeSlider = AceGUI:Create("Slider")
+        auraFontSizeSlider:SetLabel("Font Size")
+        auraFontSizeSlider:SetSliderValues(8, 32, 1)
+        auraFontSizeSlider:SetValue(style.auraTextFontSize or 12)
+        auraFontSizeSlider:SetFullWidth(true)
+        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFontSize = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontSizeSlider)
+
+        local auraFontDrop = AceGUI:Create("Dropdown")
+        auraFontDrop:SetLabel("Font")
+        auraFontDrop:SetList(fontOptions)
+        auraFontDrop:SetValue(style.auraTextFont or "Fonts\\FRIZQT__.TTF")
+        auraFontDrop:SetFullWidth(true)
+        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFont = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontDrop)
+
+        local auraOutlineDrop = AceGUI:Create("Dropdown")
+        auraOutlineDrop:SetLabel("Font Outline")
+        auraOutlineDrop:SetList(outlineOptions)
+        auraOutlineDrop:SetValue(style.auraTextFontOutline or "OUTLINE")
+        auraOutlineDrop:SetFullWidth(true)
+        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraOutlineDrop)
+
+        local auraFontColor = AceGUI:Create("ColorPicker")
+        auraFontColor:SetLabel("Font Color")
+        auraFontColor:SetHasAlpha(true)
+        local ac = style.auraTextFontColor or {1, 1, 1, 1}
+        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
+        auraFontColor:SetFullWidth(true)
+        auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.auraTextFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        auraFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.auraTextFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        container:AddChild(auraFontColor)
     end
 end
 

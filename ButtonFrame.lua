@@ -750,7 +750,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawEdge(true)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
-    button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+    button.cooldown:SetHideCountdownNumbers(false) -- Always allow; visibility controlled via text alpha
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
@@ -1177,11 +1177,35 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        -- Cooldown text color: reapply each tick because WoW's CooldownFrame
-        -- may reset the internal countdown FontString color during its update.
-        if button._cdTextRegion and style.cooldownFontColor then
-            local cc = style.cooldownFontColor
-            button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        -- Cooldown/aura text: pick font + visibility based on current state.
+        -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
+        if button._cdTextRegion then
+            local showText, fontColor, wantFont, wantSize, wantOutline
+            if button._auraActive then
+                showText = style.showAuraText ~= false
+                fontColor = style.auraTextFontColor or {1, 1, 1, 1}
+                wantFont = style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+                wantSize = style.auraTextFontSize or 12
+                wantOutline = style.auraTextFontOutline or "OUTLINE"
+            else
+                showText = style.showCooldownText
+                fontColor = style.cooldownFontColor or {1, 1, 1, 1}
+                wantFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+                wantSize = style.cooldownFontSize or 12
+                wantOutline = style.cooldownFontOutline or "OUTLINE"
+            end
+            if showText then
+                local cc = fontColor
+                button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+                -- Only call SetFont when mode changes to avoid per-tick overhead
+                local mode = button._auraActive and "aura" or "cd"
+                if button._cdTextMode ~= mode then
+                    button._cdTextMode = mode
+                    button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
+                end
+            else
+                button._cdTextRegion:SetTextColor(0, 0, 0, 0)
+            end
         end
 
         -- Desaturation: driven entirely by the cooldown widget's own state.
@@ -1496,10 +1520,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
 
-    -- Update cooldown text visibility and font
-    button.cooldown:SetHideCountdownNumbers(not style.showCooldownText)
+    -- Always allow countdown numbers; visibility controlled via text alpha per-tick
+    button.cooldown:SetHideCountdownNumbers(false)
 
-    -- Update cooldown font settings
+    -- Update cooldown font settings (default state; per-tick logic handles aura mode)
     local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cooldownFontSize = style.cooldownFontSize or 12
     local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
@@ -1509,6 +1533,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
     end
+    -- Clear cached text mode so per-tick logic re-applies the correct font
+    button._cdTextMode = nil
 
     -- Update count text font/anchor settings from per-button data
     button.count:ClearAllPoints()
@@ -1958,8 +1984,31 @@ UpdateBarFill = function(button)
             end
         end
 
-        -- Time text: show recharge remaining
-        if button.style.showCooldownText then
+        -- Time text: show recharge remaining (charge bars are suppressed when _auraActive, so this is defensive)
+        local showTimeText = button._auraActive
+            and (button.style.showAuraText ~= false)
+            or (not button._auraActive and button.style.showCooldownText)
+        if showTimeText then
+            -- Switch font/color when mode changes
+            local mode = button._auraActive and "aura" or "cd"
+            if button._barTextMode ~= mode then
+                button._barTextMode = mode
+                if button._auraActive then
+                    local f = button.style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+                    local s = button.style.auraTextFontSize or 12
+                    local o = button.style.auraTextFontOutline or "OUTLINE"
+                    button.timeText:SetFont(f, s, o)
+                else
+                    local f = button.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+                    local s = button.style.cooldownFontSize or 12
+                    local o = button.style.cooldownFontOutline or "OUTLINE"
+                    button.timeText:SetFont(f, s, o)
+                end
+            end
+            local cc = button._auraActive
+                and (button.style.auraTextFontColor or {1, 1, 1, 1})
+                or (button.style.cooldownFontColor or {1, 1, 1, 1})
+            button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             if remaining > 0 then
                 button.timeText:SetText(FormatBarTime(remaining))
             elseif chargeCount >= chargeMax then
@@ -2087,7 +2136,30 @@ UpdateBarFill = function(button)
         end
         button.statusBar:SetValue(fraction)
 
-        if button.style.showCooldownText then
+        local showTimeText = button._auraActive
+            and (button.style.showAuraText ~= false)
+            or (not button._auraActive and button.style.showCooldownText)
+        if showTimeText then
+            -- Switch font/color when mode changes
+            local mode = button._auraActive and "aura" or "cd"
+            if button._barTextMode ~= mode then
+                button._barTextMode = mode
+                if button._auraActive then
+                    local f = button.style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+                    local s = button.style.auraTextFontSize or 12
+                    local o = button.style.auraTextFontOutline or "OUTLINE"
+                    button.timeText:SetFont(f, s, o)
+                else
+                    local f = button.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+                    local s = button.style.cooldownFontSize or 12
+                    local o = button.style.cooldownFontOutline or "OUTLINE"
+                    button.timeText:SetFont(f, s, o)
+                end
+            end
+            local cc = button._auraActive
+                and (button.style.auraTextFontColor or {1, 1, 1, 1})
+                or (button.style.cooldownFontColor or {1, 1, 1, 1})
+            button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             if remaining > 0 then
                 button.timeText:SetText(FormatBarTime(remaining))
             else
@@ -2935,13 +3007,15 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.nameText:Hide()
     end
 
-    -- Update time text font
+    -- Update time text font (default state; per-tick logic handles aura mode)
     local cdFont = newStyle.cooldownFont or "Fonts\\FRIZQT__.TTF"
     local cdFontSize = newStyle.cooldownFontSize or 12
     local cdFontOutline = newStyle.cooldownFontOutline or "OUTLINE"
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
     local cdColor = newStyle.cooldownFontColor or {1, 1, 1, 1}
     button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+    -- Clear cached text mode so per-tick logic re-applies the correct font
+    button._barTextMode = nil
 
     -- Re-anchor name and time text for orientation
     local nameOffX = newStyle.barNameTextOffsetX or 0

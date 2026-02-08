@@ -94,6 +94,11 @@ local defaults = {
                         cooldownFontOutline = "OUTLINE",
                         cooldownFont = "Fonts\\FRIZQT__.TTF",
                         cooldownFontColor = {1, 1, 1, 1},
+                        showAuraText = true, -- nil defaults to true via ~= false
+                        auraTextFont = "Fonts\\FRIZQT__.TTF",
+                        auraTextFontSize = 12,
+                        auraTextFontOutline = "OUTLINE",
+                        auraTextFontColor = {1, 1, 1, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = true,
