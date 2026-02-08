@@ -1480,7 +1480,11 @@ function RefreshColumn1()
                     info.notCheckable = true
                     info.func = function()
                         CloseDropDownMenus()
-                        group.displayMode = (group.displayMode == "bars") and "icons" or "bars"
+                        local wasBars = group.displayMode == "bars"
+                        group.displayMode = wasBars and "icons" or "bars"
+                        if not wasBars then
+                            group.style.orientation = "vertical"
+                        end
                         if group.displayMode == "bars" and group.masqueEnabled then
                             CooldownCompanion:ToggleGroupMasque(groupId, false)
                         end
@@ -1717,6 +1721,7 @@ function RefreshColumn1()
             local groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             local group = CooldownCompanion.db.profile.groups[groupId]
             group.displayMode = "bars"
+            group.style.orientation = "vertical"
             if group.masqueEnabled then
                 CooldownCompanion:ToggleGroupMasque(groupId, false)
             end
