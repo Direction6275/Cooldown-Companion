@@ -63,6 +63,13 @@ local pickFrameCallback = nil
 local pickCDMOverlay = nil
 local pickCDMCallback = nil
 
+-- Autocomplete state
+local autocompleteDropdown = nil
+local autocompleteCache = nil
+local AUTOCOMPLETE_MAX_ROWS = 10
+local AUTOCOMPLETE_ROW_HEIGHT = 22
+local AUTOCOMPLETE_ICON_SIZE = 20
+
 -- Viewer frame names (mirrors Core.lua's local VIEWER_NAMES)
 local CDM_VIEWER_NAMES = {
     "EssentialCooldownViewer",
@@ -1218,6 +1225,302 @@ local function TryReceiveCursorDrop()
 end
 
 ------------------------------------------------------------------------
+-- Autocomplete: Build cache of player spells + usable bag items
+------------------------------------------------------------------------
+local function BuildAutocompleteCache()
+    local cache = {}
+    local seen = {}
+
+    -- Iterate spellbook skill lines
+    local numLines = C_SpellBook.GetNumSpellBookSkillLines()
+    for lineIdx = 1, numLines do
+        local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIdx)
+        if lineInfo and not lineInfo.shouldHide then
+            local category = lineInfo.name or "Spells"
+            for slotOffset = 1, lineInfo.numSpellBookItems do
+                local slotIdx = lineInfo.itemIndexOffset + slotOffset
+                local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Player)
+                if itemInfo and itemInfo.spellID
+                    and not itemInfo.isPassive
+                    and not itemInfo.isOffSpec
+                    and itemInfo.itemType ~= Enum.SpellBookItemType.Flyout
+                    and itemInfo.itemType ~= Enum.SpellBookItemType.FutureSpell
+                then
+                    local id = itemInfo.spellID
+                    if not seen[id] then
+                        seen[id] = true
+                        table.insert(cache, {
+                            id = id,
+                            name = itemInfo.name,
+                            nameLower = itemInfo.name:lower(),
+                            icon = itemInfo.iconID or 134400,
+                            category = category,
+                            isItem = false,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    -- Iterate bags for usable items
+    for bag = 0, 4 do
+        local numSlots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
+            if containerInfo and containerInfo.itemID then
+                local itemID = containerInfo.itemID
+                if not seen["item:" .. itemID] then
+                    local spellName = C_Item.GetItemSpell(itemID)
+                    if spellName then
+                        seen["item:" .. itemID] = true
+                        local itemName = containerInfo.itemName or C_Item.GetItemNameByID(itemID) or "Unknown"
+                        table.insert(cache, {
+                            id = itemID,
+                            name = itemName,
+                            nameLower = itemName:lower(),
+                            icon = containerInfo.iconFileID or C_Item.GetItemIconByID(itemID) or 134400,
+                            category = "Item",
+                            isItem = true,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    autocompleteCache = cache
+    return cache
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Search cache for matches
+------------------------------------------------------------------------
+local function SearchAutocomplete(query)
+    if not query or #query < 1 then return nil end
+
+    local cache = autocompleteCache or BuildAutocompleteCache()
+    local queryLower = query:lower()
+    local queryNum = tonumber(query)
+    local prefixMatches = {}
+    local substringMatches = {}
+
+    for _, entry in ipairs(cache) do
+        local isMatch = false
+        local isPrefix = false
+
+        -- Match by numeric ID
+        if queryNum and tostring(entry.id):find(query, 1, true) == 1 then
+            isMatch = true
+            isPrefix = true
+        end
+
+        -- Match by name substring
+        if not isMatch then
+            local pos = entry.nameLower:find(queryLower, 1, true)
+            if pos then
+                isMatch = true
+                isPrefix = (pos == 1)
+            end
+        end
+
+        if isMatch then
+            if isPrefix then
+                table.insert(prefixMatches, entry)
+            else
+                table.insert(substringMatches, entry)
+            end
+        end
+
+        -- Early exit if we have enough prefix matches
+        if #prefixMatches >= AUTOCOMPLETE_MAX_ROWS then break end
+    end
+
+    -- Combine: prefix matches first, then substring matches
+    local results = {}
+    for _, entry in ipairs(prefixMatches) do
+        table.insert(results, entry)
+        if #results >= AUTOCOMPLETE_MAX_ROWS then break end
+    end
+    if #results < AUTOCOMPLETE_MAX_ROWS then
+        for _, entry in ipairs(substringMatches) do
+            table.insert(results, entry)
+            if #results >= AUTOCOMPLETE_MAX_ROWS then break end
+        end
+    end
+
+    return #results > 0 and results or nil
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Hide dropdown
+------------------------------------------------------------------------
+local function HideAutocomplete()
+    if autocompleteDropdown then
+        autocompleteDropdown:Hide()
+    end
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Update keyboard selection highlight
+------------------------------------------------------------------------
+local function UpdateAutocompleteHighlight()
+    if not autocompleteDropdown then return end
+    local idx = autocompleteDropdown._highlightIndex or 0
+    for i, row in ipairs(autocompleteDropdown.rows) do
+        if row.selectionBg then
+            if i == idx then
+                row.selectionBg:Show()
+            else
+                row.selectionBg:Hide()
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Select handler
+------------------------------------------------------------------------
+local function OnAutocompleteSelect(entry)
+    HideAutocomplete()
+    if not selectedGroup then return end
+    local added
+    if entry.isItem then
+        added = TryAddItem(tostring(entry.id))
+    else
+        added = TryAddSpell(tostring(entry.id))
+    end
+    if added then
+        newInput = ""
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Create or return the reusable dropdown frame
+------------------------------------------------------------------------
+local function GetOrCreateAutocompleteDropdown()
+    if autocompleteDropdown then return autocompleteDropdown end
+
+    local dropdown = CreateFrame("Frame", "CooldownCompanionAutocomplete", UIParent, "BackdropTemplate")
+    dropdown:SetFrameStrata("TOOLTIP")
+    dropdown:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    dropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    dropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    dropdown:Hide()
+
+    dropdown.rows = {}
+    for i = 1, AUTOCOMPLETE_MAX_ROWS do
+        local row = CreateFrame("Button", nil, dropdown)
+        row:SetHeight(AUTOCOMPLETE_ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 1, -((i - 1) * AUTOCOMPLETE_ROW_HEIGHT) - 1)
+        row:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -1, -((i - 1) * AUTOCOMPLETE_ROW_HEIGHT) - 1)
+
+        -- Keyboard selection highlight (manually shown/hidden)
+        local selectionBg = row:CreateTexture(nil, "BACKGROUND")
+        selectionBg:SetAllPoints()
+        selectionBg:SetColorTexture(0.2, 0.4, 0.7, 0.4)
+        selectionBg:Hide()
+        row.selectionBg = selectionBg
+
+        -- Mouse hover highlight
+        local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints()
+        highlight:SetColorTexture(0.3, 0.5, 0.8, 0.3)
+
+        -- Icon
+        local icon = row:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(AUTOCOMPLETE_ICON_SIZE, AUTOCOMPLETE_ICON_SIZE)
+        icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+        row.icon = icon
+
+        -- Name text
+        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+        nameText:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+        nameText:SetJustifyH("LEFT")
+        nameText:SetWordWrap(false)
+        row.nameText = nameText
+
+        -- Category text
+        local categoryText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        categoryText:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        categoryText:SetJustifyH("RIGHT")
+        categoryText:SetTextColor(0.5, 0.5, 0.5, 1)
+        row.categoryText = categoryText
+
+        row:SetScript("OnMouseDown", function()
+            dropdown._clickInProgress = true
+        end)
+
+        row:SetScript("OnClick", function()
+            dropdown._clickInProgress = false
+            if row.entry then
+                OnAutocompleteSelect(row.entry)
+            end
+        end)
+
+        row:Hide()
+        dropdown.rows[i] = row
+    end
+
+    -- Hide when edit box loses focus (checked via OnUpdate)
+    dropdown:SetScript("OnUpdate", function(self)
+        if self._clickInProgress then return end
+        if self._editbox and not self._editbox:HasFocus() then
+            self:Hide()
+        end
+    end)
+
+    autocompleteDropdown = dropdown
+    return dropdown
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Show results anchored to an edit box widget
+------------------------------------------------------------------------
+local function ShowAutocompleteResults(results, anchorWidget)
+    local dropdown = GetOrCreateAutocompleteDropdown()
+
+    if not results then
+        dropdown:Hide()
+        return
+    end
+
+    -- Anchor below the edit box widget's frame (parented to UIParent, so it draws above the config panel)
+    local anchorFrame = anchorWidget.frame or anchorWidget
+    dropdown:ClearAllPoints()
+    dropdown:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
+    dropdown:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 0, -2)
+
+    local numResults = #results
+    dropdown._highlightIndex = 0
+    dropdown._numResults = numResults
+    dropdown:SetHeight((numResults * AUTOCOMPLETE_ROW_HEIGHT) + 2)
+
+    for i = 1, AUTOCOMPLETE_MAX_ROWS do
+        local row = dropdown.rows[i]
+        if i <= numResults then
+            local entry = results[i]
+            row.entry = entry
+            row.icon:SetTexture(entry.icon)
+            row.nameText:SetText(entry.name)
+            row.categoryText:SetText(entry.category)
+            row:Show()
+        else
+            row.entry = nil
+            row:Hide()
+        end
+    end
+
+    dropdown:Show()
+end
+
+------------------------------------------------------------------------
 -- Helper: Get icon for a button data entry
 ------------------------------------------------------------------------
 local function GetButtonIcon(buttonData)
@@ -1969,6 +2272,7 @@ end
 function RefreshColumn2()
     if not col2Scroll then return end
     CancelDrag()
+    HideAutocomplete()
     col2Scroll:ReleaseChildren()
 
     if not selectedGroup then
@@ -1990,6 +2294,12 @@ function RefreshColumn2()
     inputBox:DisableButton(true)
     inputBox:SetFullWidth(true)
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        -- If arrow-key selection was confirmed via Enter, the hook already handled it
+        if autocompleteDropdown and autocompleteDropdown._enterConsumed then
+            autocompleteDropdown._enterConsumed = nil
+            return
+        end
+        HideAutocomplete()
         newInput = text
         if newInput ~= "" and selectedGroup then
             if TryAdd(newInput) then
@@ -2000,8 +2310,46 @@ function RefreshColumn2()
     end)
     inputBox:SetCallback("OnTextChanged", function(widget, event, text)
         newInput = text
+        if text and #text >= 1 then
+            local results = SearchAutocomplete(text)
+            ShowAutocompleteResults(results, widget)
+            if autocompleteDropdown then
+                autocompleteDropdown._editbox = widget.editbox
+            end
+        else
+            HideAutocomplete()
+        end
     end)
     inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
+    -- Arrow key / Enter navigation for autocomplete dropdown.
+    -- HookScript is necessary because AceGUI has no OnKeyDown callback.
+    -- Guarded: only acts when the autocomplete dropdown is visible; no-op otherwise.
+    local editboxFrame = inputBox.editbox
+    if not editboxFrame._cdcAutocompHooked then
+        editboxFrame._cdcAutocompHooked = true
+        editboxFrame:HookScript("OnKeyDown", function(self, key)
+            if not autocompleteDropdown or not autocompleteDropdown:IsShown() then return end
+            local maxIdx = autocompleteDropdown._numResults or 0
+            if maxIdx == 0 then return end
+            if key == "DOWN" then
+                local idx = (autocompleteDropdown._highlightIndex or 0) + 1
+                if idx > maxIdx then idx = 1 end
+                autocompleteDropdown._highlightIndex = idx
+                UpdateAutocompleteHighlight()
+            elseif key == "UP" then
+                local idx = (autocompleteDropdown._highlightIndex or 0) - 1
+                if idx < 1 then idx = maxIdx end
+                autocompleteDropdown._highlightIndex = idx
+                UpdateAutocompleteHighlight()
+            elseif key == "ENTER" then
+                local idx = autocompleteDropdown._highlightIndex or 0
+                if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
+                    autocompleteDropdown._enterConsumed = true
+                    OnAutocompleteSelect(autocompleteDropdown.rows[idx].entry)
+                end
+            end
+        end)
+    end
     col2Scroll:AddChild(inputBox)
 
     local spacer = AceGUI:Create("SimpleGroup")
@@ -5839,6 +6187,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
         CloseDropDownMenus()
+        HideAutocomplete()
     end)
 
     -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
@@ -6356,6 +6705,14 @@ local function CreateConfigPanel()
     -- Do initial layout next frame (after frame sizes are established)
     C_Timer.After(0, function()
         LayoutColumns()
+    end)
+
+    -- Autocomplete cache invalidation
+    local autocompleteCacheFrame = CreateFrame("Frame")
+    autocompleteCacheFrame:RegisterEvent("SPELLS_CHANGED")
+    autocompleteCacheFrame:RegisterEvent("BAG_UPDATE")
+    autocompleteCacheFrame:SetScript("OnEvent", function()
+        autocompleteCache = nil
     end)
 
     -- Store references
