@@ -208,10 +208,6 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
 
--- Assisted combat highlight: updated via EventRegistry callback instead of
--- per-tick polling. C_AssistedCombat.GetNextCastSpell is AllowedWhenUntainted
--- and cannot be called from addon code during combat without causing taint.
-
 function CooldownCompanion:OnEnable()
     -- Register cooldown events — set dirty flag, let ticker do the actual update.
     -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
@@ -279,15 +275,6 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
-    -- Assisted combat highlight: track via EventRegistry instead of polling
-    -- C_AssistedCombat.GetNextCastSpell (AllowedWhenUntainted — causes taint from addon code)
-    if AssistedCombatManager then
-        EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
-            self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
-            self._cooldownsDirty = true
-        end, self)
-    end
-
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
@@ -315,6 +302,11 @@ function CooldownCompanion:OnEnable()
     -- Start a ticker to update cooldowns periodically
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
+        -- Read assisted combat recommended spell (plain table field, no API call)
+        if AssistedCombatManager then
+            self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
+        end
+
         self:UpdateAllCooldowns()
         self._cooldownsDirty = false
     end)
