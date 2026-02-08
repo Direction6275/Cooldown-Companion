@@ -4097,6 +4097,22 @@ local function BuildExtrasTab(container)
         container:AddChild(CreateTriStateToggle("Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat"))
         container:AddChild(CreateTriStateToggle("Mounted", "forceAlphaMounted", "forceHideMounted"))
 
+        -- "Include Druid Travel Form" nested checkbox
+        -- Show when: mounted toggle is not Disabled AND (global group OR player is a Druid)
+        local mountedActive = group.forceAlphaMounted or group.forceHideMounted
+        local isDruid = CooldownCompanion._playerClassID == 11
+        if mountedActive and (group.isGlobal or isDruid) then
+            local travelVal = group.treatTravelFormAsMounted or false
+            local travelCb = AceGUI:Create("CheckBox")
+            travelCb:SetLabel("Include Druid Travel Form")
+            travelCb:SetValue(travelVal)
+            travelCb:SetFullWidth(true)
+            travelCb:SetCallback("OnValueChanged", function(widget, event, val)
+                group.treatTravelFormAsMounted = val
+            end)
+            container:AddChild(travelCb)
+        end
+
         -- Target Exists checkbox (force-visible only)
         local targetVal = group.forceAlphaTargetExists or false
         local targetCb = AceGUI:Create("CheckBox")

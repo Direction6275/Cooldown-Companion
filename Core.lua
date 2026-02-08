@@ -275,6 +275,9 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
+    -- Cache player class for class-specific checks (e.g. Druid Travel Form)
+    self._playerClassID = select(3, UnitClass("player"))
+
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
@@ -1403,7 +1406,7 @@ local function UpdateFadedAlpha(state, desired, now, fadeInDur, fadeOutDur)
     return state.currentAlpha
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted)
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
@@ -1436,13 +1439,16 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         return
     end
 
+    -- Effective mounted state: real mount OR travel form (if opted in)
+    local effectiveMounted = mounted or (group.treatTravelFormAsMounted and inTravelForm)
+
     -- Check force-hidden conditions
     local forceHidden = false
     if group.forceHideInCombat and inCombat then
         forceHidden = true
     elseif group.forceHideOutOfCombat and not inCombat then
         forceHidden = true
-    elseif group.forceHideMounted and mounted then
+    elseif group.forceHideMounted and effectiveMounted then
         forceHidden = true
     end
 
@@ -1452,7 +1458,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         forceFull = true
     elseif group.forceAlphaOutOfCombat and not inCombat then
         forceFull = true
-    elseif group.forceAlphaMounted and mounted then
+    elseif group.forceAlphaMounted and effectiveMounted then
         forceFull = true
     elseif group.forceAlphaTargetExists and hasTarget then
         forceFull = true
@@ -1503,10 +1509,19 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         local hasTarget = UnitExists("target")
         local mounted = IsMounted()
 
+        local inTravelForm = false
+        if self._playerClassID == 11 then -- Druid
+            local fi = GetShapeshiftForm()
+            if fi and fi > 0 then
+                local _, _, _, spellID = GetShapeshiftFormInfo(fi)
+                if spellID == 783 then inTravelForm = true end
+            end
+        end
+
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() and GroupNeedsAlphaUpdate(group) then
-                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted)
+                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
             end
         end
     end)
