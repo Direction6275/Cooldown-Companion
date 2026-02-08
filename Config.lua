@@ -59,6 +59,18 @@ local pendingStrataGroup = nil
 local pickFrameOverlay = nil
 local pickFrameCallback = nil
 
+-- Pick-CDM overlay state
+local pickCDMOverlay = nil
+local pickCDMCallback = nil
+
+-- Viewer frame names (mirrors Core.lua's local VIEWER_NAMES)
+local CDM_VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+    "BuffBarCooldownViewer",
+}
+
 -- Font options for dropdown
 local fontOptions = {
     ["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata (Default)",
@@ -739,6 +751,216 @@ local function StartPickFrame(callback)
     pickFrameOverlay.label:SetText("")
     pickFrameOverlay.highlight:Hide()
     pickFrameOverlay:Show()
+end
+
+------------------------------------------------------------------------
+-- Helper: Start pick-CDM mode (select a spell from Cooldown Manager)
+------------------------------------------------------------------------
+local function FinishPickCDM(spellID)
+    if not pickCDMOverlay then return end
+    pickCDMOverlay:Hide()
+    CooldownCompanion:ApplyCdmAlpha()
+    local cb = pickCDMCallback
+    pickCDMCallback = nil
+    if cb then
+        cb(spellID)
+    end
+end
+
+local function StartPickCDM(callback)
+    pickCDMCallback = callback
+
+    -- Create overlay lazily
+    if not pickCDMOverlay then
+        local overlay = CreateFrame("Frame", "CooldownCompanionPickCDMOverlay", UIParent)
+        overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+        overlay:SetFrameLevel(100)
+        overlay:SetAllPoints(UIParent)
+        overlay:EnableMouse(true)
+        overlay:EnableKeyboard(true)
+
+        -- Semi-transparent dark background
+        local bg = overlay:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.3)
+        overlay.bg = bg
+
+        -- Instruction text at top
+        local instructions = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        instructions:SetPoint("TOP", overlay, "TOP", 0, -30)
+        instructions:SetText("Click a buff/debuff in the Cooldown Manager  |  Right-click or Escape to cancel")
+        instructions:SetTextColor(1, 1, 1, 0.9)
+        overlay.instructions = instructions
+
+        -- Cursor-following label showing spell name/ID
+        local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        label:SetTextColor(0.2, 1, 0.2, 1)
+        overlay.label = label
+
+        -- Highlight frame (colored border that outlines hovered CDM child)
+        local highlight = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+        highlight:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 12,
+        })
+        highlight:SetBackdropBorderColor(0, 1, 0, 0.9)
+        highlight:Hide()
+        overlay.highlight = highlight
+
+        -- OnUpdate: detect CDM child under cursor
+        overlay:SetScript("OnUpdate", function(self, dt)
+            local cx, cy = GetCursorPosition()
+            local scale = UIParent:GetEffectiveScale()
+            cx, cy = cx / scale, cy / scale
+
+            local bestChild, bestArea, bestSpellID, bestName, bestIsAuraViewer
+
+            for _, viewerName in ipairs(CDM_VIEWER_NAMES) do
+                local viewer = _G[viewerName]
+                if viewer then
+                    local isAuraViewer = viewerName == "BuffIconCooldownViewer" or viewerName == "BuffBarCooldownViewer"
+                    for _, child in pairs({viewer:GetChildren()}) do
+                        if child.cooldownInfo and child:IsVisible() then
+                            local ok, left, bottom, width, height = pcall(child.GetRect, child)
+                            if ok and left and width and width > 0 and height > 0 then
+                                if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
+                                    local area = width * height
+                                    if not bestArea or area < bestArea then
+                                        local info = child.cooldownInfo
+                                        local sid = info.overrideSpellID or info.spellID
+                                        if sid then
+                                            bestChild = child
+                                            bestArea = area
+                                            bestSpellID = sid
+                                            bestIsAuraViewer = isAuraViewer
+                                            local spellInfo = C_Spell.GetSpellInfo(sid)
+                                            bestName = spellInfo and spellInfo.name or tostring(sid)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Also scan the CDM Settings panel (CooldownViewerSettings) if open
+            local settingsPanel = CooldownViewerSettings
+            if settingsPanel and settingsPanel:IsVisible() and settingsPanel.categoryPool then
+                for categoryDisplay in settingsPanel.categoryPool:EnumerateActive() do
+                    if categoryDisplay.itemPool then
+                        local catObj = categoryDisplay:GetCategoryObject()
+                        local isAuraCat = catObj and (catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBuff or catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBar)
+                        for item in categoryDisplay.itemPool:EnumerateActive() do
+                            if item:IsVisible() and not item:IsEmptyCategory() then
+                                local ok, left, bottom, width, height = pcall(item.GetRect, item)
+                                if ok and left and width and width > 0 and height > 0 then
+                                    if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
+                                        local area = width * height
+                                        if not bestArea or area < bestArea then
+                                            local info = item:GetCooldownInfo()
+                                            local sid = info and (info.overrideSpellID or info.spellID)
+                                            if sid then
+                                                bestChild = item
+                                                bestArea = area
+                                                bestSpellID = sid
+                                                bestIsAuraViewer = isAuraCat
+                                                local spellInfo = C_Spell.GetSpellInfo(sid)
+                                                bestName = spellInfo and spellInfo.name or tostring(sid)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            self.currentSpellID = bestSpellID
+
+            if not bestChild then
+                self.label:SetText("")
+                self.highlight:Hide()
+                return
+            end
+
+            -- Color: green for BuffIcon/BuffBar (aura-capable), yellow for Essential/Utility
+            if bestIsAuraViewer then
+                self.label:SetTextColor(0.2, 1, 0.2, 1)
+            else
+                self.label:SetTextColor(1, 1, 0.2, 1)
+            end
+
+            self.label:ClearAllPoints()
+            self.label:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", cx + 20, cy + 10)
+            self.label:SetText(bestName .. "  (" .. bestSpellID .. ")")
+
+            local ok, left, bottom, width, height = pcall(bestChild.GetRect, bestChild)
+            if ok and left and width and width > 0 and height > 0 then
+                self.highlight:ClearAllPoints()
+                self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+                self.highlight:SetSize(width, height)
+                if bestIsAuraViewer then
+                    self.highlight:SetBackdropBorderColor(0, 1, 0, 0.9)
+                else
+                    self.highlight:SetBackdropBorderColor(1, 1, 0, 0.9)
+                end
+                self.highlight:Show()
+            else
+                self.highlight:Hide()
+            end
+        end)
+
+        -- Detect clicks via GLOBAL_MOUSE_DOWN
+        overlay:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        overlay:SetScript("OnEvent", function(self, event, button)
+            if event ~= "GLOBAL_MOUSE_DOWN" then return end
+            if button == "LeftButton" then
+                FinishPickCDM(self.currentSpellID)
+            elseif button == "RightButton" then
+                FinishPickCDM(nil)
+            end
+        end)
+
+        -- Escape to cancel
+        overlay:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:SetPropagateKeyboardInput(false)
+                FinishPickCDM(nil)
+            else
+                self:SetPropagateKeyboardInput(true)
+            end
+        end)
+
+        overlay:SetScript("OnHide", function(self)
+            self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+        end)
+
+        overlay:SetScript("OnShow", function(self)
+            self:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        end)
+
+        pickCDMOverlay = overlay
+    end
+
+    -- Hide config panel, show overlay
+    if configFrame and configFrame.frame:IsShown() then
+        configFrame.frame:Hide()
+    end
+    -- Temporarily show CDM if hidden
+    if CooldownCompanion.db.profile.cdmHidden then
+        for _, name in ipairs(CDM_VIEWER_NAMES) do
+            local viewer = _G[name]
+            if viewer then
+                viewer:SetAlpha(1)
+            end
+        end
+    end
+    pickCDMOverlay.currentSpellID = nil
+    pickCDMOverlay.label:SetText("")
+    pickCDMOverlay.highlight:Hide()
+    pickCDMOverlay:Show()
 end
 
 ------------------------------------------------------------------------
@@ -2208,7 +2430,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshGroupFrame(selectedGroup)
     end
 
-    if canTrackAura then
+    if buttonData.type == "spell" then
     local auraHeading = AceGUI:Create("Heading")
     auraHeading:SetText("Aura Tracking")
     auraHeading:SetFullWidth(true)
@@ -2241,6 +2463,82 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     if not auraCollapsed then
+
+    -- Spell ID Override row (always visible for spells, even without auto-detected aura)
+    local overrideRow = AceGUI:Create("SimpleGroup")
+    overrideRow:SetFullWidth(true)
+    overrideRow:SetLayout("Flow")
+
+    local auraEditBox = AceGUI:Create("EditBox")
+    if auraEditBox.editbox.Instructions then auraEditBox.editbox.Instructions:Hide() end
+    auraEditBox:SetLabel("Spell ID Override")
+    auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+    auraEditBox:SetRelativeWidth(0.72)
+    auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        text = text:gsub("%s", "")
+        buttonData.auraSpellID = text ~= "" and text or nil
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    overrideRow:AddChild(auraEditBox)
+
+    local pickCDMBtn = AceGUI:Create("Button")
+    pickCDMBtn:SetText("Pick CDM")
+    pickCDMBtn:SetRelativeWidth(0.28)
+    pickCDMBtn:SetCallback("OnClick", function()
+        local grp = selectedGroup
+        local btn = selectedButton
+        StartPickCDM(function(spellID)
+            -- Re-show config panel
+            if configFrame then
+                configFrame.frame:Show()
+            end
+            if spellID then
+                local groups = CooldownCompanion.db.profile.groups
+                local g = groups[grp]
+                if g and g.buttons and g.buttons[btn] then
+                    g.buttons[btn].auraSpellID = tostring(spellID)
+                end
+            end
+            CooldownCompanion:RefreshGroupFrame(grp)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end)
+    overrideRow:AddChild(pickCDMBtn)
+
+    scroll:AddChild(overrideRow)
+
+    -- (?) tooltip for override
+    local overrideInfo = CreateFrame("Button", nil, auraEditBox.frame)
+    overrideInfo:SetSize(16, 16)
+    overrideInfo:SetPoint("TOPLEFT", auraEditBox.frame, "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2)
+    local overrideInfoText = overrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    overrideInfoText:SetPoint("CENTER")
+    overrideInfoText:SetText("|cff66aaff(?)|r")
+    overrideInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Spell ID Override")
+        GameTooltip:AddLine("Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas for multiple IDs (e.g. 48517,48518 for both Eclipse forms).\n\nYou can also click \"Pick CDM\" to visually select a spell from the Cooldown Manager.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    overrideInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, overrideInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        overrideInfo:Hide()
+    end
+
+    -- Nudge Pick CDM button down to align with editbox
+    pickCDMBtn.frame:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", nil)
+        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+        if yOfs then
+            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+        end
+    end)
+
+    if canTrackAura then
     local auraCb = AceGUI:Create("CheckBox")
     local auraLabel = isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration")
     local auraActive = hasViewerFrame and buttonData.auraTracking == true
@@ -2389,41 +2687,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             elseif buttonData.type == "spell" then
                 -- Non-harmful spell: always tracks on player
                 buttonData.auraUnit = nil
-            end
-
-            -- Spell ID override (for spells whose buff ID differs from ability ID)
-            local auraEditBox = AceGUI:Create("EditBox")
-            if auraEditBox.editbox.Instructions then auraEditBox.editbox.Instructions:Hide() end
-            auraEditBox:SetLabel("Spell ID Override")
-            auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
-            auraEditBox:SetFullWidth(true)
-            auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
-                text = text:gsub("%s", "")
-                buttonData.auraSpellID = text ~= "" and text or nil
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(auraEditBox)
-
-            -- (?) tooltip for override
-            local overrideInfo = CreateFrame("Button", nil, auraEditBox.frame)
-            overrideInfo:SetSize(16, 16)
-            overrideInfo:SetPoint("TOPLEFT", auraEditBox.frame, "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2)
-            local overrideInfoText = overrideInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            overrideInfoText:SetPoint("CENTER")
-            overrideInfoText:SetText("|cff66aaff(?)|r")
-            overrideInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Spell ID Override")
-                GameTooltip:AddLine("Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas for multiple IDs (e.g. 48517,48518 for both Eclipse forms). You can find spell IDs on Wowhead or by inspecting your buffs.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            overrideInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(infoButtons, overrideInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                overrideInfo:Hide()
             end
 
             -- Color Settings collapsible section
@@ -3041,8 +3304,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- not pandemicCollapsed
             end -- pandemicCapable
     end -- hasViewerFrame and auraTracking
-    end -- not auraCollapsed
     end -- canTrackAura
+    end -- not auraCollapsed
+    end -- buttonData.type == "spell"
 
     -- Proc Glow collapsible section (icon mode only)
     if group.displayMode ~= "bars" then
