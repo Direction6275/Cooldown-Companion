@@ -2516,6 +2516,26 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(pandemicCb)
 
             if buttonData.pandemicGlow then
+                -- Preview toggle (transient — not saved)
+                local pandemicPreviewCb = AceGUI:Create("CheckBox")
+                pandemicPreviewCb:SetLabel("Preview")
+                local pandemicPreviewActive = false
+                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                if gFrame then
+                    for _, btn in ipairs(gFrame.buttons) do
+                        if btn.index == selectedButton and btn._pandemicPreview then
+                            pandemicPreviewActive = true
+                            break
+                        end
+                    end
+                end
+                pandemicPreviewCb:SetValue(pandemicPreviewActive)
+                pandemicPreviewCb:SetFullWidth(true)
+                pandemicPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    CooldownCompanion:SetPandemicPreview(selectedGroup, selectedButton, val)
+                end)
+                scroll:AddChild(pandemicPreviewCb)
+
                 local pandemicStyleDrop = AceGUI:Create("Dropdown")
                 pandemicStyleDrop:SetLabel("Pandemic Glow Style")
                 pandemicStyleDrop:SetList({
@@ -2715,20 +2735,125 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                     end)
                     scroll:AddChild(pandemicBarColorPicker)
 
-                    local pandemicEffectColorPicker = AceGUI:Create("ColorPicker")
-                    pandemicEffectColorPicker:SetLabel("Pandemic Effect Color")
-                    local pgc = buttonData.pandemicGlowColor or {1, 0.5, 0, 1}
-                    pandemicEffectColorPicker:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-                    pandemicEffectColorPicker:SetHasAlpha(true)
-                    pandemicEffectColorPicker:SetFullWidth(true)
-                    pandemicEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                        buttonData.pandemicGlowColor = {r, g, b, a}
-                    end)
-                    pandemicEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                        buttonData.pandemicGlowColor = {r, g, b, a}
+                    local pandemicEffectDrop = AceGUI:Create("Dropdown")
+                    pandemicEffectDrop:SetLabel("Pandemic Effect")
+                    pandemicEffectDrop:SetList({
+                        ["none"] = "None",
+                        ["pixel"] = "Pixel Glow",
+                        ["solid"] = "Solid Border",
+                        ["glow"] = "Proc Glow",
+                    }, {"none", "pixel", "solid", "glow"})
+                    pandemicEffectDrop:SetValue(buttonData.pandemicBarEffect or buttonData.barAuraEffect or "none")
+                    pandemicEffectDrop:SetFullWidth(true)
+                    pandemicEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        buttonData.pandemicBarEffect = (val ~= "none") and val or nil
                         CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        CooldownCompanion:RefreshConfigPanel()
                     end)
-                    scroll:AddChild(pandemicEffectColorPicker)
+                    scroll:AddChild(pandemicEffectDrop)
+
+                    local pandemicEffect = buttonData.pandemicBarEffect or buttonData.barAuraEffect or "none"
+                    if pandemicEffect ~= "none" then
+                        local pandemicEffectColorPicker = AceGUI:Create("ColorPicker")
+                        pandemicEffectColorPicker:SetLabel("Pandemic Effect Color")
+                        local pgc = buttonData.pandemicGlowColor or {1, 0.5, 0, 1}
+                        pandemicEffectColorPicker:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+                        pandemicEffectColorPicker:SetHasAlpha(true)
+                        pandemicEffectColorPicker:SetFullWidth(true)
+                        pandemicEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                            buttonData.pandemicGlowColor = {r, g, b, a}
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        pandemicEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                            buttonData.pandemicGlowColor = {r, g, b, a}
+                            CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                        end)
+                        scroll:AddChild(pandemicEffectColorPicker)
+
+                        if pandemicEffect == "solid" then
+                            local pandemicBorderSizeSlider = AceGUI:Create("Slider")
+                            pandemicBorderSizeSlider:SetLabel("Border Size")
+                            pandemicBorderSizeSlider:SetSliderValues(1, 8, 1)
+                            pandemicBorderSizeSlider:SetValue(buttonData.pandemicBarEffectSize or 2)
+                            pandemicBorderSizeSlider:SetFullWidth(true)
+                            pandemicBorderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                buttonData.pandemicBarEffectSize = val
+                                CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                            end)
+                            scroll:AddChild(pandemicBorderSizeSlider)
+                        elseif pandemicEffect == "pixel" then
+                            local pandemicLineLengthSlider = AceGUI:Create("Slider")
+                            pandemicLineLengthSlider:SetLabel("Line Length")
+                            pandemicLineLengthSlider:SetSliderValues(2, 12, 1)
+                            pandemicLineLengthSlider:SetValue(buttonData.pandemicBarEffectSize or 4)
+                            pandemicLineLengthSlider:SetFullWidth(true)
+                            pandemicLineLengthSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                buttonData.pandemicBarEffectSize = val
+                                CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                            end)
+                            scroll:AddChild(pandemicLineLengthSlider)
+
+                            local pandemicLineThicknessSlider = AceGUI:Create("Slider")
+                            pandemicLineThicknessSlider:SetLabel("Line Thickness")
+                            pandemicLineThicknessSlider:SetSliderValues(1, 6, 1)
+                            pandemicLineThicknessSlider:SetValue(buttonData.pandemicBarEffectThickness or 2)
+                            pandemicLineThicknessSlider:SetFullWidth(true)
+                            pandemicLineThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                buttonData.pandemicBarEffectThickness = val
+                                CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                            end)
+                            scroll:AddChild(pandemicLineThicknessSlider)
+
+                            local pandemicSpeedSlider = AceGUI:Create("Slider")
+                            pandemicSpeedSlider:SetLabel("Speed")
+                            pandemicSpeedSlider:SetSliderValues(10, 200, 5)
+                            pandemicSpeedSlider:SetValue(buttonData.pandemicBarEffectSpeed or 60)
+                            pandemicSpeedSlider:SetFullWidth(true)
+                            pandemicSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                buttonData.pandemicBarEffectSpeed = val
+                                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                                if gFrame then
+                                    for _, btn in ipairs(gFrame.buttons) do
+                                        if btn.index == selectedButton and btn.barAuraEffect and btn.barAuraEffect.pixelFrame then
+                                            btn.barAuraEffect.pixelFrame._speed = val
+                                        end
+                                    end
+                                end
+                            end)
+                            scroll:AddChild(pandemicSpeedSlider)
+                        elseif pandemicEffect == "glow" then
+                            local pandemicGlowSizeSlider = AceGUI:Create("Slider")
+                            pandemicGlowSizeSlider:SetLabel("Glow Size")
+                            pandemicGlowSizeSlider:SetSliderValues(0, 60, 1)
+                            pandemicGlowSizeSlider:SetValue(buttonData.pandemicBarEffectSize or 32)
+                            pandemicGlowSizeSlider:SetFullWidth(true)
+                            pandemicGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                buttonData.pandemicBarEffectSize = val
+                                CooldownCompanion:InvalidateBarAuraEffect(selectedGroup, selectedButton)
+                            end)
+                            scroll:AddChild(pandemicGlowSizeSlider)
+                        end
+                    end
+
+                    -- Preview toggle (transient — not saved)
+                    local pandemicPreviewCb = AceGUI:Create("CheckBox")
+                    pandemicPreviewCb:SetLabel("Preview")
+                    local pandemicPreviewActive = false
+                    local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                    if gFrame then
+                        for _, btn in ipairs(gFrame.buttons) do
+                            if btn.index == selectedButton and btn._pandemicPreview then
+                                pandemicPreviewActive = true
+                                break
+                            end
+                        end
+                    end
+                    pandemicPreviewCb:SetValue(pandemicPreviewActive)
+                    pandemicPreviewCb:SetFullWidth(true)
+                    pandemicPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        CooldownCompanion:SetPandemicPreview(selectedGroup, selectedButton, val)
+                    end)
+                    scroll:AddChild(pandemicPreviewCb)
                 end
                 end -- pandemicCapable (bar)
             end -- bars/icons aura effect branch
@@ -3239,6 +3364,7 @@ local function RefreshButtonSettingsColumn()
     if not buttonSettingsScroll then return end
     CooldownCompanion:ClearAllProcGlowPreviews()
     CooldownCompanion:ClearAllAuraGlowPreviews()
+    CooldownCompanion:ClearAllPandemicPreviews()
     for _, btn in ipairs(buttonSettingsInfoButtons) do
         btn:ClearAllPoints()
         btn:Hide()
@@ -3324,7 +3450,7 @@ local function BuildExtrasTab(container)
     local isBarMode = group.displayMode == "bars"
 
     local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetLabel("Desaturate On Cooldown / Active Aura")
     desatCb:SetValue(style.desaturateOnCooldown or false)
     desatCb:SetFullWidth(true)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4976,6 +5102,7 @@ local function CreateConfigPanel()
         if isCollapsing then return end
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
+        CooldownCompanion:ClearAllPandemicPreviews()
         CloseDropDownMenus()
     end)
 
