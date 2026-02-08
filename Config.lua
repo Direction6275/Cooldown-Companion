@@ -2117,325 +2117,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     spellHeading:SetFullWidth(true)
     scroll:AddChild(spellHeading)
 
-    -- Charge text customization controls (only for charge-based spells)
-    if buttonData.hasCharges then
-        local showChargeTextCb = AceGUI:Create("CheckBox")
-        showChargeTextCb:SetLabel("Show Charge Count Text")
-        showChargeTextCb:SetValue(buttonData.showChargeText or false)
-        showChargeTextCb:SetFullWidth(true)
-        showChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.showChargeText = val or nil
-            CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(showChargeTextCb)
-
-        if buttonData.showChargeText then
-        local chargeKey = selectedGroup .. "_" .. selectedButton .. "_charges"
-        local chargesCollapsed = collapsedSections[chargeKey]
-
-        -- Collapse toggle button
-        local chargeCollapseBtn = CreateFrame("Button", nil, showChargeTextCb.frame)
-        table.insert(buttonSettingsCollapseButtons, chargeCollapseBtn)
-        chargeCollapseBtn:SetSize(16, 16)
-        chargeCollapseBtn:SetPoint("LEFT", showChargeTextCb.checkbg, "RIGHT", showChargeTextCb.text:GetStringWidth() + 6, 0)
-        local chargeCollapseArrow = chargeCollapseBtn:CreateTexture(nil, "ARTWORK")
-        chargeCollapseArrow:SetSize(12, 12)
-        chargeCollapseArrow:SetPoint("CENTER")
-        chargeCollapseArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
-        if chargesCollapsed then
-            chargeCollapseArrow:SetRotation(math.rad(180))
-        end
-        chargeCollapseBtn:SetScript("OnClick", function()
-            collapsedSections[chargeKey] = not collapsedSections[chargeKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        chargeCollapseBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(chargesCollapsed and "Expand" or "Collapse")
-            GameTooltip:Show()
-        end)
-        chargeCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        if not chargesCollapsed then
-            local chargeFontSizeSlider = AceGUI:Create("Slider")
-            chargeFontSizeSlider:SetLabel("Font Size")
-            chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-            chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
-            chargeFontSizeSlider:SetFullWidth(true)
-            chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontSize = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeFontSizeSlider)
-
-            local chargeFontDrop = AceGUI:Create("Dropdown")
-            chargeFontDrop:SetLabel("Font")
-            chargeFontDrop:SetList(fontOptions)
-            chargeFontDrop:SetValue(buttonData.chargeFont or "Fonts\\FRIZQT__.TTF")
-            chargeFontDrop:SetFullWidth(true)
-            chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFont = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeFontDrop)
-
-            local chargeOutlineDrop = AceGUI:Create("Dropdown")
-            chargeOutlineDrop:SetLabel("Font Outline")
-            chargeOutlineDrop:SetList(outlineOptions)
-            chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
-            chargeOutlineDrop:SetFullWidth(true)
-            chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontOutline = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeOutlineDrop)
-
-            local chargeFontColor = AceGUI:Create("ColorPicker")
-            chargeFontColor:SetLabel("Font Color (Max Charges)")
-            chargeFontColor:SetHasAlpha(true)
-            local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
-            chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
-            chargeFontColor:SetFullWidth(true)
-            chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-            end)
-            chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColor)
-
-            local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-            chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-            chargeFontColorMissing:SetHasAlpha(true)
-            local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
-            chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
-            chargeFontColorMissing:SetFullWidth(true)
-            chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-            end)
-            chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColorMissing)
-
-            local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
-            local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
-            local defChargeX = barNoIcon and 0 or -2
-            local defChargeY = 2
-
-            local chargeAnchorValues = {}
-            for _, pt in ipairs(anchorPoints) do
-                chargeAnchorValues[pt] = anchorPointLabels[pt]
-            end
-            local chargeAnchorDrop = AceGUI:Create("Dropdown")
-            chargeAnchorDrop:SetLabel("Anchor Point")
-            chargeAnchorDrop:SetList(chargeAnchorValues)
-            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or defChargeAnchor)
-            chargeAnchorDrop:SetFullWidth(true)
-            chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeAnchor = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeAnchorDrop)
-
-            local chargeXSlider = AceGUI:Create("Slider")
-            chargeXSlider:SetLabel("X Offset")
-            chargeXSlider:SetSliderValues(-20, 20, 1)
-            chargeXSlider:SetValue(buttonData.chargeXOffset or defChargeX)
-            chargeXSlider:SetFullWidth(true)
-            chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeXOffset = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeXSlider)
-
-            local chargeYSlider = AceGUI:Create("Slider")
-            chargeYSlider:SetLabel("Y Offset")
-            chargeYSlider:SetSliderValues(-20, 20, 1)
-            chargeYSlider:SetValue(buttonData.chargeYOffset or defChargeY)
-            chargeYSlider:SetFullWidth(true)
-            chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeYOffset = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-            end)
-            scroll:AddChild(chargeYSlider)
-
-            local chargeBreak = AceGUI:Create("Heading")
-            chargeBreak:SetText("")
-            chargeBreak:SetFullWidth(true)
-            scroll:AddChild(chargeBreak)
-        end -- not chargesCollapsed
-        end -- showChargeText
-
-        if group.displayMode == "bars" then
-            if group.style and group.style.showCooldownText then
-                local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
-                cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
-                cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
-                cdTextOnRechargeCb:SetFullWidth(true)
-                cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    buttonData.barCdTextOnRechargeBar = val
-                end)
-                scroll:AddChild(cdTextOnRechargeCb)
-            end
-
-            local reverseChargesCb = AceGUI:Create("CheckBox")
-            reverseChargesCb:SetLabel("Flip Charge Order")
-            reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-            reverseChargesCb:SetFullWidth(true)
-            reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.barReverseCharges = val or nil
-                CooldownCompanion:UpdateGroupStyle(selectedGroup)
-            end)
-            scroll:AddChild(reverseChargesCb)
-        end
-    end -- hasCharges
-
-    -- Proc Glow toggle (hidden for bar mode)
-    if group.displayMode ~= "bars" then
-    local procCb = AceGUI:Create("CheckBox")
-    procCb:SetLabel("Show Proc Glow")
-    procCb:SetValue(buttonData.procGlow == true)
-    procCb:SetFullWidth(true)
-    procCb:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.procGlow = val
-        if val then
-            collapsedSections[selectedGroup .. "_" .. selectedButton .. "_procGlow"] = nil
-        end
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(procCb)
-
-    -- (?) tooltip for proc glow
-    local procInfo = CreateFrame("Button", nil, procCb.frame)
-    procInfo:SetSize(16, 16)
-    procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
-    local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    procInfoText:SetPoint("CENTER")
-    procInfoText:SetText("|cff66aaff(?)|r")
-    procInfo:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Proc Glow")
-        GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    procInfo:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    table.insert(infoButtons, procInfo)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        procInfo:Hide()
-    end
-
-    if buttonData.procGlow == true then
-        local procKey = selectedGroup .. "_" .. selectedButton .. "_procGlow"
-        local procCollapsed = collapsedSections[procKey]
-
-        -- Collapse toggle button
-        local procCollapseBtn = CreateFrame("Button", nil, procCb.frame)
-        table.insert(buttonSettingsCollapseButtons, procCollapseBtn)
-        procCollapseBtn:SetSize(16, 16)
-        procCollapseBtn:SetPoint("LEFT", procInfo, "RIGHT", 4, 0)
-        local procCollapseArrow = procCollapseBtn:CreateTexture(nil, "ARTWORK")
-        procCollapseArrow:SetSize(12, 12)
-        procCollapseArrow:SetPoint("CENTER")
-        procCollapseArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
-        if procCollapsed then
-            procCollapseArrow:SetRotation(math.rad(180))
-        end
-        procCollapseBtn:SetScript("OnClick", function()
-            collapsedSections[procKey] = not collapsedSections[procKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        procCollapseBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(procCollapsed and "Expand" or "Collapse")
-            GameTooltip:Show()
-        end)
-        procCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        if not procCollapsed then
-            -- Preview toggle (transient — not saved)
-            local previewCb = AceGUI:Create("CheckBox")
-            previewCb:SetLabel("Preview")
-            -- Restore preview state from the button frame if it's still active
-            local previewActive = false
-            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
-            if gFrame then
-                for _, btn in ipairs(gFrame.buttons) do
-                    if btn.index == selectedButton and btn._procGlowPreview then
-                        previewActive = true
-                        break
-                    end
-                end
-            end
-            previewCb:SetValue(previewActive)
-            previewCb:SetFullWidth(true)
-            previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
-            end)
-            scroll:AddChild(previewCb)
-
-            -- (?) tooltip for preview
-            local previewInfo = CreateFrame("Button", nil, previewCb.frame)
-            previewInfo:SetSize(16, 16)
-            previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
-            local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            previewInfoText:SetPoint("CENTER")
-            previewInfoText:SetText("|cff66aaff(?)|r")
-            previewInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Preview")
-                GameTooltip:AddLine("Shows what the proc glow looks like on this icon. You may need to toggle preview off and on to reflect changes to glow size.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            previewInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(infoButtons, previewInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                previewInfo:Hide()
-            end
-
-            -- Proc Glow color & size (group-wide style settings)
-            local procGlowColor = AceGUI:Create("ColorPicker")
-            procGlowColor:SetLabel("Glow Color")
-            procGlowColor:SetHasAlpha(true)
-            local pgc = group.style.procGlowColor or {1, 1, 1, 1}
-            procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-            procGlowColor:SetFullWidth(true)
-            procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                group.style.procGlowColor = {r, g, b, a}
-            end)
-            procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                group.style.procGlowColor = {r, g, b, a}
-                CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
-            end)
-            scroll:AddChild(procGlowColor)
-
-            local procSizeSlider = AceGUI:Create("Slider")
-            procSizeSlider:SetLabel("Glow Size")
-            procSizeSlider:SetSliderValues(0, 60, 1)
-            procSizeSlider:SetValue(group.style.procGlowOverhang or 32)
-            procSizeSlider:SetFullWidth(true)
-            procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                group.style.procGlowOverhang = val
-                CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
-            end)
-            scroll:AddChild(procSizeSlider)
-
-            local procBreak = AceGUI:Create("Heading")
-            procBreak:SetText("")
-            procBreak:SetFullWidth(true)
-            scroll:AddChild(procBreak)
-        end
-    end
-    end -- not bars (proc glow)
-
     local isHarmful = buttonData.type == "spell" and C_Spell.IsSpellHarmful(buttonData.id)
     -- Look up viewer frame: try override IDs first, then resolved aura ID, then ability ID
     local viewerFrame
@@ -3054,6 +2735,325 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end -- hasViewerFrame and auraTracking
     end -- canTrackAura
+
+    -- Charge text customization controls (only for charge-based spells)
+    if buttonData.hasCharges then
+        local showChargeTextCb = AceGUI:Create("CheckBox")
+        showChargeTextCb:SetLabel("Show Charge Count Text")
+        showChargeTextCb:SetValue(buttonData.showChargeText or false)
+        showChargeTextCb:SetFullWidth(true)
+        showChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.showChargeText = val or nil
+            CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(showChargeTextCb)
+
+        if buttonData.showChargeText then
+        local chargeKey = selectedGroup .. "_" .. selectedButton .. "_charges"
+        local chargesCollapsed = collapsedSections[chargeKey]
+
+        -- Collapse toggle button
+        local chargeCollapseBtn = CreateFrame("Button", nil, showChargeTextCb.frame)
+        table.insert(buttonSettingsCollapseButtons, chargeCollapseBtn)
+        chargeCollapseBtn:SetSize(16, 16)
+        chargeCollapseBtn:SetPoint("LEFT", showChargeTextCb.checkbg, "RIGHT", showChargeTextCb.text:GetStringWidth() + 6, 0)
+        local chargeCollapseArrow = chargeCollapseBtn:CreateTexture(nil, "ARTWORK")
+        chargeCollapseArrow:SetSize(12, 12)
+        chargeCollapseArrow:SetPoint("CENTER")
+        chargeCollapseArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
+        if chargesCollapsed then
+            chargeCollapseArrow:SetRotation(math.rad(180))
+        end
+        chargeCollapseBtn:SetScript("OnClick", function()
+            collapsedSections[chargeKey] = not collapsedSections[chargeKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        chargeCollapseBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(chargesCollapsed and "Expand" or "Collapse")
+            GameTooltip:Show()
+        end)
+        chargeCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        if not chargesCollapsed then
+            local chargeFontSizeSlider = AceGUI:Create("Slider")
+            chargeFontSizeSlider:SetLabel("Font Size")
+            chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+            chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
+            chargeFontSizeSlider:SetFullWidth(true)
+            chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeFontSize = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeFontSizeSlider)
+
+            local chargeFontDrop = AceGUI:Create("Dropdown")
+            chargeFontDrop:SetLabel("Font")
+            chargeFontDrop:SetList(fontOptions)
+            chargeFontDrop:SetValue(buttonData.chargeFont or "Fonts\\FRIZQT__.TTF")
+            chargeFontDrop:SetFullWidth(true)
+            chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeFont = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeFontDrop)
+
+            local chargeOutlineDrop = AceGUI:Create("Dropdown")
+            chargeOutlineDrop:SetLabel("Font Outline")
+            chargeOutlineDrop:SetList(outlineOptions)
+            chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
+            chargeOutlineDrop:SetFullWidth(true)
+            chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeFontOutline = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeOutlineDrop)
+
+            local chargeFontColor = AceGUI:Create("ColorPicker")
+            chargeFontColor:SetLabel("Font Color (Max Charges)")
+            chargeFontColor:SetHasAlpha(true)
+            local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
+            chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
+            chargeFontColor:SetFullWidth(true)
+            chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColor = {r, g, b, a}
+            end)
+            chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColor = {r, g, b, a}
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeFontColor)
+
+            local chargeFontColorMissing = AceGUI:Create("ColorPicker")
+            chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
+            chargeFontColorMissing:SetHasAlpha(true)
+            local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
+            chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
+            chargeFontColorMissing:SetFullWidth(true)
+            chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorMissing = {r, g, b, a}
+            end)
+            chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorMissing = {r, g, b, a}
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeFontColorMissing)
+
+            local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
+            local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
+            local defChargeX = barNoIcon and 0 or -2
+            local defChargeY = 2
+
+            local chargeAnchorValues = {}
+            for _, pt in ipairs(anchorPoints) do
+                chargeAnchorValues[pt] = anchorPointLabels[pt]
+            end
+            local chargeAnchorDrop = AceGUI:Create("Dropdown")
+            chargeAnchorDrop:SetLabel("Anchor Point")
+            chargeAnchorDrop:SetList(chargeAnchorValues)
+            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or defChargeAnchor)
+            chargeAnchorDrop:SetFullWidth(true)
+            chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeAnchor = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeAnchorDrop)
+
+            local chargeXSlider = AceGUI:Create("Slider")
+            chargeXSlider:SetLabel("X Offset")
+            chargeXSlider:SetSliderValues(-20, 20, 1)
+            chargeXSlider:SetValue(buttonData.chargeXOffset or defChargeX)
+            chargeXSlider:SetFullWidth(true)
+            chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeXOffset = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeXSlider)
+
+            local chargeYSlider = AceGUI:Create("Slider")
+            chargeYSlider:SetLabel("Y Offset")
+            chargeYSlider:SetSliderValues(-20, 20, 1)
+            chargeYSlider:SetValue(buttonData.chargeYOffset or defChargeY)
+            chargeYSlider:SetFullWidth(true)
+            chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.chargeYOffset = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+            end)
+            scroll:AddChild(chargeYSlider)
+
+            local chargeBreak = AceGUI:Create("Heading")
+            chargeBreak:SetText("")
+            chargeBreak:SetFullWidth(true)
+            scroll:AddChild(chargeBreak)
+        end -- not chargesCollapsed
+        end -- showChargeText
+
+        if group.displayMode == "bars" then
+            if group.style and group.style.showCooldownText then
+                local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
+                cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
+                cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
+                cdTextOnRechargeCb:SetFullWidth(true)
+                cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.barCdTextOnRechargeBar = val
+                end)
+                scroll:AddChild(cdTextOnRechargeCb)
+            end
+
+            local reverseChargesCb = AceGUI:Create("CheckBox")
+            reverseChargesCb:SetLabel("Flip Charge Order")
+            reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
+            reverseChargesCb:SetFullWidth(true)
+            reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.barReverseCharges = val or nil
+                CooldownCompanion:UpdateGroupStyle(selectedGroup)
+            end)
+            scroll:AddChild(reverseChargesCb)
+        end
+    end -- hasCharges
+
+    -- Proc Glow toggle (hidden for bar mode)
+    if group.displayMode ~= "bars" then
+    local procCb = AceGUI:Create("CheckBox")
+    procCb:SetLabel("Show Proc Glow")
+    procCb:SetValue(buttonData.procGlow == true)
+    procCb:SetFullWidth(true)
+    procCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.procGlow = val
+        if val then
+            collapsedSections[selectedGroup .. "_" .. selectedButton .. "_procGlow"] = nil
+        end
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(procCb)
+
+    -- (?) tooltip for proc glow
+    local procInfo = CreateFrame("Button", nil, procCb.frame)
+    procInfo:SetSize(16, 16)
+    procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
+    local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    procInfoText:SetPoint("CENTER")
+    procInfoText:SetText("|cff66aaff(?)|r")
+    procInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Proc Glow")
+        GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    procInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, procInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        procInfo:Hide()
+    end
+
+    if buttonData.procGlow == true then
+        local procKey = selectedGroup .. "_" .. selectedButton .. "_procGlow"
+        local procCollapsed = collapsedSections[procKey]
+
+        -- Collapse toggle button
+        local procCollapseBtn = CreateFrame("Button", nil, procCb.frame)
+        table.insert(buttonSettingsCollapseButtons, procCollapseBtn)
+        procCollapseBtn:SetSize(16, 16)
+        procCollapseBtn:SetPoint("LEFT", procInfo, "RIGHT", 4, 0)
+        local procCollapseArrow = procCollapseBtn:CreateTexture(nil, "ARTWORK")
+        procCollapseArrow:SetSize(12, 12)
+        procCollapseArrow:SetPoint("CENTER")
+        procCollapseArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
+        if procCollapsed then
+            procCollapseArrow:SetRotation(math.rad(180))
+        end
+        procCollapseBtn:SetScript("OnClick", function()
+            collapsedSections[procKey] = not collapsedSections[procKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        procCollapseBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(procCollapsed and "Expand" or "Collapse")
+            GameTooltip:Show()
+        end)
+        procCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        if not procCollapsed then
+            -- Preview toggle (transient — not saved)
+            local previewCb = AceGUI:Create("CheckBox")
+            previewCb:SetLabel("Preview")
+            -- Restore preview state from the button frame if it's still active
+            local previewActive = false
+            local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+            if gFrame then
+                for _, btn in ipairs(gFrame.buttons) do
+                    if btn.index == selectedButton and btn._procGlowPreview then
+                        previewActive = true
+                        break
+                    end
+                end
+            end
+            previewCb:SetValue(previewActive)
+            previewCb:SetFullWidth(true)
+            previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
+            end)
+            scroll:AddChild(previewCb)
+
+            -- (?) tooltip for preview
+            local previewInfo = CreateFrame("Button", nil, previewCb.frame)
+            previewInfo:SetSize(16, 16)
+            previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
+            local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            previewInfoText:SetPoint("CENTER")
+            previewInfoText:SetText("|cff66aaff(?)|r")
+            previewInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Preview")
+                GameTooltip:AddLine("Shows what the proc glow looks like on this icon. You may need to toggle preview off and on to reflect changes to glow size.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            previewInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(infoButtons, previewInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                previewInfo:Hide()
+            end
+
+            -- Proc Glow color & size (group-wide style settings)
+            local procGlowColor = AceGUI:Create("ColorPicker")
+            procGlowColor:SetLabel("Glow Color")
+            procGlowColor:SetHasAlpha(true)
+            local pgc = group.style.procGlowColor or {1, 1, 1, 1}
+            procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+            procGlowColor:SetFullWidth(true)
+            procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                group.style.procGlowColor = {r, g, b, a}
+            end)
+            procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                group.style.procGlowColor = {r, g, b, a}
+                CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
+            end)
+            scroll:AddChild(procGlowColor)
+
+            local procSizeSlider = AceGUI:Create("Slider")
+            procSizeSlider:SetLabel("Glow Size")
+            procSizeSlider:SetSliderValues(0, 60, 1)
+            procSizeSlider:SetValue(group.style.procGlowOverhang or 32)
+            procSizeSlider:SetFullWidth(true)
+            procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                group.style.procGlowOverhang = val
+                CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
+            end)
+            scroll:AddChild(procSizeSlider)
+
+            local procBreak = AceGUI:Create("Heading")
+            procBreak:SetText("")
+            procBreak:SetFullWidth(true)
+            scroll:AddChild(procBreak)
+        end
+    end
+    end -- not bars (proc glow)
 
     if buttonData.hasCharges and group.displayMode == "bars" then
         local chargeBarBreak = AceGUI:Create("Heading")
