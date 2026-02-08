@@ -2321,8 +2321,10 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
         button.nameText:SetJustifyH("LEFT")
     end
-    if style.showBarNameText ~= false then
-        button.nameText:SetText(buttonData.name or "")
+    if style.showBarNameText ~= false or buttonData.customName then
+        button.nameText:SetText(buttonData.customName or buttonData.name or "")
+    else
+        button.nameText:Hide()
     end
 
     -- Time text
@@ -2485,14 +2487,16 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     self:UpdateButtonIcon(button)
 
     -- Set name text from resolved spell/item name
-    if style.showBarNameText ~= false then
-        local displayName = buttonData.name
-        if buttonData.type == "spell" then
-            local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
-            if spellName then displayName = spellName end
-        elseif buttonData.type == "item" then
-            local itemName = C_Item.GetItemNameByID(buttonData.id)
-            if itemName then displayName = itemName end
+    if style.showBarNameText ~= false or buttonData.customName then
+        local displayName = buttonData.customName or buttonData.name
+        if not buttonData.customName then
+            if buttonData.type == "spell" then
+                local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
+                if spellName then displayName = spellName end
+            elseif buttonData.type == "item" then
+                local itemName = C_Item.GetItemNameByID(buttonData.id)
+                if itemName then displayName = itemName end
+            end
         end
         button.nameText:SetText(displayName or "")
     end
@@ -2724,7 +2728,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update name text font and position
-    if newStyle.showBarNameText ~= false then
+    local hasCustomName = button.buttonData and button.buttonData.customName
+    if newStyle.showBarNameText ~= false or hasCustomName then
         local nameFont = newStyle.barNameFont or "Fonts\\FRIZQT__.TTF"
         local nameFontSize = newStyle.barNameFontSize or 10
         local nameFontOutline = newStyle.barNameFontOutline or "OUTLINE"
@@ -2798,14 +2803,16 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     -- Update spell name text
     self:UpdateButtonIcon(button)
-    if newStyle.showBarNameText ~= false then
-        local displayName = button.buttonData.name
-        if button.buttonData.type == "spell" then
-            local spellName = C_Spell.GetSpellName(button._displaySpellId or button.buttonData.id)
-            if spellName then displayName = spellName end
-        elseif button.buttonData.type == "item" then
-            local itemName = C_Item.GetItemNameByID(button.buttonData.id)
-            if itemName then displayName = itemName end
+    if newStyle.showBarNameText ~= false or (button.buttonData and button.buttonData.customName) then
+        local displayName = button.buttonData.customName or button.buttonData.name
+        if not button.buttonData.customName then
+            if button.buttonData.type == "spell" then
+                local spellName = C_Spell.GetSpellName(button._displaySpellId or button.buttonData.id)
+                if spellName then displayName = spellName end
+            elseif button.buttonData.type == "item" then
+                local itemName = C_Item.GetItemNameByID(button.buttonData.id)
+                if itemName then displayName = itemName end
+            end
         end
         button.nameText:SetText(displayName or "")
     end

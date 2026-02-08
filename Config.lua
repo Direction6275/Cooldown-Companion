@@ -3234,6 +3234,69 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
         end -- not chargesCollapsed
     end -- hasCharges
+
+    if group.displayMode == "bars" then
+        local customNameHeading = AceGUI:Create("Heading")
+        customNameHeading:SetText("Custom Name")
+        customNameHeading:SetFullWidth(true)
+        scroll:AddChild(customNameHeading)
+
+        local customNameKey = selectedGroup .. "_" .. selectedButton .. "_customname"
+        local customNameCollapsed = collapsedSections[customNameKey]
+
+        local customNameCollapseBtn = CreateFrame("Button", nil, customNameHeading.frame)
+        table.insert(buttonSettingsCollapseButtons, customNameCollapseBtn)
+        customNameCollapseBtn:SetSize(16, 16)
+        customNameCollapseBtn:SetPoint("LEFT", customNameHeading.label, "RIGHT", 4, 0)
+        customNameHeading.right:SetPoint("LEFT", customNameCollapseBtn, "RIGHT", 4, 0)
+        local customNameCollapseArrow = customNameCollapseBtn:CreateTexture(nil, "ARTWORK")
+        customNameCollapseArrow:SetSize(12, 12)
+        customNameCollapseArrow:SetPoint("CENTER")
+        customNameCollapseArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
+        if customNameCollapsed then
+            customNameCollapseArrow:SetRotation(math.rad(180))
+        end
+        customNameCollapseBtn:SetScript("OnClick", function()
+            collapsedSections[customNameKey] = not collapsedSections[customNameKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        customNameCollapseBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(customNameCollapsed and "Expand" or "Collapse")
+            GameTooltip:Show()
+        end)
+        customNameCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        if not customNameCollapsed then
+        local customNameBox = AceGUI:Create("EditBox")
+        customNameBox:SetLabel("")
+        customNameBox:SetText(buttonData.customName or "")
+        customNameBox:SetFullWidth(true)
+        customNameBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            text = strtrim(text)
+            buttonData.customName = text ~= "" and text or nil
+            CooldownCompanion:UpdateGroupStyle(selectedGroup)
+        end)
+        scroll:AddChild(customNameBox)
+
+        local editFrame = customNameBox.editbox
+        editFrame.Instructions = editFrame.Instructions or editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        editFrame.Instructions:SetPoint("LEFT", editFrame, "LEFT", 0, 0)
+        editFrame.Instructions:SetPoint("RIGHT", editFrame, "RIGHT", 0, 0)
+        editFrame.Instructions:SetText("add custom name here, leave blank for default")
+        editFrame.Instructions:SetTextColor(0.5, 0.5, 0.5)
+        if (buttonData.customName or "") ~= "" then
+            editFrame.Instructions:Hide()
+        end
+        customNameBox:SetCallback("OnTextChanged", function(widget, event, text)
+            if text == "" then
+                editFrame.Instructions:Show()
+            else
+                editFrame.Instructions:Hide()
+            end
+        end)
+        end -- not customNameCollapsed
+    end
 end
 
 local function BuildItemSettings(scroll, buttonData, infoButtons)
