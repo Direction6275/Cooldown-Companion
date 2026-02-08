@@ -885,16 +885,17 @@ local function StartPickCDM(callback)
                 return
             end
 
-            -- Color: green for BuffIcon/BuffBar (aura-capable), yellow for Essential/Utility
+            -- Color: green for BuffIcon/BuffBar (aura-capable), red for Essential/Utility (not a buff/debuff)
             if bestIsAuraViewer then
                 self.label:SetTextColor(0.2, 1, 0.2, 1)
             else
-                self.label:SetTextColor(1, 1, 0.2, 1)
+                self.label:SetTextColor(1, 0.3, 0.3, 1)
             end
 
             self.label:ClearAllPoints()
             self.label:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", cx + 20, cy + 10)
-            self.label:SetText(bestName .. "  (" .. bestSpellID .. ")")
+            local suffix = bestIsAuraViewer and "TRACKABLE AURA" or "NOT AN AURA"
+            self.label:SetText(bestName .. "  |  " .. bestSpellID .. "  |  " .. suffix)
 
             local ok, left, bottom, width, height = pcall(bestChild.GetRect, bestChild)
             if ok and left and width and width > 0 and height > 0 then
@@ -904,7 +905,7 @@ local function StartPickCDM(callback)
                 if bestIsAuraViewer then
                     self.highlight:SetBackdropBorderColor(0, 1, 0, 0.9)
                 else
-                    self.highlight:SetBackdropBorderColor(1, 1, 0, 0.9)
+                    self.highlight:SetBackdropBorderColor(1, 0.3, 0.3, 0.9)
                 end
                 self.highlight:Show()
             else
@@ -2503,6 +2504,15 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             CooldownCompanion:RefreshGroupFrame(grp)
             CooldownCompanion:RefreshConfigPanel()
         end)
+    end)
+    pickCDMBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        GameTooltip:AddLine("Pick from Cooldown Manager")
+        GameTooltip:AddLine("Click a buff or debuff icon either from the on-screen Cooldown Manager viewer or from the Blizzard CDM Settings panel to populate the Spell ID Override.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    pickCDMBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
     end)
     overrideRow:AddChild(pickCDMBtn)
 
