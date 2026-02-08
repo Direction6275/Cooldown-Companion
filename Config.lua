@@ -2465,6 +2465,59 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     if not auraCollapsed then
 
+    -- Track buff/debuff duration toggle (always visible for spells)
+    local auraCb = AceGUI:Create("CheckBox")
+    local auraLabel = "Track Aura Duration"
+    local auraActive = hasViewerFrame and buttonData.auraTracking == true
+    auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
+    auraCb:SetLabel(auraLabel)
+    auraCb:SetValue(buttonData.auraTracking == true)
+    auraCb:SetFullWidth(true)
+    if not hasViewerFrame then
+        auraCb:SetDisabled(true)
+    end
+    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.auraTracking = val and true or false
+        if val then
+            if isHarmful then
+                if not buttonData.auraUnit or buttonData.auraUnit == "player" then
+                    buttonData.auraUnit = "target"
+                end
+            elseif buttonData.type == "spell" then
+                buttonData.auraUnit = nil
+            end
+        end
+        CooldownCompanion:RefreshGroupFrame(selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(auraCb)
+
+    -- (?) tooltip for aura tracking
+    local auraWarn = CreateFrame("Button", nil, auraCb.frame)
+    auraWarn:SetSize(16, 16)
+    auraWarn:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
+    local auraWarnText = auraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    auraWarnText:SetPoint("CENTER")
+    auraWarnText:SetText("|cffffcc00(?)|r")
+    auraWarn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if isHarmful then
+            GameTooltip:AddLine("Debuff Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe shows the remaining debuff or DoT duration on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Buff Tracking")
+            GameTooltip:AddLine("When enabled, the cooldown swipe shows the remaining buff duration on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    auraWarn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, auraWarn)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        auraWarn:Hide()
+    end
+
     -- Spell ID Override row (always visible for spells, even without auto-detected aura)
     local overrideRow = AceGUI:Create("SimpleGroup")
     overrideRow:SetFullWidth(true)
@@ -2548,70 +2601,12 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end)
 
-    if canTrackAura then
-    local auraCb = AceGUI:Create("CheckBox")
-    local auraLabel = isHarmful and "Track Debuff Duration" or (buttonData.type == "spell" and "Track Buff Duration" or "Track Aura Duration")
-    local auraActive = hasViewerFrame and buttonData.auraTracking == true
-    auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
-    auraCb:SetLabel(auraLabel)
-    auraCb:SetValue(buttonData.auraTracking == true)
-    auraCb:SetFullWidth(true)
-    if not hasViewerFrame then
-        auraCb:SetDisabled(true)
-    end
-    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.auraTracking = val and true or false
-        if val then
-            if isHarmful then
-                if not buttonData.auraUnit or buttonData.auraUnit == "player" then
-                    buttonData.auraUnit = "target"
-                end
-            elseif buttonData.type == "spell" then
-                buttonData.auraUnit = nil
-            end
-        end
-        CooldownCompanion:RefreshGroupFrame(selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(auraCb)
+    local overrideCdmSpacer = AceGUI:Create("Label")
+    overrideCdmSpacer:SetText(" ")
+    overrideCdmSpacer:SetFullWidth(true)
+    scroll:AddChild(overrideCdmSpacer)
 
-    -- (?) tooltip for aura tracking
-    local auraWarn = CreateFrame("Button", nil, auraCb.frame)
-    auraWarn:SetSize(16, 16)
-    auraWarn:SetPoint("LEFT", auraCb.checkbg, "RIGHT", auraCb.text:GetStringWidth() + 4, 0)
-    local auraWarnText = auraWarn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    auraWarnText:SetPoint("CENTER")
-    auraWarnText:SetText("|cffffcc00(?)|r")
-    auraWarn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if isHarmful then
-            GameTooltip:AddLine("Debuff Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe shows the remaining debuff or DoT duration on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true)
-        else
-            GameTooltip:AddLine("Buff Tracking")
-            GameTooltip:AddLine("When enabled, the cooldown swipe shows the remaining buff duration on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true)
-        end
-        GameTooltip:Show()
-    end)
-    auraWarn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    table.insert(infoButtons, auraWarn)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        auraWarn:Hide()
-    end
-
-    if not hasViewerFrame then
-        local auraDisabledLabel = AceGUI:Create("Label")
-        auraDisabledLabel:SetText("|cff888888This spell is not tracked as a Buff or Debuff in the Blizzard Cooldown Manager. Add it as a tracked buff or debuff in the CDM to enable aura tracking.|r")
-        auraDisabledLabel:SetFullWidth(true)
-        scroll:AddChild(auraDisabledLabel)
-        local auraDisabledSpacer = AceGUI:Create("Label")
-        auraDisabledSpacer:SetText(" ")
-        auraDisabledSpacer:SetFullWidth(true)
-        scroll:AddChild(auraDisabledSpacer)
-    end
-
+    -- Cooldown Manager controls (always visible for spells)
     local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
     local cdmToggleBtn = AceGUI:Create("Button")
     cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
@@ -2621,8 +2616,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         SetCVar("cooldownViewerEnabled", current and "0" or "1")
         CooldownCompanion:RefreshConfigPanel()
         if not current then
-            -- CDM was just enabled — viewer children need time to rebuild.
-            -- Rebuild the aura map after a short delay so stale entries are cleared.
             C_Timer.After(0.2, function()
                 CooldownCompanion:BuildViewerAuraMap()
                 CooldownCompanion:RefreshConfigPanel()
@@ -2631,7 +2624,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end)
     scroll:AddChild(cdmToggleBtn)
 
-    -- Cooldown Manager controls (always visible)
     local cdmRow = AceGUI:Create("SimpleGroup")
     cdmRow:SetFullWidth(true)
     cdmRow:SetLayout("Flow")
@@ -2665,7 +2657,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     scroll:AddChild(cdmRow)
 
-    -- Aura tracking status confirmation
+    -- Aura tracking status confirmation (always visible for spells)
     local auraStatusSpacer1 = AceGUI:Create("Label")
     auraStatusSpacer1:SetText(" ")
     auraStatusSpacer1:SetFullWidth(true)
@@ -2685,6 +2677,30 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraStatusSpacer2:SetText(" ")
     auraStatusSpacer2:SetFullWidth(true)
     scroll:AddChild(auraStatusSpacer2)
+
+    if not canTrackAura then
+        local noAuraLabel = AceGUI:Create("Label")
+        noAuraLabel:SetText("|cff888888No associated buff or debuff was found in the Cooldown Manager for this spell. Use the Spell ID Override above to link this spell to a CDM-trackable aura.|r")
+        noAuraLabel:SetFullWidth(true)
+        scroll:AddChild(noAuraLabel)
+        local noAuraSpacer = AceGUI:Create("Label")
+        noAuraSpacer:SetText(" ")
+        noAuraSpacer:SetFullWidth(true)
+        scroll:AddChild(noAuraSpacer)
+    end
+
+    if canTrackAura then
+
+    if not hasViewerFrame then
+        local auraDisabledLabel = AceGUI:Create("Label")
+        auraDisabledLabel:SetText("|cff888888This spell has a trackable aura in the Cooldown Manager, but it has not been added as a tracked buff or debuff yet. Add it in the CDM to enable aura tracking.|r")
+        auraDisabledLabel:SetFullWidth(true)
+        scroll:AddChild(auraDisabledLabel)
+        local auraDisabledSpacer = AceGUI:Create("Label")
+        auraDisabledSpacer:SetText(" ")
+        auraDisabledSpacer:SetFullWidth(true)
+        scroll:AddChild(auraDisabledSpacer)
+    end
 
     if hasViewerFrame and buttonData.auraTracking then
             -- Aura unit: harmful spells track on target, non-harmful track on player.
@@ -2744,7 +2760,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             -- Active buff/debuff indicator controls (hidden for bar mode)
             if group.displayMode ~= "bars" then
             local auraGlowDrop = AceGUI:Create("Dropdown")
-            auraGlowDrop:SetLabel(isHarmful and "Active Debuff Indicator" or "Active Buff Indicator")
+            auraGlowDrop:SetLabel("Active Aura Indicator")
             auraGlowDrop:SetList({
                 ["none"] = "None",
                 ["solid"] = "Solid Border",
