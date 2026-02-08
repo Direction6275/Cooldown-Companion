@@ -266,8 +266,16 @@ function CooldownCompanion:OnEnable()
     -- Aura (buff/debuff) changes — drives aura tracking overlay
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
-    -- Target change event — clear stale aura state so viewer picks up new target
+    -- Target change — marks dirty so ticker reads fresh viewer data next pass
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
+
+    -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
+    -- receive it).  CDM also uses this event to refresh target aura frames.
+    local utFrame = CreateFrame("Frame")
+    utFrame:RegisterUnitEvent("UNIT_TARGET", "player")
+    utFrame:SetScript("OnEvent", function()
+        self:UpdateAllCooldowns()
+    end)
 
     -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
     EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
@@ -569,20 +577,36 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
         end
     end
 
+    -- Update immediately — CDM viewer frames registered their event handlers
+    -- before our addon loaded, so by the time this handler fires the CDM has
+    -- already refreshed its children with fresh auraInstanceID data.
+    if unit == "target" or unit == "player" then
+        self:UpdateAllCooldowns()
+    end
 end
 
 -- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
 -- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
 function CooldownCompanion:ClearAuraUnit(unitToken)
+    local vf = self.viewerAuraFrames
     for _, frame in pairs(self.groupFrames) do
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
-                if button.buttonData
-                   and button.buttonData.auraTracking
-                   and button._auraUnit == unitToken then
-                    button._auraInstanceID = nil
-                    button._auraActive = false
-                    button._inPandemic = false
+                if button.buttonData and button.buttonData.auraTracking then
+                    local shouldClear = button._auraUnit == unitToken
+                    -- _auraUnit defaults to "player" even for debuff-tracking buttons
+                    -- whose viewer frame has auraDataUnit == "target".  Check the viewer
+                    -- map as a fallback so target-switch clears actually reach them.
+                    if not shouldClear and unitToken == "target" and vf then
+                        local f = (button._auraSpellID and vf[button._auraSpellID])
+                            or vf[button.buttonData.id]
+                        shouldClear = f and f.auraDataUnit == "target"
+                    end
+                    if shouldClear then
+                        button._auraInstanceID = nil
+                        button._auraActive = false
+                        button._inPandemic = false
+                    end
                 end
             end
         end
@@ -591,8 +615,9 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
 end
 
 function CooldownCompanion:OnTargetChanged()
-    self:ClearAuraUnit("target")
+    self._cooldownsDirty = true
 end
+
 
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end

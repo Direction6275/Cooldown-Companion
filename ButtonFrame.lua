@@ -1094,6 +1094,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._auraInstanceID = viewerInstId
                     auraOverrideActive = true
                     fetchOk = true
+                elseif button._auraActive then
+                    -- GetAuraDuration returned nil — the viewer's instID is stale
+                    -- (target switched but UNIT_TARGET hasn't fired yet, ~250-430ms).
+                    -- If the button was previously tracking an aura and its cooldown
+                    -- widget is still counting down, keep showing it.  This matches
+                    -- CDM behavior: the cooldown widget self-animates until refresh.
+                    local sMs, dMs = button.cooldown:GetCooldownTimes()
+                    local ok2, still = pcall(function()
+                        return dMs > 0 and (sMs + dMs) > GetTime() * 1000
+                    end)
+                    if ok2 and still then
+                        auraOverrideActive = true
+                        fetchOk = true
+                    end
                 end
             else
                 -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
@@ -1104,7 +1118,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local startMs, durMs = viewerCooldown:GetCooldownTimes()
                     -- Verify the cooldown hasn't elapsed; GetCooldownTimes() returns
                     -- the original start/duration even after the buff expires.
-                    if startMs and durMs and durMs > 0 and (startMs + durMs) > GetTime() * 1000 then
+                    -- Wrap comparison in pcall: during pool cleanup the cooldown
+                    -- widget may hold secret values that reject arithmetic.
+                    local ok, active = pcall(function()
+                        return durMs > 0 and (startMs + durMs) > GetTime() * 1000
+                    end)
+                    if ok and active then
                         button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
                         auraOverrideActive = true
                         fetchOk = true
