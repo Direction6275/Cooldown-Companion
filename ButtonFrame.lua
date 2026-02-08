@@ -2793,7 +2793,6 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
                 self._auraActive = false
                 self._inPandemic = false
                 self._barAuraColor = nil
-                self._barAuraEffectActive = nil
                 -- If charge sub-bars exist, make statusBar transparent so sub-bars show
                 if self._chargeMax and self._chargeMax > 1 then
                     self.statusBar:SetStatusBarColor(0, 0, 0, 0)
@@ -2933,7 +2932,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
                 self._auraActive = false
                 self._inPandemic = false
                 self._barAuraColor = nil
-                self._barAuraEffectActive = nil
                 if self._chargeMax and self._chargeMax > 1 then
                     self.statusBar:SetStatusBarColor(0, 0, 0, 0)
                     self._barCdColor = nil
