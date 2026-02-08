@@ -2462,10 +2462,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
-    -- Only treat as aura-capable if viewer is from BuffIcon or BuffBar
+    -- Only treat as aura-capable if CDM is enabled and viewer is from BuffIcon or BuffBar.
+    -- When CDM is disabled, viewer children persist with stale data and cannot be trusted.
     -- (Essential and Utility viewers track cooldowns only, not auras)
     local hasViewerFrame = false
-    if viewerFrame then
+    if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
         local parent = viewerFrame:GetParent()
         local parentName = parent and parent:GetName()
         hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
@@ -2566,6 +2567,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         auraDisabledLabel:SetText("|cff888888This spell is not tracked as a Buff or Debuff in the Blizzard Cooldown Manager. Add it as a tracked buff or debuff in the CDM to enable aura tracking.|r")
         auraDisabledLabel:SetFullWidth(true)
         scroll:AddChild(auraDisabledLabel)
+        local auraDisabledSpacer = AceGUI:Create("Label")
+        auraDisabledSpacer:SetText(" ")
+        auraDisabledSpacer:SetFullWidth(true)
+        scroll:AddChild(auraDisabledSpacer)
     end
 
     local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
@@ -2576,6 +2581,14 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         local current = GetCVarBool("cooldownViewerEnabled")
         SetCVar("cooldownViewerEnabled", current and "0" or "1")
         CooldownCompanion:RefreshConfigPanel()
+        if not current then
+            -- CDM was just enabled — viewer children need time to rebuild.
+            -- Rebuild the aura map after a short delay so stale entries are cleared.
+            C_Timer.After(0.2, function()
+                CooldownCompanion:BuildViewerAuraMap()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end
     end)
     scroll:AddChild(cdmToggleBtn)
 
@@ -2620,7 +2633,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(auraStatusSpacer1)
 
     local auraStatusLabel = AceGUI:Create("Label")
-    if buttonData.auraTracking and cdmEnabled then
+    if buttonData.auraTracking and cdmEnabled and hasViewerFrame then
         auraStatusLabel:SetText("|cff00ff00Aura tracking is active and ready.|r")
     else
         auraStatusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
