@@ -2024,22 +2024,28 @@ UpdateBarFill = function(button)
                     button.timeText:SetFont(f, s, o)
                 end
             end
-            local cc = button._auraActive
-                and (button.style.auraTextFontColor or {1, 1, 1, 1})
-                or (button.style.cooldownFontColor or {1, 1, 1, 1})
-            button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             if remaining > 0 then
+                local cc = button._auraActive
+                    and (button.style.auraTextFontColor or {1, 1, 1, 1})
+                    or (button.style.cooldownFontColor or {1, 1, 1, 1})
+                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
                 button.timeText:SetText(FormatBarTime(remaining))
             elseif chargeCount >= chargeMax then
                 if button.style.showBarReadyText then
+                    local rc = button.style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
+                    button.timeText:SetTextColor(rc[1], rc[2], rc[3], rc[4])
                     button.timeText:SetText(button.style.barReadyText or "Ready")
                 else
                     button.timeText:SetText("")
                 end
             else
+                local cc = button.style.cooldownFontColor or {1, 1, 1, 1}
+                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
                 button.timeText:SetText("")
             end
         elseif chargeCount >= chargeMax and button.style.showBarReadyText then
+            local rc = button.style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
+            button.timeText:SetTextColor(rc[1], rc[2], rc[3], rc[4])
             button.timeText:SetText(button.style.barReadyText or "Ready")
         else
             button.timeText:SetText("")
