@@ -15,6 +15,14 @@ CooldownCompanion.ST = ST
 -- Event-driven range check registry (spellID -> true)
 CooldownCompanion._rangeCheckSpells = {}
 
+-- Viewer-based aura tracking: spellID → cooldown viewer child frame
+CooldownCompanion.viewerAuraFrames = {}
+
+-- Event-driven proc glow tracking: spellID → true when overlay active
+-- Replaces per-tick C_SpellActivationOverlay.IsSpellOverlayed polling
+-- (that API is AllowedWhenUntainted and cannot be called from addon code in combat)
+CooldownCompanion.procOverlaySpells = {}
+
 -- Constants
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
@@ -86,6 +94,11 @@ local defaults = {
                         cooldownFontOutline = "OUTLINE",
                         cooldownFont = "Fonts\\FRIZQT__.TTF",
                         cooldownFontColor = {1, 1, 1, 1},
+                        showAuraText = true, -- nil defaults to true via ~= false
+                        auraTextFont = "Fonts\\FRIZQT__.TTF",
+                        auraTextFontSize = 12,
+                        auraTextFontOutline = "OUTLINE",
+                        auraTextFontColor = {1, 1, 1, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = true,
@@ -175,6 +188,7 @@ local defaults = {
         },
         locked = false,
         auraDurationCache = {},
+        cdmHidden = false,
     },
 }
 
@@ -197,11 +211,6 @@ function CooldownCompanion:OnInitialize()
     self:SetupConfig()
 
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
-end
-
--- Pre-defined at file scope to avoid creating a closure every tick
-local function FetchAssistedSpell()
-    return C_AssistedCombat and C_AssistedCombat.GetNextCastSpell()
 end
 
 function CooldownCompanion:OnEnable()
@@ -231,8 +240,10 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("SPELL_UPDATE_CHARGES", "OnChargesChanged")
 
     -- Spell activation overlay (proc glow) events
+    -- Track state via events instead of polling IsSpellOverlayed
+    -- (that API is AllowedWhenUntainted — calling from addon code causes taint)
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "OnProcGlowShow")
-    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "MarkCooldownsDirty")
+    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "OnProcGlowHide")
 
     -- Item count changes (inventory updates for tracked items)
     self:RegisterEvent("ITEM_COUNT_CHANGED", "MarkCooldownsDirty")
@@ -255,8 +266,30 @@ function CooldownCompanion:OnEnable()
     -- Aura (buff/debuff) changes — drives aura tracking overlay
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
-    -- Target change events — alpha system handles this via OnUpdate polling
-    -- (kept for potential future use but no longer drives visibility)
+    -- Target change — marks dirty so ticker reads fresh viewer data next pass
+    self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
+
+    -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
+    -- receive it).  CDM also uses this event to refresh target aura frames.
+    local utFrame = CreateFrame("Frame")
+    utFrame:RegisterUnitEvent("UNIT_TARGET", "player")
+    utFrame:SetScript("OnEvent", function()
+        self:UpdateAllCooldowns()
+    end)
+
+    -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
+    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        C_Timer.After(0.2, function()
+            self:BuildViewerAuraMap()
+            self:RefreshConfigPanel()
+        end)
+    end, self)
+
+    -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
+    self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
+
+    -- Cache player class for class-specific checks (e.g. Druid Travel Form)
+    self._playerClassID = select(3, UnitClass("player"))
 
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
@@ -285,9 +318,10 @@ function CooldownCompanion:OnEnable()
     -- Start a ticker to update cooldowns periodically
     -- This ensures cooldowns update even if events don't fire
     self.updateTicker = C_Timer.NewTicker(0.1, function()
-        -- Fetch assisted combat recommended spell (may not exist on older clients)
-        local ok, spellID = pcall(FetchAssistedSpell)
-        self.assistedSpellID = ok and spellID or nil
+        -- Read assisted combat recommended spell (plain table field, no API call)
+        if AssistedCombatManager then
+            self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
+        end
 
         self:UpdateAllCooldowns()
         self._cooldownsDirty = false
@@ -331,6 +365,7 @@ function CooldownCompanion:OnChargesChanged()
 end
 
 function CooldownCompanion:OnProcGlowShow(event, spellID)
+    self.procOverlaySpells[spellID] = true
     -- A proc overlay appeared for this spell. If it's a charged spell,
     -- increment the charge count — during combat we can't read charges
     -- from the API (secret values), so this is our signal that a charge
@@ -339,6 +374,11 @@ function CooldownCompanion:OnProcGlowShow(event, spellID)
         self:IncrementChargeOnProc(spellID)
     end
     self:UpdateAllCooldowns()
+end
+
+function CooldownCompanion:OnProcGlowHide(event, spellID)
+    self.procOverlaySpells[spellID] = nil
+    self._cooldownsDirty = true
 end
 
 function CooldownCompanion:IncrementChargeOnProc(spellID)
@@ -353,14 +393,17 @@ function CooldownCompanion:IncrementChargeOnProc(spellID)
                    and button._chargeMax
                    and button._chargeCount < button._chargeMax then
                     button._chargeCount = button._chargeCount + 1
-                    -- If now at max, no recharge in progress
                     if button._chargeCount >= button._chargeMax then
+                        -- At max: no recharge in progress
                         button._chargeCDStart = nil
                         button._chargeCDDuration = nil
+                    else
+                        -- Mark approximate new-recharge start so the catch-up
+                        -- loop in DecrementChargeOnCast doesn't re-detect this
+                        -- recovery. The ticker readback corrects to the real
+                        -- value on the same UpdateAllCooldowns pass.
+                        button._chargeCDStart = GetTime()
                     end
-                    -- Don't touch _chargeCDStart when not at max — the
-                    -- existing recharge timer is still running and the
-                    -- estimation loop should continue from where it was.
                     button._chargeText = button._chargeCount
                     button.count:SetText(button._chargeCount)
                 end
@@ -374,26 +417,7 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
         if InCombatLockdown() then
             self:DecrementChargeOnCast(spellID)
         end
-        -- Mark aura-tracking buttons as pending for event-driven instance ID capture
-        self:MarkButtonsAuraPending(spellID)
         self:UpdateAllCooldowns()
-    end
-end
-
-function CooldownCompanion:MarkButtonsAuraPending(spellID)
-    local now = GetTime()
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                if button.buttonData
-                   and button.buttonData.auraTracking
-                   and button._auraSpellID
-                   and (button.buttonData.id == spellID
-                        or button._displaySpellId == spellID) then
-                    button._auraPendingSince = now
-                end
-            end
-        end
     end
 end
 
@@ -535,7 +559,6 @@ function CooldownCompanion:SlashCommand(input)
 end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
-    if unit ~= "player" then return end
     self._cooldownsDirty = true
     if not updateInfo then return end
 
@@ -545,9 +568,11 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
             for _, frame in pairs(self.groupFrames) do
                 if frame and frame.buttons then
                     for _, button in ipairs(frame.buttons) do
-                        if button._auraInstanceID == instId then
+                        if button._auraInstanceID == instId
+                           and button._auraUnit == unit then
                             button._auraInstanceID = nil
                             button._auraActive = false
+                            button._inPandemic = false
                         end
                     end
                 end
@@ -555,97 +580,54 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
         end
     end
 
-    -- Process added auras: match by readable spellId, or by cast-hint for secret auras
-    if updateInfo.addedAuras then
-        local unmatchedInstIds
-        for _, auraData in ipairs(updateInfo.addedAuras) do
-            local instId = auraData.auraInstanceID
-            if instId then
-                local spellId = auraData.spellId
-                -- Test if spellId is a normal Lua value (not secret) by attempting a comparison
-                local canCompare = spellId and pcall(function() return spellId == 0 end)
-                if canCompare then
-                    -- Readable spellId: match directly to tracked buttons
-                    for _, frame in pairs(self.groupFrames) do
-                        if frame and frame.buttons then
-                            for _, button in ipairs(frame.buttons) do
-                                if button.buttonData
-                                   and button.buttonData.auraTracking
-                                   and button._auraSpellID == spellId then
-                                    button._auraInstanceID = instId
-                                    button._auraPendingSince = nil
-                                end
-                            end
-                        end
-                    end
-                else
-                    -- Secret spellId: pool for cast-hint matching
-                    if not unmatchedInstIds then unmatchedInstIds = {} end
-                    table.insert(unmatchedInstIds, instId)
-                end
-            end
-        end
-
-        -- Assign unmatched (secret) instance IDs to buttons pending from a recent cast
-        if unmatchedInstIds then
-            local now = GetTime()
-            local consumed = {}
-            for _, frame in pairs(self.groupFrames) do
-                if frame and frame.buttons then
-                    for _, button in ipairs(frame.buttons) do
-                        if button._auraPendingSince
-                           and now - button._auraPendingSince < 2
-                           and not button._auraInstanceID then
-                            -- Try each candidate; prefer closest to cached expected
-                            -- duration, fall back to longest if no cache exists
-                            local expected = button._auraSpellID and self.db.profile.auraDurationCache[button._auraSpellID]
-                            local bestInstId, bestScore = nil, nil
-                            for _, instId in ipairs(unmatchedInstIds) do
-                                if not consumed[instId] then
-                                    local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", instId)
-                                    if ok and durObj then
-                                        button.cooldown:SetCooldownFromDurationObject(durObj)
-                                        local _, widgetDurMs = button.cooldown:GetCooldownTimes()
-                                        if widgetDurMs and widgetDurMs > 0 then
-                                            if expected and expected > 0 then
-                                                -- Lower distance = better match
-                                                local dist = math.abs(widgetDurMs - expected)
-                                                if not bestScore or dist < bestScore then
-                                                    bestScore = dist
-                                                    bestInstId = instId
-                                                end
-                                            else
-                                                -- No cache: fall back to longest duration
-                                                if not bestScore or widgetDurMs > bestScore then
-                                                    bestScore = widgetDurMs
-                                                    bestInstId = instId
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                            if bestInstId then
-                                -- Re-set cooldown to the best candidate (the loop may have overwritten it)
-                                local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", bestInstId)
-                                if ok and durObj then
-                                    button.cooldown:SetCooldownFromDurationObject(durObj)
-                                end
-                                button._auraInstanceID = bestInstId
-                                button._auraPendingSince = nil
-                                consumed[bestInstId] = true
-                            end
-                        end
-                    end
-                end
-            end
-        end
+    -- Update immediately — CDM viewer frames registered their event handlers
+    -- before our addon loaded, so by the time this handler fires the CDM has
+    -- already refreshed its children with fresh auraInstanceID data.
+    if unit == "target" or unit == "player" then
+        self:UpdateAllCooldowns()
     end
 end
 
+-- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
+-- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
+function CooldownCompanion:ClearAuraUnit(unitToken)
+    local vf = self.viewerAuraFrames
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData and button.buttonData.auraTracking then
+                    local shouldClear = button._auraUnit == unitToken
+                    -- _auraUnit defaults to "player" even for debuff-tracking buttons
+                    -- whose viewer frame has auraDataUnit == "target".  Check the viewer
+                    -- map as a fallback so target-switch clears actually reach them.
+                    if not shouldClear and unitToken == "target" and vf then
+                        local f = (button._auraSpellID and vf[button._auraSpellID])
+                            or vf[button.buttonData.id]
+                        shouldClear = f and f.auraDataUnit == "target"
+                    end
+                    if shouldClear then
+                        button._auraInstanceID = nil
+                        button._auraActive = false
+                        button._inPandemic = false
+                    end
+                end
+            end
+        end
+    end
+    self._cooldownsDirty = true
+end
+
+function CooldownCompanion:OnTargetChanged()
+    self._cooldownsDirty = true
+end
+
+
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end
-    if buttonData.auraSpellID then return buttonData.auraSpellID end
+    if buttonData.auraSpellID then
+        local first = tostring(buttonData.auraSpellID):match("%d+")
+        return first and tonumber(first)
+    end
     if buttonData.type == "spell" then
         local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
         if auraId and auraId ~= 0 then return auraId end
@@ -653,6 +635,247 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return buttonData.id
     end
     return nil
+end
+
+-- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
+-- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
+-- Both Eclipse forms map to both buff IDs so whichever buff is active gets tracked.
+-- Format: [abilitySpellID] = "comma-separated buff spell IDs"
+CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
+    [1233346] = "48517,48518",  -- Solar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
+    [1233272] = "48517,48518",  -- Lunar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
+}
+
+-- Viewer frame list used by BuildViewerAuraMap and FindViewerChildForSpell.
+local VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+    "BuffBarCooldownViewer",
+}
+
+function CooldownCompanion:ApplyCdmAlpha()
+    local alpha = self.db.profile.cdmHidden and 0 or 1
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            viewer:SetAlpha(alpha)
+        end
+    end
+end
+
+-- Build a mapping from spellID → Blizzard cooldown viewer child frame.
+-- The viewer frames (EssentialCooldownViewer, UtilityCooldownViewer, etc.)
+-- run untainted code that reads secret aura data and stores the result
+-- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
+function CooldownCompanion:BuildViewerAuraMap()
+    wipe(self.viewerAuraFrames)
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            for _, child in pairs({viewer:GetChildren()}) do
+                if child.cooldownInfo then
+                    local spellID = child.cooldownInfo.spellID
+                    if spellID then
+                        self.viewerAuraFrames[spellID] = child
+                    end
+                    local override = child.cooldownInfo.overrideSpellID
+                    if override then
+                        self.viewerAuraFrames[override] = child
+                    end
+                    local tooltipOverride = child.cooldownInfo.overrideTooltipSpellID
+                    if tooltipOverride then
+                        self.viewerAuraFrames[tooltipOverride] = child
+                    end
+                end
+            end
+        end
+    end
+    -- Ensure tracked buttons can find their viewer child even if
+    -- buttonData.id is a non-current override form of a transforming spell.
+    self:MapButtonSpellsToViewers()
+
+    -- Map hardcoded overrides: ability IDs and buff IDs → viewer child.
+    -- Group by buff string so sibling abilities (e.g. Solar/Lunar Eclipse)
+    -- cross-map to the same viewer child even if only one form is current.
+    local groupsByBuffs = {}
+    for abilityID, buffIDStr in pairs(self.ABILITY_BUFF_OVERRIDES) do
+        if not groupsByBuffs[buffIDStr] then
+            groupsByBuffs[buffIDStr] = {}
+        end
+        groupsByBuffs[buffIDStr][#groupsByBuffs[buffIDStr] + 1] = abilityID
+    end
+    for buffIDStr, abilityIDs in pairs(groupsByBuffs) do
+        -- Prefer a BuffIcon/BuffBar child (tracks aura duration) over
+        -- Essential/Utility (tracks cooldown only). Check buff IDs first
+        -- since the initial scan maps them to the correct viewer type.
+        local child
+        for id in buffIDStr:gmatch("%d+") do
+            local c = self.viewerAuraFrames[tonumber(id)]
+            if c then
+                local p = c:GetParent()
+                local pn = p and p:GetName()
+                if pn == "BuffIconCooldownViewer" or pn == "BuffBarCooldownViewer" then
+                    child = c
+                    break
+                end
+            end
+        end
+        if not child then
+            for _, abilityID in ipairs(abilityIDs) do
+                child = self.viewerAuraFrames[abilityID]
+                if child then break end
+            end
+        end
+        if not child then
+            for _, abilityID in ipairs(abilityIDs) do
+                child = self:FindViewerChildForSpell(abilityID)
+                if child then break end
+            end
+        end
+        if child then
+            for _, abilityID in ipairs(abilityIDs) do
+                self.viewerAuraFrames[abilityID] = child
+            end
+            -- Map buff IDs only if they aren't already mapped by the initial scan.
+            -- Each buff may have its own viewer child (e.g. Solar vs Lunar Eclipse).
+            for id in buffIDStr:gmatch("%d+") do
+                local numID = tonumber(id)
+                if not self.viewerAuraFrames[numID] then
+                    self.viewerAuraFrames[numID] = child
+                end
+            end
+        end
+    end
+end
+
+-- For each tracked button, ensure viewerAuraFrames contains an entry
+-- for buttonData.id. Handles the case where the spell was added while
+-- in one form (e.g. Solar Eclipse) but the map was rebuilt while the
+-- spell is in a different form (e.g. Lunar Eclipse).
+function CooldownCompanion:MapButtonSpellsToViewers()
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local id = button.buttonData.id
+                if id and button.buttonData.type == "spell" and not self.viewerAuraFrames[id] then
+                    local child = self:FindViewerChildForSpell(id)
+                    if child then
+                        self.viewerAuraFrames[id] = child
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Scan viewer children to find one that tracks a given spellID.
+-- Checks spellID, overrideSpellID, overrideTooltipSpellID on each child,
+-- then uses GetBaseSpell to resolve override forms back to their base spell.
+-- Returns the child frame if found, nil otherwise.
+function CooldownCompanion:FindViewerChildForSpell(spellID)
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            for _, child in pairs({viewer:GetChildren()}) do
+                if child.cooldownInfo then
+                    if child.cooldownInfo.spellID == spellID
+                       or child.cooldownInfo.overrideSpellID == spellID
+                       or child.cooldownInfo.overrideTooltipSpellID == spellID then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    -- GetBaseSpell (AllowedWhenTainted): resolve override → base, then check map.
+    local baseSpellID = C_Spell.GetBaseSpell(spellID)
+    if baseSpellID and baseSpellID ~= spellID then
+        local child = self.viewerAuraFrames[baseSpellID]
+        if child then
+            return child
+        end
+    end
+    -- Override table: check buff IDs and sibling abilities
+    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
+    if overrideBuffs then
+        -- Check buff IDs in the map (viewer children may be keyed by buff spell ID)
+        for id in overrideBuffs:gmatch("%d+") do
+            local child = self.viewerAuraFrames[tonumber(id)]
+            if child then return child end
+        end
+        -- Check sibling abilities that share the same viewer
+        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
+            if sibBuffs == overrideBuffs and sibID ~= spellID then
+                local child = self.viewerAuraFrames[sibID]
+                if child then return child end
+            end
+        end
+    end
+    return nil
+end
+
+-- Find a cooldown viewer child (Essential/Utility only) for a spell.
+-- Used by UpdateButtonIcon to get dynamic icon/name from the cooldown tracker
+-- rather than the buff tracker (BuffIcon/BuffBar), which uses static buff spell IDs.
+function CooldownCompanion:FindCooldownViewerChild(spellID)
+    local cdViewers = {"EssentialCooldownViewer", "UtilityCooldownViewer"}
+    for _, name in ipairs(cdViewers) do
+        local viewer = _G[name]
+        if viewer then
+            for _, child in pairs({viewer:GetChildren()}) do
+                if child.cooldownInfo then
+                    if child.cooldownInfo.spellID == spellID
+                       or child.cooldownInfo.overrideSpellID == spellID
+                       or child.cooldownInfo.overrideTooltipSpellID == spellID then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    -- Try base spell resolution
+    local baseSpellID = C_Spell.GetBaseSpell(spellID)
+    if baseSpellID and baseSpellID ~= spellID then
+        return self:FindCooldownViewerChild(baseSpellID)
+    end
+    -- Try sibling abilities from override table
+    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
+    if overrideBuffs then
+        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
+            if sibBuffs == overrideBuffs and sibID ~= spellID then
+                for _, name in ipairs(cdViewers) do
+                    local viewer = _G[name]
+                    if viewer then
+                        for _, child in pairs({viewer:GetChildren()}) do
+                            if child.cooldownInfo then
+                                if child.cooldownInfo.spellID == sibID
+                                   or child.cooldownInfo.overrideSpellID == sibID
+                                   or child.cooldownInfo.overrideTooltipSpellID == sibID then
+                                    return child
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- When a spell transforms (e.g. Solar Eclipse → Lunar Eclipse), map the new
+-- override spell ID to the same viewer child frame so lookups work for both forms.
+function CooldownCompanion:OnViewerSpellOverrideUpdated(event, baseSpellID, overrideSpellID)
+    if not baseSpellID then return end
+    local child = self.viewerAuraFrames[baseSpellID]
+    if child and overrideSpellID then
+        self.viewerAuraFrames[overrideSpellID] = child
+    end
+    -- Refresh icons/names now that the viewer child's overrideSpellID is current
+    self:OnSpellUpdateIcon()
+    -- Update config panel if open (name, icon, usability may have changed)
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
@@ -741,6 +964,10 @@ function CooldownCompanion:OnSpecChanged()
     self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
+    -- Rebuild viewer map after a short delay to let the viewer re-populate
+    C_Timer.After(1, function()
+        self:BuildViewerAuraMap()
+    end)
 end
 
 function CooldownCompanion:OnPlayerEnteringWorld()
@@ -748,6 +975,8 @@ function CooldownCompanion:OnPlayerEnteringWorld()
         self:CacheCurrentSpec()
         self:RefreshChargeFlags()
         self:RefreshAllGroups()
+        self:BuildViewerAuraMap()
+        self:ApplyCdmAlpha()
     end)
 end
 
@@ -1210,7 +1439,7 @@ local function UpdateFadedAlpha(state, desired, now, fadeInDur, fadeOutDur)
     return state.currentAlpha
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted)
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
@@ -1243,13 +1472,16 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         return
     end
 
+    -- Effective mounted state: real mount OR travel form (if opted in)
+    local effectiveMounted = mounted or (group.treatTravelFormAsMounted and inTravelForm)
+
     -- Check force-hidden conditions
     local forceHidden = false
     if group.forceHideInCombat and inCombat then
         forceHidden = true
     elseif group.forceHideOutOfCombat and not inCombat then
         forceHidden = true
-    elseif group.forceHideMounted and mounted then
+    elseif group.forceHideMounted and effectiveMounted then
         forceHidden = true
     end
 
@@ -1259,7 +1491,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         forceFull = true
     elseif group.forceAlphaOutOfCombat and not inCombat then
         forceFull = true
-    elseif group.forceAlphaMounted and mounted then
+    elseif group.forceAlphaMounted and effectiveMounted then
         forceFull = true
     elseif group.forceAlphaTargetExists and hasTarget then
         forceFull = true
@@ -1310,10 +1542,19 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         local hasTarget = UnitExists("target")
         local mounted = IsMounted()
 
+        local inTravelForm = false
+        if self._playerClassID == 11 then -- Druid
+            local fi = GetShapeshiftForm()
+            if fi and fi > 0 then
+                local _, _, _, spellID = GetShapeshiftFormInfo(fi)
+                if spellID == 783 then inTravelForm = true end
+            end
+        end
+
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() and GroupNeedsAlphaUpdate(group) then
-                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted)
+                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
             end
         end
     end)
@@ -1331,7 +1572,15 @@ end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
-        return IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id)
+        if IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id) then
+            return true
+        end
+        -- Safety net for override forms (pre-existing data before add-time normalization).
+        local baseID = C_Spell.GetBaseSpell(buttonData.id)
+        if baseID and baseID ~= buttonData.id then
+            return IsSpellKnownOrOverridesKnown(baseID) or IsPlayerSpell(baseID)
+        end
+        return false
     elseif buttonData.type == "item" then
         return GetItemCount(buttonData.id) > 0
     end
