@@ -53,7 +53,10 @@ local function ApplyStrataOrder(button, order)
     local frameMap = {
         cooldown = {button.cooldown},
         chargeText = {button.overlayFrame},
-        procGlow = {button.procGlow},
+        procGlow = {
+            button.procGlow and button.procGlow.solidFrame,
+            button.procGlow and button.procGlow.procFrame,
+        },
         assistedHighlight = {
             button.assistedHighlight and button.assistedHighlight.solidFrame,
             button.assistedHighlight and button.assistedHighlight.blizzardFrame,
@@ -314,39 +317,65 @@ local function SetAssistedHighlight(button, show)
 end
 
 -- Show or hide proc glow on a button.
--- Tracks state (including color) to avoid restarting animations every tick.
+-- Supports "solid" (colored border) and "glow" (animated proc-style) styles.
+-- Tracks state (style + color + size) to avoid restarting animations every tick.
 local function SetProcGlow(button, show)
-    local frame = button.procGlow
-    if not frame then return end
+    local pg = button.procGlow
+    if not pg then return end
 
-    -- Build a cache key that includes color and size so changes trigger an update
+    -- Build a cache key that includes style, color and size so changes trigger an update
     local desiredState
     if show then
-        local c = button.style and button.style.procGlowColor or {1, 1, 1, 1}
-        local sz = button.style and button.style.procGlowOverhang or 32
-        desiredState = string.format("on%.2f%.2f%.2f%.2f%d", c[1], c[2], c[3], c[4] or 1, sz)
+        local bd = button.buttonData
+        local glowStyle = bd.procGlowStyle or "glow"
+        local c = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
+        local sz
+        if glowStyle == "solid" then
+            sz = bd.procGlowSize or 2
+        else
+            sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
+        end
+        desiredState = string.format("%s%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz)
     end
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
 
-    if show then
-        FitHighlightFrame(frame, button, button.style and button.style.procGlowOverhang or 32)
-        TintProcGlowFrame(frame, button.style and button.style.procGlowColor or {1, 1, 1, 1})
-        frame:Show()
+    -- Hide all styles
+    for _, tex in ipairs(pg.solidTextures) do tex:Hide() end
+    if pg.procFrame then
+        if pg.procFrame.ProcStartAnim then pg.procFrame.ProcStartAnim:Stop() end
+        if pg.procFrame.ProcLoop then pg.procFrame.ProcLoop:Stop() end
+        pg.procFrame:Hide()
+    end
+
+    if not desiredState then return end
+
+    local bd = button.buttonData
+    local glowStyle = bd.procGlowStyle or "glow"
+    local color = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
+
+    if glowStyle == "solid" then
+        local size = bd.procGlowSize or 2
+        ApplyEdgePositions(pg.solidTextures, button, size)
+        for _, tex in ipairs(pg.solidTextures) do
+            tex:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+            tex:Show()
+        end
+    elseif glowStyle == "glow" then
+        local size = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
+        FitHighlightFrame(pg.procFrame, button, size)
+        TintProcGlowFrame(pg.procFrame, color)
+        pg.procFrame:Show()
         -- Skip the intro burst and go straight to the loop
-        if frame.ProcStartFlipbook then
-            frame.ProcStartFlipbook:SetAlpha(0)
+        if pg.procFrame.ProcStartFlipbook then
+            pg.procFrame.ProcStartFlipbook:SetAlpha(0)
         end
-        if frame.ProcLoopFlipbook then
-            frame.ProcLoopFlipbook:SetAlpha(1)
+        if pg.procFrame.ProcLoopFlipbook then
+            pg.procFrame.ProcLoopFlipbook:SetAlpha(1)
         end
-        if frame.ProcLoop then
-            frame.ProcLoop:Play()
+        if pg.procFrame.ProcLoop then
+            pg.procFrame.ProcLoop:Play()
         end
-    else
-        if frame.ProcStartAnim then frame.ProcStartAnim:Stop() end
-        if frame.ProcLoop then frame.ProcLoop:Stop() end
-        frame:Hide()
     end
 end
 
@@ -564,12 +593,26 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
-    -- Proc glow frame (spell activation alert, separate from assisted highlight)
-    local procGlowFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(procGlowFrame, button, style.procGlowOverhang or 32)
-    SetFrameClickThroughRecursive(procGlowFrame, true, true)
-    procGlowFrame:Hide()
-    button.procGlow = procGlowFrame
+    -- Proc glow elements (solid border + animated glow, matching aura glow pattern)
+    button.procGlow = {}
+
+    -- Solid border: 4 edge textures
+    button.procGlow.solidFrame = CreateFrame("Frame", nil, button)
+    button.procGlow.solidFrame:SetAllPoints()
+    button.procGlow.solidFrame:EnableMouse(false)
+    button.procGlow.solidTextures = {}
+    for i = 1, 4 do
+        local tex = button.procGlow.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:Hide()
+        button.procGlow.solidTextures[i] = tex
+    end
+
+    -- Animated glow
+    local procGlowProcFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procGlowProcFrame, button, style.procGlowOverhang or 32)
+    SetFrameClickThroughRecursive(procGlowProcFrame, true, true)
+    procGlowProcFrame:Hide()
+    button.procGlow.procFrame = procGlowProcFrame
 
     -- Aura active glow elements (solid border + animated glow)
     button.auraGlow = {}
@@ -684,7 +727,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.procGlow then
-        SetFrameClickThroughRecursive(button.procGlow, true, true)
+        SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
+        SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
@@ -1303,9 +1347,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.locCooldown:Clear()
     end
 
-    -- Update proc glow frame
+    -- Update proc glow frames
     if button.procGlow then
-        FitHighlightFrame(button.procGlow, button, style.procGlowOverhang or 32)
+        button.procGlow.solidFrame:SetAllPoints()
+        ApplyEdgePositions(button.procGlow.solidTextures, button, button.buttonData.procGlowSize or 2)
+        FitHighlightFrame(button.procGlow.procFrame, button, button.buttonData.procGlowSize or (style.procGlowOverhang or 32))
         SetProcGlow(button, false)
     end
 
@@ -1333,7 +1379,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.procGlow then
-        SetFrameClickThroughRecursive(button.procGlow, true, true)
+        SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
+        SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
@@ -1504,6 +1551,19 @@ function CooldownCompanion:InvalidateGroupProcGlow(groupId)
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
         button._procGlowActive = nil
+    end
+end
+
+-- Invalidate proc glow cache on a specific button so the next tick re-applies.
+-- Used by per-button config sliders to update glow appearance without recreating buttons.
+function CooldownCompanion:InvalidateProcGlow(groupId, buttonIndex)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._procGlowActive = nil
+            return
+        end
     end
 end
 

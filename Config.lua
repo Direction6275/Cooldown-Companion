@@ -2676,144 +2676,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- icon/bar color settings branch
             end -- not colorCollapsed
 
-            -- Proc Glow collapsible section (icon mode only)
-            if group.displayMode ~= "bars" then
-            local procHeading = AceGUI:Create("Heading")
-            procHeading:SetText("Proc Glow")
-            procHeading:SetFullWidth(true)
-            scroll:AddChild(procHeading)
-
-            local procKey = selectedGroup .. "_" .. selectedButton .. "_procGlow"
-            local procCollapsed = collapsedSections[procKey]
-
-            local procHeadingCollapseBtn = CreateFrame("Button", nil, procHeading.frame)
-            table.insert(buttonSettingsCollapseButtons, procHeadingCollapseBtn)
-            procHeadingCollapseBtn:SetSize(16, 16)
-            procHeadingCollapseBtn:SetPoint("LEFT", procHeading.label, "RIGHT", 4, 0)
-            procHeading.right:SetPoint("LEFT", procHeadingCollapseBtn, "RIGHT", 4, 0)
-            local procHeadingArrow = procHeadingCollapseBtn:CreateTexture(nil, "ARTWORK")
-            procHeadingArrow:SetSize(12, 12)
-            procHeadingArrow:SetPoint("CENTER")
-            procHeadingArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
-            if procCollapsed then
-                procHeadingArrow:SetRotation(math.rad(180))
-            end
-            procHeadingCollapseBtn:SetScript("OnClick", function()
-                collapsedSections[procKey] = not collapsedSections[procKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            procHeadingCollapseBtn:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine(procCollapsed and "Expand" or "Collapse")
-                GameTooltip:Show()
-            end)
-            procHeadingCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-            if not procCollapsed then
-            local procCb = AceGUI:Create("CheckBox")
-            procCb:SetLabel("Show Proc Glow")
-            procCb:SetValue(buttonData.procGlow == true)
-            procCb:SetFullWidth(true)
-            procCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.procGlow = val
-                CooldownCompanion:RefreshGroupFrame(selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(procCb)
-
-            -- (?) tooltip for proc glow
-            local procInfo = CreateFrame("Button", nil, procCb.frame)
-            procInfo:SetSize(16, 16)
-            procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
-            local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            procInfoText:SetPoint("CENTER")
-            procInfoText:SetText("|cff66aaff(?)|r")
-            procInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Proc Glow")
-                GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            procInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(infoButtons, procInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                procInfo:Hide()
-            end
-
-            if buttonData.procGlow == true then
-                -- Preview toggle (transient — not saved)
-                local previewCb = AceGUI:Create("CheckBox")
-                previewCb:SetLabel("Preview")
-                local previewActive = false
-                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
-                if gFrame then
-                    for _, btn in ipairs(gFrame.buttons) do
-                        if btn.index == selectedButton and btn._procGlowPreview then
-                            previewActive = true
-                            break
-                        end
-                    end
-                end
-                previewCb:SetValue(previewActive)
-                previewCb:SetFullWidth(true)
-                previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
-                end)
-                scroll:AddChild(previewCb)
-
-                -- (?) tooltip for preview
-                local previewInfo = CreateFrame("Button", nil, previewCb.frame)
-                previewInfo:SetSize(16, 16)
-                previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
-                local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                previewInfoText:SetPoint("CENTER")
-                previewInfoText:SetText("|cff66aaff(?)|r")
-                previewInfo:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:AddLine("Preview")
-                    GameTooltip:AddLine("Shows what the proc glow looks like on this icon. You may need to toggle preview off and on to reflect changes to glow size.", 1, 1, 1, true)
-                    GameTooltip:Show()
-                end)
-                previewInfo:SetScript("OnLeave", function()
-                    GameTooltip:Hide()
-                end)
-                table.insert(infoButtons, previewInfo)
-                if CooldownCompanion.db.profile.hideInfoButtons then
-                    previewInfo:Hide()
-                end
-
-                -- Proc Glow color & size (group-wide style settings)
-                local procGlowColor = AceGUI:Create("ColorPicker")
-                procGlowColor:SetLabel("Glow Color")
-                procGlowColor:SetHasAlpha(true)
-                local pgc = group.style.procGlowColor or {1, 1, 1, 1}
-                procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-                procGlowColor:SetFullWidth(true)
-                procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    group.style.procGlowColor = {r, g, b, a}
-                end)
-                procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    group.style.procGlowColor = {r, g, b, a}
-                    CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
-                end)
-                scroll:AddChild(procGlowColor)
-
-                local procSizeSlider = AceGUI:Create("Slider")
-                procSizeSlider:SetLabel("Glow Size")
-                procSizeSlider:SetSliderValues(0, 60, 1)
-                procSizeSlider:SetValue(group.style.procGlowOverhang or 32)
-                procSizeSlider:SetFullWidth(true)
-                procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    group.style.procGlowOverhang = val
-                    CooldownCompanion:InvalidateGroupProcGlow(selectedGroup)
-                end)
-                scroll:AddChild(procSizeSlider)
-            end
-            end -- not procCollapsed
-            end -- not bars (proc glow)
-
             -- Pandemic indicator collapsible section
             local pandemicOk, pandemicCapable = pcall(function()
                 return viewerFrame and viewerFrame.CanTriggerAlertType
@@ -3066,6 +2928,177 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end -- hasViewerFrame and auraTracking
     end -- not auraCollapsed
     end -- canTrackAura
+
+    -- Proc Glow collapsible section (icon mode only)
+    if group.displayMode ~= "bars" then
+            local procHeading = AceGUI:Create("Heading")
+            procHeading:SetText("Proc Glow")
+            procHeading:SetFullWidth(true)
+            scroll:AddChild(procHeading)
+
+            local procKey = selectedGroup .. "_" .. selectedButton .. "_procGlow"
+            local procCollapsed = collapsedSections[procKey]
+
+            local procHeadingCollapseBtn = CreateFrame("Button", nil, procHeading.frame)
+            table.insert(buttonSettingsCollapseButtons, procHeadingCollapseBtn)
+            procHeadingCollapseBtn:SetSize(16, 16)
+            procHeadingCollapseBtn:SetPoint("LEFT", procHeading.label, "RIGHT", 4, 0)
+            procHeading.right:SetPoint("LEFT", procHeadingCollapseBtn, "RIGHT", 4, 0)
+            local procHeadingArrow = procHeadingCollapseBtn:CreateTexture(nil, "ARTWORK")
+            procHeadingArrow:SetSize(12, 12)
+            procHeadingArrow:SetPoint("CENTER")
+            procHeadingArrow:SetTexture("Interface\\AddOns\\CooldownCompanion\\Media\\arrow_underline_20x20")
+            if procCollapsed then
+                procHeadingArrow:SetRotation(math.rad(180))
+            end
+            procHeadingCollapseBtn:SetScript("OnClick", function()
+                collapsedSections[procKey] = not collapsedSections[procKey]
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            procHeadingCollapseBtn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(procCollapsed and "Expand" or "Collapse")
+                GameTooltip:Show()
+            end)
+            procHeadingCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            if not procCollapsed then
+            local procCb = AceGUI:Create("CheckBox")
+            procCb:SetLabel("Show Proc Glow")
+            procCb:SetValue(buttonData.procGlow == true)
+            procCb:SetFullWidth(true)
+            procCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.procGlow = val
+                CooldownCompanion:RefreshGroupFrame(selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(procCb)
+
+            -- (?) tooltip for proc glow
+            local procInfo = CreateFrame("Button", nil, procCb.frame)
+            procInfo:SetSize(16, 16)
+            procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
+            local procInfoText = procInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            procInfoText:SetPoint("CENTER")
+            procInfoText:SetText("|cff66aaff(?)|r")
+            procInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Proc Glow")
+                GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("If this spell does not have a proc associated with it, these settings will have no effect.", 0.7, 0.7, 0.7, true)
+                GameTooltip:Show()
+            end)
+            procInfo:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            table.insert(infoButtons, procInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                procInfo:Hide()
+            end
+
+            if buttonData.procGlow == true then
+                -- Style dropdown
+                local procStyleDrop = AceGUI:Create("Dropdown")
+                procStyleDrop:SetLabel("Glow Style")
+                procStyleDrop:SetList({
+                    ["solid"] = "Solid Border",
+                    ["glow"] = "Glow",
+                }, {"solid", "glow"})
+                procStyleDrop:SetValue(buttonData.procGlowStyle or "glow")
+                procStyleDrop:SetFullWidth(true)
+                procStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    buttonData.procGlowStyle = val
+                    CooldownCompanion:InvalidateProcGlow(selectedGroup, selectedButton)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                scroll:AddChild(procStyleDrop)
+
+                -- Color picker (per-button, falls back to group style)
+                local procGlowColor = AceGUI:Create("ColorPicker")
+                procGlowColor:SetLabel("Glow Color")
+                procGlowColor:SetHasAlpha(true)
+                local pgc = buttonData.procGlowColor or group.style.procGlowColor or {1, 1, 1, 1}
+                procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+                procGlowColor:SetFullWidth(true)
+                procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                    buttonData.procGlowColor = {r, g, b, a}
+                end)
+                procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                    buttonData.procGlowColor = {r, g, b, a}
+                    CooldownCompanion:InvalidateProcGlow(selectedGroup, selectedButton)
+                end)
+                scroll:AddChild(procGlowColor)
+
+                -- Size slider (varies by style)
+                local currentProcStyle = buttonData.procGlowStyle or "glow"
+                if currentProcStyle == "solid" then
+                    local procSizeSlider = AceGUI:Create("Slider")
+                    procSizeSlider:SetLabel("Border Size")
+                    procSizeSlider:SetSliderValues(1, 8, 1)
+                    procSizeSlider:SetValue(buttonData.procGlowSize or 2)
+                    procSizeSlider:SetFullWidth(true)
+                    procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        buttonData.procGlowSize = val
+                        CooldownCompanion:InvalidateProcGlow(selectedGroup, selectedButton)
+                    end)
+                    scroll:AddChild(procSizeSlider)
+                elseif currentProcStyle == "glow" then
+                    local procSizeSlider = AceGUI:Create("Slider")
+                    procSizeSlider:SetLabel("Glow Size")
+                    procSizeSlider:SetSliderValues(0, 60, 1)
+                    procSizeSlider:SetValue(buttonData.procGlowSize or group.style.procGlowOverhang or 32)
+                    procSizeSlider:SetFullWidth(true)
+                    procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        buttonData.procGlowSize = val
+                        CooldownCompanion:InvalidateProcGlow(selectedGroup, selectedButton)
+                    end)
+                    scroll:AddChild(procSizeSlider)
+                end
+
+                -- Preview toggle (transient — not saved)
+                local previewCb = AceGUI:Create("CheckBox")
+                previewCb:SetLabel("Preview")
+                local previewActive = false
+                local gFrame = CooldownCompanion.groupFrames[selectedGroup]
+                if gFrame then
+                    for _, btn in ipairs(gFrame.buttons) do
+                        if btn.index == selectedButton and btn._procGlowPreview then
+                            previewActive = true
+                            break
+                        end
+                    end
+                end
+                previewCb:SetValue(previewActive)
+                previewCb:SetFullWidth(true)
+                previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    CooldownCompanion:SetProcGlowPreview(selectedGroup, selectedButton, val)
+                end)
+                scroll:AddChild(previewCb)
+
+                -- (?) tooltip for preview
+                local previewInfo = CreateFrame("Button", nil, previewCb.frame)
+                previewInfo:SetSize(16, 16)
+                previewInfo:SetPoint("LEFT", previewCb.checkbg, "RIGHT", previewCb.text:GetStringWidth() + 4, 0)
+                local previewInfoText = previewInfo:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                previewInfoText:SetPoint("CENTER")
+                previewInfoText:SetText("|cff66aaff(?)|r")
+                previewInfo:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Preview")
+                    GameTooltip:AddLine("Shows what the proc glow looks like on this icon.", 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                previewInfo:SetScript("OnLeave", function()
+                    GameTooltip:Hide()
+                end)
+                table.insert(infoButtons, previewInfo)
+                if CooldownCompanion.db.profile.hideInfoButtons then
+                    previewInfo:Hide()
+                end
+            end
+            end -- not procCollapsed
+    end -- not bars (proc glow)
 
     -- Charge settings (only for charge-based spells)
     if buttonData.hasCharges then
