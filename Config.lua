@@ -2137,6 +2137,16 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             viewerFrame = child
         end
     end
+    -- Fallback for hardcoded overrides: try the buff IDs in the viewer map
+    if not viewerFrame and buttonData.type == "spell" then
+        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+        if overrideBuffs then
+            for id in overrideBuffs:gmatch("%d+") do
+                viewerFrame = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+                if viewerFrame then break end
+            end
+        end
+    end
 
     -- Only treat as aura-capable if CDM is enabled and viewer is from BuffIcon or BuffBar.
     -- When CDM is disabled, viewer children persist with stale data and cannot be trusted.
@@ -2173,9 +2183,19 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         or buffTrackableSpells[buttonData.id]
         or (buttonData.auraSpellID and buttonData.auraSpellID ~= "")
 
+    if not canTrackAura and buttonData.type == "spell" then
+        if CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id] then
+            canTrackAura = true
+        end
+    end
+
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
         buttonData.auraTracking = true
+        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+        if overrideBuffs and not buttonData.auraSpellID then
+            buttonData.auraSpellID = overrideBuffs
+        end
         if isHarmful then
             buttonData.auraUnit = "target"
         else

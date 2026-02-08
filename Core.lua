@@ -609,6 +609,15 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+-- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
+-- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
+-- Both Eclipse forms map to both buff IDs so whichever buff is active gets tracked.
+-- Format: [abilitySpellID] = "comma-separated buff spell IDs"
+CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
+    [1233346] = "48517,48518",  -- Solar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
+    [1233272] = "48517,48518",  -- Lunar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
+}
+
 -- Viewer frame list used by BuildViewerAuraMap and FindViewerChildForSpell.
 local VIEWER_NAMES = {
     "EssentialCooldownViewer",
@@ -657,6 +666,59 @@ function CooldownCompanion:BuildViewerAuraMap()
     -- Ensure tracked buttons can find their viewer child even if
     -- buttonData.id is a non-current override form of a transforming spell.
     self:MapButtonSpellsToViewers()
+
+    -- Map hardcoded overrides: ability IDs and buff IDs → viewer child.
+    -- Group by buff string so sibling abilities (e.g. Solar/Lunar Eclipse)
+    -- cross-map to the same viewer child even if only one form is current.
+    local groupsByBuffs = {}
+    for abilityID, buffIDStr in pairs(self.ABILITY_BUFF_OVERRIDES) do
+        if not groupsByBuffs[buffIDStr] then
+            groupsByBuffs[buffIDStr] = {}
+        end
+        groupsByBuffs[buffIDStr][#groupsByBuffs[buffIDStr] + 1] = abilityID
+    end
+    for buffIDStr, abilityIDs in pairs(groupsByBuffs) do
+        -- Prefer a BuffIcon/BuffBar child (tracks aura duration) over
+        -- Essential/Utility (tracks cooldown only). Check buff IDs first
+        -- since the initial scan maps them to the correct viewer type.
+        local child
+        for id in buffIDStr:gmatch("%d+") do
+            local c = self.viewerAuraFrames[tonumber(id)]
+            if c then
+                local p = c:GetParent()
+                local pn = p and p:GetName()
+                if pn == "BuffIconCooldownViewer" or pn == "BuffBarCooldownViewer" then
+                    child = c
+                    break
+                end
+            end
+        end
+        if not child then
+            for _, abilityID in ipairs(abilityIDs) do
+                child = self.viewerAuraFrames[abilityID]
+                if child then break end
+            end
+        end
+        if not child then
+            for _, abilityID in ipairs(abilityIDs) do
+                child = self:FindViewerChildForSpell(abilityID)
+                if child then break end
+            end
+        end
+        if child then
+            for _, abilityID in ipairs(abilityIDs) do
+                self.viewerAuraFrames[abilityID] = child
+            end
+            -- Map buff IDs only if they aren't already mapped by the initial scan.
+            -- Each buff may have its own viewer child (e.g. Solar vs Lunar Eclipse).
+            for id in buffIDStr:gmatch("%d+") do
+                local numID = tonumber(id)
+                if not self.viewerAuraFrames[numID] then
+                    self.viewerAuraFrames[numID] = child
+                end
+            end
+        end
+    end
 end
 
 -- For each tracked button, ensure viewerAuraFrames contains an entry
@@ -704,6 +766,71 @@ function CooldownCompanion:FindViewerChildForSpell(spellID)
         local child = self.viewerAuraFrames[baseSpellID]
         if child then
             return child
+        end
+    end
+    -- Override table: check buff IDs and sibling abilities
+    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
+    if overrideBuffs then
+        -- Check buff IDs in the map (viewer children may be keyed by buff spell ID)
+        for id in overrideBuffs:gmatch("%d+") do
+            local child = self.viewerAuraFrames[tonumber(id)]
+            if child then return child end
+        end
+        -- Check sibling abilities that share the same viewer
+        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
+            if sibBuffs == overrideBuffs and sibID ~= spellID then
+                local child = self.viewerAuraFrames[sibID]
+                if child then return child end
+            end
+        end
+    end
+    return nil
+end
+
+-- Find a cooldown viewer child (Essential/Utility only) for a spell.
+-- Used by UpdateButtonIcon to get dynamic icon/name from the cooldown tracker
+-- rather than the buff tracker (BuffIcon/BuffBar), which uses static buff spell IDs.
+function CooldownCompanion:FindCooldownViewerChild(spellID)
+    local cdViewers = {"EssentialCooldownViewer", "UtilityCooldownViewer"}
+    for _, name in ipairs(cdViewers) do
+        local viewer = _G[name]
+        if viewer then
+            for _, child in pairs({viewer:GetChildren()}) do
+                if child.cooldownInfo then
+                    if child.cooldownInfo.spellID == spellID
+                       or child.cooldownInfo.overrideSpellID == spellID
+                       or child.cooldownInfo.overrideTooltipSpellID == spellID then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    -- Try base spell resolution
+    local baseSpellID = C_Spell.GetBaseSpell(spellID)
+    if baseSpellID and baseSpellID ~= spellID then
+        return self:FindCooldownViewerChild(baseSpellID)
+    end
+    -- Try sibling abilities from override table
+    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[spellID]
+    if overrideBuffs then
+        for sibID, sibBuffs in pairs(self.ABILITY_BUFF_OVERRIDES) do
+            if sibBuffs == overrideBuffs and sibID ~= spellID then
+                for _, name in ipairs(cdViewers) do
+                    local viewer = _G[name]
+                    if viewer then
+                        for _, child in pairs({viewer:GetChildren()}) do
+                            if child.cooldownInfo then
+                                if child.cooldownInfo.spellID == sibID
+                                   or child.cooldownInfo.overrideSpellID == sibID
+                                   or child.cooldownInfo.overrideTooltipSpellID == sibID then
+                                    return child
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
     return nil
