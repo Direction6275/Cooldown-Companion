@@ -1761,6 +1761,7 @@ function RefreshColumn2()
 
     -- Input editbox
     local inputBox = AceGUI:Create("EditBox")
+    if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
     inputBox:SetLabel("")
     inputBox:SetText(newInput)
     inputBox:DisableButton(true)
@@ -1774,10 +1775,8 @@ function RefreshColumn2()
             end
         end
     end)
-    inputBox.editbox:HookScript("OnTextChanged", function(self, userInput)
-        if userInput then
-            newInput = self:GetText()
-        end
+    inputBox:SetCallback("OnTextChanged", function(widget, event, text)
+        newInput = text
     end)
     inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
     col2Scroll:AddChild(inputBox)
@@ -2394,6 +2393,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
             -- Spell ID override (for spells whose buff ID differs from ability ID)
             local auraEditBox = AceGUI:Create("EditBox")
+            if auraEditBox.editbox.Instructions then auraEditBox.editbox.Instructions:Hide() end
             auraEditBox:SetLabel("Spell ID Override")
             auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
             auraEditBox:SetFullWidth(true)
@@ -3476,6 +3476,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         editFrame.Instructions:SetTextColor(0.5, 0.5, 0.5)
         if (buttonData.customName or "") ~= "" then
             editFrame.Instructions:Hide()
+        else
+            editFrame.Instructions:Show()
         end
         customNameBox:SetCallback("OnTextChanged", function(widget, event, text)
             if text == "" then
@@ -4242,6 +4244,7 @@ local function BuildPositioningTab(container)
     anchorRow:SetLayout("Flow")
 
     local anchorBox = AceGUI:Create("EditBox")
+    if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
     anchorBox:SetLabel("Anchor to Frame")
     local currentAnchor = group.anchor.relativeTo
     if currentAnchor == "UIParent" then currentAnchor = "" end
@@ -4927,6 +4930,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     if style.showBarReadyText then
         local readyTextBox = AceGUI:Create("EditBox")
+        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
         readyTextBox:SetLabel("Ready Text")
         readyTextBox:SetText(style.barReadyText or "Ready")
         readyTextBox:SetFullWidth(true)
