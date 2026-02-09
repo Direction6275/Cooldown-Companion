@@ -58,6 +58,7 @@ local pendingStrataGroup = nil
 -- Folder collapse state (transient UI state, resets on profile change)
 local collapsedFolders = {}    -- [folderId] = true when collapsed
 local folderContextMenu = nil  -- reusable dropdown frame
+local folderAccentBars = {}    -- pool of accent bar textures for expanded folders
 
 -- Pick-frame overlay state
 local pickFrameOverlay = nil
@@ -542,6 +543,27 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
             if group then
                 group.specs = nil
                 CooldownCompanion:ToggleGroupGlobal(data.groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
+    text = "This will remove foreign spec filters and turn '%s' into a character group. Continue?",
+    button1 = "Continue",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.dragState then
+            local db = CooldownCompanion.db.profile
+            local group = db.groups[data.dragState.sourceGroupId]
+            if group then
+                group.specs = nil
+                ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
         end
@@ -1683,12 +1705,16 @@ local function AcquireBadge(frame, index)
     badge.icon:SetTexture(nil)
     badge.icon:SetVertexColor(1, 1, 1, 1)
     badge.icon:SetTexCoord(0, 1, 0, 1)
+    if badge._cdcCircleMask then
+        badge.icon:RemoveMaskTexture(badge._cdcCircleMask)
+    end
+    badge:SetSize(BADGE_SIZE, BADGE_SIZE)
     badge.text:SetText("")
     badge:SetFrameLevel(frame:GetFrameLevel() + 5)
     return badge
 end
 
-local function SetupGroupRowIndicators(entry, group, isOverridden)
+local function SetupGroupRowIndicators(entry, group)
     local frame = entry.frame
     if frame._cdcBadges then
         for _, b in ipairs(frame._cdcBadges) do b:Hide() end
@@ -1716,31 +1742,33 @@ local function SetupGroupRowIndicators(entry, group, isOverridden)
         badge:Show()
     end
 
-    -- Disabled (red X)
+    -- Disabled
     if group.enabled == false then
-        AddAtlasBadge("common-icon-redx")
+        AddAtlasBadge("GM-icon-visibleDis-pressed")
     end
     -- Unlocked (lock icon)
     if group.locked == false then
-        AddAtlasBadge("common-icon-move")
+        AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
-    -- Global (blue "G" text)
-    if group.isGlobal then
-        AddTextBadge("|cff66aaff" .. "G" .. "|r")
-    end
-    -- Bars mode (blue "=" text)
-    if group.displayMode == "bars" then
-        AddTextBadge("|cff66ccff" .. "=" .. "|r")
-    end
-    -- Spec filter: folder override or group's own
-    if isOverridden then
-        AddTextBadge("|cff888888" .. "F" .. "|r")
-    elseif group.specs and next(group.specs) then
+    -- Spec filter badges
+    local SPEC_BADGE_SIZE = 16
+    if group.specs and next(group.specs) then
         for specId in pairs(group.specs) do
             local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
             if specIcon then
-                AddIconBadge(specIcon)
-                break
+                badgeIndex = badgeIndex + 1
+                local badge = AcquireBadge(frame, badgeIndex)
+                badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
+                badge.icon:SetTexture(specIcon)
+                badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                if not badge._cdcCircleMask then
+                    local mask = badge:CreateMaskTexture()
+                    mask:SetAllPoints(badge.icon)
+                    mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
+                    badge._cdcCircleMask = mask
+                end
+                badge.icon:AddMaskTexture(badge._cdcCircleMask)
+                badge:Show()
             end
         end
     end
@@ -1753,7 +1781,7 @@ local function SetupGroupRowIndicators(entry, group, isOverridden)
             if badge:IsShown() then
                 badge:ClearAllPoints()
                 badge:SetPoint("RIGHT", frame, "RIGHT", offsetX, 0)
-                offsetX = offsetX - BADGE_SIZE - BADGE_SPACING
+                offsetX = offsetX - badge:GetWidth() - BADGE_SPACING
             end
         end
     end
@@ -1930,7 +1958,7 @@ end
 -- Returns a table describing where the drop would land:
 --   { action="reorder-before"|"reorder-after"|"into-folder", rowIndex=N, targetRow=<row-meta>, anchorFrame=<frame> }
 -- or nil if no valid drop target.
-local function GetCol1DropTarget(cursorY, renderedRows, sourceKind)
+local function GetCol1DropTarget(cursorY, renderedRows, sourceKind, sourceSection)
     if not renderedRows or #renderedRows == 0 then return nil end
 
     for i, rowMeta in ipairs(renderedRows) do
@@ -1964,11 +1992,24 @@ local function GetCol1DropTarget(cursorY, renderedRows, sourceKind)
         end
     end
 
-    -- Below all rows: drop after last
-    local lastRow = renderedRows[#renderedRows]
+    -- Below all rows: drop after last row in source section
+    local lastRow, lastRowIndex
+    if sourceSection then
+        for i = #renderedRows, 1, -1 do
+            if renderedRows[i].section == sourceSection then
+                lastRow = renderedRows[i]
+                lastRowIndex = i
+                break
+            end
+        end
+    end
+    if not lastRow then
+        lastRow = renderedRows[#renderedRows]
+        lastRowIndex = #renderedRows
+    end
     local lastFrame = lastRow and lastRow.widget and lastRow.widget.frame
     if lastFrame and lastFrame:IsShown() then
-        return { action = "reorder-after", rowIndex = #renderedRows, targetRow = lastRow, anchorFrame = lastFrame }
+        return { action = "reorder-after", rowIndex = lastRowIndex, targetRow = lastRow, anchorFrame = lastFrame, isBelowAll = true }
     end
     return nil
 end
@@ -2011,8 +2052,11 @@ local function ApplyCol1Drop(state)
             group.folderId = dropTarget.targetFolderId
         elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             local targetRow = dropTarget.targetRow
-            -- If dropping on a row that's in a folder, join that folder
-            if targetRow.kind == "group" and targetRow.inFolder then
+            if dropTarget.isBelowAll then
+                -- Dropped below all rows: always become top-level
+                group.folderId = nil
+            elseif targetRow.kind == "group" and targetRow.inFolder then
+                -- If dropping on a row that's in a folder, join that folder
                 group.folderId = targetRow.inFolder
             elseif targetRow.kind == "folder" then
                 -- Dropping before/after a folder header = top-level
@@ -2022,9 +2066,20 @@ local function ApplyCol1Drop(state)
                 group.folderId = nil
             end
 
+            -- Cross-section move: toggle global/character status
+            local targetSection = targetRow.section or state.sourceSection
+            if targetSection ~= state.sourceSection then
+                if targetSection == "global" then
+                    group.isGlobal = true
+                else
+                    group.isGlobal = false
+                    group.createdBy = CooldownCompanion.db.keys.char
+                end
+            end
+
             -- Reassign order values for all items in the target section
             -- to place the dragged group at the right position
-            local section = targetRow.section or state.sourceSection
+            local section = targetSection
             local renderedRows = state.col1RenderedRows
             if renderedRows then
                 -- Build ordered list of items in the same container (folder or top-level)
@@ -2179,6 +2234,35 @@ local function FinishDrag()
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" then
         -- Column 1 folder-aware drop
+        -- Check for cross-section global→char with foreign specs
+        local dropTarget = state.dropTarget
+        if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
+            local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+            local sourceGroup = CooldownCompanion.db.profile.groups[state.sourceGroupId]
+            if targetSection and targetSection ~= state.sourceSection
+               and state.sourceSection == "global"
+               and sourceGroup and sourceGroup.specs then
+                local hasForeign = false
+                local numSpecs = GetNumSpecializations()
+                local playerSpecIds = {}
+                for i = 1, numSpecs do
+                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                    if specId then playerSpecIds[specId] = true end
+                end
+                for specId in pairs(sourceGroup.specs) do
+                    if not playerSpecIds[specId] then
+                        hasForeign = true
+                        break
+                    end
+                end
+                if hasForeign then
+                    ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceGroup.name, {
+                        dragState = state,
+                    })
+                    return
+                end
+            end
+        end
         ApplyCol1Drop(state)
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "button" then
@@ -2219,7 +2303,7 @@ local function StartDragTracking()
         if dragState.phase == "active" then
             if dragState.col1RenderedRows then
                 -- Column 1 folder-aware drop detection
-                local dropTarget = GetCol1DropTarget(cursorY, dragState.col1RenderedRows, dragState.kind)
+                local dropTarget = GetCol1DropTarget(cursorY, dragState.col1RenderedRows, dragState.kind, dragState.sourceSection)
                 dragState.dropTarget = dropTarget
                 if dropTarget then
                     ResetDragIndicatorStyle()
@@ -2255,7 +2339,6 @@ local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
 -- Spec Filter (inline expansion in group list)
 ------------------------------------------------------------------------
 local specExpandedGroupId
-local specExpandedFolderId
 
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
@@ -2264,6 +2347,13 @@ function RefreshColumn1()
     if not col1Scroll then return end
     CancelDrag()
     col1Scroll:ReleaseChildren()
+
+    -- Hide all accent bars from previous render
+    for i, bar in ipairs(folderAccentBars) do
+        bar:Hide()
+        bar:ClearAllPoints()
+    end
+    local accentBarIndex = 0  -- pool cursor, incremented as bars are used
 
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
@@ -2333,31 +2423,75 @@ function RefreshColumn1()
         return items, folderChildGroups
     end
 
+    -- Shift label right to make room for mode badge after UpdateImageAnchor reflows
+    local MODE_BADGE_W = 18
+    local function ApplyModeBadgeOffset(widget)
+        local lbl = widget.label
+        for i = 1, lbl:GetNumPoints() do
+            local pt, rel, relPt, x, y = lbl:GetPoint(i)
+            if rel == widget.image then
+                lbl:SetPoint(pt, rel, relPt, (x or 0) + MODE_BADGE_W, y or 0)
+                lbl:SetWidth(lbl:GetWidth() - MODE_BADGE_W)
+                return
+            end
+        end
+    end
+
     -- Helper: render a single group row (reused by both sections)
     local function RenderGroupRow(groupId, inFolder, sectionTag)
         local group = db.groups[groupId]
         if not group then return end
 
-        -- Check if folder overrides this group's specs
-        local _, isOverridden = CooldownCompanion:GetEffectiveSpecs(group)
-
         local entry = AceGUI:Create("InteractiveLabel")
         entry:SetText(group.name)
-        entry:SetImage(GetGroupIcon(group))
-        entry:SetImageSize(30, 36)
+        entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
+        entry:SetImageSize(inFolder and 13 or 1, 30)  -- extra width indents folder children
+        entry.image:SetAlpha(0)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
-        -- Color: green for selected, muted for folder-overridden, default otherwise
+        -- Color: green for selected, gray for disabled, default otherwise
         if selectedGroup == groupId then
             entry:SetColor(0, 1, 0)
-        elseif isOverridden then
-            entry:SetColor(0.7, 0.7, 0.7)
+        elseif group.enabled == false then
+            entry:SetColor(0.5, 0.5, 0.5)
         end
 
+        -- Hide stale badge so OnWidthSet hook skips during AddChild layout
+        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
         col1Scroll:AddChild(entry)
-        SetupGroupRowIndicators(entry, group, isOverridden)
+
+        -- Mode badge between group icon and label text (reuse texture from recycled widget)
+        local modeBadge = entry._cdcModeBadge
+        if not modeBadge then
+            modeBadge = entry.frame:CreateTexture(nil, "ARTWORK")
+            entry._cdcModeBadge = modeBadge
+        end
+        modeBadge:ClearAllPoints()
+        modeBadge:SetTexture(nil)
+        modeBadge:SetTexCoord(0, 1, 0, 1)
+        modeBadge:SetSize(14, 14)
+        if group.displayMode == "bars" then
+            modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause")
+        else
+            modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked")
+        end
+        modeBadge:SetPoint("LEFT", entry.image, "RIGHT", 2, 0)
+        modeBadge:Show()
+        -- Hook OnWidthSet so badge offset survives UpdateImageAnchor reflows (once per widget)
+        if not entry._cdcWidthHooked then
+            entry._cdcWidthHooked = true
+            hooksecurefunc(entry, "OnWidthSet", function(self)
+                if self._cdcModeBadge and self._cdcModeBadge:IsShown() then
+                    ApplyModeBadgeOffset(self)
+                end
+            end)
+        end
+        -- Apply offset now (first layout already ran before hook was installed)
+        ApplyModeBadgeOffset(entry)
+
+        SetupGroupRowIndicators(entry, group)
 
         -- Neutralize built-in OnClick so mousedown doesn't fire
         entry:SetCallback("OnClick", function() end)
@@ -2367,19 +2501,10 @@ function RefreshColumn1()
             if dragState and dragState.phase == "active" then return end
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
-                    -- Shift+click: if folder overrides, redirect to folder spec panel
-                    if isOverridden and group.folderId then
-                        if specExpandedFolderId == group.folderId then
-                            specExpandedFolderId = nil
-                        else
-                            specExpandedFolderId = group.folderId
-                        end
+                    if specExpandedGroupId == groupId then
+                        specExpandedGroupId = nil
                     else
-                        if specExpandedGroupId == groupId then
-                            specExpandedGroupId = nil
-                        else
-                            specExpandedGroupId = groupId
-                        end
+                        specExpandedGroupId = groupId
                     end
                     CooldownCompanion:RefreshConfigPanel()
                     return
@@ -2600,6 +2725,9 @@ function RefreshColumn1()
                     CooldownCompanion:RefreshConfigPanel()
                 end)
                 col1Scroll:AddChild(cb)
+                if inFolder then
+                    cb.checkbg:SetPoint("TOPLEFT", 12, 0)
+                end
             end
 
             local playerSpecIds = {}
@@ -2643,6 +2771,9 @@ function RefreshColumn1()
                             CooldownCompanion:RefreshConfigPanel()
                         end)
                         col1Scroll:AddChild(fcb)
+                        if inFolder then
+                            fcb.checkbg:SetPoint("TOPLEFT", 12, 0)
+                        end
                     end
                 end
             end
@@ -2683,6 +2814,8 @@ function RefreshColumn1()
                 StartDragTracking()
             end
         end
+
+        return entry
     end
 
     -- Helper: render a folder header row
@@ -2694,10 +2827,15 @@ function RefreshColumn1()
 
         -- Collapse indicator as inline texture in label
         local collapseTag = isCollapsed
-            and "  |TInterface\\Buttons\\UI-PlusButton-UP:14:14:0:0|t"
-            or "  |TInterface\\Buttons\\UI-MinusButton-UP:14:14:0:0|t"
+            and "  |A:common-icon-plus:10:10|a"
+            or "  |A:common-icon-minus:10:10|a"
 
         local entry = AceGUI:Create("InteractiveLabel")
+        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
+        if entry.frame._cdcBadges then
+            for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
+        end
+        entry.image:SetAlpha(1)
         entry:SetText(folder.name .. collapseTag)
         entry:SetImage(GetFolderIcon(folderId, db))
         entry:SetImageSize(32, 32)
@@ -2733,18 +2871,8 @@ function RefreshColumn1()
         entry.frame:SetScript("OnMouseUp", function(self, button)
             if dragState and dragState.phase == "active" then return end
             if button == "LeftButton" then
-                if IsShiftKeyDown() then
-                    -- Toggle folder spec panel
-                    if specExpandedFolderId == folderId then
-                        specExpandedFolderId = nil
-                    else
-                        specExpandedFolderId = folderId
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                else
-                    collapsedFolders[folderId] = not collapsedFolders[folderId]
-                    CooldownCompanion:RefreshConfigPanel()
-                end
+                collapsedFolders[folderId] = not collapsedFolders[folderId]
+                CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 if not folderContextMenu then
                     folderContextMenu = CreateFrame("Frame", "CDCFolderContextMenu", UIParent, "UIDropDownMenuTemplate")
@@ -2771,21 +2899,6 @@ function RefreshColumn1()
                     end
                     UIDropDownMenu_AddButton(info, level)
 
-                    -- Set Spec Filter
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Set Spec Filter"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        if specExpandedFolderId == folderId then
-                            specExpandedFolderId = nil
-                        else
-                            specExpandedFolderId = folderId
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
                     -- Delete
                     info = UIDropDownMenu_CreateInfo()
                     info.text = "|cffff4444Delete Folder|r"
@@ -2800,54 +2913,6 @@ function RefreshColumn1()
                 ToggleDropDownMenu(1, nil, folderContextMenu, "cursor", 0, 0)
             end
         end)
-
-        -- Inline spec filter panel (expanded via Shift+Left-click or context menu)
-        if specExpandedFolderId == folderId then
-            local numSpecs = GetNumSpecializations()
-            for i = 1, numSpecs do
-                local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-                local cb = AceGUI:Create("CheckBox")
-                cb:SetLabel(name)
-                cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
-                cb:SetFullWidth(true)
-                cb:SetValue(folder.specs and folder.specs[specId] or false)
-                cb:SetCallback("OnValueChanged", function(widget, event, value)
-                    if value then
-                        if not folder.specs then folder.specs = {} end
-                        folder.specs[specId] = true
-                    else
-                        if folder.specs then
-                            folder.specs[specId] = nil
-                            if not next(folder.specs) then
-                                folder.specs = nil
-                            end
-                        end
-                    end
-                    -- Refresh all child groups
-                    for gid, group in pairs(db.groups) do
-                        if group.folderId == folderId then
-                            CooldownCompanion:RefreshGroupFrame(gid)
-                        end
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                col1Scroll:AddChild(cb)
-            end
-
-            local clearBtn = AceGUI:Create("Button")
-            clearBtn:SetText("Clear All")
-            clearBtn:SetFullWidth(true)
-            clearBtn:SetCallback("OnClick", function()
-                folder.specs = nil
-                for gid, group in pairs(db.groups) do
-                    if group.folderId == folderId then
-                        CooldownCompanion:RefreshGroupFrame(gid)
-                    end
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            col1Scroll:AddChild(clearBtn)
-        end
 
         -- Drag support for folder header
         local entryFrame = entry.frame
@@ -2885,15 +2950,38 @@ function RefreshColumn1()
         heading:SetFullWidth(true)
         col1Scroll:AddChild(heading)
 
+        -- Class color for accent bars
+        local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+
         for _, item in ipairs(items) do
             if item.kind == "folder" then
                 RenderFolderRow(item.id, section)
-                -- If expanded, render children
+                -- If expanded, render children with accent bar
                 if not collapsedFolders[item.id] then
                     local children = folderChildGroups[item.id]
-                    if children then
+                    if children and #children > 0 then
+                        local firstEntry, lastEntry
                         for _, gid in ipairs(children) do
-                            RenderGroupRow(gid, true, section)
+                            local entry = RenderGroupRow(gid, true, section)
+                            if entry then
+                                if not firstEntry then firstEntry = entry end
+                                lastEntry = entry
+                            end
+                        end
+                        -- Create accent bar spanning all child rows
+                        if firstEntry and lastEntry and classColor then
+                            accentBarIndex = accentBarIndex + 1
+                            local bar = folderAccentBars[accentBarIndex]
+                            if not bar then
+                                bar = col1Scroll.content:CreateTexture(nil, "ARTWORK")
+                                folderAccentBars[accentBarIndex] = bar
+                            end
+                            bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
+                            bar:SetWidth(3)
+                            bar:ClearAllPoints()
+                            bar:SetPoint("TOPLEFT", firstEntry.frame, "TOPLEFT", 0, 0)
+                            bar:SetPoint("BOTTOMLEFT", lastEntry.frame, "BOTTOMLEFT", 0, 0)
+                            bar:Show()
                         end
                     end
                 end
@@ -3001,7 +3089,7 @@ function RefreshColumn1()
         end)
         newIconBtn.frame:SetParent(col1ButtonBar)
         newIconBtn.frame:ClearAllPoints()
-        newIconBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOPLEFT", 0, 0)
+        newIconBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOPLEFT", 0, -1)
         newIconBtn.frame:SetPoint("RIGHT", col1ButtonBar, "CENTER", -2, 0)
         newIconBtn.frame:SetHeight(28)
         newIconBtn.frame:Show()
@@ -3025,7 +3113,7 @@ function RefreshColumn1()
         end)
         newBarBtn.frame:SetParent(col1ButtonBar)
         newBarBtn.frame:ClearAllPoints()
-        newBarBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOP", 2, 0)
+        newBarBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOP", 2, -1)
         newBarBtn.frame:SetPoint("TOPRIGHT", col1ButtonBar, "TOPRIGHT", 0, 0)
         newBarBtn.frame:SetHeight(28)
         newBarBtn.frame:Show()
@@ -3182,6 +3270,11 @@ function RefreshColumn2()
     local numButtons = #group.buttons
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")
+        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
+        if entry.frame._cdcBadges then
+            for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
+        end
+        entry.image:SetAlpha(1)
         local usable = CooldownCompanion:IsButtonUsable(buttonData)
         -- Show current spell name via viewer child's overrideSpellID (tracks current form)
         local entryName = buttonData.name
@@ -3219,9 +3312,9 @@ function RefreshColumn2()
                 warnBtn = CreateFrame("Button", nil, entry.frame)
                 warnBtn:SetSize(16, 16)
                 warnBtn:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
-                local warnText = warnBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                warnText:SetPoint("CENTER")
-                warnText:SetText("|cffff4444(!)|r")
+                local warnIcon = warnBtn:CreateTexture(nil, "OVERLAY")
+                warnIcon:SetAtlas("Ping_Marker_Icon_Warning")
+                warnIcon:SetAllPoints()
                 warnBtn:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:AddLine("Spell/item unavailable", 1, 0.3, 0.3)
@@ -3686,9 +3779,9 @@ local function CreateConfigPanel()
         frame.sizer_e:Hide()
     end
 
-    -- Custom resize grip — expand freely, shrink vertically only (min width locked)
+    -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 913px)
     content:SetResizable(true)
-    content:SetResizeBounds(1304, 400)
+    content:SetResizeBounds(913, 400)
 
     local resizeGrip = CreateFrame("Button", nil, content)
     resizeGrip:SetSize(16, 16)
@@ -4005,9 +4098,10 @@ local function CreateConfigPanel()
     local groupInfoBtn = CreateFrame("Button", nil, col1.frame)
     groupInfoBtn:SetSize(16, 16)
     groupInfoBtn:SetPoint("LEFT", col1.titletext, "RIGHT", -2, 0)
-    local groupInfoText = groupInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    groupInfoText:SetPoint("CENTER")
-    groupInfoText:SetText("|cff66aaff(?)|r")
+    local groupInfoIcon = groupInfoBtn:CreateTexture(nil, "OVERLAY")
+    groupInfoIcon:SetSize(12, 12)
+    groupInfoIcon:SetPoint("CENTER")
+    groupInfoIcon:SetAtlas("QuestRepeatableTurnin")
     groupInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Groups")
@@ -4021,8 +4115,6 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Shift+Left-click folder to set spec filter.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Status badges: X=disabled, lock=unlocked, G=global, ==bars, F=folder spec, icon=spec filter.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
@@ -4040,9 +4132,10 @@ local function CreateConfigPanel()
     local infoBtn = CreateFrame("Button", nil, col2.frame)
     infoBtn:SetSize(16, 16)
     infoBtn:SetPoint("LEFT", col2.titletext, "RIGHT", -2, 0)
-    local infoText = infoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    infoText:SetPoint("CENTER")
-    infoText:SetText("|cff66aaff(?)|r")
+    local infoIcon = infoBtn:CreateTexture(nil, "OVERLAY")
+    infoIcon:SetSize(12, 12)
+    infoIcon:SetPoint("CENTER")
+    infoIcon:SetAtlas("QuestRepeatableTurnin")
     infoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Spells / Items")
@@ -4074,9 +4167,10 @@ local function CreateConfigPanel()
     local bsInfoBtn = CreateFrame("Button", nil, buttonSettingsCol.frame)
     bsInfoBtn:SetSize(16, 16)
     bsInfoBtn:SetPoint("LEFT", buttonSettingsCol.titletext, "RIGHT", -2, 0)
-    local bsInfoText = bsInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    bsInfoText:SetPoint("CENTER")
-    bsInfoText:SetText("|cff66aaff(?)|r")
+    local bsInfoIcon = bsInfoBtn:CreateTexture(nil, "OVERLAY")
+    bsInfoIcon:SetSize(12, 12)
+    bsInfoIcon:SetPoint("CENTER")
+    bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Button Settings")
@@ -4098,9 +4192,10 @@ local function CreateConfigPanel()
     local settingsInfoBtn = CreateFrame("Button", nil, col3.frame)
     settingsInfoBtn:SetSize(16, 16)
     settingsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
-    local settingsInfoText = settingsInfoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    settingsInfoText:SetPoint("CENTER")
-    settingsInfoText:SetText("|cff66aaff(?)|r")
+    local settingsInfoIcon = settingsInfoBtn:CreateTexture(nil, "OVERLAY")
+    settingsInfoIcon:SetSize(12, 12)
+    settingsInfoIcon:SetPoint("CENTER")
+    settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Group Settings")
@@ -4127,7 +4222,7 @@ local function CreateConfigPanel()
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(56)
+    btnBar:SetHeight(60)
     col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -4136,7 +4231,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 56)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 60)
     scroll1.frame:Show()
     col1Scroll = scroll1
 
@@ -4394,7 +4489,7 @@ function CooldownCompanion:SetupConfig()
         selectedButton = nil
         wipe(selectedButtons)
         wipe(collapsedFolders)
-        specExpandedFolderId = nil
+
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -4405,7 +4500,7 @@ function CooldownCompanion:SetupConfig()
         selectedButton = nil
         wipe(selectedButtons)
         wipe(collapsedFolders)
-        specExpandedFolderId = nil
+
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -4416,7 +4511,7 @@ function CooldownCompanion:SetupConfig()
         selectedButton = nil
         wipe(selectedButtons)
         wipe(collapsedFolders)
-        specExpandedFolderId = nil
+
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end

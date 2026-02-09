@@ -1435,12 +1435,6 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
 end
 
 function CooldownCompanion:GetEffectiveSpecs(group)
-    if group.folderId then
-        local folder = self.db.profile.folders[group.folderId]
-        if folder and folder.specs and next(folder.specs) then
-            return folder.specs, true  -- folderSpecs, isOverridden
-        end
-    end
     return group.specs, false
 end
 
