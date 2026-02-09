@@ -55,6 +55,10 @@ local pendingStrataOrder = nil
 local collapsedSections = {}
 local pendingStrataGroup = nil
 
+-- Folder collapse state (transient UI state, resets on profile change)
+local collapsedFolders = {}    -- [folderId] = true when collapsed
+local folderContextMenu = nil  -- reusable dropdown frame
+
 -- Pick-frame overlay state
 local pickFrameOverlay = nil
 local pickFrameCallback = nil
@@ -540,6 +544,48 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
                 CooldownCompanion:ToggleGroupGlobal(data.groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_RENAME_FOLDER"] = {
+    text = "Rename folder '%s' to:",
+    button1 = "Rename",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self, data)
+        local newName = self.EditBox:GetText()
+        if newName and newName ~= "" and data and data.folderId then
+            CooldownCompanion:RenameFolder(data.folderId, newName)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_RENAME_FOLDER"].OnAccept(parent, parent.data)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        self.EditBox:SetFocus()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
+    text = "Delete folder '%s'? Groups inside will be kept (moved to top level).",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.folderId then
+            CooldownCompanion:DeleteFolder(data.folderId)
+            CooldownCompanion:RefreshConfigPanel()
         end
     end,
     timeout = 0,
@@ -1750,6 +1796,211 @@ local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
     end
 end
 
+-- Drop target detection for column 1 with folder support.
+-- Returns a table describing where the drop would land:
+--   { action="reorder-before"|"reorder-after"|"into-folder", rowIndex=N, targetRow=<row-meta>, anchorFrame=<frame> }
+-- or nil if no valid drop target.
+local function GetCol1DropTarget(cursorY, renderedRows, sourceKind)
+    if not renderedRows or #renderedRows == 0 then return nil end
+
+    for i, rowMeta in ipairs(renderedRows) do
+        local frame = rowMeta.widget and rowMeta.widget.frame
+        if frame and frame:IsShown() then
+            local top = frame:GetTop()
+            local bottom = frame:GetBottom()
+            if top and bottom and cursorY <= top and cursorY >= bottom then
+                local height = top - bottom
+                -- If hovering over a folder header and dragging a group, use 3-zone detection
+                if rowMeta.kind == "folder" and (sourceKind == "group" or sourceKind == "folder-group") then
+                    local topZone = top - height * 0.25
+                    local bottomZone = bottom + height * 0.25
+                    if cursorY > topZone then
+                        return { action = "reorder-before", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                    elseif cursorY < bottomZone then
+                        return { action = "reorder-after", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                    else
+                        return { action = "into-folder", rowIndex = i, targetRow = rowMeta, anchorFrame = frame, targetFolderId = rowMeta.id }
+                    end
+                else
+                    -- Standard 2-zone (above/below midpoint)
+                    local mid = (top + bottom) / 2
+                    if cursorY > mid then
+                        return { action = "reorder-before", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                    else
+                        return { action = "reorder-after", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                    end
+                end
+            end
+        end
+    end
+
+    -- Below all rows: drop after last
+    local lastRow = renderedRows[#renderedRows]
+    local lastFrame = lastRow and lastRow.widget and lastRow.widget.frame
+    if lastFrame and lastFrame:IsShown() then
+        return { action = "reorder-after", rowIndex = #renderedRows, targetRow = lastRow, anchorFrame = lastFrame }
+    end
+    return nil
+end
+
+-- Show drag indicator for "into-folder" drops (highlight overlay on folder row)
+local function ShowFolderDropOverlay(anchorFrame, parentScrollWidget)
+    local ind = GetDragIndicator()
+    local width = parentScrollWidget.content:GetWidth() or 100
+    ind:SetWidth(width)
+    ind:SetHeight(anchorFrame:GetHeight() or 24)
+    ind:ClearAllPoints()
+    ind:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
+    ind.tex:SetColorTexture(0.4, 0.7, 0.2, 0.3)
+    ind:Show()
+end
+
+-- Reset drag indicator to default line style
+local function ResetDragIndicatorStyle()
+    if dragIndicator and dragIndicator.tex then
+        dragIndicator:SetHeight(2)
+        dragIndicator.tex:SetColorTexture(0.2, 0.6, 1.0, 1.0)
+    end
+end
+
+-- Apply a column-1 folder-aware drop result.
+-- Called from FinishDrag for group/folder/folder-group drag kinds.
+local function ApplyCol1Drop(state)
+    local dropTarget = state.dropTarget
+    if not dropTarget then return end
+
+    local db = CooldownCompanion.db.profile
+
+    if state.kind == "group" or state.kind == "folder-group" then
+        local sourceGroupId = state.sourceGroupId
+        local group = db.groups[sourceGroupId]
+        if not group then return end
+
+        if dropTarget.action == "into-folder" then
+            -- Move group into the target folder
+            group.folderId = dropTarget.targetFolderId
+        elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
+            local targetRow = dropTarget.targetRow
+            -- If dropping on a row that's in a folder, join that folder
+            if targetRow.kind == "group" and targetRow.inFolder then
+                group.folderId = targetRow.inFolder
+            elseif targetRow.kind == "folder" then
+                -- Dropping before/after a folder header = top-level
+                group.folderId = nil
+            else
+                -- Dropping on a loose group = stay/become loose
+                group.folderId = nil
+            end
+
+            -- Reassign order values for all items in the target section
+            -- to place the dragged group at the right position
+            local section = targetRow.section or state.sourceSection
+            local renderedRows = state.col1RenderedRows
+            if renderedRows then
+                -- Build ordered list of items in the same container (folder or top-level)
+                -- and reassign order values
+                local targetFolderId = group.folderId
+                local orderItems = {}
+                for _, row in ipairs(renderedRows) do
+                    if row.section == section then
+                        if targetFolderId then
+                            -- Ordering within a folder: collect groups in same folder
+                            if row.kind == "group" and row.inFolder == targetFolderId and row.id ~= sourceGroupId then
+                                table.insert(orderItems, row.id)
+                            end
+                        else
+                            -- Top-level ordering: collect top-level items (folders + loose groups)
+                            if (row.kind == "folder") or (row.kind == "group" and not row.inFolder) then
+                                if row.id ~= sourceGroupId then
+                                    table.insert(orderItems, { kind = row.kind, id = row.id })
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- Find insertion position
+                local insertPos
+                if targetFolderId then
+                    -- Within folder: find target group position
+                    insertPos = #orderItems + 1
+                    for idx, gid in ipairs(orderItems) do
+                        if gid == dropTarget.targetRow.id then
+                            insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                            break
+                        end
+                    end
+                    table.insert(orderItems, insertPos, sourceGroupId)
+                    for i, gid in ipairs(orderItems) do
+                        db.groups[gid].order = i
+                    end
+                else
+                    -- Top-level: find target position among mixed items
+                    insertPos = #orderItems + 1
+                    for idx, item in ipairs(orderItems) do
+                        if item.kind == dropTarget.targetRow.kind and item.id == dropTarget.targetRow.id then
+                            insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                            break
+                        end
+                    end
+                    table.insert(orderItems, insertPos, { kind = "group", id = sourceGroupId })
+                    for i, item in ipairs(orderItems) do
+                        if item.kind == "folder" then
+                            db.folders[item.id].order = i
+                        else
+                            db.groups[item.id].order = i
+                        end
+                    end
+                end
+            end
+        end
+    elseif state.kind == "folder" then
+        local sourceFolderId = state.sourceFolderId
+        local folder = db.folders[sourceFolderId]
+        if not folder then return end
+
+        local dropTarget = state.dropTarget
+        local targetRow = dropTarget.targetRow
+        local section = targetRow.section or state.sourceSection
+
+        -- Build top-level items for the section (excluding the source folder)
+        local renderedRows = state.col1RenderedRows
+        if renderedRows then
+            local orderItems = {}
+            for _, row in ipairs(renderedRows) do
+                if row.section == section then
+                    if (row.kind == "folder" or (row.kind == "group" and not row.inFolder)) and row.id ~= sourceFolderId then
+                        table.insert(orderItems, { kind = row.kind, id = row.id })
+                    end
+                end
+            end
+
+            local insertPos = #orderItems + 1
+            for idx, item in ipairs(orderItems) do
+                local targetKind = targetRow.kind
+                local targetId = targetRow.id
+                -- If target is a group inside a folder, use the folder as anchor
+                if targetRow.inFolder then
+                    targetKind = "folder"
+                    targetId = targetRow.inFolder
+                end
+                if item.kind == targetKind and item.id == targetId then
+                    insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                    break
+                end
+            end
+            table.insert(orderItems, insertPos, { kind = "folder", id = sourceFolderId })
+            for i, item in ipairs(orderItems) do
+                if item.kind == "folder" then
+                    db.folders[item.id].order = i
+                else
+                    db.groups[item.id].order = i
+                end
+            end
+        end
+    end
+end
+
 local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
     if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
     if sourceIndex == dropIndex then return end
@@ -1778,6 +2029,7 @@ local function CancelDrag()
     end
     dragState = nil
     HideDragIndicator()
+    ResetDragIndicatorStyle()
     if dragTracker then
         dragTracker:SetScript("OnUpdate", nil)
     end
@@ -1790,8 +2042,14 @@ local function FinishDrag()
     end
     local state = dragState
     CancelDrag()
-    if state.kind == "group" then
+    ResetDragIndicatorStyle()
+    if state.kind == "group" and state.groupIds then
+        -- Legacy flat reorder (column 2 button drags still use this path)
         PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
+        CooldownCompanion:RefreshConfigPanel()
+    elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" then
+        -- Column 1 folder-aware drop
+        ApplyCol1Drop(state)
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "button" then
         PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
@@ -1829,13 +2087,31 @@ local function StartDragTracking()
             end
         end
         if dragState.phase == "active" then
-            local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
-                dragState.scrollWidget, cursorY,
-                dragState.childOffset or 0,
-                dragState.totalDraggable
-            )
-            dragState.dropIndex = dropIndex
-            ShowDragIndicator(anchorFrame, anchorAbove, dragState.scrollWidget)
+            if dragState.col1RenderedRows then
+                -- Column 1 folder-aware drop detection
+                local dropTarget = GetCol1DropTarget(cursorY, dragState.col1RenderedRows, dragState.kind)
+                dragState.dropTarget = dropTarget
+                if dropTarget then
+                    ResetDragIndicatorStyle()
+                    if dropTarget.action == "into-folder" then
+                        ShowFolderDropOverlay(dropTarget.anchorFrame, dragState.scrollWidget)
+                    elseif dropTarget.action == "reorder-before" then
+                        ShowDragIndicator(dropTarget.anchorFrame, true, dragState.scrollWidget)
+                    else
+                        ShowDragIndicator(dropTarget.anchorFrame, false, dragState.scrollWidget)
+                    end
+                else
+                    HideDragIndicator()
+                end
+            else
+                local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
+                    dragState.scrollWidget, cursorY,
+                    dragState.childOffset or 0,
+                    dragState.totalDraggable
+                )
+                dragState.dropIndex = dropIndex
+                ShowDragIndicator(anchorFrame, anchorAbove, dragState.scrollWidget)
+            end
         end
     end)
 end
@@ -1861,23 +2137,8 @@ function RefreshColumn1()
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
 
-    -- Split groups into global and character-owned, sorted by order
-    local globalIds = {}
-    local charIds = {}
-    for id, group in pairs(db.groups) do
-        if group.isGlobal then
-            table.insert(globalIds, id)
-        elseif group.createdBy == charKey then
-            table.insert(charIds, id)
-        end
-    end
-    local function sortByOrder(a, b)
-        local orderA = db.groups[a].order or a
-        local orderB = db.groups[b].order or b
-        return orderA < orderB
-    end
-    table.sort(globalIds, sortByOrder)
-    table.sort(charIds, sortByOrder)
+    -- Ensure folders table exists
+    if not db.folders then db.folders = {} end
 
     -- Count current children in scroll widget
     local function CountScrollChildren()
@@ -1885,8 +2146,64 @@ function RefreshColumn1()
         return #children
     end
 
+    -- Track all rendered rows for drag system: sequential index -> metadata
+    local col1RenderedRows = {}
+
+    -- Build top-level items for a section (folders + loose groups), sorted by order
+    local function BuildSectionItems(section, sectionGroupIds)
+        -- Collect folders for this section
+        local sectionFolderIds = {}
+        for fid, folder in pairs(db.folders) do
+            if folder.section == section then
+                table.insert(sectionFolderIds, fid)
+            end
+        end
+
+        -- Determine which groups are in valid folders for this section
+        local validFolderIds = {}
+        for _, fid in ipairs(sectionFolderIds) do
+            validFolderIds[fid] = true
+        end
+
+        -- Split groups: those in a valid folder vs loose
+        local looseGroupIds = {}
+        local folderChildGroups = {}  -- [folderId] = { groupId, ... }
+        for _, gid in ipairs(sectionGroupIds) do
+            local group = db.groups[gid]
+            if group.folderId and validFolderIds[group.folderId] then
+                if not folderChildGroups[group.folderId] then
+                    folderChildGroups[group.folderId] = {}
+                end
+                table.insert(folderChildGroups[group.folderId], gid)
+            else
+                table.insert(looseGroupIds, gid)
+            end
+        end
+
+        -- Sort folder children by group order
+        for fid, children in pairs(folderChildGroups) do
+            table.sort(children, function(a, b)
+                local orderA = db.groups[a].order or a
+                local orderB = db.groups[b].order or b
+                return orderA < orderB
+            end)
+        end
+
+        -- Build top-level items list: folders + loose groups
+        local items = {}
+        for _, fid in ipairs(sectionFolderIds) do
+            table.insert(items, { kind = "folder", id = fid, order = db.folders[fid].order or fid })
+        end
+        for _, gid in ipairs(looseGroupIds) do
+            table.insert(items, { kind = "group", id = gid, order = db.groups[gid].order or gid })
+        end
+        table.sort(items, function(a, b) return a.order < b.order end)
+
+        return items, folderChildGroups
+    end
+
     -- Helper: render a single group row (reused by both sections)
-    local function RenderGroupRow(groupId, listIndex, sectionGroupIds, sectionChildOffset)
+    local function RenderGroupRow(groupId, inFolder, sectionTag)
         local group = db.groups[groupId]
         if not group then return end
 
@@ -1913,7 +2230,9 @@ function RefreshColumn1()
             end
         end
         local globalTag = group.isGlobal and "|cff66aaff[G]|r " or ""
-        local label = globalTag .. specTag .. group.name
+        -- Indent prefix for groups inside folders
+        local indentPrefix = inFolder and "    " or ""
+        local label = indentPrefix .. globalTag .. specTag .. group.name
         local indicators = {}
         if group.enabled == false then
             table.insert(indicators, "|cff888888OFF|r")
@@ -1935,11 +2254,10 @@ function RefreshColumn1()
         if btnText and col1Scroll then
             btnText:SetWordWrap(true)
             btnText:SetNonSpaceWrap(true)
-            -- Pre-calculate height based on scroll container width
             local function AdjustButtonHeight()
                 local scrollWidth = col1Scroll.content:GetWidth()
                 if scrollWidth and scrollWidth > 20 then
-                    local padding = 20  -- button internal padding
+                    local padding = 20
                     btnText:SetWidth(scrollWidth - padding)
                     local textHeight = btnText:GetStringHeight()
                     local minHeight = 24
@@ -1950,7 +2268,6 @@ function RefreshColumn1()
                 end
                 return false
             end
-            -- Try immediately, fall back to deferred if width not ready
             if not AdjustButtonHeight() then
                 C_Timer.After(0, function()
                     if btn.frame and col1Scroll then
@@ -1967,7 +2284,6 @@ function RefreshColumn1()
         end
         btn.frame:RegisterForClicks("AnyUp")
         btn:SetCallback("OnClick", function(widget, event, mouseButton)
-            -- Suppress click if a drag just finished
             if dragState and dragState.phase == "active" then return end
             if IsShiftKeyDown() then
                 if mouseButton == "LeftButton" then
@@ -1984,102 +2300,155 @@ function RefreshColumn1()
                 if not groupContextMenu then
                     groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
                 end
-                UIDropDownMenu_Initialize(groupContextMenu, function(self, level)
-                    -- Rename
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = "Rename"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
-                    end
-                    UIDropDownMenu_AddButton(info, level)
+                UIDropDownMenu_Initialize(groupContextMenu, function(self, level, menuList)
+                    level = level or 1
+                    if level == 1 then
+                        -- Rename
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = "Rename"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                        end
+                        UIDropDownMenu_AddButton(info, level)
 
-                    -- Toggle Global
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = group.isGlobal and "Make Character-Only" or "Make Global"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        if group.isGlobal and group.specs then
-                            local hasForeign = false
-                            local numSpecs = GetNumSpecializations()
-                            local playerSpecIds = {}
-                            for i = 1, numSpecs do
-                                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-                                if specId then playerSpecIds[specId] = true end
-                            end
-                            for specId in pairs(group.specs) do
-                                if not playerSpecIds[specId] then
-                                    hasForeign = true
-                                    break
+                        -- Toggle Global
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = group.isGlobal and "Make Character-Only" or "Make Global"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            if group.isGlobal and group.specs then
+                                local hasForeign = false
+                                local numSpecs = GetNumSpecializations()
+                                local playerSpecIds = {}
+                                for i = 1, numSpecs do
+                                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                                    if specId then playerSpecIds[specId] = true end
+                                end
+                                for specId in pairs(group.specs) do
+                                    if not playerSpecIds[specId] then
+                                        hasForeign = true
+                                        break
+                                    end
+                                end
+                                if hasForeign then
+                                    ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", group.name, { groupId = groupId })
+                                    return
                                 end
                             end
-                            if hasForeign then
-                                ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", group.name, { groupId = groupId })
-                                return
-                            end
-                        end
-                        CooldownCompanion:ToggleGroupGlobal(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Toggle On/Off
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = (group.enabled ~= false) and "Disable" or "Enable"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        group.enabled = not (group.enabled ~= false)
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Duplicate
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Duplicate"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local newGroupId = CooldownCompanion:DuplicateGroup(groupId)
-                        if newGroupId then
-                            selectedGroup = newGroupId
+                            CooldownCompanion:ToggleGroupGlobal(groupId)
                             CooldownCompanion:RefreshConfigPanel()
                         end
-                    end
-                    UIDropDownMenu_AddButton(info, level)
+                        UIDropDownMenu_AddButton(info, level)
 
-                    -- Switch display mode
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = group.displayMode == "bars" and "Switch to Icons" or "Switch to Bars"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local wasBars = group.displayMode == "bars"
-                        group.displayMode = wasBars and "icons" or "bars"
-                        if not wasBars then
-                            group.style.orientation = "vertical"
+                        -- Move to Folder submenu
+                        local groupSection = group.isGlobal and "global" or "char"
+                        local hasFolders = false
+                        for fid, folder in pairs(db.folders) do
+                            if folder.section == groupSection then
+                                hasFolders = true
+                                break
+                            end
                         end
-                        if group.displayMode == "bars" and group.masqueEnabled then
-                            CooldownCompanion:ToggleGroupMasque(groupId, false)
+                        if hasFolders or group.folderId then
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "Move to Folder"
+                            info.notCheckable = true
+                            info.hasArrow = true
+                            info.menuList = "MOVE_TO_FOLDER"
+                            UIDropDownMenu_AddButton(info, level)
                         end
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
 
-                    -- Delete
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "|cffff4444Delete|r"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local name = group and group.name or "this group"
-                        ShowPopupAboveConfig("CDC_DELETE_GROUP", name, { groupId = groupId })
+                        -- Toggle On/Off
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = (group.enabled ~= false) and "Disable" or "Enable"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            group.enabled = not (group.enabled ~= false)
+                            CooldownCompanion:RefreshGroupFrame(groupId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- Duplicate
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "Duplicate"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            local newGroupId = CooldownCompanion:DuplicateGroup(groupId)
+                            if newGroupId then
+                                selectedGroup = newGroupId
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- Switch display mode
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = group.displayMode == "bars" and "Switch to Icons" or "Switch to Bars"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            local wasBars = group.displayMode == "bars"
+                            group.displayMode = wasBars and "icons" or "bars"
+                            if not wasBars then
+                                group.style.orientation = "vertical"
+                            end
+                            if group.displayMode == "bars" and group.masqueEnabled then
+                                CooldownCompanion:ToggleGroupMasque(groupId, false)
+                            end
+                            CooldownCompanion:RefreshGroupFrame(groupId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- Delete
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "|cffff4444Delete|r"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            local name = group and group.name or "this group"
+                            ShowPopupAboveConfig("CDC_DELETE_GROUP", name, { groupId = groupId })
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    elseif menuList == "MOVE_TO_FOLDER" then
+                        -- "(No Folder)" option
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = "(No Folder)"
+                        info.checked = (group.folderId == nil)
+                        info.func = function()
+                            CloseDropDownMenus()
+                            CooldownCompanion:MoveGroupToFolder(groupId, nil)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- List all folders in this group's section
+                        local groupSection = group.isGlobal and "global" or "char"
+                        local folderList = {}
+                        for fid, folder in pairs(db.folders) do
+                            if folder.section == groupSection then
+                                table.insert(folderList, { id = fid, name = folder.name, order = folder.order or fid })
+                            end
+                        end
+                        table.sort(folderList, function(a, b) return a.order < b.order end)
+                        for _, f in ipairs(folderList) do
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = f.name
+                            info.checked = (group.folderId == f.id)
+                            info.func = function()
+                                CloseDropDownMenus()
+                                CooldownCompanion:MoveGroupToFolder(groupId, f.id)
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+                        end
                     end
-                    UIDropDownMenu_AddButton(info, level)
                 end, "MENU")
                 groupContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
                 ToggleDropDownMenu(1, nil, groupContextMenu, "cursor", 0, 0)
@@ -2106,6 +2475,22 @@ function RefreshColumn1()
         row:SetLayout("Flow")
         row:AddChild(btn)
         col1Scroll:AddChild(row)
+
+        -- Tag the row frame with metadata for drag system
+        row.frame._cdcItemKind = "group"
+        row.frame._cdcGroupId = groupId
+        row.frame._cdcInFolder = inFolder and group.folderId or nil
+        row.frame._cdcSection = sectionTag
+
+        -- Track in rendered rows list
+        local rowIndex = #col1RenderedRows + 1
+        col1RenderedRows[rowIndex] = {
+            kind = "group",
+            id = groupId,
+            widget = row,
+            inFolder = inFolder and group.folderId or nil,
+            section = sectionTag,
+        }
 
         -- Inline spec filter panel (expanded via Shift+Left-click)
         if specExpandedGroupId == groupId then
@@ -2135,7 +2520,6 @@ function RefreshColumn1()
                 col1Scroll:AddChild(cb)
             end
 
-            -- Foreign specs: specs from other classes already toggled on
             local playerSpecIds = {}
             for i = 1, numSpecs do
                 local specId = C_SpecializationInfo.GetSpecializationInfo(i)
@@ -2153,7 +2537,6 @@ function RefreshColumn1()
 
             if #foreignSpecs > 0 then
                 table.sort(foreignSpecs)
-
                 for _, specId in ipairs(foreignSpecs) do
                     local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
                     if name then
@@ -2194,7 +2577,6 @@ function RefreshColumn1()
         end
 
         -- Hold-click drag reorder via handler-table HookScript pattern
-        -- Hook btn.frame (not row.frame) because the Button captures mouse events
         local btnFrame = btn.frame
         if not btnFrame._cdcDragHooked then
             btnFrame._cdcDragHooked = true
@@ -2206,51 +2588,200 @@ function RefreshColumn1()
             if button == "LeftButton" and not IsShiftKeyDown() then
                 local cursorY = GetScaledCursorPosition(col1Scroll)
                 dragState = {
-                    kind = "group",
+                    kind = inFolder and "folder-group" or "group",
                     phase = "pending",
-                    sourceIndex = listIndex,
-                    groupIds = sectionGroupIds,
+                    sourceGroupId = groupId,
+                    sourceSection = sectionTag,
+                    sourceFolderId = inFolder and group.folderId or nil,
                     scrollWidget = col1Scroll,
                     widget = row,
                     startY = cursorY,
-                    childOffset = sectionChildOffset,
-                    totalDraggable = #sectionGroupIds,
+                    col1RenderedRows = col1RenderedRows,
                 }
                 StartDragTracking()
             end
         end
     end
 
-    -- Render "Global Groups" section
-    if #globalIds > 0 then
-        local globalHeading = AceGUI:Create("Heading")
-        globalHeading:SetText("|cff66aaff" .. "Global Groups" .. "|r")
-        globalHeading:SetFullWidth(true)
-        col1Scroll:AddChild(globalHeading)
+    -- Helper: render a folder header row
+    local function RenderFolderRow(folderId, sectionTag)
+        local folder = db.folders[folderId]
+        if not folder then return end
 
-        local globalChildOffset = CountScrollChildren()
-        for listIndex, groupId in ipairs(globalIds) do
-            RenderGroupRow(groupId, listIndex, globalIds, globalChildOffset)
+        local isCollapsed = collapsedFolders[folderId]
+        local arrow = isCollapsed and "> " or "v "
+        local folderLabel = "|cffffd100" .. arrow .. folder.name .. "|r"
+
+        local btn = AceGUI:Create("Button")
+        btn:SetText(folderLabel)
+        btn:SetFullWidth(true)
+
+        btn.frame:RegisterForClicks("AnyUp")
+        btn:SetCallback("OnClick", function(widget, event, mouseButton)
+            if dragState and dragState.phase == "active" then return end
+            if mouseButton == "LeftButton" then
+                collapsedFolders[folderId] = not collapsedFolders[folderId]
+                CooldownCompanion:RefreshConfigPanel()
+            elseif mouseButton == "RightButton" then
+                if not folderContextMenu then
+                    folderContextMenu = CreateFrame("Frame", "CDCFolderContextMenu", UIParent, "UIDropDownMenuTemplate")
+                end
+                UIDropDownMenu_Initialize(folderContextMenu, function(self, level)
+                    -- Rename
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = "Rename"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        ShowPopupAboveConfig("CDC_RENAME_FOLDER", folder.name, { folderId = folderId })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Toggle Global/Character
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = folder.section == "global" and "Make Character Folder" or "Make Global Folder"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        CooldownCompanion:ToggleFolderGlobal(folderId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Delete
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "|cffff4444Delete Folder|r"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        ShowPopupAboveConfig("CDC_DELETE_FOLDER", folder.name, { folderId = folderId })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end, "MENU")
+                folderContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                ToggleDropDownMenu(1, nil, folderContextMenu, "cursor", 0, 0)
+            end
+        end)
+
+        local row = AceGUI:Create("SimpleGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+        row:AddChild(btn)
+        col1Scroll:AddChild(row)
+
+        -- Tag the row frame with metadata for drag system
+        row.frame._cdcItemKind = "folder"
+        row.frame._cdcFolderId = folderId
+        row.frame._cdcSection = sectionTag
+
+        -- Track in rendered rows list
+        local rowIndex = #col1RenderedRows + 1
+        col1RenderedRows[rowIndex] = {
+            kind = "folder",
+            id = folderId,
+            widget = row,
+            section = sectionTag,
+        }
+
+        -- Drag support for folder header
+        local btnFrame = btn.frame
+        if not btnFrame._cdcDragHooked then
+            btnFrame._cdcDragHooked = true
+            btnFrame:HookScript("OnMouseDown", function(self, mouseBtn)
+                if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
+            end)
+        end
+        btnFrame._cdcOnMouseDown = function(self, button)
+            if button == "LeftButton" then
+                local cursorY = GetScaledCursorPosition(col1Scroll)
+                dragState = {
+                    kind = "folder",
+                    phase = "pending",
+                    sourceFolderId = folderId,
+                    sourceSection = sectionTag,
+                    scrollWidget = col1Scroll,
+                    widget = row,
+                    startY = cursorY,
+                    col1RenderedRows = col1RenderedRows,
+                }
+                StartDragTracking()
+            end
         end
     end
 
-    -- Render character groups section
-    if #charIds > 0 then
-        local charName = charKey:match("^(.-)%s*%-") or charKey
-        local charHeading = AceGUI:Create("Heading")
-        charHeading:SetText(charName .. "'s Groups")
-        charHeading:SetFullWidth(true)
-        col1Scroll:AddChild(charHeading)
+    -- Render a section (global or character)
+    local function RenderSection(section, sectionGroupIds, headingText)
+        local items, folderChildGroups = BuildSectionItems(section, sectionGroupIds)
+        if #items == 0 and not next(folderChildGroups) then return end
 
-        local charChildOffset = CountScrollChildren()
-        for listIndex, groupId in ipairs(charIds) do
-            RenderGroupRow(groupId, listIndex, charIds, charChildOffset)
+        local heading = AceGUI:Create("Heading")
+        heading:SetText(headingText)
+        heading:SetFullWidth(true)
+        col1Scroll:AddChild(heading)
+
+        for _, item in ipairs(items) do
+            if item.kind == "folder" then
+                RenderFolderRow(item.id, section)
+                -- If expanded, render children
+                if not collapsedFolders[item.id] then
+                    local children = folderChildGroups[item.id]
+                    if children then
+                        for _, gid in ipairs(children) do
+                            RenderGroupRow(gid, true, section)
+                        end
+                    end
+                end
+            else
+                RenderGroupRow(item.id, false, section)
+            end
         end
+    end
+
+    -- Split groups into global and character-owned
+    local globalIds = {}
+    local charIds = {}
+    for id, group in pairs(db.groups) do
+        if group.isGlobal then
+            table.insert(globalIds, id)
+        elseif group.createdBy == charKey then
+            table.insert(charIds, id)
+        end
+    end
+
+    -- Render sections
+    if #globalIds > 0 or next(db.folders) then
+        -- Check if there are any global folders
+        local hasGlobalContent = #globalIds > 0
+        if not hasGlobalContent then
+            for _, folder in pairs(db.folders) do
+                if folder.section == "global" then
+                    hasGlobalContent = true
+                    break
+                end
+            end
+        end
+        if hasGlobalContent then
+            RenderSection("global", globalIds, "|cff66aaff" .. "Global Groups" .. "|r")
+        end
+    end
+
+    local charName = charKey:match("^(.-)%s*%-") or charKey
+    -- Always show character section (even if empty, folders might exist)
+    local hasCharContent = #charIds > 0
+    if not hasCharContent then
+        for _, folder in pairs(db.folders) do
+            if folder.section == "char" then
+                hasCharContent = true
+                break
+            end
+        end
+    end
+    if hasCharContent then
+        RenderSection("char", charIds, charName .. "'s Groups")
     end
 
     -- Refresh the static button bar at the bottom
     if col1ButtonBar then
-        -- Release previous bar widgets
         for _, widget in ipairs(col1BarWidgets) do
             widget:Release()
         end
@@ -2274,7 +2805,25 @@ function RefreshColumn1()
             return name
         end
 
-        -- "New Icon Group" button (left half)
+        -- Helper: generate a unique folder name
+        local function GenerateFolderName(base)
+            local db = CooldownCompanion.db.profile
+            local existing = {}
+            for _, f in pairs(db.folders) do
+                existing[f.name] = true
+            end
+            local name = base
+            if existing[name] then
+                local n = 1
+                while existing[name .. " " .. n] do
+                    n = n + 1
+                end
+                name = name .. " " .. n
+            end
+            return name
+        end
+
+        -- Top row: "New Icon Group" (left) | "New Bar Group" (right)
         local newIconBtn = AceGUI:Create("Button")
         newIconBtn:SetText("New Icon Group")
         newIconBtn:SetCallback("OnClick", function()
@@ -2287,11 +2836,11 @@ function RefreshColumn1()
         newIconBtn.frame:SetParent(col1ButtonBar)
         newIconBtn.frame:ClearAllPoints()
         newIconBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOPLEFT", 0, 0)
-        newIconBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOM", -2, 0)
+        newIconBtn.frame:SetPoint("RIGHT", col1ButtonBar, "CENTER", -2, 0)
+        newIconBtn.frame:SetHeight(28)
         newIconBtn.frame:Show()
         table.insert(col1BarWidgets, newIconBtn)
 
-        -- "New Bar Group" button (right half)
         local newBarBtn = AceGUI:Create("Button")
         newBarBtn:SetText("New Bar Group")
         newBarBtn:SetCallback("OnClick", function()
@@ -2311,9 +2860,25 @@ function RefreshColumn1()
         newBarBtn.frame:SetParent(col1ButtonBar)
         newBarBtn.frame:ClearAllPoints()
         newBarBtn.frame:SetPoint("TOPLEFT", col1ButtonBar, "TOP", 2, 0)
-        newBarBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        newBarBtn.frame:SetPoint("TOPRIGHT", col1ButtonBar, "TOPRIGHT", 0, 0)
+        newBarBtn.frame:SetHeight(28)
         newBarBtn.frame:Show()
         table.insert(col1BarWidgets, newBarBtn)
+
+        -- Bottom row: "New Folder" (full width)
+        local newFolderBtn = AceGUI:Create("Button")
+        newFolderBtn:SetText("New Folder")
+        newFolderBtn:SetCallback("OnClick", function()
+            local folderId = CooldownCompanion:CreateFolder(GenerateFolderName("New Folder"), "char")
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        newFolderBtn.frame:SetParent(col1ButtonBar)
+        newFolderBtn.frame:ClearAllPoints()
+        newFolderBtn.frame:SetPoint("BOTTOMLEFT", col1ButtonBar, "BOTTOMLEFT", 0, 0)
+        newFolderBtn.frame:SetPoint("BOTTOMRIGHT", col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        newFolderBtn.frame:SetHeight(28)
+        newFolderBtn.frame:Show()
+        table.insert(col1BarWidgets, newFolderBtn)
     end
 end
 
@@ -3380,11 +3945,11 @@ local function CreateConfigPanel()
         end
     end
 
-    -- Static button bar at bottom of column 1 (New / Delete)
+    -- Static button bar at bottom of column 1 (New Icon/Bar Group + New Folder)
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(28)
+    btnBar:SetHeight(56)
     col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -3393,7 +3958,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 28)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 56)
     scroll1.frame:Show()
     col1Scroll = scroll1
 
@@ -3648,6 +4213,7 @@ function CooldownCompanion:SetupConfig()
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(collapsedFolders)
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -3657,6 +4223,7 @@ function CooldownCompanion:SetupConfig()
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(collapsedFolders)
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -3666,6 +4233,7 @@ function CooldownCompanion:SetupConfig()
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(collapsedFolders)
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end

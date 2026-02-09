@@ -156,6 +156,8 @@ local defaults = {
             ]]
         },
         nextGroupId = 1,
+        folders = {},       -- [folderId] = { name, order, section }
+        nextFolderId = 1,
         globalStyle = {
             buttonSize = 36,
             buttonSpacing = 2,
@@ -320,6 +322,9 @@ function CooldownCompanion:OnEnable()
 
     -- Remove orphaned barChargeMissingColor/barChargeSwipe fields (replaced by charge sub-bars)
     self:MigrateRemoveBarChargeOldFields()
+
+    -- Ensure folders table exists in profile
+    self:MigrateFolders()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -1149,12 +1154,75 @@ function CooldownCompanion:DuplicateGroup(groupId)
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
 
+    -- If source was global but duplicate becomes character-owned, clear folderId
+    -- (folder belongs to the global section)
+    if sourceGroup.isGlobal and newGroup.folderId then
+        newGroup.folderId = nil
+    end
+
     self.db.profile.groups[newGroupId] = newGroup
 
     -- Create the frame for the new group
     self:CreateGroupFrame(newGroupId)
 
     return newGroupId
+end
+
+function CooldownCompanion:CreateFolder(name, section)
+    local db = self.db.profile
+    local folderId = db.nextFolderId
+    db.nextFolderId = folderId + 1
+    db.folders[folderId] = {
+        name = name,
+        order = folderId,
+        section = section or "char",
+    }
+    return folderId
+end
+
+function CooldownCompanion:DeleteFolder(folderId)
+    local db = self.db.profile
+    if not db.folders[folderId] then return end
+    -- Clear folderId on all child groups (they become loose)
+    for _, group in pairs(db.groups) do
+        if group.folderId == folderId then
+            group.folderId = nil
+        end
+    end
+    db.folders[folderId] = nil
+end
+
+function CooldownCompanion:RenameFolder(folderId, newName)
+    local folder = self.db.profile.folders[folderId]
+    if folder then
+        folder.name = newName
+    end
+end
+
+function CooldownCompanion:MoveGroupToFolder(groupId, folderId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+    group.folderId = folderId  -- nil = loose (no folder)
+end
+
+function CooldownCompanion:ToggleFolderGlobal(folderId)
+    local db = self.db.profile
+    local folder = db.folders[folderId]
+    if not folder then return end
+    local newSection = (folder.section == "global") and "char" or "global"
+    folder.section = newSection
+    -- Move all child groups to the new section
+    for groupId, group in pairs(db.groups) do
+        if group.folderId == folderId then
+            if newSection == "global" then
+                group.isGlobal = true
+            else
+                group.isGlobal = false
+                group.createdBy = self.db.keys.char
+            end
+        end
+    end
+    self:RefreshAllGroups()
 end
 
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
@@ -1347,6 +1415,15 @@ function CooldownCompanion:MigrateRemoveBarChargeOldFields()
                 bd.barChargeSwipe = nil
             end
         end
+    end
+end
+
+function CooldownCompanion:MigrateFolders()
+    if self.db.profile.folders == nil then
+        self.db.profile.folders = {}
+    end
+    if self.db.profile.nextFolderId == nil then
+        self.db.profile.nextFolderId = 1
     end
 end
 
@@ -1545,6 +1622,8 @@ function CooldownCompanion:ToggleGroupGlobal(groupId)
     if not group.isGlobal then
         group.createdBy = self.db.keys.char
     end
+    -- Clear folder assignment — the folder belongs to the old section
+    group.folderId = nil
     self:RefreshAllGroups()
 end
 
