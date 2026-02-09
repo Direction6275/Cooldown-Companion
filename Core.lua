@@ -1173,6 +1173,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
         local charges = C_Spell.GetSpellCharges(id)
         if charges and charges.maxCharges and charges.maxCharges > 1 then
             group.buttons[buttonIndex].hasCharges = true
+            group.buttons[buttonIndex].showChargeText = true
         end
     end
 
