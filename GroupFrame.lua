@@ -6,80 +6,18 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
--- Helper function to make a frame click-through
--- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
--- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
-local function SetFrameClickThrough(frame, disableClicks, disableMotion)
-    if not frame then return end
+-- Localize frequently-used globals for faster access
+local pairs = pairs
+local ipairs = ipairs
+local math_floor = math.floor
+local math_min = math.min
+local math_max = math.max
+local math_ceil = math.ceil
+local table_insert = table.insert
 
-    if disableClicks then
-        if frame.SetMouseClickEnabled then
-            frame:SetMouseClickEnabled(false)
-        end
-        if frame.SetPropagateMouseClicks then
-            frame:SetPropagateMouseClicks(true)
-        end
-        if frame.RegisterForClicks then
-            frame:RegisterForClicks()
-        end
-        if frame.RegisterForDrag then
-            frame:RegisterForDrag()
-        end
-        frame:SetScript("OnMouseDown", nil)
-        frame:SetScript("OnMouseUp", nil)
-    else
-        if frame.SetMouseClickEnabled then
-            frame:SetMouseClickEnabled(true)
-        end
-        if frame.SetPropagateMouseClicks then
-            frame:SetPropagateMouseClicks(false)
-        end
-    end
-
-    if disableMotion then
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(false)
-        end
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(true)
-        end
-        frame:SetScript("OnEnter", nil)
-        frame:SetScript("OnLeave", nil)
-    else
-        if frame.SetMouseMotionEnabled then
-            frame:SetMouseMotionEnabled(true)
-        end
-        if frame.SetPropagateMouseMotion then
-            frame:SetPropagateMouseMotion(false)
-        end
-    end
-
-    if disableClicks and disableMotion then
-        frame:EnableMouse(false)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(10000, 10000, 10000, 10000)
-        end
-        frame:EnableKeyboard(false)
-    elseif not disableClicks and not disableMotion then
-        frame:EnableMouse(true)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(0, 0, 0, 0)
-        end
-    else
-        frame:EnableMouse(true)
-        if frame.SetHitRectInsets then
-            frame:SetHitRectInsets(0, 0, 0, 0)
-        end
-    end
-end
-
--- Recursively apply click-through to frame and all children
-local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
-    SetFrameClickThrough(frame, disableClicks, disableMotion)
-    for _, child in ipairs({frame:GetChildren()}) do
-        SetFrameClickThroughRecursive(child, disableClicks, disableMotion)
-    end
-end
+-- Shared click-through and border helpers from Utils.lua
+local SetFrameClickThrough = ST.SetFrameClickThrough
+local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 local function UpdateCoordLabel(frame, x, y)
     if frame.coordLabel then
@@ -92,36 +30,7 @@ local NUDGE_BTN_SIZE = 14
 local NUDGE_REPEAT_DELAY = 0.5
 local NUDGE_REPEAT_INTERVAL = 0.05
 
--- Create 4 pixel-perfect border textures using PixelUtil (replaces backdrop edgeFile)
-local function CreatePixelBorders(frame, r, g, b, a)
-    r, g, b, a = r or 0, g or 0, b or 0, a or 1
-
-    local top = frame:CreateTexture(nil, "BORDER")
-    top:SetColorTexture(r, g, b, a)
-    PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-    PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    PixelUtil.SetHeight(top, 1, 1)
-
-    local bottom = frame:CreateTexture(nil, "BORDER")
-    bottom:SetColorTexture(r, g, b, a)
-    PixelUtil.SetPoint(bottom, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    PixelUtil.SetPoint(bottom, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    PixelUtil.SetHeight(bottom, 1, 1)
-
-    local left = frame:CreateTexture(nil, "BORDER")
-    left:SetColorTexture(r, g, b, a)
-    PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-    PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    PixelUtil.SetWidth(left, 1, 1)
-
-    local right = frame:CreateTexture(nil, "BORDER")
-    right:SetColorTexture(r, g, b, a)
-    PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    PixelUtil.SetWidth(right, 1, 1)
-
-    frame.borderTextures = { top, bottom, left, right }
-end
+local CreatePixelBorders = ST.CreatePixelBorders
 
 local function CreateNudger(frame, groupId)
     local NUDGE_GAP = 2
@@ -181,8 +90,8 @@ local function CreateNudger(frame, groupId)
                 gFrame:AdjustPointsOffset(dir.dx, dir.dy)
                 -- Read the actual frame position so display stays in sync
                 local _, _, _, x, y = gFrame:GetPoint()
-                group.anchor.x = math.floor(x * 10 + 0.5) / 10
-                group.anchor.y = math.floor(y * 10 + 0.5) / 10
+                group.anchor.x = math_floor(x * 10 + 0.5) / 10
+                group.anchor.y = math_floor(y * 10 + 0.5) / 10
                 UpdateCoordLabel(gFrame, x, y)
             end
         end
@@ -318,8 +227,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     
     -- Show/hide based on enabled state, spec filter, and character visibility
     local specAllowed = true
-    if group.specs and next(group.specs) then
-        specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
+    local effectiveSpecs = self:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
+        specAllowed = self._currentSpecId and effectiveSpecs[self._currentSpecId]
     end
     local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
 
@@ -400,16 +310,26 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         return
     end
 
-    -- Sync alpha immediately
-    frame:SetAlpha(parentFrame:GetEffectiveAlpha())
+    -- Sync alpha immediately and cache for change detection
+    local lastAlpha = parentFrame:GetEffectiveAlpha()
+    frame:SetAlpha(lastAlpha)
 
-    -- Sync alpha every frame to match parent's fade animations
-    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
+    -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
+    local accumulator = 0
+    local SYNC_INTERVAL = 1 / 30
+    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+        accumulator = accumulator + dt
+        if accumulator < SYNC_INTERVAL then return end
+        accumulator = 0
         if frame.anchoredToParent then
             -- Skip sync if alpha system is active or group is unlocked
             local grp = CooldownCompanion.db.profile.groups[frame.groupId]
             if grp and (grp.baselineAlpha < 1 or not grp.locked) then return end
-            frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
+            local alpha = frame.anchoredToParent:GetEffectiveAlpha()
+            if alpha ~= lastAlpha then
+                lastAlpha = alpha
+                frame:SetAlpha(alpha)
+            end
         end
     end)
 end
@@ -469,8 +389,8 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     local refPtY = rcy + ray
 
     -- The offset is the difference, rounded to 1 decimal place
-    local newX = math.floor((framePtX - refPtX) * 10 + 0.5) / 10
-    local newY = math.floor((framePtY - refPtY) * 10 + 0.5) / 10
+    local newX = math_floor((framePtX - refPtX) * 10 + 0.5) / 10
+    local newY = math_floor((framePtY - refPtY) * 10 + 0.5) / 10
 
     group.anchor.x = newX
     group.anchor.y = newY
@@ -484,33 +404,33 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     self:RefreshConfigPanel()
 end
 
+-- Compute button width/height from group style (bar mode vs square vs non-square).
+-- Returns width, height, isBarMode.
+local function GetButtonDimensions(group)
+    local style = group.style or {}
+    local isBarMode = group.displayMode == "bars"
+    local w, h
+    if isBarMode then
+        w, h = style.barLength or 180, style.barHeight or 20
+        if style.barFillVertical then w, h = h, w end
+    elseif style.maintainAspectRatio then
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        w, h = size, size
+    else
+        w = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        h = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    end
+    return w, h, isBarMode
+end
+
 function CooldownCompanion:PopulateGroupButtons(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
     if not frame or not group then return end
 
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
     local style = group.style or {}
-    local isBarMode = group.displayMode == "bars"
-    local buttonWidth, buttonHeight
-
-    if isBarMode then
-        buttonWidth = style.barLength or 180
-        buttonHeight = style.barHeight or 20
-        if style.barFillVertical then
-            buttonWidth, buttonHeight = buttonHeight, buttonWidth
-        end
-    elseif style.maintainAspectRatio then
-        -- Square mode: use buttonSize for both dimensions
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        buttonWidth = size
-        buttonHeight = size
-    else
-        -- Non-square mode: use separate width/height
-        buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
-        buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    end
-
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
@@ -540,17 +460,17 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             -- Position the button using visibleIndex for gap-free layout
             local row, col
             if orientation == "horizontal" then
-                row = math.floor((visibleIndex - 1) / buttonsPerRow)
+                row = math_floor((visibleIndex - 1) / buttonsPerRow)
                 col = (visibleIndex - 1) % buttonsPerRow
                 button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
             else
-                col = math.floor((visibleIndex - 1) / buttonsPerRow)
+                col = math_floor((visibleIndex - 1) / buttonsPerRow)
                 row = (visibleIndex - 1) % buttonsPerRow
                 button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
             end
 
             button:Show()
-            table.insert(frame.buttons, button)
+            table_insert(frame.buttons, button)
 
             -- Add to Masque if enabled (after button is shown and in the list, icons only)
             if not isBarMode and group.masqueEnabled then
@@ -579,27 +499,8 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     if not frame or not group then return end
 
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
     local style = group.style or {}
-    local isBarMode = group.displayMode == "bars"
-    local buttonWidth, buttonHeight
-
-    if isBarMode then
-        buttonWidth = style.barLength or 180
-        buttonHeight = style.barHeight or 20
-        if style.barFillVertical then
-            buttonWidth, buttonHeight = buttonHeight, buttonWidth
-        end
-    elseif style.maintainAspectRatio then
-        -- Square mode: use buttonSize for both dimensions
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        buttonWidth = size
-        buttonHeight = size
-    else
-        -- Non-square mode: use separate width/height
-        buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
-        buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    end
-
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
@@ -612,17 +513,17 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     local rows, cols
     if orientation == "horizontal" then
-        cols = math.min(numButtons, buttonsPerRow)
-        rows = math.ceil(numButtons / buttonsPerRow)
+        cols = math_min(numButtons, buttonsPerRow)
+        rows = math_ceil(numButtons / buttonsPerRow)
     else
-        rows = math.min(numButtons, buttonsPerRow)
-        cols = math.ceil(numButtons / buttonsPerRow)
+        rows = math_min(numButtons, buttonsPerRow)
+        cols = math_ceil(numButtons / buttonsPerRow)
     end
 
     local width = cols * buttonWidth + (cols - 1) * spacing
     local height = rows * buttonHeight + (rows - 1) * spacing
 
-    frame:SetSize(math.max(width, buttonWidth), math.max(height, buttonHeight))
+    frame:SetSize(math_max(width, buttonWidth), math_max(height, buttonHeight))
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
@@ -659,9 +560,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update visibility — hide if disabled, no buttons, wrong spec, or wrong character
     local specAllowed = true
-    if group.specs and next(group.specs) then
+    local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
         specAllowed = CooldownCompanion._currentSpecId
-            and group.specs[CooldownCompanion._currentSpecId]
+            and effectiveSpecs[CooldownCompanion._currentSpecId]
     end
     local charVisible = CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
 
