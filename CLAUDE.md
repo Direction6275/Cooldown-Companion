@@ -12,53 +12,60 @@ Spell/item cooldown tracker with QoL enhancements: cooldown swipes, GCD indicato
 
 **Before writing ANY code, verify APIs exist in local reference files.** Do NOT guess signatures or assume APIs exist.
 
-### Local References
+### Local References (Priority Order)
 
-| Reference | Path | Contents |
-|-----------|------|----------|
-| **Blizzard UI Source (primary)** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\` | Complete Blizzard addon source — frame structure, mixins, data providers, templates, XML. **First place to look** for understanding any Blizzard system (CDM, action bars, auras, edit mode, etc.). |
-| **Blizzard API Docs** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\Blizzard_APIDocumentationGenerated` | Specifically for C_* namespace API calls, events, enums, and function signatures. A subset of the above — use this when you need an API signature, not for frame/mixin investigation. |
-| **Legacy Global Functions** | `C:\Users\nicho\Desktop\global and widget api\WoW_Legacy_Global_Functions_Reference.md` | Unit functions, action bar APIs, combat, secure hooking |
-| **Widget API Reference** | `C:\Users\nicho\Desktop\global and widget api\WoW_Widget_API_Reference.md` | Frame/widget methods, script handlers, positioning |
-| **Lua Utilities Reference** | `C:\Users\nicho\Desktop\global and widget api\WoW_Lua_Utilities_Reference.md` | Table utils, colors, slash commands, SavedVariables |
+| Priority | Reference | Path | Use When |
+|----------|-----------|------|----------|
+| **1** | **Blizzard UI Source** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\` | Frame structure, mixins, data providers, templates, XML. **First place to look** for any Blizzard system. |
+| **2** | **Blizzard API Docs** | `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\Blizzard_APIDocumentationGenerated` | `C_*` namespace API signatures, events, enums. |
+| **3** | **WoW Addon Dev Guide** | `C:\Users\nicho\Desktop\WoWAddonDevGuide\` | Everything else: legacy globals, widget methods, Lua utilities, patterns, best practices, examples, 12.0 migration, secret values. See lookup table below. |
 
-**Lookup rules:**
-- Blizzard frame structure, mixins, data flow, templates → **Blizzard UI Source** (read the `.lua`/`.xml` files directly)
-- `C_Spell`, `C_Item`, etc. → Blizzard API Docs (`{SystemName}Documentation.lua`)
-- `UnitHealth`, `GetActionCooldown`, etc. → Legacy Global Functions
-- Frame methods → Widget API Reference
-- `tinsert`, `Mixin`, etc. → Lua Utilities Reference
-- **If not found → ASK ME** (I have the API Interface addon). Do NOT implement workarounds until I confirm it doesn't exist.
+### WoW Addon Dev Guide — File Lookup
+
+Read these files from `C:\Users\nicho\Desktop\WoWAddonDevGuide\` as needed:
+
+| Need | Read |
+|------|------|
+| API functions by category, legacy globals, Lua extensions | `01_API_Reference.md` |
+| Event handling, registration | `02_Event_System.md` |
+| Frames, widgets, XML, templates, mixins, widget methods | `03_UI_Framework.md` |
+| TOC files, load order, file organization | `04_Addon_Structure.md` |
+| Coding patterns, performance, best practices, object pooling | `05_Patterns_And_Best_Practices.md` |
+| Saved variables, databases, profiles | `06_Data_Persistence.md` |
+| Working code examples from Blizzard UI | `07_Blizzard_UI_Examples.md` |
+| Ace3, LibStub, community frameworks, slash commands | `08_Community_Addon_Patterns.md` |
+| Library reference (LibStub, Ace3, LDB) | `09_Addon_Libraries_Guide.md` |
+| Cross-client, performance, multi-addon | `10_Advanced_Techniques.md` |
+| Player housing APIs (12.0+) | `11_Housing_System_Guide.md` |
+| 12.0 API migration, breaking changes | `12_API_Migration_Guide.md` |
+| **Secret values complete reference** | `12a_Secret_Safe_APIs.md` |
+
+### Lookup Rules
+
+- Blizzard frame structure, mixins, data flow, templates → **Blizzard UI Source** (read `.lua`/`.xml` directly)
+- `C_Spell`, `C_Item`, etc. → **Blizzard API Docs** (`{SystemName}Documentation.lua`)
+- Legacy globals (`UnitHealth`, `GetTime`, etc.) → Dev Guide `01_API_Reference.md`
+- Widget/frame methods → Dev Guide `03_UI_Framework.md`
+- Lua utilities (`tinsert`, `Mixin`, `Clamp`, `C_Timer`, etc.) → Dev Guide `01_API_Reference.md` or `05_Patterns_And_Best_Practices.md`
+- Secret values behavior → Dev Guide `12a_Secret_Safe_APIs.md` first, then my verified values below
+- **If not found → ASK ME** (I have the API Interface addon). Do NOT implement workarounds until I confirm.
 - **If behavior is uncertain → ASK ME to test in-game.**
 
 ### Secondary Resources
 
 - **Blizzard UI Source (GitHub):** `https://github.com/Gethe/wow-ui-source` (live branch)
 - **API Docs (GitHub):** `https://raw.githubusercontent.com/Gethe/wow-ui-source/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/{FileName}.lua`
-- **Community wiki:** `https://warcraft.wiki.gg/wiki/API_{FunctionName}` — ask me if retrieval fails
+- **Community wiki:** `https://warcraft.wiki.gg/wiki/API_{FunctionName}`
 - **Ketho's resources:** `https://github.com/Ketho/BlizzardInterfaceResources` (mainline)
-- **Amadeus Dev Guide:** `https://github.com/Amadeus-/WoWAddonDevGuide`
 - **FrameAlphaTweaks:** `C:\Users\nicho\Desktop\FrameAlphaTweaks` (personal addon, reference on request)
 
 ---
 
-## WoW 12.0 SECRET VALUES SYSTEM (CRITICAL)
+## WoW 12.0 SECRET VALUES — VERIFIED IN-GAME RESULTS
 
-Secret values lock combat-related API returns — addons can **display** but not **read/compare/compute** with them during combat. Enforced during all combat. Normal outside combat.
+For general secret values documentation, read `12a_Secret_Safe_APIs.md` from the Dev Guide. The values below are **tested in-game ground truth** that override any conflicting documentation.
 
-### Forbidden operations on secret values (combat)
-Compare, math, concatenate, use as table keys, check length, boolean test, tostring()
-
-### Allowed operations on secret values
-Store in variables/tables (as values), pass to approved widget APIs, pass to Lua functions
-
-### Helper functions
-`issecretvalue(v)`, `canaccesssecrets()`, `canaccessvalue(v)`, `issecrettable(t)`, `canaccesstable(t)`, `GetRestrictedActionStatus("type")`
-
-### Secret Aspects (Widgets)
-Setting a secret on a widget applies a secret aspect (e.g. `SetText(secret)` → `GetText()` returns secret). Clear with `SetToDefaults()`. Propagates to children via anchoring.
-
-### Verified Non-Secret Values (Tested In-Game)
+### Verified Non-Secret Values
 
 | Value | Source |
 |-------|--------|
@@ -84,24 +91,6 @@ Setting a secret on a widget applies a secret aspect (e.g. `SetText(secret)` →
 
 **Key insight:** Prefer querying **widget state** over **API return values**. Widgets expose non-secret internal state even when original values were secret.
 
-### API Documentation Flags
-`SecretReturns`, `SecretWhenUnitIdentityRestricted`, `ConditionalSecret`, `AcceptsSecretFromTaintedCode`, `NeverSecret`
-
-### Whitelisted (Non-Secret in Combat)
-GCD (61304), Skyriding, combat res, Maelstrom Weapon, Devourer DH resources, secondary resources (Holy Power, Combo Points, Runes, etc.)
-
-### 12.0 Tools for Secrets
-```lua
-C_CurveUtil.CreateCurve() / CreateColorCurve()
-CurveConstants.ScaleTo100, .Reverse, .ReverseTo100
-C_DurationUtil.CreateDuration()
-statusBar:SetTimerDuration(duration)
-FontString:SetVertexColorFromBoolean(...)
-Texture:SetVertexColorFromBoolean(...)
-UnitHealthPercent/Missing(unit), UnitPowerPercent/Missing(unit)
-SecondsFormatter -- formats secret durations
-```
-
 ### Impact on Cooldown Companion
 
 | Feature | Status | Approach |
@@ -119,10 +108,6 @@ SecondsFormatter -- formats secret durations
 3. Prefer event-driven logic over polling
 4. Avoid comparisons on secret values — use curves or widget state
 5. Ask me to test if unsure about combat behavior
-
-### References
-- https://warcraft.wiki.gg/wiki/Patch_12.0.0/API_changes
-- https://warcraft.wiki.gg/wiki/Patch_12.0.0/Planned_API_changes
 
 ---
 
@@ -169,9 +154,6 @@ Blizzard's cooldown viewer system provides combat-safe aura data via plain frame
 
 ### Usage pattern
 ```lua
--- Build map on login, spec change, CDM layout change
--- Map spellID, overrideSpellID, AND overrideTooltipSpellID from all 4 viewers
--- Read each tick: try override/aura IDs first, then ability ID
 local viewerFrame = viewerMap[auraSpellID] or viewerMap[abilitySpellID]
 if viewerFrame and viewerFrame.auraInstanceID then
     local durationObj = C_UnitAuras.GetAuraDuration(viewerFrame.auraDataUnit, viewerFrame.auraInstanceID)
@@ -196,33 +178,16 @@ end
 
 ### AceGUI EditBox Widget Recycling (CRITICAL — recurring bug)
 
-AceGUI pools widgets. Underlying WoW frames persist across recycling. This has caused multiple bugs.
+AceGUI pools widgets. Underlying WoW frames persist across recycling.
 
 **Rules:**
-1. **NEVER `HookScript` on `widget.editbox`** — hooks are permanent. Use `widget:SetCallback("OnTextChanged", ...)` instead.
-2. **NEVER create child regions on `widget.editbox`** — they persist. If you must, clean up on every acquisition: `if box.editbox.Instructions then box.editbox.Instructions:Hide() end`
+1. **NEVER `HookScript` on `widget.editbox`** — hooks are permanent. Use `widget:SetCallback("OnTextChanged", ...)`.
+2. **NEVER create child regions on `widget.editbox`** — they persist. Clean up on every acquisition.
 3. **NEVER `SetScript` on `widget.editbox`** — breaks AceGUI's own handlers. Use `widget:SetCallback(...)`.
 4. **Avoid `SetPoint` on `widget.editbox`** — persists across recycling.
 5. **Always explicit Show/Hide for custom sub-elements** — don't assume default state.
 
 **Principle:** Treat AceGUI widgets as opaque. Use widget API (`SetCallback`, `SetText`, `SetLabel`), not underlying frame.
-
-### Key Patterns
-```lua
--- Namespace: always use local or addon namespace, never bare globals
-local ADDON_NAME, ns = ...
-
--- Event throttling
-frame:SetScript("OnUpdate", function(self, elapsed)
-    timeSinceLastUpdate = timeSinceLastUpdate + elapsed
-    if timeSinceLastUpdate < 0.1 then return end
-    timeSinceLastUpdate = 0
-    -- work
-end)
-
--- Secure frame check
-if InCombatLockdown() then return end
-```
 
 ### Debugging
 ```
@@ -240,6 +205,8 @@ if InCombatLockdown() then return end
 3. **Verify API signatures** in local references before using.
 4. **Use modern namespaced APIs** (C_Spell, C_Item, C_Container, C_UnitAuras).
 5. **Search Blizzard UI source** when in doubt about implementation patterns.
-6. **Ask me to test in-game** rather than guessing runtime behavior.
-7. **Prefer simplest solution.** Check if data is already exposed as a plain readable value (table field, widget property, frame attribute) before building workarounds.
-8. **Read local Blizzard source before asking for in-game diagnostics.** When investigating Blizzard frame structure, mixins, or data flow, ALWAYS read the source files under `C:\Users\nicho\Desktop\BlizzardInterfaceCode\Interface\AddOns\` first. Do NOT ask the user to run `/dump` or `/run` commands to reverse-engineer frame hierarchies that are fully documented in source. Only ask for in-game commands when the question is about **runtime state** that source code cannot answer (e.g. secret values, timing, live aura data).
+6. **Consult WoW Addon Dev Guide** for patterns, best practices, migration guidance, and secret values reference before implementing.
+7. **Ask me to test in-game** rather than guessing runtime behavior.
+8. **Prefer simplest solution.** Check if data is already exposed as a plain readable value before building workarounds.
+9. **When in plan mode**, ask thorough clarifying questions using the AskUSerQuestionTool before proceeding—do not make assumptions about intent, scope, or implementation details. It's better to over-ask than to guess wrong. It also helps the user clarify their vision. Minimum 3 clarifying questions per plan mode, including when bypass permissions are on.
+10. **Read local Blizzard source before asking for in-game diagnostics.** Only ask for in-game commands when the question is about **runtime state** that source code cannot answer (e.g. secret values, timing, live aura data).
