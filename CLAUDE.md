@@ -208,4 +208,5 @@ AceGUI pools widgets. Underlying WoW frames persist across recycling.
 6. **Consult WoW Addon Dev Guide** for patterns, best practices, migration guidance, and secret values reference before implementing.
 7. **Ask me to test in-game** rather than guessing runtime behavior.
 8. **Prefer simplest solution.** Check if data is already exposed as a plain readable value before building workarounds.
-9. **Read local Blizzard source before asking for in-game diagnostics.** Only ask for in-game commands when the question is about **runtime state** that source code cannot answer (e.g. secret values, timing, live aura data).
+9. **When in plan mode**, ask thorough clarifying questions using the AskUSerQuestionTool before proceeding—do not make assumptions about intent, scope, or implementation details. It's better to over-ask than to guess wrong. It also helps the user clarify their vision. Minimum 3 clarifying questions per plan mode, including when bypass permissions are on.
+10. **Read local Blizzard source before asking for in-game diagnostics.** Only ask for in-game commands when the question is about **runtime state** that source code cannot answer (e.g. secret values, timing, live aura data).
