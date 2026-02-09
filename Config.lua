@@ -583,7 +583,7 @@ end
 -- Helper: Check if frame name belongs to this addon (should be excluded)
 ------------------------------------------------------------------------
 local function IsAddonFrame(name)
-    if not name then return true end
+    if not name or type(name) ~= "string" then return true end
     if name:find("^CooldownCompanion") then return true end
     if name == "WorldFrame" then return true end
     -- Exclude the config panel itself (AceGUI frames)
@@ -2011,7 +2011,7 @@ function RefreshColumn1()
                             local numSpecs = GetNumSpecializations()
                             local playerSpecIds = {}
                             for i = 1, numSpecs do
-                                local specId = GetSpecializationInfo(i)
+                                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
                                 if specId then playerSpecIds[specId] = true end
                             end
                             for specId in pairs(group.specs) do
@@ -2116,7 +2116,7 @@ function RefreshColumn1()
         if specExpandedGroupId == groupId then
             local numSpecs = GetNumSpecializations()
             for i = 1, numSpecs do
-                local specId, name, _, icon = GetSpecializationInfo(i)
+                local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
                 local cb = AceGUI:Create("CheckBox")
                 cb:SetLabel(name)
                 cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
@@ -2143,7 +2143,7 @@ function RefreshColumn1()
             -- Foreign specs: specs from other classes already toggled on
             local playerSpecIds = {}
             for i = 1, numSpecs do
-                local specId = GetSpecializationInfo(i)
+                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
                 if specId then playerSpecIds[specId] = true end
             end
 

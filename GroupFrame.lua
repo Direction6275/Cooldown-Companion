@@ -6,6 +6,15 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+-- Localize frequently-used globals for faster access
+local pairs = pairs
+local ipairs = ipairs
+local math_floor = math.floor
+local math_min = math.min
+local math_max = math.max
+local math_ceil = math.ceil
+local table_insert = table.insert
+
 -- Shared click-through and border helpers from Utils.lua
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
@@ -81,8 +90,8 @@ local function CreateNudger(frame, groupId)
                 gFrame:AdjustPointsOffset(dir.dx, dir.dy)
                 -- Read the actual frame position so display stays in sync
                 local _, _, _, x, y = gFrame:GetPoint()
-                group.anchor.x = math.floor(x * 10 + 0.5) / 10
-                group.anchor.y = math.floor(y * 10 + 0.5) / 10
+                group.anchor.x = math_floor(x * 10 + 0.5) / 10
+                group.anchor.y = math_floor(y * 10 + 0.5) / 10
                 UpdateCoordLabel(gFrame, x, y)
             end
         end
@@ -300,16 +309,26 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         return
     end
 
-    -- Sync alpha immediately
-    frame:SetAlpha(parentFrame:GetEffectiveAlpha())
+    -- Sync alpha immediately and cache for change detection
+    local lastAlpha = parentFrame:GetEffectiveAlpha()
+    frame:SetAlpha(lastAlpha)
 
-    -- Sync alpha every frame to match parent's fade animations
-    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, delta)
+    -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
+    local accumulator = 0
+    local SYNC_INTERVAL = 1 / 30
+    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+        accumulator = accumulator + dt
+        if accumulator < SYNC_INTERVAL then return end
+        accumulator = 0
         if frame.anchoredToParent then
             -- Skip sync if alpha system is active or group is unlocked
             local grp = CooldownCompanion.db.profile.groups[frame.groupId]
             if grp and (grp.baselineAlpha < 1 or not grp.locked) then return end
-            frame:SetAlpha(frame.anchoredToParent:GetEffectiveAlpha())
+            local alpha = frame.anchoredToParent:GetEffectiveAlpha()
+            if alpha ~= lastAlpha then
+                lastAlpha = alpha
+                frame:SetAlpha(alpha)
+            end
         end
     end)
 end
@@ -369,8 +388,8 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     local refPtY = rcy + ray
 
     -- The offset is the difference, rounded to 1 decimal place
-    local newX = math.floor((framePtX - refPtX) * 10 + 0.5) / 10
-    local newY = math.floor((framePtY - refPtY) * 10 + 0.5) / 10
+    local newX = math_floor((framePtX - refPtX) * 10 + 0.5) / 10
+    local newY = math_floor((framePtY - refPtY) * 10 + 0.5) / 10
 
     group.anchor.x = newX
     group.anchor.y = newY
@@ -384,33 +403,33 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     self:RefreshConfigPanel()
 end
 
+-- Compute button width/height from group style (bar mode vs square vs non-square).
+-- Returns width, height, isBarMode.
+local function GetButtonDimensions(group)
+    local style = group.style or {}
+    local isBarMode = group.displayMode == "bars"
+    local w, h
+    if isBarMode then
+        w, h = style.barLength or 180, style.barHeight or 20
+        if style.barFillVertical then w, h = h, w end
+    elseif style.maintainAspectRatio then
+        local size = style.buttonSize or ST.BUTTON_SIZE
+        w, h = size, size
+    else
+        w = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
+        h = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+    end
+    return w, h, isBarMode
+end
+
 function CooldownCompanion:PopulateGroupButtons(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
     if not frame or not group then return end
 
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
     local style = group.style or {}
-    local isBarMode = group.displayMode == "bars"
-    local buttonWidth, buttonHeight
-
-    if isBarMode then
-        buttonWidth = style.barLength or 180
-        buttonHeight = style.barHeight or 20
-        if style.barFillVertical then
-            buttonWidth, buttonHeight = buttonHeight, buttonWidth
-        end
-    elseif style.maintainAspectRatio then
-        -- Square mode: use buttonSize for both dimensions
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        buttonWidth = size
-        buttonHeight = size
-    else
-        -- Non-square mode: use separate width/height
-        buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
-        buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    end
-
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
@@ -440,17 +459,17 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             -- Position the button using visibleIndex for gap-free layout
             local row, col
             if orientation == "horizontal" then
-                row = math.floor((visibleIndex - 1) / buttonsPerRow)
+                row = math_floor((visibleIndex - 1) / buttonsPerRow)
                 col = (visibleIndex - 1) % buttonsPerRow
                 button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
             else
-                col = math.floor((visibleIndex - 1) / buttonsPerRow)
+                col = math_floor((visibleIndex - 1) / buttonsPerRow)
                 row = (visibleIndex - 1) % buttonsPerRow
                 button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
             end
 
             button:Show()
-            table.insert(frame.buttons, button)
+            table_insert(frame.buttons, button)
 
             -- Add to Masque if enabled (after button is shown and in the list, icons only)
             if not isBarMode and group.masqueEnabled then
@@ -479,27 +498,8 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     if not frame or not group then return end
 
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
     local style = group.style or {}
-    local isBarMode = group.displayMode == "bars"
-    local buttonWidth, buttonHeight
-
-    if isBarMode then
-        buttonWidth = style.barLength or 180
-        buttonHeight = style.barHeight or 20
-        if style.barFillVertical then
-            buttonWidth, buttonHeight = buttonHeight, buttonWidth
-        end
-    elseif style.maintainAspectRatio then
-        -- Square mode: use buttonSize for both dimensions
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        buttonWidth = size
-        buttonHeight = size
-    else
-        -- Non-square mode: use separate width/height
-        buttonWidth = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
-        buttonHeight = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    end
-
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
@@ -512,17 +512,17 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     local rows, cols
     if orientation == "horizontal" then
-        cols = math.min(numButtons, buttonsPerRow)
-        rows = math.ceil(numButtons / buttonsPerRow)
+        cols = math_min(numButtons, buttonsPerRow)
+        rows = math_ceil(numButtons / buttonsPerRow)
     else
-        rows = math.min(numButtons, buttonsPerRow)
-        cols = math.ceil(numButtons / buttonsPerRow)
+        rows = math_min(numButtons, buttonsPerRow)
+        cols = math_ceil(numButtons / buttonsPerRow)
     end
 
     local width = cols * buttonWidth + (cols - 1) * spacing
     local height = rows * buttonHeight + (rows - 1) * spacing
 
-    frame:SetSize(math.max(width, buttonWidth), math.max(height, buttonHeight))
+    frame:SetSize(math_max(width, buttonWidth), math_max(height, buttonHeight))
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)

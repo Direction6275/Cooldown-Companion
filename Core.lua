@@ -9,6 +9,22 @@ local CooldownCompanion = LibStub("AceAddon-3.0"):NewAddon(ADDON_NAME, "AceConso
 ST.Addon = CooldownCompanion
 _G.CooldownCompanion = CooldownCompanion
 
+-- Localize frequently-used globals for faster access
+local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
+local IsMounted = IsMounted
+local UnitExists = UnitExists
+local GetShapeshiftForm = GetShapeshiftForm
+local GetShapeshiftFormInfo = GetShapeshiftFormInfo
+local pairs = pairs
+local ipairs = ipairs
+local wipe = wipe
+local select = select
+local pcall = pcall
+local tostring = tostring
+local tonumber = tonumber
+local table_remove = table.remove
+
 -- Expose the private table for other modules
 CooldownCompanion.ST = ST
 
@@ -560,18 +576,23 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     self._cooldownsDirty = true
     if not updateInfo then return end
 
-    -- Process removals first so refreshed auras (remove + add in same event) work
+    -- Process removals first so refreshed auras (remove + add in same event) work.
+    -- Single traversal with inner loop (instead of N traversals) to avoid N closures
+    -- and N full button scans when many auras are removed at once (e.g. leaving combat).
     if updateInfo.removedAuraInstanceIDs then
-        for _, instId in ipairs(updateInfo.removedAuraInstanceIDs) do
-            self:ForEachButton(function(button)
-                if button._auraInstanceID == instId
-                   and button._auraUnit == unit then
-                    button._auraInstanceID = nil
-                    button._auraActive = false
-                    button._inPandemic = false
+        local removedIDs = updateInfo.removedAuraInstanceIDs
+        self:ForEachButton(function(button)
+            if button._auraInstanceID and button._auraUnit == unit then
+                for _, instId in ipairs(removedIDs) do
+                    if button._auraInstanceID == instId then
+                        button._auraInstanceID = nil
+                        button._auraActive = false
+                        button._inPandemic = false
+                        break
+                    end
                 end
-            end)
-        end
+            end
+        end)
     end
 
     -- Update immediately — CDM viewer frames registered their event handlers
@@ -908,9 +929,9 @@ function CooldownCompanion:RefreshChargeFlags()
 end
 
 function CooldownCompanion:CacheCurrentSpec()
-    local specIndex = GetSpecialization()
+    local specIndex = C_SpecializationInfo.GetSpecialization()
     if specIndex then
-        local specId = GetSpecializationInfo(specIndex)
+        local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
         self._currentSpecId = specId
     end
 end
@@ -1163,7 +1184,7 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     local group = self.db.profile.groups[groupId]
     if not group then return end
     
-    table.remove(group.buttons, buttonIndex)
+    table_remove(group.buttons, buttonIndex)
     self:RefreshGroupFrame(groupId)
 end
 
@@ -1205,7 +1226,7 @@ end
 local function FindDisplaySpell(matcher)
     local _, _, classID = UnitClass("player")
     if not classID then return nil end
-    local numSpecs = GetNumSpecializationsForClassID(classID)
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID)
     for specIndex = 1, numSpecs do
         local specID = GetSpecializationInfoForClassID(classID, specIndex)
         if specID then
@@ -1528,17 +1549,17 @@ end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
-        if IsSpellKnownOrOverridesKnown(buttonData.id) or IsPlayerSpell(buttonData.id) then
+        if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id) then
             return true
         end
         -- Safety net for override forms (pre-existing data before add-time normalization).
         local baseID = C_Spell.GetBaseSpell(buttonData.id)
         if baseID and baseID ~= buttonData.id then
-            return IsSpellKnownOrOverridesKnown(baseID) or IsPlayerSpell(baseID)
+            return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)
         end
         return false
     elseif buttonData.type == "item" then
-        return GetItemCount(buttonData.id) > 0
+        return C_Item.GetItemCount(buttonData.id) > 0
     end
     return true
 end

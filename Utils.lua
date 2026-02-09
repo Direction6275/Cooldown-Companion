@@ -5,6 +5,11 @@
 
 local ADDON_NAME, ST = ...
 
+-- Localize frequently-used globals for faster access
+local InCombatLockdown = InCombatLockdown
+local ipairs = ipairs
+local string_format = string.format
+
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
@@ -162,5 +167,5 @@ end
 -- Format a color table {r, g, b, a} into a cache key string.
 -- Replaces repeated string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4]) calls.
 function ST.FormatColorKey(c)
-    return string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4] or 1)
+    return string_format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4] or 1)
 end

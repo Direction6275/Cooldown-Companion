@@ -9,6 +9,21 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+-- Localize frequently-used globals for faster access
+local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
+local pcall = pcall
+local tostring = tostring
+local tonumber = tonumber
+local unpack = unpack
+local pairs = pairs
+local ipairs = ipairs
+local select = select
+local IsItemInRange = C_Item.IsItemInRange
+local IsUsableItem = C_Item.IsUsableItem
+local math_floor = math.floor
+local string_format = string.format
+
 -- Forward declarations for bar mode functions (defined at end of file)
 local FormatBarTime
 local UpdateBarDisplay
@@ -94,6 +109,25 @@ local function ApplyEdgePositions(textures, button, size)
         tex:ClearAllPoints()
         tex:SetPoint(spec[1], button, spec[2], spec[5] * size, spec[6] * size)
         tex:SetPoint(spec[3], button, spec[4], spec[7] * size, spec[8] * size)
+    end
+end
+
+-- Apply aspect-ratio-aware texture cropping to an icon.
+-- Crops the narrower dimension so the icon image stays undistorted.
+local function ApplyIconTexCoord(icon, width, height)
+    if width ~= height then
+        local texMin, texMax = 0.08, 0.92
+        local texRange = texMax - texMin
+        local aspectRatio = width / height
+        if aspectRatio > 1.0 then
+            local crop = (texRange - texRange / aspectRatio) / 2
+            icon:SetTexCoord(texMin, texMax, texMin + crop, texMax - crop)
+        else
+            local crop = (texRange - texRange * aspectRatio) / 2
+            icon:SetTexCoord(texMin + crop, texMax - crop, texMin, texMax)
+        end
+    else
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
 end
 
@@ -396,7 +430,7 @@ local function SetProcGlow(button, show)
         end
         th = (glowStyle == "pixel") and (bd.procGlowThickness or 2) or 0
         local spd = (glowStyle == "pixel") and (bd.procGlowSpeed or 60) or 0
-        desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
     end
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
@@ -454,7 +488,7 @@ local function SetAuraGlow(button, show, pandemicOverride)
                 th = (style == "pixel") and (bd.auraGlowThickness or 2) or 0
                 spd = (style == "pixel") and (bd.auraGlowSpeed or 60) or 0
             end
-            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
         end
     end
 
@@ -660,29 +694,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
-    -- Handle aspect ratio via texture cropping (always crop to prevent stretching)
-    if width ~= height then
-        -- Crop the icon texture to match frame shape while keeping icon undistorted
-        -- Default visible texture range: 0.08 to 0.92 (0.84 of texture)
-        local texMin, texMax = 0.08, 0.92
-        local texRange = texMax - texMin
-        local aspectRatio = width / height
+    ApplyIconTexCoord(button.icon, width, height)
 
-        if aspectRatio > 1.0 then
-            -- Frame is wider than tall - crop top/bottom of icon
-            local visibleHeight = texRange / aspectRatio
-            local cropAmount = (texRange - visibleHeight) / 2
-            button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
-        else
-            -- Frame is taller than wide - crop left/right of icon
-            local visibleWidth = texRange * aspectRatio
-            local cropAmount = (texRange - visibleWidth) / 2
-            button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
-        end
-    else
-        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    end
-    
     -- Border using textures (not BackdropTemplate which captures mouse)
     local borderColor = style.borderColor or {0, 0, 0, 1}
     button.borderTextures = {}
@@ -1477,27 +1490,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
-    -- Handle aspect ratio via texture cropping (always crop to prevent stretching)
-    if width ~= height then
-        -- Crop the icon texture to match frame shape while keeping icon undistorted
-        local texMin, texMax = 0.08, 0.92
-        local texRange = texMax - texMin
-        local aspectRatio = width / height
-
-        if aspectRatio > 1.0 then
-            -- Frame is wider than tall - crop top/bottom of icon
-            local visibleHeight = texRange / aspectRatio
-            local cropAmount = (texRange - visibleHeight) / 2
-            button.icon:SetTexCoord(texMin, texMax, texMin + cropAmount, texMax - cropAmount)
-        else
-            -- Frame is taller than wide - crop left/right of icon
-            local visibleWidth = texRange * aspectRatio
-            local cropAmount = (texRange - visibleWidth) / 2
-            button.icon:SetTexCoord(texMin + cropAmount, texMax - cropAmount, texMin, texMax)
-        end
-    else
-        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    end
+    ApplyIconTexCoord(button.icon, width, height)
 
     -- Update border textures
     local borderColor = style.borderColor or {0, 0, 0, 1}
@@ -1819,11 +1812,11 @@ end
 -- Format remaining seconds for bar time text display
 FormatBarTime = function(seconds)
     if seconds >= 60 then
-        return string.format("%d:%02d", math.floor(seconds / 60), math.floor(seconds % 60))
+        return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
     elseif seconds >= 10 then
-        return string.format("%d", math.floor(seconds))
+        return string_format("%d", math_floor(seconds))
     elseif seconds > 0 then
-        return string.format("%.1f", seconds)
+        return string_format("%.1f", seconds)
     end
     return ""
 end
@@ -2357,7 +2350,7 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
                 sz = bd.barAuraEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
                 th = (effect == "pixel") and (bd.barAuraEffectThickness or 2) or 0
             end
-            desiredState = string.format("%s%.2f%.2f%.2f%.2f%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, pandemicOverride and "P" or "")
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, pandemicOverride and "P" or "")
         end
     end
 
