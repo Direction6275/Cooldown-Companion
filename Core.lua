@@ -1434,6 +1434,16 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     return group.createdBy == self.db.keys.char
 end
 
+function CooldownCompanion:GetEffectiveSpecs(group)
+    if group.folderId then
+        local folder = self.db.profile.folders[group.folderId]
+        if folder and folder.specs and next(folder.specs) then
+            return folder.specs, true  -- folderSpecs, isOverridden
+        end
+    end
+    return group.specs, false
+end
+
 -- Alpha fade system: per-group runtime state
 -- self.alphaState[groupId] = {
 --     currentAlpha   - current interpolated alpha

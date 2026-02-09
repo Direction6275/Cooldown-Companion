@@ -227,8 +227,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     
     -- Show/hide based on enabled state, spec filter, and character visibility
     local specAllowed = true
-    if group.specs and next(group.specs) then
-        specAllowed = self._currentSpecId and group.specs[self._currentSpecId]
+    local effectiveSpecs = self:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
+        specAllowed = self._currentSpecId and effectiveSpecs[self._currentSpecId]
     end
     local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
 
@@ -559,9 +560,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update visibility — hide if disabled, no buttons, wrong spec, or wrong character
     local specAllowed = true
-    if group.specs and next(group.specs) then
+    local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
         specAllowed = CooldownCompanion._currentSpecId
-            and group.specs[CooldownCompanion._currentSpecId]
+            and effectiveSpecs[CooldownCompanion._currentSpecId]
     end
     local charVisible = CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
 
