@@ -878,8 +878,6 @@ function CooldownCompanion:UpdateButtonIcon(button)
 
     if buttonData.type == "spell" then
         -- Look up viewer child for current override info (icon, display name).
-        -- buttonData.id is always the base spell (normalized at add time), so
-        -- it maps directly to the viewer child's cooldownInfo.spellID.
         -- For override spells (ability→buff mapping), viewerAuraFrames may point
         -- to a BuffIcon/BuffBar child whose spellID is the buff, not the ability.
         -- Scan for an Essential/Utility child that tracks the transforming spell.

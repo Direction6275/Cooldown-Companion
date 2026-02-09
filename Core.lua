@@ -1552,7 +1552,7 @@ function CooldownCompanion:IsButtonUsable(buttonData)
         if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id) then
             return true
         end
-        -- Safety net for override forms (pre-existing data before add-time normalization).
+        -- Fallback: spell may be stored as an override form; check the base spell.
         local baseID = C_Spell.GetBaseSpell(buttonData.id)
         if baseID and baseID ~= buttonData.id then
             return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)

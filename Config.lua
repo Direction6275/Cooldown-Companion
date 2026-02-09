@@ -1051,14 +1051,6 @@ local function TryAddSpell(input)
     end
 
     if spellId and spellName then
-        -- Normalize override forms to their base spell for consistent tracking.
-        -- E.g. adding Lunar Eclipse (1233272) stores the base Eclipse ID (1233346)
-        -- so the spell is found in the CDM viewer map regardless of current form.
-        local baseId = C_Spell.GetBaseSpell(spellId)
-        if baseId and baseId ~= spellId then
-            spellId = baseId
-            spellName = C_Spell.GetSpellName(baseId) or spellName
-        end
         if C_Spell.IsSpellPassive(spellId) then
             CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
             return false
