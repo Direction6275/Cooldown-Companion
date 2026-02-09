@@ -1573,6 +1573,21 @@ function CooldownCompanion:CreateAllGroupFrames()
 end
 
 function CooldownCompanion:RefreshAllGroups()
+    -- Fully deactivate frames for groups not in the current profile
+    -- (e.g. after a profile switch). Removes from groupFrames so
+    -- ForEachButton / event handlers skip them entirely.
+    for groupId, frame in pairs(self.groupFrames) do
+        if not self.db.profile.groups[groupId] then
+            self:DeleteMasqueGroup(groupId)
+            frame:Hide()
+            self.groupFrames[groupId] = nil
+            if self.alphaState then
+                self.alphaState[groupId] = nil
+            end
+        end
+    end
+
+    -- Refresh current profile's groups
     for groupId, _ in pairs(self.db.profile.groups) do
         if self:IsGroupVisibleToCurrentChar(groupId) then
             self:RefreshGroupFrame(groupId)
