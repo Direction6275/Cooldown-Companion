@@ -66,6 +66,7 @@ local pickCDMCallback = nil
 -- Autocomplete state
 local autocompleteDropdown = nil
 local autocompleteCache = nil
+local pendingEditBoxFocus = false
 local AUTOCOMPLETE_MAX_ROWS = 10
 local AUTOCOMPLETE_ROW_HEIGHT = 22
 local AUTOCOMPLETE_ICON_SIZE = 20
@@ -1440,6 +1441,7 @@ local function OnAutocompleteSelect(entry)
     end
     if added then
         newInput = ""
+        pendingEditBoxFocus = true
         CooldownCompanion:RefreshConfigPanel()
     end
 end
@@ -1546,7 +1548,7 @@ local function ShowAutocompleteResults(results, anchorWidget)
     dropdown:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 0, -2)
 
     local numResults = #results
-    dropdown._highlightIndex = 0
+    dropdown._highlightIndex = 1
     dropdown._numResults = numResults
     dropdown:SetHeight((numResults * AUTOCOMPLETE_ROW_HEIGHT) + 2)
 
@@ -1566,6 +1568,7 @@ local function ShowAutocompleteResults(results, anchorWidget)
     end
 
     dropdown:Show()
+    UpdateAutocompleteHighlight()
 end
 
 ------------------------------------------------------------------------
@@ -2399,6 +2402,15 @@ function RefreshColumn2()
         end)
     end
     col2Scroll:AddChild(inputBox)
+
+    if pendingEditBoxFocus then
+        pendingEditBoxFocus = false
+        C_Timer.After(0, function()
+            if inputBox.editbox then
+                inputBox:SetFocus()
+            end
+        end)
+    end
 
     local spacer = AceGUI:Create("SimpleGroup")
     spacer:SetFullWidth(true)
