@@ -3744,52 +3744,40 @@ local function CreateConfigPanel()
     -- Title bar buttons: [Gear] [Collapse] [X] at top-right
 
     -- X (close) button — rightmost
-    local closeBtn = AceGUI:Create("Button")
-    closeBtn:SetText("")
-    closeBtn:SetWidth(22)
-    closeBtn:SetHeight(18)
-    closeBtn.frame:SetParent(content)
-    closeBtn.frame:ClearAllPoints()
-    closeBtn.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, -5)
-    closeBtn.frame:Show()
-    local closeIcon = closeBtn.frame:CreateTexture(nil, "ARTWORK")
+    local closeBtn = CreateFrame("Button", nil, content)
+    closeBtn:SetSize(19, 19)
+    closeBtn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, -5)
+    local closeIcon = closeBtn:CreateTexture(nil, "ARTWORK")
     closeIcon:SetAtlas("common-icon-redx")
-    closeIcon:SetSize(16, 16)
-    closeIcon:SetPoint("CENTER")
-    closeBtn:SetCallback("OnClick", function()
+    closeIcon:SetAllPoints()
+    closeBtn:SetHighlightAtlas("common-icon-redx")
+    closeBtn:GetHighlightTexture():SetAlpha(0.3)
+    closeBtn:SetScript("OnClick", function()
         content:Hide()
     end)
 
     -- Collapse button — left of X
-    local collapseBtn = AceGUI:Create("Button")
-    collapseBtn:SetText("")
-    collapseBtn:SetWidth(22)
-    collapseBtn:SetHeight(18)
-    collapseBtn.frame:SetParent(content)
-    collapseBtn.frame:ClearAllPoints()
-    collapseBtn.frame:SetPoint("RIGHT", closeBtn.frame, "LEFT", -2, 0)
-    collapseBtn.frame:Show()
-    local collapseIcon = collapseBtn.frame:CreateTexture(nil, "ARTWORK")
-    collapseIcon:SetAtlas("questlog-icon-shrink")
-    collapseIcon:SetSize(18, 18)
-    collapseIcon:SetPoint("CENTER", 1, -1)
+    local collapseBtn = CreateFrame("Button", nil, content)
+    collapseBtn:SetSize(15, 15)
+    collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+    local collapseIcon = collapseBtn:CreateTexture(nil, "ARTWORK")
+    collapseIcon:SetAtlas("common-icon-minus")
+    collapseIcon:SetAllPoints()
+    collapseBtn:SetHighlightAtlas("common-icon-minus")
+    collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
     -- Gear button — left of Collapse
-    local gearBtn = AceGUI:Create("Button")
-    gearBtn:SetText("")
-    gearBtn:SetWidth(22)
-    gearBtn:SetHeight(18)
-    gearBtn.frame:SetParent(content)
-    gearBtn.frame:ClearAllPoints()
-    gearBtn.frame:SetPoint("RIGHT", collapseBtn.frame, "LEFT", -2, 0)
-    gearBtn.frame:Show()
-    local gearIcon = gearBtn.frame:CreateTexture(nil, "ARTWORK")
+    local gearBtn = CreateFrame("Button", nil, content)
+    gearBtn:SetSize(20, 20)
+    gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
+    local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
-    gearIcon:SetSize(16, 16)
-    gearIcon:SetPoint("CENTER")
+    gearIcon:SetAllPoints()
+    gearBtn:SetHighlightTexture("Interface\\WorldMap\\GEAR_64GREY")
+    gearBtn:GetHighlightTexture():SetAlpha(0.3)
 
     -- Gear dropdown menu
-    gearBtn:SetCallback("OnClick", function()
+    gearBtn:SetScript("OnClick", function()
         if not gearDropdownFrame then
             gearDropdownFrame = CreateFrame("Frame", "CDCGearDropdown", UIParent, "UIDropDownMenuTemplate")
         end
@@ -3825,7 +3813,7 @@ local function CreateConfigPanel()
             UIDropDownMenu_AddButton(info2, level)
         end, "MENU")
         gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-        ToggleDropDownMenu(1, nil, gearDropdownFrame, gearBtn.frame, 0, 0)
+        ToggleDropDownMenu(1, nil, gearDropdownFrame, gearBtn, 0, 0)
     end)
 
     -- Mini frame for collapsed state
@@ -3879,10 +3867,10 @@ local function CreateConfigPanel()
     -- Reset collapse state whenever mini frame is hidden (ESC, /cdc toggle, expand)
     miniFrame:SetScript("OnHide", function()
         isMinimized = false
-        collapseIcon:SetAtlas("questlog-icon-shrink")
-        collapseBtn.frame:SetParent(content)
-        collapseBtn.frame:ClearAllPoints()
-        collapseBtn.frame:SetPoint("RIGHT", closeBtn.frame, "LEFT", -2, 0)
+        collapseIcon:SetAtlas("common-icon-minus")
+        collapseBtn:SetParent(content)
+        collapseBtn:ClearAllPoints()
+        collapseBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
     end)
 
     -- ESC handler for mini frame
@@ -3901,7 +3889,7 @@ local function CreateConfigPanel()
     frame._miniFrame = miniFrame
 
     -- Collapse button callback
-    collapseBtn:SetCallback("OnClick", function()
+    collapseBtn:SetScript("OnClick", function()
         if isMinimized then
             local expandRight, expandTop
             if miniWasDragged then
@@ -3929,8 +3917,8 @@ local function CreateConfigPanel()
             savedFrameRight = content:GetRight()
             savedFrameTop = content:GetTop()
 
-            local btnLeft = collapseBtn.frame:GetLeft()
-            local btnBottom = collapseBtn.frame:GetBottom()
+            local btnLeft = collapseBtn:GetLeft()
+            local btnBottom = collapseBtn:GetBottom()
 
             isCollapsing = true
             content:Hide()
@@ -3946,11 +3934,11 @@ local function CreateConfigPanel()
             savedOffsetTop = savedFrameTop - miniFrame:GetTop()
 
             -- Reparent collapse button to mini frame
-            collapseBtn.frame:SetParent(miniFrame)
-            collapseBtn.frame:ClearAllPoints()
-            collapseBtn.frame:SetPoint("CENTER")
+            collapseBtn:SetParent(miniFrame)
+            collapseBtn:ClearAllPoints()
+            collapseBtn:SetPoint("CENTER")
 
-            collapseIcon:SetAtlas("questlog-icon-expand")
+            collapseIcon:SetAtlas("common-icon-plus")
             isMinimized = true
         end
     end)
