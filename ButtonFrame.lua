@@ -9,9 +9,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
--- Button Frame Pool
-local buttonPool = {}
-
 -- Forward declarations for bar mode functions (defined at end of file)
 local FormatBarTime
 local UpdateBarDisplay
@@ -87,14 +84,8 @@ local function ApplyStrataOrder(button, order)
     end
 end
 
--- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
--- Signs: 0 = zero offset, 1 = +size, -1 = -size
-local EDGE_ANCHOR_SPEC = {
-    {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "TOPRIGHT",     0, 0,  0, -1}, -- Top    (full width)
-    {"TOPLEFT", "BOTTOMLEFT",  "BOTTOMRIGHT", "BOTTOMRIGHT",  0, 1,  0,  0}, -- Bottom (full width)
-    {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "BOTTOMLEFT",   0, -1,  1,  1}, -- Left   (inset to avoid corner overlap)
-    {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, -1,  0,  1}, -- Right  (inset to avoid corner overlap)
-}
+-- Shared edge anchor spec from Utils.lua
+local EDGE_ANCHOR_SPEC = ST.EDGE_ANCHOR_SPEC
 
 -- Apply edge positions to 4 border/highlight textures using the shared spec
 local function ApplyEdgePositions(textures, button, size)
@@ -106,97 +97,9 @@ local function ApplyEdgePositions(textures, button, size)
     end
 end
 
--- Helper function to make a frame click-through
--- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
--- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
-local function SetFrameClickThrough(frame, disableClicks, disableMotion)
-    if not frame then return end
-    local inCombat = InCombatLockdown()
-
-    if disableClicks then
-        -- Disable mouse click interaction for camera pass-through
-        -- SetMouseClickEnabled and SetPropagateMouseClicks are protected in combat
-        if not inCombat then
-            if frame.SetMouseClickEnabled then
-                frame:SetMouseClickEnabled(false)
-            end
-            if frame.SetPropagateMouseClicks then
-                frame:SetPropagateMouseClicks(true)
-            end
-            if frame.RegisterForClicks then
-                frame:RegisterForClicks()
-            end
-            if frame.RegisterForDrag then
-                frame:RegisterForDrag()
-            end
-        end
-        frame:SetScript("OnMouseDown", nil)
-        frame:SetScript("OnMouseUp", nil)
-    else
-        if not inCombat then
-            if frame.SetMouseClickEnabled then
-                frame:SetMouseClickEnabled(true)
-            end
-            if frame.SetPropagateMouseClicks then
-                frame:SetPropagateMouseClicks(false)
-            end
-        end
-    end
-
-    if disableMotion then
-        -- Disable mouse motion (hover) events
-        if not inCombat then
-            if frame.SetMouseMotionEnabled then
-                frame:SetMouseMotionEnabled(false)
-            end
-            if frame.SetPropagateMouseMotion then
-                frame:SetPropagateMouseMotion(true)
-            end
-        end
-        frame:SetScript("OnEnter", nil)
-        frame:SetScript("OnLeave", nil)
-    else
-        if not inCombat then
-            if frame.SetMouseMotionEnabled then
-                frame:SetMouseMotionEnabled(true)
-            end
-            if frame.SetPropagateMouseMotion then
-                frame:SetPropagateMouseMotion(false)
-            end
-        end
-    end
-
-    -- EnableMouse must be true if we want motion events (tooltips)
-    -- Only fully disable if both clicks and motion are disabled
-    if not inCombat then
-        if disableClicks and disableMotion then
-            frame:EnableMouse(false)
-            if frame.SetHitRectInsets then
-                frame:SetHitRectInsets(10000, 10000, 10000, 10000)
-            end
-            frame:EnableKeyboard(false)
-        elseif not disableClicks and not disableMotion then
-            frame:EnableMouse(true)
-            if frame.SetHitRectInsets then
-                frame:SetHitRectInsets(0, 0, 0, 0)
-            end
-        else
-            frame:EnableMouse(true)
-            if frame.SetHitRectInsets then
-                frame:SetHitRectInsets(0, 0, 0, 0)
-            end
-        end
-    end
-end
-
--- Recursively apply click-through to frame and all children
-local function SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
-    SetFrameClickThrough(frame, disableClicks, disableMotion)
-    -- Apply to all child frames
-    for _, child in ipairs({frame:GetChildren()}) do
-        SetFrameClickThroughRecursive(child, disableClicks, disableMotion)
-    end
-end
+-- Shared click-through helpers from Utils.lua
+local SetFrameClickThrough = ST.SetFrameClickThrough
+local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 -- Fit a Blizzard highlight template frame to a button.
 -- The flipbook texture must overhang the button edges to create the border effect.
@@ -248,6 +151,82 @@ local function TintProcGlowFrame(frame, color)
     end
 end
 
+-- Hide all glow sub-styles in a container table (solidTextures, procFrame, pixelFrame).
+-- Works for procGlow, auraGlow, barAuraEffect, and assistedHighlight containers.
+local function HideGlowStyles(container)
+    if container.solidTextures then
+        for _, tex in ipairs(container.solidTextures) do tex:Hide() end
+    end
+    if container.procFrame then
+        if container.procFrame.ProcStartAnim then container.procFrame.ProcStartAnim:Stop() end
+        if container.procFrame.ProcLoop then container.procFrame.ProcLoop:Stop() end
+        container.procFrame:Hide()
+    end
+    if container.pixelFrame then
+        container.pixelFrame:SetScript("OnUpdate", nil)
+        container.pixelFrame:Hide()
+    end
+    -- Assisted highlight blizzard flipbook frame
+    if container.blizzardFrame then
+        if container.blizzardFrame.Flipbook and container.blizzardFrame.Flipbook.Anim then
+            container.blizzardFrame.Flipbook.Anim:Stop()
+        end
+        container.blizzardFrame:Hide()
+    end
+end
+
+-- Show the selected glow style on a container.
+-- style: "solid", "pixel", "glow", or "blizzard"
+-- button: the parent button frame (for positioning)
+-- color: {r, g, b, a} color table
+-- params: {size, thickness, speed} — style-specific parameters
+local function ShowGlowStyle(container, style, button, color, params)
+    local size = params.size
+    local defaultAlpha = params.defaultAlpha or 1
+    if style == "solid" then
+        ApplyEdgePositions(container.solidTextures, button, size or 2)
+        for _, tex in ipairs(container.solidTextures) do
+            tex:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
+            tex:Show()
+        end
+    elseif style == "pixel" then
+        local pf = container.pixelFrame
+        local r, g, b, a = color[1], color[2], color[3], color[4] or defaultAlpha
+        for _, px in ipairs(pf.particles) do
+            px[1]:SetColorTexture(r, g, b, a)
+            px[2]:SetColorTexture(r, g, b, a)
+        end
+        pf._elapsed = 0
+        pf._speed = params.speed or 60
+        pf._lineLength = size or 4
+        pf._lineThickness = params.thickness or 2
+        pf._parentButton = button
+        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
+        pf:Show()
+    elseif style == "glow" then
+        FitHighlightFrame(container.procFrame, button, size or 32)
+        TintProcGlowFrame(container.procFrame, color)
+        container.procFrame:Show()
+        -- Skip intro burst, go straight to loop
+        if container.procFrame.ProcStartFlipbook then
+            container.procFrame.ProcStartFlipbook:SetAlpha(0)
+        end
+        if container.procFrame.ProcLoopFlipbook then
+            container.procFrame.ProcLoopFlipbook:SetAlpha(1)
+        end
+        if container.procFrame.ProcLoop then
+            container.procFrame.ProcLoop:Play()
+        end
+    elseif style == "blizzard" then
+        if container.blizzardFrame then
+            container.blizzardFrame:Show()
+            if container.blizzardFrame.Flipbook and container.blizzardFrame.Flipbook.Anim then
+                container.blizzardFrame.Flipbook.Anim:Play()
+            end
+        end
+    end
+end
+
 -- Show or hide assisted highlight on a button based on the selected style.
 -- Tracks current state to avoid restarting animations every tick.
 local function SetAssistedHighlight(button, show)
@@ -260,10 +239,10 @@ local function SetAssistedHighlight(button, show)
     local colorKey
     if show and highlightStyle == "solid" then
         local c = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
-        colorKey = string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4])
+        colorKey = ST.FormatColorKey(c)
     elseif show and highlightStyle == "proc" then
         local c = button.style.assistedHighlightProcColor or {1, 1, 1, 1}
-        colorKey = string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4])
+        colorKey = ST.FormatColorKey(c)
     end
     local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
 
@@ -271,54 +250,20 @@ local function SetAssistedHighlight(button, show)
     if hl.currentState == desiredState then return end
     hl.currentState = desiredState
 
-    -- Hide all styles (only hide parent frames, not individual textures —
-    -- template animations control alpha on child textures internally)
-    for _, tex in ipairs(hl.solidTextures or {}) do
-        tex:Hide()
-    end
-    if hl.blizzardFrame then
-        if hl.blizzardFrame.Flipbook and hl.blizzardFrame.Flipbook.Anim then
-            hl.blizzardFrame.Flipbook.Anim:Stop()
-        end
-        hl.blizzardFrame:Hide()
-    end
-    if hl.procFrame then
-        if hl.procFrame.ProcStartAnim then hl.procFrame.ProcStartAnim:Stop() end
-        if hl.procFrame.ProcLoop then hl.procFrame.ProcLoop:Stop() end
-        hl.procFrame:Hide()
-    end
+    HideGlowStyles(hl)
 
     if not show then return end
 
-    -- Show the selected style
+    -- Map "proc" → "glow" for ShowGlowStyle (assisted highlight uses "proc" as style name
+    -- but the visual is the same "glow" proc-style animation)
     if highlightStyle == "solid" then
         local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
-        for _, tex in ipairs(hl.solidTextures) do
-            tex:SetColorTexture(unpack(color))
-            tex:Show()
-        end
+        ShowGlowStyle(hl, "solid", button, color, {size = button.style.assistedHighlightBorderSize or 2})
     elseif highlightStyle == "blizzard" then
-        if hl.blizzardFrame then
-            hl.blizzardFrame:Show()
-            if hl.blizzardFrame.Flipbook and hl.blizzardFrame.Flipbook.Anim then
-                hl.blizzardFrame.Flipbook.Anim:Play()
-            end
-        end
+        ShowGlowStyle(hl, "blizzard", button, {1, 1, 1, 1}, {})
     elseif highlightStyle == "proc" then
-        if hl.procFrame then
-            TintProcGlowFrame(hl.procFrame, button.style.assistedHighlightProcColor or {1, 1, 1, 1})
-            hl.procFrame:Show()
-            -- Skip the intro burst (ProcStartAnim) and go straight to the loop
-            if hl.procFrame.ProcStartFlipbook then
-                hl.procFrame.ProcStartFlipbook:SetAlpha(0)
-            end
-            if hl.procFrame.ProcLoopFlipbook then
-                hl.procFrame.ProcLoopFlipbook:SetAlpha(1)
-            end
-            if hl.procFrame.ProcLoop then
-                hl.procFrame.ProcLoop:Play()
-            end
-        end
+        local color = button.style.assistedHighlightProcColor or {1, 1, 1, 1}
+        ShowGlowStyle(hl, "glow", button, color, {size = button.style.assistedHighlightProcOverhang or 32})
     end
 end
 
@@ -456,63 +401,26 @@ local function SetProcGlow(button, show)
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
 
-    -- Hide all styles
-    for _, tex in ipairs(pg.solidTextures) do tex:Hide() end
-    if pg.procFrame then
-        if pg.procFrame.ProcStartAnim then pg.procFrame.ProcStartAnim:Stop() end
-        if pg.procFrame.ProcLoop then pg.procFrame.ProcLoop:Stop() end
-        pg.procFrame:Hide()
-    end
-    if pg.pixelFrame then
-        pg.pixelFrame:SetScript("OnUpdate", nil)
-        pg.pixelFrame:Hide()
-    end
+    HideGlowStyles(pg)
 
     if not desiredState then return end
 
     local bd = button.buttonData
     local glowStyle = bd.procGlowStyle or "glow"
     local color = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
-
+    local sz
     if glowStyle == "solid" then
-        local size = bd.procGlowSize or 2
-        ApplyEdgePositions(pg.solidTextures, button, size)
-        for _, tex in ipairs(pg.solidTextures) do
-            tex:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
-            tex:Show()
-        end
+        sz = bd.procGlowSize or 2
     elseif glowStyle == "pixel" then
-        local pf = pg.pixelFrame
-        local lineLength = bd.procGlowSize or 4
-        local lineThickness = bd.procGlowThickness or 2
-        local r, g, b, a = color[1], color[2], color[3], color[4] or 1
-        for _, px in ipairs(pf.particles) do
-            px[1]:SetColorTexture(r, g, b, a)
-            px[2]:SetColorTexture(r, g, b, a)
-        end
-        pf._elapsed = 0
-        pf._speed = bd.procGlowSpeed or 60
-        pf._lineLength = lineLength
-        pf._lineThickness = lineThickness
-        pf._parentButton = button
-        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
-        pf:Show()
-    elseif glowStyle == "glow" then
-        local size = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
-        FitHighlightFrame(pg.procFrame, button, size)
-        TintProcGlowFrame(pg.procFrame, color)
-        pg.procFrame:Show()
-        -- Skip the intro burst and go straight to the loop
-        if pg.procFrame.ProcStartFlipbook then
-            pg.procFrame.ProcStartFlipbook:SetAlpha(0)
-        end
-        if pg.procFrame.ProcLoopFlipbook then
-            pg.procFrame.ProcLoopFlipbook:SetAlpha(1)
-        end
-        if pg.procFrame.ProcLoop then
-            pg.procFrame.ProcLoop:Play()
-        end
+        sz = bd.procGlowSize or 4
+    else
+        sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
     end
+    ShowGlowStyle(pg, glowStyle, button, color, {
+        size = sz,
+        thickness = bd.procGlowThickness or 2,
+        speed = bd.procGlowSpeed or 60,
+    })
 end
 
 -- Show or hide aura active glow on a button.
@@ -553,19 +461,7 @@ local function SetAuraGlow(button, show, pandemicOverride)
     if button._auraGlowActive == desiredState then return end
     button._auraGlowActive = desiredState
 
-    -- Hide all styles
-    for _, tex in ipairs(ag.solidTextures) do
-        tex:Hide()
-    end
-    if ag.procFrame then
-        if ag.procFrame.ProcStartAnim then ag.procFrame.ProcStartAnim:Stop() end
-        if ag.procFrame.ProcLoop then ag.procFrame.ProcLoop:Stop() end
-        ag.procFrame:Hide()
-    end
-    if ag.pixelFrame then
-        ag.pixelFrame:SetScript("OnUpdate", nil)
-        ag.pixelFrame:Hide()
-    end
+    HideGlowStyles(ag)
 
     if not desiredState then return end
 
@@ -584,53 +480,24 @@ local function SetAuraGlow(button, show, pandemicOverride)
     else
         size = bd.auraGlowSize
     end
-
-    if style == "solid" then
-        size = size or 2
-        ApplyEdgePositions(ag.solidTextures, button, size)
-        for _, tex in ipairs(ag.solidTextures) do
-            tex:SetColorTexture(color[1], color[2], color[3], color[4] or 0.9)
-            tex:Show()
-        end
-    elseif style == "pixel" then
-        local pf = ag.pixelFrame
-        local lineLength = size or 4
-        local lineThickness, lineSpeed
-        if pandemicOverride then
-            lineThickness = bd.pandemicGlowThickness or bd.auraGlowThickness or 2
-            lineSpeed = bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60
-        else
-            lineThickness = bd.auraGlowThickness or 2
-            lineSpeed = bd.auraGlowSpeed or 60
-        end
-        local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
-        for _, px in ipairs(pf.particles) do
-            px[1]:SetColorTexture(r, g, b, a)
-            px[2]:SetColorTexture(r, g, b, a)
-        end
-        pf._elapsed = 0
-        pf._speed = lineSpeed
-        pf._lineLength = lineLength
-        pf._lineThickness = lineThickness
-        pf._parentButton = button
-        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
-        pf:Show()
-    elseif style == "glow" then
-        size = size or 32
-        FitHighlightFrame(ag.procFrame, button, size)
-        TintProcGlowFrame(ag.procFrame, color)
-        ag.procFrame:Show()
-        -- Skip intro burst, go straight to loop
-        if ag.procFrame.ProcStartFlipbook then
-            ag.procFrame.ProcStartFlipbook:SetAlpha(0)
-        end
-        if ag.procFrame.ProcLoopFlipbook then
-            ag.procFrame.ProcLoopFlipbook:SetAlpha(1)
-        end
-        if ag.procFrame.ProcLoop then
-            ag.procFrame.ProcLoop:Play()
-        end
+    local thickness, speed
+    if pandemicOverride then
+        thickness = bd.pandemicGlowThickness or bd.auraGlowThickness or 2
+        speed = bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60
+    else
+        thickness = bd.auraGlowThickness or 2
+        speed = bd.auraGlowSpeed or 60
     end
+    -- Default size depends on style
+    if not size then
+        size = (style == "solid" and 2) or (style == "pixel" and 4) or 32
+    end
+    ShowGlowStyle(ag, style, button, color, {
+        size = size,
+        thickness = thickness,
+        speed = speed,
+        defaultAlpha = 0.9,
+    })
 end
 
 -- Update loss-of-control cooldown on a button.
@@ -649,6 +516,117 @@ local function UpdateLossOfControl(button)
             end)
         end
     end
+end
+
+-- Create a pixel glow frame with particle pairs for animated border effect.
+-- parent: parent frame to attach to
+-- numParticles: number of particle pairs (default ST.PARTICLE_COUNT = 12)
+local function CreatePixelGlowFrame(parent, numParticles)
+    numParticles = numParticles or ST.PARTICLE_COUNT
+    local pf = CreateFrame("Frame", nil, parent)
+    pf:SetAllPoints()
+    pf:EnableMouse(false)
+    pf:Hide()
+    pf.particles = {}
+    for i = 1, numParticles do
+        local t1 = pf:CreateTexture(nil, "OVERLAY", nil, 3)
+        t1:SetColorTexture(1, 1, 1, 1)
+        local t2 = pf:CreateTexture(nil, "OVERLAY", nil, 3)
+        t2:SetColorTexture(1, 1, 1, 1)
+        t2:Hide()
+        pf.particles[i] = {t1, t2}
+    end
+    pf._elapsed = 0
+    SetFrameClickThroughRecursive(pf, true, true)
+    return pf
+end
+
+-- Create a complete glow container with solid border, proc glow, and pixel glow sub-frames.
+-- parent: parent button frame
+-- overhang: overhang percentage for the proc glow frame (default 32)
+-- Returns table {solidFrame, solidTextures, procFrame, pixelFrame}
+local function CreateGlowContainer(parent, overhang)
+    local container = {}
+
+    -- Solid border: 4 edge textures
+    container.solidFrame = CreateFrame("Frame", nil, parent)
+    container.solidFrame:SetAllPoints()
+    container.solidFrame:EnableMouse(false)
+    container.solidTextures = {}
+    for i = 1, 4 do
+        local tex = container.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:Hide()
+        container.solidTextures[i] = tex
+    end
+
+    -- Proc-style animated glow
+    local procFrame = CreateFrame("Frame", nil, parent, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procFrame, parent, overhang or 32)
+    SetFrameClickThroughRecursive(procFrame, true, true)
+    procFrame:Hide()
+    container.procFrame = procFrame
+
+    -- Pixel glow
+    container.pixelFrame = CreatePixelGlowFrame(parent)
+
+    -- Ensure solid frame is also non-interactive
+    SetFrameClickThroughRecursive(container.solidFrame, true, true)
+
+    return container
+end
+
+-- Setup tooltip OnEnter/OnLeave scripts on a button frame.
+-- Shared between icon-mode (CreateButtonFrame) and bar-mode (CreateBarFrame).
+local function SetupTooltipScripts(button)
+    button:SetScript("OnEnter", function(self)
+        GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+        if self.buttonData.type == "spell" then
+            GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
+        elseif self.buttonData.type == "item" then
+            GameTooltip:SetItemByID(self.buttonData.id)
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+end
+
+-- Create the assisted highlight container (solid border + blizzard flipbook + proc glow).
+-- Returns the container table with solidFrame, solidTextures, blizzardFrame, procFrame.
+local function CreateAssistedHighlight(button, style)
+    local hl = {}
+
+    -- Solid border: 4 edge textures
+    local highlightSize = style.assistedHighlightBorderSize or 2
+    local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+    hl.solidFrame = CreateFrame("Frame", nil, button)
+    hl.solidFrame:SetAllPoints()
+    hl.solidFrame:EnableMouse(false)
+    hl.solidTextures = {}
+    for i = 1, 4 do
+        local tex = hl.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:SetColorTexture(unpack(hlColor))
+        tex:Hide()
+        hl.solidTextures[i] = tex
+    end
+    ApplyEdgePositions(hl.solidTextures, button, highlightSize)
+
+    -- Blizzard assisted combat highlight (marching ants flipbook)
+    local blizzFrame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatHighlightTemplate")
+    FitHighlightFrame(blizzFrame, button, style.assistedHighlightBlizzardOverhang)
+    SetFrameClickThroughRecursive(blizzFrame, true, true)
+    blizzFrame:Hide()
+    hl.blizzardFrame = blizzFrame
+
+    -- Proc glow (spell activation alert flipbook)
+    local procFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
+    FitHighlightFrame(procFrame, button, style.assistedHighlightProcOverhang)
+    SetFrameClickThroughRecursive(procFrame, true, true)
+    procFrame:Hide()
+    hl.procFrame = procFrame
+
+    return hl
 end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
@@ -718,36 +696,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     ApplyEdgePositions(button.borderTextures, button, borderSize)
 
     -- Assisted highlight overlays (multiple styles, all hidden by default)
-    button.assistedHighlight = {}
-
-    -- Solid border: 4 edge textures
-    local highlightSize = style.assistedHighlightBorderSize or 2
-    local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
-    button.assistedHighlight.solidFrame = CreateFrame("Frame", nil, button)
-    button.assistedHighlight.solidFrame:SetAllPoints()
-    button.assistedHighlight.solidFrame:EnableMouse(false)
-    button.assistedHighlight.solidTextures = {}
-    for i = 1, 4 do
-        local tex = button.assistedHighlight.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
-        tex:SetColorTexture(unpack(hlColor))
-        tex:Hide()
-        button.assistedHighlight.solidTextures[i] = tex
-    end
-    ApplyEdgePositions(button.assistedHighlight.solidTextures, button, highlightSize)
-
-    -- Blizzard assisted combat highlight (marching ants flipbook)
-    local blizzFrame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatHighlightTemplate")
-    FitHighlightFrame(blizzFrame, button, style.assistedHighlightBlizzardOverhang)
-    SetFrameClickThroughRecursive(blizzFrame, true, true)
-    blizzFrame:Hide()
-    button.assistedHighlight.blizzardFrame = blizzFrame
-
-    -- Proc glow (spell activation alert flipbook)
-    local procFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(procFrame, button, style.assistedHighlightProcOverhang)
-    SetFrameClickThroughRecursive(procFrame, true, true)
-    procFrame:Hide()
-    button.assistedHighlight.procFrame = procFrame
+    button.assistedHighlight = CreateAssistedHighlight(button, style)
 
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
@@ -770,83 +719,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
-    -- Proc glow elements (solid border + animated glow, matching aura glow pattern)
-    button.procGlow = {}
+    -- Proc glow elements (solid border + animated glow + pixel glow)
+    button.procGlow = CreateGlowContainer(button, style.procGlowOverhang or 32)
 
-    -- Solid border: 4 edge textures
-    button.procGlow.solidFrame = CreateFrame("Frame", nil, button)
-    button.procGlow.solidFrame:SetAllPoints()
-    button.procGlow.solidFrame:EnableMouse(false)
-    button.procGlow.solidTextures = {}
-    for i = 1, 4 do
-        local tex = button.procGlow.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
-        tex:Hide()
-        button.procGlow.solidTextures[i] = tex
-    end
-
-    -- Animated glow
-    local procGlowProcFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(procGlowProcFrame, button, style.procGlowOverhang or 32)
-    SetFrameClickThroughRecursive(procGlowProcFrame, true, true)
-    procGlowProcFrame:Hide()
-    button.procGlow.procFrame = procGlowProcFrame
-
-    -- Pixel glow: frame with 12 particle pairs for animated border
-    local procPixelFrame = CreateFrame("Frame", nil, button)
-    procPixelFrame:SetAllPoints()
-    procPixelFrame:EnableMouse(false)
-    procPixelFrame:Hide()
-    procPixelFrame.particles = {}
-    for i = 1, 12 do
-        local t1 = procPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
-        t1:SetColorTexture(1, 1, 1, 1)
-        local t2 = procPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
-        t2:SetColorTexture(1, 1, 1, 1)
-        t2:Hide()
-        procPixelFrame.particles[i] = {t1, t2}
-    end
-    procPixelFrame._elapsed = 0
-    SetFrameClickThroughRecursive(procPixelFrame, true, true)
-    button.procGlow.pixelFrame = procPixelFrame
-
-    -- Aura active glow elements (solid border + animated glow)
-    button.auraGlow = {}
-
-    -- Solid border: 4 edge textures
-    button.auraGlow.solidFrame = CreateFrame("Frame", nil, button)
-    button.auraGlow.solidFrame:SetAllPoints()
-    button.auraGlow.solidFrame:EnableMouse(false)
-    button.auraGlow.solidTextures = {}
-    for i = 1, 4 do
-        local tex = button.auraGlow.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
-        tex:Hide()
-        button.auraGlow.solidTextures[i] = tex
-    end
-
-    -- Proc-style animated glow
-    local auraGlowProcFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(auraGlowProcFrame, button, 32)
-    SetFrameClickThroughRecursive(auraGlowProcFrame, true, true)
-    auraGlowProcFrame:Hide()
-    button.auraGlow.procFrame = auraGlowProcFrame
-
-    -- Pixel glow: frame with 12 particle pairs for animated border
-    local auraPixelFrame = CreateFrame("Frame", nil, button)
-    auraPixelFrame:SetAllPoints()
-    auraPixelFrame:EnableMouse(false)
-    auraPixelFrame:Hide()
-    auraPixelFrame.particles = {}
-    for i = 1, 12 do
-        local t1 = auraPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
-        t1:SetColorTexture(1, 1, 1, 1)
-        local t2 = auraPixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
-        t2:SetColorTexture(1, 1, 1, 1)
-        t2:Hide()
-        auraPixelFrame.particles[i] = {t1, t2}
-    end
-    auraPixelFrame._elapsed = 0
-    SetFrameClickThroughRecursive(auraPixelFrame, true, true)
-    button.auraGlow.pixelFrame = auraPixelFrame
+    -- Aura active glow elements (solid border + animated glow + pixel glow)
+    button.auraGlow = CreateGlowContainer(button, 32)
 
     -- Frame levels: just above cooldown
     local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
@@ -975,18 +852,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
-        button:SetScript("OnEnter", function(self)
-            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
-            if self.buttonData.type == "spell" then
-                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
-            elseif self.buttonData.type == "item" then
-                GameTooltip:SetItemByID(self.buttonData.id)
-            end
-            GameTooltip:Show()
-        end)
-        button:SetScript("OnLeave", function(self)
-            GameTooltip:Hide()
-        end)
+        SetupTooltipScripts(button)
     end
 
     return button
@@ -1049,6 +915,314 @@ function CooldownCompanion:UpdateButtonIcon(button)
     end
 end
 
+-- Update charge count state for a spell with hasCharges enabled.
+-- Handles secret-value fallback during combat and recharge readback.
+-- Returns the raw charges API table (may be nil) for use by callers.
+local function UpdateChargeTracking(button, buttonData)
+    local charges
+    pcall(function()
+        charges = C_Spell.GetSpellCharges(buttonData.id)
+    end)
+
+    -- Try to read charge values as normal Lua numbers (works out of
+    -- combat and for non-restricted spells during combat).
+    local countOk, cur, mx, cdStart, cdDur
+    if charges then
+        countOk, cur, mx, cdStart, cdDur = pcall(function()
+            if charges.maxCharges > 1 then
+                return charges.currentCharges, charges.maxCharges,
+                       charges.cooldownStartTime, charges.cooldownDuration
+            end
+        end)
+    end
+
+    if countOk and cur ~= nil then
+        -- API fully readable as Lua numbers — update all caches
+        button._chargeCount = cur
+        button._chargeMax = mx
+        button._chargeCDStart = cdStart
+        button._chargeCDDuration = cdDur
+        button._nilConfirmPending = nil
+        if cdDur and cdDur > 0 then
+            buttonData.chargeCooldownDuration = cdDur
+        end
+    elseif button._chargeCount then
+        -- CDR readback: sync recharge start/duration with real values.
+        -- Charge COUNT is determined by hard constraints from
+        -- GetSpellChargeDuration + GetSpellCooldownDuration state.
+        local durationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
+
+        -- Read back charge recharge; filter out GCD (≤2s).
+        local isRealRecharge = false
+        if durationObj then
+            scratchCooldown:SetCooldownFromDurationObject(durationObj)
+            local startMs, durMs = scratchCooldown:GetCooldownTimes()
+            if startMs and durMs and durMs > 2000 then
+                isRealRecharge = true
+                local realStart = startMs / 1000
+                local realDur = durMs / 1000
+
+                -- Detect intermediate charge recovery: recharge start
+                -- jumped forward.  CDR doesn't change start, so a jump
+                -- means the old recharge completed and a new one began.
+                if button._chargeCDStart
+                   and button._chargeCount < button._chargeMax
+                   and realStart > button._chargeCDStart + 0.5 then
+                    button._chargeCount = button._chargeCount + 1
+                end
+
+                button._chargeCDStart = realStart
+                button._chargeCDDuration = realDur
+                buttonData.chargeCooldownDuration = realDur
+            end
+        end
+
+        if isRealRecharge then
+            -- HARD CONSTRAINT: recharge active means count < max.
+            if button._chargeCount >= button._chargeMax then
+                button._chargeCount = button._chargeMax - 1
+            end
+
+            -- CONSTRAINT: spell main cooldown distinguishes 0 vs 1+.
+            -- GetSpellCooldownDuration returns a non-secret DurationObject
+            -- for the spell's availability cooldown.  For charge spells:
+            --   0 charges → spell on cooldown → non-nil, long duration
+            --   1+ charges → spell usable → nil (or brief GCD ≤2s)
+            local spellCD = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            local spellOnCD = false
+            if spellCD then
+                scratchCooldown:SetCooldownFromDurationObject(spellCD)
+                local _, cdDurMs = scratchCooldown:GetCooldownTimes()
+                spellOnCD = cdDurMs and cdDurMs > 2000
+            end
+            if spellOnCD then
+                button._chargeCount = 0
+            elseif button._chargeCount < 1 then
+                -- Only raise 0→1 when recharge has significant time
+                -- left.  Near the end (<1s), GetSpellCooldownDuration
+                -- may report nil slightly before GetSpellChargeDuration,
+                -- creating a brief false "spell usable" window.
+                local cdEnd = (button._chargeCDStart or 0)
+                    + (button._chargeCDDuration or 0)
+                if cdEnd - GetTime() > 1 then
+                    button._chargeCount = 1
+                end
+            end
+
+            button._nilConfirmPending = nil
+        elseif button._chargeCount < button._chargeMax then
+            -- No real recharge active (nil or GCD only).  Require two
+            -- consecutive ticks to confirm, then increment by 1 (not
+            -- jump to max) to avoid flashing all bars on intermediate
+            -- recoveries.
+            if not button._nilConfirmPending then
+                button._nilConfirmPending = true
+            else
+                button._nilConfirmPending = nil
+                button._chargeCount = button._chargeCount + 1
+                if button._chargeCount >= button._chargeMax then
+                    button._chargeCDStart = nil
+                    button._chargeCDDuration = nil
+                else
+                    -- Reset recharge start so bar fill doesn't flash
+                    -- from stale old-recharge values.  The readback
+                    -- corrects to the real start on the next tick.
+                    button._chargeCDStart = GetTime()
+                end
+            end
+        else
+            button._nilConfirmPending = nil
+        end
+    end
+
+    -- Display charge text.  Prefer passing the raw API value to SetText
+    -- (C-side, handles secret values like print() does).  Fall back to
+    -- the Lua-side estimated count only when the API table is nil.
+    if not buttonData.showChargeText then
+        if button._chargeText ~= "" then
+            button._chargeText = ""
+            button.count:SetText("")
+        end
+    else
+        local textSet = false
+        if charges then
+            textSet = pcall(function()
+                button.count:SetText(charges.currentCharges)
+            end)
+        end
+        if not textSet then
+            local displayText = button._chargeCount or ""
+            if button._chargeText ~= displayText then
+                button._chargeText = displayText
+                button.count:SetText(displayText)
+            end
+        end
+    end
+
+    return charges
+end
+
+-- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
+local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD)
+    -- GCD suppression (isOnGCD is NeverSecret, always readable)
+    if fetchOk then
+        local suppressGCD = not style.showGCDSwipe and isOnGCD
+
+        if suppressGCD then
+            button.cooldown:Hide()
+        else
+            if not button.cooldown:IsShown() then
+                button.cooldown:Show()
+            end
+        end
+    end
+
+    -- Cooldown/aura text: pick font + visibility based on current state.
+    -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
+    if button._cdTextRegion then
+        local showText, fontColor, wantFont, wantSize, wantOutline
+        if button._auraActive then
+            showText = style.showAuraText ~= false
+            fontColor = style.auraTextFontColor or {1, 1, 1, 1}
+            wantFont = style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+            wantSize = style.auraTextFontSize or 12
+            wantOutline = style.auraTextFontOutline or "OUTLINE"
+        else
+            showText = style.showCooldownText
+            fontColor = style.cooldownFontColor or {1, 1, 1, 1}
+            wantFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+            wantSize = style.cooldownFontSize or 12
+            wantOutline = style.cooldownFontOutline or "OUTLINE"
+        end
+        if showText then
+            local cc = fontColor
+            button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+            -- Only call SetFont when mode changes to avoid per-tick overhead
+            local mode = button._auraActive and "aura" or "cd"
+            if button._cdTextMode ~= mode then
+                button._cdTextMode = mode
+                button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
+            end
+        else
+            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
+        end
+    end
+
+    -- Desaturation: driven entirely by the cooldown widget's own state.
+    -- GetCooldownTimes() returns non-secret values even during restricted
+    -- combat, so we can always reliably check if the widget has an active
+    -- cooldown. This replaces all previous state-tracking approaches.
+    if style.desaturateOnCooldown then
+        local wantDesat = false
+        if fetchOk and not isOnGCD then
+            local _, widgetDuration = button.cooldown:GetCooldownTimes()
+            wantDesat = widgetDuration and widgetDuration > 0
+        end
+        if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
+            wantDesat = false
+        end
+        -- When isOnGCD is true, wantDesat stays false. This clears
+        -- desaturation the moment GCD takes over from a real cooldown,
+        -- and is a no-op after a fresh cast (already un-desaturated).
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    else
+        if button._desaturated ~= false then
+            button._desaturated = false
+            button.icon:SetDesaturated(false)
+        end
+    end
+
+    -- Icon tinting priority: out-of-range red > unusable dimming > normal white
+    local r, g, b = 1, 1, 1
+    if style.showOutOfRange then
+        if buttonData.type == "spell" then
+            if button._spellOutOfRange then
+                r, g, b = 1, 0.2, 0.2
+            end
+        elseif buttonData.type == "item" then
+            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
+            if not InCombatLockdown() then
+                local inRange = IsItemInRange(buttonData.id, "target")
+                -- inRange is nil when no target or item has no range; only tint on explicit false
+                if inRange == false then
+                    r, g, b = 1, 0.2, 0.2
+                end
+            end
+        end
+    end
+    if r == 1 and g == 1 and b == 1 and style.showUnusable then
+        if buttonData.type == "spell" then
+            local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
+            if insufficientPower then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        elseif buttonData.type == "item" then
+            local usable, noMana = IsUsableItem(buttonData.id)
+            if not usable then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        end
+    end
+    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
+        button._vertexR, button._vertexG, button._vertexB = r, g, b
+        button.icon:SetVertexColor(r, g, b)
+    end
+end
+
+-- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
+local function UpdateIconModeGlows(button, buttonData, style)
+    -- Loss of control overlay
+    UpdateLossOfControl(button)
+
+    -- Assisted highlight glow
+    if button.assistedHighlight then
+        local assistedSpellID = CooldownCompanion.assistedSpellID
+        local displayId = button._displaySpellId or buttonData.id
+        local showHighlight = style.showAssistedHighlight
+            and buttonData.type == "spell"
+            and assistedSpellID
+            and (displayId == assistedSpellID or buttonData.id == assistedSpellID)
+
+        SetAssistedHighlight(button, showHighlight)
+    end
+
+    -- Proc glow (spell activation overlay)
+    if button.procGlow then
+        local showProc = false
+        if button._procGlowPreview then
+            showProc = true
+        elseif buttonData.procGlow == true and buttonData.type == "spell" then
+            showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
+        end
+        SetProcGlow(button, showProc)
+    end
+
+    -- Aura active glow indicator
+    if button.auraGlow then
+        local showAuraGlow = false
+        local pandemicOverride = false
+        if button._pandemicPreview then
+            showAuraGlow = true
+            pandemicOverride = true
+        elseif button._auraGlowPreview then
+            showAuraGlow = true
+        elseif button._auraActive then
+            if button._inPandemic then
+                showAuraGlow = true
+                pandemicOverride = true
+            elseif buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+                showAuraGlow = true
+            end
+        end
+        SetAuraGlow(button, showAuraGlow, pandemicOverride)
+    end
+end
+
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
@@ -1067,10 +1241,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- stores auraInstanceID + auraDataUnit as plain readable properties.
         -- Requires the Blizzard Cooldown Manager to be visible with this spell.
         local viewerFrame
-        -- Try each override ID (comma-separated), prefer one with active aura
+        -- Try each override ID (comma-separated), prefer one with active aura.
+        -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
         if buttonData.auraSpellID then
-            for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-                local f = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+            local ids = button._parsedAuraIDs
+            if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
+                ids = {}
+                for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+                    ids[#ids + 1] = tonumber(id)
+                end
+                button._parsedAuraIDs = ids
+                button._parsedAuraIDsRaw = buttonData.auraSpellID
+            end
+            for _, numId in ipairs(ids) do
+                local f = CooldownCompanion.viewerAuraFrames[numId]
                 if f then
                     if f.auraInstanceID then
                         viewerFrame = f
@@ -1188,262 +1372,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if not button._isBar then
-        -- GCD suppression (isOnGCD is NeverSecret, always readable)
-        if fetchOk then
-            local suppressGCD = not style.showGCDSwipe and isOnGCD
-
-            if suppressGCD then
-                button.cooldown:Hide()
-            else
-                if not button.cooldown:IsShown() then
-                    button.cooldown:Show()
-                end
-            end
-        end
-
-        -- Cooldown/aura text: pick font + visibility based on current state.
-        -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
-        if button._cdTextRegion then
-            local showText, fontColor, wantFont, wantSize, wantOutline
-            if button._auraActive then
-                showText = style.showAuraText ~= false
-                fontColor = style.auraTextFontColor or {1, 1, 1, 1}
-                wantFont = style.auraTextFont or "Fonts\\FRIZQT__.TTF"
-                wantSize = style.auraTextFontSize or 12
-                wantOutline = style.auraTextFontOutline or "OUTLINE"
-            else
-                showText = style.showCooldownText
-                fontColor = style.cooldownFontColor or {1, 1, 1, 1}
-                wantFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
-                wantSize = style.cooldownFontSize or 12
-                wantOutline = style.cooldownFontOutline or "OUTLINE"
-            end
-            if showText then
-                local cc = fontColor
-                button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-                -- Only call SetFont when mode changes to avoid per-tick overhead
-                local mode = button._auraActive and "aura" or "cd"
-                if button._cdTextMode ~= mode then
-                    button._cdTextMode = mode
-                    button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
-                end
-            else
-                button._cdTextRegion:SetTextColor(0, 0, 0, 0)
-            end
-        end
-
-        -- Desaturation: driven entirely by the cooldown widget's own state.
-        -- GetCooldownTimes() returns non-secret values even during restricted
-        -- combat, so we can always reliably check if the widget has an active
-        -- cooldown. This replaces all previous state-tracking approaches.
-        if style.desaturateOnCooldown then
-            local wantDesat = false
-            if fetchOk and not isOnGCD then
-                local _, widgetDuration = button.cooldown:GetCooldownTimes()
-                wantDesat = widgetDuration and widgetDuration > 0
-            end
-            if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
-                wantDesat = false
-            end
-            -- When isOnGCD is true, wantDesat stays false. This clears
-            -- desaturation the moment GCD takes over from a real cooldown,
-            -- and is a no-op after a fresh cast (already un-desaturated).
-            if button._desaturated ~= wantDesat then
-                button._desaturated = wantDesat
-                button.icon:SetDesaturated(wantDesat)
-            end
-        else
-            if button._desaturated ~= false then
-                button._desaturated = false
-                button.icon:SetDesaturated(false)
-            end
-        end
-
-        -- Icon tinting priority: out-of-range red > unusable dimming > normal white
-        local r, g, b = 1, 1, 1
-        if style.showOutOfRange then
-            if buttonData.type == "spell" then
-                if button._spellOutOfRange then
-                    r, g, b = 1, 0.2, 0.2
-                end
-            elseif buttonData.type == "item" then
-                -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
-                if not InCombatLockdown() then
-                    local inRange = IsItemInRange(buttonData.id, "target")
-                    -- inRange is nil when no target or item has no range; only tint on explicit false
-                    if inRange == false then
-                        r, g, b = 1, 0.2, 0.2
-                    end
-                end
-            end
-        end
-        if r == 1 and g == 1 and b == 1 and style.showUnusable then
-            if buttonData.type == "spell" then
-                local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
-                if insufficientPower then
-                    local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                    r, g, b = uc[1], uc[2], uc[3]
-                end
-            elseif buttonData.type == "item" then
-                local usable, noMana = IsUsableItem(buttonData.id)
-                if not usable then
-                    local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                    r, g, b = uc[1], uc[2], uc[3]
-                end
-            end
-        end
-        if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
-            button._vertexR, button._vertexG, button._vertexB = r, g, b
-            button.icon:SetVertexColor(r, g, b)
-        end
+        UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD)
     end
 
-    -- Charge count (spells with hasCharges enabled only)
-    -- For restricted spells the charge fields are "secret values" during
-    -- combat — they look like numbers but reject Lua arithmetic/comparison.
-    -- C-side widget methods (SetText, SetCooldown) can handle them just
-    -- like print() can, so we pass API values directly to the UI and only
-    -- fall back to Lua-side estimation when the API call itself fails.
+    -- Charge count tracking (spells with hasCharges enabled)
+    local charges
     if buttonData.type == "spell" and buttonData.hasCharges then
-        local charges
-        pcall(function()
-            charges = C_Spell.GetSpellCharges(buttonData.id)
-        end)
-
-        -- Try to read charge values as normal Lua numbers (works out of
-        -- combat and for non-restricted spells during combat).
-        local countOk, cur, mx, cdStart, cdDur
-        if charges then
-            countOk, cur, mx, cdStart, cdDur = pcall(function()
-                if charges.maxCharges > 1 then
-                    return charges.currentCharges, charges.maxCharges,
-                           charges.cooldownStartTime, charges.cooldownDuration
-                end
-            end)
-        end
-
-        if countOk and cur ~= nil then
-            -- API fully readable as Lua numbers — update all caches
-            button._chargeCount = cur
-            button._chargeMax = mx
-            button._chargeCDStart = cdStart
-            button._chargeCDDuration = cdDur
-            button._nilConfirmPending = nil
-            if cdDur and cdDur > 0 then
-                buttonData.chargeCooldownDuration = cdDur
-            end
-        elseif button._chargeCount then
-            -- CDR readback: sync recharge start/duration with real values.
-            -- Charge COUNT is determined by hard constraints from
-            -- GetSpellChargeDuration + GetSpellCooldownDuration state.
-            local durationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
-
-            -- Read back charge recharge; filter out GCD (≤2s).
-            local isRealRecharge = false
-            if durationObj then
-                scratchCooldown:SetCooldownFromDurationObject(durationObj)
-                local startMs, durMs = scratchCooldown:GetCooldownTimes()
-                if startMs and durMs and durMs > 2000 then
-                    isRealRecharge = true
-                    local realStart = startMs / 1000
-                    local realDur = durMs / 1000
-
-                    -- Detect intermediate charge recovery: recharge start
-                    -- jumped forward.  CDR doesn't change start, so a jump
-                    -- means the old recharge completed and a new one began.
-                    if button._chargeCDStart
-                       and button._chargeCount < button._chargeMax
-                       and realStart > button._chargeCDStart + 0.5 then
-                        button._chargeCount = button._chargeCount + 1
-                    end
-
-                    button._chargeCDStart = realStart
-                    button._chargeCDDuration = realDur
-                    buttonData.chargeCooldownDuration = realDur
-                end
-            end
-
-            if isRealRecharge then
-                -- HARD CONSTRAINT: recharge active means count < max.
-                if button._chargeCount >= button._chargeMax then
-                    button._chargeCount = button._chargeMax - 1
-                end
-
-                -- CONSTRAINT: spell main cooldown distinguishes 0 vs 1+.
-                -- GetSpellCooldownDuration returns a non-secret DurationObject
-                -- for the spell's availability cooldown.  For charge spells:
-                --   0 charges → spell on cooldown → non-nil, long duration
-                --   1+ charges → spell usable → nil (or brief GCD ≤2s)
-                local spellCD = C_Spell.GetSpellCooldownDuration(buttonData.id)
-                local spellOnCD = false
-                if spellCD then
-                    scratchCooldown:SetCooldownFromDurationObject(spellCD)
-                    local _, cdDurMs = scratchCooldown:GetCooldownTimes()
-                    spellOnCD = cdDurMs and cdDurMs > 2000
-                end
-                if spellOnCD then
-                    button._chargeCount = 0
-                elseif button._chargeCount < 1 then
-                    -- Only raise 0→1 when recharge has significant time
-                    -- left.  Near the end (<1s), GetSpellCooldownDuration
-                    -- may report nil slightly before GetSpellChargeDuration,
-                    -- creating a brief false "spell usable" window.
-                    local cdEnd = (button._chargeCDStart or 0)
-                        + (button._chargeCDDuration or 0)
-                    if cdEnd - GetTime() > 1 then
-                        button._chargeCount = 1
-                    end
-                end
-
-                button._nilConfirmPending = nil
-            elseif button._chargeCount < button._chargeMax then
-                -- No real recharge active (nil or GCD only).  Require two
-                -- consecutive ticks to confirm, then increment by 1 (not
-                -- jump to max) to avoid flashing all bars on intermediate
-                -- recoveries.
-                if not button._nilConfirmPending then
-                    button._nilConfirmPending = true
-                else
-                    button._nilConfirmPending = nil
-                    button._chargeCount = button._chargeCount + 1
-                    if button._chargeCount >= button._chargeMax then
-                        button._chargeCDStart = nil
-                        button._chargeCDDuration = nil
-                    else
-                        -- Reset recharge start so bar fill doesn't flash
-                        -- from stale old-recharge values.  The readback
-                        -- corrects to the real start on the next tick.
-                        button._chargeCDStart = GetTime()
-                    end
-                end
-            else
-                button._nilConfirmPending = nil
-            end
-        end
-
-        -- Display charge text.  Prefer passing the raw API value to SetText
-        -- (C-side, handles secret values like print() does).  Fall back to
-        -- the Lua-side estimated count only when the API table is nil.
-        if not buttonData.showChargeText then
-            if button._chargeText ~= "" then
-                button._chargeText = ""
-                button.count:SetText("")
-            end
-        else
-            local textSet = false
-            if charges then
-                textSet = pcall(function()
-                    button.count:SetText(charges.currentCharges)
-                end)
-            end
-            if not textSet then
-                local displayText = button._chargeCount or ""
-                if button._chargeText ~= displayText then
-                    button._chargeText = displayText
-                    button.count:SetText(displayText)
-                end
-            end
-        end
+        charges = UpdateChargeTracking(button, buttonData)
 
         -- Show recharge radial — skip for bars and when aura override is active
         if not button._isBar and not auraOverrideActive then
@@ -1490,51 +1425,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if not button._isBar then
-        -- Loss of control overlay
-        UpdateLossOfControl(button)
-
-        -- Assisted highlight glow
-        if button.assistedHighlight then
-            local assistedSpellID = CooldownCompanion.assistedSpellID
-            local displayId = button._displaySpellId or buttonData.id
-            local showHighlight = style.showAssistedHighlight
-                and buttonData.type == "spell"
-                and assistedSpellID
-                and (displayId == assistedSpellID or buttonData.id == assistedSpellID)
-
-            SetAssistedHighlight(button, showHighlight)
-        end
-
-        -- Proc glow (spell activation overlay)
-        if button.procGlow then
-            local showProc = false
-            if button._procGlowPreview then
-                showProc = true
-            elseif buttonData.procGlow == true and buttonData.type == "spell" then
-                showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
-            end
-            SetProcGlow(button, showProc)
-        end
-
-        -- Aura active glow indicator
-        if button.auraGlow then
-            local showAuraGlow = false
-            local pandemicOverride = false
-            if button._pandemicPreview then
-                showAuraGlow = true
-                pandemicOverride = true
-            elseif button._auraGlowPreview then
-                showAuraGlow = true
-            elseif button._auraActive then
-                if button._inPandemic then
-                    showAuraGlow = true
-                    pandemicOverride = true
-                elseif buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
-                    showAuraGlow = true
-                end
-            end
-            SetAuraGlow(button, showAuraGlow, pandemicOverride)
-        end
+        UpdateIconModeGlows(button, buttonData, style)
     end
 end
 
@@ -2473,19 +2364,7 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
     if button._barAuraEffectActive == desiredState then return end
     button._barAuraEffectActive = desiredState
 
-    -- Hide all styles
-    for _, tex in ipairs(ae.solidTextures) do
-        tex:Hide()
-    end
-    if ae.procFrame then
-        if ae.procFrame.ProcStartAnim then ae.procFrame.ProcStartAnim:Stop() end
-        if ae.procFrame.ProcLoop then ae.procFrame.ProcLoop:Stop() end
-        ae.procFrame:Hide()
-    end
-    if ae.pixelFrame then
-        ae.pixelFrame:SetScript("OnUpdate", nil)
-        ae.pixelFrame:Hide()
-    end
+    HideGlowStyles(ae)
 
     if not desiredState then return end
 
@@ -2508,46 +2387,18 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
     else
         size = bd.barAuraEffectSize
     end
-
-    if effect == "solid" then
-        size = size or 2
-        ApplyEdgePositions(ae.solidTextures, button, size)
-        for _, tex in ipairs(ae.solidTextures) do
-            tex:SetColorTexture(color[1], color[2], color[3], color[4] or 0.9)
-            tex:Show()
-        end
-    elseif effect == "pixel" then
-        local pf = ae.pixelFrame
-        local particles = pf.particles
-        local lineLength = size or 4
-        local lineThickness = (pandemicOverride and bd.pandemicBarEffectThickness or bd.barAuraEffectThickness) or 2
-        local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
-        for _, px in ipairs(particles) do
-            px[1]:SetColorTexture(r, g, b, a)
-            px[2]:SetColorTexture(r, g, b, a)
-        end
-        pf._elapsed = 0
-        pf._speed = (pandemicOverride and bd.pandemicBarEffectSpeed or bd.barAuraEffectSpeed) or 60
-        pf._lineLength = lineLength
-        pf._lineThickness = lineThickness
-        pf._parentButton = button
-        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
-        pf:Show()
-    elseif effect == "glow" then
-        size = size or 32
-        FitHighlightFrame(ae.procFrame, button, size)
-        TintProcGlowFrame(ae.procFrame, color)
-        ae.procFrame:Show()
-        if ae.procFrame.ProcStartFlipbook then
-            ae.procFrame.ProcStartFlipbook:SetAlpha(0)
-        end
-        if ae.procFrame.ProcLoopFlipbook then
-            ae.procFrame.ProcLoopFlipbook:SetAlpha(1)
-        end
-        if ae.procFrame.ProcLoop then
-            ae.procFrame.ProcLoop:Play()
-        end
+    -- Default size depends on effect style
+    if not size then
+        size = (effect == "solid" and 2) or (effect == "pixel" and 4) or 32
     end
+    local thickness = (pandemicOverride and bd.pandemicBarEffectThickness or bd.barAuraEffectThickness) or 2
+    local speed = (pandemicOverride and bd.pandemicBarEffectSpeed or bd.barAuraEffectSpeed) or 60
+    ShowGlowStyle(ae, effect, button, color, {
+        size = size,
+        thickness = thickness,
+        speed = speed,
+        defaultAlpha = 0.9,
+    })
 end
 
 function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
@@ -2818,41 +2669,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraInstanceID = nil
 
     -- Aura effect frames (solid border, pixel glow, proc glow)
-    button.barAuraEffect = {}
-    button.barAuraEffect.solidFrame = CreateFrame("Frame", nil, button)
-    button.barAuraEffect.solidFrame:SetAllPoints()
-    button.barAuraEffect.solidFrame:EnableMouse(false)
-    button.barAuraEffect.solidTextures = {}
-    for i = 1, 4 do
-        local tex = button.barAuraEffect.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
-        tex:Hide()
-        button.barAuraEffect.solidTextures[i] = tex
-    end
-    local barAuraProcFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(barAuraProcFrame, button, 32)
-    SetFrameClickThroughRecursive(barAuraProcFrame, true, true)
-    barAuraProcFrame:Hide()
-    button.barAuraEffect.procFrame = barAuraProcFrame
-    -- Pixel glow frame with particle textures (2 textures each for corner wrapping)
-    local pixelFrame = CreateFrame("Frame", nil, button)
-    pixelFrame:SetAllPoints()
-    pixelFrame:EnableMouse(false)
-    pixelFrame:Hide()
-    pixelFrame.particles = {}
-    local NUM_PIXELS = 12
-    for i = 1, NUM_PIXELS do
-        local t1 = pixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
-        t1:SetColorTexture(1, 1, 1, 1)
-        local t2 = pixelFrame:CreateTexture(nil, "OVERLAY", nil, 3)
-        t2:SetColorTexture(1, 1, 1, 1)
-        t2:Hide()
-        pixelFrame.particles[i] = {t1, t2}
-    end
-    pixelFrame._elapsed = 0
-    button.barAuraEffect.pixelFrame = pixelFrame
-    SetFrameClickThroughRecursive(button.barAuraEffect.solidFrame, true, true)
-    SetFrameClickThroughRecursive(button.barAuraEffect.procFrame, true, true)
-    SetFrameClickThroughRecursive(pixelFrame, true, true)
+    button.barAuraEffect = CreateGlowContainer(button, 32)
 
     -- Set icon
     self:UpdateButtonIcon(button)
@@ -2891,18 +2708,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Tooltip scripts
     if showTooltips then
-        button:SetScript("OnEnter", function(self)
-            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
-            if self.buttonData.type == "spell" then
-                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
-            elseif self.buttonData.type == "item" then
-                GameTooltip:SetItemByID(self.buttonData.id)
-            end
-            GameTooltip:Show()
-        end)
-        button:SetScript("OnLeave", function(self)
-            GameTooltip:Hide()
-        end)
+        SetupTooltipScripts(button)
     end
 
     return button
