@@ -3669,14 +3669,13 @@ local function CreateConfigPanel()
     frame:SetWidth(1304)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
-    frame:EnableResize(false)
 
     -- Store the raw frame for raw child parenting
     local content = frame.frame
     -- Get the content area (below the title bar)
     local contentFrame = frame.content
 
-    -- Hide the AceGUI sizer grip since resize is disabled
+    -- Hide AceGUI's default sizer grips (replaced by custom resize grip below)
     if frame.sizer_se then
         frame.sizer_se:Hide()
     end
@@ -3686,6 +3685,26 @@ local function CreateConfigPanel()
     if frame.sizer_e then
         frame.sizer_e:Hide()
     end
+
+    -- Custom resize grip — expand freely, shrink vertically only (min width locked)
+    content:SetResizable(true)
+    content:SetResizeBounds(1304, 400)
+
+    local resizeGrip = CreateFrame("Button", nil, content)
+    resizeGrip:SetSize(16, 16)
+    resizeGrip:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -1, 1)
+    resizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    resizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+
+    resizeGrip:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            content:StartSizing("BOTTOMRIGHT")
+        end
+    end)
+    resizeGrip:SetScript("OnMouseUp", function(self)
+        content:StopMovingOrSizing()
+    end)
 
     -- Hide the AceGUI status bar and add version text at bottom-right
     if frame.statustext then
