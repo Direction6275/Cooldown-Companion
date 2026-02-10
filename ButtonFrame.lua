@@ -534,6 +534,92 @@ local function SetAuraGlow(button, show, pandemicOverride)
     })
 end
 
+-- Evaluate per-button visibility rules and set hidden/alpha override state.
+-- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
+-- Fast path: if no toggles are enabled, zero overhead.
+local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
+    -- Fast path: no visibility toggles enabled
+    if not buttonData.hideWhileOnCooldown
+       and not buttonData.hideWhileAuraNotActive
+       and not buttonData.hideWhileAuraActive then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = nil
+        return
+    end
+
+    local shouldHide = false
+    local hidReasonAuraNotActive = false
+
+    -- Check hideWhileOnCooldown
+    if buttonData.hideWhileOnCooldown then
+        if buttonData.hasCharges then
+            -- Charged spells: hide only when all charges consumed
+            if button._chargeCount == 0 then
+                shouldHide = true
+            end
+        elseif buttonData.type == "item" then
+            -- Items: check cooldown widget directly (no GCD concept)
+            local _, widgetDuration = button.cooldown:GetCooldownTimes()
+            if widgetDuration and widgetDuration > 0 then
+                shouldHide = true
+            end
+        else
+            -- Non-charged spells: on cooldown AND not just GCD
+            local _, widgetDuration = button.cooldown:GetCooldownTimes()
+            if widgetDuration and widgetDuration > 0 and not isOnGCD then
+                shouldHide = true
+            end
+        end
+    end
+
+    -- Check hideWhileAuraNotActive
+    if buttonData.hideWhileAuraNotActive then
+        if not auraOverrideActive then
+            shouldHide = true
+            hidReasonAuraNotActive = true
+        end
+    end
+
+    -- Check hideWhileAuraActive
+    if buttonData.hideWhileAuraActive then
+        if auraOverrideActive then
+            shouldHide = true
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is aura-not-active
+    -- and useBaselineAlphaFallback is enabled, dim instead of hiding
+    if shouldHide and hidReasonAuraNotActive and buttonData.useBaselineAlphaFallback then
+        -- Check if any OTHER hide condition also triggered
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.hasCharges then
+                if button._chargeCount == 0 then otherHide = true end
+            elseif buttonData.type == "item" then
+                local _, wd = button.cooldown:GetCooldownTimes()
+                if wd and wd > 0 then otherHide = true end
+            else
+                local _, wd = button.cooldown:GetCooldownTimes()
+                if wd and wd > 0 and not isOnGCD then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            otherHide = true
+        end
+        if not otherHide then
+            -- Use baseline alpha fallback instead of hiding
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    button._visibilityHidden = shouldHide
+    button._visibilityAlphaOverride = nil
+end
+
 -- Update loss-of-control cooldown on a button.
 -- Uses a CooldownFrame to avoid comparing secret values — the raw start/duration
 -- go directly to SetCooldown which handles them on the C side.
@@ -806,18 +892,25 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraActive = false
     button._auraInstanceID = nil
 
+    -- Per-button visibility runtime state
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._lastVisAlpha = 1
+    button._groupId = parent.groupId
+
     -- Set icon
     self:UpdateButtonIcon(button)
-    
+
     -- Methods
     button.UpdateCooldown = function(self)
         CooldownCompanion:UpdateButtonCooldown(self)
     end
-    
+
     button.UpdateStyle = function(self, newStyle)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
-    
+
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
     local showTooltips = style.showTooltips == true
@@ -1430,6 +1523,46 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
 
+    -- Per-button visibility evaluation (after charge tracking so _chargeCount is current)
+    EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
+
+    -- Track if hidden state changed (for compact layout dirty flag)
+    if button._visibilityHidden ~= button._prevVisibilityHidden then
+        button._prevVisibilityHidden = button._visibilityHidden
+        local groupFrame = button:GetParent()
+        if groupFrame then groupFrame._layoutDirty = true end
+    end
+
+    -- Apply visibility alpha or early-return for hidden buttons
+    local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
+    if not group or not group.compactLayout then
+        -- Non-compact mode: alpha=0 for hidden, restore for visible
+        if button._visibilityHidden then
+            if button._lastVisAlpha ~= 0 then
+                button:SetAlpha(0)
+                button._lastVisAlpha = 0
+            end
+            return  -- Skip all visual updates
+        else
+            local targetAlpha = button._visibilityAlphaOverride or 1
+            if button._lastVisAlpha ~= targetAlpha then
+                button:SetAlpha(targetAlpha)
+                button._lastVisAlpha = targetAlpha
+            end
+        end
+    else
+        -- Compact mode: Show/Hide handled by UpdateGroupLayout
+        if button._visibilityHidden then
+            return  -- Skip visual updates for hidden buttons
+        else
+            local targetAlpha = button._visibilityAlphaOverride or 1
+            if button._lastVisAlpha ~= targetAlpha then
+                button:SetAlpha(targetAlpha)
+                button._lastVisAlpha = targetAlpha
+            end
+        end
+    end
+
     -- Bar mode: update bar display after charges are resolved
     if button._isBar then
         UpdateBarDisplay(button, fetchOk)
@@ -1480,6 +1613,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._lastVisAlpha = 1
 
     button:SetSize(width, height)
 
@@ -2659,6 +2796,13 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraActive = false
     button._auraInstanceID = nil
 
+    -- Per-button visibility runtime state
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._lastVisAlpha = 1
+    button._groupId = parent.groupId
+
     -- Aura effect frames (solid border, pixel glow, proc glow)
     button.barAuraEffect = CreateGlowContainer(button, 32)
 
@@ -2764,6 +2908,10 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._lastVisAlpha = 1
     button._barCdColor = nil
     button._barReadyTextColor = nil
     button._barAuraColor = nil

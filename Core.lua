@@ -323,6 +323,9 @@ function CooldownCompanion:OnEnable()
     -- Remove orphaned barChargeMissingColor/barChargeSwipe fields (replaced by charge sub-bars)
     self:MigrateRemoveBarChargeOldFields()
 
+    -- Migrate groups to have compactLayout field
+    self:MigrateVisibility()
+
     -- Ensure folders table exists in profile
     self:MigrateFolders()
 
@@ -341,6 +344,7 @@ function CooldownCompanion:OnEnable()
         end
 
         self:UpdateAllCooldowns()
+        self:UpdateAllGroupLayouts()
         self._cooldownsDirty = false
     end)
 
@@ -1120,6 +1124,12 @@ function CooldownCompanion:CreateGroup(name)
     -- Masque defaults
     self.db.profile.groups[groupId].masqueEnabled = false
 
+    -- Compact layout default (per-button visibility feature)
+    self.db.profile.groups[groupId].compactLayout = false
+
+    -- Max visible buttons cap (0 = no cap, use total button count)
+    self.db.profile.groups[groupId].maxVisibleButtons = 0
+
     -- Create the frame for this group
     self:CreateGroupFrame(groupId)
     
@@ -1421,6 +1431,17 @@ function CooldownCompanion:MigrateRemoveBarChargeOldFields()
     end
 end
 
+function CooldownCompanion:MigrateVisibility()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.compactLayout == nil then
+            group.compactLayout = false
+        end
+        if group.maxVisibleButtons == nil then
+            group.maxVisibleButtons = 0
+        end
+    end
+end
+
 function CooldownCompanion:MigrateFolders()
     if self.db.profile.folders == nil then
         self.db.profile.folders = {}
@@ -1690,6 +1711,14 @@ function CooldownCompanion:UpdateAllCooldowns()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
+        end
+    end
+end
+
+function CooldownCompanion:UpdateAllGroupLayouts()
+    for groupId, frame in pairs(self.groupFrames) do
+        if frame and frame:IsShown() and frame._layoutDirty then
+            self:UpdateGroupLayout(groupId)
         end
     end
 end
