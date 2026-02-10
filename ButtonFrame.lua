@@ -878,6 +878,24 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
 
+    -- Keybind text overlay
+    button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
+    do
+        local kbFont = style.keybindFont or "Fonts\\FRIZQT__.TTF"
+        local kbSize = style.keybindFontSize or 10
+        local kbOutline = style.keybindFontOutline or "OUTLINE"
+        button.keybindText:SetFont(kbFont, kbSize, kbOutline)
+        local kbColor = style.keybindFontColor or {1, 1, 1, 1}
+        button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
+        local anchor = style.keybindAnchor or "TOPRIGHT"
+        local xOff = (anchor == "TOPLEFT" or anchor == "BOTTOMLEFT") and 2 or -2
+        local yOff = (anchor == "TOPLEFT" or anchor == "TOPRIGHT") and -2 or 2
+        button.keybindText:SetPoint(anchor, xOff, yOff)
+        local text = CooldownCompanion:GetKeybindText(buttonData)
+        button.keybindText:SetText(text or "")
+        button.keybindText:SetShown(style.showKeybindText and text ~= nil)
+    end
+
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
 
@@ -1684,6 +1702,24 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+
+    -- Update keybind text overlay
+    if button.keybindText then
+        local kbFont = style.keybindFont or "Fonts\\FRIZQT__.TTF"
+        local kbSize = style.keybindFontSize or 10
+        local kbOutline = style.keybindFontOutline or "OUTLINE"
+        button.keybindText:SetFont(kbFont, kbSize, kbOutline)
+        local kbColor = style.keybindFontColor or {1, 1, 1, 1}
+        button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
+        button.keybindText:ClearAllPoints()
+        local anchor = style.keybindAnchor or "TOPRIGHT"
+        local xOff = (anchor == "TOPLEFT" or anchor == "BOTTOMLEFT") and 2 or -2
+        local yOff = (anchor == "TOPLEFT" or anchor == "TOPRIGHT") and -2 or 2
+        button.keybindText:SetPoint(anchor, xOff, yOff)
+        local text = CooldownCompanion:GetKeybindText(button.buttonData)
+        button.keybindText:SetText(text or "")
+        button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
 
     -- Update highlight overlay positions and hide all

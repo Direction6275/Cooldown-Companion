@@ -3378,6 +3378,90 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(auraFontColor)
     end
+
+    -- Keybind Text section
+    local kbHeading = AceGUI:Create("Heading")
+    kbHeading:SetText("Keybind Text")
+    kbHeading:SetFullWidth(true)
+    container:AddChild(kbHeading)
+
+    local kbCb = AceGUI:Create("CheckBox")
+    kbCb:SetLabel("Show Keybind Text")
+    kbCb:SetValue(style.showKeybindText or false)
+    kbCb:SetFullWidth(true)
+    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showKeybindText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(kbCb)
+
+    if style.showKeybindText then
+        local kbAnchorDrop = AceGUI:Create("Dropdown")
+        kbAnchorDrop:SetLabel("Anchor")
+        kbAnchorDrop:SetList({
+            TOPRIGHT = "Top Right",
+            TOPLEFT = "Top Left",
+            BOTTOMRIGHT = "Bottom Right",
+            BOTTOMLEFT = "Bottom Left",
+        })
+        kbAnchorDrop:SetValue(style.keybindAnchor or "TOPRIGHT")
+        kbAnchorDrop:SetFullWidth(true)
+        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbAnchorDrop)
+
+        local kbFontSizeSlider = AceGUI:Create("Slider")
+        kbFontSizeSlider:SetLabel("Font Size")
+        kbFontSizeSlider:SetSliderValues(6, 24, 1)
+        kbFontSizeSlider:SetValue(style.keybindFontSize or 10)
+        kbFontSizeSlider:SetFullWidth(true)
+        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontSizeSlider)
+
+        local kbFontDrop = AceGUI:Create("Dropdown")
+        kbFontDrop:SetLabel("Font")
+        kbFontDrop:SetList(CS.fontOptions)
+        kbFontDrop:SetValue(style.keybindFont or "Fonts\\FRIZQT__.TTF")
+        kbFontDrop:SetFullWidth(true)
+        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontDrop)
+
+        local kbOutlineDrop = AceGUI:Create("Dropdown")
+        kbOutlineDrop:SetLabel("Font Outline")
+        kbOutlineDrop:SetList(CS.outlineOptions)
+        kbOutlineDrop:SetValue(style.keybindFontOutline or "OUTLINE")
+        kbOutlineDrop:SetFullWidth(true)
+        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbOutlineDrop)
+
+        local kbFontColor = AceGUI:Create("ColorPicker")
+        kbFontColor:SetLabel("Font Color")
+        kbFontColor:SetHasAlpha(true)
+        local kbc = style.keybindFontColor or {1, 1, 1, 1}
+        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
+        kbFontColor:SetFullWidth(true)
+        kbFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.keybindFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        kbFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.keybindFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontColor)
+    end
 end
 
 ------------------------------------------------------------------------
