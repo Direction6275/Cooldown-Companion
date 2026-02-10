@@ -1636,11 +1636,87 @@ local function RefreshButtonSettingsColumn()
 
     -- Only show settings when a single button is selected (not multi-select)
     local multiCount = 0
-    for _ in pairs(CS.selectedButtons) do
+    local multiIndices = {}
+    for idx in pairs(CS.selectedButtons) do
         multiCount = multiCount + 1
+        table.insert(multiIndices, idx)
     end
 
-    if multiCount >= 2 or not CS.selectedButton or not group.buttons[CS.selectedButton] then
+    if multiCount >= 2 then
+        local scroll = CS.buttonSettingsScroll
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText(multiCount .. " Selected")
+        heading:SetFullWidth(true)
+        scroll:AddChild(heading)
+
+        local delBtn = AceGUI:Create("Button")
+        delBtn:SetText("Delete Selected")
+        delBtn:SetFullWidth(true)
+        delBtn:SetCallback("OnClick", function()
+            CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
+                { groupId = CS.selectedGroup, indices = multiIndices })
+        end)
+        scroll:AddChild(delBtn)
+
+        local spacer = AceGUI:Create("Label")
+        spacer:SetText(" ")
+        spacer:SetFullWidth(true)
+        local font, _, flags = spacer.label:GetFont()
+        spacer:SetFont(font, 3, flags or "")
+        scroll:AddChild(spacer)
+
+        local moveBtn = AceGUI:Create("Button")
+        moveBtn:SetText("Move Selected")
+        moveBtn:SetFullWidth(true)
+        moveBtn:SetCallback("OnClick", function()
+            local moveMenuFrame = _G["CDCMoveMenu"]
+            if not moveMenuFrame then
+                moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+            local sourceGroupId = CS.selectedGroup
+            local indices = multiIndices
+            local db = CooldownCompanion.db.profile
+            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+                local groupIds = {}
+                for id in pairs(db.groups) do
+                    if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                        table.insert(groupIds, id)
+                    end
+                end
+                table.sort(groupIds)
+                for _, gid in ipairs(groupIds) do
+                    if gid ~= sourceGroupId then
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = db.groups[gid].name
+                        info.func = function()
+                            for _, idx in ipairs(indices) do
+                                table.insert(db.groups[gid].buttons, db.groups[sourceGroupId].buttons[idx])
+                            end
+                            table.sort(indices, function(a, b) return a > b end)
+                            for _, idx in ipairs(indices) do
+                                table.remove(db.groups[sourceGroupId].buttons, idx)
+                            end
+                            CooldownCompanion:RefreshGroupFrame(gid)
+                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                            CS.selectedButton = nil
+                            wipe(CS.selectedButtons)
+                            CooldownCompanion:RefreshConfigPanel()
+                            CloseDropDownMenus()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+            end, "MENU")
+            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
+        end)
+        scroll:AddChild(moveBtn)
+
+        return
+    end
+
+    if not CS.selectedButton or not group.buttons[CS.selectedButton] then
         local label = AceGUI:Create("Label")
         label:SetText("Select a spell or item to configure")
         label:SetFullWidth(true)
@@ -2944,7 +3020,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local auraFontColor = AceGUI:Create("ColorPicker")
         auraFontColor:SetLabel("Font Color")
         auraFontColor:SetHasAlpha(true)
-        local ac = style.auraTextFontColor or {1, 1, 1, 1}
+        local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
         auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
         auraFontColor:SetFullWidth(true)
         auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
@@ -3263,7 +3339,7 @@ local function BuildAppearanceTab(container)
         local auraFontColor = AceGUI:Create("ColorPicker")
         auraFontColor:SetLabel("Font Color")
         auraFontColor:SetHasAlpha(true)
-        local ac = style.auraTextFontColor or {1, 1, 1, 1}
+        local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
         auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
         auraFontColor:SetFullWidth(true)
         auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)

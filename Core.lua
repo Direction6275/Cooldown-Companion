@@ -114,7 +114,7 @@ local defaults = {
                         auraTextFont = "Fonts\\FRIZQT__.TTF",
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
-                        auraTextFontColor = {1, 1, 1, 1},
+                        auraTextFontColor = {0, 0.925, 1, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = true,
@@ -927,7 +927,10 @@ function CooldownCompanion:RefreshChargeFlags()
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" then
                 local charges = C_Spell.GetSpellCharges(buttonData.id)
-                buttonData.hasCharges = (charges and charges.maxCharges and charges.maxCharges > 1) or nil
+                local ok, result = pcall(function()
+                    return charges and charges.maxCharges and charges.maxCharges > 1
+                end)
+                buttonData.hasCharges = (ok and result) or nil
             end
         end
     end

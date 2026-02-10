@@ -1094,7 +1094,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         local showText, fontColor, wantFont, wantSize, wantOutline
         if button._auraActive then
             showText = style.showAuraText ~= false
-            fontColor = style.auraTextFontColor or {1, 1, 1, 1}
+            fontColor = style.auraTextFontColor or {0, 0.925, 1, 1}
             wantFont = style.auraTextFont or "Fonts\\FRIZQT__.TTF"
             wantSize = style.auraTextFontSize or 12
             wantOutline = style.auraTextFontOutline or "OUTLINE"
@@ -1989,7 +1989,7 @@ UpdateBarFill = function(button)
             end
             if remaining > 0 then
                 local cc = button._auraActive
-                    and (button.style.auraTextFontColor or {1, 1, 1, 1})
+                    and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
                     or (button.style.cooldownFontColor or {1, 1, 1, 1})
                 button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
                 button.timeText:SetText(FormatBarTime(remaining))
@@ -2145,7 +2145,7 @@ UpdateBarFill = function(button)
                 end
             end
             local cc = button._auraActive
-                and (button.style.auraTextFontColor or {1, 1, 1, 1})
+                and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
                 or (button.style.cooldownFontColor or {1, 1, 1, 1})
             button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             if remaining > 0 then

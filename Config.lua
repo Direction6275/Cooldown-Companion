@@ -17,6 +17,7 @@ local LibDeflate = LibStub("LibDeflate")
 local selectedGroup = nil
 local selectedButton = nil
 local selectedButtons = {}  -- set of indices for multi-select (ctrl+click)
+local selectedGroups = {}   -- set of groupIds for multi-select (ctrl+click in column 1)
 local selectedTab = "appearance"
 local newInput = ""
 
@@ -47,6 +48,8 @@ local dragState = nil
 local dragIndicator = nil
 local dragTracker = nil
 local DRAG_THRESHOLD = 8
+local showPhantomSections = false
+local lastCol1RenderedRows = nil
 
 -- Pending strata order state (survives panel rebuilds, resets on group change)
 local pendingStrataOrder = nil
@@ -119,6 +122,7 @@ ST._configState = {
     selectedGroup = nil,    -- set by Config.lua
     selectedButton = nil,   -- set by Config.lua
     selectedButtons = selectedButtons,
+    selectedGroups = selectedGroups,
     selectedTab = nil,      -- set/read by both files
     -- UI state tables (both files read/write)
     collapsedSections = collapsedSections,
@@ -156,6 +160,7 @@ CS.IsStrataOrderComplete = nil   -- set after definition below
 CS.InitPendingStrataOrder = nil  -- set after definition below
 CS.StartPickFrame = nil          -- set after definition below
 CS.StartPickCDM = nil            -- set after definition below
+CS.ShowPopupAboveConfig = nil    -- set after definition below
 
 local function IsStrataOrderComplete(order)
     if not order then return false end
@@ -227,6 +232,7 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
                 selectedButton = nil
                 wipe(selectedButtons)
             end
+            selectedGroups[data.groupId] = nil
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
@@ -334,6 +340,7 @@ StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
+            wipe(selectedGroups)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -355,6 +362,7 @@ StaticPopupDialogs["CDC_RESET_PROFILE"] = {
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
+            wipe(selectedGroups)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -378,6 +386,7 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
+            wipe(selectedGroups)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -411,6 +420,7 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
+            wipe(selectedGroups)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -443,6 +453,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
+            wipe(selectedGroups)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
         end
@@ -553,6 +564,8 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
     preferredIndex = 3,
 }
 
+local ApplyCol1Drop  -- forward declaration; defined later in drag-and-drop section
+
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
     text = "This will remove foreign spec filters and turn '%s' into a character group. Continue?",
     button1 = "Continue",
@@ -566,6 +579,88 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
                 ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
+    text = "This folder contains groups with foreign spec filters. Moving to character will remove those filters. Continue?",
+    button1 = "Continue",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.dragState then
+            local db = CooldownCompanion.db.profile
+            local folderId = data.dragState.sourceFolderId
+            -- Clear foreign specs from all child groups
+            for groupId, group in pairs(db.groups) do
+                if group.folderId == folderId and group.specs then
+                    group.specs = nil
+                end
+            end
+            ApplyCol1Drop(data.dragState)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
+    text = "Delete %d selected groups?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.groupIds then
+            for _, gid in ipairs(data.groupIds) do
+                CooldownCompanion:DeleteGroup(gid)
+            end
+            selectedGroup = nil
+            wipe(selectedGroups)
+            selectedButton = nil
+            wipe(selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
+    text = "Some selected groups have foreign spec filters. Moving to character will remove those filters. Continue?",
+    button1 = "Continue",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.callback then
+            -- Strip foreign specs from affected groups before executing the operation
+            if data.groupIds then
+                local db = CooldownCompanion.db.profile
+                local numSpecs = GetNumSpecializations()
+                local playerSpecIds = {}
+                for i = 1, numSpecs do
+                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                    if specId then playerSpecIds[specId] = true end
+                end
+                for _, gid in ipairs(data.groupIds) do
+                    local group = db.groups[gid]
+                    if group and group.specs then
+                        for specId in pairs(group.specs) do
+                            if not playerSpecIds[specId] then
+                                group.specs = nil
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            data.callback()
         end
     end,
     timeout = 0,
@@ -630,6 +725,7 @@ local function ShowPopupAboveConfig(which, text_arg1, data)
     end
     return dialog
 end
+CS.ShowPopupAboveConfig = ShowPopupAboveConfig
 
 ------------------------------------------------------------------------
 -- Helper: Resolve named frame from mouse focus
@@ -1688,6 +1784,16 @@ local BADGE_SIZE = 24
 local BADGE_SPACING = 2
 local BADGE_RIGHT_PAD = 4
 
+local function CleanRecycledEntry(entry)
+    if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
+    if entry.frame._cdcBadges then
+        for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
+    end
+    if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
+    if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
+    entry.image:SetAlpha(1)
+end
+
 local function AcquireBadge(frame, index)
     if not frame._cdcBadges then frame._cdcBadges = {} end
     local badge = frame._cdcBadges[index]
@@ -1954,6 +2060,9 @@ local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
     end
 end
 
+-- Forward declaration needed by StartDragTracking for phantom section rebuilds
+local RefreshColumn1
+
 -- Drop target detection for column 1 with folder support.
 -- Returns a table describing where the drop would land:
 --   { action="reorder-before"|"reorder-after"|"into-folder", rowIndex=N, targetRow=<row-meta>, anchorFrame=<frame> }
@@ -1992,21 +2101,22 @@ local function GetCol1DropTarget(cursorY, renderedRows, sourceKind, sourceSectio
         end
     end
 
-    -- Below all rows: drop after last row in source section
-    local lastRow, lastRowIndex
-    if sourceSection then
-        for i = #renderedRows, 1, -1 do
-            if renderedRows[i].section == sourceSection then
-                lastRow = renderedRows[i]
-                lastRowIndex = i
-                break
+    -- Cursor is in a gap between rows (e.g. between sections): find the first
+    -- row whose top edge is below the cursor and target it with reorder-before.
+    for i, rowMeta in ipairs(renderedRows) do
+        local frame = rowMeta.widget and rowMeta.widget.frame
+        if frame and frame:IsShown() then
+            local top = frame:GetTop()
+            if top and cursorY > top then
+                return { action = "reorder-before", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
             end
         end
     end
-    if not lastRow then
-        lastRow = renderedRows[#renderedRows]
-        lastRowIndex = #renderedRows
-    end
+
+    -- Below all rows: drop after the last row overall.
+    -- This naturally handles cross-section moves (last row is in the bottom section).
+    local lastRow = renderedRows[#renderedRows]
+    local lastRowIndex = #renderedRows
     local lastFrame = lastRow and lastRow.widget and lastRow.widget.frame
     if lastFrame and lastFrame:IsShown() then
         return { action = "reorder-after", rowIndex = lastRowIndex, targetRow = lastRow, anchorFrame = lastFrame, isBelowAll = true }
@@ -2036,7 +2146,7 @@ end
 
 -- Apply a column-1 folder-aware drop result.
 -- Called from FinishDrag for group/folder/folder-group drag kinds.
-local function ApplyCol1Drop(state)
+ApplyCol1Drop = function(state)
     local dropTarget = state.dropTarget
     if not dropTarget then return end
 
@@ -2060,6 +2170,9 @@ local function ApplyCol1Drop(state)
                 group.folderId = targetRow.inFolder
             elseif targetRow.kind == "folder" then
                 -- Dropping before/after a folder header = top-level
+                group.folderId = nil
+            elseif targetRow.kind == "phantom" then
+                -- Dropping on phantom section placeholder = top-level in that section
                 group.folderId = nil
             else
                 -- Dropping on a loose group = stay/become loose
@@ -2139,6 +2252,117 @@ local function ApplyCol1Drop(state)
                 end
             end
         end
+    elseif state.kind == "multi-group" then
+        local sourceGroupIds = state.sourceGroupIds
+        if not sourceGroupIds then return end
+
+        local targetRow = dropTarget.targetRow
+        -- Determine target folder and section
+        local targetFolderId = nil
+        if dropTarget.action == "into-folder" then
+            targetFolderId = dropTarget.targetFolderId
+        elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
+            if dropTarget.isBelowAll then
+                targetFolderId = nil
+            elseif targetRow.kind == "group" and targetRow.inFolder then
+                targetFolderId = targetRow.inFolder
+            else
+                targetFolderId = nil
+            end
+        end
+
+        local targetSection = targetRow.section or state.sourceSection
+
+        -- Set folder and cross-section toggle for each selected group
+        for gid in pairs(sourceGroupIds) do
+            local g = db.groups[gid]
+            if g then
+                g.folderId = targetFolderId
+                local groupSection = g.isGlobal and "global" or "char"
+                if groupSection ~= targetSection then
+                    if targetSection == "global" then
+                        g.isGlobal = true
+                    else
+                        g.isGlobal = false
+                        g.createdBy = CooldownCompanion.db.keys.char
+                    end
+                end
+            end
+        end
+
+        -- Sort selected groups by current order to preserve relative ordering
+        local sortedSelected = {}
+        for gid in pairs(sourceGroupIds) do
+            local g = db.groups[gid]
+            if g then
+                table.insert(sortedSelected, { id = gid, order = g.order or gid })
+            end
+        end
+        table.sort(sortedSelected, function(a, b) return a.order < b.order end)
+
+        -- Rebuild order for target container
+        local renderedRows = state.col1RenderedRows
+        if renderedRows then
+            if targetFolderId then
+                -- Ordering within a folder
+                local orderItems = {}
+                -- Collect ALL groups in target folder across all sections (after section toggle, they're all in targetSection)
+                for _, row in ipairs(renderedRows) do
+                    if row.kind == "group" and row.inFolder == targetFolderId and not sourceGroupIds[row.id] then
+                        table.insert(orderItems, row.id)
+                    end
+                end
+                -- Also include non-selected groups already in this folder from other sections
+                -- (they may not be in rendered rows if section changed)
+
+                -- Find insertion position
+                local insertPos = #orderItems + 1
+                for idx, gid in ipairs(orderItems) do
+                    if gid == targetRow.id then
+                        insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                        break
+                    end
+                end
+                -- Insert all selected groups at the position, preserving relative order
+                for i, item in ipairs(sortedSelected) do
+                    table.insert(orderItems, insertPos + i - 1, item.id)
+                end
+                for i, gid in ipairs(orderItems) do
+                    db.groups[gid].order = i
+                end
+            else
+                -- Top-level ordering
+                local orderItems = {}
+                for _, row in ipairs(renderedRows) do
+                    if row.section == targetSection then
+                        if (row.kind == "folder") or (row.kind == "group" and not row.inFolder) then
+                            if not sourceGroupIds[row.id] then
+                                table.insert(orderItems, { kind = row.kind, id = row.id })
+                            end
+                        end
+                    end
+                end
+
+                local insertPos = #orderItems + 1
+                for idx, item in ipairs(orderItems) do
+                    if item.kind == targetRow.kind and item.id == targetRow.id then
+                        insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                        break
+                    end
+                end
+                -- Insert all selected groups at the position
+                for i, item in ipairs(sortedSelected) do
+                    table.insert(orderItems, insertPos + i - 1, { kind = "group", id = item.id })
+                end
+                for i, item in ipairs(orderItems) do
+                    if item.kind == "folder" then
+                        db.folders[item.id].order = i
+                    else
+                        db.groups[item.id].order = i
+                    end
+                end
+            end
+        end
     elseif state.kind == "folder" then
         local sourceFolderId = state.sourceFolderId
         local folder = db.folders[sourceFolderId]
@@ -2147,6 +2371,21 @@ local function ApplyCol1Drop(state)
         local dropTarget = state.dropTarget
         local targetRow = dropTarget.targetRow
         local section = targetRow.section or state.sourceSection
+
+        -- Cross-section move: toggle folder section and update all child groups
+        if section ~= state.sourceSection then
+            folder.section = section
+            for groupId, group in pairs(db.groups) do
+                if group.folderId == sourceFolderId then
+                    if section == "global" then
+                        group.isGlobal = true
+                    else
+                        group.isGlobal = false
+                        group.createdBy = CooldownCompanion.db.keys.char
+                    end
+                end
+            end
+        end
 
         -- Build top-level items for the section (excluding the source folder)
         local renderedRows = state.col1RenderedRows
@@ -2208,7 +2447,11 @@ end
 
 local function CancelDrag()
     if dragState then
-        if dragState.widget then
+        if dragState.dimmedWidgets then
+            for _, w in ipairs(dragState.dimmedWidgets) do
+                w.frame:SetAlpha(1)
+            end
+        elseif dragState.widget then
             dragState.widget.frame:SetAlpha(1)
         end
     end
@@ -2218,6 +2461,12 @@ local function CancelDrag()
     if dragTracker then
         dragTracker:SetScript("OnUpdate", nil)
     end
+    if showPhantomSections then
+        showPhantomSections = false
+        C_Timer.After(0, function()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
 end
 
 local function FinishDrag()
@@ -2226,13 +2475,14 @@ local function FinishDrag()
         return
     end
     local state = dragState
+    showPhantomSections = false  -- clear before CancelDrag to avoid redundant deferred refresh
     CancelDrag()
     ResetDragIndicatorStyle()
     if state.kind == "group" and state.groupIds then
         -- Legacy flat reorder (column 2 button drags still use this path)
         PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
         CooldownCompanion:RefreshConfigPanel()
-    elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" then
+    elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" or state.kind == "multi-group" then
         -- Column 1 folder-aware drop
         -- Check for cross-section global→char with foreign specs
         local dropTarget = state.dropTarget
@@ -2257,6 +2507,77 @@ local function FinishDrag()
                 end
                 if hasForeign then
                     ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceGroup.name, {
+                        dragState = state,
+                    })
+                    return
+                end
+            end
+        end
+        -- Check for cross-section global→char with foreign specs (multi-group)
+        if dropTarget and state.kind == "multi-group" and state.sourceGroupIds then
+            local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+            if targetSection then
+                local hasForeign = false
+                local numSpecs = GetNumSpecializations()
+                local playerSpecIds = {}
+                for i = 1, numSpecs do
+                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                    if specId then playerSpecIds[specId] = true end
+                end
+                local db = CooldownCompanion.db.profile
+                for gid in pairs(state.sourceGroupIds) do
+                    local g = db.groups[gid]
+                    if g and g.isGlobal and targetSection == "char" and g.specs then
+                        for specId in pairs(g.specs) do
+                            if not playerSpecIds[specId] then
+                                hasForeign = true
+                                break
+                            end
+                        end
+                        if hasForeign then break end
+                    end
+                end
+                if hasForeign then
+                    ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
+                        groupIds = (function()
+                            local ids = {}
+                            for gid in pairs(state.sourceGroupIds) do table.insert(ids, gid) end
+                            return ids
+                        end)(),
+                        callback = function()
+                            ApplyCol1Drop(state)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end,
+                    })
+                    return
+                end
+            end
+        end
+        -- Check for cross-section global→char with foreign specs in folder children
+        if dropTarget and state.kind == "folder" then
+            local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+            if targetSection and targetSection ~= state.sourceSection
+               and state.sourceSection == "global" then
+                local hasForeign = false
+                local numSpecs = GetNumSpecializations()
+                local playerSpecIds = {}
+                for i = 1, numSpecs do
+                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                    if specId then playerSpecIds[specId] = true end
+                end
+                for groupId, group in pairs(CooldownCompanion.db.profile.groups) do
+                    if group.folderId == state.sourceFolderId and group.specs then
+                        for specId in pairs(group.specs) do
+                            if not playerSpecIds[specId] then
+                                hasForeign = true
+                                break
+                            end
+                        end
+                        if hasForeign then break end
+                    end
+                end
+                if hasForeign then
+                    ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_FOLDER", nil, {
                         dragState = state,
                     })
                     return
@@ -2295,15 +2616,79 @@ local function StartDragTracking()
         if dragState.phase == "pending" then
             if math.abs(cursorY - dragState.startY) > DRAG_THRESHOLD then
                 dragState.phase = "active"
-                if dragState.widget then
+                -- Dim source widget(s)
+                if dragState.kind == "multi-group" and dragState.sourceGroupIds then
+                    dragState.dimmedWidgets = {}
+                    for _, row in ipairs(dragState.col1RenderedRows) do
+                        if row.kind == "group" and dragState.sourceGroupIds[row.id] then
+                            row.widget.frame:SetAlpha(0.4)
+                            table.insert(dragState.dimmedWidgets, row.widget)
+                        end
+                    end
+                elseif dragState.widget then
                     dragState.widget.frame:SetAlpha(0.4)
+                end
+                -- Check if we need phantom sections for cross-section drops
+                if dragState.col1RenderedRows and not showPhantomSections then
+                    local hasGlobal, hasChar = false, false
+                    for _, row in ipairs(dragState.col1RenderedRows) do
+                        if row.section == "global" then hasGlobal = true end
+                        if row.section == "char" then hasChar = true end
+                    end
+                    if not hasGlobal or not hasChar then
+                        -- Save drag metadata before rebuild
+                        local savedKind = dragState.kind
+                        local savedSourceGroupId = dragState.sourceGroupId
+                        local savedSourceGroupIds = dragState.sourceGroupIds
+                        local savedSourceFolderId = dragState.sourceFolderId
+                        local savedSourceSection = dragState.sourceSection
+                        local savedScrollWidget = dragState.scrollWidget
+                        local savedStartY = dragState.startY
+                        showPhantomSections = true
+                        RefreshColumn1(true)
+                        -- Reconstruct drag state with new rendered rows
+                        dragState = {
+                            kind = savedKind,
+                            phase = "active",
+                            sourceGroupId = savedSourceGroupId,
+                            sourceGroupIds = savedSourceGroupIds,
+                            sourceFolderId = savedSourceFolderId,
+                            sourceSection = savedSourceSection,
+                            scrollWidget = savedScrollWidget,
+                            startY = savedStartY,
+                            col1RenderedRows = lastCol1RenderedRows,
+                        }
+                        -- Dim the source widget(s) in the new rows
+                        if savedKind == "multi-group" and savedSourceGroupIds then
+                            dragState.dimmedWidgets = {}
+                            for _, row in ipairs(dragState.col1RenderedRows) do
+                                if row.kind == "group" and savedSourceGroupIds[row.id] then
+                                    row.widget.frame:SetAlpha(0.4)
+                                    table.insert(dragState.dimmedWidgets, row.widget)
+                                end
+                            end
+                        else
+                            for _, row in ipairs(dragState.col1RenderedRows) do
+                                if savedKind == "folder" and row.kind == "folder" and row.id == savedSourceFolderId then
+                                    dragState.widget = row.widget
+                                    row.widget.frame:SetAlpha(0.4)
+                                    break
+                                elseif (savedKind == "group" or savedKind == "folder-group") and row.kind == "group" and row.id == savedSourceGroupId then
+                                    dragState.widget = row.widget
+                                    row.widget.frame:SetAlpha(0.4)
+                                    break
+                                end
+                            end
+                        end
+                    end
                 end
             end
         end
         if dragState.phase == "active" then
             if dragState.col1RenderedRows then
                 -- Column 1 folder-aware drop detection
-                local dropTarget = GetCol1DropTarget(cursorY, dragState.col1RenderedRows, dragState.kind, dragState.sourceSection)
+                local effectiveKind = dragState.kind == "multi-group" and "group" or dragState.kind
+                local dropTarget = GetCol1DropTarget(cursorY, dragState.col1RenderedRows, effectiveKind, dragState.sourceSection)
                 dragState.dropTarget = dropTarget
                 if dropTarget then
                     ResetDragIndicatorStyle()
@@ -2333,7 +2718,7 @@ end
 ------------------------------------------------------------------------
 -- Forward declarations for refresh functions
 ------------------------------------------------------------------------
-local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
+local RefreshColumn2, RefreshColumn3, RefreshProfileBar
 
 ------------------------------------------------------------------------
 -- Spec Filter (inline expansion in group list)
@@ -2341,11 +2726,31 @@ local RefreshColumn1, RefreshColumn2, RefreshColumn3, RefreshProfileBar
 local specExpandedGroupId
 
 ------------------------------------------------------------------------
+-- Helper: generate a unique folder name (module-level for RefreshColumn1 + RefreshColumn2)
+------------------------------------------------------------------------
+local function GenerateFolderName(base)
+    local db = CooldownCompanion.db.profile
+    local existing = {}
+    for _, f in pairs(db.folders) do
+        existing[f.name] = true
+    end
+    local name = base
+    if existing[name] then
+        local n = 1
+        while existing[name .. " " .. n] do
+            n = n + 1
+        end
+        name = name .. " " .. n
+    end
+    return name
+end
+
+------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
-function RefreshColumn1()
+function RefreshColumn1(preserveDrag)
     if not col1Scroll then return end
-    CancelDrag()
+    if not preserveDrag then CancelDrag() end
     col1Scroll:ReleaseChildren()
 
     -- Hide all accent bars from previous render
@@ -2443,6 +2848,8 @@ function RefreshColumn1()
         if not group then return end
 
         local entry = AceGUI:Create("InteractiveLabel")
+        -- Clean recycled widget sub-elements before setup
+        CleanRecycledEntry(entry)
         entry:SetText(group.name)
         entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
         entry:SetImageSize(inFolder and 13 or 1, 30)  -- extra width indents folder children
@@ -2451,15 +2858,15 @@ function RefreshColumn1()
         entry:SetFontObject(GameFontHighlight)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
-        -- Color: green for selected, gray for disabled, default otherwise
-        if selectedGroup == groupId then
+        -- Color: blue for multi-selected, green for selected, gray for disabled, default otherwise
+        if selectedGroups[groupId] then
+            entry:SetColor(0.4, 0.7, 1.0)
+        elseif selectedGroup == groupId then
             entry:SetColor(0, 1, 0)
         elseif group.enabled == false then
             entry:SetColor(0.5, 0.5, 0.5)
         end
 
-        -- Hide stale badge so OnWidthSet hook skips during AddChild layout
-        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
         col1Scroll:AddChild(entry)
 
         -- Mode badge between group icon and label text (reuse texture from recycled widget)
@@ -2508,8 +2915,25 @@ function RefreshColumn1()
                     end
                     CooldownCompanion:RefreshConfigPanel()
                     return
+                elseif IsControlKeyDown() then
+                    -- Ctrl+click: toggle multi-select
+                    if selectedGroups[groupId] then
+                        selectedGroups[groupId] = nil
+                    else
+                        selectedGroups[groupId] = true
+                    end
+                    -- Auto-promote current single selection into multi-select
+                    if selectedGroup and not selectedGroups[selectedGroup] and next(selectedGroups) then
+                        selectedGroups[selectedGroup] = true
+                    end
+                    selectedGroup = nil
+                    selectedButton = nil
+                    wipe(selectedButtons)
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
                 end
-                -- Normal click: toggle selection
+                -- Normal click: toggle selection, clear multi-select
+                wipe(selectedGroups)
                 if selectedGroup == groupId then
                     selectedGroup = nil
                 else
@@ -2606,6 +3030,33 @@ function RefreshColumn1()
                                 selectedGroup = newGroupId
                                 CooldownCompanion:RefreshConfigPanel()
                             end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- Lock/Unlock
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = group.locked and "Unlock" or "Lock"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            group.locked = not group.locked
+                            CooldownCompanion:RefreshGroupFrame(groupId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- Spec Filter
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "Spec Filter"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            if specExpandedGroupId == groupId then
+                                specExpandedGroupId = nil
+                            else
+                                specExpandedGroupId = groupId
+                            end
+                            CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
 
@@ -2798,12 +3249,14 @@ function RefreshColumn1()
             end)
         end
         entryFrame._cdcOnMouseDown = function(self, button)
-            if button == "LeftButton" and not IsShiftKeyDown() then
+            if button == "LeftButton" and not IsShiftKeyDown() and not IsControlKeyDown() then
+                local isMulti = next(selectedGroups) and selectedGroups[groupId]
                 local cursorY = GetScaledCursorPosition(col1Scroll)
                 dragState = {
-                    kind = inFolder and "folder-group" or "group",
+                    kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
                     phase = "pending",
                     sourceGroupId = groupId,
+                    sourceGroupIds = isMulti and CopyTable(selectedGroups) or nil,
                     sourceSection = sectionTag,
                     sourceFolderId = inFolder and group.folderId or nil,
                     scrollWidget = col1Scroll,
@@ -2831,11 +3284,7 @@ function RefreshColumn1()
             or "  |A:common-icon-minus:10:10|a"
 
         local entry = AceGUI:Create("InteractiveLabel")
-        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
-        if entry.frame._cdcBadges then
-            for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
-        end
-        entry.image:SetAlpha(1)
+        CleanRecycledEntry(entry)
         entry:SetText(folder.name .. collapseTag)
         entry:SetImage(GetFolderIcon(folderId, db))
         entry:SetImageSize(32, 32)
@@ -2844,11 +3293,6 @@ function RefreshColumn1()
         entry:SetColor(1.0, 0.82, 0.0)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         col1Scroll:AddChild(entry)
-
-        -- Clean up recycled collapse texture from previous implementation
-        if entry.frame._cdcCollapseIcon then
-            entry.frame._cdcCollapseIcon:Hide()
-        end
 
         -- Tag entry frame with metadata for drag system
         entry.frame._cdcItemKind = "folder"
@@ -2873,6 +3317,23 @@ function RefreshColumn1()
             if button == "LeftButton" then
                 collapsedFolders[folderId] = not collapsedFolders[folderId]
                 CooldownCompanion:RefreshConfigPanel()
+            elseif button == "MiddleButton" then
+                local anyLocked = false
+                for gid, g in pairs(db.groups) do
+                    if g.folderId == folderId and g.locked then
+                        anyLocked = true
+                        break
+                    end
+                end
+                local newState = not anyLocked
+                for gid, g in pairs(db.groups) do
+                    if g.folderId == folderId then
+                        g.locked = newState
+                        CooldownCompanion:RefreshGroupFrame(gid)
+                    end
+                end
+                CooldownCompanion:RefreshConfigPanel()
+                return
             elseif button == "RightButton" then
                 if not folderContextMenu then
                     folderContextMenu = CreateFrame("Frame", "CDCFolderContextMenu", UIParent, "UIDropDownMenuTemplate")
@@ -2895,6 +3356,30 @@ function RefreshColumn1()
                     info.func = function()
                         CloseDropDownMenus()
                         CooldownCompanion:ToggleFolderGlobal(folderId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Lock All / Unlock All
+                    local anyLocked = false
+                    for gid, g in pairs(db.groups) do
+                        if g.folderId == folderId and g.locked then
+                            anyLocked = true
+                            break
+                        end
+                    end
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = anyLocked and "Unlock All" or "Lock All"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local newState = not anyLocked
+                        for gid, g in pairs(db.groups) do
+                            if g.folderId == folderId then
+                                g.locked = newState
+                                CooldownCompanion:RefreshGroupFrame(gid)
+                            end
+                        end
                         CooldownCompanion:RefreshConfigPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
@@ -2943,12 +3428,27 @@ function RefreshColumn1()
     -- Render a section (global or character)
     local function RenderSection(section, sectionGroupIds, headingText)
         local items, folderChildGroups = BuildSectionItems(section, sectionGroupIds)
-        if #items == 0 and not next(folderChildGroups) then return end
+        local isEmpty = #items == 0 and not next(folderChildGroups)
+        if isEmpty and not showPhantomSections then return end
 
         local heading = AceGUI:Create("Heading")
         heading:SetText(headingText)
         heading:SetFullWidth(true)
         col1Scroll:AddChild(heading)
+
+        if isEmpty and showPhantomSections then
+            local placeholder = AceGUI:Create("Label")
+            placeholder:SetText("|cff888888Drop here to move|r")
+            placeholder:SetFullWidth(true)
+            col1Scroll:AddChild(placeholder)
+            local rowIndex = #col1RenderedRows + 1
+            col1RenderedRows[rowIndex] = {
+                kind = "phantom",
+                widget = placeholder,
+                section = section,
+            }
+            return
+        end
 
         -- Class color for accent bars
         local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
@@ -3003,7 +3503,7 @@ function RefreshColumn1()
     end
 
     -- Render sections
-    if #globalIds > 0 or next(db.folders) then
+    if #globalIds > 0 or next(db.folders) or showPhantomSections then
         -- Check if there are any global folders
         local hasGlobalContent = #globalIds > 0
         if not hasGlobalContent then
@@ -3014,7 +3514,7 @@ function RefreshColumn1()
                 end
             end
         end
-        if hasGlobalContent then
+        if hasGlobalContent or showPhantomSections then
             RenderSection("global", globalIds, "|cff66aaff" .. "Global Groups" .. "|r")
         end
     end
@@ -3030,9 +3530,11 @@ function RefreshColumn1()
             end
         end
     end
-    if hasCharContent then
+    if hasCharContent or showPhantomSections then
         RenderSection("char", charIds, charName .. "'s Groups")
     end
+
+    lastCol1RenderedRows = col1RenderedRows
 
     -- Refresh the static button bar at the bottom
     if col1ButtonBar then
@@ -3047,24 +3549,6 @@ function RefreshColumn1()
             local existing = {}
             for _, g in pairs(db.groups) do
                 existing[g.name] = true
-            end
-            local name = base
-            if existing[name] then
-                local n = 1
-                while existing[name .. " " .. n] do
-                    n = n + 1
-                end
-                name = name .. " " .. n
-            end
-            return name
-        end
-
-        -- Helper: generate a unique folder name
-        local function GenerateFolderName(base)
-            local db = CooldownCompanion.db.profile
-            local existing = {}
-            for _, f in pairs(db.folders) do
-                existing[f.name] = true
             end
             local name = base
             if existing[name] then
@@ -3144,6 +3628,354 @@ function RefreshColumn2()
     CancelDrag()
     HideAutocomplete()
     col2Scroll:ReleaseChildren()
+
+    -- Multi-group selection: show inline action buttons instead of spell list
+    local multiGroupCount = 0
+    local multiGroupIds = {}
+    for gid in pairs(selectedGroups) do
+        multiGroupCount = multiGroupCount + 1
+        table.insert(multiGroupIds, gid)
+    end
+    if multiGroupCount >= 2 then
+        local db = CooldownCompanion.db.profile
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText(multiGroupCount .. " Groups Selected")
+        heading:SetFullWidth(true)
+        col2Scroll:AddChild(heading)
+
+        -- Delete Selected
+        local delBtn = AceGUI:Create("Button")
+        delBtn:SetText("Delete Selected")
+        delBtn:SetFullWidth(true)
+        delBtn:SetCallback("OnClick", function()
+            ShowPopupAboveConfig("CDC_DELETE_SELECTED_GROUPS", multiGroupCount, { groupIds = multiGroupIds })
+        end)
+        col2Scroll:AddChild(delBtn)
+
+        local spacer1 = AceGUI:Create("Label")
+        spacer1:SetText(" ")
+        spacer1:SetFullWidth(true)
+        local f1, _, fl1 = spacer1.label:GetFont()
+        spacer1:SetFont(f1, 3, fl1 or "")
+        col2Scroll:AddChild(spacer1)
+
+        -- Move to Folder
+        local moveBtn = AceGUI:Create("Button")
+        moveBtn:SetText("Move to Folder")
+        moveBtn:SetFullWidth(true)
+        moveBtn:SetCallback("OnClick", function()
+            if not moveMenuFrame then
+                moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+                -- "(No Folder)" option
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "(No Folder)"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    for _, gid in ipairs(multiGroupIds) do
+                        local g = db.groups[gid]
+                        if g then g.folderId = nil end
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+
+                -- Collect all folders from both sections
+                local folderList = {}
+                for fid, folder in pairs(db.folders) do
+                    table.insert(folderList, {
+                        id = fid,
+                        name = folder.name,
+                        section = folder.section,
+                        order = folder.order or fid,
+                    })
+                end
+                table.sort(folderList, function(a, b)
+                    if a.section ~= b.section then
+                        return a.section == "global"
+                    end
+                    return a.order < b.order
+                end)
+
+                for _, f in ipairs(folderList) do
+                    info = UIDropDownMenu_CreateInfo()
+                    local sectionLabel = f.section == "global" and " (Global)" or " (Char)"
+                    info.text = f.name .. sectionLabel
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local targetSection = f.section
+
+                        -- Check for foreign specs when moving global→char
+                        local hasForeignSpecs = false
+                        if targetSection == "char" then
+                            local numSpecs = GetNumSpecializations()
+                            local playerSpecIds = {}
+                            for i = 1, numSpecs do
+                                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                                if specId then playerSpecIds[specId] = true end
+                            end
+                            for _, gid in ipairs(multiGroupIds) do
+                                local g = db.groups[gid]
+                                if g and g.isGlobal and g.specs then
+                                    for specId in pairs(g.specs) do
+                                        if not playerSpecIds[specId] then
+                                            hasForeignSpecs = true
+                                            break
+                                        end
+                                    end
+                                    if hasForeignSpecs then break end
+                                end
+                            end
+                        end
+
+                        local doMove = function()
+                            for _, gid in ipairs(multiGroupIds) do
+                                local g = db.groups[gid]
+                                if g then
+                                    g.folderId = f.id
+                                    -- Cross-section: toggle global/char
+                                    local groupSection = g.isGlobal and "global" or "char"
+                                    if groupSection ~= targetSection then
+                                        if targetSection == "global" then
+                                            g.isGlobal = true
+                                        else
+                                            g.isGlobal = false
+                                            g.createdBy = CooldownCompanion.db.keys.char
+                                        end
+                                    end
+                                end
+                            end
+                            CooldownCompanion:RefreshAllGroups()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+
+                        if hasForeignSpecs then
+                            ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
+                                groupIds = multiGroupIds,
+                                callback = doMove,
+                            })
+                        else
+                            doMove()
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end, "MENU")
+            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
+        end)
+        col2Scroll:AddChild(moveBtn)
+
+        local spacer2 = AceGUI:Create("Label")
+        spacer2:SetText(" ")
+        spacer2:SetFullWidth(true)
+        local f2, _, fl2 = spacer2.label:GetFont()
+        spacer2:SetFont(f2, 3, fl2 or "")
+        col2Scroll:AddChild(spacer2)
+
+        -- Group into New Folder
+        local newFolderBtn = AceGUI:Create("Button")
+        newFolderBtn:SetText("Group into New Folder")
+        newFolderBtn:SetFullWidth(true)
+        newFolderBtn:SetCallback("OnClick", function()
+            if not moveMenuFrame then
+                moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+                for _, entry in ipairs({
+                    { text = "New Global Folder", section = "global" },
+                    { text = "New Character Folder", section = "char" },
+                }) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = entry.text
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local targetSection = entry.section
+
+                        -- Check for foreign specs when targeting char section
+                        local hasForeignSpecs = false
+                        if targetSection == "char" then
+                            local numSpecs = GetNumSpecializations()
+                            local playerSpecIds = {}
+                            for i = 1, numSpecs do
+                                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                                if specId then playerSpecIds[specId] = true end
+                            end
+                            for _, gid in ipairs(multiGroupIds) do
+                                local g = db.groups[gid]
+                                if g and g.isGlobal and g.specs then
+                                    for specId in pairs(g.specs) do
+                                        if not playerSpecIds[specId] then
+                                            hasForeignSpecs = true
+                                            break
+                                        end
+                                    end
+                                    if hasForeignSpecs then break end
+                                end
+                            end
+                        end
+
+                        local doGroupIntoFolder = function()
+                            local folderName = GenerateFolderName("New Folder")
+                            local folderId = CooldownCompanion:CreateFolder(folderName, targetSection)
+                            for _, gid in ipairs(multiGroupIds) do
+                                local g = db.groups[gid]
+                                if g then
+                                    g.folderId = folderId
+                                    local groupSection = g.isGlobal and "global" or "char"
+                                    if groupSection ~= targetSection then
+                                        if targetSection == "global" then
+                                            g.isGlobal = true
+                                        else
+                                            g.isGlobal = false
+                                            g.createdBy = CooldownCompanion.db.keys.char
+                                        end
+                                    end
+                                end
+                            end
+                            CooldownCompanion:RefreshAllGroups()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+
+                        if hasForeignSpecs then
+                            ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
+                                groupIds = multiGroupIds,
+                                callback = doGroupIntoFolder,
+                            })
+                        else
+                            doGroupIntoFolder()
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end, "MENU")
+            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
+        end)
+        col2Scroll:AddChild(newFolderBtn)
+
+        local spacer3 = AceGUI:Create("Label")
+        spacer3:SetText(" ")
+        spacer3:SetFullWidth(true)
+        local f3, _, fl3 = spacer3.label:GetFont()
+        spacer3:SetFont(f3, 3, fl3 or "")
+        col2Scroll:AddChild(spacer3)
+
+        -- Make Global / Make Character
+        local anyChar = false
+        local allGlobal = true
+        for _, gid in ipairs(multiGroupIds) do
+            local g = db.groups[gid]
+            if g then
+                if not g.isGlobal then
+                    anyChar = true
+                    allGlobal = false
+                end
+            end
+        end
+
+        local toggleBtn = AceGUI:Create("Button")
+        toggleBtn:SetText(anyChar and "Make All Global" or "Make All Character")
+        toggleBtn:SetFullWidth(true)
+        toggleBtn:SetCallback("OnClick", function()
+            if anyChar then
+                -- Make all global
+                for _, gid in ipairs(multiGroupIds) do
+                    local g = db.groups[gid]
+                    if g and not g.isGlobal then
+                        g.isGlobal = true
+                        g.folderId = nil
+                    end
+                end
+                CooldownCompanion:RefreshAllGroups()
+                CooldownCompanion:RefreshConfigPanel()
+            else
+                -- Make all character — check for foreign specs
+                local hasForeignSpecs = false
+                local numSpecs = GetNumSpecializations()
+                local playerSpecIds = {}
+                for i = 1, numSpecs do
+                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                    if specId then playerSpecIds[specId] = true end
+                end
+                for _, gid in ipairs(multiGroupIds) do
+                    local g = db.groups[gid]
+                    if g and g.specs then
+                        for specId in pairs(g.specs) do
+                            if not playerSpecIds[specId] then
+                                hasForeignSpecs = true
+                                break
+                            end
+                        end
+                        if hasForeignSpecs then break end
+                    end
+                end
+
+                local doToggle = function()
+                    for _, gid in ipairs(multiGroupIds) do
+                        local g = db.groups[gid]
+                        if g and g.isGlobal then
+                            g.isGlobal = false
+                            g.createdBy = CooldownCompanion.db.keys.char
+                            g.folderId = nil
+                        end
+                    end
+                    CooldownCompanion:RefreshAllGroups()
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+
+                if hasForeignSpecs then
+                    ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
+                        groupIds = multiGroupIds,
+                        callback = doToggle,
+                    })
+                else
+                    doToggle()
+                end
+            end
+        end)
+        col2Scroll:AddChild(toggleBtn)
+
+        local spacer4 = AceGUI:Create("Label")
+        spacer4:SetText(" ")
+        spacer4:SetFullWidth(true)
+        local f4, _, fl4 = spacer4.label:GetFont()
+        spacer4:SetFont(f4, 3, fl4 or "")
+        col2Scroll:AddChild(spacer4)
+
+        -- Lock / Unlock All
+        local anyLocked = false
+        for _, gid in ipairs(multiGroupIds) do
+            local g = db.groups[gid]
+            if g and g.locked then
+                anyLocked = true
+                break
+            end
+        end
+
+        local lockBtn = AceGUI:Create("Button")
+        lockBtn:SetText(anyLocked and "Unlock All" or "Lock All")
+        lockBtn:SetFullWidth(true)
+        lockBtn:SetCallback("OnClick", function()
+            local newState = not anyLocked
+            for _, gid in ipairs(multiGroupIds) do
+                local g = db.groups[gid]
+                if g then
+                    g.locked = newState
+                    CooldownCompanion:RefreshGroupFrame(gid)
+                end
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        col2Scroll:AddChild(lockBtn)
+
+        return
+    end
 
     if not selectedGroup then
         local label = AceGUI:Create("Label")
@@ -3270,11 +4102,7 @@ function RefreshColumn2()
     local numButtons = #group.buttons
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")
-        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
-        if entry.frame._cdcBadges then
-            for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
-        end
-        entry.image:SetAlpha(1)
+        CleanRecycledEntry(entry)
         local usable = CooldownCompanion:IsButtonUsable(buttonData)
         -- Show current spell name via viewer child's overrideSpellID (tracks current form)
         local entryName = buttonData.name
@@ -3482,86 +4310,6 @@ function RefreshColumn2()
         end
     end
 
-    -- Count multi-selected entries
-    local multiCount = 0
-    local multiIndices = {}
-    for idx in pairs(selectedButtons) do
-        multiCount = multiCount + 1
-        table.insert(multiIndices, idx)
-    end
-
-    if multiCount >= 2 then
-        -- Multi-select: show Delete Selected button
-        local delHeading = AceGUI:Create("Heading")
-        delHeading:SetText(multiCount .. " Selected")
-        delHeading:SetFullWidth(true)
-        col2Scroll:AddChild(delHeading)
-
-        local delRow = AceGUI:Create("SimpleGroup")
-        delRow:SetFullWidth(true)
-        delRow:SetLayout("Flow")
-        local delBtn = AceGUI:Create("Button")
-        delBtn:SetText("Delete Selected")
-        delBtn:SetFullWidth(true)
-        delBtn:SetCallback("OnClick", function()
-            ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
-                { groupId = selectedGroup, indices = multiIndices })
-        end)
-        delRow:AddChild(delBtn)
-        col2Scroll:AddChild(delRow)
-
-        local moveRow = AceGUI:Create("SimpleGroup")
-        moveRow:SetFullWidth(true)
-        moveRow:SetLayout("Flow")
-        local moveBtn = AceGUI:Create("Button")
-        moveBtn:SetText("Move Selected")
-        moveBtn:SetFullWidth(true)
-        moveBtn:SetCallback("OnClick", function()
-            if not moveMenuFrame then
-                moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-            end
-            local sourceGroupId = selectedGroup
-            local indices = multiIndices
-            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
-                local db = CooldownCompanion.db.profile
-                local groupIds = {}
-                for id in pairs(db.groups) do
-                    if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
-                        table.insert(groupIds, id)
-                    end
-                end
-                table.sort(groupIds)
-                for _, gid in ipairs(groupIds) do
-                    if gid ~= sourceGroupId then
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = db.groups[gid].name
-                        info.func = function()
-                            -- Copy entries to target group
-                            for _, idx in ipairs(indices) do
-                                table.insert(db.groups[gid].buttons, group.buttons[idx])
-                            end
-                            -- Remove from source in reverse order
-                            table.sort(indices, function(a, b) return a > b end)
-                            for _, idx in ipairs(indices) do
-                                table.remove(db.groups[sourceGroupId].buttons, idx)
-                            end
-                            CooldownCompanion:RefreshGroupFrame(gid)
-                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                            selectedButton = nil
-                            wipe(selectedButtons)
-                            CooldownCompanion:RefreshConfigPanel()
-                            CloseDropDownMenus()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-                    end
-                end
-            end, "MENU")
-            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
-        end)
-        moveRow:AddChild(moveBtn)
-        col2Scroll:AddChild(moveRow)
-    end
 end
 
 
@@ -3571,6 +4319,22 @@ end
 ------------------------------------------------------------------------
 
 function RefreshColumn3(container)
+    -- Multi-group selection: show placeholder
+    local multiGroupCount = 0
+    for _ in pairs(selectedGroups) do multiGroupCount = multiGroupCount + 1 end
+    if multiGroupCount >= 2 then
+        if not container.placeholderLabel then
+            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            container.placeholderLabel:SetPoint("TOPLEFT", -1, 0)
+        end
+        container.placeholderLabel:SetText("Select a single group to configure")
+        container.placeholderLabel:Show()
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        return
+    end
+
     if not selectedGroup then
         -- Show placeholder, hide tab group
         if not container.placeholderLabel then
@@ -3692,6 +4456,7 @@ local function RefreshProfileBar(bar)
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(selectedGroups)
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:RefreshAllGroups()
     end)
@@ -4106,13 +4871,14 @@ local function CreateConfigPanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Groups")
         GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
+        GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
         GameTooltip:AddLine("Right-click for options.", 1, 1, 1, true)
         GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Left-click folder to expand/collapse.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Left-click folder to set spec filter.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click folder to lock/unlock all children.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:Show()
@@ -4488,6 +5254,7 @@ function CooldownCompanion:SetupConfig()
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(selectedGroups)
         wipe(collapsedFolders)
 
         if configFrame and configFrame.frame:IsShown() then
@@ -4499,6 +5266,7 @@ function CooldownCompanion:SetupConfig()
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(selectedGroups)
         wipe(collapsedFolders)
 
         if configFrame and configFrame.frame:IsShown() then
@@ -4510,6 +5278,7 @@ function CooldownCompanion:SetupConfig()
         selectedGroup = nil
         selectedButton = nil
         wipe(selectedButtons)
+        wipe(selectedGroups)
         wipe(collapsedFolders)
 
         if configFrame and configFrame.frame:IsShown() then
