@@ -124,6 +124,7 @@ ST._configState = {
     selectedButtons = selectedButtons,
     selectedGroups = selectedGroups,
     selectedTab = nil,      -- set/read by both files
+    buttonSettingsTab = "settings", -- "settings" or "visibility"
     -- UI state tables (both files read/write)
     collapsedSections = collapsedSections,
     buttonSettingsInfoButtons = buttonSettingsInfoButtons,
@@ -5010,13 +5011,102 @@ local function CreateConfigPanel()
     scroll2.frame:Show()
     col2Scroll = scroll2
 
+    -- Button Settings TabGroup (Settings + Visibility tabs)
+    local bsTabGroup = AceGUI:Create("TabGroup")
+    bsTabGroup:SetTabs({
+        { value = "settings",   text = "Settings" },
+        { value = "visibility", text = "Visibility" },
+    })
+    bsTabGroup:SetLayout("Fill")
+
+    bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+        CS.buttonSettingsTab = tab
+        -- Clean up info/collapse buttons before releasing
+        for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
+            btn:ClearAllPoints()
+            btn:Hide()
+            btn:SetParent(nil)
+        end
+        wipe(CS.buttonSettingsInfoButtons)
+        for _, btn in ipairs(CS.buttonSettingsCollapseButtons) do
+            btn:ClearAllPoints()
+            btn:Hide()
+            btn:SetParent(nil)
+        end
+        wipe(CS.buttonSettingsCollapseButtons)
+        CooldownCompanion:ClearAllProcGlowPreviews()
+        CooldownCompanion:ClearAllAuraGlowPreviews()
+        CooldownCompanion:ClearAllPandemicPreviews()
+        widget:ReleaseChildren()
+
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        widget:AddChild(scroll)
+        buttonSettingsScroll = scroll
+        CS.buttonSettingsScroll = scroll
+
+        SyncConfigState()
+
+        local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if not group then return end
+
+        local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
+        if not buttonData then return end
+
+        -- Multi-select handling
+        local multiCount = 0
+        local multiIndices = {}
+        for idx in pairs(CS.selectedButtons) do
+            multiCount = multiCount + 1
+            table.insert(multiIndices, idx)
+        end
+
+        if tab == "settings" then
+            -- Multi-select shows only delete/move in settings tab
+            if multiCount >= 2 then
+                ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices)
+            elseif buttonData.type == "spell" then
+                ST._BuildSpellSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
+                ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
+                ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
+        elseif tab == "visibility" then
+            if multiCount >= 2 then
+                -- Apply visibility settings to all selected buttons
+                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            else
+                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
+        end
+
+        -- Apply hideInfoButtons setting
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
+                btn:Hide()
+            end
+        end
+    end)
+
+    bsTabGroup.frame:SetParent(buttonSettingsCol.content)
+    bsTabGroup.frame:ClearAllPoints()
+    bsTabGroup.frame:SetPoint("TOPLEFT", buttonSettingsCol.content, "TOPLEFT", 0, 0)
+    bsTabGroup.frame:SetPoint("BOTTOMRIGHT", buttonSettingsCol.content, "BOTTOMRIGHT", 0, 0)
+    bsTabGroup.frame:Hide()
+    buttonSettingsCol.bsTabGroup = bsTabGroup
+
+    -- Placeholder label shown when no button is selected
+    local bsPlaceholderLabel = buttonSettingsCol.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bsPlaceholderLabel:SetPoint("TOPLEFT", buttonSettingsCol.content, "TOPLEFT", -1, 0)
+    bsPlaceholderLabel:SetText("Select a spell or item to configure")
+    bsPlaceholderLabel:Show()
+    buttonSettingsCol.bsPlaceholder = bsPlaceholderLabel
+
+    -- Initialize with a placeholder scroll (will be replaced on tab select)
     local bsScroll = AceGUI:Create("ScrollFrame")
     bsScroll:SetLayout("List")
-    bsScroll.frame:SetParent(buttonSettingsCol.content)
-    bsScroll.frame:ClearAllPoints()
-    bsScroll.frame:SetPoint("TOPLEFT", buttonSettingsCol.content, "TOPLEFT", 0, 0)
-    bsScroll.frame:SetPoint("BOTTOMRIGHT", buttonSettingsCol.content, "BOTTOMRIGHT", 0, 0)
-    bsScroll.frame:Show()
+    bsTabGroup:AddChild(bsScroll)
     buttonSettingsScroll = bsScroll
     CS.buttonSettingsScroll = bsScroll
 

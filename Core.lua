@@ -135,6 +135,12 @@ local defaults = {
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
+                        showKeybindText = false,
+                        keybindFont = "Fonts\\FRIZQT__.TTF",
+                        keybindFontSize = 10,
+                        keybindFontOutline = "OUTLINE",
+                        keybindFontColor = {1, 1, 1, 1},
+                        keybindAnchor = "TOPRIGHT",
                     },
                     enabled = true,
                     displayMode = "icons",    -- "icons" or "bars"
@@ -187,6 +193,12 @@ local defaults = {
             procGlowColor = {1, 1, 1, 1},
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
+            showKeybindText = false,
+            keybindFont = "Fonts\\FRIZQT__.TTF",
+            keybindFontSize = 10,
+            keybindFontOutline = "OUTLINE",
+            keybindFontColor = {1, 1, 1, 1},
+            keybindAnchor = "TOPRIGHT",
             -- Bar display mode defaults
             barLength = 180,
             barHeight = 20,
@@ -302,6 +314,10 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
+    -- Keybind text events
+    self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
+    self:RegisterEvent("ACTIONBAR_SLOT_CHANGED", "OnActionBarSlotChanged")
+
     -- Cache player class for class-specific checks (e.g. Druid Travel Form)
     self._playerClassID = select(3, UnitClass("player"))
 
@@ -323,6 +339,9 @@ function CooldownCompanion:OnEnable()
     -- Remove orphaned barChargeMissingColor/barChargeSwipe fields (replaced by charge sub-bars)
     self:MigrateRemoveBarChargeOldFields()
 
+    -- Migrate groups to have compactLayout field
+    self:MigrateVisibility()
+
     -- Ensure folders table exists in profile
     self:MigrateFolders()
 
@@ -341,6 +360,7 @@ function CooldownCompanion:OnEnable()
         end
 
         self:UpdateAllCooldowns()
+        self:UpdateAllGroupLayouts()
         self._cooldownsDirty = false
     end)
 
@@ -962,7 +982,23 @@ function CooldownCompanion:OnPlayerEnteringWorld()
         self:RefreshAllGroups()
         self:BuildViewerAuraMap()
         self:ApplyCdmAlpha()
+        self:RebuildSlotMapping()
+        self:RebuildItemSlotCache()
+        self:OnKeybindsChanged()
     end)
+end
+
+function CooldownCompanion:OnBindingsChanged()
+    self:OnKeybindsChanged()
+end
+
+function CooldownCompanion:OnActionBarSlotChanged(_, slot)
+    -- Rebuild slot mapping since frame .action fields may have changed
+    self:RebuildSlotMapping()
+    if slot then
+        self:UpdateItemSlotCache(slot)
+    end
+    self:OnKeybindsChanged()
 end
 
 -- Masque Helper Functions
@@ -1119,6 +1155,12 @@ function CooldownCompanion:CreateGroup(name)
 
     -- Masque defaults
     self.db.profile.groups[groupId].masqueEnabled = false
+
+    -- Compact layout default (per-button visibility feature)
+    self.db.profile.groups[groupId].compactLayout = false
+
+    -- Max visible buttons cap (0 = no cap, use total button count)
+    self.db.profile.groups[groupId].maxVisibleButtons = 0
 
     -- Create the frame for this group
     self:CreateGroupFrame(groupId)
@@ -1421,6 +1463,17 @@ function CooldownCompanion:MigrateRemoveBarChargeOldFields()
     end
 end
 
+function CooldownCompanion:MigrateVisibility()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.compactLayout == nil then
+            group.compactLayout = false
+        end
+        if group.maxVisibleButtons == nil then
+            group.maxVisibleButtons = 0
+        end
+    end
+end
+
 function CooldownCompanion:MigrateFolders()
     if self.db.profile.folders == nil then
         self.db.profile.folders = {}
@@ -1694,6 +1747,14 @@ function CooldownCompanion:UpdateAllCooldowns()
     end
 end
 
+function CooldownCompanion:UpdateAllGroupLayouts()
+    for groupId, frame in pairs(self.groupFrames) do
+        if frame and frame:IsShown() and frame._layoutDirty then
+            self:UpdateGroupLayout(groupId)
+        end
+    end
+end
+
 function CooldownCompanion:LockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
@@ -1734,4 +1795,142 @@ function CooldownCompanion:GetItemInfo(itemId)
         return nil, icon
     end
     return itemName, itemIcon
+end
+
+------------------------------------------------------------------------
+-- KEYBIND TEXT SUPPORT
+------------------------------------------------------------------------
+
+-- Known action bar button frames: {framePrefix, bindingPrefix, count}
+-- Frame names come from Blizzard_ActionBar/Shared/ActionBar.lua:
+--   MainActionBar → "ActionButton"..i (special case)
+--   All others    → barFrameName.."Button"..i
+-- Binding prefixes come from buttonType in MultiActionBars.xml templates.
+local ACTION_BAR_BUTTONS = {
+    {"ActionButton",              "ACTIONBUTTON",            12},
+    {"MultiBarBottomLeftButton",  "MULTIACTIONBAR1BUTTON",   12},
+    {"MultiBarBottomRightButton", "MULTIACTIONBAR2BUTTON",   12},
+    {"MultiBarRightButton",       "MULTIACTIONBAR3BUTTON",   12},
+    {"MultiBarLeftButton",        "MULTIACTIONBAR4BUTTON",   12},
+    {"MultiBar5Button",           "MULTIACTIONBAR5BUTTON",   12},
+    {"MultiBar6Button",           "MULTIACTIONBAR6BUTTON",   12},
+    {"MultiBar7Button",           "MULTIACTIONBAR7BUTTON",   12},
+}
+
+-- slot → {bindingAction, frameName} reverse lookup, rebuilt on events
+local slotToButtonInfo = {}
+
+-- Item ID → action bar slot reverse lookup cache
+CooldownCompanion._itemSlotCache = {}
+
+-- Rebuild the slot → button info mapping by reading .action from actual frames.
+-- This correctly handles page-based slot numbering without hardcoded ranges.
+function CooldownCompanion:RebuildSlotMapping()
+    wipe(slotToButtonInfo)
+    for _, barInfo in ipairs(ACTION_BAR_BUTTONS) do
+        local framePrefix, bindingPrefix, count = barInfo[1], barInfo[2], barInfo[3]
+        for i = 1, count do
+            local frameName = framePrefix .. i
+            local frame = _G[frameName]
+            if frame and frame.action then
+                slotToButtonInfo[frame.action] = {
+                    bindingAction = bindingPrefix .. i,
+                    frameName = frameName,
+                }
+            end
+        end
+    end
+end
+
+-- Shorten verbose keybind display text to fit inside icon corners.
+local function AbbreviateKeybind(text)
+    text = text:gsub("Mouse Button ", "M")
+    text = text:gsub("Num Pad ", "N")
+    text = text:gsub("Middle Mouse", "M3")
+    text = text:gsub("Mouse Wheel Up", "MWU")
+    text = text:gsub("Mouse Wheel Down", "MWD")
+    return text
+end
+
+-- Return the formatted keybind string for a given action bar slot, or nil.
+-- Uses both the named binding AND the CLICK fallback (matching Blizzard logic).
+local function GetKeybindForSlot(slot)
+    local info = slotToButtonInfo[slot]
+    if not info then return nil end
+    local key = GetBindingKey(info.bindingAction) or
+                GetBindingKey("CLICK " .. info.frameName .. ":LeftButton")
+    if key then
+        return AbbreviateKeybind(GetBindingText(key, 1))
+    end
+    return nil
+end
+
+-- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.
+function CooldownCompanion:RebuildItemSlotCache()
+    wipe(self._itemSlotCache)
+    for slot, info in pairs(slotToButtonInfo) do
+        if C_ActionBar.HasAction(slot) and C_ActionBar.IsItemAction(slot) then
+            local actionType, id = GetActionInfo(slot)
+            if actionType == "item" and id then
+                if not self._itemSlotCache[id] then
+                    self._itemSlotCache[id] = slot
+                end
+            end
+        end
+    end
+end
+
+-- Update item slot cache for a single changed slot.
+function CooldownCompanion:UpdateItemSlotCache(slot)
+    -- Remove old entry pointing to this slot
+    for itemId, cachedSlot in pairs(self._itemSlotCache) do
+        if cachedSlot == slot then
+            self._itemSlotCache[itemId] = nil
+            break
+        end
+    end
+    -- Add new entry if slot now has an item
+    if C_ActionBar.HasAction(slot) and C_ActionBar.IsItemAction(slot) then
+        local actionType, id = GetActionInfo(slot)
+        if actionType == "item" and id then
+            if not self._itemSlotCache[id] then
+                self._itemSlotCache[id] = slot
+            end
+        end
+    end
+end
+
+-- Return the formatted keybind text for a button, or nil if none found.
+function CooldownCompanion:GetKeybindText(buttonData)
+    if not buttonData then return nil end
+
+    if buttonData.type == "spell" then
+        local slots = C_ActionBar.FindSpellActionButtons(buttonData.id)
+        if slots then
+            for _, slot in ipairs(slots) do
+                local text = GetKeybindForSlot(slot)
+                if text and text ~= "" then
+                    return text
+                end
+            end
+        end
+    elseif buttonData.type == "item" then
+        local slot = self._itemSlotCache[buttonData.id]
+        if slot then
+            return GetKeybindForSlot(slot)
+        end
+    end
+
+    return nil
+end
+
+-- Refresh keybind text on all icon-mode buttons.
+function CooldownCompanion:OnKeybindsChanged()
+    self:ForEachButton(function(button, buttonData)
+        if button.keybindText then
+            local text = CooldownCompanion:GetKeybindText(buttonData)
+            button.keybindText:SetText(text or "")
+            button.keybindText:SetShown(button.style.showKeybindText and text ~= nil)
+        end
+    end)
 end

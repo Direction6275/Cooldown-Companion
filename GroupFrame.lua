@@ -481,6 +481,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Resize the frame to fit visible buttons
     frame.visibleButtonCount = visibleIndex
+    frame._layoutDirty = false
+    frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
 
     -- Update clickthrough state
@@ -524,6 +526,57 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local height = rows * buttonHeight + (rows - 1) * spacing
 
     frame:SetSize(math_max(width, buttonWidth), math_max(height, buttonHeight))
+end
+
+-- Compact layout reflow: reposition visible buttons to fill gaps left by hidden ones.
+-- Only runs when compactLayout is enabled and _layoutDirty is true.
+function CooldownCompanion:UpdateGroupLayout(groupId)
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+    if not frame or not group then return end
+
+    if not group.compactLayout then
+        frame._layoutDirty = false
+        return
+    end
+
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local style = group.style or {}
+    local spacing = style.buttonSpacing or ST.BUTTON_SPACING
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local buttonsPerRow = style.buttonsPerRow or 12
+
+    local maxVis = (group.maxVisibleButtons and group.maxVisibleButtons > 0) and group.maxVisibleButtons or #frame.buttons
+
+    local visibleIndex = 0
+    for _, button in ipairs(frame.buttons) do
+        if button._visibilityHidden or visibleIndex >= maxVis then
+            button:Hide()
+        else
+            visibleIndex = visibleIndex + 1
+            button:Show()
+
+            -- Reposition to compact layout slot
+            button:ClearAllPoints()
+            local row, col
+            if orientation == "horizontal" then
+                row = math_floor((visibleIndex - 1) / buttonsPerRow)
+                col = (visibleIndex - 1) % buttonsPerRow
+            else
+                col = math_floor((visibleIndex - 1) / buttonsPerRow)
+                row = (visibleIndex - 1) % buttonsPerRow
+            end
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+        end
+    end
+
+    -- Resize group frame if visible count changed
+    if frame.visibleButtonCount ~= visibleIndex then
+        frame.visibleButtonCount = visibleIndex
+        self:ResizeGroupFrame(groupId)
+    end
+
+    frame._layoutDirty = false
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)

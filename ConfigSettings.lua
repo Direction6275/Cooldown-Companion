@@ -1604,141 +1604,99 @@ end
 ------------------------------------------------------------------------
 -- BUTTON SETTINGS COLUMN: Refresh
 ------------------------------------------------------------------------
-local function RefreshButtonSettingsColumn()
-    if not CS.buttonSettingsScroll then return end
-    CooldownCompanion:ClearAllProcGlowPreviews()
-    CooldownCompanion:ClearAllAuraGlowPreviews()
-    CooldownCompanion:ClearAllPandemicPreviews()
-    for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-        btn:ClearAllPoints()
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(CS.buttonSettingsInfoButtons)
-    for _, btn in ipairs(CS.buttonSettingsCollapseButtons) do
-        btn:ClearAllPoints()
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(CS.buttonSettingsCollapseButtons)
-    CS.buttonSettingsScroll:ReleaseChildren()
+-- Multi-select content for button settings (delete/move selected)
+local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(multiCount .. " Selected")
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
 
-    if not CS.selectedGroup then
-        local label = AceGUI:Create("Label")
-        label:SetText("Select a spell or item to configure")
-        label:SetFullWidth(true)
-        CS.buttonSettingsScroll:AddChild(label)
-        return
-    end
+    local delBtn = AceGUI:Create("Button")
+    delBtn:SetText("Delete Selected")
+    delBtn:SetFullWidth(true)
+    delBtn:SetCallback("OnClick", function()
+        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
+            { groupId = CS.selectedGroup, indices = multiIndices })
+    end)
+    scroll:AddChild(delBtn)
 
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group then return end
+    local spacer = AceGUI:Create("Label")
+    spacer:SetText(" ")
+    spacer:SetFullWidth(true)
+    local font, _, flags = spacer.label:GetFont()
+    spacer:SetFont(font, 3, flags or "")
+    scroll:AddChild(spacer)
 
-    -- Only show settings when a single button is selected (not multi-select)
-    local multiCount = 0
-    local multiIndices = {}
-    for idx in pairs(CS.selectedButtons) do
-        multiCount = multiCount + 1
-        table.insert(multiIndices, idx)
-    end
-
-    if multiCount >= 2 then
-        local scroll = CS.buttonSettingsScroll
-
-        local heading = AceGUI:Create("Heading")
-        heading:SetText(multiCount .. " Selected")
-        heading:SetFullWidth(true)
-        scroll:AddChild(heading)
-
-        local delBtn = AceGUI:Create("Button")
-        delBtn:SetText("Delete Selected")
-        delBtn:SetFullWidth(true)
-        delBtn:SetCallback("OnClick", function()
-            CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
-                { groupId = CS.selectedGroup, indices = multiIndices })
-        end)
-        scroll:AddChild(delBtn)
-
-        local spacer = AceGUI:Create("Label")
-        spacer:SetText(" ")
-        spacer:SetFullWidth(true)
-        local font, _, flags = spacer.label:GetFont()
-        spacer:SetFont(font, 3, flags or "")
-        scroll:AddChild(spacer)
-
-        local moveBtn = AceGUI:Create("Button")
-        moveBtn:SetText("Move Selected")
-        moveBtn:SetFullWidth(true)
-        moveBtn:SetCallback("OnClick", function()
-            local moveMenuFrame = _G["CDCMoveMenu"]
-            if not moveMenuFrame then
-                moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-            end
-            local sourceGroupId = CS.selectedGroup
-            local indices = multiIndices
-            local db = CooldownCompanion.db.profile
-            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
-                local groupIds = {}
-                for id in pairs(db.groups) do
-                    if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
-                        table.insert(groupIds, id)
-                    end
-                end
-                table.sort(groupIds)
-                for _, gid in ipairs(groupIds) do
-                    if gid ~= sourceGroupId then
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = db.groups[gid].name
-                        info.func = function()
-                            for _, idx in ipairs(indices) do
-                                table.insert(db.groups[gid].buttons, db.groups[sourceGroupId].buttons[idx])
-                            end
-                            table.sort(indices, function(a, b) return a > b end)
-                            for _, idx in ipairs(indices) do
-                                table.remove(db.groups[sourceGroupId].buttons, idx)
-                            end
-                            CooldownCompanion:RefreshGroupFrame(gid)
-                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                            CS.selectedButton = nil
-                            wipe(CS.selectedButtons)
-                            CooldownCompanion:RefreshConfigPanel()
-                            CloseDropDownMenus()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-                    end
-                end
-            end, "MENU")
-            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
-        end)
-        scroll:AddChild(moveBtn)
-
-        return
-    end
-
-    if not CS.selectedButton or not group.buttons[CS.selectedButton] then
-        local label = AceGUI:Create("Label")
-        label:SetText("Select a spell or item to configure")
-        label:SetFullWidth(true)
-        CS.buttonSettingsScroll:AddChild(label)
-        return
-    end
-
-    local buttonData = group.buttons[CS.selectedButton]
-
-    if buttonData.type == "spell" then
-        BuildSpellSettings(CS.buttonSettingsScroll, buttonData, CS.buttonSettingsInfoButtons)
-    elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
-        BuildItemSettings(CS.buttonSettingsScroll, buttonData, CS.buttonSettingsInfoButtons)
-    elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
-        BuildEquipItemSettings(CS.buttonSettingsScroll, buttonData, CS.buttonSettingsInfoButtons)
-    end
-
-    -- Apply hideInfoButtons setting
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-            btn:Hide()
+    local moveBtn = AceGUI:Create("Button")
+    moveBtn:SetText("Move Selected")
+    moveBtn:SetFullWidth(true)
+    moveBtn:SetCallback("OnClick", function()
+        local moveMenuFrame = _G["CDCMoveMenu"]
+        if not moveMenuFrame then
+            moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
         end
+        local sourceGroupId = CS.selectedGroup
+        local indices = multiIndices
+        local db = CooldownCompanion.db.profile
+        UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+            local groupIds = {}
+            for id in pairs(db.groups) do
+                if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                    table.insert(groupIds, id)
+                end
+            end
+            table.sort(groupIds)
+            for _, gid in ipairs(groupIds) do
+                if gid ~= sourceGroupId then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = db.groups[gid].name
+                    info.func = function()
+                        for _, idx in ipairs(indices) do
+                            table.insert(db.groups[gid].buttons, db.groups[sourceGroupId].buttons[idx])
+                        end
+                        table.sort(indices, function(a, b) return a > b end)
+                        for _, idx in ipairs(indices) do
+                            table.remove(db.groups[sourceGroupId].buttons, idx)
+                        end
+                        CooldownCompanion:RefreshGroupFrame(gid)
+                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                        CS.selectedButton = nil
+                        wipe(CS.selectedButtons)
+                        CooldownCompanion:RefreshConfigPanel()
+                        CloseDropDownMenus()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+        end, "MENU")
+        moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
+    end)
+    scroll:AddChild(moveBtn)
+end
+
+local function RefreshButtonSettingsColumn()
+    local cf = CS.configFrame
+    if not cf then return end
+    local bsCol = cf.buttonSettingsCol
+    if not bsCol or not bsCol.bsTabGroup then return end
+
+    -- Check if a valid button is selected
+    local hasSelection = false
+    if CS.selectedGroup and CS.selectedButton then
+        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if group and group.buttons[CS.selectedButton] then
+            hasSelection = true
+        end
+    end
+
+    if hasSelection then
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+        bsCol.bsTabGroup.frame:Show()
+        bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or "settings")
+    else
+        bsCol.bsTabGroup.frame:Hide()
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Show() end
     end
 end
 
@@ -1830,6 +1788,74 @@ local function BuildExtrasTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(tooltipCb)
+
+    -- Compact Layout (per-button visibility feature)
+    local compactCb = AceGUI:Create("CheckBox")
+    compactCb:SetLabel("Compact Layout")
+    compactCb:SetValue(group.compactLayout or false)
+    compactCb:SetFullWidth(true)
+    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.compactLayout = val or false
+        CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
+        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+        if frame then frame._layoutDirty = true end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(compactCb)
+
+    -- (?) tooltip for compact layout
+    local compactInfo = CreateFrame("Button", nil, compactCb.frame)
+    compactInfo:SetSize(16, 16)
+    compactInfo:SetPoint("LEFT", compactCb.checkbg, "RIGHT", compactCb.text:GetStringWidth() + 4, 0)
+    local compactInfoIcon = compactInfo:CreateTexture(nil, "OVERLAY")
+    compactInfoIcon:SetSize(12, 12)
+    compactInfoIcon:SetPoint("CENTER")
+    compactInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    compactInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Compact Layout")
+        GameTooltip:AddLine("When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    compactInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(tabInfoButtons, compactInfo)
+
+    if group.compactLayout then
+        local totalButtons = #group.buttons
+        local maxVisSlider = AceGUI:Create("Slider")
+        maxVisSlider:SetLabel("Max Visible Buttons")
+        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
+        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
+        maxVisSlider:SetFullWidth(true)
+        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            val = math.floor(val + 0.5)
+            if val >= totalButtons then
+                group.maxVisibleButtons = 0
+            else
+                group.maxVisibleButtons = val
+            end
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame then frame._layoutDirty = true end
+        end)
+        container:AddChild(maxVisSlider)
+
+        -- (?) tooltip for max visible buttons
+        local maxVisInfo = CreateFrame("Button", nil, maxVisSlider.frame)
+        maxVisInfo:SetSize(16, 16)
+        maxVisInfo:SetPoint("LEFT", maxVisSlider.label, "RIGHT", 4, 0)
+        local maxVisInfoIcon = maxVisInfo:CreateTexture(nil, "OVERLAY")
+        maxVisInfoIcon:SetSize(12, 12)
+        maxVisInfoIcon:SetPoint("CENTER")
+        maxVisInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        maxVisInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Max Visible Buttons")
+            GameTooltip:AddLine("Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(tabInfoButtons, maxVisInfo)
+    end
 
     if not isBarMode then
     -- Loss of control
@@ -3352,6 +3378,273 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(auraFontColor)
     end
+
+    -- Keybind Text section
+    local kbHeading = AceGUI:Create("Heading")
+    kbHeading:SetText("Keybind Text")
+    kbHeading:SetFullWidth(true)
+    container:AddChild(kbHeading)
+
+    local kbCb = AceGUI:Create("CheckBox")
+    kbCb:SetLabel("Show Keybind Text")
+    kbCb:SetValue(style.showKeybindText or false)
+    kbCb:SetFullWidth(true)
+    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showKeybindText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(kbCb)
+
+    if style.showKeybindText then
+        local kbAnchorDrop = AceGUI:Create("Dropdown")
+        kbAnchorDrop:SetLabel("Anchor")
+        kbAnchorDrop:SetList({
+            TOPRIGHT = "Top Right",
+            TOPLEFT = "Top Left",
+            BOTTOMRIGHT = "Bottom Right",
+            BOTTOMLEFT = "Bottom Left",
+        })
+        kbAnchorDrop:SetValue(style.keybindAnchor or "TOPRIGHT")
+        kbAnchorDrop:SetFullWidth(true)
+        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbAnchorDrop)
+
+        local kbFontSizeSlider = AceGUI:Create("Slider")
+        kbFontSizeSlider:SetLabel("Font Size")
+        kbFontSizeSlider:SetSliderValues(6, 24, 1)
+        kbFontSizeSlider:SetValue(style.keybindFontSize or 10)
+        kbFontSizeSlider:SetFullWidth(true)
+        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontSizeSlider)
+
+        local kbFontDrop = AceGUI:Create("Dropdown")
+        kbFontDrop:SetLabel("Font")
+        kbFontDrop:SetList(CS.fontOptions)
+        kbFontDrop:SetValue(style.keybindFont or "Fonts\\FRIZQT__.TTF")
+        kbFontDrop:SetFullWidth(true)
+        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontDrop)
+
+        local kbOutlineDrop = AceGUI:Create("Dropdown")
+        kbOutlineDrop:SetLabel("Font Outline")
+        kbOutlineDrop:SetList(CS.outlineOptions)
+        kbOutlineDrop:SetValue(style.keybindFontOutline or "OUTLINE")
+        kbOutlineDrop:SetFullWidth(true)
+        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbOutlineDrop)
+
+        local kbFontColor = AceGUI:Create("ColorPicker")
+        kbFontColor:SetLabel("Font Color")
+        kbFontColor:SetHasAlpha(true)
+        local kbc = style.keybindFontColor or {1, 1, 1, 1}
+        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
+        kbFontColor:SetFullWidth(true)
+        kbFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.keybindFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        kbFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.keybindFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontColor)
+    end
+end
+
+------------------------------------------------------------------------
+-- PER-BUTTON VISIBILITY SETTINGS
+------------------------------------------------------------------------
+local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+
+    local isItem = buttonData.type == "item"
+
+    -- Helper: apply a value to all selected buttons if multi-select, else just this one
+    local function ApplyToSelected(field, value)
+        if CS.selectedButtons then
+            local count = 0
+            for _ in pairs(CS.selectedButtons) do count = count + 1 end
+            if count >= 2 then
+                for idx in pairs(CS.selectedButtons) do
+                    local bd = group.buttons[idx]
+                    if bd then bd[field] = value end
+                end
+                return
+            end
+        end
+        buttonData[field] = value
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Visibility Rules")
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    -- Hide While On Cooldown
+    local hasCooldown = true
+    if buttonData.type == "spell" then
+        hasCooldown = false
+        local tipData = C_TooltipInfo.GetSpellByID(buttonData.id)
+        if tipData and tipData.lines then
+            for _, line in ipairs(tipData.lines) do
+                local left = line.leftText and line.leftText:lower() or ""
+                local right = line.rightText and line.rightText:lower() or ""
+                if left:find("cooldown") or left:find("recharge")
+                    or right:find("cooldown") or right:find("recharge") then
+                    hasCooldown = true
+                    break
+                end
+            end
+        end
+    end
+    local hideCDCb = AceGUI:Create("CheckBox")
+    hideCDCb:SetLabel("Hide While On Cooldown")
+    hideCDCb:SetValue(buttonData.hideWhileOnCooldown or false)
+    hideCDCb:SetFullWidth(true)
+    if not hasCooldown then
+        hideCDCb:SetDisabled(true)
+    end
+    hideCDCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ApplyToSelected("hideWhileOnCooldown", val or nil)
+    end)
+    scroll:AddChild(hideCDCb)
+
+    -- Hide While Aura Active
+    local auraDisabled = isItem or not buttonData.auraTracking
+    local hideAuraCb = AceGUI:Create("CheckBox")
+    hideAuraCb:SetLabel("Hide While Aura Active")
+    hideAuraCb:SetValue(buttonData.hideWhileAuraActive or false)
+    hideAuraCb:SetFullWidth(true)
+    if auraDisabled then
+        hideAuraCb:SetDisabled(true)
+    end
+    hideAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ApplyToSelected("hideWhileAuraActive", val or nil)
+        if val then
+            ApplyToSelected("hideWhileAuraNotActive", nil)
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(hideAuraCb)
+
+    -- (?) tooltip
+    local hideAuraInfo = CreateFrame("Button", nil, hideAuraCb.frame)
+    hideAuraInfo:SetSize(16, 16)
+    hideAuraInfo:SetPoint("LEFT", hideAuraCb.checkbg, "RIGHT", hideAuraCb.text:GetStringWidth() + 4, 0)
+    local hideAuraInfoIcon = hideAuraInfo:CreateTexture(nil, "OVERLAY")
+    hideAuraInfoIcon:SetSize(12, 12)
+    hideAuraInfoIcon:SetPoint("CENTER")
+    hideAuraInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    hideAuraInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Hide While Aura Active")
+        GameTooltip:AddLine("Requires Aura Tracking to be enabled in the Settings tab.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    hideAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(infoButtons, hideAuraInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        hideAuraInfo:Hide()
+    end
+
+    -- Hide While Aura Not Active
+    local hideNoAuraCb = AceGUI:Create("CheckBox")
+    hideNoAuraCb:SetLabel("Hide While Aura Not Active")
+    hideNoAuraCb:SetValue(buttonData.hideWhileAuraNotActive or false)
+    hideNoAuraCb:SetFullWidth(true)
+    if auraDisabled then
+        hideNoAuraCb:SetDisabled(true)
+    end
+    hideNoAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ApplyToSelected("hideWhileAuraNotActive", val or nil)
+        if val then
+            ApplyToSelected("hideWhileAuraActive", nil)
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(hideNoAuraCb)
+
+    -- (?) tooltip
+    local hideNoAuraInfo = CreateFrame("Button", nil, hideNoAuraCb.frame)
+    hideNoAuraInfo:SetSize(16, 16)
+    hideNoAuraInfo:SetPoint("LEFT", hideNoAuraCb.checkbg, "RIGHT", hideNoAuraCb.text:GetStringWidth() + 4, 0)
+    local hideNoAuraInfoIcon = hideNoAuraInfo:CreateTexture(nil, "OVERLAY")
+    hideNoAuraInfoIcon:SetSize(12, 12)
+    hideNoAuraInfoIcon:SetPoint("CENTER")
+    hideNoAuraInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    hideNoAuraInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Hide While Aura Not Active")
+        GameTooltip:AddLine("Requires Aura Tracking to be enabled in the Settings tab.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    hideNoAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(infoButtons, hideNoAuraInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        hideNoAuraInfo:Hide()
+    end
+
+    -- Baseline Alpha Fallback (only shown when hideWhileAuraNotActive is checked)
+    if buttonData.hideWhileAuraNotActive then
+        local fallbackCb = AceGUI:Create("CheckBox")
+        fallbackCb:SetLabel("Use Baseline Alpha Fallback")
+        fallbackCb:SetValue(buttonData.useBaselineAlphaFallback or false)
+        fallbackCb:SetFullWidth(true)
+        fallbackCb:SetCallback("OnValueChanged", function(widget, event, val)
+            ApplyToSelected("useBaselineAlphaFallback", val or nil)
+        end)
+        scroll:AddChild(fallbackCb)
+
+        -- (?) tooltip
+        local fallbackInfo = CreateFrame("Button", nil, fallbackCb.frame)
+        fallbackInfo:SetSize(16, 16)
+        fallbackInfo:SetPoint("LEFT", fallbackCb.checkbg, "RIGHT", fallbackCb.text:GetStringWidth() + 4, 0)
+        local fallbackInfoIcon = fallbackInfo:CreateTexture(nil, "OVERLAY")
+        fallbackInfoIcon:SetSize(12, 12)
+        fallbackInfoIcon:SetPoint("CENTER")
+        fallbackInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        fallbackInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Use Baseline Alpha Fallback")
+            GameTooltip:AddLine("Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        fallbackInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(infoButtons, fallbackInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            fallbackInfo:Hide()
+        end
+    end
+
+    -- Warning: aura-based toggles enabled but auraTracking is off
+    if not isItem
+       and (buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive)
+       and not buttonData.auraTracking then
+        local warnSpacer = AceGUI:Create("Label")
+        warnSpacer:SetText(" ")
+        warnSpacer:SetFullWidth(true)
+        scroll:AddChild(warnSpacer)
+
+        local warnLabel = AceGUI:Create("Label")
+        warnLabel:SetText("|cffff8800Warning: Aura Tracking is not enabled in the Settings tab. Aura-based visibility will have no effect.|r")
+        warnLabel:SetFullWidth(true)
+        scroll:AddChild(warnLabel)
+    end
+
 end
 
 -- Expose builder functions for Config.lua to call
@@ -3359,6 +3652,8 @@ ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
 ST._BuildEquipItemSettings = BuildEquipItemSettings
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
+ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
+ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildPositioningTab = BuildPositioningTab
 ST._BuildExtrasTab = BuildExtrasTab
