@@ -296,11 +296,12 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
-    -- receive it).  CDM also uses this event to refresh target aura frames.
+    -- receive it).  Marks dirty so the next ticker pass reads fresh CDM viewer
+    -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
     local utFrame = CreateFrame("Frame")
     utFrame:RegisterUnitEvent("UNIT_TARGET", "player")
     utFrame:SetScript("OnEvent", function()
-        self:UpdateAllCooldowns()
+        self._cooldownsDirty = true
     end)
 
     -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
@@ -611,7 +612,6 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                 for _, instId in ipairs(removedIDs) do
                     if button._auraInstanceID == instId then
                         button._auraInstanceID = nil
-                        button._auraActive = false
                         button._inPandemic = false
                         break
                     end
@@ -1287,6 +1287,48 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
         if charges and charges.maxCharges and charges.maxCharges > 1 then
             group.buttons[buttonIndex].hasCharges = true
             group.buttons[buttonIndex].showChargeText = true
+        end
+    end
+
+    -- Auto-detect aura tracking for spells with viewer aura frames
+    if buttonType == "spell" then
+        local newButton = group.buttons[buttonIndex]
+        local viewerFrame
+        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
+        viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
+                and self.viewerAuraFrames[resolvedAuraId])
+            or self.viewerAuraFrames[id]
+        if not viewerFrame then
+            local child = self:FindViewerChildForSpell(id)
+            if child then
+                self.viewerAuraFrames[id] = child
+                viewerFrame = child
+            end
+        end
+        if not viewerFrame then
+            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
+            if overrideBuffs then
+                for buffId in overrideBuffs:gmatch("%d+") do
+                    viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
+                    if viewerFrame then break end
+                end
+            end
+        end
+        local hasViewerFrame = false
+        if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+            local parent = viewerFrame:GetParent()
+            local parentName = parent and parent:GetName()
+            hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
+        end
+        if hasViewerFrame then
+            newButton.auraTracking = true
+            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
+            if overrideBuffs then
+                newButton.auraSpellID = overrideBuffs
+            end
+            if C_Spell.IsSpellHarmful(id) then
+                newButton.auraUnit = "target"
+            end
         end
     end
 
