@@ -703,7 +703,6 @@ end
 CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
     [1233346] = "48517,48518",  -- Solar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
     [1233272] = "48517,48518",  -- Lunar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
-    [93402] = "164815",         -- Sunfire → Sunfire (DoT debuff)
 }
 
 -- Viewer frame list used by BuildViewerAuraMap and FindViewerChildForSpell.
