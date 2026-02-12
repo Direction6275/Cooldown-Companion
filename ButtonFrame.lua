@@ -1370,59 +1370,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
-    local directQueryDefinitive = false  -- true when direct query checked trusted debuff IDs
     if buttonData.auraTracking and button._auraSpellID then
         local auraUnit = button._auraUnit or "player"
-
-        -- Direct aura query on target switch: bypasses CDM viewer frames
-        -- which haven't refreshed yet when PLAYER_TARGET_CHANGED fires.
-        -- Only definitive when we have trusted debuff IDs (user config or
-        -- ABILITY_BUFF_OVERRIDES); fallback ability IDs may not match the
-        -- debuff spell ID on the target.
-        if CooldownCompanion._targetSwitched and auraUnit == "target" then
-            local directAuraData
-            if button._parsedAuraIDs then
-                -- User-configured or auto-detected buff spell IDs — trusted
-                for _, id in ipairs(button._parsedAuraIDs) do
-                    directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", id)
-                    if directAuraData then break end
-                end
-                directQueryDefinitive = true
-            else
-                -- Try ability/resolved IDs (may not match debuff ID)
-                directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", button._auraSpellID)
-                if not directAuraData and buttonData.id ~= button._auraSpellID then
-                    directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", buttonData.id)
-                end
-                if not directAuraData and button._displaySpellId
-                   and button._displaySpellId ~= button._auraSpellID
-                   and button._displaySpellId ~= buttonData.id then
-                    directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", button._displaySpellId)
-                end
-                -- Check hardcoded ability→debuff overrides — these are trusted
-                if not directAuraData then
-                    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-                    if overrideBuffs then
-                        for buffId in overrideBuffs:gmatch("%d+") do
-                            directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", tonumber(buffId))
-                            if directAuraData then break end
-                        end
-                        directQueryDefinitive = true
-                    end
-                end
-            end
-
-            if directAuraData and directAuraData.auraInstanceID then
-                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "target", directAuraData.auraInstanceID)
-                if ok and durationObj then
-                    button._durationObj = durationObj
-                    button.cooldown:SetCooldownFromDurationObject(durationObj)
-                    button._auraInstanceID = directAuraData.auraInstanceID
-                    auraOverrideActive = true
-                    fetchOk = true
-                end
-            end
-        end
 
         -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
         -- untainted code that matches spell IDs to auras during combat and
@@ -1461,7 +1410,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 or CooldownCompanion.viewerAuraFrames[buttonData.id]
                 or (button._displaySpellId and CooldownCompanion.viewerAuraFrames[button._displaySpellId])
         end
-        if not auraOverrideActive and not directQueryDefinitive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
+        if not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
                 local unit = viewerFrame.auraDataUnit or auraUnit
@@ -1507,26 +1456,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Slow path (combat, HasSecretValues=true): bounded tick counter.
         if not auraOverrideActive and button._auraActive
            and prevAuraDurationObj then
-            -- Direct query with trusted IDs is definitive: no grace needed.
-            -- (Either it found the aura, or the target genuinely has none.)
-            if directQueryDefinitive then
-                button._auraGraceTicks = nil
-            else
-                local expired = false
-                if not prevAuraDurationObj:HasSecretValues() then
-                    expired = prevAuraDurationObj:GetRemainingDuration() <= 0
-                end
-                if not expired then
-                    button._auraGraceTicks = (button._auraGraceTicks or 0) + 1
-                    if button._auraGraceTicks <= 3 then
-                        button._durationObj = prevAuraDurationObj
-                        auraOverrideActive = true
-                    else
-                        button._auraGraceTicks = nil
-                    end
+            local expired = false
+            if not prevAuraDurationObj:HasSecretValues() then
+                expired = prevAuraDurationObj:GetRemainingDuration() <= 0
+            end
+            if not expired then
+                button._auraGraceTicks = (button._auraGraceTicks or 0) + 1
+                if button._auraGraceTicks <= 3 then
+                    button._durationObj = prevAuraDurationObj
+                    auraOverrideActive = true
                 else
                     button._auraGraceTicks = nil
                 end
+            else
+                button._auraGraceTicks = nil
             end
         else
             -- Fresh aura data (or no aura at all): reset grace counter
@@ -2947,7 +2890,11 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
         -- Non-secret (out of combat): instant expiry detection.
         -- Secret (in combat): skip; UpdateButtonCooldown handles expiry next tick.
-        if self._auraActive and self._durationObj then
+        -- Skip when cooldowns are dirty (target switch / UNIT_AURA just fired,
+        -- ticker hasn't processed yet — old DurationObject may be invalidated)
+        -- or grace period active (holdover DurationObject from previous target).
+        if self._auraActive and self._durationObj
+           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
             if not self._durationObj:HasSecretValues() then
                 if self._durationObj:GetRemainingDuration() <= 0 then
                     self._durationObj = nil
@@ -3051,7 +2998,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barInterval = newStyle.barUpdateInterval or 0.025
     button._barFillElapsed = 0
     button:SetScript("OnUpdate", function(self, elapsed)
-        if self._auraActive and self._durationObj then
+        if self._auraActive and self._durationObj
+           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
             if not self._durationObj:HasSecretValues() then
                 if self._durationObj:GetRemainingDuration() <= 0 then
                     self._durationObj = nil

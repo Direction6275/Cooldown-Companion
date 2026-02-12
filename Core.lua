@@ -296,12 +296,12 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
-    -- receive it).  OnTargetChanged handles the immediate direct-query update;
-    -- this catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
+    -- receive it).  Marks dirty so the next ticker pass reads fresh CDM viewer
+    -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
     local utFrame = CreateFrame("Frame")
     utFrame:RegisterUnitEvent("UNIT_TARGET", "player")
     utFrame:SetScript("OnEvent", function()
-        self:UpdateAllCooldowns()
+        self._cooldownsDirty = true
     end)
 
     -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
@@ -612,7 +612,6 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                 for _, instId in ipairs(removedIDs) do
                     if button._auraInstanceID == instId then
                         button._auraInstanceID = nil
-                        button._auraActive = false
                         button._inPandemic = false
                         break
                     end
@@ -648,9 +647,6 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 button._auraInstanceID = nil
                 button._auraActive = false
                 button._inPandemic = false
-                button._durationObj = nil
-                button._auraGraceTicks = nil
-                button._barAuraColor = nil
             end
         end
     end)
@@ -659,9 +655,6 @@ end
 
 function CooldownCompanion:OnTargetChanged()
     self._cooldownsDirty = true
-    self._targetSwitched = true
-    self:UpdateAllCooldowns()
-    self._targetSwitched = false
 end
 
 
