@@ -33,7 +33,7 @@ local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local UpdateBarFill
 local EnsureChargeBars
 
--- Scratch cooldown for reading back DurationObjects as non-secret ms values.
+-- Scratch cooldown (legacy; kept for potential fallback use).
 local scratchParent = CreateFrame("Frame")
 scratchParent:Hide()
 local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
@@ -564,9 +564,8 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
                 shouldHide = true
             end
         else
-            -- Non-charged spells: on cooldown AND not just GCD
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            if widgetDuration and widgetDuration > 0 and not isOnGCD then
+            -- Non-charged spells: _durationObj non-nil means active CD (secret-safe nil check)
+            if button._durationObj and not isOnGCD then
                 shouldHide = true
             end
         end
@@ -599,8 +598,9 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
             else
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if wd and wd > 0 and not isOnGCD then otherHide = true end
+                if button._durationObj and not isOnGCD then
+                    otherHide = true
+                end
             end
         end
         if buttonData.hideWhileAuraActive and auraOverrideActive then
@@ -908,6 +908,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
+
     button._auraInstanceID = nil
 
     -- Per-button visibility runtime state
@@ -1074,28 +1075,31 @@ local function UpdateChargeTracking(button, buttonData)
         -- GetSpellChargeDuration + GetSpellCooldownDuration state.
         local durationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
 
-        -- Read back charge recharge; filter out GCD (≤2s).
+        -- Read back charge recharge via DurationObject methods.
+        -- HasSecretValues() gates comparisons; during combat (secret),
+        -- charge duration readback is skipped but charge COUNT still works.
         local isRealRecharge = false
-        if durationObj then
-            scratchCooldown:SetCooldownFromDurationObject(durationObj)
-            local startMs, durMs = scratchCooldown:GetCooldownTimes()
-            if startMs and durMs and durMs > 2000 then
-                isRealRecharge = true
-                local realStart = startMs / 1000
-                local realDur = durMs / 1000
+        if durationObj and not durationObj:HasSecretValues() then
+            if not durationObj:IsZero() then
+                local totalDur = durationObj:GetTotalDuration()
+                if totalDur and totalDur > 2 then
+                    isRealRecharge = true
+                    local realStart = durationObj:GetStartTime()
+                    local realDur = totalDur
 
-                -- Detect intermediate charge recovery: recharge start
-                -- jumped forward.  CDR doesn't change start, so a jump
-                -- means the old recharge completed and a new one began.
-                if button._chargeCDStart
-                   and button._chargeCount < button._chargeMax
-                   and realStart > button._chargeCDStart + 0.5 then
-                    button._chargeCount = button._chargeCount + 1
+                    -- Detect intermediate charge recovery: recharge start
+                    -- jumped forward.  CDR doesn't change start, so a jump
+                    -- means the old recharge completed and a new one began.
+                    if button._chargeCDStart
+                       and button._chargeCount < button._chargeMax
+                       and realStart > button._chargeCDStart + 0.5 then
+                        button._chargeCount = button._chargeCount + 1
+                    end
+
+                    button._chargeCDStart = realStart
+                    button._chargeCDDuration = realDur
+                    buttonData.chargeCooldownDuration = realDur
                 end
-
-                button._chargeCDStart = realStart
-                button._chargeCDDuration = realDur
-                buttonData.chargeCooldownDuration = realDur
             end
         end
 
@@ -1112,10 +1116,11 @@ local function UpdateChargeTracking(button, buttonData)
             --   1+ charges → spell usable → nil (or brief GCD ≤2s)
             local spellCD = C_Spell.GetSpellCooldownDuration(buttonData.id)
             local spellOnCD = false
-            if spellCD then
-                scratchCooldown:SetCooldownFromDurationObject(spellCD)
-                local _, cdDurMs = scratchCooldown:GetCooldownTimes()
-                spellOnCD = cdDurMs and cdDurMs > 2000
+            if spellCD and not spellCD:HasSecretValues() then
+                if not spellCD:IsZero() then
+                    local totalDur = spellCD:GetTotalDuration()
+                    spellOnCD = totalDur and totalDur > 2
+                end
             end
             if spellOnCD then
                 button._chargeCount = 0
@@ -1230,15 +1235,17 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Desaturation: driven entirely by the cooldown widget's own state.
-    -- GetCooldownTimes() returns non-secret values even during restricted
-    -- combat, so we can always reliably check if the widget has an active
-    -- cooldown. This replaces all previous state-tracking approaches.
+    -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
+    -- spells/auras; GetCooldownTimes() remains safe for items.
     if style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk and not isOnGCD then
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            wantDesat = widgetDuration and widgetDuration > 0
+            if button._durationObj then
+                wantDesat = true
+            elseif buttonData.type == "item" then
+                local _, widgetDuration = button.cooldown:GetCooldownTimes()
+                wantDesat = widgetDuration and widgetDuration > 0
+            end
         end
         if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
             wantDesat = false
@@ -1349,14 +1356,73 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
 
+    -- Clear per-tick DurationObject; set below if cooldown/aura active.
+    -- Used by bar fill, desaturation, visibility checks instead of
+    -- GetCooldownTimes() which returns secret values after
+    -- SetCooldownFromDurationObject() in 12.0.1.
+    -- Save previous aura DurationObject for one-tick grace period on target switch.
+    local prevAuraDurationObj = button._auraActive and button._durationObj or nil
+    button._durationObj = nil
+
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
+    local directQueryDefinitive = false  -- true when direct query checked trusted debuff IDs
     if buttonData.auraTracking and button._auraSpellID then
         local auraUnit = button._auraUnit or "player"
+
+        -- Direct aura query on target switch: bypasses CDM viewer frames
+        -- which haven't refreshed yet when PLAYER_TARGET_CHANGED fires.
+        -- Only definitive when we have trusted debuff IDs (user config or
+        -- ABILITY_BUFF_OVERRIDES); fallback ability IDs may not match the
+        -- debuff spell ID on the target.
+        if CooldownCompanion._targetSwitched and auraUnit == "target" then
+            local directAuraData
+            if button._parsedAuraIDs then
+                -- User-configured or auto-detected buff spell IDs — trusted
+                for _, id in ipairs(button._parsedAuraIDs) do
+                    directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", id)
+                    if directAuraData then break end
+                end
+                directQueryDefinitive = true
+            else
+                -- Try ability/resolved IDs (may not match debuff ID)
+                directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", button._auraSpellID)
+                if not directAuraData and buttonData.id ~= button._auraSpellID then
+                    directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", buttonData.id)
+                end
+                if not directAuraData and button._displaySpellId
+                   and button._displaySpellId ~= button._auraSpellID
+                   and button._displaySpellId ~= buttonData.id then
+                    directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", button._displaySpellId)
+                end
+                -- Check hardcoded ability→debuff overrides — these are trusted
+                if not directAuraData then
+                    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+                    if overrideBuffs then
+                        for buffId in overrideBuffs:gmatch("%d+") do
+                            directAuraData = C_UnitAuras.GetUnitAuraBySpellID("target", tonumber(buffId))
+                            if directAuraData then break end
+                        end
+                        directQueryDefinitive = true
+                    end
+                end
+            end
+
+            if directAuraData and directAuraData.auraInstanceID then
+                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, "target", directAuraData.auraInstanceID)
+                if ok and durationObj then
+                    button._durationObj = durationObj
+                    button.cooldown:SetCooldownFromDurationObject(durationObj)
+                    button._auraInstanceID = directAuraData.auraInstanceID
+                    auraOverrideActive = true
+                    fetchOk = true
+                end
+            end
+        end
 
         -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
         -- untainted code that matches spell IDs to auras during combat and
@@ -1395,30 +1461,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 or CooldownCompanion.viewerAuraFrames[buttonData.id]
                 or (button._displaySpellId and CooldownCompanion.viewerAuraFrames[button._displaySpellId])
         end
-        if viewerFrame and (auraUnit == "player" or auraUnit == "target") then
+        if not auraOverrideActive and not directQueryDefinitive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
                 local unit = viewerFrame.auraDataUnit or auraUnit
                 local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, viewerInstId)
                 if ok and durationObj then
+                    button._durationObj = durationObj
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
                     button._auraInstanceID = viewerInstId
                     auraOverrideActive = true
                     fetchOk = true
-                elseif button._auraActive then
-                    -- GetAuraDuration returned nil — the viewer's instID is stale
-                    -- (target switched but UNIT_TARGET hasn't fired yet, ~250-430ms).
-                    -- If the button was previously tracking an aura and its cooldown
-                    -- widget is still counting down, keep showing it.  This matches
-                    -- CDM behavior: the cooldown widget self-animates until refresh.
-                    local sMs, dMs = button.cooldown:GetCooldownTimes()
-                    local ok2, still = pcall(function()
-                        return dMs > 0 and (sMs + dMs) > GetTime() * 1000
-                    end)
-                    if ok2 and still then
-                        auraOverrideActive = true
-                        fetchOk = true
-                    end
                 end
             else
                 -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
@@ -1429,8 +1482,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local startMs, durMs = viewerCooldown:GetCooldownTimes()
                     -- Verify the cooldown hasn't elapsed; GetCooldownTimes() returns
                     -- the original start/duration even after the buff expires.
-                    -- Wrap comparison in pcall: during pool cleanup the cooldown
-                    -- widget may hold secret values that reject arithmetic.
+                    -- pcall: during pool cleanup the cooldown widget may hold
+                    -- secret values that reject arithmetic.
                     local ok, active = pcall(function()
                         return durMs > 0 and (startMs + durMs) > GetTime() * 1000
                     end)
@@ -1444,6 +1497,40 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._auraInstanceID = nil
                 end
             end
+        end
+        -- Grace period: if aura data is momentarily unavailable (target switch,
+        -- ~250-430ms) but we had an active aura DurationObject last tick, keep
+        -- aura state alive.  Restoring _durationObj preserves bar fill, color,
+        -- and time text.
+        -- Fast path: if we can read the old DurationObject (non-secret), check
+        -- expiry directly — clears instantly when the aura has genuinely ended.
+        -- Slow path (combat, HasSecretValues=true): bounded tick counter.
+        if not auraOverrideActive and button._auraActive
+           and prevAuraDurationObj then
+            -- Direct query with trusted IDs is definitive: no grace needed.
+            -- (Either it found the aura, or the target genuinely has none.)
+            if directQueryDefinitive then
+                button._auraGraceTicks = nil
+            else
+                local expired = false
+                if not prevAuraDurationObj:HasSecretValues() then
+                    expired = prevAuraDurationObj:GetRemainingDuration() <= 0
+                end
+                if not expired then
+                    button._auraGraceTicks = (button._auraGraceTicks or 0) + 1
+                    if button._auraGraceTicks <= 3 then
+                        button._durationObj = prevAuraDurationObj
+                        auraOverrideActive = true
+                    else
+                        button._auraGraceTicks = nil
+                    end
+                else
+                    button._auraGraceTicks = nil
+                end
+            end
+        else
+            -- Fresh aura data (or no aura at all): reset grace counter
+            button._auraGraceTicks = nil
         end
         button._auraActive = auraOverrideActive
 
@@ -1466,13 +1553,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOverrideActive then
         if buttonData.type == "spell" then
-            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
-            if spellCooldownDuration then
-                button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
-                fetchOk = true
-            end
+            -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
+            -- pcall: SetCooldown fallback may receive secret startTime/duration.
+            local cooldownInfo
             pcall(function()
-                local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
+                cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
                 if cooldownInfo then
                     isOnGCD = cooldownInfo.isOnGCD
                     if not fetchOk then
@@ -1481,6 +1566,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     fetchOk = true
                 end
             end)
+            -- DurationObject path: HasSecretValues gates IsZero comparison.
+            -- Non-secret: use IsZero to filter zero-duration (spell ready).
+            -- Secret: fall back to isOnGCD (NeverSecret) as activity signal.
+            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            if spellCooldownDuration then
+                local useIt = false
+                if not spellCooldownDuration:HasSecretValues() then
+                    if not spellCooldownDuration:IsZero() then useIt = true end
+                else
+                    if isOnGCD then useIt = true end
+                end
+                if useIt then
+                    button._durationObj = spellCooldownDuration
+                    button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    fetchOk = true
+                end
+            end
         elseif buttonData.type == "item" then
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
             button.cooldown:SetCooldown(cdStart, cdDuration)
@@ -1506,6 +1608,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not button._isBar and not auraOverrideActive then
             local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
             if chargeDuration then
+                button._durationObj = chargeDuration
                 button.cooldown:SetCooldownFromDurationObject(chargeDuration)
             elseif charges then
                 pcall(function()
@@ -1627,6 +1730,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._spellOutOfRange = nil
     button._itemCount = nil
     button._auraActive = nil
+
     button._auraInstanceID = nil
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
@@ -2276,27 +2380,43 @@ UpdateBarFill = function(button)
     end
 
     -- Single-bar path
-    local startMs, durationMs = button.cooldown:GetCooldownTimes()
-    local now = GetTime() * 1000
+    -- DurationObject percent methods return secret values during combat in 12.0.1,
+    -- but SetValue() accepts secrets (C-side widget method).  HasSecretValues gates
+    -- expiry detection and time text formatting.
+    -- Items use SetCooldown() so GetCooldownTimes() remains non-secret for them.
+    local onCooldown = false
+    local itemRemaining = 0
 
-    local onCooldown = durationMs and durationMs > 0
-    -- Suppress GCD: treat as off-cooldown when only the GCD is active
-    if onCooldown and button._barGCDSuppressed then
-        onCooldown = false
-    end
-    if onCooldown then
-        local elapsed = now - startMs
-        local remaining = (durationMs - elapsed) / 1000
-        local fraction
+    if button._durationObj and not button._barGCDSuppressed then
+        onCooldown = true
+        -- SetValue accepts secret values; fraction animates natively in the engine
         if button._auraActive then
-            fraction = 1 - (elapsed / durationMs)
-            if fraction < 0 then fraction = 0 end
+            button.statusBar:SetValue(button._durationObj:GetRemainingPercent())   -- drain: 1→0
         else
-            fraction = elapsed / durationMs
-            if fraction > 1 then fraction = 1 end
+            button.statusBar:SetValue(button._durationObj:GetElapsedPercent())     -- fill: 0→1
         end
-        button.statusBar:SetValue(fraction)
+    elseif button.buttonData.type == "item" then
+        -- Items: GetCooldownTimes() is safe (no DurationObject tainting)
+        local startMs, durationMs = button.cooldown:GetCooldownTimes()
+        local now = GetTime() * 1000
+        onCooldown = durationMs and durationMs > 0
+        if onCooldown and button._barGCDSuppressed then onCooldown = false end
+        if onCooldown then
+            local elapsed = now - startMs
+            itemRemaining = (durationMs - elapsed) / 1000
+            if button._auraActive then
+                local frac = 1 - (elapsed / durationMs)
+                if frac < 0 then frac = 0 end
+                button.statusBar:SetValue(frac)
+            else
+                local frac = elapsed / durationMs
+                if frac > 1 then frac = 1 end
+                button.statusBar:SetValue(frac)
+            end
+        end
+    end
 
+    if onCooldown then
         local showTimeText = button._auraActive
             and (button.style.showAuraText ~= false)
             or (not button._auraActive and button.style.showCooldownText)
@@ -2321,10 +2441,26 @@ UpdateBarFill = function(button)
                 and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
                 or (button.style.cooldownFontColor or {1, 1, 1, 1})
             button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-            if remaining > 0 then
-                button.timeText:SetText(FormatBarTime(remaining))
+            -- Time text: HasSecretValues() returns a non-secret boolean.
+            -- Non-secret: full FormatBarTime formatting ("1:30", "45", etc.)
+            -- Secret: pass secret number to C++ SetFormattedText ("%.1f" format)
+            if button._durationObj then
+                local remaining = button._durationObj:GetRemainingDuration()
+                if not button._durationObj:HasSecretValues() then
+                    if remaining > 0 then
+                        button.timeText:SetText(FormatBarTime(remaining))
+                    else
+                        button.timeText:SetText("")
+                    end
+                else
+                    button.timeText:SetFormattedText("%.1f", remaining)
+                end
             else
-                button.timeText:SetText("")
+                if itemRemaining > 0 then
+                    button.timeText:SetText(FormatBarTime(itemRemaining))
+                else
+                    button.timeText:SetText("")
+                end
             end
         end
     else
@@ -2341,7 +2477,6 @@ end
 -- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
 UpdateBarDisplay = function(button, fetchOk)
     local style = button.style
-    local _, durationMs = button.cooldown:GetCooldownTimes()
 
     -- Lazy create/destroy charge sub-bars
     local hasChargeBars = button._chargeMax and button._chargeMax > 1 and not button._auraActive
@@ -2350,12 +2485,17 @@ UpdateBarDisplay = function(button, fetchOk)
         EnsureChargeBars(button, wantCount)
     end
 
+    -- Determine onCooldown via nil-checks (secret-safe).
+    -- _durationObj is non-nil only when UpdateButtonCooldown found an active CD/aura.
     local onCooldown
     if button.chargeBars and button._chargeBarCount > 0 then
         -- For charge sub-bars, "on cooldown" means any charge is missing
         onCooldown = button._chargeCount and button._chargeMax
             and button._chargeCount < button._chargeMax
-    else
+    elseif button._durationObj then
+        onCooldown = not button._barGCDSuppressed
+    elseif button.buttonData.type == "item" then
+        local _, durationMs = button.cooldown:GetCooldownTimes()
         onCooldown = durationMs and durationMs > 0
         if onCooldown and button._barGCDSuppressed then
             onCooldown = false
@@ -2434,7 +2574,10 @@ UpdateBarDisplay = function(button, fetchOk)
             if button.chargeBars and button._chargeBarCount > 0 then
                 wantDesat = button._chargeCount and button._chargeMax
                     and button._chargeCount < button._chargeMax
-            else
+            elseif button._durationObj then
+                wantDesat = true
+            elseif button.buttonData.type == "item" then
+                local _, durationMs = button.cooldown:GetCooldownTimes()
                 wantDesat = durationMs and durationMs > 0
             end
         end
@@ -2801,22 +2944,26 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._barFillElapsed = 0
     local barInterval = style.barUpdateInterval or 0.025
     button:SetScript("OnUpdate", function(self, elapsed)
-        -- Detect aura expiry every frame (not throttled) to avoid color flicker
-        if self._auraActive then
-            local sMs, dMs = self.cooldown:GetCooldownTimes()
-            if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
-                self._auraActive = false
-                self._inPandemic = false
-                self._barAuraColor = nil
-                -- If charge sub-bars exist, make statusBar transparent so sub-bars show
-                if self._chargeMax and self._chargeMax > 1 then
-                    self.statusBar:SetStatusBarColor(0, 0, 0, 0)
-                    self._barCdColor = nil
-                else
-                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
+        -- Non-secret (out of combat): instant expiry detection.
+        -- Secret (in combat): skip; UpdateButtonCooldown handles expiry next tick.
+        if self._auraActive and self._durationObj then
+            if not self._durationObj:HasSecretValues() then
+                if self._durationObj:GetRemainingDuration() <= 0 then
+                    self._durationObj = nil
+                    self._auraActive = false
+                    self._inPandemic = false
+                    self._barAuraColor = nil
+                    -- If charge sub-bars exist, make statusBar transparent so sub-bars show
+                    if self._chargeMax and self._chargeMax > 1 then
+                        self.statusBar:SetStatusBarColor(0, 0, 0, 0)
+                        self._barCdColor = nil
+                    else
+                        local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                        self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                    end
+                    SetBarAuraEffect(self, false)
                 end
-                SetBarAuraEffect(self, false)
             end
         end
         self._barFillElapsed = self._barFillElapsed + elapsed
@@ -2830,6 +2977,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
+
     button._auraInstanceID = nil
 
     -- Per-button visibility runtime state
@@ -2903,20 +3051,23 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barInterval = newStyle.barUpdateInterval or 0.025
     button._barFillElapsed = 0
     button:SetScript("OnUpdate", function(self, elapsed)
-        if self._auraActive then
-            local sMs, dMs = self.cooldown:GetCooldownTimes()
-            if dMs and dMs > 0 and (GetTime() * 1000 - sMs) >= dMs then
-                self._auraActive = false
-                self._inPandemic = false
-                self._barAuraColor = nil
-                if self._chargeMax and self._chargeMax > 1 then
-                    self.statusBar:SetStatusBarColor(0, 0, 0, 0)
-                    self._barCdColor = nil
-                else
-                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+        if self._auraActive and self._durationObj then
+            if not self._durationObj:HasSecretValues() then
+                if self._durationObj:GetRemainingDuration() <= 0 then
+                    self._durationObj = nil
+
+                    self._auraActive = false
+                    self._inPandemic = false
+                    self._barAuraColor = nil
+                    if self._chargeMax and self._chargeMax > 1 then
+                        self.statusBar:SetStatusBarColor(0, 0, 0, 0)
+                        self._barCdColor = nil
+                    else
+                        local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                        self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                    end
+                    SetBarAuraEffect(self, false)
                 end
-                SetBarAuraEffect(self, false)
             end
         end
         self._barFillElapsed = self._barFillElapsed + elapsed
@@ -2940,6 +3091,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._displaySpellId = nil
     button._itemCount = nil
     button._auraActive = nil
+
     button._auraInstanceID = nil
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
