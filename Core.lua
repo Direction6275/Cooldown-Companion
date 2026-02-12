@@ -244,22 +244,6 @@ function CooldownCompanion:OnInitialize()
 end
 
 function CooldownCompanion:OnEnable()
-    -- Blizzard bug workaround (12.0.1): CooldownViewerItemData.lua:516
-    -- CheckSetPandemicAlertTiggerTime uses secret-tainted values as a table
-    -- index, which errors and propagates up through RefreshData, breaking the
-    -- viewer frame's pandemic alert system for the rest of the session.
-    -- Wrap it in pcall so the error is caught silently; pandemic detection
-    -- degrades (no PandemicIcon shown when values are secret) but the viewer
-    -- frame state is preserved and recovers when taint clears.
-    if CooldownViewerItemMixin and CooldownViewerItemMixin.CheckSetPandemicAlertTiggerTime then
-        local origCheckPandemic = CooldownViewerItemMixin.CheckSetPandemicAlertTiggerTime
-        CooldownViewerItemMixin.CheckSetPandemicAlertTiggerTime = function(self, ...)
-            local ok, result = pcall(origCheckPandemic, self, ...)
-            if ok then return result end
-            return false
-        end
-    end
-
     -- Register cooldown events — set dirty flag, let ticker do the actual update.
     -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
     -- event-triggered updates — indistinguishable visually since the cooldown
