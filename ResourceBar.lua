@@ -75,6 +75,9 @@ local POWER_NAMES = {
 local DEFAULT_RUNE_READY_COLOR = { 0.8, 0.8, 0.8 }
 local DEFAULT_RUNE_RECHARGING_COLOR = { 0.4, 0.4, 0.4 }
 
+local DEFAULT_ESSENCE_READY_COLOR = { 0.851, 0.482, 0.780 }
+local DEFAULT_ESSENCE_RECHARGING_COLOR = { 0.561, 0.561, 0.545 }
+
 local SEGMENTED_TYPES = {
     [4]  = true,  -- ComboPoints
     [5]  = true,  -- Runes
@@ -234,6 +237,20 @@ local function GetRuneColors(settings)
         if override then
             if override.runeReadyColor then readyColor = override.runeReadyColor end
             if override.runeRechargingColor then rechargingColor = override.runeRechargingColor end
+        end
+    end
+    return readyColor, rechargingColor
+end
+
+--- Get essence-specific colors (ready vs recharging).
+local function GetEssenceColors(settings)
+    local readyColor = DEFAULT_ESSENCE_READY_COLOR
+    local rechargingColor = DEFAULT_ESSENCE_RECHARGING_COLOR
+    if settings and settings.resources then
+        local override = settings.resources[19]
+        if override then
+            if override.essenceReadyColor then readyColor = override.essenceReadyColor end
+            if override.essenceRechargingColor then rechargingColor = override.essenceRechargingColor end
         end
     end
     return readyColor, rechargingColor
@@ -487,17 +504,22 @@ local function UpdateSegmentedBar(holder, powerType)
     end
 
     if powerType == 19 then
-        -- Essence: partial recharge
+        -- Essence: partial recharge with ready/recharging colors
         local filled = UnitPower("player", 19)
         local max = UnitPowerMax("player", 19)
         local partial = UnitPartialPower("player", 19) / 1000
+        local readyColor, rechargingColor = GetEssenceColors(GetResourceBarSettings())
         for i = 1, math_min(#holder.segments, max) do
+            local seg = holder.segments[i]
             if i <= filled then
-                holder.segments[i]:SetValue(1)
+                seg:SetValue(1)
+                seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
             elseif i == filled + 1 and partial > 0 then
-                holder.segments[i]:SetValue(partial)
+                seg:SetValue(partial)
+                seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             else
-                holder.segments[i]:SetValue(0)
+                seg:SetValue(0)
+                seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
         end
         return
@@ -625,7 +647,13 @@ end
 local function StyleSegmentedBar(holder, powerType, settings)
     if powerType == 5 then
         -- Runes: colored dynamically per-segment in UpdateSegmentedBar
-        local readyColor, rechargingColor = GetRuneColors(settings)
+        local readyColor = GetRuneColors(settings)
+        for _, seg in ipairs(holder.segments) do
+            seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
+        end
+    elseif powerType == 19 then
+        -- Essence: colored dynamically per-segment in UpdateSegmentedBar
+        local readyColor = GetEssenceColors(settings)
         for _, seg in ipairs(holder.segments) do
             seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
         end
