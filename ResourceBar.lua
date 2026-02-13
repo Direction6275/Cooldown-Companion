@@ -72,6 +72,9 @@ local POWER_NAMES = {
     [19] = "Essence",
 }
 
+local DEFAULT_RUNE_READY_COLOR = { 0.8, 0.8, 0.8 }
+local DEFAULT_RUNE_RECHARGING_COLOR = { 0.4, 0.4, 0.4 }
+
 local SEGMENTED_TYPES = {
     [4]  = true,  -- ComboPoints
     [5]  = true,  -- Runes
@@ -220,6 +223,20 @@ local function GetPowerColor(powerType, settings)
         end
     end
     return DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }
+end
+
+--- Get rune-specific colors (ready vs recharging).
+local function GetRuneColors(settings)
+    local readyColor = DEFAULT_RUNE_READY_COLOR
+    local rechargingColor = DEFAULT_RUNE_RECHARGING_COLOR
+    if settings and settings.resources then
+        local override = settings.resources[5]
+        if override then
+            if override.runeReadyColor then readyColor = override.runeReadyColor end
+            if override.runeRechargingColor then rechargingColor = override.runeRechargingColor end
+        end
+    end
+    return readyColor, rechargingColor
 end
 
 --- Check if a specific resource is enabled in settings.
@@ -429,14 +446,19 @@ local function UpdateSegmentedBar(holder, powerType)
             if a.ready ~= b.ready then return a.ready end
             return a.remaining < b.remaining
         end)
+        local readyColor, rechargingColor = GetRuneColors(GetResourceBarSettings())
         for i = 1, numSegs do
             local r = runeData[i]
+            local seg = holder.segments[i]
             if r.ready then
-                holder.segments[i]:SetValue(1)
+                seg:SetValue(1)
+                seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
             elseif r.duration and r.duration > 0 then
-                holder.segments[i]:SetValue(math_min((now - r.start) / r.duration, 1))
+                seg:SetValue(math_min((now - r.start) / r.duration, 1))
+                seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             else
-                holder.segments[i]:SetValue(0)
+                seg:SetValue(0)
+                seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
         end
         return
@@ -601,9 +623,17 @@ local function StyleContinuousBar(bar, powerType, settings)
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)
-    local color = GetPowerColor(powerType, settings)
-    for _, seg in ipairs(holder.segments) do
-        seg:SetStatusBarColor(color[1], color[2], color[3], 1)
+    if powerType == 5 then
+        -- Runes: colored dynamically per-segment in UpdateSegmentedBar
+        local readyColor, rechargingColor = GetRuneColors(settings)
+        for _, seg in ipairs(holder.segments) do
+            seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
+        end
+    else
+        local color = GetPowerColor(powerType, settings)
+        for _, seg in ipairs(holder.segments) do
+            seg:SetStatusBarColor(color[1], color[2], color[3], 1)
+        end
     end
 
     -- Segmented bars hide text by default (no text FontString on segmented)

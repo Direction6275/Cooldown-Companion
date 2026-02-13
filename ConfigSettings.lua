@@ -4768,6 +4768,9 @@ local DEFAULT_POWER_COLORS_CONFIG = {
     [19] = { 0.286, 0.773, 0.541 },
 }
 
+local DEFAULT_RUNE_READY_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
+local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.4, 0.4, 0.4 }
+
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
     [1]  = { 1 },
@@ -5283,31 +5286,69 @@ local function BuildResourceBarStylingPanel(container)
     if not colorCollapsed then
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
-            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
             if not settings.resources[pt] then
                 settings.resources[pt] = {}
             end
-            local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
 
-            local cp = AceGUI:Create("ColorPicker")
-            cp:SetLabel(name)
-            cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
-            cp:SetHasAlpha(false)
-            cp:SetFullWidth(true)
-            cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                if not settings.resources[pt] then
-                    settings.resources[pt] = {}
-                end
-                settings.resources[pt].color = {r, g, b}
-            end)
-            cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                if not settings.resources[pt] then
-                    settings.resources[pt] = {}
-                end
-                settings.resources[pt].color = {r, g, b}
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(cp)
+            if pt == 5 then
+                -- Runes: two color pickers (ready vs recharging)
+                local readyColor = settings.resources[5].runeReadyColor or DEFAULT_RUNE_READY_COLOR_CONFIG
+                local cpReady = AceGUI:Create("ColorPicker")
+                cpReady:SetLabel("Runes (Ready)")
+                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
+                cpReady:SetHasAlpha(false)
+                cpReady:SetFullWidth(true)
+                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeReadyColor = {r, g, b}
+                end)
+                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeReadyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpReady)
+
+                local rechargingColor = settings.resources[5].runeRechargingColor or DEFAULT_RUNE_RECHARGING_COLOR_CONFIG
+                local cpRecharging = AceGUI:Create("ColorPicker")
+                cpRecharging:SetLabel("Runes (Recharging)")
+                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
+                cpRecharging:SetHasAlpha(false)
+                cpRecharging:SetFullWidth(true)
+                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeRechargingColor = {r, g, b}
+                end)
+                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeRechargingColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpRecharging)
+            else
+                local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+                local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
+
+                local cp = AceGUI:Create("ColorPicker")
+                cp:SetLabel(name)
+                cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
+                cp:SetHasAlpha(false)
+                cp:SetFullWidth(true)
+                cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[pt] then
+                        settings.resources[pt] = {}
+                    end
+                    settings.resources[pt].color = {r, g, b}
+                end)
+                cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[pt] then
+                        settings.resources[pt] = {}
+                    end
+                    settings.resources[pt].color = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cp)
+            end
         end
     end
 end
