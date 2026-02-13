@@ -1065,6 +1065,7 @@ local function UpdateChargeTracking(button, buttonData)
         button._chargeMax = mx
         button._chargeCDStart = cdStart
         button._chargeCDDuration = cdDur
+        button._chargeDurationObj = nil  -- manual values are authoritative
         button._nilConfirmPending = nil
         if cdDur and cdDur > 0 then
             buttonData.chargeCooldownDuration = cdDur
@@ -1075,10 +1076,17 @@ local function UpdateChargeTracking(button, buttonData)
         -- GetSpellChargeDuration + GetSpellCooldownDuration state.
         local durationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
 
+        -- Store charge DurationObject for bar fill (percent methods work
+        -- even with secret values, unlike GetStartTime/GetTotalDuration).
+        button._chargeDurationObj = durationObj
+
         -- Read back charge recharge via DurationObject methods.
-        -- HasSecretValues() gates comparisons; during combat (secret),
-        -- charge duration readback is skipped but charge COUNT still works.
+        -- Non-secret: full readback of start/duration for bar math.
+        -- Secret + bar mode: use cooldown widget as C++ signal — same
+        -- pattern as Bug 1.  SetCooldownFromDurationObject auto-shows the
+        -- widget only when duration > 0 (handles secrets internally).
         local isRealRecharge = false
+        local isRechargeShown = false
         if durationObj and not durationObj:HasSecretValues() then
             if not durationObj:IsZero() then
                 local totalDur = durationObj:GetTotalDuration()
@@ -1101,9 +1109,16 @@ local function UpdateChargeTracking(button, buttonData)
                     buttonData.chargeCooldownDuration = realDur
                 end
             end
+        elseif durationObj and button._isBar then
+            -- Secret values + bar mode: use the cooldown widget as a C++
+            -- signal.  Hide first to clear main-spell CD state, then set
+            -- charge duration — widget auto-shows only if recharge active.
+            button.cooldown:Hide()
+            button.cooldown:SetCooldownFromDurationObject(durationObj)
+            isRechargeShown = button.cooldown:IsShown()
         end
 
-        if isRealRecharge then
+        if isRealRecharge or isRechargeShown then
             -- HARD CONSTRAINT: recharge active means count < max.
             if button._chargeCount >= button._chargeMax then
                 button._chargeCount = button._chargeMax - 1
@@ -1121,18 +1136,27 @@ local function UpdateChargeTracking(button, buttonData)
                     local totalDur = spellCD:GetTotalDuration()
                     spellOnCD = totalDur and totalDur > 2
                 end
+            elseif isRechargeShown then
+                -- Secret: use main-spell CD signal stored before charge
+                -- tracking (IsShown + not isOnGCD → real cooldown → 0 charges)
+                spellOnCD = button._mainCDShown
             end
             if spellOnCD then
                 button._chargeCount = 0
             elseif button._chargeCount < 1 then
-                -- Only raise 0→1 when recharge has significant time
-                -- left.  Near the end (<1s), GetSpellCooldownDuration
-                -- may report nil slightly before GetSpellChargeDuration,
-                -- creating a brief false "spell usable" window.
-                local cdEnd = (button._chargeCDStart or 0)
-                    + (button._chargeCDDuration or 0)
-                if cdEnd - GetTime() > 1 then
+                if isRechargeShown then
+                    -- Secret: widget confirms recharge active, skip stale cdEnd
                     button._chargeCount = 1
+                else
+                    -- Only raise 0→1 when recharge has significant time
+                    -- left.  Near the end (<1s), GetSpellCooldownDuration
+                    -- may report nil slightly before GetSpellChargeDuration,
+                    -- creating a brief false "spell usable" window.
+                    local cdEnd = (button._chargeCDStart or 0)
+                        + (button._chargeCDDuration or 0)
+                    if cdEnd - GetTime() > 1 then
+                        button._chargeCount = 1
+                    end
                 end
             end
 
@@ -1518,7 +1542,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if not spellCooldownDuration:HasSecretValues() then
                     if not spellCooldownDuration:IsZero() then useIt = true end
                 else
-                    if isOnGCD then useIt = true end
+                    -- Secret values: can't call IsZero() to check if spell is ready.
+                    -- GetSpellCooldownDuration returns non-nil even for ready spells
+                    -- during combat.  Use the hidden cooldown widget as a C++ level
+                    -- signal: SetCooldown() auto-shows it only when duration > 0
+                    -- (handles secrets internally).
+                    useIt = button.cooldown:IsShown()
                 end
                 if useIt then
                     button._durationObj = spellCooldownDuration
@@ -1533,6 +1562,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Store raw GCD state for bar desaturation guard
+    button._isOnGCD = isOnGCD or false
+
     -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate)
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
@@ -1543,6 +1575,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Charge count tracking (spells with hasCharges enabled)
+    -- Store main-spell CD signal before charge tracking overrides the widget.
+    -- IsShown() reflects main cooldown (from SetCooldown/SetCooldownFromDurationObject
+    -- above); filter GCD so only real cooldown (0 charges) reads as true.
+    if button._isBar and buttonData.hasCharges then
+        button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+    end
+
     local charges
     if buttonData.type == "spell" and buttonData.hasCharges then
         charges = UpdateChargeTracking(button, buttonData)
@@ -2180,7 +2219,11 @@ UpdateBarFill = function(button)
             if ci <= chargeCount then
                 bar:SetValue(1) -- available
             elseif ci == chargeCount + 1 then
-                bar:SetValue(rechargeFraction) -- recharging
+                if button._chargeDurationObj then
+                    bar:SetValue(button._chargeDurationObj:GetElapsedPercent())
+                else
+                    bar:SetValue(rechargeFraction)
+                end
             else
                 bar:SetValue(0) -- spent
             end
@@ -2207,7 +2250,18 @@ UpdateBarFill = function(button)
                     button.timeText:SetFont(f, s, o)
                 end
             end
-            if remaining > 0 then
+            if button._chargeDurationObj and chargeCount < chargeMax then
+                local rem = button._chargeDurationObj:GetRemainingDuration()
+                local cc = button._auraActive
+                    and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
+                    or (button.style.cooldownFontColor or {1, 1, 1, 1})
+                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+                if not button._chargeDurationObj:HasSecretValues() then
+                    button.timeText:SetText(rem > 0 and FormatBarTime(rem) or "")
+                else
+                    button.timeText:SetFormattedText("%.1f", rem)
+                end
+            elseif remaining > 0 then
                 local cc = button._auraActive
                     and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
                     or (button.style.cooldownFontColor or {1, 1, 1, 1})
@@ -2510,10 +2564,10 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Icon desaturation
+    -- Icon desaturation (skip during GCD, matching icon-mode behavior)
     if style.desaturateOnCooldown then
         local wantDesat = false
-        if fetchOk then
+        if fetchOk and not button._isOnGCD then
             if button.chargeBars and button._chargeBarCount > 0 then
                 wantDesat = button._chargeCount and button._chargeMax
                     and button._chargeCount < button._chargeMax
