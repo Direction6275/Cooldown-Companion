@@ -3973,6 +3973,448 @@ local function BuildLoadConditionsTab(container)
     end
 end
 
+------------------------------------------------------------------------
+-- CAST BAR SETTINGS PANEL
+------------------------------------------------------------------------
+
+-- Collapsible section state for cast bar panel (persistent across rebuilds)
+local castBarCollapsedSections = {}
+
+local barTextureOptions = {
+    ["Interface\\TargetingFrame\\UI-StatusBar"]          = "Blizzard (Default)",
+    ["Interface\\BUTTONS\\WHITE8X8"]                     = "Flat",
+    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]           = "Raid",
+    ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Skills Bar",
+}
+
+local function BuildCastBarPanel(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.castBar
+
+    -- Header
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Cast Bar Settings")
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    -- Enable
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Enable Cast Bar")
+    enableCb:SetValue(settings.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.enabled = val
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    -- Anchor Group dropdown
+    local groupDropValues = { [""] = "None" }
+    local groupDropOrder = { "" }
+    for groupId, group in pairs(db.groups) do
+        if group.displayMode == "icons" and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId) then
+            groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
+            table.insert(groupDropOrder, tostring(groupId))
+        end
+    end
+
+    local anchorDrop = AceGUI:Create("Dropdown")
+    anchorDrop:SetLabel("Anchor to Group")
+    anchorDrop:SetList(groupDropValues, groupDropOrder)
+    anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
+    anchorDrop:SetFullWidth(true)
+    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.anchorGroupId = val ~= "" and tonumber(val) or nil
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorDrop)
+
+    -- ============ Position Section ============
+    local posHeading = AceGUI:Create("Heading")
+    posHeading:SetText("Position")
+    posHeading:SetFullWidth(true)
+    container:AddChild(posHeading)
+
+    local posKey = "castbar_position"
+    local posCollapsed = castBarCollapsedSections[posKey]
+
+    local posCollapseBtn = CreateFrame("Button", nil, posHeading.frame)
+    posCollapseBtn:SetSize(16, 16)
+    posCollapseBtn:SetPoint("LEFT", posHeading.label, "RIGHT", 4, 0)
+    posHeading.right:SetPoint("LEFT", posCollapseBtn, "RIGHT", 4, 0)
+    local posArrow = posCollapseBtn:CreateTexture(nil, "ARTWORK")
+    posArrow:SetSize(12, 12)
+    posArrow:SetPoint("CENTER")
+    posArrow:SetAtlas(posCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    posCollapseBtn:SetScript("OnClick", function()
+        castBarCollapsedSections[posKey] = not castBarCollapsedSections[posKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not posCollapsed then
+        -- Above/Below
+        local posDrop = AceGUI:Create("Dropdown")
+        posDrop:SetLabel("Position")
+        posDrop:SetList({ below = "Below Group", above = "Above Group" }, { "below", "above" })
+        posDrop:SetValue(settings.position or "below")
+        posDrop:SetFullWidth(true)
+        posDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.position = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(posDrop)
+
+        -- Y Offset
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(-50, 50, 1)
+        ySlider:SetValue(settings.yOffset or -2)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.yOffset = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ySlider)
+
+        -- Height
+        local hSlider = AceGUI:Create("Slider")
+        hSlider:SetLabel("Height")
+        hSlider:SetSliderValues(4, 40, 1)
+        hSlider:SetValue(settings.height or 14)
+        hSlider:SetFullWidth(true)
+        hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.height = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(hSlider)
+    end
+
+    -- ============ Bar Visuals Section ============
+    local visHeading = AceGUI:Create("Heading")
+    visHeading:SetText("Bar Visuals")
+    visHeading:SetFullWidth(true)
+    container:AddChild(visHeading)
+
+    local visKey = "castbar_visuals"
+    local visCollapsed = castBarCollapsedSections[visKey]
+
+    local visCollapseBtn = CreateFrame("Button", nil, visHeading.frame)
+    visCollapseBtn:SetSize(16, 16)
+    visCollapseBtn:SetPoint("LEFT", visHeading.label, "RIGHT", 4, 0)
+    visHeading.right:SetPoint("LEFT", visCollapseBtn, "RIGHT", 4, 0)
+    local visArrow = visCollapseBtn:CreateTexture(nil, "ARTWORK")
+    visArrow:SetSize(12, 12)
+    visArrow:SetPoint("CENTER")
+    visArrow:SetAtlas(visCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    visCollapseBtn:SetScript("OnClick", function()
+        castBarCollapsedSections[visKey] = not castBarCollapsedSections[visKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not visCollapsed then
+        -- Bar Color
+        local barColorPicker = AceGUI:Create("ColorPicker")
+        barColorPicker:SetLabel("Bar Color")
+        local bcc = settings.barColor or { 1.0, 0.7, 0.0, 1.0 }
+        barColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
+        barColorPicker:SetHasAlpha(true)
+        barColorPicker:SetFullWidth(true)
+        barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            settings.barColor = {r, g, b, a}
+        end)
+        barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            settings.barColor = {r, g, b, a}
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(barColorPicker)
+
+        -- Bar Texture
+        local texDrop = AceGUI:Create("Dropdown")
+        texDrop:SetLabel("Bar Texture")
+        texDrop:SetList(barTextureOptions)
+        texDrop:SetValue(settings.barTexture or "Interface\\TargetingFrame\\UI-StatusBar")
+        texDrop:SetFullWidth(true)
+        texDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.barTexture = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(texDrop)
+
+        -- Background Color
+        local bgColorPicker = AceGUI:Create("ColorPicker")
+        bgColorPicker:SetLabel("Background Color")
+        local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+        bgColorPicker:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
+        bgColorPicker:SetHasAlpha(true)
+        bgColorPicker:SetFullWidth(true)
+        bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            settings.backgroundColor = {r, g, b, a}
+        end)
+        bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            settings.backgroundColor = {r, g, b, a}
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(bgColorPicker)
+
+        -- Show Spell Icon
+        local iconCb = AceGUI:Create("CheckBox")
+        iconCb:SetLabel("Show Spell Icon")
+        iconCb:SetValue(settings.showIcon or false)
+        iconCb:SetFullWidth(true)
+        iconCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showIcon = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(iconCb)
+
+        -- Show Spark
+        local sparkCb = AceGUI:Create("CheckBox")
+        sparkCb:SetLabel("Show Spark")
+        sparkCb:SetValue(settings.showSpark ~= false)
+        sparkCb:SetFullWidth(true)
+        sparkCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showSpark = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(sparkCb)
+
+        -- Border Style
+        local borderDrop = AceGUI:Create("Dropdown")
+        borderDrop:SetLabel("Border Style")
+        borderDrop:SetList({
+            blizzard = "Blizzard",
+            pixel = "Pixel",
+            none = "None",
+        }, { "blizzard", "pixel", "none" })
+        borderDrop:SetValue(settings.borderStyle or "blizzard")
+        borderDrop:SetFullWidth(true)
+        borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.borderStyle = val
+            CooldownCompanion:ApplyCastBarSettings()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(borderDrop)
+
+        -- Border Color (only when pixel)
+        if settings.borderStyle == "pixel" then
+            local borderColorPicker = AceGUI:Create("ColorPicker")
+            borderColorPicker:SetLabel("Border Color")
+            local brc = settings.borderColor or { 0, 0, 0, 1 }
+            borderColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
+            borderColorPicker:SetHasAlpha(true)
+            borderColorPicker:SetFullWidth(true)
+            borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                settings.borderColor = {r, g, b, a}
+            end)
+            borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                settings.borderColor = {r, g, b, a}
+                CooldownCompanion:ApplyCastBarSettings()
+            end)
+            container:AddChild(borderColorPicker)
+        end
+    end
+
+    -- ============ Spell Name Text Section ============
+    local nameHeading = AceGUI:Create("Heading")
+    nameHeading:SetText("Spell Name Text")
+    nameHeading:SetFullWidth(true)
+    container:AddChild(nameHeading)
+
+    local nameKey = "castbar_nametext"
+    local nameCollapsed = castBarCollapsedSections[nameKey]
+
+    local nameCollapseBtn = CreateFrame("Button", nil, nameHeading.frame)
+    nameCollapseBtn:SetSize(16, 16)
+    nameCollapseBtn:SetPoint("LEFT", nameHeading.label, "RIGHT", 4, 0)
+    nameHeading.right:SetPoint("LEFT", nameCollapseBtn, "RIGHT", 4, 0)
+    local nameArrow = nameCollapseBtn:CreateTexture(nil, "ARTWORK")
+    nameArrow:SetSize(12, 12)
+    nameArrow:SetPoint("CENTER")
+    nameArrow:SetAtlas(nameCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    nameCollapseBtn:SetScript("OnClick", function()
+        castBarCollapsedSections[nameKey] = not castBarCollapsedSections[nameKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not nameCollapsed then
+        -- Show
+        local nameCb = AceGUI:Create("CheckBox")
+        nameCb:SetLabel("Show Spell Name")
+        nameCb:SetValue(settings.showNameText ~= false)
+        nameCb:SetFullWidth(true)
+        nameCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showNameText = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(nameCb)
+
+        -- Font
+        local nameFontDrop = AceGUI:Create("Dropdown")
+        nameFontDrop:SetLabel("Font")
+        nameFontDrop:SetList(CS.fontOptions)
+        nameFontDrop:SetValue(settings.nameFont or "Fonts\\FRIZQT__.TTF")
+        nameFontDrop:SetFullWidth(true)
+        nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.nameFont = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(nameFontDrop)
+
+        -- Size
+        local nameSizeSlider = AceGUI:Create("Slider")
+        nameSizeSlider:SetLabel("Font Size")
+        nameSizeSlider:SetSliderValues(6, 24, 1)
+        nameSizeSlider:SetValue(settings.nameFontSize or 10)
+        nameSizeSlider:SetFullWidth(true)
+        nameSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.nameFontSize = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(nameSizeSlider)
+
+        -- Outline
+        local nameOutlineDrop = AceGUI:Create("Dropdown")
+        nameOutlineDrop:SetLabel("Outline")
+        nameOutlineDrop:SetList(CS.outlineOptions)
+        nameOutlineDrop:SetValue(settings.nameFontOutline or "OUTLINE")
+        nameOutlineDrop:SetFullWidth(true)
+        nameOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.nameFontOutline = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(nameOutlineDrop)
+
+        -- Color
+        local nameColorPicker = AceGUI:Create("ColorPicker")
+        nameColorPicker:SetLabel("Font Color")
+        local nc = settings.nameFontColor or { 1, 1, 1, 1 }
+        nameColorPicker:SetColor(nc[1], nc[2], nc[3], nc[4])
+        nameColorPicker:SetHasAlpha(true)
+        nameColorPicker:SetFullWidth(true)
+        nameColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            settings.nameFontColor = {r, g, b, a}
+        end)
+        nameColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            settings.nameFontColor = {r, g, b, a}
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(nameColorPicker)
+    end
+
+    -- ============ Cast Time Text Section ============
+    local ctHeading = AceGUI:Create("Heading")
+    ctHeading:SetText("Cast Time Text")
+    ctHeading:SetFullWidth(true)
+    container:AddChild(ctHeading)
+
+    local ctKey = "castbar_casttime"
+    local ctCollapsed = castBarCollapsedSections[ctKey]
+
+    local ctCollapseBtn = CreateFrame("Button", nil, ctHeading.frame)
+    ctCollapseBtn:SetSize(16, 16)
+    ctCollapseBtn:SetPoint("LEFT", ctHeading.label, "RIGHT", 4, 0)
+    ctHeading.right:SetPoint("LEFT", ctCollapseBtn, "RIGHT", 4, 0)
+    local ctArrow = ctCollapseBtn:CreateTexture(nil, "ARTWORK")
+    ctArrow:SetSize(12, 12)
+    ctArrow:SetPoint("CENTER")
+    ctArrow:SetAtlas(ctCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    ctCollapseBtn:SetScript("OnClick", function()
+        castBarCollapsedSections[ctKey] = not castBarCollapsedSections[ctKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not ctCollapsed then
+        -- Show
+        local ctCb = AceGUI:Create("CheckBox")
+        ctCb:SetLabel("Show Cast Time")
+        ctCb:SetValue(settings.showCastTimeText ~= false)
+        ctCb:SetFullWidth(true)
+        ctCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showCastTimeText = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctCb)
+
+        -- Font
+        local ctFontDrop = AceGUI:Create("Dropdown")
+        ctFontDrop:SetLabel("Font")
+        ctFontDrop:SetList(CS.fontOptions)
+        ctFontDrop:SetValue(settings.castTimeFont or "Fonts\\FRIZQT__.TTF")
+        ctFontDrop:SetFullWidth(true)
+        ctFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.castTimeFont = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctFontDrop)
+
+        -- Size
+        local ctSizeSlider = AceGUI:Create("Slider")
+        ctSizeSlider:SetLabel("Font Size")
+        ctSizeSlider:SetSliderValues(6, 24, 1)
+        ctSizeSlider:SetValue(settings.castTimeFontSize or 10)
+        ctSizeSlider:SetFullWidth(true)
+        ctSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.castTimeFontSize = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctSizeSlider)
+
+        -- Outline
+        local ctOutlineDrop = AceGUI:Create("Dropdown")
+        ctOutlineDrop:SetLabel("Outline")
+        ctOutlineDrop:SetList(CS.outlineOptions)
+        ctOutlineDrop:SetValue(settings.castTimeFontOutline or "OUTLINE")
+        ctOutlineDrop:SetFullWidth(true)
+        ctOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.castTimeFontOutline = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctOutlineDrop)
+
+        -- Color
+        local ctColorPicker = AceGUI:Create("ColorPicker")
+        ctColorPicker:SetLabel("Font Color")
+        local ctc = settings.castTimeFontColor or { 1, 1, 1, 1 }
+        ctColorPicker:SetColor(ctc[1], ctc[2], ctc[3], ctc[4])
+        ctColorPicker:SetHasAlpha(true)
+        ctColorPicker:SetFullWidth(true)
+        ctColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            settings.castTimeFontColor = {r, g, b, a}
+        end)
+        ctColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            settings.castTimeFontColor = {r, g, b, a}
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctColorPicker)
+
+        -- X Offset
+        local ctXSlider = AceGUI:Create("Slider")
+        ctXSlider:SetLabel("X Offset")
+        ctXSlider:SetSliderValues(-50, 50, 1)
+        ctXSlider:SetValue(settings.castTimeXOffset or 0)
+        ctXSlider:SetFullWidth(true)
+        ctXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.castTimeXOffset = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctXSlider)
+
+        -- Y Offset
+        local ctYSlider = AceGUI:Create("Slider")
+        ctYSlider:SetLabel("Y Offset")
+        ctYSlider:SetSliderValues(-20, 20, 1)
+        ctYSlider:SetValue(settings.castTimeYOffset or 0)
+        ctYSlider:SetFullWidth(true)
+        ctYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.castTimeYOffset = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ctYSlider)
+    end
+end
+
 -- Expose builder functions for Config.lua to call
 ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
@@ -3984,3 +4426,4 @@ ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildPositioningTab = BuildPositioningTab
 ST._BuildExtrasTab = BuildExtrasTab
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
+ST._BuildCastBarPanel = BuildCastBarPanel
