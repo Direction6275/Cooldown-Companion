@@ -5149,19 +5149,8 @@ local function CreateConfigPanel()
         local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
         if not buttonData then return end
 
-        -- Multi-select handling
-        local multiCount = 0
-        local multiIndices = {}
-        for idx in pairs(CS.selectedButtons) do
-            multiCount = multiCount + 1
-            table.insert(multiIndices, idx)
-        end
-
         if tab == "settings" then
-            -- Multi-select shows only delete/move in settings tab
-            if multiCount >= 2 then
-                ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices)
-            elseif buttonData.type == "spell" then
+            if buttonData.type == "spell" then
                 ST._BuildSpellSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                 ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
@@ -5169,12 +5158,7 @@ local function CreateConfigPanel()
                 ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
         elseif tab == "visibility" then
-            if multiCount >= 2 then
-                -- Apply visibility settings to all selected buttons
-                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            else
-                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            end
+            ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
 
         -- Apply hideInfoButtons setting

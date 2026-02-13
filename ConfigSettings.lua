@@ -1688,6 +1688,7 @@ local function RefreshButtonSettingsColumn()
     if CS.castBarPanelActive then
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+        if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
 
         if not bsCol.castBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -1709,7 +1710,42 @@ local function RefreshButtonSettingsColumn()
         bsCol.castBarScroll.frame:Hide()
     end
 
-    -- Check if a valid button is selected
+    -- Check for multiselect
+    local multiCount = 0
+    local multiIndices = {}
+    if CS.selectedGroup then
+        for idx in pairs(CS.selectedButtons) do
+            multiCount = multiCount + 1
+            table.insert(multiIndices, idx)
+        end
+    end
+
+    if multiCount >= 2 then
+        -- Multiselect: hide tabs and placeholder, show dedicated scroll
+        bsCol.bsTabGroup.frame:Hide()
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+
+        if not bsCol.multiSelectScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(bsCol.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
+            bsCol.multiSelectScroll = scroll
+        end
+        bsCol.multiSelectScroll:ReleaseChildren()
+        bsCol.multiSelectScroll.frame:Show()
+        RefreshButtonSettingsMultiSelect(bsCol.multiSelectScroll, multiCount, multiIndices)
+        return
+    end
+
+    -- Hide multiselect scroll when not in multiselect mode
+    if bsCol.multiSelectScroll then
+        bsCol.multiSelectScroll.frame:Hide()
+    end
+
+    -- Check if a valid single button is selected
     local hasSelection = false
     if CS.selectedGroup and CS.selectedButton then
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
