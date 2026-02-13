@@ -37,6 +37,7 @@ local hooksInstalled = false
 local castEventFrame = nil
 local fillMaskLeft, fillMaskRight = nil, nil
 local isPreviewActive = false
+local originalFXSizes = nil
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -144,6 +145,72 @@ local function ApplySparkSize(cb, barHeight)
 end
 
 ------------------------------------------------------------------------
+-- FX scaling helpers — scale cast bar effect textures proportionally
+-- Default bar is 208x11; FX regions are designed for that size.
+-- When the bar is wider/taller, scale all FX regions proportionally.
+------------------------------------------------------------------------
+
+local FX_REGION_NAMES = {
+    "BorderMask",       -- MaskTexture that clips all FX (256x13)
+    "StandardGlow",     -- spark trail glow
+    "CraftGlow",        -- craft spark trail glow
+    "ChannelShadow",    -- channel spark shadow
+    "InterruptGlow",    -- interrupt outer glow
+    "ChargeGlow",       -- empowered outer glow
+    "EnergyGlow",       -- standard finish upward glow
+    "EnergyMask",       -- standard finish mask
+    "Flakes01",         -- standard finish particles
+    "Flakes02",
+    "Flakes03",
+    "Shine",            -- crafting finish wipe
+    "CraftingMask",     -- crafting finish mask
+    "BaseGlow",         -- channel finish FX
+    "WispGlow",
+    "WispMask",
+    "Sparkles01",
+    "Sparkles02",
+}
+
+local function CaptureOriginalFXSizes(cb)
+    if originalFXSizes then return end
+    originalFXSizes = {}
+    for _, name in ipairs(FX_REGION_NAMES) do
+        local region = cb[name]
+        if region then
+            local w, h = region:GetSize()
+            if w and h and w > 0 and h > 0 then
+                originalFXSizes[name] = { w = w, h = h }
+            end
+        end
+    end
+end
+
+local function ApplyFXScaling(cb, barWidth, barHeight)
+    CaptureOriginalFXSizes(cb)
+    if not originalFXSizes then return end
+
+    local widthScale = barWidth / 208
+    local heightScale = barHeight / 11
+
+    for name, orig in pairs(originalFXSizes) do
+        local region = cb[name]
+        if region then
+            region:SetSize(orig.w * widthScale, orig.h * heightScale)
+        end
+    end
+end
+
+local function RevertFXScaling(cb)
+    if not originalFXSizes then return end
+    for name, orig in pairs(originalFXSizes) do
+        local region = cb[name]
+        if region then
+            region:SetSize(orig.w, orig.h)
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- Position helper (used by both Apply and DeferredReapply)
 ------------------------------------------------------------------------
 
@@ -188,6 +255,9 @@ local function DeferredReapply()
 
     -- Spark sizing (technical — always applies regardless of styling)
     ApplySparkSize(cb, effectiveHeight)
+
+    -- FX scaling (always applies when anchored — spark trails, interrupt glow, etc.)
+    ApplyFXScaling(cb, cb:GetWidth(), effectiveHeight)
 
     if s.stylingEnabled then
         -- Re-apply custom bar texture (Blizzard resets to atlas on each cast event)
@@ -361,6 +431,9 @@ function CooldownCompanion:RevertCastBar()
     HidePixelBorders()
     HideFillMasks()
 
+    -- Restore FX regions to original sizes
+    RevertFXScaling(cb)
+
     -- End preview if active
     isPreviewActive = false
 
@@ -463,6 +536,7 @@ function CooldownCompanion:ApplyCastBarSettings()
     local effectiveHeight = settings.stylingEnabled and (settings.height or 14) or 11
     ApplyPosition(cb, settings, effectiveHeight)
     ApplySparkSize(cb, effectiveHeight)
+    ApplyFXScaling(cb, groupFrame:GetWidth(), effectiveHeight)
 
     if settings.stylingEnabled then
         -- ---- STYLING (optional layer) ----
