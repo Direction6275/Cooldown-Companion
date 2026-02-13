@@ -5006,16 +5006,21 @@ BuildResourceBarAnchoringPanel = function(container)
     end)
 
     if not toggleCollapsed then
-        local manaCb = AceGUI:Create("CheckBox")
-        manaCb:SetLabel("Hide Mana for Non-Healer Specs")
-        manaCb:SetValue(settings.hideManaForNonHealer or false)
-        manaCb:SetFullWidth(true)
-        manaCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.hideManaForNonHealer = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-        end)
-        container:AddChild(manaCb)
+        -- Only show mana toggle for classes that actually use mana
+        local _, _, classID = UnitClass("player")
+        local NO_MANA_CLASSES = { [1] = true, [3] = true, [4] = true, [6] = true, [12] = true }
+        if classID and not NO_MANA_CLASSES[classID] then
+            local manaCb = AceGUI:Create("CheckBox")
+            manaCb:SetLabel("Hide Mana for Non-Healer Specs")
+            manaCb:SetValue(settings.hideManaForNonHealer or false)
+            manaCb:SetFullWidth(true)
+            manaCb:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.hideManaForNonHealer = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(manaCb)
+        end
 
         -- Per-resource enable/disable
         local resources = GetConfigActiveResources()
@@ -5143,8 +5148,9 @@ local function BuildResourceBarStylingPanel(container)
 
             local borderSizeSlider = AceGUI:Create("Slider")
             borderSizeSlider:SetLabel("Border Size")
-            borderSizeSlider:SetSliderValues(1, 4, 1)
+            borderSizeSlider:SetSliderValues(0, 4, 0.1)
             borderSizeSlider:SetValue(settings.borderSize or 1)
+            borderSizeSlider:SetIsPercent(false)
             borderSizeSlider:SetFullWidth(true)
             borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
                 settings.borderSize = val

@@ -412,14 +412,29 @@ local function UpdateSegmentedBar(holder, powerType)
     if not holder or not holder.segments then return end
 
     if powerType == 5 then
-        -- DK Runes: per-rune recharge animation
+        -- DK Runes: sorted by readiness (ready left, longest CD right)
         local now = GetTime()
-        for i = 1, math_min(#holder.segments, 6) do
+        local numSegs = math_min(#holder.segments, 6)
+        local runeData = {}
+        for i = 1, 6 do
             local start, duration, ready = GetRuneCooldown(i)
-            if ready then
+            local remaining = 0
+            if not ready and duration and duration > 0 then
+                remaining = math_max((start + duration) - now, 0)
+            end
+            runeData[i] = { start = start, duration = duration, ready = ready, remaining = remaining }
+        end
+        -- Sort: ready first, then by ascending remaining time
+        table.sort(runeData, function(a, b)
+            if a.ready ~= b.ready then return a.ready end
+            return a.remaining < b.remaining
+        end)
+        for i = 1, numSegs do
+            local r = runeData[i]
+            if r.ready then
                 holder.segments[i]:SetValue(1)
-            elseif duration and duration > 0 then
-                holder.segments[i]:SetValue(math_min((now - start) / duration, 1))
+            elseif r.duration and r.duration > 0 then
+                holder.segments[i]:SetValue(math_min((now - r.start) / r.duration, 1))
             else
                 holder.segments[i]:SetValue(0)
             end
