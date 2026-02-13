@@ -4769,10 +4769,13 @@ local DEFAULT_POWER_COLORS_CONFIG = {
 }
 
 local DEFAULT_RUNE_READY_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
-local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.4, 0.4, 0.4 }
+local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+
+local DEFAULT_SHARD_READY_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
+local DEFAULT_SHARD_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
 
 local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
-local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.561, 0.561, 0.545 }
+local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
 
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
@@ -5325,6 +5328,41 @@ local function BuildResourceBarStylingPanel(container)
                 cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
                     if not settings.resources[5] then settings.resources[5] = {} end
                     settings.resources[5].runeRechargingColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpRecharging)
+            elseif pt == 7 then
+                -- Soul Shards: two color pickers (ready vs recharging)
+                local readyColor = settings.resources[7].shardReadyColor or DEFAULT_SHARD_READY_COLOR_CONFIG
+                local cpReady = AceGUI:Create("ColorPicker")
+                cpReady:SetLabel("Soul Shards (Ready)")
+                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
+                cpReady:SetHasAlpha(false)
+                cpReady:SetFullWidth(true)
+                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardReadyColor = {r, g, b}
+                end)
+                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardReadyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpReady)
+
+                local rechargingColor = settings.resources[7].shardRechargingColor or DEFAULT_SHARD_RECHARGING_COLOR_CONFIG
+                local cpRecharging = AceGUI:Create("ColorPicker")
+                cpRecharging:SetLabel("Soul Shards (Recharging)")
+                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
+                cpRecharging:SetHasAlpha(false)
+                cpRecharging:SetFullWidth(true)
+                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardRechargingColor = {r, g, b}
+                end)
+                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardRechargingColor = {r, g, b}
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpRecharging)

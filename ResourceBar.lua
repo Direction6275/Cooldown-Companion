@@ -73,10 +73,13 @@ local POWER_NAMES = {
 }
 
 local DEFAULT_RUNE_READY_COLOR = { 0.8, 0.8, 0.8 }
-local DEFAULT_RUNE_RECHARGING_COLOR = { 0.4, 0.4, 0.4 }
+local DEFAULT_RUNE_RECHARGING_COLOR = { 0.490, 0.490, 0.490 }
 
 local DEFAULT_ESSENCE_READY_COLOR = { 0.851, 0.482, 0.780 }
-local DEFAULT_ESSENCE_RECHARGING_COLOR = { 0.561, 0.561, 0.545 }
+local DEFAULT_ESSENCE_RECHARGING_COLOR = { 0.490, 0.490, 0.490 }
+
+local DEFAULT_SHARD_READY_COLOR = { 0.5, 0.32, 0.55 }
+local DEFAULT_SHARD_RECHARGING_COLOR = { 0.490, 0.490, 0.490 }
 
 local SEGMENTED_TYPES = {
     [4]  = true,  -- ComboPoints
@@ -251,6 +254,20 @@ local function GetEssenceColors(settings)
         if override then
             if override.essenceReadyColor then readyColor = override.essenceReadyColor end
             if override.essenceRechargingColor then rechargingColor = override.essenceRechargingColor end
+        end
+    end
+    return readyColor, rechargingColor
+end
+
+--- Get soul shard-specific colors (ready vs recharging).
+local function GetShardColors(settings)
+    local readyColor = DEFAULT_SHARD_READY_COLOR
+    local rechargingColor = DEFAULT_SHARD_RECHARGING_COLOR
+    if settings and settings.resources then
+        local override = settings.resources[7]
+        if override then
+            if override.shardReadyColor then readyColor = override.shardReadyColor end
+            if override.shardRechargingColor then rechargingColor = override.shardRechargingColor end
         end
     end
     return readyColor, rechargingColor
@@ -482,7 +499,7 @@ local function UpdateSegmentedBar(holder, powerType)
     end
 
     if powerType == 7 then
-        -- Soul Shards: fractional fill
+        -- Soul Shards: fractional fill with ready/recharging colors
         local raw = UnitPower("player", 7, true)
         local rawMax = UnitPowerMax("player", 7, true)
         local max = UnitPowerMax("player", 7)
@@ -490,13 +507,18 @@ local function UpdateSegmentedBar(holder, powerType)
             local perShard = rawMax / max
             local filled = math_floor(raw / perShard)
             local partial = (raw % perShard) / perShard
+            local readyColor, rechargingColor = GetShardColors(GetResourceBarSettings())
             for i = 1, math_min(#holder.segments, max) do
+                local seg = holder.segments[i]
                 if i <= filled then
-                    holder.segments[i]:SetValue(1)
+                    seg:SetValue(1)
+                    seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
                 elseif i == filled + 1 and partial > 0 then
-                    holder.segments[i]:SetValue(partial)
+                    seg:SetValue(partial)
+                    seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
                 else
-                    holder.segments[i]:SetValue(0)
+                    seg:SetValue(0)
+                    seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
                 end
             end
         end
@@ -648,6 +670,12 @@ local function StyleSegmentedBar(holder, powerType, settings)
     if powerType == 5 then
         -- Runes: colored dynamically per-segment in UpdateSegmentedBar
         local readyColor = GetRuneColors(settings)
+        for _, seg in ipairs(holder.segments) do
+            seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
+        end
+    elseif powerType == 7 then
+        -- Soul Shards: colored dynamically per-segment in UpdateSegmentedBar
+        local readyColor = GetShardColors(settings)
         for _, seg in ipairs(holder.segments) do
             seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
         end
