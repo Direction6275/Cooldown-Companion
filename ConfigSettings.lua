@@ -4768,14 +4768,29 @@ local DEFAULT_POWER_COLORS_CONFIG = {
     [19] = { 0.286, 0.773, 0.541 },
 }
 
+local DEFAULT_COMBO_COLOR_CONFIG = { 1, 0.96, 0.41 }
+local DEFAULT_COMBO_MAX_COLOR_CONFIG = { 1, 0.96, 0.41 }
+
 local DEFAULT_RUNE_READY_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
 local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+local DEFAULT_RUNE_MAX_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
 
 local DEFAULT_SHARD_READY_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
 local DEFAULT_SHARD_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+local DEFAULT_SHARD_MAX_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
+
+local DEFAULT_HOLY_COLOR_CONFIG = { 0.95, 0.9, 0.6 }
+local DEFAULT_HOLY_MAX_COLOR_CONFIG = { 0.95, 0.9, 0.6 }
+
+local DEFAULT_CHI_COLOR_CONFIG = { 0.71, 1, 0.92 }
+local DEFAULT_CHI_MAX_COLOR_CONFIG = { 0.71, 1, 0.92 }
+
+local DEFAULT_ARCANE_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
+local DEFAULT_ARCANE_MAX_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
 
 local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+local DEFAULT_ESSENCE_MAX_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
@@ -5296,8 +5311,43 @@ local function BuildResourceBarStylingPanel(container)
                 settings.resources[pt] = {}
             end
 
-            if pt == 5 then
-                -- Runes: two color pickers (ready vs recharging)
+            if pt == 4 then
+                -- Combo Points: two color pickers (normal vs at max)
+                local normalColor = settings.resources[4].comboColor or DEFAULT_COMBO_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Combo Points")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[4].comboMaxColor or DEFAULT_COMBO_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Combo Points (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 5 then
+                -- Runes: three color pickers (ready, recharging, max)
                 local readyColor = settings.resources[5].runeReadyColor or DEFAULT_RUNE_READY_COLOR_CONFIG
                 local cpReady = AceGUI:Create("ColorPicker")
                 cpReady:SetLabel("Runes (Ready)")
@@ -5331,8 +5381,25 @@ local function BuildResourceBarStylingPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpRecharging)
+
+                local maxColor = settings.resources[5].runeMaxColor or DEFAULT_RUNE_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Runes (All Ready)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
             elseif pt == 7 then
-                -- Soul Shards: two color pickers (ready vs recharging)
+                -- Soul Shards: three color pickers (ready, recharging, max)
                 local readyColor = settings.resources[7].shardReadyColor or DEFAULT_SHARD_READY_COLOR_CONFIG
                 local cpReady = AceGUI:Create("ColorPicker")
                 cpReady:SetLabel("Soul Shards (Ready)")
@@ -5366,8 +5433,130 @@ local function BuildResourceBarStylingPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpRecharging)
+
+                local maxColor = settings.resources[7].shardMaxColor or DEFAULT_SHARD_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Soul Shards (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 9 then
+                -- Holy Power: two color pickers (normal vs max)
+                local normalColor = settings.resources[9].holyColor or DEFAULT_HOLY_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Holy Power")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[9].holyMaxColor or DEFAULT_HOLY_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Holy Power (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 12 then
+                -- Chi: two color pickers (normal vs max)
+                local normalColor = settings.resources[12].chiColor or DEFAULT_CHI_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Chi")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[12].chiMaxColor or DEFAULT_CHI_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Chi (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 16 then
+                -- Arcane Charges: two color pickers (normal vs max)
+                local normalColor = settings.resources[16].arcaneColor or DEFAULT_ARCANE_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Arcane Charges")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[16].arcaneMaxColor or DEFAULT_ARCANE_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Arcane Charges (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
             elseif pt == 19 then
-                -- Essence: two color pickers (ready vs recharging)
+                -- Essence: three color pickers (ready, recharging, max)
                 local readyColor = settings.resources[19].essenceReadyColor or DEFAULT_ESSENCE_READY_COLOR_CONFIG
                 local cpReady = AceGUI:Create("ColorPicker")
                 cpReady:SetLabel("Essence (Ready)")
@@ -5401,6 +5590,23 @@ local function BuildResourceBarStylingPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpRecharging)
+
+                local maxColor = settings.resources[19].essenceMaxColor or DEFAULT_ESSENCE_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Essence (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
             else
                 local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
                 local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
