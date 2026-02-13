@@ -4682,12 +4682,12 @@ local function CreateConfigPanel()
 
     -- Cast Bar button — left of Gear
     local castBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-    castBarBtn:SetSize(20, 20)
+    castBarBtn:SetSize(16, 16)
     local castBarIcon = castBarBtn:CreateTexture(nil, "ARTWORK")
-    castBarIcon:SetAtlas("ui-castingbar-filling-standard")
+    castBarIcon:SetAtlas("icons_16x16_magic")
     castBarIcon:SetAllPoints()
-    castBarBtn:SetHighlightTexture("Interface\\BUTTONS\\WHITE8X8")
-    castBarBtn:GetHighlightTexture():SetAlpha(0.15)
+    castBarBtn:SetHighlightAtlas("icons_16x16_magic")
+    castBarBtn:GetHighlightTexture():SetAlpha(0.3)
 
     local castBarBtnBorder = nil -- created on first highlight
 
