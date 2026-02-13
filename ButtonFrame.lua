@@ -1232,7 +1232,7 @@ local function UpdateChargeTracking(button, buttonData)
                     buttonData.chargeCooldownDuration = realDur
                 end
             end
-        elseif durationObj and button._isBar then
+        elseif durationObj then
             -- Secret values + bar mode: use the cooldown widget as a C++
             -- signal.  Hide first to clear main-spell CD state, then set
             -- charge duration — widget auto-shows only if recharge active.
@@ -1337,7 +1337,7 @@ local function UpdateChargeTracking(button, buttonData)
 end
 
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
-local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD)
+local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
     if fetchOk then
         local suppressGCD = not style.showGCDSwipe and isOnGCD
@@ -1386,8 +1386,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- spells/auras; GetCooldownTimes() remains safe for items.
     if style.desaturateOnCooldown then
         local wantDesat = false
-        if fetchOk and not isOnGCD then
-            if button._durationObj then
+        if fetchOk and not isOnGCD and not gcdJustEnded then
+            if buttonData.hasCharges then
+                wantDesat = button._chargeCount == 0
+            elseif button._durationObj then
                 wantDesat = true
             elseif buttonData.type == "item" then
                 local _, widgetDuration = button.cooldown:GetCooldownTimes()
@@ -1397,9 +1399,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
             wantDesat = false
         end
-        -- When isOnGCD is true, wantDesat stays false. This clears
-        -- desaturation the moment GCD takes over from a real cooldown,
-        -- and is a no-op after a fresh cast (already un-desaturated).
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -1688,23 +1687,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Store raw GCD state for bar desaturation guard
+    local gcdJustEnded = (button._wasOnGCD == true) and not isOnGCD
+    button._wasOnGCD = isOnGCD or false
     button._isOnGCD = isOnGCD or false
+    button._gcdJustEnded = gcdJustEnded
 
     -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate)
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
     end
 
-    if not button._isBar then
-        UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD)
-    end
-
-    -- Charge count tracking (spells with hasCharges enabled)
-    -- Store main-spell CD signal before charge tracking overrides the widget.
+    -- Charge count tracking: store main-spell CD signal BEFORE anything
+    -- modifies the cooldown widget (UpdateIconModeVisuals may Hide/re-set it).
     -- IsShown() reflects main cooldown (from SetCooldown/SetCooldownFromDurationObject
     -- above); filter GCD so only real cooldown (0 charges) reads as true.
-    if button._isBar and buttonData.hasCharges then
+    if buttonData.hasCharges then
         button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+    end
+
+    if not button._isBar then
+        UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     end
 
     local charges
@@ -1723,6 +1725,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end)
             end
         end
+
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
@@ -2767,10 +2770,9 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Icon desaturation (skip during GCD, matching icon-mode behavior)
     if style.desaturateOnCooldown then
         local wantDesat = false
-        if fetchOk and not button._isOnGCD then
+        if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.chargeBars and button._chargeBarCount > 0 then
-                wantDesat = button._chargeCount and button._chargeMax
-                    and button._chargeCount < button._chargeMax
+                wantDesat = button._chargeCount == 0
             elseif button._durationObj then
                 wantDesat = true
             elseif button.buttonData.type == "item" then

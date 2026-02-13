@@ -137,6 +137,7 @@ ST._configState = {
     -- Tab UI state (populated by ConfigSettings.lua, cleaned by both files)
     tabInfoButtons = {},
     appearanceTabElements = {},
+    castBarPanelActive = false,
     -- Static lookup tables
     fontOptions = fontOptions,
     outlineOptions = outlineOptions,
@@ -2942,6 +2943,8 @@ function RefreshColumn1(preserveDrag)
                 end
                 selectedButton = nil
                 wipe(selectedButtons)
+                CS.castBarPanelActive = false
+                CooldownCompanion:StopCastBarPreview()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 if not groupContextMenu then
@@ -4320,6 +4323,35 @@ end
 ------------------------------------------------------------------------
 
 function RefreshColumn3(container)
+    -- Cast Bar panel mode: show cast bar settings instead of group settings
+    if CS.castBarPanelActive then
+        if container.placeholderLabel then
+            container.placeholderLabel:Hide()
+        end
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        -- Create or reuse the cast bar scroll frame
+        if not container.castBarScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(container)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.castBarScroll = scroll
+        end
+        container.castBarScroll:ReleaseChildren()
+        container.castBarScroll.frame:Show()
+        SyncConfigState()
+        ST._BuildCastBarStylingPanel(container.castBarScroll)
+        return
+    end
+    -- Hide cast bar scroll if it exists
+    if container.castBarScroll then
+        container.castBarScroll.frame:Hide()
+    end
+
     -- Multi-group selection: show placeholder
     local multiGroupCount = 0
     for _ in pairs(selectedGroups) do multiGroupCount = multiGroupCount + 1 end
@@ -4591,6 +4623,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
+        CooldownCompanion:StopCastBarPreview()
         CloseDropDownMenus()
         HideAutocomplete()
     end)
@@ -4647,10 +4680,60 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
+    -- Cast Bar button — left of Gear
+    local castBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    castBarBtn:SetSize(16, 16)
+    local castBarIcon = castBarBtn:CreateTexture(nil, "ARTWORK")
+    castBarIcon:SetAtlas("icons_16x16_magic")
+    castBarIcon:SetAllPoints()
+    castBarBtn:SetHighlightAtlas("icons_16x16_magic")
+    castBarBtn:GetHighlightTexture():SetAlpha(0.3)
+
+    local castBarBtnBorder = nil -- created on first highlight
+
+    local function UpdateCastBarBtnHighlight()
+        if CS.castBarPanelActive then
+            if not castBarBtnBorder then
+                castBarBtnBorder = castBarBtn:CreateTexture(nil, "OVERLAY")
+                castBarBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                castBarBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                castBarBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            castBarBtnBorder:Show()
+        else
+            if castBarBtnBorder then
+                castBarBtnBorder:Hide()
+            end
+        end
+    end
+
+    castBarBtn:SetScript("OnClick", function()
+        if CS.castBarPanelActive then
+            CS.castBarPanelActive = false
+            CooldownCompanion:StopCastBarPreview()
+        else
+            CS.castBarPanelActive = true
+            selectedGroup = nil
+            selectedButton = nil
+            wipe(selectedButtons)
+            wipe(selectedGroups)
+        end
+        UpdateCastBarBtnHighlight()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    castBarBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Cast Bar")
+        GameTooltip:AddLine("Attach and customize the player cast bar", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    castBarBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     -- Gear button — left of Collapse
     local gearBtn = CreateFrame("Button", nil, content)
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
+    castBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -4943,8 +5026,13 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Button Settings")
-        GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
+        if CS.castBarPanelActive then
+            GameTooltip:AddLine("Cast Bar Anchoring / FX")
+            GameTooltip:AddLine("Anchoring, positioning, and visual effects for the cast bar.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Button Settings")
+            GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     bsInfoBtn:SetScript("OnLeave", function()
@@ -4968,8 +5056,13 @@ local function CreateConfigPanel()
     settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Group Settings")
-        GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
+        if CS.castBarPanelActive then
+            GameTooltip:AddLine("Cast Bar Styling")
+            GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Group Settings")
+            GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     settingsInfoBtn:SetScript("OnLeave", function()
@@ -5056,19 +5149,8 @@ local function CreateConfigPanel()
         local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
         if not buttonData then return end
 
-        -- Multi-select handling
-        local multiCount = 0
-        local multiIndices = {}
-        for idx in pairs(CS.selectedButtons) do
-            multiCount = multiCount + 1
-            table.insert(multiIndices, idx)
-        end
-
         if tab == "settings" then
-            -- Multi-select shows only delete/move in settings tab
-            if multiCount >= 2 then
-                ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices)
-            elseif buttonData.type == "spell" then
+            if buttonData.type == "spell" then
                 ST._BuildSpellSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                 ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
@@ -5076,12 +5158,7 @@ local function CreateConfigPanel()
                 ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
         elseif tab == "visibility" then
-            if multiCount >= 2 then
-                -- Apply visibility settings to all selected buttons
-                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            else
-                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            end
+            ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
 
         -- Apply hideInfoButtons setting
@@ -5218,6 +5295,7 @@ local function CreateConfigPanel()
     frame.col3 = col3
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
+    frame.UpdateCastBarBtnHighlight = UpdateCastBarBtnHighlight
 
     configFrame = frame
     CS.configFrame = frame
@@ -5258,6 +5336,16 @@ function CooldownCompanion:RefreshConfigPanel()
         RefreshProfileBar(configFrame.profileBar)
     end
     configFrame.versionText:SetText("v1.3  |  " .. (self.db:GetCurrentProfile() or "Default"))
+    if configFrame.UpdateCastBarBtnHighlight then
+        configFrame.UpdateCastBarBtnHighlight()
+    end
+    if CS.castBarPanelActive then
+        configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
+        configFrame.col3:SetTitle("Cast Bar Styling")
+    else
+        configFrame.buttonSettingsCol:SetTitle("Button Settings")
+        configFrame.col3:SetTitle("Group Settings")
+    end
     RefreshColumn1()
     RefreshColumn2()
     SyncConfigState()
@@ -5349,6 +5437,8 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedButtons)
         wipe(selectedGroups)
         wipe(collapsedFolders)
+        CS.castBarPanelActive = false
+        CooldownCompanion:StopCastBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -5361,6 +5451,8 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedButtons)
         wipe(selectedGroups)
         wipe(collapsedFolders)
+        CS.castBarPanelActive = false
+        CooldownCompanion:StopCastBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -5373,6 +5465,8 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedButtons)
         wipe(selectedGroups)
         wipe(collapsedFolders)
+        CS.castBarPanelActive = false
+        CooldownCompanion:StopCastBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
