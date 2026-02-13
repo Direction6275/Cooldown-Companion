@@ -4344,7 +4344,7 @@ function RefreshColumn3(container)
         container.castBarScroll:ReleaseChildren()
         container.castBarScroll.frame:Show()
         SyncConfigState()
-        ST._BuildCastBarPanel(container.castBarScroll)
+        ST._BuildCastBarStylingPanel(container.castBarScroll)
         return
     end
     -- Hide cast bar scroll if it exists
@@ -5026,8 +5026,13 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Button Settings")
-        GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
+        if CS.castBarPanelActive then
+            GameTooltip:AddLine("Cast Bar Anchoring / FX")
+            GameTooltip:AddLine("Anchoring, positioning, and visual effects for the cast bar.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Button Settings")
+            GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     bsInfoBtn:SetScript("OnLeave", function()
@@ -5052,8 +5057,8 @@ local function CreateConfigPanel()
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.castBarPanelActive then
-            GameTooltip:AddLine("Cast Bar Settings")
-            GameTooltip:AddLine("These settings configure the cast bar overlay.", 1, 1, 1, true)
+            GameTooltip:AddLine("Cast Bar Styling")
+            GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Group Settings")
             GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
@@ -5351,8 +5356,10 @@ function CooldownCompanion:RefreshConfigPanel()
         configFrame.UpdateCastBarBtnHighlight()
     end
     if CS.castBarPanelActive then
-        configFrame.col3:SetTitle("Cast Bar Settings")
+        configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
+        configFrame.col3:SetTitle("Cast Bar Styling")
     else
+        configFrame.buttonSettingsCol:SetTitle("Button Settings")
         configFrame.col3:SetTitle("Group Settings")
     end
     RefreshColumn1()

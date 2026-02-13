@@ -1675,11 +1675,39 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     scroll:AddChild(moveBtn)
 end
 
+-- Forward declaration — defined after all collapsible-section state
+local BuildCastBarAnchoringPanel
+
 local function RefreshButtonSettingsColumn()
     local cf = CS.configFrame
     if not cf then return end
     local bsCol = cf.buttonSettingsCol
     if not bsCol or not bsCol.bsTabGroup then return end
+
+    -- Cast bar overlay: replace button settings with anchoring/FX panel
+    if CS.castBarPanelActive then
+        bsCol.bsTabGroup.frame:Hide()
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+
+        if not bsCol.castBarScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(bsCol.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
+            bsCol.castBarScroll = scroll
+        end
+        bsCol.castBarScroll:ReleaseChildren()
+        bsCol.castBarScroll.frame:Show()
+        BuildCastBarAnchoringPanel(bsCol.castBarScroll)
+        return
+    end
+
+    -- Hide cast bar scroll when not in cast bar mode
+    if bsCol.castBarScroll then
+        bsCol.castBarScroll.frame:Hide()
+    end
 
     -- Check if a valid button is selected
     local hasSelection = false
@@ -3987,15 +4015,9 @@ local barTextureOptions = {
     ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Skills Bar",
 }
 
-local function BuildCastBarPanel(container)
+BuildCastBarAnchoringPanel = function(container)
     local db = CooldownCompanion.db.profile
     local settings = db.castBar
-
-    -- Header
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Cast Bar Settings")
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
 
     -- Enable Anchoring
     local enableCb = AceGUI:Create("CheckBox")
@@ -4096,18 +4118,6 @@ local function BuildCastBarPanel(container)
 
     end
 
-    -- ============ Enable Styling Toggle ============
-    local styleCb = AceGUI:Create("CheckBox")
-    styleCb:SetLabel("Enable Cast Bar Styling")
-    styleCb:SetValue(settings.stylingEnabled or false)
-    styleCb:SetFullWidth(true)
-    styleCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.stylingEnabled = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(styleCb)
-
     -- ============ Cast Effects Section ============
     local fxHeading = AceGUI:Create("Heading")
     fxHeading:SetText("Cast Effects")
@@ -4191,7 +4201,26 @@ local function BuildCastBarPanel(container)
         end)
         container:AddChild(craftFinishCb)
     end
+end
 
+local function BuildCastBarStylingPanel(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.castBar
+
+    -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
+    local styleCb = AceGUI:Create("CheckBox")
+    styleCb:SetLabel("Enable Cast Bar Styling")
+    styleCb:SetValue(settings.stylingEnabled or false)
+    styleCb:SetFullWidth(true)
+    styleCb:SetDisabled(not settings.enabled)
+    styleCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.stylingEnabled = val
+        CooldownCompanion:ApplyCastBarSettings()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(styleCb)
+
+    if not settings.enabled then return end
     if not settings.stylingEnabled then return end
 
     -- Height (styling-only — anchoring uses Blizzard default height)
@@ -4584,4 +4613,5 @@ ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildPositioningTab = BuildPositioningTab
 ST._BuildExtrasTab = BuildExtrasTab
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
-ST._BuildCastBarPanel = BuildCastBarPanel
+ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
+ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel
