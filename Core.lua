@@ -39,6 +39,10 @@ CooldownCompanion.viewerAuraFrames = {}
 -- (that API is AllowedWhenUntainted and cannot be called from addon code in combat)
 CooldownCompanion.procOverlaySpells = {}
 
+-- Instance & resting state cache for load conditions
+CooldownCompanion._currentInstanceType = "none"  -- "none"|"pvp"|"arena"|"party"|"raid"|"scenario"|"delve"
+CooldownCompanion._isResting = false
+
 -- Constants
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
@@ -158,6 +162,16 @@ local defaults = {
                     fadeDelay = 1,            -- seconds before fading after mouseover ends
                     fadeInDuration = 0.2,     -- fade-in animation seconds
                     fadeOutDuration = 0.2,    -- fade-out animation seconds
+                    -- Load conditions: true = unload group in this context
+                    loadConditions = {
+                        raid = false,
+                        dungeon = false,
+                        delve = false,
+                        battleground = false,
+                        arena = false,
+                        openWorld = false,
+                        rested = false,
+                    },
                 }
             ]]
         },
@@ -214,6 +228,9 @@ local defaults = {
             showBarReadyText = false,
             barReadyText = "Ready",
             barReadyTextColor = {0.2, 1.0, 0.2, 1.0},
+            barReadyFontSize = 12,
+            barReadyFont = "Fonts\\FRIZQT__.TTF",
+            barReadyFontOutline = "OUTLINE",
             barUpdateInterval = 0.025,  -- seconds between bar fill updates (~40Hz default)
         },
         locked = false,
@@ -288,6 +305,10 @@ function CooldownCompanion:OnEnable()
 
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
+
+    -- Zone/instance change events — load condition evaluation
+    self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnZoneChanged")
+    self:RegisterEvent("PLAYER_UPDATE_RESTING", "OnRestingChanged")
 
     -- Aura (buff/debuff) changes — drives aura tracking overlay
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")
@@ -975,8 +996,30 @@ function CooldownCompanion:OnSpecChanged()
     end)
 end
 
+function CooldownCompanion:CachePlayerState()
+    local inInstance, instanceType = IsInInstance()
+    if inInstance and instanceType == "scenario" then
+        local _, _, difficultyID = GetInstanceInfo()
+        self._currentInstanceType = (difficultyID == 208) and "delve" or "scenario"
+    else
+        self._currentInstanceType = inInstance and instanceType or "none"
+    end
+    self._isResting = IsResting()
+end
+
+function CooldownCompanion:OnZoneChanged()
+    self:CachePlayerState()
+    self:RefreshAllGroups()
+end
+
+function CooldownCompanion:OnRestingChanged()
+    self._isResting = IsResting()
+    self:RefreshAllGroups()
+end
+
 function CooldownCompanion:OnPlayerEnteringWorld()
     C_Timer.After(1, function()
+        self:CachePlayerState()
         self:CacheCurrentSpec()
         self:RefreshChargeFlags()
         self:RefreshAllGroups()
@@ -1534,6 +1577,37 @@ end
 
 function CooldownCompanion:GetEffectiveSpecs(group)
     return group.specs, false
+end
+
+function CooldownCompanion:CheckLoadConditions(group)
+    local lc = group.loadConditions
+    if not lc then return true end
+
+    local instanceType = self._currentInstanceType
+
+    -- Map instance type to load condition key
+    local conditionKey
+    if instanceType == "raid" then
+        conditionKey = "raid"
+    elseif instanceType == "party" then
+        conditionKey = "dungeon"
+    elseif instanceType == "pvp" then
+        conditionKey = "battleground"
+    elseif instanceType == "arena" then
+        conditionKey = "arena"
+    elseif instanceType == "delve" then
+        conditionKey = "delve"
+    else
+        conditionKey = "openWorld"  -- "none" or "scenario"
+    end
+
+    -- If the matching instance condition is enabled, unload
+    if lc[conditionKey] then return false end
+
+    -- If rested condition is enabled and player is resting, unload
+    if lc.rested and self._isResting then return false end
+
+    return true
 end
 
 -- Alpha fade system: per-group runtime state

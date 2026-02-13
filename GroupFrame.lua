@@ -225,15 +225,16 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on enabled state, spec filter, and character visibility
+    -- Show/hide based on enabled state, spec filter, character visibility, and load conditions
     local specAllowed = true
     local effectiveSpecs = self:GetEffectiveSpecs(group)
     if effectiveSpecs and next(effectiveSpecs) then
         specAllowed = self._currentSpecId and effectiveSpecs[self._currentSpecId]
     end
     local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
+    local loadAllowed = self:CheckLoadConditions(group)
 
-    if group.enabled and specAllowed and charVisible then
+    if group.enabled and specAllowed and charVisible and loadAllowed then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         local alphaState = self.alphaState and self.alphaState[groupId]
@@ -611,7 +612,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — hide if disabled, no buttons, wrong spec, or wrong character
+    -- Update visibility — hide if disabled, no buttons, wrong spec, wrong character, or load conditions
     local specAllowed = true
     local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
     if effectiveSpecs and next(effectiveSpecs) then
@@ -619,8 +620,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             and effectiveSpecs[CooldownCompanion._currentSpecId]
     end
     local charVisible = CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
+    local loadAllowed = CooldownCompanion:CheckLoadConditions(group)
 
-    if group.enabled and #group.buttons > 0 and specAllowed and charVisible then
+    if group.enabled and #group.buttons > 0 and specAllowed and charVisible and loadAllowed then
         frame:Show()
         -- Force 100% alpha while unlocked for easier positioning
         if not group.locked then
