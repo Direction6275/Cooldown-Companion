@@ -322,6 +322,10 @@ end
 ------------------------------------------------------------------------
 
 local function SuppressFX(cb, s)
+    -- Always hide ChannelShadow when styling is on (artifacts)
+    if s.stylingEnabled then
+        if cb.ChannelShadow then cb.ChannelShadow:Hide() end
+    end
     if s.showSparkTrail == false then
         if cb.StandardGlow then cb.StandardGlow:Hide() end
         if cb.CraftGlow then cb.CraftGlow:Hide() end
@@ -410,6 +414,16 @@ local function InstallFXHooks(cb)
             if s and s.showInterruptGlow == false then
                 anim:Stop()
                 if cb.InterruptGlow then cb.InterruptGlow:SetAlpha(0) end
+            end
+        end)
+    end
+    if cb.ChannelShadow then
+        local shadow = cb.ChannelShadow
+        hooksecurefunc(shadow, "Show", function()
+            if not isApplied then return end
+            local s = GetCastBarSettings()
+            if s and s.stylingEnabled then
+                shadow:Hide()
             end
         end)
     end
