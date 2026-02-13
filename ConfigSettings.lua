@@ -4315,19 +4315,7 @@ local function BuildCastBarStylingPanel(container)
         container:AddChild(iconCb)
 
         if settings.showIcon then
-            -- Icon Size
-            local iconSizeSlider = AceGUI:Create("Slider")
-            iconSizeSlider:SetLabel("Icon Size")
-            iconSizeSlider:SetSliderValues(8, 64, 1)
-            iconSizeSlider:SetValue(settings.iconSize or 16)
-            iconSizeSlider:SetFullWidth(true)
-            iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.iconSize = val
-                CooldownCompanion:ApplyCastBarSettings()
-            end)
-            container:AddChild(iconSizeSlider)
-
-            -- Icon Flip Side
+            -- Icon on Right Side
             local iconFlipCb = AceGUI:Create("CheckBox")
             iconFlipCb:SetLabel("Icon on Right Side")
             iconFlipCb:SetValue(settings.iconFlipSide or false)
@@ -4337,6 +4325,68 @@ local function BuildCastBarStylingPanel(container)
                 CooldownCompanion:ApplyCastBarSettings()
             end)
             container:AddChild(iconFlipCb)
+
+            -- Icon Offset toggle
+            local iconOffsetCb = AceGUI:Create("CheckBox")
+            iconOffsetCb:SetLabel("Icon Offset")
+            iconOffsetCb:SetValue(settings.iconOffset or false)
+            iconOffsetCb:SetFullWidth(true)
+            iconOffsetCb:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.iconOffset = val
+                CooldownCompanion:ApplyCastBarSettings()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(iconOffsetCb)
+
+            if settings.iconOffset then
+                -- Icon Size slider (offset mode only)
+                local iconSizeSlider = AceGUI:Create("Slider")
+                iconSizeSlider:SetLabel("Icon Size")
+                iconSizeSlider:SetSliderValues(8, 64, 1)
+                iconSizeSlider:SetValue(settings.iconSize or 16)
+                iconSizeSlider:SetFullWidth(true)
+                iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.iconSize = val
+                    CooldownCompanion:ApplyCastBarSettings()
+                end)
+                container:AddChild(iconSizeSlider)
+
+                -- Icon X Offset slider
+                local iconXSlider = AceGUI:Create("Slider")
+                iconXSlider:SetLabel("Icon X Offset")
+                iconXSlider:SetSliderValues(-50, 50, 1)
+                iconXSlider:SetValue(settings.iconOffsetX or 0)
+                iconXSlider:SetFullWidth(true)
+                iconXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.iconOffsetX = val
+                    CooldownCompanion:ApplyCastBarSettings()
+                end)
+                container:AddChild(iconXSlider)
+
+                -- Icon Y Offset slider
+                local iconYSlider = AceGUI:Create("Slider")
+                iconYSlider:SetLabel("Icon Y Offset")
+                iconYSlider:SetSliderValues(-50, 50, 1)
+                iconYSlider:SetValue(settings.iconOffsetY or 0)
+                iconYSlider:SetFullWidth(true)
+                iconYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.iconOffsetY = val
+                    CooldownCompanion:ApplyCastBarSettings()
+                end)
+                container:AddChild(iconYSlider)
+
+                -- Icon Border Size slider (offset mode only)
+                local iconBorderSlider = AceGUI:Create("Slider")
+                iconBorderSlider:SetLabel("Icon Border Size")
+                iconBorderSlider:SetSliderValues(0, 4, 0.1)
+                iconBorderSlider:SetValue(settings.iconBorderSize or 1)
+                iconBorderSlider:SetFullWidth(true)
+                iconBorderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.iconBorderSize = val
+                    CooldownCompanion:ApplyCastBarSettings()
+                end)
+                container:AddChild(iconBorderSlider)
+            end
         end
 
         -- Show Spark

@@ -66,8 +66,66 @@ local function GetPixelBorders(cb)
     return pixelBorders
 end
 
-local function ShowPixelBorders(cb, color, size)
+--- Optional iconFrame + iconOnRight: extends the border to wrap both bar+icon.
+local function ShowPixelBorders(cb, color, size, iconFrame, iconOnRight)
     local borders = GetPixelBorders(cb)
+    local r, g, b, a = color[1], color[2], color[3], color[4]
+    size = size or 1
+
+    for _, tex in pairs(borders) do
+        tex:SetColorTexture(r, g, b, a)
+        tex:Show()
+    end
+
+    local leftFrame = (iconFrame and not iconOnRight) and iconFrame or cb
+    local rightFrame = (iconFrame and iconOnRight) and iconFrame or cb
+
+    borders.TOP:SetHeight(size)
+    borders.TOP:ClearAllPoints()
+    borders.TOP:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", 0, size)
+    borders.TOP:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", 0, size)
+
+    borders.BOTTOM:SetHeight(size)
+    borders.BOTTOM:ClearAllPoints()
+    borders.BOTTOM:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", 0, -size)
+    borders.BOTTOM:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", 0, -size)
+
+    borders.LEFT:SetWidth(size)
+    borders.LEFT:ClearAllPoints()
+    borders.LEFT:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", -size, size)
+    borders.LEFT:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", -size, -size)
+
+    borders.RIGHT:SetWidth(size)
+    borders.RIGHT:ClearAllPoints()
+    borders.RIGHT:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", size, size)
+    borders.RIGHT:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", size, -size)
+end
+
+local function HidePixelBorders()
+    if not pixelBorders then return end
+    for _, tex in pairs(pixelBorders) do
+        tex:Hide()
+    end
+end
+
+--- Icon pixel borders (inline mode — matches bar border style)
+local iconPixelBorders = nil
+
+local function GetIconPixelBorders(cb)
+    if iconPixelBorders then return iconPixelBorders end
+    iconPixelBorders = {}
+    local names = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
+    for _, side in ipairs(names) do
+        local tex = cb:CreateTexture(nil, "OVERLAY", nil, 7)
+        tex:SetColorTexture(0, 0, 0, 1)
+        tex:Hide()
+        iconPixelBorders[side] = tex
+    end
+    return iconPixelBorders
+end
+
+local function ShowIconPixelBorders(cb, color, size)
+    local borders = GetIconPixelBorders(cb)
     local r, g, b, a = color[1], color[2], color[3], color[4]
     size = size or 1
 
@@ -78,28 +136,28 @@ local function ShowPixelBorders(cb, color, size)
 
     borders.TOP:SetHeight(size)
     borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", cb, "TOPLEFT", 0, size)
-    borders.TOP:SetPoint("TOPRIGHT", cb, "TOPRIGHT", 0, size)
+    borders.TOP:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", 0, size)
+    borders.TOP:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", 0, size)
 
     borders.BOTTOM:SetHeight(size)
     borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", 0, -size)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", 0, -size)
+    borders.BOTTOM:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", 0, -size)
+    borders.BOTTOM:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", 0, -size)
 
     borders.LEFT:SetWidth(size)
     borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", cb, "TOPLEFT", -size, size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", -size, -size)
+    borders.LEFT:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", -size, size)
+    borders.LEFT:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", -size, -size)
 
     borders.RIGHT:SetWidth(size)
     borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", cb, "TOPRIGHT", size, size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", size, -size)
+    borders.RIGHT:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", size, size)
+    borders.RIGHT:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", size, -size)
 end
 
-local function HidePixelBorders()
-    if not pixelBorders then return end
-    for _, tex in pairs(pixelBorders) do
+local function HideIconPixelBorders()
+    if not iconPixelBorders then return end
+    for _, tex in pairs(iconPixelBorders) do
         tex:Hide()
     end
 end
@@ -391,12 +449,24 @@ local function ApplyPosition(cb, s, height)
 
     cb:ClearAllPoints()
     local yOfs = s.yOffset or -2
+
+    -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
+    local iconInsetLeft, iconInsetRight = 0, 0
+    if s.stylingEnabled and s.showIcon and not s.iconOffset then
+        local iconSize = height
+        if s.iconFlipSide then
+            iconInsetRight = iconSize
+        else
+            iconInsetLeft = iconSize
+        end
+    end
+
     if s.position == "above" then
-        cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, -yOfs)
-        cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", 0, -yOfs)
+        cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, -yOfs)
+        cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, -yOfs)
     else
-        cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, yOfs)
-        cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", 0, yOfs)
+        cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, yOfs)
+        cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, yOfs)
     end
 
     cb:SetHeight(height or 14)
@@ -446,15 +516,48 @@ local function DeferredReapply()
         if cb.Icon then
             cb.Icon:SetShown(s.showIcon or false)
             if s.showIcon then
-                local iSize = s.iconSize or 16
-                cb.Icon:SetSize(iSize, iSize)
-                cb.Icon:ClearAllPoints()
-                if s.iconFlipSide then
-                    cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5, 0)
+                cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                if s.iconOffset then
+                    local iSize = s.iconSize or 16
+                    cb.Icon:SetSize(iSize, iSize)
+                    cb.Icon:ClearAllPoints()
+                    local ox = s.iconOffsetX or 0
+                    local oy = s.iconOffsetY or 0
+                    if s.iconFlipSide then
+                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5 + ox, oy)
+                    else
+                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5 + ox, oy)
+                    end
                 else
-                    cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
+                    local iconSize = effectiveHeight
+                    cb.Icon:SetSize(iconSize, iconSize)
+                    cb.Icon:ClearAllPoints()
+                    if s.iconFlipSide then
+                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 0, 0)
+                    else
+                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", 0, 0)
+                    end
                 end
             end
+        end
+
+        -- Re-apply pixel borders
+        local bStyle = s.borderStyle or "blizzard"
+        if bStyle == "pixel" then
+            local bColor = s.borderColor or {0,0,0,1}
+            local bSize = s.borderSize or 1
+            if s.showIcon and not s.iconOffset then
+                ShowPixelBorders(cb, bColor, bSize, cb.Icon, s.iconFlipSide)
+            else
+                ShowPixelBorders(cb, bColor, bSize)
+            end
+            if s.showIcon and s.iconOffset then
+                ShowIconPixelBorders(cb, bColor, s.iconBorderSize or 1)
+            else
+                HideIconPixelBorders()
+            end
+        else
+            HideIconPixelBorders()
         end
 
         -- Re-apply cast time text visibility
@@ -596,8 +699,9 @@ function CooldownCompanion:RevertCastBar()
         cb.TextBorder:Show()
     end
 
-    -- Hide pixel borders and fill masks
+    -- Hide pixel borders, icon borders, and fill masks
     HidePixelBorders()
+    HideIconPixelBorders()
     HideFillMasks()
 
     -- Restore FX regions to original sizes
@@ -616,6 +720,8 @@ function CooldownCompanion:RevertCastBar()
     if cb.Icon then
         cb.Icon:Hide()
         cb.Icon:SetSize(16, 16)
+        cb.Icon:SetDrawLayer("ARTWORK", 0)
+        cb.Icon:SetTexCoord(0, 1, 0, 1)
         cb.Icon:ClearAllPoints()
         cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
     end
@@ -705,7 +811,11 @@ function CooldownCompanion:ApplyCastBarSettings()
     local effectiveHeight = settings.stylingEnabled and (settings.height or 14) or 11
     ApplyPosition(cb, settings, effectiveHeight)
     ApplySparkSize(cb, effectiveHeight)
-    ApplyFXScaling(cb, groupFrame:GetWidth(), effectiveHeight)
+    local barWidth = groupFrame:GetWidth()
+    if settings.showIcon and not settings.iconOffset and settings.stylingEnabled then
+        barWidth = barWidth - effectiveHeight
+    end
+    ApplyFXScaling(cb, barWidth, effectiveHeight)
 
     -- FX hooks (once) + suppression (always applies — user toggles for FX categories)
     InstallFXHooks(cb)
@@ -743,13 +853,29 @@ function CooldownCompanion:ApplyCastBarSettings()
         if cb.Icon then
             cb.Icon:SetShown(settings.showIcon or false)
             if settings.showIcon then
-                local iSize = settings.iconSize or 16
-                cb.Icon:SetSize(iSize, iSize)
-                cb.Icon:ClearAllPoints()
-                if settings.iconFlipSide then
-                    cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5, 0)
+                cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                if settings.iconOffset then
+                    -- Offset mode: custom size, positioned outside bar with X/Y offsets
+                    local iSize = settings.iconSize or 16
+                    cb.Icon:SetSize(iSize, iSize)
+                    cb.Icon:ClearAllPoints()
+                    local ox = settings.iconOffsetX or 0
+                    local oy = settings.iconOffsetY or 0
+                    if settings.iconFlipSide then
+                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5 + ox, oy)
+                    else
+                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5 + ox, oy)
+                    end
                 else
-                    cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
+                    -- Inline mode: icon outside bar, same height as bar
+                    local iconSize = effectiveHeight
+                    cb.Icon:SetSize(iconSize, iconSize)
+                    cb.Icon:ClearAllPoints()
+                    if settings.iconFlipSide then
+                        cb.Icon:SetPoint("LEFT", cb, "RIGHT", 0, 0)
+                    else
+                        cb.Icon:SetPoint("RIGHT", cb, "LEFT", 0, 0)
+                    end
                 end
             end
         end
@@ -763,6 +889,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         local borderStyle = settings.borderStyle or "blizzard"
         if borderStyle == "blizzard" then
             HidePixelBorders()
+            HideIconPixelBorders()
             if cb.Border then
                 cb.Border:SetAtlas("ui-castingbar-frame")
                 cb.Border:Show()
@@ -773,9 +900,22 @@ function CooldownCompanion:ApplyCastBarSettings()
             if cb.Border then
                 cb.Border:Hide()
             end
-            ShowPixelBorders(cb, settings.borderColor or { 0, 0, 0, 1 }, settings.borderSize or 1)
+            local bColor = settings.borderColor or { 0, 0, 0, 1 }
+            local bSize = settings.borderSize or 1
+            if settings.showIcon and not settings.iconOffset then
+                ShowPixelBorders(cb, bColor, bSize, cb.Icon, settings.iconFlipSide)
+            else
+                ShowPixelBorders(cb, bColor, bSize)
+            end
+            -- Icon border (offset mode only)
+            if settings.showIcon and settings.iconOffset then
+                ShowIconPixelBorders(cb, bColor, settings.iconBorderSize or 1)
+            else
+                HideIconPixelBorders()
+            end
         elseif borderStyle == "none" then
             HidePixelBorders()
+            HideIconPixelBorders()
             HideFillMasks()
             if cb.Border then
                 cb.Border:Hide()
@@ -848,12 +988,15 @@ function CooldownCompanion:ApplyCastBarSettings()
         if cb.Icon then
             cb.Icon:Hide()
             cb.Icon:SetSize(16, 16)
+            cb.Icon:SetDrawLayer("ARTWORK", 0)
+            cb.Icon:SetTexCoord(0, 1, 0, 1)
             cb.Icon:ClearAllPoints()
             cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
         end
         if cb.Spark then cb.Spark:Show() end
 
         HidePixelBorders()
+        HideIconPixelBorders()
         if cb.Border then
             cb.Border:SetAtlas("ui-castingbar-frame")
             cb.Border:Show()
