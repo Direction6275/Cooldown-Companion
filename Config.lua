@@ -2944,6 +2944,7 @@ function RefreshColumn1(preserveDrag)
                 selectedButton = nil
                 wipe(selectedButtons)
                 CS.castBarPanelActive = false
+                CooldownCompanion:StopCastBarPreview()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 if not groupContextMenu then
@@ -4622,6 +4623,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
+        CooldownCompanion:StopCastBarPreview()
         CloseDropDownMenus()
         HideAutocomplete()
     end)
@@ -4708,6 +4710,7 @@ local function CreateConfigPanel()
     castBarBtn:SetScript("OnClick", function()
         if CS.castBarPanelActive then
             CS.castBarPanelActive = false
+            CooldownCompanion:StopCastBarPreview()
         else
             CS.castBarPanelActive = true
             selectedGroup = nil
@@ -5434,6 +5437,7 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedGroups)
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
+        CooldownCompanion:StopCastBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -5447,6 +5451,7 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedGroups)
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
+        CooldownCompanion:StopCastBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -5460,6 +5465,7 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedGroups)
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
+        CooldownCompanion:StopCastBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()

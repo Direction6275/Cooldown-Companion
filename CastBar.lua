@@ -35,6 +35,8 @@ local isApplied = false
 local pixelBorders = nil
 local hooksInstalled = false
 local castEventFrame = nil
+local fillMaskLeft, fillMaskRight = nil, nil
+local isPreviewActive = false
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -60,32 +62,38 @@ local function GetPixelBorders(cb)
         tex:Hide()
         pixelBorders[side] = tex
     end
-    pixelBorders.TOP:SetHeight(1)
-    pixelBorders.TOP:SetPoint("TOPLEFT", cb, "TOPLEFT", 0, 1)
-    pixelBorders.TOP:SetPoint("TOPRIGHT", cb, "TOPRIGHT", 0, 1)
-
-    pixelBorders.BOTTOM:SetHeight(1)
-    pixelBorders.BOTTOM:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", 0, -1)
-    pixelBorders.BOTTOM:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", 0, -1)
-
-    pixelBorders.LEFT:SetWidth(1)
-    pixelBorders.LEFT:SetPoint("TOPLEFT", cb, "TOPLEFT", -1, 1)
-    pixelBorders.LEFT:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", -1, -1)
-
-    pixelBorders.RIGHT:SetWidth(1)
-    pixelBorders.RIGHT:SetPoint("TOPRIGHT", cb, "TOPRIGHT", 1, 1)
-    pixelBorders.RIGHT:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", 1, -1)
-
     return pixelBorders
 end
 
-local function ShowPixelBorders(cb, color)
+local function ShowPixelBorders(cb, color, size)
     local borders = GetPixelBorders(cb)
     local r, g, b, a = color[1], color[2], color[3], color[4]
+    size = size or 1
+
     for _, tex in pairs(borders) do
         tex:SetColorTexture(r, g, b, a)
         tex:Show()
     end
+
+    borders.TOP:SetHeight(size)
+    borders.TOP:ClearAllPoints()
+    borders.TOP:SetPoint("TOPLEFT", cb, "TOPLEFT", 0, size)
+    borders.TOP:SetPoint("TOPRIGHT", cb, "TOPRIGHT", 0, size)
+
+    borders.BOTTOM:SetHeight(size)
+    borders.BOTTOM:ClearAllPoints()
+    borders.BOTTOM:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", 0, -size)
+    borders.BOTTOM:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", 0, -size)
+
+    borders.LEFT:SetWidth(size)
+    borders.LEFT:ClearAllPoints()
+    borders.LEFT:SetPoint("TOPLEFT", cb, "TOPLEFT", -size, size)
+    borders.LEFT:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", -size, -size)
+
+    borders.RIGHT:SetWidth(size)
+    borders.RIGHT:ClearAllPoints()
+    borders.RIGHT:SetPoint("TOPRIGHT", cb, "TOPRIGHT", size, size)
+    borders.RIGHT:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", size, -size)
 end
 
 local function HidePixelBorders()
@@ -95,11 +103,51 @@ local function HidePixelBorders()
     end
 end
 
+--- Fill edge masks: thin opaque strips at the left/right edges of the StatusBar
+--- that prevent the bar fill texture from visually poking past the Blizzard border
+--- atlas when the bar is wider/taller than the designed 208x11 default.
+--- Layer: ARTWORK sublevel 1 (above fill at BORDER, below border at ARTWORK sublevel 4).
+local function EnsureFillMasks(cb)
+    if fillMaskLeft then return end
+    fillMaskLeft = cb:CreateTexture(nil, "ARTWORK", nil, 1)
+    fillMaskRight = cb:CreateTexture(nil, "ARTWORK", nil, 1)
+
+    fillMaskLeft:SetColorTexture(0, 0, 0, 1)
+    fillMaskLeft:SetWidth(2)
+    fillMaskLeft:SetPoint("TOPLEFT", cb, "TOPLEFT", 0, 0)
+    fillMaskLeft:SetPoint("BOTTOMLEFT", cb, "BOTTOMLEFT", 0, 0)
+
+    fillMaskRight:SetColorTexture(0, 0, 0, 1)
+    fillMaskRight:SetWidth(2)
+    fillMaskRight:SetPoint("TOPRIGHT", cb, "TOPRIGHT", 0, 0)
+    fillMaskRight:SetPoint("BOTTOMRIGHT", cb, "BOTTOMRIGHT", 0, 0)
+end
+
+local function ShowFillMasks(cb)
+    EnsureFillMasks(cb)
+    fillMaskLeft:Show()
+    fillMaskRight:Show()
+end
+
+local function HideFillMasks()
+    if fillMaskLeft then fillMaskLeft:Hide() end
+    if fillMaskRight then fillMaskRight:Hide() end
+end
+
+------------------------------------------------------------------------
+-- Spark sizing helper — height matches bar exactly, width stays default
+------------------------------------------------------------------------
+
+local function ApplySparkSize(cb, barHeight)
+    if not cb.Spark then return end
+    cb.Spark:SetSize(8, barHeight)
+end
+
 ------------------------------------------------------------------------
 -- Position helper (used by both Apply and DeferredReapply)
 ------------------------------------------------------------------------
 
-local function ApplyPosition(cb, s)
+local function ApplyPosition(cb, s, height)
     local groupFrame = GetAnchorGroupFrame(s)
     if not groupFrame then return end
 
@@ -116,7 +164,7 @@ local function ApplyPosition(cb, s)
         cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", 0, yOfs)
     end
 
-    cb:SetHeight(s.height or 14)
+    cb:SetHeight(height or 14)
 end
 
 ------------------------------------------------------------------------
@@ -132,43 +180,68 @@ local function DeferredReapply()
     local s = GetCastBarSettings()
     if not s or not s.enabled then return end
 
+    -- Effective height: custom when styling on, Blizzard default when off
+    local effectiveHeight = s.stylingEnabled and (s.height or 14) or 11
+
     -- Re-position (OnShow's AddManagedFrame may have repositioned us)
-    ApplyPosition(cb, s)
+    ApplyPosition(cb, s, effectiveHeight)
 
-    -- Re-apply custom bar texture (Blizzard resets to atlas on each cast event)
-    if s.barTexture and s.barTexture ~= "" then
-        cb:SetStatusBarTexture(s.barTexture)
-    end
+    -- Spark sizing (technical — always applies regardless of styling)
+    ApplySparkSize(cb, effectiveHeight)
 
-    -- Re-apply custom bar color
-    local bc = s.barColor
-    if bc then
-        cb:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4])
-    end
-
-    -- Re-apply icon visibility (Blizzard's UpdateIconShown reads self.showIcon
-    -- during OnEvent — we never touch showIcon, so re-set via C method on child)
-    if cb.Icon then
-        cb.Icon:SetShown(s.showIcon or false)
-    end
-
-    -- Re-apply cast time text visibility (we never touch showCastTimeSetting)
-    if cb.CastTimeText then
-        if s.showCastTimeText then
-            cb.CastTimeText:SetShown(cb.casting or cb.channeling or false)
-        else
-            cb.CastTimeText:Hide()
+    if s.stylingEnabled then
+        -- Re-apply custom bar texture (Blizzard resets to atlas on each cast event)
+        if s.barTexture and s.barTexture ~= "" then
+            cb:SetStatusBarTexture(s.barTexture)
         end
-    end
 
-    -- Re-hide spark if user wants it hidden
-    if not s.showSpark and cb.Spark then
-        cb.Spark:Hide()
-    end
+        -- Re-apply custom bar color
+        local bc = s.barColor
+        if bc then
+            cb:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4])
+        end
 
-    -- Re-hide TextBorder
-    if cb.TextBorder then
-        cb.TextBorder:Hide()
+        -- Re-apply icon visibility, size, and position
+        if cb.Icon then
+            cb.Icon:SetShown(s.showIcon or false)
+            if s.showIcon then
+                local iSize = s.iconSize or 16
+                cb.Icon:SetSize(iSize, iSize)
+                cb.Icon:ClearAllPoints()
+                if s.iconFlipSide then
+                    cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5, 0)
+                else
+                    cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
+                end
+            end
+        end
+
+        -- Re-apply cast time text visibility
+        if cb.CastTimeText then
+            if s.showCastTimeText then
+                cb.CastTimeText:SetShown(cb.casting or cb.channeling or false)
+            else
+                cb.CastTimeText:Hide()
+            end
+        end
+
+        -- Re-apply spark visibility
+        if not s.showSpark and cb.Spark then
+            cb.Spark:Hide()
+        end
+
+        -- Re-hide TextBorder
+        if cb.TextBorder then
+            cb.TextBorder:Hide()
+        end
+
+        -- Re-show fill masks based on border style
+        if (s.borderStyle or "blizzard") == "blizzard" then
+            ShowFillMasks(cb)
+        end
+    else
+        -- Anchoring-only: just show fill masks (Blizzard border at non-standard width)
+        ShowFillMasks(cb)
     end
 end
 
@@ -186,6 +259,10 @@ local function EnsureCastEventFrame()
     castEventFrame = CreateFrame("Frame")
     castEventFrame:SetScript("OnEvent", function(self, event, unit)
         if unit and unit ~= "player" then return end
+        -- Real cast started — end preview if active
+        if isPreviewActive then
+            isPreviewActive = false
+        end
         ScheduleReapply()
     end)
     castEventFrame:Hide()
@@ -265,17 +342,25 @@ function CooldownCompanion:RevertCastBar()
         cb.TextBorder:Show()
     end
 
-    -- Hide pixel borders
+    -- Hide pixel borders and fill masks
     HidePixelBorders()
+    HideFillMasks()
 
-    -- Restore spark visibility
+    -- End preview if active
+    isPreviewActive = false
+
+    -- Restore spark visibility and size (CLASSIC: 8x20)
     if cb.Spark then
+        cb.Spark:SetSize(8, 20)
         cb.Spark:Show()
     end
 
-    -- Restore icon (CLASSIC hides it)
+    -- Restore icon (CLASSIC: hidden, 16x16, left side)
     if cb.Icon then
         cb.Icon:Hide()
+        cb.Icon:SetSize(16, 16)
+        cb.Icon:ClearAllPoints()
+        cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
     end
 
     -- Restore text to CLASSIC defaults
@@ -357,113 +442,178 @@ function CooldownCompanion:ApplyCastBarSettings()
     cb:SetFixedFrameStrata(true)
     cb:SetFrameStrata("HIGH")
 
-    -- Position via two-point anchoring
-    ApplyPosition(cb, settings)
+    -- ---- ANCHORING (always applied when enabled) ----
+    -- Height: use custom setting when styling is on, Blizzard default (11) when off
+    local effectiveHeight = settings.stylingEnabled and (settings.height or 14) or 11
+    ApplyPosition(cb, settings, effectiveHeight)
+    ApplySparkSize(cb, effectiveHeight)
 
-    -- Bar fill color (C widget method — safe)
-    local bc = settings.barColor
-    if bc then
-        cb:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4])
-    end
+    if settings.stylingEnabled then
+        -- ---- STYLING (optional layer) ----
 
-    -- Bar fill texture (C widget method — safe)
-    local tex = settings.barTexture
-    if tex and tex ~= "" then
-        cb:SetStatusBarTexture(tex)
-    end
-
-    -- Background color (C methods on child — safe)
-    if cb.Background then
-        local bgc = settings.backgroundColor
-        if bgc then
-            cb.Background:SetAtlas(nil)
-            cb.Background:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
-            cb.Background:ClearAllPoints()
-            cb.Background:SetPoint("TOPLEFT", 0, 0)
-            cb.Background:SetPoint("BOTTOMRIGHT", 0, 0)
+        -- Bar fill color (C widget method — safe)
+        local bc = settings.barColor
+        if bc then
+            cb:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4])
         end
-    end
 
-    -- Icon visibility — C method on CHILD, not SetIconShown()
-    -- (SetIconShown writes self.showIcon which taints OnEvent via UpdateIconShown)
-    if cb.Icon then
-        cb.Icon:SetShown(settings.showIcon or false)
-    end
+        -- Bar fill texture (C widget method — safe)
+        local tex = settings.barTexture
+        if tex and tex ~= "" then
+            cb:SetStatusBarTexture(tex)
+        end
 
-    -- Spark visibility (C method on child — safe)
-    if not settings.showSpark and cb.Spark then
-        cb.Spark:Hide()
-    end
+        -- Background color (C methods on child — safe)
+        if cb.Background then
+            local bgc = settings.backgroundColor
+            if bgc then
+                cb.Background:SetAtlas(nil)
+                cb.Background:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
+                cb.Background:ClearAllPoints()
+                cb.Background:SetPoint("TOPLEFT", 0, 0)
+                cb.Background:SetPoint("BOTTOMRIGHT", 0, 0)
+            end
+        end
 
-    -- Border style
-    local borderStyle = settings.borderStyle or "blizzard"
-    if borderStyle == "blizzard" then
+        -- Icon visibility, size, and position — C methods on CHILD
+        if cb.Icon then
+            cb.Icon:SetShown(settings.showIcon or false)
+            if settings.showIcon then
+                local iSize = settings.iconSize or 16
+                cb.Icon:SetSize(iSize, iSize)
+                cb.Icon:ClearAllPoints()
+                if settings.iconFlipSide then
+                    cb.Icon:SetPoint("LEFT", cb, "RIGHT", 5, 0)
+                else
+                    cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
+                end
+            end
+        end
+
+        -- Spark visibility
+        if not settings.showSpark and cb.Spark then
+            cb.Spark:Hide()
+        end
+
+        -- Border style
+        local borderStyle = settings.borderStyle or "blizzard"
+        if borderStyle == "blizzard" then
+            HidePixelBorders()
+            if cb.Border then
+                cb.Border:SetAtlas("ui-castingbar-frame")
+                cb.Border:Show()
+            end
+            ShowFillMasks(cb)
+        elseif borderStyle == "pixel" then
+            HideFillMasks()
+            if cb.Border then
+                cb.Border:Hide()
+            end
+            ShowPixelBorders(cb, settings.borderColor or { 0, 0, 0, 1 }, settings.borderSize or 1)
+        elseif borderStyle == "none" then
+            HidePixelBorders()
+            HideFillMasks()
+            if cb.Border then
+                cb.Border:Hide()
+            end
+        end
+
+        -- Hide TextBorder
+        if cb.TextBorder then
+            cb.TextBorder:Hide()
+        end
+
+        -- Spell name text (C methods on child — safe)
+        if cb.Text then
+            if settings.showNameText then
+                cb.Text:Show()
+                local nf = settings.nameFont or "Fonts\\FRIZQT__.TTF"
+                local ns = settings.nameFontSize or 10
+                local no = settings.nameFontOutline or "OUTLINE"
+                cb.Text:SetFont(nf, ns, no)
+                cb.Text:ClearAllPoints()
+                cb.Text:SetPoint("LEFT", cb, "LEFT", 4, 0)
+                cb.Text:SetPoint("RIGHT", cb, "RIGHT", -4, 0)
+                cb.Text:SetWidth(0)
+                cb.Text:SetHeight(0)
+                cb.Text:SetJustifyH("LEFT")
+                local nc = settings.nameFontColor
+                if nc then
+                    cb.Text:SetVertexColor(nc[1], nc[2], nc[3], nc[4])
+                end
+            else
+                cb.Text:Hide()
+            end
+        end
+
+        -- Cast time text — C methods only, NOT showCastTimeSetting
+        if cb.CastTimeText then
+            if settings.showCastTimeText then
+                local ctf = settings.castTimeFont or "Fonts\\FRIZQT__.TTF"
+                local cts = settings.castTimeFontSize or 10
+                local cto = settings.castTimeFontOutline or "OUTLINE"
+                cb.CastTimeText:SetFont(ctf, cts, cto)
+                cb.CastTimeText:ClearAllPoints()
+                local xOfs = settings.castTimeXOffset or 0
+                local ctYOfs = settings.castTimeYOffset or 0
+                cb.CastTimeText:SetPoint("RIGHT", cb, "RIGHT", -4 + xOfs, ctYOfs)
+                cb.CastTimeText:SetJustifyH("RIGHT")
+                local ctc = settings.castTimeFontColor
+                if ctc then
+                    cb.CastTimeText:SetVertexColor(ctc[1], ctc[2], ctc[3], ctc[4])
+                end
+                cb.CastTimeText:SetShown(cb.casting or cb.channeling or false)
+            else
+                cb.CastTimeText:Hide()
+            end
+        end
+    else
+        -- ---- ANCHORING ONLY — restore Blizzard default visuals ----
+        -- (needed to undo styling if it was previously enabled)
+        cb:SetStatusBarTexture("ui-castingbar-filling-standard")
+        cb:SetStatusBarColor(1, 1, 1, 1)
+
+        if cb.Background then
+            cb.Background:SetAtlas("ui-castingbar-background")
+            cb.Background:SetVertexColor(1, 1, 1, 1)
+            cb.Background:ClearAllPoints()
+            cb.Background:SetPoint("TOPLEFT", -1, 1)
+            cb.Background:SetPoint("BOTTOMRIGHT", 1, -1)
+        end
+
+        if cb.Icon then
+            cb.Icon:Hide()
+            cb.Icon:SetSize(16, 16)
+            cb.Icon:ClearAllPoints()
+            cb.Icon:SetPoint("RIGHT", cb, "LEFT", -5, 0)
+        end
+        if cb.Spark then cb.Spark:Show() end
+
         HidePixelBorders()
         if cb.Border then
             cb.Border:SetAtlas("ui-castingbar-frame")
             cb.Border:Show()
         end
-    elseif borderStyle == "pixel" then
-        if cb.Border then
-            cb.Border:Hide()
-        end
-        ShowPixelBorders(cb, settings.borderColor or { 0, 0, 0, 1 })
-    elseif borderStyle == "none" then
-        HidePixelBorders()
-        if cb.Border then
-            cb.Border:Hide()
-        end
-    end
+        ShowFillMasks(cb)
 
-    -- Hide TextBorder (C method — safe)
-    if cb.TextBorder then
-        cb.TextBorder:Hide()
-    end
+        if cb.TextBorder then cb.TextBorder:Show() end
 
-    -- Spell name text (C methods on child — safe)
-    if cb.Text then
-        if settings.showNameText then
+        -- Restore text to CLASSIC defaults
+        if cb.Text then
             cb.Text:Show()
-            local nf = settings.nameFont or "Fonts\\FRIZQT__.TTF"
-            local ns = settings.nameFontSize or 10
-            local no = settings.nameFontOutline or "OUTLINE"
-            cb.Text:SetFont(nf, ns, no)
             cb.Text:ClearAllPoints()
-            cb.Text:SetPoint("LEFT", cb, "LEFT", 4, 0)
-            cb.Text:SetPoint("RIGHT", cb, "RIGHT", -4, 0)
-            cb.Text:SetWidth(0)
-            cb.Text:SetHeight(0)
-            cb.Text:SetJustifyH("LEFT")
-            local nc = settings.nameFontColor
-            if nc then
-                cb.Text:SetVertexColor(nc[1], nc[2], nc[3], nc[4])
-            end
-        else
-            cb.Text:Hide()
+            cb.Text:SetWidth(185)
+            cb.Text:SetHeight(16)
+            cb.Text:SetPoint("TOP", 0, -10)
+            cb.Text:SetFontObject("GameFontHighlightSmall")
+            cb.Text:SetVertexColor(1, 1, 1, 1)
         end
-    end
 
-    -- Cast time text — C methods only, NOT showCastTimeSetting
-    -- (showCastTimeSetting is read by UpdateCastTimeTextShown in OnEvent context)
-    if cb.CastTimeText then
-        if settings.showCastTimeText then
-            local ctf = settings.castTimeFont or "Fonts\\FRIZQT__.TTF"
-            local cts = settings.castTimeFontSize or 10
-            local cto = settings.castTimeFontOutline or "OUTLINE"
-            cb.CastTimeText:SetFont(ctf, cts, cto)
+        if cb.CastTimeText then
+            cb.CastTimeText:SetFontObject("GameFontHighlightLarge")
             cb.CastTimeText:ClearAllPoints()
-            local xOfs = settings.castTimeXOffset or 0
-            local ctYOfs = settings.castTimeYOffset or 0
-            cb.CastTimeText:SetPoint("RIGHT", cb, "RIGHT", -4 + xOfs, ctYOfs)
-            cb.CastTimeText:SetJustifyH("RIGHT")
-            local ctc = settings.castTimeFontColor
-            if ctc then
-                cb.CastTimeText:SetVertexColor(ctc[1], ctc[2], ctc[3], ctc[4])
-            end
-            -- Show if currently casting
-            cb.CastTimeText:SetShown(cb.casting or cb.channeling or false)
-        else
-            cb.CastTimeText:Hide()
+            cb.CastTimeText:SetPoint("LEFT", cb, "RIGHT", 10, 0)
+            cb.CastTimeText:SetVertexColor(1, 1, 1, 1)
         end
     end
 
@@ -483,6 +633,94 @@ function CooldownCompanion:EvaluateCastBar()
         return
     end
     self:ApplyCastBarSettings()
+end
+
+------------------------------------------------------------------------
+-- Preview: show the cast bar with fake cast data for settings preview.
+-- State is ephemeral (local flag, not saved to DB).  Preview ends when:
+--   • a real cast event fires
+--   • the user unchecks Preview
+--   • the cast bar panel is deactivated / config panel closed
+--   • the feature is disabled / anchor reverts
+------------------------------------------------------------------------
+
+local function ApplyPreview()
+    if not isApplied then return end
+    local cb = PlayerCastingBarFrame
+    if not cb then return end
+    local s = GetCastBarSettings()
+    if not s or not s.enabled then return end
+
+    -- Ensure the managed frame system doesn't fight us
+    UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
+
+    cb:SetAlpha(1)
+    cb:Show()
+    cb:SetMinMaxValues(0, 100)
+    cb:SetValue(65)
+
+    -- Spell name text
+    if cb.Text then
+        cb.Text:SetText("Preview Cast")
+        cb.Text:Show()
+    end
+
+    -- Cast time text (always show in preview so the user can see layout)
+    if cb.CastTimeText then
+        cb.CastTimeText:SetText("1.5 s")
+        if s.stylingEnabled then
+            cb.CastTimeText:SetShown(s.showCastTimeText ~= false)
+        else
+            cb.CastTimeText:Show()
+        end
+    end
+
+    -- Spark at the fill edge (65% of bar width)
+    if cb.Spark then
+        local showSpark = (not s.stylingEnabled) or (s.showSpark ~= false)
+        if showSpark then
+            local sparkPos = 0.65 * cb:GetWidth()
+            cb.Spark:Show()
+            cb.Spark:ClearAllPoints()
+            cb.Spark:SetPoint("CENTER", cb, "LEFT", sparkPos, cb.Spark.offsetY or 0)
+        else
+            cb.Spark:Hide()
+        end
+    end
+
+    -- TextBorder: hide only when styling is active
+    if s.stylingEnabled and cb.TextBorder then
+        cb.TextBorder:Hide()
+    end
+
+    -- Fill masks
+    local borderStyle = s.stylingEnabled and (s.borderStyle or "blizzard") or "blizzard"
+    if borderStyle == "blizzard" then
+        ShowFillMasks(cb)
+    end
+end
+
+function CooldownCompanion:StartCastBarPreview()
+    isPreviewActive = true
+    self:ApplyCastBarSettings()
+    ApplyPreview()
+end
+
+function CooldownCompanion:StopCastBarPreview()
+    if not isPreviewActive then return end
+    isPreviewActive = false
+
+    local cb = PlayerCastingBarFrame
+    if not cb then return end
+
+    -- If not actually casting, hide the bar
+    if not (cb.casting or cb.channeling) then
+        cb:Hide()
+    end
+end
+
+function CooldownCompanion:IsCastBarPreviewActive()
+    return isPreviewActive
 end
 
 ------------------------------------------------------------------------
