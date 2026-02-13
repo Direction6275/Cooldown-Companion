@@ -5051,8 +5051,13 @@ local function CreateConfigPanel()
     settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Group Settings")
-        GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
+        if CS.castBarPanelActive then
+            GameTooltip:AddLine("Cast Bar Settings")
+            GameTooltip:AddLine("These settings configure the cast bar overlay.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Group Settings")
+            GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     settingsInfoBtn:SetScript("OnLeave", function()
@@ -5344,6 +5349,11 @@ function CooldownCompanion:RefreshConfigPanel()
     configFrame.versionText:SetText("v1.3  |  " .. (self.db:GetCurrentProfile() or "Default"))
     if configFrame.UpdateCastBarBtnHighlight then
         configFrame.UpdateCastBarBtnHighlight()
+    end
+    if CS.castBarPanelActive then
+        configFrame.col3:SetTitle("Cast Bar Settings")
+    else
+        configFrame.col3:SetTitle("Group Settings")
     end
     RefreshColumn1()
     RefreshColumn2()
