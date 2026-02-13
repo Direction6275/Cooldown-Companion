@@ -463,6 +463,7 @@ local function ApplyPosition(cb, s, height)
 
     cb:ClearAllPoints()
     local yOfs = s.yOffset or -2
+    local stackOffset = CooldownCompanion:GetAnchorStackOffset("castBar")
 
     -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
     local iconInsetLeft, iconInsetRight = 0, 0
@@ -476,11 +477,11 @@ local function ApplyPosition(cb, s, height)
     end
 
     if s.position == "above" then
-        cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, -yOfs)
-        cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, -yOfs)
+        cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, -yOfs + stackOffset)
+        cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, -yOfs + stackOffset)
     else
-        cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, yOfs)
-        cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, yOfs)
+        cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, yOfs - stackOffset)
+        cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, yOfs - stackOffset)
     end
 
     cb:SetHeight(height or 14)

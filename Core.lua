@@ -236,6 +236,28 @@ local defaults = {
         locked = false,
         auraDurationCache = {},
         cdmHidden = false,
+        resourceBars = {
+            enabled = false,
+            anchorGroupId = nil,
+            position = "below",
+            yOffset = -2,
+            barHeight = 12,
+            barSpacing = 1,
+            barTexture = "Interface\\BUTTONS\\WHITE8X8",
+            backgroundColor = { 0, 0, 0, 0.5 },
+            borderStyle = "pixel",
+            borderColor = { 0, 0, 0, 1 },
+            borderSize = 1,
+            segmentGap = 2,
+            hideManaForNonHealer = false,
+            stackOrder = "cast_first",
+            resources = {},
+            textFont = "Fonts\\FRIZQT__.TTF",
+            textFontSize = 10,
+            textFontOutline = "OUTLINE",
+            textFontColor = { 1, 1, 1, 1 },
+            textFormat = "current_max",
+        },
         castBar = {
             enabled = false,
             stylingEnabled = false,
@@ -1082,6 +1104,62 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
         self:UpdateItemSlotCache(slot)
     end
     self:OnKeybindsChanged()
+end
+
+------------------------------------------------------------------------
+-- Stacking coordination (CastBar + ResourceBars on same anchor group)
+------------------------------------------------------------------------
+local pendingStackUpdate = false
+
+function CooldownCompanion:GetCastBarHeight()
+    local s = self.db and self.db.profile and self.db.profile.castBar
+    if not s or not s.enabled or not s.anchorGroupId then return 0 end
+    local gf = self.groupFrames[s.anchorGroupId]
+    if not gf or not gf:IsShown() then return 0 end
+    local group = self.db.profile.groups[s.anchorGroupId]
+    if not group or group.displayMode ~= "icons" then return 0 end
+    return s.stylingEnabled and (s.height or 14) or 11
+end
+
+function CooldownCompanion:GetAnchorStackOffset(moduleId)
+    local cb = self.db and self.db.profile and self.db.profile.castBar
+    local rb = self.db and self.db.profile and self.db.profile.resourceBars
+    if not cb or not rb then return 0 end
+    if not cb.enabled or not rb.enabled then return 0 end
+    if not cb.anchorGroupId or not rb.anchorGroupId then return 0 end
+    if cb.anchorGroupId ~= rb.anchorGroupId then return 0 end
+
+    local cbPos = cb.position or "below"
+    local rbPos = rb.position or "below"
+    if cbPos ~= rbPos then return 0 end
+
+    local order = rb.stackOrder or "cast_first"
+
+    if moduleId == "castBar" then
+        if order == "resource_first" then
+            return self:GetResourceBarsTotalHeight()
+        end
+        return 0
+    elseif moduleId == "resourceBars" then
+        if order == "cast_first" then
+            local cbHeight = self:GetCastBarHeight()
+            if cbHeight > 0 then
+                return cbHeight + math.abs(cb.yOffset or -2)
+            end
+        end
+        return 0
+    end
+    return 0
+end
+
+function CooldownCompanion:UpdateAnchorStacking()
+    if pendingStackUpdate then return end
+    pendingStackUpdate = true
+    C_Timer.After(0, function()
+        pendingStackUpdate = false
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:EvaluateResourceBars()
+    end)
 end
 
 -- Masque Helper Functions

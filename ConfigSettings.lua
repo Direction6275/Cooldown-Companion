@@ -1675,8 +1675,9 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     scroll:AddChild(moveBtn)
 end
 
--- Forward declaration — defined after all collapsible-section state
+-- Forward declarations — defined after all collapsible-section state
 local BuildCastBarAnchoringPanel
+local BuildResourceBarAnchoringPanel
 
 local function RefreshButtonSettingsColumn()
     local cf = CS.configFrame
@@ -1689,6 +1690,7 @@ local function RefreshButtonSettingsColumn()
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
         if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
+        if bsCol.resourceBarScroll then bsCol.resourceBarScroll.frame:Hide() end
 
         if not bsCol.castBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -1708,6 +1710,32 @@ local function RefreshButtonSettingsColumn()
     -- Hide cast bar scroll when not in cast bar mode
     if bsCol.castBarScroll then
         bsCol.castBarScroll.frame:Hide()
+    end
+
+    -- Resource bar overlay: replace button settings with resource anchoring panel
+    if CS.resourceBarPanelActive then
+        bsCol.bsTabGroup.frame:Hide()
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+        if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
+
+        if not bsCol.resourceBarScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(bsCol.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
+            bsCol.resourceBarScroll = scroll
+        end
+        bsCol.resourceBarScroll:ReleaseChildren()
+        bsCol.resourceBarScroll.frame:Show()
+        BuildResourceBarAnchoringPanel(bsCol.resourceBarScroll)
+        return
+    end
+
+    -- Hide resource bar scroll when not in resource bar mode
+    if bsCol.resourceBarScroll then
+        bsCol.resourceBarScroll.frame:Hide()
     end
 
     -- Check for multiselect
@@ -4688,6 +4716,596 @@ local function BuildCastBarStylingPanel(container)
     end
 end
 
+------------------------------------------------------------------------
+-- RESOURCE BAR: Anchoring Panel
+------------------------------------------------------------------------
+
+local resourceBarCollapsedSections = {}
+
+-- Power names + segmented check for config UI (mirrors ResourceBar.lua constants)
+local POWER_NAMES_CONFIG = {
+    [0]  = "Mana",
+    [1]  = "Rage",
+    [2]  = "Focus",
+    [3]  = "Energy",
+    [4]  = "Combo Points",
+    [5]  = "Runes",
+    [6]  = "Runic Power",
+    [7]  = "Soul Shards",
+    [8]  = "Lunar Power",
+    [9]  = "Holy Power",
+    [11] = "Maelstrom",
+    [12] = "Chi",
+    [13] = "Insanity",
+    [16] = "Arcane Charges",
+    [17] = "Fury",
+    [18] = "Pain",
+    [19] = "Essence",
+}
+
+local SEGMENTED_TYPES_CONFIG = {
+    [4]  = true, [5]  = true, [7]  = true, [9]  = true,
+    [12] = true, [16] = true, [19] = true,
+}
+
+local DEFAULT_POWER_COLORS_CONFIG = {
+    [0]  = { 0, 0, 1 },
+    [1]  = { 1, 0, 0 },
+    [2]  = { 1, 0.5, 0.25 },
+    [3]  = { 1, 1, 0 },
+    [4]  = { 1, 0.96, 0.41 },
+    [5]  = { 0.5, 0.5, 0.5 },
+    [6]  = { 0, 0.82, 1 },
+    [7]  = { 0.5, 0.32, 0.55 },
+    [8]  = { 0.3, 0.52, 0.9 },
+    [9]  = { 0.95, 0.9, 0.6 },
+    [11] = { 0, 0.5, 1 },
+    [12] = { 0.71, 1, 0.92 },
+    [13] = { 0.4, 0, 0.8 },
+    [16] = { 0.1, 0.1, 0.98 },
+    [17] = { 0.788, 0.259, 0.992 },
+    [18] = { 1, 0.612, 0 },
+    [19] = { 0.286, 0.773, 0.541 },
+}
+
+-- Class-to-resource mapping for config UI
+local CLASS_RESOURCES_CONFIG = {
+    [1]  = { 1 },
+    [2]  = { 9, 0 },
+    [3]  = { 2 },
+    [4]  = { 4, 3 },
+    [5]  = { 0 },
+    [6]  = { 5, 6 },
+    [7]  = { 0 },
+    [8]  = { 0 },
+    [9]  = { 7, 0 },
+    [10] = { 0 },
+    [11] = { 1, 4, 3, 8, 0 },  -- All possible druid resources
+    [12] = { 17 },
+    [13] = { 19, 0 },
+}
+
+local SPEC_RESOURCES_CONFIG = {
+    [258] = { 13, 0 },
+    [262] = { 11, 0 },
+    [263] = { 11, 0 },
+    [62]  = { 16, 0 },
+    [269] = { 12, 3 },
+    [268] = { 3 },
+    [581] = { 18 },
+}
+
+local function GetConfigActiveResources()
+    local _, _, classID = UnitClass("player")
+    if not classID then return {} end
+
+    local specIdx = C_SpecializationInfo.GetSpecialization()
+    local specID
+    if specIdx then
+        specID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+    end
+
+    -- For Druid, show all possible resources (user can toggle each)
+    if classID == 11 then
+        return CLASS_RESOURCES_CONFIG[11]
+    end
+
+    if specID and SPEC_RESOURCES_CONFIG[specID] then
+        return SPEC_RESOURCES_CONFIG[specID]
+    end
+
+    return CLASS_RESOURCES_CONFIG[classID] or {}
+end
+
+BuildResourceBarAnchoringPanel = function(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.resourceBars
+
+    -- Enable Resource Bars
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Enable Resource Bars")
+    enableCb:SetValue(settings.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.enabled = val
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    if not settings.enabled then return end
+
+    -- Anchor Group dropdown
+    local groupDropValues = { [""] = "None" }
+    local groupDropOrder = { "" }
+    for groupId, group in pairs(db.groups) do
+        if group.displayMode == "icons" and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId) then
+            groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
+            table.insert(groupDropOrder, tostring(groupId))
+        end
+    end
+
+    local anchorDrop = AceGUI:Create("Dropdown")
+    anchorDrop:SetLabel("Anchor to Group")
+    anchorDrop:SetList(groupDropValues, groupDropOrder)
+    anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
+    anchorDrop:SetFullWidth(true)
+    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.anchorGroupId = val ~= "" and tonumber(val) or nil
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorDrop)
+
+    -- Preview toggle (ephemeral)
+    local previewCb = AceGUI:Create("CheckBox")
+    previewCb:SetLabel("Preview Resource Bars")
+    previewCb:SetValue(CooldownCompanion:IsResourceBarPreviewActive())
+    previewCb:SetFullWidth(true)
+    previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if val then
+            CooldownCompanion:StartResourceBarPreview()
+        else
+            CooldownCompanion:StopResourceBarPreview()
+        end
+    end)
+    container:AddChild(previewCb)
+
+    -- ============ Position Section ============
+    local posHeading = AceGUI:Create("Heading")
+    posHeading:SetText("Position")
+    posHeading:SetFullWidth(true)
+    container:AddChild(posHeading)
+
+    local posKey = "rb_position"
+    local posCollapsed = resourceBarCollapsedSections[posKey]
+
+    local posCollapseBtn = CreateFrame("Button", nil, posHeading.frame)
+    posCollapseBtn:SetSize(16, 16)
+    posCollapseBtn:SetPoint("LEFT", posHeading.label, "RIGHT", 4, 0)
+    posHeading.right:SetPoint("LEFT", posCollapseBtn, "RIGHT", 4, 0)
+    local posArrow = posCollapseBtn:CreateTexture(nil, "ARTWORK")
+    posArrow:SetSize(12, 12)
+    posArrow:SetPoint("CENTER")
+    posArrow:SetAtlas(posCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    posCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[posKey] = not resourceBarCollapsedSections[posKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not posCollapsed then
+        local posDrop = AceGUI:Create("Dropdown")
+        posDrop:SetLabel("Position")
+        posDrop:SetList({ below = "Below Group", above = "Above Group" }, { "below", "above" })
+        posDrop:SetValue(settings.position or "below")
+        posDrop:SetFullWidth(true)
+        posDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.position = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(posDrop)
+
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(-50, 50, 1)
+        ySlider:SetValue(settings.yOffset or -2)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.yOffset = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(ySlider)
+
+        local hSlider = AceGUI:Create("Slider")
+        hSlider:SetLabel("Bar Height")
+        hSlider:SetSliderValues(4, 40, 1)
+        hSlider:SetValue(settings.barHeight or 12)
+        hSlider:SetFullWidth(true)
+        hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.barHeight = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(hSlider)
+
+        local spacingSlider = AceGUI:Create("Slider")
+        spacingSlider:SetLabel("Bar Spacing")
+        spacingSlider:SetSliderValues(0, 10, 1)
+        spacingSlider:SetValue(settings.barSpacing or 1)
+        spacingSlider:SetFullWidth(true)
+        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.barSpacing = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(spacingSlider)
+    end
+
+    -- ============ Stacking Section ============
+    local stackHeading = AceGUI:Create("Heading")
+    stackHeading:SetText("Stacking")
+    stackHeading:SetFullWidth(true)
+    container:AddChild(stackHeading)
+
+    local stackKey = "rb_stacking"
+    local stackCollapsed = resourceBarCollapsedSections[stackKey]
+
+    local stackCollapseBtn = CreateFrame("Button", nil, stackHeading.frame)
+    stackCollapseBtn:SetSize(16, 16)
+    stackCollapseBtn:SetPoint("LEFT", stackHeading.label, "RIGHT", 4, 0)
+    stackHeading.right:SetPoint("LEFT", stackCollapseBtn, "RIGHT", 4, 0)
+    local stackArrow = stackCollapseBtn:CreateTexture(nil, "ARTWORK")
+    stackArrow:SetSize(12, 12)
+    stackArrow:SetPoint("CENTER")
+    stackArrow:SetAtlas(stackCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    stackCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[stackKey] = not resourceBarCollapsedSections[stackKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not stackCollapsed then
+        local stackDrop = AceGUI:Create("Dropdown")
+        stackDrop:SetLabel("Stack Order")
+        stackDrop:SetList({
+            cast_first = "Cast Bar First",
+            resource_first = "Resource Bars First",
+        }, { "cast_first", "resource_first" })
+        stackDrop:SetValue(settings.stackOrder or "cast_first")
+        stackDrop:SetFullWidth(true)
+        stackDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.stackOrder = val
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(stackDrop)
+    end
+
+    -- ============ Resource Toggles Section ============
+    local toggleHeading = AceGUI:Create("Heading")
+    toggleHeading:SetText("Resource Toggles")
+    toggleHeading:SetFullWidth(true)
+    container:AddChild(toggleHeading)
+
+    local toggleKey = "rb_toggles"
+    local toggleCollapsed = resourceBarCollapsedSections[toggleKey]
+
+    local toggleCollapseBtn = CreateFrame("Button", nil, toggleHeading.frame)
+    toggleCollapseBtn:SetSize(16, 16)
+    toggleCollapseBtn:SetPoint("LEFT", toggleHeading.label, "RIGHT", 4, 0)
+    toggleHeading.right:SetPoint("LEFT", toggleCollapseBtn, "RIGHT", 4, 0)
+    local toggleArrow = toggleCollapseBtn:CreateTexture(nil, "ARTWORK")
+    toggleArrow:SetSize(12, 12)
+    toggleArrow:SetPoint("CENTER")
+    toggleArrow:SetAtlas(toggleCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    toggleCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[toggleKey] = not resourceBarCollapsedSections[toggleKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not toggleCollapsed then
+        local manaCb = AceGUI:Create("CheckBox")
+        manaCb:SetLabel("Hide Mana for Non-Healer Specs")
+        manaCb:SetValue(settings.hideManaForNonHealer or false)
+        manaCb:SetFullWidth(true)
+        manaCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.hideManaForNonHealer = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(manaCb)
+
+        -- Per-resource enable/disable
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            if not settings.resources[pt] then
+                settings.resources[pt] = {}
+            end
+            local enabled = settings.resources[pt].enabled ~= false
+
+            local resCb = AceGUI:Create("CheckBox")
+            resCb:SetLabel("Show " .. name)
+            resCb:SetValue(enabled)
+            resCb:SetFullWidth(true)
+            resCb:SetCallback("OnValueChanged", function(widget, event, val)
+                if not settings.resources[pt] then
+                    settings.resources[pt] = {}
+                end
+                settings.resources[pt].enabled = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(resCb)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- RESOURCE BAR: Styling Panel
+------------------------------------------------------------------------
+
+local function BuildResourceBarStylingPanel(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.resourceBars
+
+    if not settings.enabled then
+        local label = AceGUI:Create("Label")
+        label:SetText("Enable Resource Bars to configure styling.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    -- Bar Texture
+    local texDrop = AceGUI:Create("Dropdown")
+    texDrop:SetLabel("Bar Texture")
+    texDrop:SetList(barTextureOptions)
+    texDrop:SetValue(settings.barTexture or "Interface\\BUTTONS\\WHITE8X8")
+    texDrop:SetFullWidth(true)
+    texDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.barTexture = val
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(texDrop)
+
+    -- Background Color
+    local bgColorPicker = AceGUI:Create("ColorPicker")
+    bgColorPicker:SetLabel("Background Color")
+    local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    bgColorPicker:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
+    bgColorPicker:SetHasAlpha(true)
+    bgColorPicker:SetFullWidth(true)
+    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        settings.backgroundColor = {r, g, b, a}
+    end)
+    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        settings.backgroundColor = {r, g, b, a}
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(bgColorPicker)
+
+    -- ============ Border Section ============
+    local borderHeading = AceGUI:Create("Heading")
+    borderHeading:SetText("Border")
+    borderHeading:SetFullWidth(true)
+    container:AddChild(borderHeading)
+
+    local borderKey = "rb_border"
+    local borderCollapsed = resourceBarCollapsedSections[borderKey]
+
+    local borderCollapseBtn = CreateFrame("Button", nil, borderHeading.frame)
+    borderCollapseBtn:SetSize(16, 16)
+    borderCollapseBtn:SetPoint("LEFT", borderHeading.label, "RIGHT", 4, 0)
+    borderHeading.right:SetPoint("LEFT", borderCollapseBtn, "RIGHT", 4, 0)
+    local borderArrow = borderCollapseBtn:CreateTexture(nil, "ARTWORK")
+    borderArrow:SetSize(12, 12)
+    borderArrow:SetPoint("CENTER")
+    borderArrow:SetAtlas(borderCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    borderCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[borderKey] = not resourceBarCollapsedSections[borderKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not borderCollapsed then
+        local borderDrop = AceGUI:Create("Dropdown")
+        borderDrop:SetLabel("Border Style")
+        borderDrop:SetList({
+            pixel = "Pixel",
+            none = "None",
+        }, { "pixel", "none" })
+        borderDrop:SetValue(settings.borderStyle or "pixel")
+        borderDrop:SetFullWidth(true)
+        borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.borderStyle = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(borderDrop)
+
+        if settings.borderStyle == "pixel" then
+            local borderColorPicker = AceGUI:Create("ColorPicker")
+            borderColorPicker:SetLabel("Border Color")
+            local brc = settings.borderColor or { 0, 0, 0, 1 }
+            borderColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
+            borderColorPicker:SetHasAlpha(true)
+            borderColorPicker:SetFullWidth(true)
+            borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                settings.borderColor = {r, g, b, a}
+            end)
+            borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                settings.borderColor = {r, g, b, a}
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(borderColorPicker)
+
+            local borderSizeSlider = AceGUI:Create("Slider")
+            borderSizeSlider:SetLabel("Border Size")
+            borderSizeSlider:SetSliderValues(1, 4, 1)
+            borderSizeSlider:SetValue(settings.borderSize or 1)
+            borderSizeSlider:SetFullWidth(true)
+            borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.borderSize = val
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(borderSizeSlider)
+        end
+    end
+
+    -- Segment Gap
+    local gapSlider = AceGUI:Create("Slider")
+    gapSlider:SetLabel("Segment Gap")
+    gapSlider:SetSliderValues(0, 8, 1)
+    gapSlider:SetValue(settings.segmentGap or 2)
+    gapSlider:SetFullWidth(true)
+    gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.segmentGap = val
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(gapSlider)
+
+    -- ============ Text Section ============
+    local textHeading = AceGUI:Create("Heading")
+    textHeading:SetText("Text")
+    textHeading:SetFullWidth(true)
+    container:AddChild(textHeading)
+
+    local textKey = "rb_text"
+    local textCollapsed = resourceBarCollapsedSections[textKey]
+
+    local textCollapseBtn = CreateFrame("Button", nil, textHeading.frame)
+    textCollapseBtn:SetSize(16, 16)
+    textCollapseBtn:SetPoint("LEFT", textHeading.label, "RIGHT", 4, 0)
+    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
+    local textArrow = textCollapseBtn:CreateTexture(nil, "ARTWORK")
+    textArrow:SetSize(12, 12)
+    textArrow:SetPoint("CENTER")
+    textArrow:SetAtlas(textCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    textCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[textKey] = not resourceBarCollapsedSections[textKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not textCollapsed then
+        local fmtDrop = AceGUI:Create("Dropdown")
+        fmtDrop:SetLabel("Format")
+        fmtDrop:SetList({
+            current_max = "Current / Max",
+            current = "Current",
+        }, { "current_max", "current" })
+        fmtDrop:SetValue(settings.textFormat or "current_max")
+        fmtDrop:SetFullWidth(true)
+        fmtDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFormat = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(fmtDrop)
+
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        fontDrop:SetList(CS.fontOptions)
+        fontDrop:SetValue(settings.textFont or "Fonts\\FRIZQT__.TTF")
+        fontDrop:SetFullWidth(true)
+        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFont = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(fontDrop)
+
+        local sizeDrop = AceGUI:Create("Slider")
+        sizeDrop:SetLabel("Font Size")
+        sizeDrop:SetSliderValues(6, 24, 1)
+        sizeDrop:SetValue(settings.textFontSize or 10)
+        sizeDrop:SetFullWidth(true)
+        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFontSize = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(sizeDrop)
+
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Outline")
+        outlineDrop:SetList(CS.outlineOptions)
+        outlineDrop:SetValue(settings.textFontOutline or "OUTLINE")
+        outlineDrop:SetFullWidth(true)
+        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFontOutline = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(outlineDrop)
+
+        local textColorPicker = AceGUI:Create("ColorPicker")
+        textColorPicker:SetLabel("Text Color")
+        local tc = settings.textFontColor or { 1, 1, 1, 1 }
+        textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+        textColorPicker:SetHasAlpha(true)
+        textColorPicker:SetFullWidth(true)
+        textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            settings.textFontColor = {r, g, b, a}
+        end)
+        textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            settings.textFontColor = {r, g, b, a}
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(textColorPicker)
+    end
+
+    -- ============ Per-Resource Colors Section ============
+    local colorHeading = AceGUI:Create("Heading")
+    colorHeading:SetText("Per-Resource Colors")
+    colorHeading:SetFullWidth(true)
+    container:AddChild(colorHeading)
+
+    local colorKey = "rb_colors"
+    local colorCollapsed = resourceBarCollapsedSections[colorKey]
+
+    local colorCollapseBtn = CreateFrame("Button", nil, colorHeading.frame)
+    colorCollapseBtn:SetSize(16, 16)
+    colorCollapseBtn:SetPoint("LEFT", colorHeading.label, "RIGHT", 4, 0)
+    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
+    local colorArrow = colorCollapseBtn:CreateTexture(nil, "ARTWORK")
+    colorArrow:SetSize(12, 12)
+    colorArrow:SetPoint("CENTER")
+    colorArrow:SetAtlas(colorCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    colorCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[colorKey] = not resourceBarCollapsedSections[colorKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not colorCollapsed then
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            if not settings.resources[pt] then
+                settings.resources[pt] = {}
+            end
+            local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
+
+            local cp = AceGUI:Create("ColorPicker")
+            cp:SetLabel(name)
+            cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
+            cp:SetHasAlpha(false)
+            cp:SetFullWidth(true)
+            cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                if not settings.resources[pt] then
+                    settings.resources[pt] = {}
+                end
+                settings.resources[pt].color = {r, g, b}
+            end)
+            cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                if not settings.resources[pt] then
+                    settings.resources[pt] = {}
+                end
+                settings.resources[pt].color = {r, g, b}
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(cp)
+        end
+    end
+end
+
 -- Expose builder functions for Config.lua to call
 ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
@@ -4701,3 +5319,5 @@ ST._BuildExtrasTab = BuildExtrasTab
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel
+ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
+ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel

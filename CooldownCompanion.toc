@@ -38,5 +38,6 @@ Core.lua
 ButtonFrame.lua
 GroupFrame.lua
 CastBar.lua
+ResourceBar.lua
 Config.lua
 ConfigSettings.lua
