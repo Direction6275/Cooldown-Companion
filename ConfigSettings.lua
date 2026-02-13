@@ -1964,6 +1964,7 @@ local function BuildExtrasTab(container)
     assistedCb:SetFullWidth(true)
     assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showAssistedHighlight = val
+        SetCVar("assistedCombatHighlight", val and "1" or "0")
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -2688,16 +2689,34 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(heightSlider)
 
+    local iconRow = AceGUI:Create("SimpleGroup")
+    iconRow:SetFullWidth(true)
+    iconRow:SetLayout("Flow")
+    container:AddChild(iconRow)
+
     local showIconCb = AceGUI:Create("CheckBox")
     showIconCb:SetLabel("Show Icon")
     showIconCb:SetValue(style.showBarIcon ~= false)
-    showIconCb:SetFullWidth(true)
+    showIconCb:SetRelativeWidth(0.5)
     showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showBarIcon = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(showIconCb)
+    iconRow:AddChild(showIconCb)
+
+    if style.showBarIcon ~= false then
+        local flipIconCheck = AceGUI:Create("CheckBox")
+        flipIconCheck:SetLabel("Flip Icon Side")
+        flipIconCheck:SetValue(style.barIconReverse or false)
+        flipIconCheck:SetRelativeWidth(0.5)
+        flipIconCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barIconReverse = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        iconRow:AddChild(flipIconCheck)
+    end
 
     if style.showBarIcon ~= false then
         local iconOffsetSlider = AceGUI:Create("Slider")
@@ -2818,16 +2837,37 @@ local function BuildBarAppearanceTab(container, group, style)
     nameHeading:SetFullWidth(true)
     container:AddChild(nameHeading)
 
+    local nameRow = AceGUI:Create("SimpleGroup")
+    nameRow:SetFullWidth(true)
+    nameRow:SetLayout("Flow")
+    container:AddChild(nameRow)
+
     local showNameCb = AceGUI:Create("CheckBox")
     showNameCb:SetLabel("Show Name Text")
     showNameCb:SetValue(style.showBarNameText ~= false)
-    showNameCb:SetFullWidth(true)
+    if style.showBarNameText ~= false then
+        showNameCb:SetRelativeWidth(0.5)
+    else
+        showNameCb:SetFullWidth(true)
+    end
     showNameCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showBarNameText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(showNameCb)
+    nameRow:AddChild(showNameCb)
+
+    if style.showBarNameText ~= false then
+        local flipNameCheck = AceGUI:Create("CheckBox")
+        flipNameCheck:SetLabel("Flip Name Text")
+        flipNameCheck:SetValue(style.barNameTextReverse or false)
+        flipNameCheck:SetRelativeWidth(0.5)
+        flipNameCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barNameTextReverse = val or nil
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        nameRow:AddChild(flipNameCheck)
+    end
 
     if style.showBarNameText ~= false then
         local nameFontSizeSlider = AceGUI:Create("Slider")
@@ -2908,16 +2948,58 @@ local function BuildBarAppearanceTab(container, group, style)
     timeHeading:SetFullWidth(true)
     container:AddChild(timeHeading)
 
+    local timeRow = AceGUI:Create("SimpleGroup")
+    timeRow:SetFullWidth(true)
+    timeRow:SetLayout("Flow")
+    container:AddChild(timeRow)
+
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
     cdTextCb:SetValue(style.showCooldownText or false)
-    cdTextCb:SetFullWidth(true)
+    if style.showCooldownText then
+        cdTextCb:SetRelativeWidth(0.5)
+    else
+        cdTextCb:SetFullWidth(true)
+    end
     cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showCooldownText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(cdTextCb)
+    timeRow:AddChild(cdTextCb)
+
+    if style.showCooldownText then
+        local flipTimeCheck = AceGUI:Create("CheckBox")
+        flipTimeCheck:SetLabel("Flip Time Text")
+        flipTimeCheck:SetValue(style.barTimeTextReverse or false)
+        flipTimeCheck:SetRelativeWidth(0.5)
+        flipTimeCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barTimeTextReverse = val or nil
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        timeRow:AddChild(flipTimeCheck)
+
+        -- (?) tooltip for Flip Time Text
+        local flipTimeInfo = CreateFrame("Button", nil, flipTimeCheck.frame)
+        flipTimeInfo:SetSize(16, 16)
+        flipTimeInfo:SetPoint("LEFT", flipTimeCheck.checkbg, "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0)
+        local flipTimeInfoIcon = flipTimeInfo:CreateTexture(nil, "OVERLAY")
+        flipTimeInfoIcon:SetSize(12, 12)
+        flipTimeInfoIcon:SetPoint("CENTER")
+        flipTimeInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        flipTimeInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Flip Time Text")
+            GameTooltip:AddLine("Applies to all time-based text, including cooldown time, aura time, and ready text.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        flipTimeInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        flipTimeCheck:SetCallback("OnRelease", function()
+            flipTimeInfo:ClearAllPoints()
+            flipTimeInfo:Hide()
+            flipTimeInfo:SetParent(nil)
+        end)
+    end
 
     if style.showCooldownText then
         local fontSizeSlider = AceGUI:Create("Slider")
@@ -3103,7 +3185,41 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(readyColorPicker)
+
+        local readyFontSizeSlider = AceGUI:Create("Slider")
+        readyFontSizeSlider:SetLabel("Font Size")
+        readyFontSizeSlider:SetSliderValues(6, 24, 1)
+        readyFontSizeSlider:SetValue(style.barReadyFontSize or 12)
+        readyFontSizeSlider:SetFullWidth(true)
+        readyFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barReadyFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(readyFontSizeSlider)
+
+        local readyFontDrop = AceGUI:Create("Dropdown")
+        readyFontDrop:SetLabel("Font")
+        readyFontDrop:SetList(CS.fontOptions)
+        readyFontDrop:SetValue(style.barReadyFont or "Fonts\\FRIZQT__.TTF")
+        readyFontDrop:SetFullWidth(true)
+        readyFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barReadyFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(readyFontDrop)
+
+        local readyOutlineDrop = AceGUI:Create("Dropdown")
+        readyOutlineDrop:SetLabel("Font Outline")
+        readyOutlineDrop:SetList(CS.outlineOptions)
+        readyOutlineDrop:SetValue(style.barReadyFontOutline or "OUTLINE")
+        readyOutlineDrop:SetFullWidth(true)
+        readyOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barReadyFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(readyOutlineDrop)
     end
+
 end
 
 local function BuildAppearanceTab(container)
@@ -3520,8 +3636,29 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     end
     hideCDCb:SetCallback("OnValueChanged", function(widget, event, val)
         ApplyToSelected("hideWhileOnCooldown", val or nil)
+        if val then
+            ApplyToSelected("hideWhileNotOnCooldown", nil)
+        end
+        CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideCDCb)
+
+    -- Hide While Not On Cooldown
+    local hideNotCDCb = AceGUI:Create("CheckBox")
+    hideNotCDCb:SetLabel("Hide While Not On Cooldown")
+    hideNotCDCb:SetValue(buttonData.hideWhileNotOnCooldown or false)
+    hideNotCDCb:SetFullWidth(true)
+    if not hasCooldown then
+        hideNotCDCb:SetDisabled(true)
+    end
+    hideNotCDCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ApplyToSelected("hideWhileNotOnCooldown", val or nil)
+        if val then
+            ApplyToSelected("hideWhileOnCooldown", nil)
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(hideNotCDCb)
 
     -- Hide While Aura Active
     local auraDisabled = isItem or not buttonData.auraTracking
@@ -3536,6 +3673,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         ApplyToSelected("hideWhileAuraActive", val or nil)
         if val then
             ApplyToSelected("hideWhileAuraNotActive", nil)
+            ApplyToSelected("useBaselineAlphaFallback", nil)
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -3561,6 +3699,38 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         hideAuraInfo:Hide()
     end
 
+    -- Baseline Alpha Fallback (only shown when hideWhileAuraActive is checked)
+    if buttonData.hideWhileAuraActive then
+        local fallbackAuraCb = AceGUI:Create("CheckBox")
+        fallbackAuraCb:SetLabel("Use Baseline Alpha Fallback")
+        fallbackAuraCb:SetValue(buttonData.useBaselineAlphaFallbackAuraActive or false)
+        fallbackAuraCb:SetFullWidth(true)
+        fallbackAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            ApplyToSelected("useBaselineAlphaFallbackAuraActive", val or nil)
+        end)
+        scroll:AddChild(fallbackAuraCb)
+
+        -- (?) tooltip
+        local fallbackAuraInfo = CreateFrame("Button", nil, fallbackAuraCb.frame)
+        fallbackAuraInfo:SetSize(16, 16)
+        fallbackAuraInfo:SetPoint("LEFT", fallbackAuraCb.checkbg, "RIGHT", fallbackAuraCb.text:GetStringWidth() + 4, 0)
+        local fallbackAuraInfoIcon = fallbackAuraInfo:CreateTexture(nil, "OVERLAY")
+        fallbackAuraInfoIcon:SetSize(12, 12)
+        fallbackAuraInfoIcon:SetPoint("CENTER")
+        fallbackAuraInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        fallbackAuraInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Use Baseline Alpha Fallback")
+            GameTooltip:AddLine("Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        fallbackAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(infoButtons, fallbackAuraInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            fallbackAuraInfo:Hide()
+        end
+    end
+
     -- Hide While Aura Not Active
     local hideNoAuraCb = AceGUI:Create("CheckBox")
     hideNoAuraCb:SetLabel("Hide While Aura Not Active")
@@ -3573,6 +3743,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         ApplyToSelected("hideWhileAuraNotActive", val or nil)
         if val then
             ApplyToSelected("hideWhileAuraActive", nil)
+            ApplyToSelected("useBaselineAlphaFallbackAuraActive", nil)
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -3647,6 +3818,161 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
 
 end
 
+------------------------------------------------------------------------
+-- LOAD CONDITIONS TAB
+------------------------------------------------------------------------
+
+local function BuildLoadConditionsTab(container)
+    for _, btn in ipairs(tabInfoButtons) do
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(tabInfoButtons)
+    for _, elem in ipairs(appearanceTabElements) do
+        elem:ClearAllPoints()
+        elem:Hide()
+        elem:SetParent(nil)
+    end
+    wipe(appearanceTabElements)
+
+    if not CS.selectedGroup then return end
+    local groupId = CS.selectedGroup
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not group then return end
+
+    -- Ensure loadConditions table exists
+    if not group.loadConditions then
+        group.loadConditions = {
+            raid = false, dungeon = false, delve = false, battleground = false,
+            arena = false, openWorld = false, rested = false,
+        }
+    end
+    local lc = group.loadConditions
+
+    local function CreateLoadConditionToggle(label, key)
+        local cb = AceGUI:Create("CheckBox")
+        cb:SetLabel(label)
+        cb:SetValue(lc[key] or false)
+        cb:SetFullWidth(true)
+        cb:SetCallback("OnValueChanged", function(widget, event, val)
+            lc[key] = val
+            CooldownCompanion:RefreshGroupFrame(groupId)
+        end)
+        return cb
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Do Not Load When In")
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local conditions = {
+        { key = "raid",          label = "Raid" },
+        { key = "dungeon",       label = "Dungeon" },
+        { key = "delve",         label = "Delve" },
+        { key = "battleground",  label = "Battleground" },
+        { key = "arena",         label = "Arena" },
+        { key = "openWorld",     label = "Open World" },
+        { key = "rested",        label = "Rested Area" },
+    }
+
+    for _, cond in ipairs(conditions) do
+        container:AddChild(CreateLoadConditionToggle(cond.label, cond.key))
+    end
+
+    -- Specialization heading
+    local specHeading = AceGUI:Create("Heading")
+    specHeading:SetText("Specialization Filter")
+    specHeading:SetFullWidth(true)
+    container:AddChild(specHeading)
+
+    local specDesc = AceGUI:Create("Label")
+    specDesc:SetText("When any spec is checked, the group only shows for those specs. Unchecking all removes the filter (always show).")
+    specDesc:SetFullWidth(true)
+    container:AddChild(specDesc)
+
+    local spacer2 = AceGUI:Create("Label")
+    spacer2:SetText(" ")
+    spacer2:SetFullWidth(true)
+    container:AddChild(spacer2)
+
+    -- Current class spec checkboxes
+    local numSpecs = GetNumSpecializations()
+    for i = 1, numSpecs do
+        local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
+        if specId then
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetLabel(name)
+            if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+            cb:SetFullWidth(true)
+            cb:SetValue(group.specs and group.specs[specId] or false)
+            cb:SetCallback("OnValueChanged", function(widget, event, value)
+                if value then
+                    if not group.specs then group.specs = {} end
+                    group.specs[specId] = true
+                else
+                    if group.specs then
+                        group.specs[specId] = nil
+                        if not next(group.specs) then
+                            group.specs = nil
+                        end
+                    end
+                end
+                CooldownCompanion:RefreshGroupFrame(groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(cb)
+        end
+    end
+
+    -- Foreign specs (from global groups that may have specs from other classes)
+    local playerSpecIds = {}
+    for i = 1, numSpecs do
+        local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+        if specId then playerSpecIds[specId] = true end
+    end
+
+    local foreignSpecs = {}
+    if group.specs then
+        for specId in pairs(group.specs) do
+            if not playerSpecIds[specId] then
+                table.insert(foreignSpecs, specId)
+            end
+        end
+    end
+
+    if #foreignSpecs > 0 then
+        table.sort(foreignSpecs)
+        for _, specId in ipairs(foreignSpecs) do
+            local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
+            if name then
+                local fcb = AceGUI:Create("CheckBox")
+                fcb:SetLabel(name)
+                if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+                fcb:SetFullWidth(true)
+                fcb:SetValue(true)
+                fcb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if not value then
+                        if group.specs then
+                            group.specs[specId] = nil
+                            if not next(group.specs) then
+                                group.specs = nil
+                            end
+                        end
+                    else
+                        if not group.specs then group.specs = {} end
+                        group.specs[specId] = true
+                    end
+                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                container:AddChild(fcb)
+            end
+        end
+    end
+end
+
 -- Expose builder functions for Config.lua to call
 ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
@@ -3657,3 +3983,4 @@ ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildPositioningTab = BuildPositioningTab
 ST._BuildExtrasTab = BuildExtrasTab
+ST._BuildLoadConditionsTab = BuildLoadConditionsTab

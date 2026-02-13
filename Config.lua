@@ -4358,9 +4358,10 @@ function RefreshColumn3(container)
     if not container.tabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
         tabGroup:SetTabs({
-            { value = "appearance",  text = "Appearance" },
-            { value = "positioning", text = "Positioning" },
-            { value = "extras",      text = "Extras" },
+            { value = "appearance",      text = "Appearance" },
+            { value = "positioning",     text = "Positioning" },
+            { value = "extras",          text = "Extras" },
+            { value = "loadconditions",  text = "Load Conditions" },
         })
         tabGroup:SetLayout("Fill")
 
@@ -4388,6 +4389,8 @@ function RefreshColumn3(container)
                 ST._BuildPositioningTab(scroll)
             elseif tab == "extras" then
                 ST._BuildExtrasTab(scroll)
+            elseif tab == "loadconditions" then
+                ST._BuildLoadConditionsTab(scroll)
             end
         end)
 
