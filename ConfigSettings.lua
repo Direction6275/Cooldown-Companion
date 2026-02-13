@@ -4108,6 +4108,90 @@ local function BuildCastBarPanel(container)
     end)
     container:AddChild(styleCb)
 
+    -- ============ Cast Effects Section ============
+    local fxHeading = AceGUI:Create("Heading")
+    fxHeading:SetText("Cast Effects")
+    fxHeading:SetFullWidth(true)
+    container:AddChild(fxHeading)
+
+    local fxKey = "castbar_fx"
+    local fxCollapsed = castBarCollapsedSections[fxKey]
+
+    local fxCollapseBtn = CreateFrame("Button", nil, fxHeading.frame)
+    fxCollapseBtn:SetSize(16, 16)
+    fxCollapseBtn:SetPoint("LEFT", fxHeading.label, "RIGHT", 4, 0)
+    fxHeading.right:SetPoint("LEFT", fxCollapseBtn, "RIGHT", 4, 0)
+    local fxArrow = fxCollapseBtn:CreateTexture(nil, "ARTWORK")
+    fxArrow:SetSize(12, 12)
+    fxArrow:SetPoint("CENTER")
+    fxArrow:SetAtlas(fxCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    fxCollapseBtn:SetScript("OnClick", function()
+        castBarCollapsedSections[fxKey] = not castBarCollapsedSections[fxKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not fxCollapsed then
+        local sparkTrailCb = AceGUI:Create("CheckBox")
+        sparkTrailCb:SetLabel("Show Spark Trail")
+        sparkTrailCb:SetValue(settings.showSparkTrail ~= false)
+        sparkTrailCb:SetFullWidth(true)
+        sparkTrailCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showSparkTrail = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(sparkTrailCb)
+
+        local intShakeCb = AceGUI:Create("CheckBox")
+        intShakeCb:SetLabel("Show Interrupt Shake")
+        intShakeCb:SetValue(settings.showInterruptShake ~= false)
+        intShakeCb:SetFullWidth(true)
+        intShakeCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showInterruptShake = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(intShakeCb)
+
+        local intGlowCb = AceGUI:Create("CheckBox")
+        intGlowCb:SetLabel("Show Interrupt Glow")
+        intGlowCb:SetValue(settings.showInterruptGlow ~= false)
+        intGlowCb:SetFullWidth(true)
+        intGlowCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showInterruptGlow = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(intGlowCb)
+
+        local castFinishCb = AceGUI:Create("CheckBox")
+        castFinishCb:SetLabel("Show Cast Finish FX")
+        castFinishCb:SetValue(settings.showCastFinishFX ~= false)
+        castFinishCb:SetFullWidth(true)
+        castFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showCastFinishFX = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(castFinishCb)
+
+        local chanFinishCb = AceGUI:Create("CheckBox")
+        chanFinishCb:SetLabel("Show Channel Finish FX")
+        chanFinishCb:SetValue(settings.showChannelFinishFX ~= false)
+        chanFinishCb:SetFullWidth(true)
+        chanFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showChannelFinishFX = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(chanFinishCb)
+
+        local craftFinishCb = AceGUI:Create("CheckBox")
+        craftFinishCb:SetLabel("Show Craft Finish FX")
+        craftFinishCb:SetValue(settings.showCraftFinishFX ~= false)
+        craftFinishCb:SetFullWidth(true)
+        craftFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.showCraftFinishFX = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(craftFinishCb)
+    end
+
     if not settings.stylingEnabled then return end
 
     -- Height (styling-only — anchoring uses Blizzard default height)

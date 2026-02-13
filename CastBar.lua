@@ -139,9 +139,17 @@ end
 -- Spark sizing helper — height matches bar exactly, width stays default
 ------------------------------------------------------------------------
 
+-- Default spark is 20px for an 11px bar.  1.66x splits the difference between
+-- the full default ratio (1.82x) and a tighter fit (1.5x).
+local SPARK_HEIGHT_SCALE = 1.66
+
 local function ApplySparkSize(cb, barHeight)
     if not cb.Spark then return end
-    cb.Spark:SetSize(8, barHeight)
+    local atlas = cb.Spark:GetAtlas()
+    if atlas then
+        cb.Spark:SetAtlas(atlas, false)
+    end
+    cb.Spark:SetSize(8, barHeight * SPARK_HEIGHT_SCALE)
 end
 
 ------------------------------------------------------------------------
@@ -150,11 +158,9 @@ end
 -- When the bar is wider/taller, scale all FX regions proportionally.
 ------------------------------------------------------------------------
 
-local FX_REGION_NAMES = {
+-- Bar-wide FX: scale both width and height proportionally
+local FX_REGIONS_BAR_WIDE = {
     "BorderMask",       -- MaskTexture that clips all FX (256x13)
-    "StandardGlow",     -- spark trail glow
-    "CraftGlow",        -- craft spark trail glow
-    "ChannelShadow",    -- channel spark shadow
     "InterruptGlow",    -- interrupt outer glow
     "ChargeGlow",       -- empowered outer glow
     "EnergyGlow",       -- standard finish upward glow
@@ -171,10 +177,26 @@ local FX_REGION_NAMES = {
     "Sparkles02",
 }
 
+-- Spark-local FX: small textures anchored to the spark pip — scale height only
+local FX_REGIONS_SPARK_LOCAL = {
+    "StandardGlow",     -- spark trail glow (37x12)
+    "CraftGlow",        -- craft spark trail glow (37x12)
+    "ChannelShadow",    -- channel spark shadow (11x11)
+}
+
 local function CaptureOriginalFXSizes(cb)
     if originalFXSizes then return end
     originalFXSizes = {}
-    for _, name in ipairs(FX_REGION_NAMES) do
+    for _, name in ipairs(FX_REGIONS_BAR_WIDE) do
+        local region = cb[name]
+        if region then
+            local w, h = region:GetSize()
+            if w and h and w > 0 and h > 0 then
+                originalFXSizes[name] = { w = w, h = h }
+            end
+        end
+    end
+    for _, name in ipairs(FX_REGIONS_SPARK_LOCAL) do
         local region = cb[name]
         if region then
             local w, h = region:GetSize()
@@ -192,21 +214,146 @@ local function ApplyFXScaling(cb, barWidth, barHeight)
     local widthScale = barWidth / 208
     local heightScale = barHeight / 11
 
-    for name, orig in pairs(originalFXSizes) do
-        local region = cb[name]
-        if region then
-            region:SetSize(orig.w * widthScale, orig.h * heightScale)
+    for _, name in ipairs(FX_REGIONS_BAR_WIDE) do
+        local orig = originalFXSizes[name]
+        if orig then
+            local region = cb[name]
+            if region then
+                region:SetSize(orig.w * widthScale, orig.h * heightScale)
+            end
+        end
+    end
+    -- Spark-local: height only — width stays original to avoid distortion
+    for _, name in ipairs(FX_REGIONS_SPARK_LOCAL) do
+        local orig = originalFXSizes[name]
+        if orig then
+            local region = cb[name]
+            if region then
+                region:SetSize(orig.w, orig.h * heightScale)
+            end
         end
     end
 end
 
 local function RevertFXScaling(cb)
     if not originalFXSizes then return end
-    for name, orig in pairs(originalFXSizes) do
-        local region = cb[name]
-        if region then
-            region:SetSize(orig.w, orig.h)
+    for _, name in ipairs(FX_REGIONS_BAR_WIDE) do
+        local orig = originalFXSizes[name]
+        if orig then
+            local region = cb[name]
+            if region then
+                region:SetSize(orig.w, orig.h)
+            end
         end
+    end
+    for _, name in ipairs(FX_REGIONS_SPARK_LOCAL) do
+        local orig = originalFXSizes[name]
+        if orig then
+            local region = cb[name]
+            if region then
+                region:SetSize(orig.w, orig.h)
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- FX suppression — hides/stops individual FX categories.
+-- Called from DeferredReapply and ApplyCastBarSettings (both branches).
+-- Uses ~= false so missing keys default to enabled.
+------------------------------------------------------------------------
+
+local function SuppressFX(cb, s)
+    if s.showSparkTrail == false then
+        if cb.StandardGlow then cb.StandardGlow:Hide() end
+        if cb.CraftGlow then cb.CraftGlow:Hide() end
+        if cb.ChannelShadow then cb.ChannelShadow:Hide() end
+    end
+    if s.showInterruptShake == false then
+        if cb.InterruptShakeAnim then cb.InterruptShakeAnim:Stop() end
+    end
+    if s.showInterruptGlow == false then
+        if cb.InterruptGlowAnim then cb.InterruptGlowAnim:Stop() end
+        if cb.InterruptGlow then cb.InterruptGlow:SetAlpha(0) end
+    end
+    if s.showCastFinishFX == false then
+        if cb.StandardFinish then cb.StandardFinish:Stop() end
+        if cb.FlashAnim then cb.FlashAnim:Stop() end
+        if cb.Flash then cb.Flash:SetAlpha(0) end
+    end
+    if s.showChannelFinishFX == false then
+        if cb.ChannelFinish then cb.ChannelFinish:Stop() end
+        if cb.FlashAnim then cb.FlashAnim:Stop() end
+        if cb.Flash then cb.Flash:SetAlpha(0) end
+    end
+    if s.showCraftFinishFX == false then
+        if cb.CraftingFinish then cb.CraftingFinish:Stop() end
+        if cb.FlashAnim then cb.FlashAnim:Stop() end
+        if cb.Flash then cb.Flash:SetAlpha(0) end
+    end
+end
+
+------------------------------------------------------------------------
+-- FX hooks — synchronous suppression via hooksecurefunc on Play().
+-- hooksecurefunc runs immediately after the original call (same frame),
+-- so Stop() prevents even a single rendered frame of the animation.
+-- IMPORTANT: `self` in hook callbacks is a SECRET VALUE when Play() is
+-- called from Blizzard's secure OnEvent — cannot be indexed.  We capture
+-- a local reference to each AnimationGroup at install time instead.
+-- All hooks are on CHILD objects (AnimationGroup) — taint-safe.
+------------------------------------------------------------------------
+
+local fxHooksInstalled = false
+
+local function InstallFXHooks(cb)
+    if fxHooksInstalled then return end
+    fxHooksInstalled = true
+
+    -- Each type-specific hook also suppresses FlashAnim + Flash (the shared border
+    -- glow).  PlayFadeAnim (FlashAnim) fires BEFORE PlayFinishAnim in the same frame,
+    -- so stopping FlashAnim from the type hook is still same-frame — no visible flash.
+    if cb.StandardFinish then
+        local anim = cb.StandardFinish
+        hooksecurefunc(anim, "Play", function()
+            local s = GetCastBarSettings()
+            if s and s.showCastFinishFX == false then
+                anim:Stop()
+                if cb.FlashAnim then cb.FlashAnim:Stop() end
+                if cb.Flash then cb.Flash:SetAlpha(0) end
+            end
+        end)
+    end
+    if cb.ChannelFinish then
+        local anim = cb.ChannelFinish
+        hooksecurefunc(anim, "Play", function()
+            local s = GetCastBarSettings()
+            if s and s.showChannelFinishFX == false then
+                anim:Stop()
+                if cb.FlashAnim then cb.FlashAnim:Stop() end
+                if cb.Flash then cb.Flash:SetAlpha(0) end
+            end
+        end)
+    end
+    if cb.CraftingFinish then
+        local anim = cb.CraftingFinish
+        hooksecurefunc(anim, "Play", function()
+            local s = GetCastBarSettings()
+            if s and s.showCraftFinishFX == false then
+                anim:Stop()
+                if cb.FlashAnim then cb.FlashAnim:Stop() end
+                if cb.Flash then cb.Flash:SetAlpha(0) end
+            end
+        end)
+    end
+    if cb.InterruptGlowAnim then
+        local anim = cb.InterruptGlowAnim
+        hooksecurefunc(anim, "Play", function()
+            local s = GetCastBarSettings()
+            if s and s.showInterruptGlow == false then
+                anim:Stop()
+                if cb.InterruptGlow then cb.InterruptGlow:SetAlpha(0) end
+            end
+        end)
     end
 end
 
@@ -258,6 +405,9 @@ local function DeferredReapply()
 
     -- FX scaling (always applies when anchored — spark trails, interrupt glow, etc.)
     ApplyFXScaling(cb, cb:GetWidth(), effectiveHeight)
+
+    -- FX suppression (always applies — user toggles for individual FX categories)
+    SuppressFX(cb, s)
 
     if s.stylingEnabled then
         -- Re-apply custom bar texture (Blizzard resets to atlas on each cast event)
@@ -350,12 +500,29 @@ local function EnableCastEventFrame()
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_UPDATE", "player")
+    -- Enforce spark height every frame — ShowSpark calls SetAtlas which may
+    -- reset the size to the atlas native dimensions (useAtlasSize defaults true).
+    -- Re-apply SetAtlas with useAtlasSize=false then force our height.
+    castEventFrame:SetScript("OnUpdate", function()
+        if not isApplied then return end
+        local cb = PlayerCastingBarFrame
+        if not cb or not cb.Spark or not cb.Spark:IsShown() then return end
+        local s = GetCastBarSettings()
+        if not s or not s.enabled then return end
+        local barH = s.stylingEnabled and (s.height or 14) or 11
+        local atlas = cb.Spark:GetAtlas()
+        if atlas then
+            cb.Spark:SetAtlas(atlas, false)
+        end
+        cb.Spark:SetSize(8, barH * SPARK_HEIGHT_SCALE)
+    end)
     castEventFrame:Show()
 end
 
 local function DisableCastEventFrame()
     if not castEventFrame then return end
     castEventFrame:UnregisterAllEvents()
+    castEventFrame:SetScript("OnUpdate", nil)
     castEventFrame:Hide()
     pendingReapply = false
 end
@@ -537,6 +704,10 @@ function CooldownCompanion:ApplyCastBarSettings()
     ApplyPosition(cb, settings, effectiveHeight)
     ApplySparkSize(cb, effectiveHeight)
     ApplyFXScaling(cb, groupFrame:GetWidth(), effectiveHeight)
+
+    -- FX hooks (once) + suppression (always applies — user toggles for FX categories)
+    InstallFXHooks(cb)
+    SuppressFX(cb, settings)
 
     if settings.stylingEnabled then
         -- ---- STYLING (optional layer) ----
