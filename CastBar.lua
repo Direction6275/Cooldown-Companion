@@ -358,6 +358,27 @@ local function InstallFXHooks(cb)
 end
 
 ------------------------------------------------------------------------
+-- Spark size hook — replaces per-frame OnUpdate with a same-frame hook
+-- on Spark:SetAtlas (fired by Blizzard's ShowSpark during cast events).
+------------------------------------------------------------------------
+local sparkHookInstalled = false
+
+local function InstallSparkHook(cb)
+    if sparkHookInstalled then return end
+    if not cb or not cb.Spark then return end
+    sparkHookInstalled = true
+
+    local spark = cb.Spark
+    hooksecurefunc(spark, "SetAtlas", function()
+        if not isApplied then return end
+        local s = GetCastBarSettings()
+        if not s or not s.enabled then return end
+        local barH = s.stylingEnabled and (s.height or 14) or 11
+        spark:SetSize(8, barH * SPARK_HEIGHT_SCALE)
+    end)
+end
+
+------------------------------------------------------------------------
 -- Position helper (used by both Apply and DeferredReapply)
 ------------------------------------------------------------------------
 
@@ -500,30 +521,11 @@ local function EnableCastEventFrame()
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_UPDATE", "player")
-    -- Enforce spark height every frame — ShowSpark calls SetAtlas which may
-    -- reset the size to the atlas native dimensions (useAtlasSize defaults true).
-    -- Re-apply SetAtlas with useAtlasSize=false then force our height.
-    castEventFrame:SetScript("OnUpdate", function()
-        if not isApplied then return end
-        local cb = PlayerCastingBarFrame
-        if not cb or not cb.Spark or not cb.Spark:IsShown() then return end
-        local s = GetCastBarSettings()
-        if not s or not s.enabled then return end
-        local barH = s.stylingEnabled and (s.height or 14) or 11
-        local atlas = cb.Spark:GetAtlas()
-        if atlas then
-            cb.Spark:SetAtlas(atlas, false)
-        end
-        cb.Spark:SetSize(8, barH * SPARK_HEIGHT_SCALE)
-    end)
-    castEventFrame:Show()
 end
 
 local function DisableCastEventFrame()
     if not castEventFrame then return end
     castEventFrame:UnregisterAllEvents()
-    castEventFrame:SetScript("OnUpdate", nil)
-    castEventFrame:Hide()
     pendingReapply = false
 end
 
@@ -707,6 +709,7 @@ function CooldownCompanion:ApplyCastBarSettings()
 
     -- FX hooks (once) + suppression (always applies — user toggles for FX categories)
     InstallFXHooks(cb)
+    InstallSparkHook(cb)
     SuppressFX(cb, settings)
 
     if settings.stylingEnabled then
