@@ -314,9 +314,24 @@ function CooldownCompanion:RevertCastBar()
     cb:SetFixedFrameStrata(true)
     cb:SetFrameStrata("HIGH")
 
-    -- Clear our anchor and let the managed frame system take over
+    -- Restore EditMode position.
+    -- AddManagedFrame early-exits when IsInDefaultPosition() is false (custom EditMode
+    -- position), leaving the bar with no anchors.  Read the saved anchorInfo directly
+    -- and apply it ourselves (all reads + C SetPoint — taint-safe).
     cb:ClearAllPoints()
-    UIParentBottomManagedFrameContainer:AddManagedFrame(cb)
+    if cb.systemInfo and cb.systemInfo.anchorInfo and not cb:IsInDefaultPosition() then
+        local scale = cb:GetScale()
+        local ai = cb.systemInfo.anchorInfo
+        cb:SetPoint(ai.point, ai.relativeTo, ai.relativePoint,
+                    ai.offsetX / scale, ai.offsetY / scale)
+        if cb.systemInfo.anchorInfo2 then
+            local ai2 = cb.systemInfo.anchorInfo2
+            cb:SetPoint(ai2.point, ai2.relativeTo, ai2.relativePoint,
+                        ai2.offsetX / scale, ai2.offsetY / scale)
+        end
+    else
+        UIParentBottomManagedFrameContainer:AddManagedFrame(cb)
+    end
 
     -- Restore bar fill to default atlas and reset color tint
     cb:SetStatusBarTexture("ui-castingbar-filling-standard")
@@ -371,6 +386,7 @@ function CooldownCompanion:RevertCastBar()
         cb.Text:SetHeight(16)
         cb.Text:SetPoint("TOP", 0, -10)
         cb.Text:SetFontObject("GameFontHighlightSmall")
+        cb.Text:SetJustifyH("CENTER")
         cb.Text:SetVertexColor(1, 1, 1, 1)
     end
 
@@ -606,6 +622,7 @@ function CooldownCompanion:ApplyCastBarSettings()
             cb.Text:SetHeight(16)
             cb.Text:SetPoint("TOP", 0, -10)
             cb.Text:SetFontObject("GameFontHighlightSmall")
+            cb.Text:SetJustifyH("CENTER")
             cb.Text:SetVertexColor(1, 1, 1, 1)
         end
 
