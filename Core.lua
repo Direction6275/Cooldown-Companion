@@ -240,17 +240,17 @@ local defaults = {
             enabled = true,
             anchorGroupId = nil,
             position = "below",
-            yOffset = -2,
+            yOffset = -3,
             barHeight = 12,
-            barSpacing = 1,
+            barSpacing = 3.6,
             barTexture = "Interface\\BUTTONS\\WHITE8X8",
             backgroundColor = { 0, 0, 0, 0.5 },
             borderStyle = "pixel",
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
-            segmentGap = 2,
-            hideManaForNonHealer = false,
-            stackOrder = "cast_first",
+            segmentGap = 4,
+            hideManaForNonHealer = true,
+            stackOrder = "resource_first",
             resources = {},
             textFont = "Fonts\\FRIZQT__.TTF",
             textFontSize = 10,
@@ -260,15 +260,15 @@ local defaults = {
         },
         castBar = {
             enabled = true,
-            stylingEnabled = false,
+            stylingEnabled = true,
             anchorGroupId = nil,
             position = "below",
-            yOffset = -2,
-            height = 14,
+            yOffset = 0,
+            height = 15,
             barColor = { 1.0, 0.7, 0.0, 1.0 },
             backgroundColor = { 0, 0, 0, 0.5 },
             barTexture = "Interface\\BUTTONS\\WHITE8X8",
-            showIcon = false,
+            showIcon = true,
             iconSize = 16,
             iconFlipSide = false,
             iconOffset = false,
@@ -1135,7 +1135,7 @@ function CooldownCompanion:GetAnchorStackOffset(moduleId)
     local rbPos = rb.position or "below"
     if cbPos ~= rbPos then return 0 end
 
-    local order = rb.stackOrder or "cast_first"
+    local order = rb.stackOrder or "resource_first"
 
     if moduleId == "castBar" then
         if order == "resource_first" then
@@ -1146,7 +1146,7 @@ function CooldownCompanion:GetAnchorStackOffset(moduleId)
         if order == "cast_first" then
             local cbHeight = self:GetCastBarHeight()
             if cbHeight > 0 then
-                return cbHeight + math.abs(cb.yOffset or -2)
+                return cbHeight + math.abs(cb.yOffset or 0)
             end
         end
         return 0

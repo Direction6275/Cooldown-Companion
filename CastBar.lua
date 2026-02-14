@@ -443,7 +443,7 @@ local function InstallSparkHook(cb)
         if not isApplied then return end
         local s = GetCastBarSettings()
         if not s or not s.enabled then return end
-        local barH = s.stylingEnabled and (s.height or 14) or 11
+        local barH = s.stylingEnabled and (s.height or 15) or 11
         spark:SetSize(8, barH * SPARK_HEIGHT_SCALE)
     end)
 end
@@ -460,7 +460,7 @@ local function ApplyPosition(cb, s, height)
     UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
 
     cb:ClearAllPoints()
-    local yOfs = s.yOffset or -2
+    local yOfs = s.yOffset or 0
     local stackOffset = CooldownCompanion:GetAnchorStackOffset("castBar")
 
     -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
@@ -482,7 +482,7 @@ local function ApplyPosition(cb, s, height)
         cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, yOfs - stackOffset)
     end
 
-    cb:SetHeight(height or 14)
+    cb:SetHeight(height or 15)
 end
 
 ------------------------------------------------------------------------
@@ -499,7 +499,7 @@ local function DeferredReapply()
     if not s or not s.enabled then return end
 
     -- Effective height: custom when styling on, Blizzard default when off
-    local effectiveHeight = s.stylingEnabled and (s.height or 14) or 11
+    local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
 
     -- Re-position (OnShow's AddManagedFrame may have repositioned us)
     ApplyPosition(cb, s, effectiveHeight)
@@ -527,7 +527,7 @@ local function DeferredReapply()
 
         -- Re-apply icon visibility, size, and position
         if cb.Icon then
-            cb.Icon:SetShown(s.showIcon or false)
+            cb.Icon:SetShown(s.showIcon ~= false)
             if s.showIcon then
                 cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 if s.iconOffset then
@@ -555,7 +555,7 @@ local function DeferredReapply()
         end
 
         -- Re-apply pixel borders
-        local bStyle = s.borderStyle or "blizzard"
+        local bStyle = s.borderStyle or "pixel"
         if bStyle == "pixel" then
             local bColor = s.borderColor or {0,0,0,1}
             local bSize = s.borderSize or 1
@@ -593,7 +593,7 @@ local function DeferredReapply()
         end
 
         -- Re-show fill masks based on border style
-        if (s.borderStyle or "blizzard") == "blizzard" then
+        if (s.borderStyle or "pixel") == "blizzard" then
             ShowFillMasks(cb)
         end
     else
@@ -821,7 +821,7 @@ function CooldownCompanion:ApplyCastBarSettings()
 
     -- ---- ANCHORING (always applied when enabled) ----
     -- Height: use custom setting when styling is on, Blizzard default (11) when off
-    local effectiveHeight = settings.stylingEnabled and (settings.height or 14) or 11
+    local effectiveHeight = settings.stylingEnabled and (settings.height or 15) or 11
     ApplyPosition(cb, settings, effectiveHeight)
     ApplySparkSize(cb, effectiveHeight)
     local barWidth = groupFrame:GetWidth()
@@ -864,7 +864,7 @@ function CooldownCompanion:ApplyCastBarSettings()
 
         -- Icon visibility, size, and position — C methods on CHILD
         if cb.Icon then
-            cb.Icon:SetShown(settings.showIcon or false)
+            cb.Icon:SetShown(settings.showIcon ~= false)
             if settings.showIcon then
                 cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 if settings.iconOffset then
@@ -899,7 +899,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         end
 
         -- Border style
-        local borderStyle = settings.borderStyle or "blizzard"
+        local borderStyle = settings.borderStyle or "pixel"
         if borderStyle == "blizzard" then
             HidePixelBorders()
             HideIconPixelBorders()
@@ -1115,7 +1115,7 @@ local function ApplyPreview()
     end
 
     -- Fill masks
-    local borderStyle = s.stylingEnabled and (s.borderStyle or "blizzard") or "blizzard"
+    local borderStyle = s.stylingEnabled and (s.borderStyle or "pixel") or "blizzard"
     if borderStyle == "blizzard" then
         ShowFillMasks(cb)
     end

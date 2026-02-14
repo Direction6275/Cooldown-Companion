@@ -61,7 +61,7 @@ local POWER_NAMES = {
     [5]  = "Runes",
     [6]  = "Runic Power",
     [7]  = "Soul Shards",
-    [8]  = "Lunar Power",
+    [8]  = "Astral Power",
     [9]  = "Holy Power",
     [11] = "Maelstrom",
     [12] = "Chi",
@@ -914,8 +914,8 @@ function CooldownCompanion:ApplyResourceBars()
 
     -- Create or recycle bar frames
     local barHeight = settings.barHeight or 12
-    local barSpacing = settings.barSpacing or 1
-    local segmentGap = settings.segmentGap or 2
+    local barSpacing = settings.barSpacing or 3.6
+    local segmentGap = settings.segmentGap or 4
     local totalWidth = groupFrame:GetWidth()
 
     -- Hide existing bars that we don't need
@@ -974,7 +974,7 @@ function CooldownCompanion:ApplyResourceBars()
 
     -- Layout: stack bars vertically inside container
     local stackOffset = self:GetAnchorStackOffset("resourceBars")
-    local yOfs = settings.yOffset or -2
+    local yOfs = settings.yOffset or -3
     local position = settings.position or "below"
 
     containerFrame:ClearAllPoints()
@@ -1087,8 +1087,8 @@ function CooldownCompanion:GetResourceBarsTotalHeight()
     if count == 0 then return 0 end
 
     local barHeight = settings.barHeight or 12
-    local barSpacing = settings.barSpacing or 1
-    return count * barHeight + (count - 1) * barSpacing + math_abs(settings.yOffset or -2)
+    local barSpacing = settings.barSpacing or 3.6
+    return count * barHeight + (count - 1) * barSpacing + math_abs(settings.yOffset or -3)
 end
 
 ------------------------------------------------------------------------

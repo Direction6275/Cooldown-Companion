@@ -4179,7 +4179,7 @@ BuildCastBarAnchoringPanel = function(container)
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
         ySlider:SetSliderValues(-50, 50, 1)
-        ySlider:SetValue(settings.yOffset or -2)
+        ySlider:SetValue(settings.yOffset or 0)
         ySlider:SetFullWidth(true)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
             settings.yOffset = val
@@ -4262,7 +4262,7 @@ local function BuildCastBarStylingPanel(container)
     -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
     local styleCb = AceGUI:Create("CheckBox")
     styleCb:SetLabel("Enable Cast Bar Styling")
-    styleCb:SetValue(settings.stylingEnabled or false)
+    styleCb:SetValue(settings.stylingEnabled ~= false)
     styleCb:SetFullWidth(true)
     styleCb:SetDisabled(not settings.enabled)
     styleCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4279,7 +4279,7 @@ local function BuildCastBarStylingPanel(container)
     local hSlider = AceGUI:Create("Slider")
     hSlider:SetLabel("Height")
     hSlider:SetSliderValues(4, 40, 0.1)
-    hSlider:SetValue(settings.height or 14)
+    hSlider:SetValue(settings.height or 15)
     hSlider:SetFullWidth(true)
     hSlider:SetCallback("OnValueChanged", function(widget, event, val)
         settings.height = val
@@ -4357,7 +4357,7 @@ local function BuildCastBarStylingPanel(container)
         -- Show Spell Icon
         local iconCb = AceGUI:Create("CheckBox")
         iconCb:SetLabel("Show Spell Icon")
-        iconCb:SetValue(settings.showIcon or false)
+        iconCb:SetValue(settings.showIcon ~= false)
         iconCb:SetFullWidth(true)
         iconCb:SetCallback("OnValueChanged", function(widget, event, val)
             settings.showIcon = val
@@ -4460,7 +4460,7 @@ local function BuildCastBarStylingPanel(container)
             pixel = "Pixel",
             none = "None",
         }, { "blizzard", "pixel", "none" })
-        borderDrop:SetValue(settings.borderStyle or "blizzard")
+        borderDrop:SetValue(settings.borderStyle or "pixel")
         borderDrop:SetFullWidth(true)
         borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
             settings.borderStyle = val
@@ -4720,7 +4720,7 @@ local POWER_NAMES_CONFIG = {
     [5]  = "Runes",
     [6]  = "Runic Power",
     [7]  = "Soul Shards",
-    [8]  = "Lunar Power",
+    [8]  = "Astral Power",
     [9]  = "Holy Power",
     [11] = "Maelstrom",
     [12] = "Chi",
@@ -4930,7 +4930,7 @@ BuildResourceBarAnchoringPanel = function(container)
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
         ySlider:SetSliderValues(-50, 50, 1)
-        ySlider:SetValue(settings.yOffset or -2)
+        ySlider:SetValue(settings.yOffset or -3)
         ySlider:SetFullWidth(true)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
             settings.yOffset = val
@@ -4954,7 +4954,7 @@ BuildResourceBarAnchoringPanel = function(container)
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Bar Spacing")
         spacingSlider:SetSliderValues(0, 20, 0.1)
-        spacingSlider:SetValue(settings.barSpacing or 1)
+        spacingSlider:SetValue(settings.barSpacing or 3.6)
         spacingSlider:SetFullWidth(true)
         spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
             settings.barSpacing = val
@@ -4993,7 +4993,7 @@ BuildResourceBarAnchoringPanel = function(container)
             cast_first = "Cast Bar First",
             resource_first = "Resource Bars First",
         }, { "cast_first", "resource_first" })
-        stackDrop:SetValue(settings.stackOrder or "cast_first")
+        stackDrop:SetValue(settings.stackOrder or "resource_first")
         stackDrop:SetFullWidth(true)
         stackDrop:SetCallback("OnValueChanged", function(widget, event, val)
             settings.stackOrder = val
@@ -5031,7 +5031,7 @@ BuildResourceBarAnchoringPanel = function(container)
         if classID and not NO_MANA_CLASSES[classID] then
             local manaCb = AceGUI:Create("CheckBox")
             manaCb:SetLabel("Hide Mana for Non-Healer Specs")
-            manaCb:SetValue(settings.hideManaForNonHealer or false)
+            manaCb:SetValue(settings.hideManaForNonHealer ~= false)
             manaCb:SetFullWidth(true)
             manaCb:SetCallback("OnValueChanged", function(widget, event, val)
                 settings.hideManaForNonHealer = val
@@ -5183,7 +5183,7 @@ local function BuildResourceBarStylingPanel(container)
     local gapSlider = AceGUI:Create("Slider")
     gapSlider:SetLabel("Segment Gap")
     gapSlider:SetSliderValues(0, 20, 0.1)
-    gapSlider:SetValue(settings.segmentGap or 2)
+    gapSlider:SetValue(settings.segmentGap or 4)
     gapSlider:SetFullWidth(true)
     gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
         settings.segmentGap = val
