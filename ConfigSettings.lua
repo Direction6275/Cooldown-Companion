@@ -1884,7 +1884,6 @@ local function BuildExtrasTab(container)
         table.insert(tabInfoButtons, maxVisInfo)
     end
 
-    if not isBarMode then
     -- Loss of control
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
@@ -1931,7 +1930,6 @@ local function BuildExtrasTab(container)
         end)
         container:AddChild(locColor)
     end
-    end -- not isBarMode
 
     -- Usability dimming
     local unusableCb = AceGUI:Create("CheckBox")

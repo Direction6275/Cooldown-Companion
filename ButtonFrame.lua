@@ -2295,6 +2295,9 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Icon tinting (out-of-range red / unusable dimming)
     UpdateIconTint(button, button.buttonData, style)
 
+    -- Loss of control overlay on bar icon
+    UpdateLossOfControl(button)
+
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
     if button._pandemicPreview then
@@ -2576,6 +2579,16 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.borderTextures[i] = tex
     end
     ApplyEdgePositions(button.borderTextures, button._barBounds, borderSize)
+
+    -- Loss of control cooldown frame (red swipe over the bar icon)
+    button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
+    button.locCooldown:SetAllPoints(button.icon)
+    button.locCooldown:SetDrawEdge(true)
+    button.locCooldown:SetDrawSwipe(true)
+    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
+    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetHideCountdownNumbers(true)
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
     -- Hidden cooldown frame for GetCooldownTimes() reads
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
