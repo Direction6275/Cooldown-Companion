@@ -346,15 +346,7 @@ local function SuppressFX(cb, s)
     end
     if s.showCastFinishFX == false then
         if cb.StandardFinish then cb.StandardFinish:Stop() end
-        if cb.FlashAnim then cb.FlashAnim:Stop() end
-        if cb.Flash then cb.Flash:SetAlpha(0) end
-    end
-    if s.showChannelFinishFX == false then
         if cb.ChannelFinish then cb.ChannelFinish:Stop() end
-        if cb.FlashAnim then cb.FlashAnim:Stop() end
-        if cb.Flash then cb.Flash:SetAlpha(0) end
-    end
-    if s.showCraftFinishFX == false then
         if cb.CraftingFinish then cb.CraftingFinish:Stop() end
         if cb.FlashAnim then cb.FlashAnim:Stop() end
         if cb.Flash then cb.Flash:SetAlpha(0) end
@@ -395,7 +387,7 @@ local function InstallFXHooks(cb)
         local anim = cb.ChannelFinish
         hooksecurefunc(anim, "Play", function()
             local s = GetCastBarSettings()
-            if s and s.showChannelFinishFX == false then
+            if s and s.showCastFinishFX == false then
                 anim:Stop()
                 if cb.FlashAnim then cb.FlashAnim:Stop() end
                 if cb.Flash then cb.Flash:SetAlpha(0) end
@@ -406,7 +398,7 @@ local function InstallFXHooks(cb)
         local anim = cb.CraftingFinish
         hooksecurefunc(anim, "Play", function()
             local s = GetCastBarSettings()
-            if s and s.showCraftFinishFX == false then
+            if s and s.showCastFinishFX == false then
                 anim:Stop()
                 if cb.FlashAnim then cb.FlashAnim:Stop() end
                 if cb.Flash then cb.Flash:SetAlpha(0) end

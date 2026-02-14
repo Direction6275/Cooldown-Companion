@@ -4252,25 +4252,6 @@ BuildCastBarAnchoringPanel = function(container)
         end)
         container:AddChild(castFinishCb)
 
-        local chanFinishCb = AceGUI:Create("CheckBox")
-        chanFinishCb:SetLabel("Show Channel Finish FX")
-        chanFinishCb:SetValue(settings.showChannelFinishFX ~= false)
-        chanFinishCb:SetFullWidth(true)
-        chanFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.showChannelFinishFX = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        container:AddChild(chanFinishCb)
-
-        local craftFinishCb = AceGUI:Create("CheckBox")
-        craftFinishCb:SetLabel("Show Craft Finish FX")
-        craftFinishCb:SetValue(settings.showCraftFinishFX ~= false)
-        craftFinishCb:SetFullWidth(true)
-        craftFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.showCraftFinishFX = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        container:AddChild(craftFinishCb)
     end
 end
 
