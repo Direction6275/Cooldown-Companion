@@ -1615,6 +1615,8 @@ end
 -- Forward declarations — defined after all collapsible-section state
 local BuildCastBarAnchoringPanel
 local BuildResourceBarAnchoringPanel
+local BuildFrameAnchoringPlayerPanel
+local BuildFrameAnchoringTargetPanel
 
 local function RefreshButtonSettingsColumn()
     local cf = CS.configFrame
@@ -1628,6 +1630,7 @@ local function RefreshButtonSettingsColumn()
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
         if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
         if bsCol.resourceBarScroll then bsCol.resourceBarScroll.frame:Hide() end
+        if bsCol.frameAnchoringScroll then bsCol.frameAnchoringScroll.frame:Hide() end
 
         if not bsCol.castBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -1654,6 +1657,7 @@ local function RefreshButtonSettingsColumn()
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
         if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
+        if bsCol.frameAnchoringScroll then bsCol.frameAnchoringScroll.frame:Hide() end
 
         if not bsCol.resourceBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -1673,6 +1677,32 @@ local function RefreshButtonSettingsColumn()
     -- Hide resource bar scroll when not in resource bar mode
     if bsCol.resourceBarScroll then
         bsCol.resourceBarScroll.frame:Hide()
+    end
+
+    -- Frame anchoring overlay: replace button settings with player frame panel
+    if CS.frameAnchoringPanelActive then
+        bsCol.bsTabGroup.frame:Hide()
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+        if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
+
+        if not bsCol.frameAnchoringScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(bsCol.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
+            bsCol.frameAnchoringScroll = scroll
+        end
+        bsCol.frameAnchoringScroll:ReleaseChildren()
+        bsCol.frameAnchoringScroll.frame:Show()
+        BuildFrameAnchoringPlayerPanel(bsCol.frameAnchoringScroll)
+        return
+    end
+
+    -- Hide frame anchoring scroll when not in frame anchoring mode
+    if bsCol.frameAnchoringScroll then
+        bsCol.frameAnchoringScroll.frame:Hide()
     end
 
     -- Check for multiselect
@@ -5578,6 +5608,269 @@ local function BuildResourceBarStylingPanel(container)
     end
 end
 
+------------------------------------------------------------------------
+-- Frame Anchoring panels
+------------------------------------------------------------------------
+
+local ANCHOR_POINTS = {
+    "TOPLEFT", "TOP", "TOPRIGHT",
+    "LEFT", "CENTER", "RIGHT",
+    "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
+}
+local ANCHOR_POINT_LABELS = {}
+for _, p in ipairs(ANCHOR_POINTS) do ANCHOR_POINT_LABELS[p] = p end
+
+local MIRROR_POINTS = {
+    LEFT         = "RIGHT",
+    RIGHT        = "LEFT",
+    TOPLEFT      = "TOPRIGHT",
+    TOPRIGHT     = "TOPLEFT",
+    BOTTOMLEFT   = "BOTTOMRIGHT",
+    BOTTOMRIGHT  = "BOTTOMLEFT",
+    TOP          = "TOP",
+    BOTTOM       = "BOTTOM",
+    CENTER       = "CENTER",
+}
+
+local UNIT_FRAME_OPTIONS = {
+    [""]         = "Auto-detect",
+    blizzard     = "Blizzard Default",
+    uuf          = "UnhaltedUnitFrames",
+    elvui        = "ElvUI",
+    custom       = "Custom",
+}
+local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "custom" }
+
+BuildFrameAnchoringPlayerPanel = function(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.frameAnchoring
+
+    -- Enable Frame Anchoring
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Enable Frame Anchoring")
+    enableCb:SetValue(settings.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.enabled = val
+        CooldownCompanion:EvaluateFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    if not settings.enabled then return end
+
+    -- Anchor Group dropdown
+    local groupDropValues = { [""] = "Auto (first available)" }
+    local groupDropOrder = { "" }
+    for groupId, group in pairs(db.groups) do
+        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
+            groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
+            table.insert(groupDropOrder, tostring(groupId))
+        end
+    end
+
+    local anchorDrop = AceGUI:Create("Dropdown")
+    anchorDrop:SetLabel("Anchor to Group")
+    anchorDrop:SetList(groupDropValues, groupDropOrder)
+    anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
+    anchorDrop:SetFullWidth(true)
+    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.anchorGroupId = val ~= "" and tonumber(val) or nil
+        CooldownCompanion:EvaluateFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorDrop)
+
+    if #groupDropOrder <= 1 then
+        local noGroupsLabel = AceGUI:Create("Label")
+        noGroupsLabel:SetText("No icon groups are currently enabled for this spec. Enable an icon group to anchor here.")
+        noGroupsLabel:SetFullWidth(true)
+        container:AddChild(noGroupsLabel)
+    end
+
+    -- Unit Frames dropdown
+    local ufDrop = AceGUI:Create("Dropdown")
+    ufDrop:SetLabel("Unit Frames")
+    ufDrop:SetList(UNIT_FRAME_OPTIONS, UNIT_FRAME_ORDER)
+    ufDrop:SetValue(settings.unitFrameAddon or "")
+    ufDrop:SetFullWidth(true)
+    ufDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.unitFrameAddon = val ~= "" and val or nil
+        CooldownCompanion:EvaluateFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(ufDrop)
+
+    -- Custom frame name editboxes (only when "Custom" selected)
+    if settings.unitFrameAddon == "custom" then
+        local playerEdit = AceGUI:Create("EditBox")
+        playerEdit:SetLabel("Player Frame Name")
+        playerEdit:SetText(settings.customPlayerFrame or "")
+        playerEdit:SetFullWidth(true)
+        playerEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+            settings.customPlayerFrame = text
+            CooldownCompanion:EvaluateFrameAnchoring()
+        end)
+        container:AddChild(playerEdit)
+
+        local targetEdit = AceGUI:Create("EditBox")
+        targetEdit:SetLabel("Target Frame Name")
+        targetEdit:SetText(settings.customTargetFrame or "")
+        targetEdit:SetFullWidth(true)
+        targetEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+            settings.customTargetFrame = text
+            CooldownCompanion:EvaluateFrameAnchoring()
+        end)
+        container:AddChild(targetEdit)
+    end
+
+    -- Mirroring checkbox
+    local mirrorCb = AceGUI:Create("CheckBox")
+    mirrorCb:SetLabel("Mirror target from player")
+    mirrorCb:SetValue(settings.mirroring)
+    mirrorCb:SetFullWidth(true)
+    mirrorCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.mirroring = val
+        CooldownCompanion:ApplyFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(mirrorCb)
+
+    -- Player Frame section heading
+    local playerHeading = AceGUI:Create("Heading")
+    playerHeading:SetText("Player Frame Position")
+    playerHeading:SetFullWidth(true)
+    container:AddChild(playerHeading)
+
+    local ps = settings.player
+
+    -- Anchor Point
+    local apDrop = AceGUI:Create("Dropdown")
+    apDrop:SetLabel("Anchor Point")
+    apDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
+    apDrop:SetValue(ps.anchorPoint or "RIGHT")
+    apDrop:SetFullWidth(true)
+    apDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        ps.anchorPoint = val
+        CooldownCompanion:ApplyFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(apDrop)
+
+    -- Relative Anchor Point
+    local rpDrop = AceGUI:Create("Dropdown")
+    rpDrop:SetLabel("Relative Anchor Point")
+    rpDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
+    rpDrop:SetValue(ps.relativePoint or "LEFT")
+    rpDrop:SetFullWidth(true)
+    rpDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        ps.relativePoint = val
+        CooldownCompanion:ApplyFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(rpDrop)
+
+    -- X Offset
+    local xSlider = AceGUI:Create("Slider")
+    xSlider:SetLabel("X Offset")
+    xSlider:SetSliderValues(-200, 200, 0.1)
+    xSlider:SetValue(ps.xOffset or 0)
+    xSlider:SetFullWidth(true)
+    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        ps.xOffset = val
+        CooldownCompanion:ApplyFrameAnchoring()
+    end)
+    container:AddChild(xSlider)
+
+    -- Y Offset
+    local ySlider = AceGUI:Create("Slider")
+    ySlider:SetLabel("Y Offset")
+    ySlider:SetSliderValues(-200, 200, 0.1)
+    ySlider:SetValue(ps.yOffset or 0)
+    ySlider:SetFullWidth(true)
+    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+        ps.yOffset = val
+        CooldownCompanion:ApplyFrameAnchoring()
+    end)
+    container:AddChild(ySlider)
+end
+
+BuildFrameAnchoringTargetPanel = function(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.frameAnchoring
+
+    if not settings.enabled then
+        local disabledLabel = AceGUI:Create("Label")
+        disabledLabel:SetText("Enable Frame Anchoring in the Player Frame column to configure target settings.")
+        disabledLabel:SetFullWidth(true)
+        container:AddChild(disabledLabel)
+        return
+    end
+
+    if settings.mirroring then
+        local infoLabel = AceGUI:Create("Label")
+        infoLabel:SetText("Target frame is mirrored from player frame settings.")
+        infoLabel:SetFullWidth(true)
+        container:AddChild(infoLabel)
+    else
+        -- Independent target settings
+        local targetHeading = AceGUI:Create("Heading")
+        targetHeading:SetText("Target Frame Position")
+        targetHeading:SetFullWidth(true)
+        container:AddChild(targetHeading)
+
+        local ts = settings.target
+
+        -- Anchor Point
+        local apDrop = AceGUI:Create("Dropdown")
+        apDrop:SetLabel("Anchor Point")
+        apDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
+        apDrop:SetValue(ts.anchorPoint or "LEFT")
+        apDrop:SetFullWidth(true)
+        apDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            ts.anchorPoint = val
+            CooldownCompanion:ApplyFrameAnchoring()
+        end)
+        container:AddChild(apDrop)
+
+        -- Relative Anchor Point
+        local rpDrop = AceGUI:Create("Dropdown")
+        rpDrop:SetLabel("Relative Anchor Point")
+        rpDrop:SetList(ANCHOR_POINT_LABELS, ANCHOR_POINTS)
+        rpDrop:SetValue(ts.relativePoint or "RIGHT")
+        rpDrop:SetFullWidth(true)
+        rpDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            ts.relativePoint = val
+            CooldownCompanion:ApplyFrameAnchoring()
+        end)
+        container:AddChild(rpDrop)
+
+        -- X Offset
+        local xSlider = AceGUI:Create("Slider")
+        xSlider:SetLabel("X Offset")
+        xSlider:SetSliderValues(-200, 200, 0.1)
+        xSlider:SetValue(ts.xOffset or 0)
+        xSlider:SetFullWidth(true)
+        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            ts.xOffset = val
+            CooldownCompanion:ApplyFrameAnchoring()
+        end)
+        container:AddChild(xSlider)
+
+        -- Y Offset
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(-200, 200, 0.1)
+        ySlider:SetValue(ts.yOffset or 0)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            ts.yOffset = val
+            CooldownCompanion:ApplyFrameAnchoring()
+        end)
+        container:AddChild(ySlider)
+    end
+end
+
 -- Expose builder functions for Config.lua to call
 ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
@@ -5593,3 +5886,5 @@ ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel
 ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
+ST._BuildFrameAnchoringPlayerPanel = BuildFrameAnchoringPlayerPanel
+ST._BuildFrameAnchoringTargetPanel = BuildFrameAnchoringTargetPanel

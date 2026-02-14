@@ -139,6 +139,7 @@ ST._configState = {
     appearanceTabElements = {},
     castBarPanelActive = false,
     resourceBarPanelActive = false,
+    frameAnchoringPanelActive = false,
     -- Static lookup tables
     fontOptions = fontOptions,
     outlineOptions = outlineOptions,
@@ -2980,6 +2981,7 @@ function RefreshColumn1(preserveDrag)
                 selectedButton = nil
                 wipe(selectedButtons)
                 CS.castBarPanelActive = false
+                CS.frameAnchoringPanelActive = false
                 CooldownCompanion:StopCastBarPreview()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
@@ -4370,6 +4372,9 @@ function RefreshColumn3(container)
         if container.resourceBarScroll then
             container.resourceBarScroll.frame:Hide()
         end
+        if container.frameAnchoringScroll then
+            container.frameAnchoringScroll.frame:Hide()
+        end
         -- Create or reuse the cast bar scroll frame
         if not container.castBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -4399,6 +4404,9 @@ function RefreshColumn3(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
+        if container.frameAnchoringScroll then
+            container.frameAnchoringScroll.frame:Hide()
+        end
         if not container.resourceBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
@@ -4417,6 +4425,34 @@ function RefreshColumn3(container)
     -- Hide resource bar scroll if it exists
     if container.resourceBarScroll then
         container.resourceBarScroll.frame:Hide()
+    end
+
+    -- Frame Anchoring panel mode: show target frame settings
+    if CS.frameAnchoringPanelActive then
+        if container.placeholderLabel then
+            container.placeholderLabel:Hide()
+        end
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        if not container.frameAnchoringScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(container)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.frameAnchoringScroll = scroll
+        end
+        container.frameAnchoringScroll:ReleaseChildren()
+        container.frameAnchoringScroll.frame:Show()
+        SyncConfigState()
+        ST._BuildFrameAnchoringTargetPanel(container.frameAnchoringScroll)
+        return
+    end
+    -- Hide frame anchoring scroll if it exists
+    if container.frameAnchoringScroll then
+        container.frameAnchoringScroll.frame:Hide()
     end
 
     -- Multi-group selection: show placeholder
@@ -4747,6 +4783,15 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
+    -- Frame Anchoring button — leftmost in cluster
+    local frameAnchoringBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    frameAnchoringBtn:SetSize(16, 16)
+    local frameAnchoringIcon = frameAnchoringBtn:CreateTexture(nil, "ARTWORK")
+    frameAnchoringIcon:SetAtlas("UI-HUD-UnitFrame-Player-Group-FriendOnlineIcon")
+    frameAnchoringIcon:SetAllPoints()
+    frameAnchoringBtn:SetHighlightAtlas("UI-HUD-UnitFrame-Player-Group-FriendOnlineIcon")
+    frameAnchoringBtn:GetHighlightTexture():SetAlpha(0.3)
+
     -- Resource Bar button — left of Cast Bar button
     local resourceBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
     resourceBarBtn:SetSize(16, 16)
@@ -4765,9 +4810,26 @@ local function CreateConfigPanel()
     castBarBtn:SetHighlightAtlas("icons_16x16_magic")
     castBarBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Highlight functions (defined after both buttons exist so closures can capture both)
+    -- Highlight functions (defined after all buttons exist so closures can capture all)
+    local frameAnchoringBtnBorder = nil
     local resourceBarBtnBorder = nil
     local castBarBtnBorder = nil
+
+    local function UpdateFrameAnchoringBtnHighlight()
+        if CS.frameAnchoringPanelActive then
+            if not frameAnchoringBtnBorder then
+                frameAnchoringBtnBorder = frameAnchoringBtn:CreateTexture(nil, "OVERLAY")
+                frameAnchoringBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                frameAnchoringBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                frameAnchoringBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            frameAnchoringBtnBorder:Show()
+        else
+            if frameAnchoringBtnBorder then
+                frameAnchoringBtnBorder:Hide()
+            end
+        end
+    end
 
     local function UpdateResourceBarBtnHighlight()
         if CS.resourceBarPanelActive then
@@ -4801,7 +4863,34 @@ local function CreateConfigPanel()
         end
     end
 
-    -- OnClick handlers (both highlight functions in scope)
+    -- OnClick handlers (all highlight functions in scope)
+    frameAnchoringBtn:SetScript("OnClick", function()
+        if CS.frameAnchoringPanelActive then
+            CS.frameAnchoringPanelActive = false
+        else
+            CS.frameAnchoringPanelActive = true
+            CS.castBarPanelActive = false
+            CS.resourceBarPanelActive = false
+            CooldownCompanion:StopCastBarPreview()
+            CooldownCompanion:StopResourceBarPreview()
+            selectedGroup = nil
+            selectedButton = nil
+            wipe(selectedButtons)
+            wipe(selectedGroups)
+        end
+        UpdateFrameAnchoringBtnHighlight()
+        UpdateResourceBarBtnHighlight()
+        UpdateCastBarBtnHighlight()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    frameAnchoringBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Frame Anchoring")
+        GameTooltip:AddLine("Anchor player and target unit frames to icon groups", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    frameAnchoringBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     resourceBarBtn:SetScript("OnClick", function()
         if CS.resourceBarPanelActive then
             CS.resourceBarPanelActive = false
@@ -4809,12 +4898,14 @@ local function CreateConfigPanel()
         else
             CS.resourceBarPanelActive = true
             CS.castBarPanelActive = false
+            CS.frameAnchoringPanelActive = false
             CooldownCompanion:StopCastBarPreview()
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
             wipe(selectedGroups)
         end
+        UpdateFrameAnchoringBtnHighlight()
         UpdateResourceBarBtnHighlight()
         UpdateCastBarBtnHighlight()
         CooldownCompanion:RefreshConfigPanel()
@@ -4834,12 +4925,14 @@ local function CreateConfigPanel()
         else
             CS.castBarPanelActive = true
             CS.resourceBarPanelActive = false
+            CS.frameAnchoringPanelActive = false
             CooldownCompanion:StopResourceBarPreview()
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
             wipe(selectedGroups)
         end
+        UpdateFrameAnchoringBtnHighlight()
         UpdateCastBarBtnHighlight()
         UpdateResourceBarBtnHighlight()
         CooldownCompanion:RefreshConfigPanel()
@@ -4858,6 +4951,7 @@ local function CreateConfigPanel()
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     resourceBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
     castBarBtn:SetPoint("RIGHT", resourceBarBtn, "LEFT", -4, 0)
+    frameAnchoringBtn:SetPoint("RIGHT", castBarBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -5429,6 +5523,7 @@ local function CreateConfigPanel()
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCastBarBtnHighlight = UpdateCastBarBtnHighlight
     frame.UpdateResourceBarBtnHighlight = UpdateResourceBarBtnHighlight
+    frame.UpdateFrameAnchoringBtnHighlight = UpdateFrameAnchoringBtnHighlight
 
     configFrame = frame
     CS.configFrame = frame
@@ -5475,12 +5570,18 @@ function CooldownCompanion:RefreshConfigPanel()
     if configFrame.UpdateResourceBarBtnHighlight then
         configFrame.UpdateResourceBarBtnHighlight()
     end
+    if configFrame.UpdateFrameAnchoringBtnHighlight then
+        configFrame.UpdateFrameAnchoringBtnHighlight()
+    end
     if CS.castBarPanelActive then
         configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
         configFrame.col3:SetTitle("Cast Bar Styling")
     elseif CS.resourceBarPanelActive then
         configFrame.buttonSettingsCol:SetTitle("Resource Anchoring")
         configFrame.col3:SetTitle("Resource Styling")
+    elseif CS.frameAnchoringPanelActive then
+        configFrame.buttonSettingsCol:SetTitle("Player Frame")
+        configFrame.col3:SetTitle("Target Frame")
     else
         configFrame.buttonSettingsCol:SetTitle("Button Settings")
         configFrame.col3:SetTitle("Group Settings")
@@ -5578,6 +5679,7 @@ function CooldownCompanion:SetupConfig()
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
         CS.resourceBarPanelActive = false
+        CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
@@ -5594,6 +5696,7 @@ function CooldownCompanion:SetupConfig()
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
         CS.resourceBarPanelActive = false
+        CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
@@ -5610,6 +5713,7 @@ function CooldownCompanion:SetupConfig()
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
         CS.resourceBarPanelActive = false
+        CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 

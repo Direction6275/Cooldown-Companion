@@ -297,6 +297,26 @@ local defaults = {
             castTimeXOffset = 0,
             castTimeYOffset = 0,
         },
+        frameAnchoring = {
+            enabled = false,
+            anchorGroupId = nil,
+            mirroring = true,
+            unitFrameAddon = nil,
+            customPlayerFrame = "",
+            customTargetFrame = "",
+            player = {
+                anchorPoint = "RIGHT",
+                relativePoint = "LEFT",
+                xOffset = -10,
+                yOffset = 0,
+            },
+            target = {
+                anchorPoint = "LEFT",
+                relativePoint = "RIGHT",
+                xOffset = 10,
+                yOffset = 0,
+            },
+        },
     },
 }
 
