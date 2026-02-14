@@ -4073,9 +4073,10 @@ end
 local castBarCollapsedSections = {}
 
 local barTextureOptions = {
-    ["Interface\\TargetingFrame\\UI-StatusBar"]          = "Blizzard (Default)",
-    ["Interface\\BUTTONS\\WHITE8X8"]                     = "Flat",
-    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]           = "Raid",
+    ["blizzard_class"]                                       = "Blizzard (Class)",
+    ["Interface\\TargetingFrame\\UI-StatusBar"]              = "Blizzard (Default)",
+    ["Interface\\BUTTONS\\WHITE8X8"]                         = "Flat",
+    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]               = "Raid",
     ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Skills Bar",
 }
 
@@ -5092,8 +5093,24 @@ local function BuildResourceBarStylingPanel(container)
     texDrop:SetCallback("OnValueChanged", function(widget, event, val)
         settings.barTexture = val
         CooldownCompanion:ApplyResourceBars()
+        -- Defer panel rebuild to next frame so it doesn't interfere with current callback
+        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
     end)
     container:AddChild(texDrop)
+
+    -- Brightness slider (only for Blizzard Class texture)
+    if settings.barTexture == "blizzard_class" then
+        local brightSlider = AceGUI:Create("Slider")
+        brightSlider:SetLabel("Class Texture Brightness")
+        brightSlider:SetSliderValues(0.5, 2.0, 0.05)
+        brightSlider:SetValue(settings.classBarBrightness or 1.3)
+        brightSlider:SetFullWidth(true)
+        brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.classBarBrightness = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(brightSlider)
+    end
 
     -- Background Color
     local bgColorPicker = AceGUI:Create("ColorPicker")
@@ -5590,27 +5607,32 @@ local function BuildResourceBarStylingPanel(container)
                 container:AddChild(cpMax)
             else
                 local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
-                local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
 
-                local cp = AceGUI:Create("ColorPicker")
-                cp:SetLabel(name)
-                cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
-                cp:SetHasAlpha(false)
-                cp:SetFullWidth(true)
-                cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    if not settings.resources[pt] then
-                        settings.resources[pt] = {}
-                    end
-                    settings.resources[pt].color = {r, g, b}
-                end)
-                cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    if not settings.resources[pt] then
-                        settings.resources[pt] = {}
-                    end
-                    settings.resources[pt].color = {r, g, b}
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cp)
+                if settings.barTexture == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
+                    -- Atlas-backed type; color picker not applicable
+                else
+                    local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
+
+                    local cp = AceGUI:Create("ColorPicker")
+                    cp:SetLabel(name)
+                    cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
+                    cp:SetHasAlpha(false)
+                    cp:SetFullWidth(true)
+                    cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                        if not settings.resources[pt] then
+                            settings.resources[pt] = {}
+                        end
+                        settings.resources[pt].color = {r, g, b}
+                    end)
+                    cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                        if not settings.resources[pt] then
+                            settings.resources[pt] = {}
+                        end
+                        settings.resources[pt].color = {r, g, b}
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(cp)
+                end
             end
         end
     end

@@ -106,6 +106,19 @@ local SEGMENTED_TYPES = {
     [19] = true,  -- Essence
 }
 
+-- Atlas info for class-specific bar textures (from PowerBarColorUtil.lua)
+-- Only continuous power types that have a direct atlas field in Blizzard's data
+local POWER_ATLAS_INFO = {
+    [8]  = { atlas = "Unit_Druid_AstralPower_Fill" },
+    [11] = { atlas = "Unit_Shaman_Maelstrom_Fill" },
+    [13] = { atlas = "Unit_Priest_Insanity_Fill" },
+    [17] = { atlas = "Unit_DemonHunter_Fury_Fill" },
+    [18] = { atlas = "_DemonHunter-DemonicPainBar" },
+}
+
+-- Expose atlas-backed power types for ConfigSettings to check
+ST.POWER_ATLAS_TYPES = { [8] = true, [11] = true, [13] = true, [17] = true, [18] = true }
+
 -- Class-to-resource mapping (classID -> ordered list of power types)
 -- Order = stacking order (first = closest to anchor)
 local CLASS_RESOURCES = {
@@ -451,6 +464,11 @@ local function CreateContinuousBar(parent)
     bar.text:SetPoint("CENTER")
     bar.text:SetTextColor(1, 1, 1, 1)
 
+    -- Brightness overlay (additive layer for atlas textures, since SetStatusBarColor clamps to [0,1])
+    bar.brightnessOverlay = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+    bar.brightnessOverlay:SetBlendMode("ADD")
+    bar.brightnessOverlay:Hide()
+
     bar._barType = "continuous"
     return bar
 end
@@ -536,6 +554,7 @@ local function UpdateContinuousBar(bar, powerType)
             bar.text:SetFormattedText("%d / %d", UnitPower("player", powerType), UnitPowerMax("player", powerType))
         end
     end
+
 end
 
 ------------------------------------------------------------------------
@@ -775,11 +794,45 @@ end
 ------------------------------------------------------------------------
 
 local function StyleContinuousBar(bar, powerType, settings)
-    local color = GetPowerColor(powerType, settings)
-    bar:SetStatusBarColor(color[1], color[2], color[3], 1)
-
     local tex = settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
-    bar:SetStatusBarTexture(tex)
+    local atlasInfo = nil
+    local useAtlas = false
+
+    if tex == "blizzard_class" then
+        atlasInfo = POWER_ATLAS_INFO[powerType]
+        if atlasInfo then
+            useAtlas = true
+            bar:SetStatusBarTexture(atlasInfo.atlas)
+            bar:SetStatusBarColor(1, 1, 1)  -- white so atlas colors show through
+
+            -- Brightness overlay: additive layer over the fill for brightness > 1.0
+            local brightness = settings.classBarBrightness or 1.3
+            local fillTexture = bar:GetStatusBarTexture()
+            bar.brightnessOverlay:SetAllPoints(fillTexture)
+            bar.brightnessOverlay:SetAtlas(atlasInfo.atlas)
+            if brightness > 1.0 then
+                bar.brightnessOverlay:SetAlpha(brightness - 1.0)
+                bar.brightnessOverlay:Show()
+            elseif brightness < 1.0 then
+                bar:SetStatusBarColor(brightness, brightness, brightness)
+                bar.brightnessOverlay:Hide()
+            else
+                bar.brightnessOverlay:Hide()
+            end
+        else
+            -- Fallback for power types without class-specific atlas
+            bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+            local color = GetPowerColor(powerType, settings)
+            bar:SetStatusBarColor(color[1], color[2], color[3], 1)
+            bar.brightnessOverlay:Hide()
+        end
+    else
+        bar:SetStatusBarTexture(tex)
+        local color = GetPowerColor(powerType, settings)
+        bar:SetStatusBarColor(color[1], color[2], color[3], 1)
+        bar.brightnessOverlay:Hide()
+    end
+
 
     local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
     bar.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
@@ -922,6 +975,9 @@ function CooldownCompanion:ApplyResourceBars()
     for i = #filtered + 1, #resourceBarFrames do
         if resourceBarFrames[i] and resourceBarFrames[i].frame then
             resourceBarFrames[i].frame:Hide()
+            if resourceBarFrames[i].frame.brightnessOverlay then
+                resourceBarFrames[i].frame.brightnessOverlay:Hide()
+            end
         end
     end
 
@@ -1042,6 +1098,9 @@ function CooldownCompanion:RevertResourceBars()
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame then
             barInfo.frame:Hide()
+            if barInfo.frame.brightnessOverlay then
+                barInfo.frame.brightnessOverlay:Hide()
+            end
         end
     end
 
