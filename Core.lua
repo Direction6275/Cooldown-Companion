@@ -1705,6 +1705,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if group.displayMode ~= "icons" then return false end
+    if group.isGlobal then return false end
     if group.enabled == false then return false end
     if not self:IsGroupVisibleToCurrentChar(groupId) then return false end
 

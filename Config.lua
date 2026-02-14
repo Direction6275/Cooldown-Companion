@@ -2426,6 +2426,11 @@ ApplyCol1Drop = function(state)
             end
         end
     end
+
+    -- Group order may have changed — re-evaluate auto-anchored bars
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:EvaluateCastBar()
 end
 
 local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
@@ -2484,6 +2489,9 @@ local function FinishDrag()
     if state.kind == "group" and state.groupIds then
         -- Legacy flat reorder (column 2 button drags still use this path)
         PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" or state.kind == "multi-group" then
         -- Column 1 folder-aware drop
