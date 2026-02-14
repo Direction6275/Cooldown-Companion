@@ -3656,19 +3656,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     -- Hide While On Cooldown
     local hasCooldown = true
     if buttonData.type == "spell" then
-        hasCooldown = false
-        local tipData = C_TooltipInfo.GetSpellByID(buttonData.id)
-        if tipData and tipData.lines then
-            for _, line in ipairs(tipData.lines) do
-                local left = line.leftText and line.leftText:lower() or ""
-                local right = line.rightText and line.rightText:lower() or ""
-                if left:find("cooldown") or left:find("recharge")
-                    or right:find("cooldown") or right:find("recharge") then
-                    hasCooldown = true
-                    break
-                end
-            end
-        end
+        local baseCooldown = GetSpellBaseCooldown(buttonData.id)
+        hasCooldown = baseCooldown and baseCooldown > 1500
     end
     local hideCDCb = AceGUI:Create("CheckBox")
     hideCDCb:SetLabel("Hide While On Cooldown")
