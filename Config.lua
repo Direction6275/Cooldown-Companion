@@ -138,6 +138,7 @@ ST._configState = {
     tabInfoButtons = {},
     appearanceTabElements = {},
     castBarPanelActive = false,
+    resourceBarPanelActive = false,
     -- Static lookup tables
     fontOptions = fontOptions,
     outlineOptions = outlineOptions,
@@ -1197,7 +1198,7 @@ CS.StartPickCDM = StartPickCDM
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input)
+local function TryAddSpell(input, isPetSpell)
     if input == "" or not selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -1226,7 +1227,7 @@ local function TryAddSpell(input)
             CooldownCompanion:Print("Cannot track Single-Button Assistant")
             return false
         end
-        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
     else
@@ -1428,6 +1429,8 @@ local function TryReceiveCursorDrop()
     local added = false
     if cursorType == "spell" and cursorSpellID then
         added = TryAddSpell(tostring(cursorSpellID))
+    elseif cursorType == "petaction" and cursorID then
+        added = TryAddSpell(tostring(cursorID), true)
     elseif cursorType == "item" and cursorID then
         added = TryAddItem(tostring(cursorID))
     end
@@ -1473,6 +1476,31 @@ local function BuildAutocompleteCache()
                             isItem = false,
                         })
                     end
+                end
+            end
+        end
+    end
+
+    -- Iterate pet spellbook
+    local numPetSpells = C_SpellBook.HasPetSpells()
+    if numPetSpells and numPetSpells > 0 then
+        for slotIdx = 1, numPetSpells do
+            local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Pet)
+            if itemInfo and itemInfo.spellID
+                and not itemInfo.isPassive
+            then
+                local id = itemInfo.spellID
+                if not seen[id] then
+                    seen[id] = true
+                    table.insert(cache, {
+                        id = id,
+                        name = itemInfo.name,
+                        nameLower = itemInfo.name:lower(),
+                        icon = itemInfo.iconID or 134400,
+                        category = "Pet",
+                        isItem = false,
+                        isPetSpell = true,
+                    })
                 end
             end
         end
@@ -1603,7 +1631,7 @@ local function OnAutocompleteSelect(entry)
     if entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        added = TryAddSpell(tostring(entry.id))
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell)
     end
     if added then
         newInput = ""
@@ -2425,6 +2453,11 @@ ApplyCol1Drop = function(state)
             end
         end
     end
+
+    -- Group order may have changed — re-evaluate auto-anchored bars
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:EvaluateCastBar()
 end
 
 local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
@@ -2483,6 +2516,9 @@ local function FinishDrag()
     if state.kind == "group" and state.groupIds then
         -- Legacy flat reorder (column 2 button drags still use this path)
         PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" or state.kind == "multi-group" then
         -- Column 1 folder-aware drop
@@ -4331,6 +4367,9 @@ function RefreshColumn3(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
+        if container.resourceBarScroll then
+            container.resourceBarScroll.frame:Hide()
+        end
         -- Create or reuse the cast bar scroll frame
         if not container.castBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -4350,6 +4389,34 @@ function RefreshColumn3(container)
     -- Hide cast bar scroll if it exists
     if container.castBarScroll then
         container.castBarScroll.frame:Hide()
+    end
+
+    -- Resource Bar panel mode: show resource bar styling instead of group settings
+    if CS.resourceBarPanelActive then
+        if container.placeholderLabel then
+            container.placeholderLabel:Hide()
+        end
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        if not container.resourceBarScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(container)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.resourceBarScroll = scroll
+        end
+        container.resourceBarScroll:ReleaseChildren()
+        container.resourceBarScroll.frame:Show()
+        SyncConfigState()
+        ST._BuildResourceBarStylingPanel(container.resourceBarScroll)
+        return
+    end
+    -- Hide resource bar scroll if it exists
+    if container.resourceBarScroll then
+        container.resourceBarScroll.frame:Hide()
     end
 
     -- Multi-group selection: show placeholder
@@ -4680,6 +4747,15 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
+    -- Resource Bar button — left of Cast Bar button
+    local resourceBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    resourceBarBtn:SetSize(16, 16)
+    local resourceBarIcon = resourceBarBtn:CreateTexture(nil, "ARTWORK")
+    resourceBarIcon:SetAtlas("UF-Essence-Icon-Active")
+    resourceBarIcon:SetAllPoints()
+    resourceBarBtn:SetHighlightAtlas("UF-Essence-Icon-Active")
+    resourceBarBtn:GetHighlightTexture():SetAlpha(0.3)
+
     -- Cast Bar button — left of Gear
     local castBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
     castBarBtn:SetSize(16, 16)
@@ -4689,7 +4765,25 @@ local function CreateConfigPanel()
     castBarBtn:SetHighlightAtlas("icons_16x16_magic")
     castBarBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    local castBarBtnBorder = nil -- created on first highlight
+    -- Highlight functions (defined after both buttons exist so closures can capture both)
+    local resourceBarBtnBorder = nil
+    local castBarBtnBorder = nil
+
+    local function UpdateResourceBarBtnHighlight()
+        if CS.resourceBarPanelActive then
+            if not resourceBarBtnBorder then
+                resourceBarBtnBorder = resourceBarBtn:CreateTexture(nil, "OVERLAY")
+                resourceBarBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                resourceBarBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                resourceBarBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            resourceBarBtnBorder:Show()
+        else
+            if resourceBarBtnBorder then
+                resourceBarBtnBorder:Hide()
+            end
+        end
+    end
 
     local function UpdateCastBarBtnHighlight()
         if CS.castBarPanelActive then
@@ -4707,18 +4801,47 @@ local function CreateConfigPanel()
         end
     end
 
+    -- OnClick handlers (both highlight functions in scope)
+    resourceBarBtn:SetScript("OnClick", function()
+        if CS.resourceBarPanelActive then
+            CS.resourceBarPanelActive = false
+            CooldownCompanion:StopResourceBarPreview()
+        else
+            CS.resourceBarPanelActive = true
+            CS.castBarPanelActive = false
+            CooldownCompanion:StopCastBarPreview()
+            selectedGroup = nil
+            selectedButton = nil
+            wipe(selectedButtons)
+            wipe(selectedGroups)
+        end
+        UpdateResourceBarBtnHighlight()
+        UpdateCastBarBtnHighlight()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    resourceBarBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Resource Bars")
+        GameTooltip:AddLine("Display class resource bars anchored to icon groups", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    resourceBarBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     castBarBtn:SetScript("OnClick", function()
         if CS.castBarPanelActive then
             CS.castBarPanelActive = false
             CooldownCompanion:StopCastBarPreview()
         else
             CS.castBarPanelActive = true
+            CS.resourceBarPanelActive = false
+            CooldownCompanion:StopResourceBarPreview()
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
             wipe(selectedGroups)
         end
         UpdateCastBarBtnHighlight()
+        UpdateResourceBarBtnHighlight()
         CooldownCompanion:RefreshConfigPanel()
     end)
     castBarBtn:SetScript("OnEnter", function(self)
@@ -4733,7 +4856,8 @@ local function CreateConfigPanel()
     local gearBtn = CreateFrame("Button", nil, content)
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
-    castBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
+    resourceBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
+    castBarBtn:SetPoint("RIGHT", resourceBarBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -5029,6 +5153,9 @@ local function CreateConfigPanel()
         if CS.castBarPanelActive then
             GameTooltip:AddLine("Cast Bar Anchoring / FX")
             GameTooltip:AddLine("Anchoring, positioning, and visual effects for the cast bar.", 1, 1, 1, true)
+        elseif CS.resourceBarPanelActive then
+            GameTooltip:AddLine("Resource Anchoring")
+            GameTooltip:AddLine("Anchoring, positioning, and resource toggles for resource bars.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Button Settings")
             GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
@@ -5059,6 +5186,9 @@ local function CreateConfigPanel()
         if CS.castBarPanelActive then
             GameTooltip:AddLine("Cast Bar Styling")
             GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
+        elseif CS.resourceBarPanelActive then
+            GameTooltip:AddLine("Resource Styling")
+            GameTooltip:AddLine("Appearance settings for class resource bars.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Group Settings")
             GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
@@ -5227,7 +5357,7 @@ local function CreateConfigPanel()
     dropOverlay:RegisterEvent("CURSOR_CHANGED")
     dropOverlay:SetScript("OnEvent", function(self)
         local cursorType = GetCursorInfo()
-        if (cursorType == "spell" or cursorType == "item") and selectedGroup and col2.frame:IsShown() then
+        if (cursorType == "spell" or cursorType == "item" or cursorType == "petaction") and selectedGroup and col2.frame:IsShown() then
             self:Show()
         else
             self:Hide()
@@ -5282,6 +5412,8 @@ local function CreateConfigPanel()
     local autocompleteCacheFrame = CreateFrame("Frame")
     autocompleteCacheFrame:RegisterEvent("SPELLS_CHANGED")
     autocompleteCacheFrame:RegisterEvent("BAG_UPDATE")
+    autocompleteCacheFrame:RegisterEvent("PET_STABLE_UPDATE")
+    autocompleteCacheFrame:RegisterEvent("UNIT_PET")
     autocompleteCacheFrame:SetScript("OnEvent", function()
         autocompleteCache = nil
     end)
@@ -5296,6 +5428,7 @@ local function CreateConfigPanel()
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCastBarBtnHighlight = UpdateCastBarBtnHighlight
+    frame.UpdateResourceBarBtnHighlight = UpdateResourceBarBtnHighlight
 
     configFrame = frame
     CS.configFrame = frame
@@ -5339,9 +5472,15 @@ function CooldownCompanion:RefreshConfigPanel()
     if configFrame.UpdateCastBarBtnHighlight then
         configFrame.UpdateCastBarBtnHighlight()
     end
+    if configFrame.UpdateResourceBarBtnHighlight then
+        configFrame.UpdateResourceBarBtnHighlight()
+    end
     if CS.castBarPanelActive then
         configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
         configFrame.col3:SetTitle("Cast Bar Styling")
+    elseif CS.resourceBarPanelActive then
+        configFrame.buttonSettingsCol:SetTitle("Resource Anchoring")
+        configFrame.col3:SetTitle("Resource Styling")
     else
         configFrame.buttonSettingsCol:SetTitle("Button Settings")
         configFrame.col3:SetTitle("Group Settings")
@@ -5438,7 +5577,9 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedGroups)
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
+        CS.resourceBarPanelActive = false
         CooldownCompanion:StopCastBarPreview()
+        CooldownCompanion:StopResourceBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -5452,7 +5593,9 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedGroups)
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
+        CS.resourceBarPanelActive = false
         CooldownCompanion:StopCastBarPreview()
+        CooldownCompanion:StopResourceBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -5466,7 +5609,9 @@ function CooldownCompanion:SetupConfig()
         wipe(selectedGroups)
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
+        CS.resourceBarPanelActive = false
         CooldownCompanion:StopCastBarPreview()
+        CooldownCompanion:StopResourceBarPreview()
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()

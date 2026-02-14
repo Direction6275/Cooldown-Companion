@@ -47,9 +47,15 @@ local function GetCastBarSettings()
     return CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.castBar
 end
 
+local function GetEffectiveAnchorGroupId(settings)
+    if not settings then return nil end
+    return settings.anchorGroupId or CooldownCompanion:GetFirstAvailableAnchorGroup()
+end
+
 local function GetAnchorGroupFrame(settings)
-    if not settings or not settings.anchorGroupId then return nil end
-    return CooldownCompanion.groupFrames[settings.anchorGroupId]
+    local groupId = GetEffectiveAnchorGroupId(settings)
+    if not groupId then return nil end
+    return CooldownCompanion.groupFrames[groupId]
 end
 
 --- Create or return the pixel border textures for the cast bar
@@ -340,15 +346,7 @@ local function SuppressFX(cb, s)
     end
     if s.showCastFinishFX == false then
         if cb.StandardFinish then cb.StandardFinish:Stop() end
-        if cb.FlashAnim then cb.FlashAnim:Stop() end
-        if cb.Flash then cb.Flash:SetAlpha(0) end
-    end
-    if s.showChannelFinishFX == false then
         if cb.ChannelFinish then cb.ChannelFinish:Stop() end
-        if cb.FlashAnim then cb.FlashAnim:Stop() end
-        if cb.Flash then cb.Flash:SetAlpha(0) end
-    end
-    if s.showCraftFinishFX == false then
         if cb.CraftingFinish then cb.CraftingFinish:Stop() end
         if cb.FlashAnim then cb.FlashAnim:Stop() end
         if cb.Flash then cb.Flash:SetAlpha(0) end
@@ -389,7 +387,7 @@ local function InstallFXHooks(cb)
         local anim = cb.ChannelFinish
         hooksecurefunc(anim, "Play", function()
             local s = GetCastBarSettings()
-            if s and s.showChannelFinishFX == false then
+            if s and s.showCastFinishFX == false then
                 anim:Stop()
                 if cb.FlashAnim then cb.FlashAnim:Stop() end
                 if cb.Flash then cb.Flash:SetAlpha(0) end
@@ -400,7 +398,7 @@ local function InstallFXHooks(cb)
         local anim = cb.CraftingFinish
         hooksecurefunc(anim, "Play", function()
             local s = GetCastBarSettings()
-            if s and s.showCraftFinishFX == false then
+            if s and s.showCastFinishFX == false then
                 anim:Stop()
                 if cb.FlashAnim then cb.FlashAnim:Stop() end
                 if cb.Flash then cb.Flash:SetAlpha(0) end
@@ -445,7 +443,7 @@ local function InstallSparkHook(cb)
         if not isApplied then return end
         local s = GetCastBarSettings()
         if not s or not s.enabled then return end
-        local barH = s.stylingEnabled and (s.height or 14) or 11
+        local barH = s.stylingEnabled and (s.height or 15) or 11
         spark:SetSize(8, barH * SPARK_HEIGHT_SCALE)
     end)
 end
@@ -462,7 +460,8 @@ local function ApplyPosition(cb, s, height)
     UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
 
     cb:ClearAllPoints()
-    local yOfs = s.yOffset or -2
+    local yOfs = s.yOffset or 0
+    local stackOffset = CooldownCompanion:GetAnchorStackOffset("castBar")
 
     -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
     local iconInsetLeft, iconInsetRight = 0, 0
@@ -476,14 +475,14 @@ local function ApplyPosition(cb, s, height)
     end
 
     if s.position == "above" then
-        cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, -yOfs)
-        cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, -yOfs)
+        cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, -yOfs + stackOffset)
+        cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, -yOfs + stackOffset)
     else
-        cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, yOfs)
-        cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, yOfs)
+        cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, yOfs - stackOffset)
+        cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, yOfs - stackOffset)
     end
 
-    cb:SetHeight(height or 14)
+    cb:SetHeight(height or 15)
 end
 
 ------------------------------------------------------------------------
@@ -500,7 +499,7 @@ local function DeferredReapply()
     if not s or not s.enabled then return end
 
     -- Effective height: custom when styling on, Blizzard default when off
-    local effectiveHeight = s.stylingEnabled and (s.height or 14) or 11
+    local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
 
     -- Re-position (OnShow's AddManagedFrame may have repositioned us)
     ApplyPosition(cb, s, effectiveHeight)
@@ -528,7 +527,7 @@ local function DeferredReapply()
 
         -- Re-apply icon visibility, size, and position
         if cb.Icon then
-            cb.Icon:SetShown(s.showIcon or false)
+            cb.Icon:SetShown(s.showIcon ~= false)
             if s.showIcon then
                 cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 if s.iconOffset then
@@ -556,7 +555,7 @@ local function DeferredReapply()
         end
 
         -- Re-apply pixel borders
-        local bStyle = s.borderStyle or "blizzard"
+        local bStyle = s.borderStyle or "pixel"
         if bStyle == "pixel" then
             local bColor = s.borderColor or {0,0,0,1}
             local bSize = s.borderSize or 1
@@ -594,7 +593,7 @@ local function DeferredReapply()
         end
 
         -- Re-show fill masks based on border style
-        if (s.borderStyle or "blizzard") == "blizzard" then
+        if (s.borderStyle or "pixel") == "blizzard" then
             ShowFillMasks(cb)
         end
     else
@@ -786,7 +785,7 @@ function CooldownCompanion:ApplyCastBarSettings()
     end
 
     -- Validate anchor group
-    local groupId = settings.anchorGroupId
+    local groupId = GetEffectiveAnchorGroupId(settings)
     if not groupId then
         self:RevertCastBar()
         return
@@ -798,7 +797,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         return
     end
 
-    local groupFrame = GetAnchorGroupFrame(settings)
+    local groupFrame = CooldownCompanion.groupFrames[groupId]
     if not groupFrame or not groupFrame:IsShown() then
         self:RevertCastBar()
         return
@@ -822,7 +821,7 @@ function CooldownCompanion:ApplyCastBarSettings()
 
     -- ---- ANCHORING (always applied when enabled) ----
     -- Height: use custom setting when styling is on, Blizzard default (11) when off
-    local effectiveHeight = settings.stylingEnabled and (settings.height or 14) or 11
+    local effectiveHeight = settings.stylingEnabled and (settings.height or 15) or 11
     ApplyPosition(cb, settings, effectiveHeight)
     ApplySparkSize(cb, effectiveHeight)
     local barWidth = groupFrame:GetWidth()
@@ -865,7 +864,7 @@ function CooldownCompanion:ApplyCastBarSettings()
 
         -- Icon visibility, size, and position — C methods on CHILD
         if cb.Icon then
-            cb.Icon:SetShown(settings.showIcon or false)
+            cb.Icon:SetShown(settings.showIcon ~= false)
             if settings.showIcon then
                 cb.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 if settings.iconOffset then
@@ -900,7 +899,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         end
 
         -- Border style
-        local borderStyle = settings.borderStyle or "blizzard"
+        local borderStyle = settings.borderStyle or "pixel"
         if borderStyle == "blizzard" then
             HidePixelBorders()
             HideIconPixelBorders()
@@ -1116,7 +1115,7 @@ local function ApplyPreview()
     end
 
     -- Fill masks
-    local borderStyle = s.stylingEnabled and (s.borderStyle or "blizzard") or "blizzard"
+    local borderStyle = s.stylingEnabled and (s.borderStyle or "pixel") or "blizzard"
     if borderStyle == "blizzard" then
         ShowFillMasks(cb)
     end
@@ -1173,7 +1172,7 @@ local function InstallHooks()
         -- When anchor group refreshes (visibility changes) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
             local s = GetCastBarSettings()
-            if s and s.enabled and s.anchorGroupId == groupId then
+            if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
                 C_Timer.After(0, function()
                     CooldownCompanion:EvaluateCastBar()
                 end)

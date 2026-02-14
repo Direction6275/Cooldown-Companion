@@ -1301,6 +1301,21 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(chargeFontColorMissing)
 
+            local chargeFontColorZero = AceGUI:Create("ColorPicker")
+            chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
+            chargeFontColorZero:SetHasAlpha(true)
+            local chz = buttonData.chargeFontColorZero or {1, 1, 1, 1}
+            chargeFontColorZero:SetColor(chz[1], chz[2], chz[3], chz[4])
+            chargeFontColorZero:SetFullWidth(true)
+            chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorZero = {r, g, b, a}
+            end)
+            chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorZero = {r, g, b, a}
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end)
+            scroll:AddChild(chargeFontColorZero)
+
             local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
             local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
             local defChargeX = barNoIcon and 0 or -2
@@ -1344,39 +1359,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(chargeYSlider)
         end -- showChargeText
 
-        if group.displayMode == "bars" then
-            if group.style and group.style.showCooldownText then
-                local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
-                cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
-                cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
-                cdTextOnRechargeCb:SetFullWidth(true)
-                cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    buttonData.barCdTextOnRechargeBar = val
-                end)
-                scroll:AddChild(cdTextOnRechargeCb)
-            end
-
-            local reverseChargesCb = AceGUI:Create("CheckBox")
-            reverseChargesCb:SetLabel("Flip Charge Order")
-            reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-            reverseChargesCb:SetFullWidth(true)
-            reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.barReverseCharges = val or nil
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            scroll:AddChild(reverseChargesCb)
-
-            local chargeGapSlider = AceGUI:Create("Slider")
-            chargeGapSlider:SetLabel("Charge Bar Gap")
-            chargeGapSlider:SetSliderValues(0, 20, 1)
-            chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
-            chargeGapSlider:SetFullWidth(true)
-            chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.barChargeGap = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeGapSlider)
-        end
         end -- not chargesCollapsed
     end -- hasCharges
 
@@ -1549,56 +1531,11 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     end)
     scroll:AddChild(itemYSlider)
 
-    if group.displayMode == "bars" then
-        local chargeGapSlider = AceGUI:Create("Slider")
-        chargeGapSlider:SetLabel("Charge Bar Gap")
-        chargeGapSlider:SetSliderValues(0, 20, 1)
-        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
-        chargeGapSlider:SetFullWidth(true)
-        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barChargeGap = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(chargeGapSlider)
-
-        local reverseChargesCb = AceGUI:Create("CheckBox")
-        reverseChargesCb:SetLabel("Flip Charge Order")
-        reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-        reverseChargesCb:SetFullWidth(true)
-        reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barReverseCharges = val or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(reverseChargesCb)
-    end
 end
 
 local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-
-    if group.displayMode == "bars" then
-        local chargeGapSlider = AceGUI:Create("Slider")
-        chargeGapSlider:SetLabel("Charge Bar Gap")
-        chargeGapSlider:SetSliderValues(0, 20, 1)
-        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
-        chargeGapSlider:SetFullWidth(true)
-        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barChargeGap = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(chargeGapSlider)
-
-        local reverseChargesCb = AceGUI:Create("CheckBox")
-        reverseChargesCb:SetLabel("Flip Charge Order")
-        reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-        reverseChargesCb:SetFullWidth(true)
-        reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barReverseCharges = val or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(reverseChargesCb)
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1675,8 +1612,9 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     scroll:AddChild(moveBtn)
 end
 
--- Forward declaration — defined after all collapsible-section state
+-- Forward declarations — defined after all collapsible-section state
 local BuildCastBarAnchoringPanel
+local BuildResourceBarAnchoringPanel
 
 local function RefreshButtonSettingsColumn()
     local cf = CS.configFrame
@@ -1689,6 +1627,7 @@ local function RefreshButtonSettingsColumn()
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
         if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
+        if bsCol.resourceBarScroll then bsCol.resourceBarScroll.frame:Hide() end
 
         if not bsCol.castBarScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -1708,6 +1647,32 @@ local function RefreshButtonSettingsColumn()
     -- Hide cast bar scroll when not in cast bar mode
     if bsCol.castBarScroll then
         bsCol.castBarScroll.frame:Hide()
+    end
+
+    -- Resource bar overlay: replace button settings with resource anchoring panel
+    if CS.resourceBarPanelActive then
+        bsCol.bsTabGroup.frame:Hide()
+        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+        if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
+
+        if not bsCol.resourceBarScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(bsCol.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
+            bsCol.resourceBarScroll = scroll
+        end
+        bsCol.resourceBarScroll:ReleaseChildren()
+        bsCol.resourceBarScroll.frame:Show()
+        BuildResourceBarAnchoringPanel(bsCol.resourceBarScroll)
+        return
+    end
+
+    -- Hide resource bar scroll when not in resource bar mode
+    if bsCol.resourceBarScroll then
+        bsCol.resourceBarScroll.frame:Hide()
     end
 
     -- Check for multiselect
@@ -1812,7 +1777,6 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(gcdCb)
 
-    if not isBarMode then
     local rangeCb = AceGUI:Create("CheckBox")
     rangeCb:SetLabel("Show Out of Range")
     rangeCb:SetValue(style.showOutOfRange or false)
@@ -1841,7 +1805,6 @@ local function BuildExtrasTab(container)
         GameTooltip:Hide()
     end)
     table.insert(tabInfoButtons, rangeInfo)
-    end -- not isBarMode
 
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
@@ -1921,7 +1884,6 @@ local function BuildExtrasTab(container)
         table.insert(tabInfoButtons, maxVisInfo)
     end
 
-    if not isBarMode then
     -- Loss of control
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
@@ -2016,6 +1978,7 @@ local function BuildExtrasTab(container)
         container:AddChild(unusableColor)
     end
 
+    if not isBarMode then
     -- Assisted Highlight section
     local assistedHeading = AceGUI:Create("Heading")
     assistedHeading:SetText("Assisted Highlight")
@@ -2744,7 +2707,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local heightSlider = AceGUI:Create("Slider")
     heightSlider:SetLabel("Bar Height")
-    heightSlider:SetSliderValues(10, 50, 1)
+    heightSlider:SetSliderValues(10, 50, 0.1)
     heightSlider:SetValue(style.barHeight or 20)
     heightSlider:SetFullWidth(true)
     heightSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2878,6 +2841,22 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(barCdColorPicker)
+
+    local barChargeColorPicker = AceGUI:Create("ColorPicker")
+    barChargeColorPicker:SetLabel("Bar Recharging Color")
+    barChargeColorPicker:SetHasAlpha(true)
+    local bchc = style.barChargeColor or {1.0, 0.82, 0.0, 1.0}
+    barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
+    barChargeColorPicker:SetFullWidth(true)
+    barChargeColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.barChargeColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    barChargeColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.barChargeColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(barChargeColorPicker)
 
     local barBgColorPicker = AceGUI:Create("ColorPicker")
     barBgColorPicker:SetLabel("Bar Background Color")
@@ -3677,19 +3656,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     -- Hide While On Cooldown
     local hasCooldown = true
     if buttonData.type == "spell" then
-        hasCooldown = false
-        local tipData = C_TooltipInfo.GetSpellByID(buttonData.id)
-        if tipData and tipData.lines then
-            for _, line in ipairs(tipData.lines) do
-                local left = line.leftText and line.leftText:lower() or ""
-                local right = line.rightText and line.rightText:lower() or ""
-                if left:find("cooldown") or left:find("recharge")
-                    or right:find("cooldown") or right:find("recharge") then
-                    hasCooldown = true
-                    break
-                end
-            end
-        end
+        local baseCooldown = GetSpellBaseCooldown(buttonData.id)
+        hasCooldown = baseCooldown and baseCooldown > 1500
     end
     local hideCDCb = AceGUI:Create("CheckBox")
     hideCDCb:SetLabel("Hide While On Cooldown")
@@ -4045,9 +4013,10 @@ end
 local castBarCollapsedSections = {}
 
 local barTextureOptions = {
-    ["Interface\\TargetingFrame\\UI-StatusBar"]          = "Blizzard (Default)",
-    ["Interface\\BUTTONS\\WHITE8X8"]                     = "Flat",
-    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]           = "Raid",
+    ["blizzard_class"]                                       = "Blizzard (Class)",
+    ["Interface\\TargetingFrame\\UI-StatusBar"]              = "Blizzard (Default)",
+    ["Interface\\BUTTONS\\WHITE8X8"]                         = "Flat",
+    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]               = "Raid",
     ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Skills Bar",
 }
 
@@ -4070,10 +4039,10 @@ BuildCastBarAnchoringPanel = function(container)
     if not settings.enabled then return end
 
     -- Anchor Group dropdown
-    local groupDropValues = { [""] = "None" }
+    local groupDropValues = { [""] = "Auto (first available)" }
     local groupDropOrder = { "" }
     for groupId, group in pairs(db.groups) do
-        if group.displayMode == "icons" and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId) then
+        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
             groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
             table.insert(groupDropOrder, tostring(groupId))
         end
@@ -4090,6 +4059,13 @@ BuildCastBarAnchoringPanel = function(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(anchorDrop)
+
+    if #groupDropOrder <= 1 then
+        local noGroupsLabel = AceGUI:Create("Label")
+        noGroupsLabel:SetText("No icon groups are currently enabled for this spec. Enable an icon group to anchor here.")
+        noGroupsLabel:SetFullWidth(true)
+        container:AddChild(noGroupsLabel)
+    end
 
     -- Preview toggle (ephemeral — not saved to DB)
     local previewCb = AceGUI:Create("CheckBox")
@@ -4144,7 +4120,7 @@ BuildCastBarAnchoringPanel = function(container)
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
         ySlider:SetSliderValues(-50, 50, 1)
-        ySlider:SetValue(settings.yOffset or -2)
+        ySlider:SetValue(settings.yOffset or 0)
         ySlider:SetFullWidth(true)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
             settings.yOffset = val
@@ -4217,25 +4193,6 @@ BuildCastBarAnchoringPanel = function(container)
         end)
         container:AddChild(castFinishCb)
 
-        local chanFinishCb = AceGUI:Create("CheckBox")
-        chanFinishCb:SetLabel("Show Channel Finish FX")
-        chanFinishCb:SetValue(settings.showChannelFinishFX ~= false)
-        chanFinishCb:SetFullWidth(true)
-        chanFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.showChannelFinishFX = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        container:AddChild(chanFinishCb)
-
-        local craftFinishCb = AceGUI:Create("CheckBox")
-        craftFinishCb:SetLabel("Show Craft Finish FX")
-        craftFinishCb:SetValue(settings.showCraftFinishFX ~= false)
-        craftFinishCb:SetFullWidth(true)
-        craftFinishCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.showCraftFinishFX = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        container:AddChild(craftFinishCb)
     end
 end
 
@@ -4246,7 +4203,7 @@ local function BuildCastBarStylingPanel(container)
     -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
     local styleCb = AceGUI:Create("CheckBox")
     styleCb:SetLabel("Enable Cast Bar Styling")
-    styleCb:SetValue(settings.stylingEnabled or false)
+    styleCb:SetValue(settings.stylingEnabled ~= false)
     styleCb:SetFullWidth(true)
     styleCb:SetDisabled(not settings.enabled)
     styleCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4262,8 +4219,8 @@ local function BuildCastBarStylingPanel(container)
     -- Height (styling-only — anchoring uses Blizzard default height)
     local hSlider = AceGUI:Create("Slider")
     hSlider:SetLabel("Height")
-    hSlider:SetSliderValues(4, 40, 1)
-    hSlider:SetValue(settings.height or 14)
+    hSlider:SetSliderValues(4, 40, 0.1)
+    hSlider:SetValue(settings.height or 15)
     hSlider:SetFullWidth(true)
     hSlider:SetCallback("OnValueChanged", function(widget, event, val)
         settings.height = val
@@ -4341,7 +4298,7 @@ local function BuildCastBarStylingPanel(container)
         -- Show Spell Icon
         local iconCb = AceGUI:Create("CheckBox")
         iconCb:SetLabel("Show Spell Icon")
-        iconCb:SetValue(settings.showIcon or false)
+        iconCb:SetValue(settings.showIcon ~= false)
         iconCb:SetFullWidth(true)
         iconCb:SetCallback("OnValueChanged", function(widget, event, val)
             settings.showIcon = val
@@ -4378,7 +4335,7 @@ local function BuildCastBarStylingPanel(container)
                 -- Icon Size slider (offset mode only)
                 local iconSizeSlider = AceGUI:Create("Slider")
                 iconSizeSlider:SetLabel("Icon Size")
-                iconSizeSlider:SetSliderValues(8, 64, 1)
+                iconSizeSlider:SetSliderValues(8, 64, 0.1)
                 iconSizeSlider:SetValue(settings.iconSize or 16)
                 iconSizeSlider:SetFullWidth(true)
                 iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4390,7 +4347,7 @@ local function BuildCastBarStylingPanel(container)
                 -- Icon X Offset slider
                 local iconXSlider = AceGUI:Create("Slider")
                 iconXSlider:SetLabel("Icon X Offset")
-                iconXSlider:SetSliderValues(-50, 50, 1)
+                iconXSlider:SetSliderValues(-50, 50, 0.1)
                 iconXSlider:SetValue(settings.iconOffsetX or 0)
                 iconXSlider:SetFullWidth(true)
                 iconXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4402,7 +4359,7 @@ local function BuildCastBarStylingPanel(container)
                 -- Icon Y Offset slider
                 local iconYSlider = AceGUI:Create("Slider")
                 iconYSlider:SetLabel("Icon Y Offset")
-                iconYSlider:SetSliderValues(-50, 50, 1)
+                iconYSlider:SetSliderValues(-50, 50, 0.1)
                 iconYSlider:SetValue(settings.iconOffsetY or 0)
                 iconYSlider:SetFullWidth(true)
                 iconYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4444,7 +4401,7 @@ local function BuildCastBarStylingPanel(container)
             pixel = "Pixel",
             none = "None",
         }, { "blizzard", "pixel", "none" })
-        borderDrop:SetValue(settings.borderStyle or "blizzard")
+        borderDrop:SetValue(settings.borderStyle or "pixel")
         borderDrop:SetFullWidth(true)
         borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
             settings.borderStyle = val
@@ -4472,7 +4429,7 @@ local function BuildCastBarStylingPanel(container)
 
             local borderSizeSlider = AceGUI:Create("Slider")
             borderSizeSlider:SetLabel("Border Size")
-            borderSizeSlider:SetSliderValues(0.5, 5, 0.1)
+            borderSizeSlider:SetSliderValues(0, 5, 0.1)
             borderSizeSlider:SetValue(settings.borderSize or 1)
             borderSizeSlider:SetFullWidth(true)
             borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4534,7 +4491,7 @@ local function BuildCastBarStylingPanel(container)
             -- Size
             local nameSizeSlider = AceGUI:Create("Slider")
             nameSizeSlider:SetLabel("Font Size")
-            nameSizeSlider:SetSliderValues(6, 24, 1)
+            nameSizeSlider:SetSliderValues(6, 24, 0.1)
             nameSizeSlider:SetValue(settings.nameFontSize or 10)
             nameSizeSlider:SetFullWidth(true)
             nameSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4624,7 +4581,7 @@ local function BuildCastBarStylingPanel(container)
             -- Size
             local ctSizeSlider = AceGUI:Create("Slider")
             ctSizeSlider:SetLabel("Font Size")
-            ctSizeSlider:SetSliderValues(6, 24, 1)
+            ctSizeSlider:SetSliderValues(6, 24, 0.1)
             ctSizeSlider:SetValue(settings.castTimeFontSize or 10)
             ctSizeSlider:SetFullWidth(true)
             ctSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4664,7 +4621,7 @@ local function BuildCastBarStylingPanel(container)
             -- X Offset
             local ctXSlider = AceGUI:Create("Slider")
             ctXSlider:SetLabel("X Offset")
-            ctXSlider:SetSliderValues(-50, 50, 1)
+            ctXSlider:SetSliderValues(-50, 50, 0.1)
             ctXSlider:SetValue(settings.castTimeXOffset or 0)
             ctXSlider:SetFullWidth(true)
             ctXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4676,7 +4633,7 @@ local function BuildCastBarStylingPanel(container)
             -- Y Offset
             local ctYSlider = AceGUI:Create("Slider")
             ctYSlider:SetLabel("Y Offset")
-            ctYSlider:SetSliderValues(-20, 20, 1)
+            ctYSlider:SetSliderValues(-20, 20, 0.1)
             ctYSlider:SetValue(settings.castTimeYOffset or 0)
             ctYSlider:SetFullWidth(true)
             ctYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4684,6 +4641,939 @@ local function BuildCastBarStylingPanel(container)
                 CooldownCompanion:ApplyCastBarSettings()
             end)
             container:AddChild(ctYSlider)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- RESOURCE BAR: Anchoring Panel
+------------------------------------------------------------------------
+
+local resourceBarCollapsedSections = {}
+
+-- Power names + segmented check for config UI (mirrors ResourceBar.lua constants)
+local POWER_NAMES_CONFIG = {
+    [0]  = "Mana",
+    [1]  = "Rage",
+    [2]  = "Focus",
+    [3]  = "Energy",
+    [4]  = "Combo Points",
+    [5]  = "Runes",
+    [6]  = "Runic Power",
+    [7]  = "Soul Shards",
+    [8]  = "Astral Power",
+    [9]  = "Holy Power",
+    [11] = "Maelstrom",
+    [12] = "Chi",
+    [13] = "Insanity",
+    [16] = "Arcane Charges",
+    [17] = "Fury",
+    [18] = "Pain",
+    [19] = "Essence",
+}
+
+local SEGMENTED_TYPES_CONFIG = {
+    [4]  = true, [5]  = true, [7]  = true, [9]  = true,
+    [12] = true, [16] = true, [19] = true,
+}
+
+local DEFAULT_POWER_COLORS_CONFIG = {
+    [0]  = { 0, 0, 1 },
+    [1]  = { 1, 0, 0 },
+    [2]  = { 1, 0.5, 0.25 },
+    [3]  = { 1, 1, 0 },
+    [4]  = { 1, 0.96, 0.41 },
+    [5]  = { 0.5, 0.5, 0.5 },
+    [6]  = { 0, 0.82, 1 },
+    [7]  = { 0.5, 0.32, 0.55 },
+    [8]  = { 0.3, 0.52, 0.9 },
+    [9]  = { 0.95, 0.9, 0.6 },
+    [11] = { 0, 0.5, 1 },
+    [12] = { 0.71, 1, 0.92 },
+    [13] = { 0.4, 0, 0.8 },
+    [16] = { 0.1, 0.1, 0.98 },
+    [17] = { 0.788, 0.259, 0.992 },
+    [18] = { 1, 0.612, 0 },
+    [19] = { 0.286, 0.773, 0.541 },
+}
+
+local DEFAULT_COMBO_COLOR_CONFIG = { 1, 0.96, 0.41 }
+local DEFAULT_COMBO_MAX_COLOR_CONFIG = { 1, 0.96, 0.41 }
+
+local DEFAULT_RUNE_READY_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
+local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+local DEFAULT_RUNE_MAX_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
+
+local DEFAULT_SHARD_READY_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
+local DEFAULT_SHARD_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+local DEFAULT_SHARD_MAX_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
+
+local DEFAULT_HOLY_COLOR_CONFIG = { 0.95, 0.9, 0.6 }
+local DEFAULT_HOLY_MAX_COLOR_CONFIG = { 0.95, 0.9, 0.6 }
+
+local DEFAULT_CHI_COLOR_CONFIG = { 0.71, 1, 0.92 }
+local DEFAULT_CHI_MAX_COLOR_CONFIG = { 0.71, 1, 0.92 }
+
+local DEFAULT_ARCANE_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
+local DEFAULT_ARCANE_MAX_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
+
+local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
+local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
+local DEFAULT_ESSENCE_MAX_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
+
+-- Class-to-resource mapping for config UI
+local CLASS_RESOURCES_CONFIG = {
+    [1]  = { 1 },
+    [2]  = { 9, 0 },
+    [3]  = { 2 },
+    [4]  = { 4, 3 },
+    [5]  = { 0 },
+    [6]  = { 5, 6 },
+    [7]  = { 0 },
+    [8]  = { 0 },
+    [9]  = { 7, 0 },
+    [10] = { 0 },
+    [11] = { 1, 4, 3, 8, 0 },  -- All possible druid resources
+    [12] = { 17 },
+    [13] = { 19, 0 },
+}
+
+local SPEC_RESOURCES_CONFIG = {
+    [258] = { 13, 0 },
+    [262] = { 11, 0 },
+    [263] = { 11, 0 },
+    [62]  = { 16, 0 },
+    [269] = { 12, 3 },
+    [268] = { 3 },
+    [581] = { 18 },
+}
+
+local function GetConfigActiveResources()
+    local _, _, classID = UnitClass("player")
+    if not classID then return {} end
+
+    local specIdx = C_SpecializationInfo.GetSpecialization()
+    local specID
+    if specIdx then
+        specID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+    end
+
+    -- For Druid, show all possible resources (user can toggle each)
+    if classID == 11 then
+        return CLASS_RESOURCES_CONFIG[11]
+    end
+
+    if specID and SPEC_RESOURCES_CONFIG[specID] then
+        return SPEC_RESOURCES_CONFIG[specID]
+    end
+
+    return CLASS_RESOURCES_CONFIG[classID] or {}
+end
+
+BuildResourceBarAnchoringPanel = function(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.resourceBars
+
+    -- Enable Resource Bars
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Enable Resource Bars")
+    enableCb:SetValue(settings.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.enabled = val
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    if not settings.enabled then return end
+
+    -- Anchor Group dropdown
+    local groupDropValues = { [""] = "Auto (first available)" }
+    local groupDropOrder = { "" }
+    for groupId, group in pairs(db.groups) do
+        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
+            groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
+            table.insert(groupDropOrder, tostring(groupId))
+        end
+    end
+
+    local anchorDrop = AceGUI:Create("Dropdown")
+    anchorDrop:SetLabel("Anchor to Group")
+    anchorDrop:SetList(groupDropValues, groupDropOrder)
+    anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
+    anchorDrop:SetFullWidth(true)
+    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.anchorGroupId = val ~= "" and tonumber(val) or nil
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorDrop)
+
+    if #groupDropOrder <= 1 then
+        local noGroupsLabel = AceGUI:Create("Label")
+        noGroupsLabel:SetText("No icon groups are currently enabled for this spec. Enable an icon group to anchor here.")
+        noGroupsLabel:SetFullWidth(true)
+        container:AddChild(noGroupsLabel)
+    end
+
+    -- Preview toggle (ephemeral)
+    local previewCb = AceGUI:Create("CheckBox")
+    previewCb:SetLabel("Preview Resource Bars")
+    previewCb:SetValue(CooldownCompanion:IsResourceBarPreviewActive())
+    previewCb:SetFullWidth(true)
+    previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if val then
+            CooldownCompanion:StartResourceBarPreview()
+        else
+            CooldownCompanion:StopResourceBarPreview()
+        end
+    end)
+    container:AddChild(previewCb)
+
+    -- ============ Position Section ============
+    local posHeading = AceGUI:Create("Heading")
+    posHeading:SetText("Position")
+    posHeading:SetFullWidth(true)
+    container:AddChild(posHeading)
+
+    local posKey = "rb_position"
+    local posCollapsed = resourceBarCollapsedSections[posKey]
+
+    local posCollapseBtn = CreateFrame("Button", nil, posHeading.frame)
+    posCollapseBtn:SetSize(16, 16)
+    posCollapseBtn:SetPoint("LEFT", posHeading.label, "RIGHT", 4, 0)
+    posHeading.right:SetPoint("LEFT", posCollapseBtn, "RIGHT", 4, 0)
+    local posArrow = posCollapseBtn:CreateTexture(nil, "ARTWORK")
+    posArrow:SetSize(12, 12)
+    posArrow:SetPoint("CENTER")
+    posArrow:SetAtlas(posCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    posCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[posKey] = not resourceBarCollapsedSections[posKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not posCollapsed then
+        local posDrop = AceGUI:Create("Dropdown")
+        posDrop:SetLabel("Position")
+        posDrop:SetList({ below = "Below Group", above = "Above Group" }, { "below", "above" })
+        posDrop:SetValue(settings.position or "below")
+        posDrop:SetFullWidth(true)
+        posDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.position = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(posDrop)
+
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(-50, 50, 1)
+        ySlider:SetValue(settings.yOffset or -3)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.yOffset = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(ySlider)
+
+        local hSlider = AceGUI:Create("Slider")
+        hSlider:SetLabel("Bar Height")
+        hSlider:SetSliderValues(4, 40, 0.1)
+        hSlider:SetValue(settings.barHeight or 12)
+        hSlider:SetFullWidth(true)
+        hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.barHeight = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(hSlider)
+
+        local spacingSlider = AceGUI:Create("Slider")
+        spacingSlider:SetLabel("Bar Spacing")
+        spacingSlider:SetSliderValues(0, 20, 0.1)
+        spacingSlider:SetValue(settings.barSpacing or 3.6)
+        spacingSlider:SetFullWidth(true)
+        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.barSpacing = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(spacingSlider)
+    end
+
+    -- ============ Stacking Section ============
+    local stackHeading = AceGUI:Create("Heading")
+    stackHeading:SetText("Stacking")
+    stackHeading:SetFullWidth(true)
+    container:AddChild(stackHeading)
+
+    local stackKey = "rb_stacking"
+    local stackCollapsed = resourceBarCollapsedSections[stackKey]
+
+    local stackCollapseBtn = CreateFrame("Button", nil, stackHeading.frame)
+    stackCollapseBtn:SetSize(16, 16)
+    stackCollapseBtn:SetPoint("LEFT", stackHeading.label, "RIGHT", 4, 0)
+    stackHeading.right:SetPoint("LEFT", stackCollapseBtn, "RIGHT", 4, 0)
+    local stackArrow = stackCollapseBtn:CreateTexture(nil, "ARTWORK")
+    stackArrow:SetSize(12, 12)
+    stackArrow:SetPoint("CENTER")
+    stackArrow:SetAtlas(stackCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    stackCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[stackKey] = not resourceBarCollapsedSections[stackKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not stackCollapsed then
+        local stackDrop = AceGUI:Create("Dropdown")
+        stackDrop:SetLabel("Stack Order")
+        stackDrop:SetList({
+            cast_first = "Cast Bar First",
+            resource_first = "Resource Bars First",
+        }, { "cast_first", "resource_first" })
+        stackDrop:SetValue(settings.stackOrder or "resource_first")
+        stackDrop:SetFullWidth(true)
+        stackDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.stackOrder = val
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(stackDrop)
+    end
+
+    -- ============ Resource Toggles Section ============
+    local toggleHeading = AceGUI:Create("Heading")
+    toggleHeading:SetText("Resource Toggles")
+    toggleHeading:SetFullWidth(true)
+    container:AddChild(toggleHeading)
+
+    local toggleKey = "rb_toggles"
+    local toggleCollapsed = resourceBarCollapsedSections[toggleKey]
+
+    local toggleCollapseBtn = CreateFrame("Button", nil, toggleHeading.frame)
+    toggleCollapseBtn:SetSize(16, 16)
+    toggleCollapseBtn:SetPoint("LEFT", toggleHeading.label, "RIGHT", 4, 0)
+    toggleHeading.right:SetPoint("LEFT", toggleCollapseBtn, "RIGHT", 4, 0)
+    local toggleArrow = toggleCollapseBtn:CreateTexture(nil, "ARTWORK")
+    toggleArrow:SetSize(12, 12)
+    toggleArrow:SetPoint("CENTER")
+    toggleArrow:SetAtlas(toggleCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    toggleCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[toggleKey] = not resourceBarCollapsedSections[toggleKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not toggleCollapsed then
+        -- Only show mana toggle for classes that actually use mana
+        local _, _, classID = UnitClass("player")
+        local NO_MANA_CLASSES = { [1] = true, [3] = true, [4] = true, [6] = true, [12] = true }
+        if classID and not NO_MANA_CLASSES[classID] then
+            local manaCb = AceGUI:Create("CheckBox")
+            manaCb:SetLabel("Hide Mana for Non-Healer Specs")
+            manaCb:SetValue(settings.hideManaForNonHealer ~= false)
+            manaCb:SetFullWidth(true)
+            manaCb:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.hideManaForNonHealer = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(manaCb)
+        end
+
+        -- Per-resource enable/disable
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            if not settings.resources[pt] then
+                settings.resources[pt] = {}
+            end
+            local enabled = settings.resources[pt].enabled ~= false
+
+            local resCb = AceGUI:Create("CheckBox")
+            resCb:SetLabel("Show " .. name)
+            resCb:SetValue(enabled)
+            resCb:SetFullWidth(true)
+            resCb:SetCallback("OnValueChanged", function(widget, event, val)
+                if not settings.resources[pt] then
+                    settings.resources[pt] = {}
+                end
+                settings.resources[pt].enabled = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(resCb)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- RESOURCE BAR: Styling Panel
+------------------------------------------------------------------------
+
+local function BuildResourceBarStylingPanel(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.resourceBars
+
+    if not settings.enabled then
+        local label = AceGUI:Create("Label")
+        label:SetText("Enable Resource Bars to configure styling.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    -- Bar Texture
+    local texDrop = AceGUI:Create("Dropdown")
+    texDrop:SetLabel("Bar Texture")
+    texDrop:SetList(barTextureOptions)
+    texDrop:SetValue(settings.barTexture or "Interface\\BUTTONS\\WHITE8X8")
+    texDrop:SetFullWidth(true)
+    texDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.barTexture = val
+        CooldownCompanion:ApplyResourceBars()
+        -- Defer panel rebuild to next frame so it doesn't interfere with current callback
+        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+    end)
+    container:AddChild(texDrop)
+
+    -- Brightness slider (only for Blizzard Class texture)
+    if settings.barTexture == "blizzard_class" then
+        local brightSlider = AceGUI:Create("Slider")
+        brightSlider:SetLabel("Class Texture Brightness")
+        brightSlider:SetSliderValues(0.5, 2.0, 0.05)
+        brightSlider:SetValue(settings.classBarBrightness or 1.3)
+        brightSlider:SetFullWidth(true)
+        brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.classBarBrightness = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(brightSlider)
+    end
+
+    -- Background Color
+    local bgColorPicker = AceGUI:Create("ColorPicker")
+    bgColorPicker:SetLabel("Background Color")
+    local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    bgColorPicker:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
+    bgColorPicker:SetHasAlpha(true)
+    bgColorPicker:SetFullWidth(true)
+    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        settings.backgroundColor = {r, g, b, a}
+    end)
+    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        settings.backgroundColor = {r, g, b, a}
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(bgColorPicker)
+
+    -- ============ Border Section ============
+    local borderHeading = AceGUI:Create("Heading")
+    borderHeading:SetText("Border")
+    borderHeading:SetFullWidth(true)
+    container:AddChild(borderHeading)
+
+    local borderKey = "rb_border"
+    local borderCollapsed = resourceBarCollapsedSections[borderKey]
+
+    local borderCollapseBtn = CreateFrame("Button", nil, borderHeading.frame)
+    borderCollapseBtn:SetSize(16, 16)
+    borderCollapseBtn:SetPoint("LEFT", borderHeading.label, "RIGHT", 4, 0)
+    borderHeading.right:SetPoint("LEFT", borderCollapseBtn, "RIGHT", 4, 0)
+    local borderArrow = borderCollapseBtn:CreateTexture(nil, "ARTWORK")
+    borderArrow:SetSize(12, 12)
+    borderArrow:SetPoint("CENTER")
+    borderArrow:SetAtlas(borderCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    borderCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[borderKey] = not resourceBarCollapsedSections[borderKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not borderCollapsed then
+        local borderDrop = AceGUI:Create("Dropdown")
+        borderDrop:SetLabel("Border Style")
+        borderDrop:SetList({
+            pixel = "Pixel",
+            none = "None",
+        }, { "pixel", "none" })
+        borderDrop:SetValue(settings.borderStyle or "pixel")
+        borderDrop:SetFullWidth(true)
+        borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.borderStyle = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(borderDrop)
+
+        if settings.borderStyle == "pixel" then
+            local borderColorPicker = AceGUI:Create("ColorPicker")
+            borderColorPicker:SetLabel("Border Color")
+            local brc = settings.borderColor or { 0, 0, 0, 1 }
+            borderColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
+            borderColorPicker:SetHasAlpha(true)
+            borderColorPicker:SetFullWidth(true)
+            borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                settings.borderColor = {r, g, b, a}
+            end)
+            borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                settings.borderColor = {r, g, b, a}
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(borderColorPicker)
+
+            local borderSizeSlider = AceGUI:Create("Slider")
+            borderSizeSlider:SetLabel("Border Size")
+            borderSizeSlider:SetSliderValues(0, 4, 0.1)
+            borderSizeSlider:SetValue(settings.borderSize or 1)
+            borderSizeSlider:SetIsPercent(false)
+            borderSizeSlider:SetFullWidth(true)
+            borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.borderSize = val
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(borderSizeSlider)
+        end
+    end
+
+    -- Segment Gap
+    local gapSlider = AceGUI:Create("Slider")
+    gapSlider:SetLabel("Segment Gap")
+    gapSlider:SetSliderValues(0, 20, 0.1)
+    gapSlider:SetValue(settings.segmentGap or 4)
+    gapSlider:SetFullWidth(true)
+    gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.segmentGap = val
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(gapSlider)
+
+    -- ============ Text Section ============
+    local textHeading = AceGUI:Create("Heading")
+    textHeading:SetText("Text")
+    textHeading:SetFullWidth(true)
+    container:AddChild(textHeading)
+
+    local textKey = "rb_text"
+    local textCollapsed = resourceBarCollapsedSections[textKey]
+
+    local textCollapseBtn = CreateFrame("Button", nil, textHeading.frame)
+    textCollapseBtn:SetSize(16, 16)
+    textCollapseBtn:SetPoint("LEFT", textHeading.label, "RIGHT", 4, 0)
+    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
+    local textArrow = textCollapseBtn:CreateTexture(nil, "ARTWORK")
+    textArrow:SetSize(12, 12)
+    textArrow:SetPoint("CENTER")
+    textArrow:SetAtlas(textCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    textCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[textKey] = not resourceBarCollapsedSections[textKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not textCollapsed then
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        fontDrop:SetList(CS.fontOptions)
+        fontDrop:SetValue(settings.textFont or "Fonts\\FRIZQT__.TTF")
+        fontDrop:SetFullWidth(true)
+        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFont = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(fontDrop)
+
+        local sizeDrop = AceGUI:Create("Slider")
+        sizeDrop:SetLabel("Font Size")
+        sizeDrop:SetSliderValues(6, 24, 1)
+        sizeDrop:SetValue(settings.textFontSize or 10)
+        sizeDrop:SetFullWidth(true)
+        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFontSize = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(sizeDrop)
+
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Outline")
+        outlineDrop:SetList(CS.outlineOptions)
+        outlineDrop:SetValue(settings.textFontOutline or "OUTLINE")
+        outlineDrop:SetFullWidth(true)
+        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.textFontOutline = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(outlineDrop)
+
+        local textColorPicker = AceGUI:Create("ColorPicker")
+        textColorPicker:SetLabel("Text Color")
+        local tc = settings.textFontColor or { 1, 1, 1, 1 }
+        textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+        textColorPicker:SetHasAlpha(true)
+        textColorPicker:SetFullWidth(true)
+        textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            settings.textFontColor = {r, g, b, a}
+        end)
+        textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            settings.textFontColor = {r, g, b, a}
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        container:AddChild(textColorPicker)
+    end
+
+    -- ============ Per-Resource Colors Section ============
+    local colorHeading = AceGUI:Create("Heading")
+    colorHeading:SetText("Per-Resource Colors")
+    colorHeading:SetFullWidth(true)
+    container:AddChild(colorHeading)
+
+    local colorKey = "rb_colors"
+    local colorCollapsed = resourceBarCollapsedSections[colorKey]
+
+    local colorCollapseBtn = CreateFrame("Button", nil, colorHeading.frame)
+    colorCollapseBtn:SetSize(16, 16)
+    colorCollapseBtn:SetPoint("LEFT", colorHeading.label, "RIGHT", 4, 0)
+    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
+    local colorArrow = colorCollapseBtn:CreateTexture(nil, "ARTWORK")
+    colorArrow:SetSize(12, 12)
+    colorArrow:SetPoint("CENTER")
+    colorArrow:SetAtlas(colorCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    colorCollapseBtn:SetScript("OnClick", function()
+        resourceBarCollapsedSections[colorKey] = not resourceBarCollapsedSections[colorKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not colorCollapsed then
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            if not settings.resources[pt] then
+                settings.resources[pt] = {}
+            end
+
+            if pt == 4 then
+                -- Combo Points: two color pickers (normal vs at max)
+                local normalColor = settings.resources[4].comboColor or DEFAULT_COMBO_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Combo Points")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[4].comboMaxColor or DEFAULT_COMBO_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Combo Points (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[4] then settings.resources[4] = {} end
+                    settings.resources[4].comboMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 5 then
+                -- Runes: three color pickers (ready, recharging, max)
+                local readyColor = settings.resources[5].runeReadyColor or DEFAULT_RUNE_READY_COLOR_CONFIG
+                local cpReady = AceGUI:Create("ColorPicker")
+                cpReady:SetLabel("Runes (Ready)")
+                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
+                cpReady:SetHasAlpha(false)
+                cpReady:SetFullWidth(true)
+                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeReadyColor = {r, g, b}
+                end)
+                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeReadyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpReady)
+
+                local rechargingColor = settings.resources[5].runeRechargingColor or DEFAULT_RUNE_RECHARGING_COLOR_CONFIG
+                local cpRecharging = AceGUI:Create("ColorPicker")
+                cpRecharging:SetLabel("Runes (Recharging)")
+                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
+                cpRecharging:SetHasAlpha(false)
+                cpRecharging:SetFullWidth(true)
+                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeRechargingColor = {r, g, b}
+                end)
+                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeRechargingColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpRecharging)
+
+                local maxColor = settings.resources[5].runeMaxColor or DEFAULT_RUNE_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Runes (All Ready)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[5] then settings.resources[5] = {} end
+                    settings.resources[5].runeMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 7 then
+                -- Soul Shards: three color pickers (ready, recharging, max)
+                local readyColor = settings.resources[7].shardReadyColor or DEFAULT_SHARD_READY_COLOR_CONFIG
+                local cpReady = AceGUI:Create("ColorPicker")
+                cpReady:SetLabel("Soul Shards (Ready)")
+                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
+                cpReady:SetHasAlpha(false)
+                cpReady:SetFullWidth(true)
+                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardReadyColor = {r, g, b}
+                end)
+                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardReadyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpReady)
+
+                local rechargingColor = settings.resources[7].shardRechargingColor or DEFAULT_SHARD_RECHARGING_COLOR_CONFIG
+                local cpRecharging = AceGUI:Create("ColorPicker")
+                cpRecharging:SetLabel("Soul Shards (Recharging)")
+                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
+                cpRecharging:SetHasAlpha(false)
+                cpRecharging:SetFullWidth(true)
+                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardRechargingColor = {r, g, b}
+                end)
+                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardRechargingColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpRecharging)
+
+                local maxColor = settings.resources[7].shardMaxColor or DEFAULT_SHARD_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Soul Shards (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[7] then settings.resources[7] = {} end
+                    settings.resources[7].shardMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 9 then
+                -- Holy Power: two color pickers (normal vs max)
+                local normalColor = settings.resources[9].holyColor or DEFAULT_HOLY_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Holy Power")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[9].holyMaxColor or DEFAULT_HOLY_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Holy Power (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[9] then settings.resources[9] = {} end
+                    settings.resources[9].holyMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 12 then
+                -- Chi: two color pickers (normal vs max)
+                local normalColor = settings.resources[12].chiColor or DEFAULT_CHI_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Chi")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[12].chiMaxColor or DEFAULT_CHI_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Chi (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[12] then settings.resources[12] = {} end
+                    settings.resources[12].chiMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 16 then
+                -- Arcane Charges: two color pickers (normal vs max)
+                local normalColor = settings.resources[16].arcaneColor or DEFAULT_ARCANE_COLOR_CONFIG
+                local cpNormal = AceGUI:Create("ColorPicker")
+                cpNormal:SetLabel("Arcane Charges")
+                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
+                cpNormal:SetHasAlpha(false)
+                cpNormal:SetFullWidth(true)
+                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneColor = {r, g, b}
+                end)
+                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpNormal)
+
+                local maxColor = settings.resources[16].arcaneMaxColor or DEFAULT_ARCANE_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Arcane Charges (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[16] then settings.resources[16] = {} end
+                    settings.resources[16].arcaneMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            elseif pt == 19 then
+                -- Essence: three color pickers (ready, recharging, max)
+                local readyColor = settings.resources[19].essenceReadyColor or DEFAULT_ESSENCE_READY_COLOR_CONFIG
+                local cpReady = AceGUI:Create("ColorPicker")
+                cpReady:SetLabel("Essence (Ready)")
+                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
+                cpReady:SetHasAlpha(false)
+                cpReady:SetFullWidth(true)
+                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceReadyColor = {r, g, b}
+                end)
+                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceReadyColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpReady)
+
+                local rechargingColor = settings.resources[19].essenceRechargingColor or DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG
+                local cpRecharging = AceGUI:Create("ColorPicker")
+                cpRecharging:SetLabel("Essence (Recharging)")
+                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
+                cpRecharging:SetHasAlpha(false)
+                cpRecharging:SetFullWidth(true)
+                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceRechargingColor = {r, g, b}
+                end)
+                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceRechargingColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpRecharging)
+
+                local maxColor = settings.resources[19].essenceMaxColor or DEFAULT_ESSENCE_MAX_COLOR_CONFIG
+                local cpMax = AceGUI:Create("ColorPicker")
+                cpMax:SetLabel("Essence (Max)")
+                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetHasAlpha(false)
+                cpMax:SetFullWidth(true)
+                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceMaxColor = {r, g, b}
+                end)
+                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[19] then settings.resources[19] = {} end
+                    settings.resources[19].essenceMaxColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMax)
+            else
+                local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+
+                if settings.barTexture == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
+                    -- Atlas-backed type; color picker not applicable
+                else
+                    local currentColor = settings.resources[pt].color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
+
+                    local cp = AceGUI:Create("ColorPicker")
+                    cp:SetLabel(name)
+                    cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
+                    cp:SetHasAlpha(false)
+                    cp:SetFullWidth(true)
+                    cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                        if not settings.resources[pt] then
+                            settings.resources[pt] = {}
+                        end
+                        settings.resources[pt].color = {r, g, b}
+                    end)
+                    cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                        if not settings.resources[pt] then
+                            settings.resources[pt] = {}
+                        end
+                        settings.resources[pt].color = {r, g, b}
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(cp)
+                end
+            end
         end
     end
 end
@@ -4701,3 +5591,5 @@ ST._BuildExtrasTab = BuildExtrasTab
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel
+ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
+ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel

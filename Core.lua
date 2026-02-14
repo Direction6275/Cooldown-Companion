@@ -218,6 +218,7 @@ local defaults = {
             barHeight = 20,
             barColor = {0.2, 0.6, 1.0, 1.0},
             barCooldownColor = {0.6, 0.13, 0.18, 1.0},
+            barChargeColor = {1.0, 0.82, 0.0, 1.0},
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
             showBarNameText = true,
@@ -236,17 +237,39 @@ local defaults = {
         locked = false,
         auraDurationCache = {},
         cdmHidden = false,
-        castBar = {
-            enabled = false,
-            stylingEnabled = false,
+        resourceBars = {
+            enabled = true,
             anchorGroupId = nil,
             position = "below",
-            yOffset = -2,
-            height = 14,
+            yOffset = -3,
+            barHeight = 12,
+            barSpacing = 3.6,
+            barTexture = "Interface\\BUTTONS\\WHITE8X8",
+            backgroundColor = { 0, 0, 0, 0.5 },
+            borderStyle = "pixel",
+            borderColor = { 0, 0, 0, 1 },
+            borderSize = 1,
+            segmentGap = 4,
+            hideManaForNonHealer = true,
+            stackOrder = "resource_first",
+            resources = {},
+            textFont = "Fonts\\FRIZQT__.TTF",
+            textFontSize = 10,
+            textFontOutline = "OUTLINE",
+            textFontColor = { 1, 1, 1, 1 },
+            textFormat = "current",
+        },
+        castBar = {
+            enabled = true,
+            stylingEnabled = true,
+            anchorGroupId = nil,
+            position = "below",
+            yOffset = 0,
+            height = 15,
             barColor = { 1.0, 0.7, 0.0, 1.0 },
             backgroundColor = { 0, 0, 0, 0.5 },
             barTexture = "Interface\\BUTTONS\\WHITE8X8",
-            showIcon = false,
+            showIcon = true,
             iconSize = 16,
             iconFlipSide = false,
             iconOffset = false,
@@ -258,8 +281,6 @@ local defaults = {
             showInterruptShake = true,
             showInterruptGlow = true,
             showCastFinishFX = true,
-            showChannelFinishFX = true,
-            showCraftFinishFX = true,
             borderStyle = "pixel",
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
@@ -479,13 +500,6 @@ end
 
 function CooldownCompanion:OnProcGlowShow(event, spellID)
     self.procOverlaySpells[spellID] = true
-    -- A proc overlay appeared for this spell. If it's a charged spell,
-    -- increment the charge count — during combat we can't read charges
-    -- from the API (secret values), so this is our signal that a charge
-    -- was granted by a proc.
-    if InCombatLockdown() then
-        self:IncrementChargeOnProc(spellID)
-    end
     self:UpdateAllCooldowns()
 end
 
@@ -494,87 +508,10 @@ function CooldownCompanion:OnProcGlowHide(event, spellID)
     self._cooldownsDirty = true
 end
 
-function CooldownCompanion:IncrementChargeOnProc(spellID)
-    self:ForEachButton(function(button, bd)
-        if bd.type == "spell"
-           and bd.id == spellID
-           and bd.hasCharges
-           and button._chargeCount ~= nil
-           and button._chargeMax
-           and button._chargeCount < button._chargeMax then
-            button._chargeCount = button._chargeCount + 1
-            if button._chargeCount >= button._chargeMax then
-                -- At max: no recharge in progress
-                button._chargeCDStart = nil
-                button._chargeCDDuration = nil
-            else
-                -- Mark approximate new-recharge start so the catch-up
-                -- loop in DecrementChargeOnCast doesn't re-detect this
-                -- recovery. The ticker readback corrects to the real
-                -- value on the same UpdateAllCooldowns pass.
-                button._chargeCDStart = GetTime()
-            end
-            button._chargeText = button._chargeCount
-            button.count:SetText(button._chargeCount)
-        end
-    end)
-end
-
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        if InCombatLockdown() then
-            self:DecrementChargeOnCast(spellID)
-        end
         self:UpdateAllCooldowns()
     end
-end
-
-function CooldownCompanion:DecrementChargeOnCast(spellID)
-    self:ForEachButton(function(button, bd)
-        if bd.type == "spell"
-           and bd.id == spellID
-           and bd.hasCharges
-           and button._chargeCount ~= nil then
-            -- Catch up on any charges that recovered since the last
-            -- ticker estimation (up to 0.1s stale). Without this, a
-            -- cast right after a recharge completes would see the old
-            -- count, skip the decrement, and desync.
-            if button._chargeCount < (button._chargeMax or 0)
-               and button._chargeCDStart and button._chargeCDDuration
-               and button._chargeCDDuration > 0 then
-                local now = GetTime()
-                while button._chargeCount < button._chargeMax
-                      and now >= button._chargeCDStart + button._chargeCDDuration do
-                    button._chargeCount = button._chargeCount + 1
-                    button._chargeCDStart = button._chargeCDStart + button._chargeCDDuration
-                end
-            end
-            -- Decrement the charge count.
-            if button._chargeCount > 0 then
-                button._chargeCount = button._chargeCount - 1
-                -- If we were at max charges, a recharge just started now
-                if button._chargeCount == (button._chargeMax or 0) - 1 then
-                    button._chargeCDStart = GetTime()
-                    -- If _chargeCDDuration is 0 (spell was at max charges
-                    -- pre-combat), use the persisted recharge duration
-                    if not button._chargeCDDuration or button._chargeCDDuration == 0 then
-                        button._chargeCDDuration = bd.chargeCooldownDuration or 0
-                    end
-                end
-            else
-                -- Estimation says 0 but the cast succeeded, so WoW
-                -- must have recovered a charge that our timing missed
-                -- (floating-point imprecision). Net result: 0 charges
-                -- (one recovered, one consumed). New recharge starts now.
-                button._chargeCDStart = GetTime()
-                if not button._chargeCDDuration or button._chargeCDDuration == 0 then
-                    button._chargeCDDuration = bd.chargeCooldownDuration or 0
-                end
-            end
-            button._chargeText = button._chargeCount
-            button.count:SetText(button._chargeCount)
-        end
-    end)
 end
 
 
@@ -1003,15 +940,25 @@ function CooldownCompanion:OnTalentsChanged()
 end
 
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
+-- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells.
 function CooldownCompanion:RefreshChargeFlags()
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" then
-                local charges = C_Spell.GetSpellCharges(buttonData.id)
-                local ok, result = pcall(function()
-                    return charges and charges.maxCharges and charges.maxCharges > 1
-                end)
-                buttonData.hasCharges = (ok and result) or nil
+                local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
+                buttonData.hasCharges = chargeInfo and true or nil
+                if chargeInfo then
+                    -- Read maxCharges directly (plain outside combat)
+                    local mc = chargeInfo.maxCharges
+                    if mc and mc > (buttonData.maxCharges or 0) then
+                        buttonData.maxCharges = mc
+                    end
+                    -- Secondary source: display count
+                    local displayCount = tonumber(C_Spell.GetSpellDisplayCount(buttonData.id))
+                    if displayCount and displayCount > (buttonData.maxCharges or 0) then
+                        buttonData.maxCharges = displayCount
+                    end
+                end
             end
         end
     end
@@ -1082,6 +1029,66 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
         self:UpdateItemSlotCache(slot)
     end
     self:OnKeybindsChanged()
+end
+
+------------------------------------------------------------------------
+-- Stacking coordination (CastBar + ResourceBars on same anchor group)
+------------------------------------------------------------------------
+local pendingStackUpdate = false
+
+function CooldownCompanion:GetCastBarHeight()
+    local s = self.db and self.db.profile and self.db.profile.castBar
+    if not s or not s.enabled then return 0 end
+    local groupId = s.anchorGroupId or self:GetFirstAvailableAnchorGroup()
+    if not groupId then return 0 end
+    local gf = self.groupFrames[groupId]
+    if not gf or not gf:IsShown() then return 0 end
+    local group = self.db.profile.groups[groupId]
+    if not group or group.displayMode ~= "icons" then return 0 end
+    return s.stylingEnabled and (s.height or 14) or 11
+end
+
+function CooldownCompanion:GetAnchorStackOffset(moduleId)
+    local cb = self.db and self.db.profile and self.db.profile.castBar
+    local rb = self.db and self.db.profile and self.db.profile.resourceBars
+    if not cb or not rb then return 0 end
+    if not cb.enabled or not rb.enabled then return 0 end
+    local cbAnchor = cb.anchorGroupId or self:GetFirstAvailableAnchorGroup()
+    local rbAnchor = rb.anchorGroupId or self:GetFirstAvailableAnchorGroup()
+    if not cbAnchor or not rbAnchor then return 0 end
+    if cbAnchor ~= rbAnchor then return 0 end
+
+    local cbPos = cb.position or "below"
+    local rbPos = rb.position or "below"
+    if cbPos ~= rbPos then return 0 end
+
+    local order = rb.stackOrder or "resource_first"
+
+    if moduleId == "castBar" then
+        if order == "resource_first" then
+            return self:GetResourceBarsTotalHeight()
+        end
+        return 0
+    elseif moduleId == "resourceBars" then
+        if order == "cast_first" then
+            local cbHeight = self:GetCastBarHeight()
+            if cbHeight > 0 then
+                return cbHeight + math.abs(cb.yOffset or 0)
+            end
+        end
+        return 0
+    end
+    return 0
+end
+
+function CooldownCompanion:UpdateAnchorStacking()
+    if pendingStackUpdate then return end
+    pendingStackUpdate = true
+    C_Timer.After(0, function()
+        pendingStackUpdate = false
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:EvaluateResourceBars()
+    end)
 end
 
 -- Masque Helper Functions
@@ -1353,23 +1360,34 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell)
     local group = self.db.profile.groups[groupId]
     if not group then return end
-    
+
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = {
         type = buttonType,
         id = id,
         name = name,
+        isPetSpell = isPetSpell or nil,
     }
 
     -- Auto-detect charges for spells
+    -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells
     if buttonType == "spell" then
-        local charges = C_Spell.GetSpellCharges(id)
-        if charges and charges.maxCharges and charges.maxCharges > 1 then
+        local chargeInfo = C_Spell.GetSpellCharges(id)
+        if chargeInfo then
             group.buttons[buttonIndex].hasCharges = true
             group.buttons[buttonIndex].showChargeText = true
+            local mc = chargeInfo.maxCharges
+            if mc and mc > 1 then
+                group.buttons[buttonIndex].maxCharges = mc
+            end
+            -- Secondary: display count
+            local displayCount = tonumber(C_Spell.GetSpellDisplayCount(id))
+            if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
+                group.buttons[buttonIndex].maxCharges = displayCount
+            end
         end
     end
 
@@ -1583,6 +1601,9 @@ function CooldownCompanion:MigrateRemoveBarChargeOldFields()
             for _, bd in ipairs(group.buttons) do
                 bd.barChargeMissingColor = nil
                 bd.barChargeSwipe = nil
+                bd.barChargeGap = nil
+                bd.barReverseCharges = nil
+                bd.barCdTextOnRechargeBar = nil
             end
         end
     end
@@ -1617,6 +1638,46 @@ end
 
 function CooldownCompanion:GetEffectiveSpecs(group)
     return group.specs, false
+end
+
+function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return false end
+    if group.displayMode ~= "icons" then return false end
+    if group.isGlobal then return false end
+    if group.enabled == false then return false end
+    if not self:IsGroupVisibleToCurrentChar(groupId) then return false end
+
+    local effectiveSpecs = self:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
+        if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+            return false
+        end
+    end
+
+    if not self:CheckLoadConditions(group) then return false end
+
+    return true
+end
+
+function CooldownCompanion:GetFirstAvailableAnchorGroup()
+    local groups = self.db.profile.groups
+    if not groups then return nil end
+
+    local candidates = {}
+    for groupId in pairs(groups) do
+        if self:IsGroupAvailableForAnchoring(groupId) then
+            table.insert(candidates, groupId)
+        end
+    end
+    if #candidates == 0 then return nil end
+
+    table.sort(candidates, function(a, b)
+        local orderA = groups[a].order or a
+        local orderB = groups[b].order or b
+        return orderA < orderB
+    end)
+    return candidates[1]
 end
 
 function CooldownCompanion:CheckLoadConditions(group)
@@ -1845,13 +1906,19 @@ end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
-        if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id) then
+        local bank = buttonData.isPetSpell
+            and Enum.SpellBookSpellBank.Pet
+            or Enum.SpellBookSpellBank.Player
+        if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id, bank) then
             return true
         end
         -- Fallback: spell may be stored as an override form; check the base spell.
-        local baseID = C_Spell.GetBaseSpell(buttonData.id)
-        if baseID and baseID ~= buttonData.id then
-            return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)
+        -- Only relevant for player spells (pet spells don't have override forms).
+        if not buttonData.isPetSpell then
+            local baseID = C_Spell.GetBaseSpell(buttonData.id)
+            if baseID and baseID ~= buttonData.id then
+                return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)
+            end
         end
         return false
     elseif buttonData.type == "item" then

@@ -12,7 +12,6 @@ local CooldownCompanion = ST.Addon
 -- Localize frequently-used globals for faster access
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
-local pcall = pcall
 local tostring = tostring
 local tonumber = tonumber
 local unpack = unpack
@@ -30,8 +29,8 @@ local UpdateBarDisplay
 local SetBarAuraEffect
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
+local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local UpdateBarFill
-local EnsureChargeBars
 
 -- Scratch cooldown (legacy; kept for potential fallback use).
 local scratchParent = CreateFrame("Frame")
@@ -602,7 +601,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
     if buttonData.hideWhileOnCooldown then
         if buttonData.hasCharges then
             -- Charged spells: hide only when all charges consumed
-            if button._chargeCount == 0 then
+            if button._mainCDShown then
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
@@ -623,7 +622,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
     if buttonData.hideWhileNotOnCooldown then
         if buttonData.hasCharges then
             -- Charged spells: hide when any charges are available
-            if not button._chargeCount or button._chargeCount > 0 then
+            if not button._mainCDShown then
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
@@ -662,7 +661,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         local otherHide = false
         if buttonData.hideWhileOnCooldown then
             if buttonData.hasCharges then
-                if button._chargeCount == 0 then otherHide = true end
+                if button._mainCDShown then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
@@ -674,7 +673,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         end
         if buttonData.hideWhileNotOnCooldown then
             if buttonData.hasCharges then
-                if not button._chargeCount or button._chargeCount > 0 then otherHide = true end
+                if not button._mainCDShown then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if not wd or wd == 0 then otherHide = true end
@@ -700,7 +699,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         local otherHide = false
         if buttonData.hideWhileOnCooldown then
             if buttonData.hasCharges then
-                if button._chargeCount == 0 then otherHide = true end
+                if button._mainCDShown then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
@@ -712,7 +711,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         end
         if buttonData.hideWhileNotOnCooldown then
             if buttonData.hasCharges then
-                if not button._chargeCount or button._chargeCount > 0 then otherHide = true end
+                if not button._mainCDShown then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if not wd or wd == 0 then otherHide = true end
@@ -747,9 +746,7 @@ local function UpdateLossOfControl(button)
         if locDuration then
             button.locCooldown:SetCooldownFromDurationObject(locDuration)
         else
-            pcall(function()
-                button.locCooldown:SetCooldown(C_Spell.GetSpellLossOfControlCooldown(button.buttonData.id))
-            end)
+            button.locCooldown:SetCooldown(C_Spell.GetSpellLossOfControlCooldown(button.buttonData.id))
         end
     end
 end
@@ -1162,178 +1159,84 @@ function CooldownCompanion:UpdateButtonIcon(button)
 end
 
 -- Update charge count state for a spell with hasCharges enabled.
--- Handles secret-value fallback during combat and recharge readback.
 -- Returns the raw charges API table (may be nil) for use by callers.
 local function UpdateChargeTracking(button, buttonData)
-    local charges
-    pcall(function()
-        charges = C_Spell.GetSpellCharges(buttonData.id)
-    end)
+    local charges = C_Spell.GetSpellCharges(buttonData.id)
 
-    -- Try to read charge values as normal Lua numbers (works out of
-    -- combat and for non-restricted spells during combat).
-    local countOk, cur, mx, cdStart, cdDur
-    if charges then
-        countOk, cur, mx, cdStart, cdDur = pcall(function()
-            if charges.maxCharges > 1 then
-                return charges.currentCharges, charges.maxCharges,
-                       charges.cooldownStartTime, charges.cooldownDuration
-            end
-        end)
+    -- Try to read current charges as plain number (works outside restricted)
+    local cur = tonumber(C_Spell.GetSpellDisplayCount(buttonData.id))
+
+    -- Update persisted maxCharges when readable
+    if cur and cur > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = cur
+    end
+    local mx = buttonData.maxCharges  -- Cached from outside combat
+
+    -- Recharge DurationObject (always works, handles secrets internally)
+    if mx and mx > 1 then
+        button._chargeDurationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
     end
 
-    if countOk and cur ~= nil then
-        -- API fully readable as Lua numbers — update all caches
-        button._chargeCount = cur
-        button._chargeMax = mx
-        button._chargeCDStart = cdStart
-        button._chargeCDDuration = cdDur
-        button._chargeDurationObj = nil  -- manual values are authoritative
-        button._nilConfirmPending = nil
-        if cdDur and cdDur > 0 then
-            buttonData.chargeCooldownDuration = cdDur
-        end
-    elseif button._chargeCount then
-        -- CDR readback: sync recharge start/duration with real values.
-        -- Charge COUNT is determined by hard constraints from
-        -- GetSpellChargeDuration + GetSpellCooldownDuration state.
-        local durationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
-
-        -- Store charge DurationObject for bar fill (percent methods work
-        -- even with secret values, unlike GetStartTime/GetTotalDuration).
-        button._chargeDurationObj = durationObj
-
-        -- Read back charge recharge via DurationObject methods.
-        -- Non-secret: full readback of start/duration for bar math.
-        -- Secret + bar mode: use cooldown widget as C++ signal — same
-        -- pattern as Bug 1.  SetCooldownFromDurationObject auto-shows the
-        -- widget only when duration > 0 (handles secrets internally).
-        local isRealRecharge = false
-        local isRechargeShown = false
-        if durationObj and not durationObj:HasSecretValues() then
-            if not durationObj:IsZero() then
-                local totalDur = durationObj:GetTotalDuration()
-                if totalDur and totalDur > 2 then
-                    isRealRecharge = true
-                    local realStart = durationObj:GetStartTime()
-                    local realDur = totalDur
-
-                    -- Detect intermediate charge recovery: recharge start
-                    -- jumped forward.  CDR doesn't change start, so a jump
-                    -- means the old recharge completed and a new one began.
-                    if button._chargeCDStart
-                       and button._chargeCount < button._chargeMax
-                       and realStart > button._chargeCDStart + 0.5 then
-                        button._chargeCount = button._chargeCount + 1
-                    end
-
-                    button._chargeCDStart = realStart
-                    button._chargeCDDuration = realDur
-                    buttonData.chargeCooldownDuration = realDur
-                end
-            end
-        elseif durationObj then
-            -- Secret values + bar mode: use the cooldown widget as a C++
-            -- signal.  Hide first to clear main-spell CD state, then set
-            -- charge duration — widget auto-shows only if recharge active.
-            button.cooldown:Hide()
-            button.cooldown:SetCooldownFromDurationObject(durationObj)
-            isRechargeShown = button.cooldown:IsShown()
-        end
-
-        if isRealRecharge or isRechargeShown then
-            -- HARD CONSTRAINT: recharge active means count < max.
-            if button._chargeCount >= button._chargeMax then
-                button._chargeCount = button._chargeMax - 1
-            end
-
-            -- CONSTRAINT: spell main cooldown distinguishes 0 vs 1+.
-            -- GetSpellCooldownDuration returns a non-secret DurationObject
-            -- for the spell's availability cooldown.  For charge spells:
-            --   0 charges → spell on cooldown → non-nil, long duration
-            --   1+ charges → spell usable → nil (or brief GCD ≤2s)
-            local spellCD = C_Spell.GetSpellCooldownDuration(buttonData.id)
-            local spellOnCD = false
-            if spellCD and not spellCD:HasSecretValues() then
-                if not spellCD:IsZero() then
-                    local totalDur = spellCD:GetTotalDuration()
-                    spellOnCD = totalDur and totalDur > 2
-                end
-            elseif isRechargeShown then
-                -- Secret: use main-spell CD signal stored before charge
-                -- tracking (IsShown + not isOnGCD → real cooldown → 0 charges)
-                spellOnCD = button._mainCDShown
-            end
-            if spellOnCD then
-                button._chargeCount = 0
-            elseif button._chargeCount < 1 then
-                if isRechargeShown then
-                    -- Secret: widget confirms recharge active, skip stale cdEnd
-                    button._chargeCount = 1
-                else
-                    -- Only raise 0→1 when recharge has significant time
-                    -- left.  Near the end (<1s), GetSpellCooldownDuration
-                    -- may report nil slightly before GetSpellChargeDuration,
-                    -- creating a brief false "spell usable" window.
-                    local cdEnd = (button._chargeCDStart or 0)
-                        + (button._chargeCDDuration or 0)
-                    if cdEnd - GetTime() > 1 then
-                        button._chargeCount = 1
-                    end
-                end
-            end
-
-            button._nilConfirmPending = nil
-        elseif button._chargeCount < button._chargeMax then
-            -- No real recharge active (nil or GCD only).  Require two
-            -- consecutive ticks to confirm, then increment by 1 (not
-            -- jump to max) to avoid flashing all bars on intermediate
-            -- recoveries.
-            if not button._nilConfirmPending then
-                button._nilConfirmPending = true
-            else
-                button._nilConfirmPending = nil
-                button._chargeCount = button._chargeCount + 1
-                if button._chargeCount >= button._chargeMax then
-                    button._chargeCDStart = nil
-                    button._chargeCDDuration = nil
-                else
-                    -- Reset recharge start so bar fill doesn't flash
-                    -- from stale old-recharge values.  The readback
-                    -- corrects to the real start on the next tick.
-                    button._chargeCDStart = GetTime()
-                end
+    -- Display charge text via secret-safe widget methods
+    if not buttonData.showChargeText then
+        button.count:SetText("")
+    else
+        if cur then
+            -- Plain number: use directly (can optimize with comparison)
+            if button._chargeText ~= cur then
+                button._chargeText = cur
+                button.count:SetText(cur)
             end
         else
-            button._nilConfirmPending = nil
-        end
-    end
-
-    -- Display charge text.  Prefer passing the raw API value to SetText
-    -- (C-side, handles secret values like print() does).  Fall back to
-    -- the Lua-side estimated count only when the API table is nil.
-    if not buttonData.showChargeText then
-        if button._chargeText ~= "" then
-            button._chargeText = ""
-            button.count:SetText("")
-        end
-    else
-        local textSet = false
-        if charges then
-            textSet = pcall(function()
-                button.count:SetText(charges.currentCharges)
-            end)
-        end
-        if not textSet then
-            local displayText = button._chargeCount or ""
-            if button._chargeText ~= displayText then
-                button._chargeText = displayText
-                button.count:SetText(displayText)
-            end
+            -- Secret: pass directly to SetText (C-level renders it)
+            -- Can't compare secrets, so always call SetText
+            button._chargeText = nil
+            button.count:SetText(C_Spell.GetSpellDisplayCount(buttonData.id))
         end
     end
 
     return charges
+end
+
+-- Icon tinting: out-of-range red > unusable dimming > normal white.
+-- Shared by icon-mode and bar-mode display paths.
+local function UpdateIconTint(button, buttonData, style)
+    local r, g, b = 1, 1, 1
+    if style.showOutOfRange then
+        if buttonData.type == "spell" then
+            if button._spellOutOfRange then
+                r, g, b = 1, 0.2, 0.2
+            end
+        elseif buttonData.type == "item" then
+            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
+            if not InCombatLockdown() then
+                local inRange = IsItemInRange(buttonData.id, "target")
+                -- inRange is nil when no target or item has no range; only tint on explicit false
+                if inRange == false then
+                    r, g, b = 1, 0.2, 0.2
+                end
+            end
+        end
+    end
+    if r == 1 and g == 1 and b == 1 and style.showUnusable then
+        if buttonData.type == "spell" then
+            local isUsable = C_Spell.IsSpellUsable(buttonData.id)
+            if not isUsable then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        elseif buttonData.type == "item" then
+            local usable, noMana = IsUsableItem(buttonData.id)
+            if not usable then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        end
+    end
+    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
+        button._vertexR, button._vertexG, button._vertexB = r, g, b
+        button.icon:SetVertexColor(r, g, b)
+    end
 end
 
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
@@ -1388,7 +1291,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         local wantDesat = false
         if fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
-                wantDesat = button._chargeCount == 0
+                wantDesat = button._mainCDShown
             elseif button._durationObj then
                 wantDesat = true
             elseif buttonData.type == "item" then
@@ -1410,43 +1313,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Icon tinting priority: out-of-range red > unusable dimming > normal white
-    local r, g, b = 1, 1, 1
-    if style.showOutOfRange then
-        if buttonData.type == "spell" then
-            if button._spellOutOfRange then
-                r, g, b = 1, 0.2, 0.2
-            end
-        elseif buttonData.type == "item" then
-            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
-            if not InCombatLockdown() then
-                local inRange = IsItemInRange(buttonData.id, "target")
-                -- inRange is nil when no target or item has no range; only tint on explicit false
-                if inRange == false then
-                    r, g, b = 1, 0.2, 0.2
-                end
-            end
-        end
-    end
-    if r == 1 and g == 1 and b == 1 and style.showUnusable then
-        if buttonData.type == "spell" then
-            local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
-            if insufficientPower then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
-            end
-        elseif buttonData.type == "item" then
-            local usable, noMana = IsUsableItem(buttonData.id)
-            if not usable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
-            end
-        end
-    end
-    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
-        button._vertexR, button._vertexG, button._vertexB = r, g, b
-        button.icon:SetVertexColor(r, g, b)
-    end
+    UpdateIconTint(button, buttonData, style)
 end
 
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
@@ -1692,17 +1559,35 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._isOnGCD = isOnGCD or false
     button._gcdJustEnded = gcdJustEnded
 
-    -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate)
+    -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate).
+    -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
+            and not buttonData.hasCharges
     end
 
-    -- Charge count tracking: store main-spell CD signal BEFORE anything
-    -- modifies the cooldown widget (UpdateIconModeVisuals may Hide/re-set it).
-    -- IsShown() reflects main cooldown (from SetCooldown/SetCooldownFromDurationObject
-    -- above); filter GCD so only real cooldown (0 charges) reads as true.
-    if buttonData.hasCharges then
-        button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+    -- Charge count tracking: detect whether the main spell cooldown (0 charges)
+    -- is active.  Filter GCD so only real cooldown reads as true.
+    -- Skip during aura override: button.cooldown shows the aura, not the main CD.
+    if buttonData.hasCharges and not auraOverrideActive then
+        if button._isBar then
+            -- Bar mode: button.cooldown is not reused for recharge animation.
+            button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+        else
+            -- Icon mode: button.cooldown is reused for the recharge radial, so
+            -- IsShown() stays true even with charges available (SetCooldown(0,0)
+            -- doesn't fully clear a prior SetCooldownFromDurationObject).
+            -- Use scratchCooldown with the spell's main CD DurationObject instead.
+            local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            if mainCDDuration then
+                scratchCooldown:Hide()
+                scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
+                button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                scratchCooldown:Hide()
+            else
+                button._mainCDShown = false
+            end
+        end
     end
 
     if not button._isBar then
@@ -1713,17 +1598,46 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.type == "spell" and buttonData.hasCharges then
         charges = UpdateChargeTracking(button, buttonData)
 
-        -- Show recharge radial — skip for bars and when aura override is active
-        if not button._isBar and not auraOverrideActive then
-            local chargeDuration = C_Spell.GetSpellChargeDuration(buttonData.id)
-            if chargeDuration then
-                button._durationObj = chargeDuration
-                button.cooldown:SetCooldownFromDurationObject(chargeDuration)
-            elseif charges then
-                pcall(function()
-                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
-                end)
+        -- Bar mode: charge bars are driven by the recharge DurationObject, not
+        -- the main spell CD. Save and clear the main CD, let the charge block
+        -- set _durationObj from the recharge, then restore the main CD for GCD
+        -- display only when showGCDSwipe is on and no recharge is active.
+        local mainDurationObj
+        if button._isBar and not auraOverrideActive then
+            mainDurationObj = button._durationObj
+            button._durationObj = nil
+        end
+
+        -- Always detect charge recharging state (needed for text/bar color even during aura override).
+        -- Charge DurationObjects may report non-zero even at full charges (stale data);
+        -- scratchCooldown auto-show is the ground truth.
+        if button._chargeDurationObj then
+            scratchCooldown:Hide()
+            scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+            button._chargeRecharging = scratchCooldown:IsShown()
+            scratchCooldown:Hide()
+        else
+            button._chargeRecharging = false
+        end
+
+        if not auraOverrideActive and button._chargeDurationObj then
+            if not button._isBar then
+                -- Icon mode: always set _durationObj, show recharge radial
+                button._durationObj = button._chargeDurationObj
+                button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+            elseif button._chargeRecharging then
+                -- Bar mode: only set _durationObj if actually recharging
+                button._durationObj = button._chargeDurationObj
             end
+        elseif not button._isBar and not auraOverrideActive and charges then
+            -- Icon mode fallback
+            button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+        end
+
+        -- Bar mode: if no recharge active, restore main CD for GCD display
+        if button._isBar and not button._durationObj
+           and mainDurationObj and isOnGCD and style.showGCDSwipe then
+            button._durationObj = mainDurationObj
         end
 
     end
@@ -1741,12 +1655,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Charge text color: applied after charge tracking so _chargeCount is current.
-    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing then
-        local atMax = button._chargeCount and button._chargeMax
-            and button._chargeCount >= button._chargeMax
+    -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
+    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing or buttonData.chargeFontColorZero then
         local cc
-        if not atMax then
+        if button._mainCDShown then
+            cc = buttonData.chargeFontColorZero or {1, 1, 1, 1}
+        elseif button._chargeRecharging then
             cc = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
         else
             cc = buttonData.chargeFontColor or {1, 1, 1, 1}
@@ -1754,7 +1668,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
 
-    -- Per-button visibility evaluation (after charge tracking so _chargeCount is current)
+    -- Per-button visibility evaluation (after charge tracking)
     EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
 
     -- Track if hidden state changed (for compact layout dirty flag)
@@ -1829,10 +1743,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
-    button._chargeCount = nil
-    button._chargeMax = nil
-    button._chargeCDStart = nil
-    button._chargeCDDuration = nil
     button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil
@@ -2206,372 +2116,8 @@ FormatBarTime = function(seconds)
     return ""
 end
 
--- Create/recreate charge sub-bars for multi-charge spells.
--- Each sub-bar is a self-contained StatusBar with its own bg + border + fill.
-EnsureChargeBars = function(button, numBars)
-    if button._chargeBarCount == numBars then return end
-
-    -- Destroy old sub-bars
-    if button.chargeBars then
-        for _, bar in ipairs(button.chargeBars) do
-            bar:Hide()
-            bar:SetParent(nil)
-        end
-    end
-
-    if numBars <= 1 then
-        button.chargeBars = nil
-        button._chargeBarCount = 0
-        return
-    end
-
-    button.chargeBars = {}
-    local sb = button.statusBar
-    local sbLevel = sb:GetFrameLevel()
-
-    for i = 1, numBars do
-        local bar = CreateFrame("StatusBar", nil, button)
-        bar:SetMinMaxValues(0, 1)
-        bar:SetValue(0)
-        bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
-        bar:SetFrameLevel(sbLevel - 1)
-        bar:EnableMouse(false)
-        if button._isVertical then bar:SetOrientation("VERTICAL") end
-        if button.style and button.style.barReverseFill then bar:SetReverseFill(true) end
-
-        -- Background (BACKGROUND layer = behind fill)
-        bar.bg = bar:CreateTexture(nil, "BACKGROUND")
-        bar.bg:SetAllPoints()
-
-        -- Border textures (OVERLAY layer = on top of fill)
-        bar.borderTextures = {}
-        for j = 1, 4 do
-            bar.borderTextures[j] = bar:CreateTexture(nil, "OVERLAY")
-        end
-
-        button.chargeBars[i] = bar
-    end
-
-    button._chargeBarCount = numBars
-    button._chargeBarsDirty = true
-end
-
--- Position charge sub-bars side-by-side relative to the button frame.
--- Each bar spans full button height with its own bg, border, and fill.
-local function LayoutChargeBars(button)
-    if not button.chargeBars then return end
-    local style = button.style
-    local showIcon = style.showBarIcon ~= false
-    local barHeight = style.barHeight or 20
-    local barLength = style.barLength or 180
-    local iconSize = barHeight
-    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
-    local numBars = #button.chargeBars
-    local gap = button.buttonData and button.buttonData.barChargeGap or 2
-
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
-    local borderColor = style.borderColor or {0, 0, 0, 1}
-
-    local iconReverse = showIcon and (style.barIconReverse or false)
-
-    if button._isVertical then
-        -- Vertical: stack sub-bars top-to-bottom
-        local iconArea = showIcon and (iconSize + iconOffset) or 0
-        local startY = (showIcon and not iconReverse) and iconArea or 0
-        local totalHeight = barLength - iconArea
-        local subBarHeight = (totalHeight - (numBars - 1) * gap) / numBars
-        if subBarHeight < 1 then subBarHeight = 1 end
-
-        for i, bar in ipairs(button.chargeBars) do
-            bar:ClearAllPoints()
-            bar:SetSize(barHeight, subBarHeight)
-            local yOffset = startY + (i - 1) * (subBarHeight + gap)
-            bar:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -yOffset)
-
-            bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-            ApplyEdgePositions(bar.borderTextures, bar, borderSize)
-            for _, tex in ipairs(bar.borderTextures) do
-                tex:SetColorTexture(unpack(borderColor))
-            end
-        end
-    else
-        -- Horizontal: stack sub-bars left-to-right
-        local iconArea = showIcon and (iconSize + iconOffset) or 0
-        local startX = (showIcon and not iconReverse) and iconArea or 0
-        local totalWidth = barLength - iconArea
-        local subBarWidth = (totalWidth - (numBars - 1) * gap) / numBars
-        if subBarWidth < 1 then subBarWidth = 1 end
-
-        for i, bar in ipairs(button.chargeBars) do
-            bar:ClearAllPoints()
-            bar:SetSize(subBarWidth, barHeight)
-            local xOffset = startX + (i - 1) * (subBarWidth + gap)
-            bar:SetPoint("TOPLEFT", button, "TOPLEFT", xOffset, 0)
-
-            bar.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-            ApplyEdgePositions(bar.borderTextures, bar, borderSize)
-            for _, tex in ipairs(bar.borderTextures) do
-                tex:SetColorTexture(unpack(borderColor))
-            end
-        end
-    end
-    button._chargeBarsDirty = false
-end
-
 -- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
 UpdateBarFill = function(button)
-    -- Charge sub-bar path: drive individual sub-bars from _chargeCount/_chargeCDStart/_chargeCDDuration
-    if button.chargeBars and button._chargeBarCount > 0 and not button._auraActive then
-        if button._chargeBarsDirty then
-            LayoutChargeBars(button)
-        end
-        local chargeCount = button._chargeCount or 0
-        local chargeMax = button._chargeMax or button._chargeBarCount
-        local cdStart = button._chargeCDStart
-        local cdDur = button._chargeCDDuration
-        local now = GetTime()
-
-        -- Compute recharge fraction for the recharging charge
-        local rechargeFraction = 0
-        local remaining = 0
-        if cdStart and cdDur and cdDur > 0 and chargeCount < chargeMax then
-            local elapsed = now - cdStart
-            rechargeFraction = elapsed / cdDur
-            if rechargeFraction > 1 then rechargeFraction = 1 end
-            if rechargeFraction < 0 then rechargeFraction = 0 end
-            remaining = cdDur - elapsed
-            if remaining < 0 then remaining = 0 end
-        end
-
-        local reverseCharges = button.buttonData and button.buttonData.barReverseCharges
-        local numBars = button._chargeBarCount
-        for i, bar in ipairs(button.chargeBars) do
-            local ci = reverseCharges and (numBars - i + 1) or i
-            if ci <= chargeCount then
-                bar:SetValue(1) -- available
-            elseif ci == chargeCount + 1 then
-                if button._chargeDurationObj then
-                    bar:SetValue(button._chargeDurationObj:GetElapsedPercent())
-                else
-                    bar:SetValue(rechargeFraction)
-                end
-            else
-                bar:SetValue(0) -- spent
-            end
-        end
-
-        -- Time text: show recharge remaining (charge bars are suppressed when _auraActive, so this is defensive)
-        local showTimeText = button._auraActive
-            and (button.style.showAuraText ~= false)
-            or (not button._auraActive and button.style.showCooldownText)
-        if showTimeText then
-            -- Switch font/color when mode changes
-            local mode = button._auraActive and "aura" or "cd"
-            if button._barTextMode ~= mode then
-                button._barTextMode = mode
-                if button._auraActive then
-                    local f = button.style.auraTextFont or "Fonts\\FRIZQT__.TTF"
-                    local s = button.style.auraTextFontSize or 12
-                    local o = button.style.auraTextFontOutline or "OUTLINE"
-                    button.timeText:SetFont(f, s, o)
-                else
-                    local f = button.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
-                    local s = button.style.cooldownFontSize or 12
-                    local o = button.style.cooldownFontOutline or "OUTLINE"
-                    button.timeText:SetFont(f, s, o)
-                end
-            end
-            if button._chargeDurationObj and chargeCount < chargeMax then
-                local rem = button._chargeDurationObj:GetRemainingDuration()
-                local cc = button._auraActive
-                    and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
-                    or (button.style.cooldownFontColor or {1, 1, 1, 1})
-                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-                if not button._chargeDurationObj:HasSecretValues() then
-                    button.timeText:SetText(rem > 0 and FormatBarTime(rem) or "")
-                else
-                    button.timeText:SetFormattedText("%.1f", rem)
-                end
-            elseif remaining > 0 then
-                local cc = button._auraActive
-                    and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
-                    or (button.style.cooldownFontColor or {1, 1, 1, 1})
-                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-                button.timeText:SetText(FormatBarTime(remaining))
-            elseif chargeCount >= chargeMax then
-                if button.style.showBarReadyText then
-                    if button._barTextMode ~= "ready" then
-                        button._barTextMode = "ready"
-                        local f = button.style.barReadyFont or "Fonts\\FRIZQT__.TTF"
-                        local s = button.style.barReadyFontSize or 12
-                        local o = button.style.barReadyFontOutline or "OUTLINE"
-                        button.timeText:SetFont(f, s, o)
-                    end
-                    local rc = button.style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
-                    button.timeText:SetTextColor(rc[1], rc[2], rc[3], rc[4])
-                    button.timeText:SetText(button.style.barReadyText or "Ready")
-                else
-                    button.timeText:SetText("")
-                end
-            else
-                local cc = button.style.cooldownFontColor or {1, 1, 1, 1}
-                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-                button.timeText:SetText("")
-            end
-        elseif chargeCount >= chargeMax and button.style.showBarReadyText then
-            if button._barTextMode ~= "ready" then
-                button._barTextMode = "ready"
-                local f = button.style.barReadyFont or "Fonts\\FRIZQT__.TTF"
-                local s = button.style.barReadyFontSize or 12
-                local o = button.style.barReadyFontOutline or "OUTLINE"
-                button.timeText:SetFont(f, s, o)
-            end
-            local rc = button.style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
-            button.timeText:SetTextColor(rc[1], rc[2], rc[3], rc[4])
-            button.timeText:SetText(button.style.barReadyText or "Ready")
-        else
-            button.timeText:SetText("")
-        end
-
-        -- Anchor cooldown text to the recharging sub-bar when enabled
-        if button.buttonData.barCdTextOnRechargeBar and button.chargeBars then
-            local targetBar
-            if chargeCount < chargeMax then
-                local logicalBar = chargeCount + 1
-                targetBar = reverseCharges and (numBars - logicalBar + 1) or logicalBar
-            else
-                targetBar = 0 -- all full → anchor back to statusBar
-            end
-            if button._timeTextAnchoredBar ~= targetBar then
-                button._timeTextAnchoredBar = targetBar
-                local st = button.style
-                local cdOX = st.barCdTextOffsetX or 0
-                local cdOY = st.barCdTextOffsetY or 0
-                local nmOX = st.barNameTextOffsetX or 0
-                local nmOY = st.barNameTextOffsetY or 0
-                local nmRev = st.barNameTextReverse
-                local tmRev = st.barTimeTextReverse
-                button.timeText:ClearAllPoints()
-                if button._isVertical then
-                    local tmPt = tmRev and "BOTTOM" or "TOP"
-                    local tmOff = tmRev and (3 + cdOY) or (-3 + cdOY)
-                    local nmPt = nmRev and "TOP" or "BOTTOM"
-                    local nmOff = nmRev and (-3 + nmOY) or (3 + nmOY)
-                    if targetBar > 0 and button.chargeBars[targetBar] then
-                        button.timeText:SetPoint(tmPt, button.chargeBars[targetBar], tmPt, cdOX, tmOff)
-                        button.nameText:ClearAllPoints()
-                        button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOX, nmOff)
-                    else
-                        button.timeText:SetPoint(tmPt, button.statusBar, tmPt, cdOX, tmOff)
-                        button.nameText:ClearAllPoints()
-                        button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOX, nmOff)
-                    end
-                else
-                    local tmPt = tmRev and "LEFT" or "RIGHT"
-                    local tmOff = tmRev and (3 + cdOX) or (-3 + cdOX)
-                    local nmPt = nmRev and "RIGHT" or "LEFT"
-                    local nmOff = nmRev and (-3 + nmOX) or (3 + nmOX)
-                    if targetBar > 0 and button.chargeBars[targetBar] then
-                        button.timeText:SetPoint(tmPt, button.chargeBars[targetBar], tmPt, tmOff, cdOY)
-                        -- Detach name truncation from timeText so it doesn't follow
-                        button.nameText:ClearAllPoints()
-                        button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOff, nmOY)
-                        if nmRev == tmRev then
-                            button.nameText:SetPoint(tmPt, button.statusBar, tmPt, tmRev and 3 or -3, 0)
-                        end
-                    else
-                        button.timeText:SetPoint(tmPt, button.statusBar, tmPt, tmOff, cdOY)
-                        -- Restore name truncation against timeText
-                        button.nameText:ClearAllPoints()
-                        button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOff, nmOY)
-                        if nmRev == tmRev then
-                            if nmRev then
-                                button.nameText:SetPoint("LEFT", button.timeText, "RIGHT", 4, 0)
-                            else
-                                button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
-                            end
-                        end
-                    end
-                end
-            end
-        elseif button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
-            -- Option disabled — reset back to statusBar
-            button._timeTextAnchoredBar = 0
-            local st = button.style
-            local cdOX = st.barCdTextOffsetX or 0
-            local cdOY = st.barCdTextOffsetY or 0
-            local nmOX = st.barNameTextOffsetX or 0
-            local nmOY = st.barNameTextOffsetY or 0
-            local nmRev = st.barNameTextReverse
-            local tmRev = st.barTimeTextReverse
-            button.timeText:ClearAllPoints()
-            if button._isVertical then
-                local tmPt = tmRev and "BOTTOM" or "TOP"
-                local tmOff = tmRev and (3 + cdOY) or (-3 + cdOY)
-                local nmPt = nmRev and "TOP" or "BOTTOM"
-                local nmOff = nmRev and (-3 + nmOY) or (3 + nmOY)
-                button.timeText:SetPoint(tmPt, button.statusBar, tmPt, cdOX, tmOff)
-                button.nameText:ClearAllPoints()
-                button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOX, nmOff)
-            else
-                local tmPt = tmRev and "LEFT" or "RIGHT"
-                local tmOff = tmRev and (3 + cdOX) or (-3 + cdOX)
-                local nmPt = nmRev and "RIGHT" or "LEFT"
-                local nmOff = nmRev and (-3 + nmOX) or (3 + nmOX)
-                button.timeText:SetPoint(tmPt, button.statusBar, tmPt, tmOff, cdOY)
-                button.nameText:ClearAllPoints()
-                button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOff, nmOY)
-                if nmRev == tmRev then
-                    if nmRev then
-                        button.nameText:SetPoint("LEFT", button.timeText, "RIGHT", 4, 0)
-                    else
-                        button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
-                    end
-                end
-            end
-        end
-
-        return -- skip single-bar path
-    end
-
-    -- Reset text anchor if previously on a charge bar
-    if button._timeTextAnchoredBar and button._timeTextAnchoredBar ~= 0 then
-        button._timeTextAnchoredBar = 0
-        local st = button.style
-        local cdOX = st.barCdTextOffsetX or 0
-        local cdOY = st.barCdTextOffsetY or 0
-        local nmOX = st.barNameTextOffsetX or 0
-        local nmOY = st.barNameTextOffsetY or 0
-        local nmRev = st.barNameTextReverse
-        local tmRev = st.barTimeTextReverse
-        button.timeText:ClearAllPoints()
-        if button._isVertical then
-            local tmPt = tmRev and "BOTTOM" or "TOP"
-            local tmOff = tmRev and (3 + cdOY) or (-3 + cdOY)
-            local nmPt = nmRev and "TOP" or "BOTTOM"
-            local nmOff = nmRev and (-3 + nmOY) or (3 + nmOY)
-            button.timeText:SetPoint(tmPt, button.statusBar, tmPt, cdOX, tmOff)
-            button.nameText:ClearAllPoints()
-            button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOX, nmOff)
-        else
-            local tmPt = tmRev and "LEFT" or "RIGHT"
-            local tmOff = tmRev and (3 + cdOX) or (-3 + cdOX)
-            local nmPt = nmRev and "RIGHT" or "LEFT"
-            local nmOff = nmRev and (-3 + nmOX) or (3 + nmOX)
-            button.timeText:SetPoint(tmPt, button.statusBar, tmPt, tmOff, cdOY)
-            button.nameText:ClearAllPoints()
-            button.nameText:SetPoint(nmPt, button.statusBar, nmPt, nmOff, nmOY)
-            if nmRev == tmRev then
-                if nmRev then
-                    button.nameText:SetPoint("LEFT", button.timeText, "RIGHT", 4, 0)
-                else
-                    button.nameText:SetPoint("RIGHT", button.timeText, "LEFT", -4, 0)
-                end
-            end
-        end
-    end
-
     -- Single-bar path
     -- DurationObject percent methods return secret values during combat in 12.0.1,
     -- but SetValue() accepts secrets (C-side widget method).  HasSecretValues gates
@@ -2678,21 +2224,10 @@ end
 UpdateBarDisplay = function(button, fetchOk)
     local style = button.style
 
-    -- Lazy create/destroy charge sub-bars
-    local hasChargeBars = button._chargeMax and button._chargeMax > 1 and not button._auraActive
-    local wantCount = hasChargeBars and button._chargeMax or 0
-    if wantCount ~= (button._chargeBarCount or 0) then
-        EnsureChargeBars(button, wantCount)
-    end
-
     -- Determine onCooldown via nil-checks (secret-safe).
     -- _durationObj is non-nil only when UpdateButtonCooldown found an active CD/aura.
     local onCooldown
-    if button.chargeBars and button._chargeBarCount > 0 then
-        -- For charge sub-bars, "on cooldown" means any charge is missing
-        onCooldown = button._chargeCount and button._chargeMax
-            and button._chargeCount < button._chargeMax
-    elseif button._durationObj then
+    if button._durationObj then
         onCooldown = not button._barGCDSuppressed
     elseif button.buttonData.type == "item" then
         local _, durationMs = button.cooldown:GetCooldownTimes()
@@ -2715,64 +2250,27 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Charge sub-bar colors and statusBar transparency
-    if button.chargeBars and button._chargeBarCount > 0 then
-        local readyColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
-        local cdColor = style.barCooldownColor or readyColor
-        local chargeCount = button._chargeCount or 0
-        local reverseCharges = button.buttonData and button.buttonData.barReverseCharges
-        local numBars = button._chargeBarCount
-        for i, bar in ipairs(button.chargeBars) do
-            local ci = reverseCharges and (numBars - i + 1) or i
-            if ci <= chargeCount then
-                bar:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
-            else
-                bar:SetStatusBarColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
-            end
-            bar:Show()
+    -- Bar color: switch between ready, cooldown, and partial charge colors
+    local wantCdColor
+    if onCooldown then
+        if button.buttonData.hasCharges and not button._mainCDShown then
+            wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
+        else
+            wantCdColor = style.barCooldownColor
         end
-        -- Make main statusBar transparent so sub-bars show through; text stays visible
-        button.statusBar:SetStatusBarColor(0, 0, 0, 0)
-        button._barCdColor = "charge-sub-bars"
-
-        -- Hide bar area bg/border when charge sub-bars are active (they have their own)
-        if not button._chargeBarsBgActive then
-            button._chargeBarsBgActive = true
-            button.bg:Hide()
-            for _, tex in ipairs(button.borderTextures) do tex:Hide() end
-        end
-    else
-        -- Hide charge sub-bars if they exist (aura override case)
-        if button.chargeBars then
-            for _, bar in ipairs(button.chargeBars) do
-                bar:Hide()
-            end
-        end
-
-        -- Restore bar area bg/border when charge bars are inactive
-        if button._chargeBarsBgActive then
-            button._chargeBarsBgActive = false
-            button.bg:Show()
-            local borderSz = style.borderSize or ST.DEFAULT_BORDER_SIZE
-            ApplyEdgePositions(button.borderTextures, button._barBounds, borderSz)
-            for _, tex in ipairs(button.borderTextures) do tex:Show() end
-        end
-
-        -- Bar color: switch between ready and cooldown colors
-        local wantCdColor = onCooldown and style.barCooldownColor or nil
-        if button._barCdColor ~= wantCdColor then
-            button._barCdColor = wantCdColor
-            local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
-            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-        end
+    end
+    if button._barCdColor ~= wantCdColor then
+        button._barCdColor = wantCdColor
+        local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+        button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
     -- Icon desaturation (skip during GCD, matching icon-mode behavior)
     if style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
-            if button.chargeBars and button._chargeBarCount > 0 then
-                wantDesat = button._chargeCount == 0
+            if button.buttonData.hasCharges then
+                wantDesat = button._mainCDShown
             elseif button._durationObj then
                 wantDesat = true
             elseif button.buttonData.type == "item" then
@@ -2794,6 +2292,12 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
+    -- Icon tinting (out-of-range red / unusable dimming)
+    UpdateIconTint(button, button.buttonData, style)
+
+    -- Loss of control overlay on bar icon
+    UpdateLossOfControl(button)
+
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
     if button._pandemicPreview then
@@ -2810,14 +2314,16 @@ UpdateBarDisplay = function(button, fetchOk)
         if not wantAuraColor then
             -- Reset to normal color immediately (don't wait for next tick)
             button._barCdColor = nil
-            if button.chargeBars and button._chargeBarCount > 0 then
-                -- Sub-bars will be re-shown on next tick
-                button.statusBar:SetStatusBarColor(0, 0, 0, 0)
-            else
-                local resetColor = onCooldown and style.barCooldownColor or nil
-                local c = resetColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
-                button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            local resetColor
+            if onCooldown then
+                if button.buttonData.hasCharges and not button._mainCDShown then
+                    resetColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
+                else
+                    resetColor = style.barCooldownColor
+                end
             end
+            local c = resetColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
         end
     end
     if wantAuraColor then
@@ -2952,11 +2458,6 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.icon:SetAlpha(0)
     end
 
-    -- Charge sub-bars (created lazily in UpdateBarDisplay when charge count is known)
-    button.chargeBars = nil
-    button._chargeBarCount = 0
-    button._chargeBarsBgActive = false
-
     -- Icon background + border (always shown when icon visible)
     button.iconBg = button:CreateTexture(nil, "BACKGROUND")
     SetIconAreaPoints(button.iconBg, button, isVertical, iconReverse, iconSize, 0)
@@ -3079,6 +2580,16 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     end
     ApplyEdgePositions(button.borderTextures, button._barBounds, borderSize)
 
+    -- Loss of control cooldown frame (red swipe over the bar icon)
+    button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
+    button.locCooldown:SetAllPoints(button.icon)
+    button.locCooldown:SetDrawEdge(true)
+    button.locCooldown:SetDrawSwipe(true)
+    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
+    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetHideCountdownNumbers(true)
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
+
     -- Hidden cooldown frame for GetCooldownTimes() reads
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetSize(1, 1)
@@ -3148,14 +2659,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
                     self._auraActive = false
                     self._inPandemic = false
                     self._barAuraColor = nil
-                    -- If charge sub-bars exist, make statusBar transparent so sub-bars show
-                    if self._chargeMax and self._chargeMax > 1 then
-                        self.statusBar:SetStatusBarColor(0, 0, 0, 0)
-                        self._barCdColor = nil
-                    else
-                        local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                        self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-                    end
+                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
                     SetBarAuraEffect(self, false)
                 end
             end
@@ -3255,13 +2760,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
                     self._auraActive = false
                     self._inPandemic = false
                     self._barAuraColor = nil
-                    if self._chargeMax and self._chargeMax > 1 then
-                        self.statusBar:SetStatusBarColor(0, 0, 0, 0)
-                        self._barCdColor = nil
-                    else
-                        local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                        self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-                    end
+                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
                     SetBarAuraEffect(self, false)
                 end
             end
@@ -3279,10 +2779,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
-    button._chargeCount = nil
-    button._chargeMax = nil
-    button._chargeCDStart = nil
-    button._chargeCDDuration = nil
     button._nilConfirmPending = nil
     button._displaySpellId = nil
     button._itemCount = nil
@@ -3297,10 +2793,10 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._visibilityAlphaOverride = nil
     button._lastVisAlpha = 1
     button._barCdColor = nil
+    button._chargeRecharging = nil
     button._barReadyTextColor = nil
     button._barAuraColor = nil
     button._barAuraEffectActive = nil
-    button._timeTextAnchoredBar = nil
 
     if isVertical then
         button:SetSize(barHeight, barLength)
@@ -3320,11 +2816,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.icon:SetAlpha(0)
     end
 
-    -- Force sub-bar rebuild on next tick
-    button._chargeBarCount = 0
-
-    -- Restore bar area bg/border (charge bars may have altered these)
-    button._chargeBarsBgActive = false
     button.bg:ClearAllPoints()
     if showIcon then
         SetBarAreaPoints(button.bg, button, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
