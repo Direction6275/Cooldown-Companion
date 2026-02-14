@@ -1197,6 +1197,39 @@ CS.StartPickFrame = StartPickFrame
 CS.StartPickCDM = StartPickCDM
 
 ------------------------------------------------------------------------
+-- Helper: Check if a spell is in CDM TrackedBuff or TrackedBar categories
+------------------------------------------------------------------------
+local function IsSpellInCDMBuffBar(spellId)
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            for _, cdID in ipairs(ids) do
+                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if ok2 and info then
+                    if info.spellID == spellId or info.overrideSpellID == spellId
+                       or info.overrideTooltipSpellID == spellId then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)
+------------------------------------------------------------------------
+local function IsPassiveOrProc(spellId)
+    if C_Spell.IsSpellPassive(spellId) then return true end
+    local baseCooldown = GetSpellBaseCooldown(spellId)
+    if (not baseCooldown or baseCooldown == 0) and IsSpellInCDMBuffBar(spellId) then
+        return true
+    end
+    return false
+end
+
+------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
 local function TryAddSpell(input, isPetSpell)
@@ -1220,15 +1253,16 @@ local function TryAddSpell(input, isPetSpell)
     end
 
     if spellId and spellName then
-        if C_Spell.IsSpellPassive(spellId) then
-            CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
-            return false
-        end
         if spellName == "Single-Button Assistant" then
             CooldownCompanion:Print("Cannot track Single-Button Assistant")
             return false
         end
-        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell)
+        local passiveOrProc = IsPassiveOrProc(spellId)
+        if passiveOrProc and not IsSpellInCDMBuffBar(spellId) then
+            CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
+            return false
+        end
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
     else
@@ -1318,10 +1352,20 @@ local function TryAdd(input)
         -- ID-based input: check both spell and item
         local spellInfo = C_Spell.GetSpellInfo(id)
         local spellFound = spellInfo and spellInfo.name
-        local isPassive = spellFound and C_Spell.IsSpellPassive(id)
+        local passiveOrProc = spellFound and IsPassiveOrProc(id)
+
+        -- Passive/proc spell: require CDM presence
+        if spellFound and passiveOrProc then
+            if IsSpellInCDMBuffBar(id) then
+                CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name, nil, true)
+                CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+                return true
+            end
+            -- Not in CDM — fall through to try as item, then report error
+        end
 
         -- Non-passive spell → add it
-        if spellFound and not isPassive then
+        if spellFound and not passiveOrProc then
             CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name)
             CooldownCompanion:Print("Added spell: " .. spellInfo.name)
             return true
@@ -1334,9 +1378,9 @@ local function TryAdd(input)
             if C_Item.IsItemDataCachedByID(itemId) then
                 local result = FinalizeAddItem(itemId, selectedGroup)
                 if result then return true end
-                -- Item had no use effect; if spell was passive, report that
-                if isPassive then
-                    CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                -- Item had no use effect; if spell was passive, report CDM error
+                if passiveOrProc then
+                    CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
                     return false
                 end
                 -- FinalizeAddItem already printed "no usable effect"
@@ -1356,8 +1400,8 @@ local function TryAdd(input)
                 CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
                 CooldownCompanion.pendingItemLoad = nil
                 if not success then
-                    if isPassive then
-                        CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                    if passiveOrProc then
+                        CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
                     else
                         CooldownCompanion:Print("Not found: " .. input)
                     end
@@ -1365,16 +1409,16 @@ local function TryAdd(input)
                 end
                 if FinalizeAddItem(itemId, capturedGroup) then
                     CooldownCompanion:RefreshConfigPanel()
-                elseif isPassive then
-                    CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                elseif passiveOrProc then
+                    CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
                 end
             end)
             return false
         end
 
         -- No item match
-        if isPassive then
-            CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+        if passiveOrProc then
+            CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
             return false
         end
 
@@ -1391,10 +1435,20 @@ local function TryAdd(input)
             spellId, spellName = CooldownCompanion:FindTalentSpellByName(input)
         end
 
-        if spellId and spellName and not C_Spell.IsSpellPassive(spellId) then
-            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
-            CooldownCompanion:Print("Added spell: " .. spellName)
-            return true
+        if spellId and spellName then
+            local passiveOrProc = IsPassiveOrProc(spellId)
+            if passiveOrProc then
+                if IsSpellInCDMBuffBar(spellId) then
+                    CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, nil, true)
+                    CooldownCompanion:Print("Added spell: " .. spellName)
+                    return true
+                end
+                -- Not in CDM — fall through to try as item, then report error
+            else
+                CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
+                CooldownCompanion:Print("Added spell: " .. spellName)
+                return true
+            end
         end
 
         -- Try as item
@@ -1403,9 +1457,9 @@ local function TryAdd(input)
             return FinalizeAddItem(itemId, selectedGroup)
         end
 
-        -- Passive spell, no item match
+        -- Passive/proc spell, no item match — report CDM error
         if spellId and spellName then
-            CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
+            CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
             return false
         end
 
@@ -1527,6 +1581,34 @@ local function BuildAutocompleteCache()
                             category = "Item",
                             isItem = true,
                         })
+                    end
+                end
+            end
+        end
+    end
+
+    -- Iterate CDM TrackedBuff + TrackedBar for passive/proc spells
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            for _, cdID in ipairs(ids) do
+                local ok2, cdInfo = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if ok2 and cdInfo and cdInfo.spellID then
+                    local id = cdInfo.spellID
+                    if not seen[id] then
+                        local spellInfo = C_Spell.GetSpellInfo(id)
+                        if spellInfo and spellInfo.name and IsPassiveOrProc(id) then
+                            seen[id] = true
+                            table.insert(cache, {
+                                id = id,
+                                name = spellInfo.name,
+                                nameLower = spellInfo.name:lower(),
+                                icon = spellInfo.iconID or 134400,
+                                category = "Cooldown Manager",
+                                isItem = false,
+                                isPassive = true,
+                            })
+                        end
                     end
                 end
             end

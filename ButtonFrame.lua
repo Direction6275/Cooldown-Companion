@@ -741,7 +741,7 @@ end
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
-    if button.style.showLossOfControl and button.buttonData.type == "spell" then
+    if button.style.showLossOfControl and button.buttonData.type == "spell" and not button.buttonData.isPassive then
         local locDuration = C_Spell.GetSpellLossOfControlCooldownDuration(button.buttonData.id)
         if locDuration then
             button.locCooldown:SetCooldownFromDurationObject(locDuration)
@@ -1201,6 +1201,13 @@ end
 -- Icon tinting: out-of-range red > unusable dimming > normal white.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
+    if buttonData.isPassive then
+        if button._vertexR ~= 1 or button._vertexG ~= 1 or button._vertexB ~= 1 then
+            button._vertexR, button._vertexG, button._vertexB = 1, 1, 1
+            button.icon:SetVertexColor(1, 1, 1)
+        end
+        return
+    end
     local r, g, b = 1, 1, 1
     if style.showOutOfRange then
         if buttonData.type == "spell" then
@@ -1242,7 +1249,8 @@ end
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
-    if fetchOk then
+    -- Passives never suppress — always show cooldown widget for aura swipe
+    if fetchOk and not buttonData.isPassive then
         local suppressGCD = not style.showGCDSwipe and isOnGCD
 
         if suppressGCD then
@@ -1287,7 +1295,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
     -- spells/auras; GetCooldownTimes() remains safe for items.
-    if style.desaturateOnCooldown then
+    -- Passives never desaturate.
+    if style.desaturateOnCooldown and not buttonData.isPassive then
         local wantDesat = false
         if fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
@@ -1510,7 +1519,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if not auraOverrideActive then
-        if buttonData.type == "spell" then
+        if buttonData.type == "spell" and not buttonData.isPassive then
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
             -- pcall: SetCooldown fallback may receive secret startTime/duration.
             local cooldownInfo
@@ -1563,7 +1572,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
-            and not buttonData.hasCharges
+            and not buttonData.hasCharges and not buttonData.isPassive
     end
 
     -- Charge count tracking: detect whether the main spell cooldown (0 charges)
@@ -2265,8 +2274,8 @@ UpdateBarDisplay = function(button, fetchOk)
         button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
-    -- Icon desaturation (skip during GCD, matching icon-mode behavior)
-    if style.desaturateOnCooldown then
+    -- Icon desaturation (skip during GCD, matching icon-mode behavior; passives never desaturate)
+    if style.desaturateOnCooldown and not button.buttonData.isPassive then
         local wantDesat = false
         if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then

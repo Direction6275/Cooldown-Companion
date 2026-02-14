@@ -140,7 +140,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     if not auraCollapsed then
 
-    -- Track buff/debuff duration toggle (always visible for spells)
+    -- Track buff/debuff duration toggle (hidden for passives — forced on)
+    if not buttonData.isPassive then
     local auraCb = AceGUI:Create("CheckBox")
     local auraLabel = "Track Aura Duration"
     local auraActive = hasViewerFrame and buttonData.auraTracking == true
@@ -193,6 +194,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if CooldownCompanion.db.profile.hideInfoButtons then
         auraWarn:Hide()
     end
+    end -- not buttonData.isPassive
 
     -- Spell ID Override row (always visible for spells, even without auto-detected aura)
     local overrideRow = AceGUI:Create("SimpleGroup")
@@ -3683,7 +3685,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
-    -- Hide While On Cooldown
+    -- Hide While On Cooldown (skip for passives — no cooldown)
+    if not buttonData.isPassive then
     local hasCooldown = true
     if buttonData.type == "spell" then
         local baseCooldown = GetSpellBaseCooldown(buttonData.id)
@@ -3721,6 +3724,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideNotCDCb)
+    end -- not buttonData.isPassive
 
     -- Hide While Aura Active
     local auraDisabled = isItem or not buttonData.auraTracking

@@ -923,7 +923,7 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and button.style and button.style.showOutOfRange then
+        if bd.type == "spell" and not bd.isPassive and button.style and button.style.showOutOfRange then
             newSet[bd.id] = true
         end
     end)
@@ -1382,7 +1382,7 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1392,11 +1392,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         id = id,
         name = name,
         isPetSpell = isPetSpell or nil,
+        isPassive = isPassive or nil,
     }
 
-    -- Auto-detect charges for spells
+    -- Auto-detect charges for spells (skip for passives — no cooldown)
     -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells
-    if buttonType == "spell" then
+    if buttonType == "spell" and not isPassive then
         local chargeInfo = C_Spell.GetSpellCharges(id)
         if chargeInfo then
             group.buttons[buttonIndex].hasCharges = true
@@ -1411,6 +1412,11 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 group.buttons[buttonIndex].maxCharges = displayCount
             end
         end
+    end
+
+    -- Force aura tracking for passive/proc spells
+    if isPassive then
+        group.buttons[buttonIndex].auraTracking = true
     end
 
     -- Auto-detect aura tracking for spells with viewer aura frames
@@ -1539,7 +1545,6 @@ function CooldownCompanion:FindTalentSpellByName(name)
     -- 1) Search talent tree (covers all talent choices across specs)
     local result = WalkTalentTree(function(defInfo)
         if defInfo.spellID then
-            if C_Spell.IsSpellPassive(defInfo.spellID) then return nil end
             local spellInfo = C_Spell.GetSpellInfo(defInfo.spellID)
             if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
                 return { defInfo.spellID, spellInfo.name }
@@ -1552,9 +1557,7 @@ function CooldownCompanion:FindTalentSpellByName(name)
     result = FindDisplaySpell(function(spellID)
         local spellInfo = C_Spell.GetSpellInfo(spellID)
         if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
-            if not C_Spell.IsSpellPassive(spellID) then
-                return { spellID, spellInfo.name }
-            end
+            return { spellID, spellInfo.name }
         end
     end)
     if result then return result[1], result[2] end
@@ -1927,6 +1930,9 @@ function CooldownCompanion:ToggleGroupGlobal(groupId)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
+    -- Passive/proc spells are tracked via aura, not spellbook presence
+    if buttonData.isPassive then return true end
+
     if buttonData.type == "spell" then
         local bank = buttonData.isPetSpell
             and Enum.SpellBookSpellBank.Pet
