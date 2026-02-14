@@ -218,6 +218,7 @@ local defaults = {
             barHeight = 20,
             barColor = {0.2, 0.6, 1.0, 1.0},
             barCooldownColor = {0.6, 0.13, 0.18, 1.0},
+            barChargeColor = {1.0, 0.82, 0.0, 1.0},
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
             showBarNameText = true,

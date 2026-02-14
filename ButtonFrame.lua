@@ -29,6 +29,7 @@ local UpdateBarDisplay
 local SetBarAuraEffect
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
+local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local UpdateBarFill
 
 -- Scratch cooldown (legacy; kept for potential fallback use).
@@ -1560,12 +1561,28 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and not buttonData.hasCharges
     end
 
-    -- Charge count tracking: store main-spell CD signal BEFORE anything
-    -- modifies the cooldown widget (UpdateIconModeVisuals may Hide/re-set it).
-    -- IsShown() reflects main cooldown (from SetCooldown/SetCooldownFromDurationObject
-    -- above); filter GCD so only real cooldown (0 charges) reads as true.
-    if buttonData.hasCharges then
-        button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+    -- Charge count tracking: detect whether the main spell cooldown (0 charges)
+    -- is active.  Filter GCD so only real cooldown reads as true.
+    -- Skip during aura override: button.cooldown shows the aura, not the main CD.
+    if buttonData.hasCharges and not auraOverrideActive then
+        if button._isBar then
+            -- Bar mode: button.cooldown is not reused for recharge animation.
+            button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+        else
+            -- Icon mode: button.cooldown is reused for the recharge radial, so
+            -- IsShown() stays true even with charges available (SetCooldown(0,0)
+            -- doesn't fully clear a prior SetCooldownFromDurationObject).
+            -- Use scratchCooldown with the spell's main CD DurationObject instead.
+            local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            if mainCDDuration then
+                scratchCooldown:Hide()
+                scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
+                button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                scratchCooldown:Hide()
+            else
+                button._mainCDShown = false
+            end
+        end
     end
 
     if not button._isBar then
@@ -1586,22 +1603,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._durationObj = nil
         end
 
+        -- Always detect charge recharging state (needed for text/bar color even during aura override).
+        -- Charge DurationObjects may report non-zero even at full charges (stale data);
+        -- scratchCooldown auto-show is the ground truth.
+        if button._chargeDurationObj then
+            scratchCooldown:Hide()
+            scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+            button._chargeRecharging = scratchCooldown:IsShown()
+            scratchCooldown:Hide()
+        else
+            button._chargeRecharging = false
+        end
+
         if not auraOverrideActive and button._chargeDurationObj then
             if not button._isBar then
                 -- Icon mode: always set _durationObj, show recharge radial
                 button._durationObj = button._chargeDurationObj
                 button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
-            else
-                -- Bar mode: gate _durationObj via C++-level activity detection.
-                -- Unlike regular spell DurationObjects, charge DurationObjects may
-                -- report non-zero even at full charges (stale recharge data).
-                -- The scratchCooldown auto-show check is the ground truth.
-                scratchCooldown:Hide()
-                scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
-                if scratchCooldown:IsShown() then
-                    button._durationObj = button._chargeDurationObj
-                end
-                scratchCooldown:Hide()
+            elseif button._chargeRecharging then
+                -- Bar mode: only set _durationObj if actually recharging
+                button._durationObj = button._chargeDurationObj
             end
         elseif not button._isBar and not auraOverrideActive and charges then
             -- Icon mode fallback
@@ -1629,16 +1650,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Charge text color: applied after charge tracking.
-    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing then
-        local cur = tonumber(C_Spell.GetSpellDisplayCount(buttonData.id))
-        if cur then
-            local atMax = cur >= (buttonData.maxCharges or 0)
-            local cc = atMax and (buttonData.chargeFontColor or {1, 1, 1, 1})
-                              or (buttonData.chargeFontColorMissing or {1, 1, 1, 1})
-            button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+    -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
+    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing or buttonData.chargeFontColorZero then
+        local cc
+        if button._mainCDShown then
+            cc = buttonData.chargeFontColorZero or {1, 1, 1, 1}
+        elseif button._chargeRecharging then
+            cc = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
+        else
+            cc = buttonData.chargeFontColor or {1, 1, 1, 1}
         end
-        -- During combat (cur nil): color unchanged from last readable tick
+        button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
 
     -- Per-button visibility evaluation (after charge tracking)
@@ -2223,8 +2245,15 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Bar color: switch between ready and cooldown colors
-    local wantCdColor = onCooldown and style.barCooldownColor or nil
+    -- Bar color: switch between ready, cooldown, and partial charge colors
+    local wantCdColor
+    if onCooldown then
+        if button.buttonData.hasCharges and not button._mainCDShown then
+            wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
+        else
+            wantCdColor = style.barCooldownColor
+        end
+    end
     if button._barCdColor ~= wantCdColor then
         button._barCdColor = wantCdColor
         local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
@@ -2274,7 +2303,14 @@ UpdateBarDisplay = function(button, fetchOk)
         if not wantAuraColor then
             -- Reset to normal color immediately (don't wait for next tick)
             button._barCdColor = nil
-            local resetColor = onCooldown and style.barCooldownColor or nil
+            local resetColor
+            if onCooldown then
+                if button.buttonData.hasCharges and not button._mainCDShown then
+                    resetColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
+                else
+                    resetColor = style.barCooldownColor
+                end
+            end
             local c = resetColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
             button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
         end
@@ -2736,6 +2772,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._visibilityAlphaOverride = nil
     button._lastVisAlpha = 1
     button._barCdColor = nil
+    button._chargeRecharging = nil
     button._barReadyTextColor = nil
     button._barAuraColor = nil
     button._barAuraEffectActive = nil

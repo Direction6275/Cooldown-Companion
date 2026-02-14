@@ -1301,6 +1301,21 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end)
             scroll:AddChild(chargeFontColorMissing)
 
+            local chargeFontColorZero = AceGUI:Create("ColorPicker")
+            chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
+            chargeFontColorZero:SetHasAlpha(true)
+            local chz = buttonData.chargeFontColorZero or {1, 1, 1, 1}
+            chargeFontColorZero:SetColor(chz[1], chz[2], chz[3], chz[4])
+            chargeFontColorZero:SetFullWidth(true)
+            chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorZero = {r, g, b, a}
+            end)
+            chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                buttonData.chargeFontColorZero = {r, g, b, a}
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end)
+            scroll:AddChild(chargeFontColorZero)
+
             local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
             local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
             local defChargeX = barNoIcon and 0 or -2
@@ -2828,6 +2843,22 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(barCdColorPicker)
+
+    local barChargeColorPicker = AceGUI:Create("ColorPicker")
+    barChargeColorPicker:SetLabel("Bar Recharging Color")
+    barChargeColorPicker:SetHasAlpha(true)
+    local bchc = style.barChargeColor or {1.0, 0.82, 0.0, 1.0}
+    barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
+    barChargeColorPicker:SetFullWidth(true)
+    barChargeColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.barChargeColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    barChargeColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.barChargeColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(barChargeColorPicker)
 
     local barBgColorPicker = AceGUI:Create("ColorPicker")
     barBgColorPicker:SetLabel("Bar Background Color")
