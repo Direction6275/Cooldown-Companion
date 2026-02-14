@@ -4787,9 +4787,9 @@ local function CreateConfigPanel()
     local frameAnchoringBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
     frameAnchoringBtn:SetSize(16, 16)
     local frameAnchoringIcon = frameAnchoringBtn:CreateTexture(nil, "ARTWORK")
-    frameAnchoringIcon:SetAtlas("UI-HUD-UnitFrame-Player-Group-FriendOnlineIcon")
+    frameAnchoringIcon:SetAtlas("squad_size_duos")
     frameAnchoringIcon:SetAllPoints()
-    frameAnchoringBtn:SetHighlightAtlas("UI-HUD-UnitFrame-Player-Group-FriendOnlineIcon")
+    frameAnchoringBtn:SetHighlightAtlas("squad_size_duos")
     frameAnchoringBtn:GetHighlightTexture():SetAlpha(0.3)
 
     -- Resource Bar button — left of Cast Bar button
