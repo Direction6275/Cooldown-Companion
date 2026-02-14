@@ -1198,7 +1198,7 @@ CS.StartPickCDM = StartPickCDM
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input)
+local function TryAddSpell(input, isPetSpell)
     if input == "" or not selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -1227,7 +1227,7 @@ local function TryAddSpell(input)
             CooldownCompanion:Print("Cannot track Single-Button Assistant")
             return false
         end
-        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
     else
@@ -1429,6 +1429,8 @@ local function TryReceiveCursorDrop()
     local added = false
     if cursorType == "spell" and cursorSpellID then
         added = TryAddSpell(tostring(cursorSpellID))
+    elseif cursorType == "petaction" and cursorID then
+        added = TryAddSpell(tostring(cursorID), true)
     elseif cursorType == "item" and cursorID then
         added = TryAddItem(tostring(cursorID))
     end
@@ -1474,6 +1476,31 @@ local function BuildAutocompleteCache()
                             isItem = false,
                         })
                     end
+                end
+            end
+        end
+    end
+
+    -- Iterate pet spellbook
+    local numPetSpells = C_SpellBook.HasPetSpells()
+    if numPetSpells and numPetSpells > 0 then
+        for slotIdx = 1, numPetSpells do
+            local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Pet)
+            if itemInfo and itemInfo.spellID
+                and not itemInfo.isPassive
+            then
+                local id = itemInfo.spellID
+                if not seen[id] then
+                    seen[id] = true
+                    table.insert(cache, {
+                        id = id,
+                        name = itemInfo.name,
+                        nameLower = itemInfo.name:lower(),
+                        icon = itemInfo.iconID or 134400,
+                        category = "Pet",
+                        isItem = false,
+                        isPetSpell = true,
+                    })
                 end
             end
         end
@@ -1604,7 +1631,7 @@ local function OnAutocompleteSelect(entry)
     if entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        added = TryAddSpell(tostring(entry.id))
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell)
     end
     if added then
         newInput = ""
@@ -5330,7 +5357,7 @@ local function CreateConfigPanel()
     dropOverlay:RegisterEvent("CURSOR_CHANGED")
     dropOverlay:SetScript("OnEvent", function(self)
         local cursorType = GetCursorInfo()
-        if (cursorType == "spell" or cursorType == "item") and selectedGroup and col2.frame:IsShown() then
+        if (cursorType == "spell" or cursorType == "item" or cursorType == "petaction") and selectedGroup and col2.frame:IsShown() then
             self:Show()
         else
             self:Hide()
@@ -5385,6 +5412,8 @@ local function CreateConfigPanel()
     local autocompleteCacheFrame = CreateFrame("Frame")
     autocompleteCacheFrame:RegisterEvent("SPELLS_CHANGED")
     autocompleteCacheFrame:RegisterEvent("BAG_UPDATE")
+    autocompleteCacheFrame:RegisterEvent("PET_STABLE_UPDATE")
+    autocompleteCacheFrame:RegisterEvent("UNIT_PET")
     autocompleteCacheFrame:SetScript("OnEvent", function()
         autocompleteCache = nil
     end)

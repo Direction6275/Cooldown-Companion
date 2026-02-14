@@ -1198,6 +1198,47 @@ local function UpdateChargeTracking(button, buttonData)
     return charges
 end
 
+-- Icon tinting: out-of-range red > unusable dimming > normal white.
+-- Shared by icon-mode and bar-mode display paths.
+local function UpdateIconTint(button, buttonData, style)
+    local r, g, b = 1, 1, 1
+    if style.showOutOfRange then
+        if buttonData.type == "spell" then
+            if button._spellOutOfRange then
+                r, g, b = 1, 0.2, 0.2
+            end
+        elseif buttonData.type == "item" then
+            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
+            if not InCombatLockdown() then
+                local inRange = IsItemInRange(buttonData.id, "target")
+                -- inRange is nil when no target or item has no range; only tint on explicit false
+                if inRange == false then
+                    r, g, b = 1, 0.2, 0.2
+                end
+            end
+        end
+    end
+    if r == 1 and g == 1 and b == 1 and style.showUnusable then
+        if buttonData.type == "spell" then
+            local isUsable = C_Spell.IsSpellUsable(buttonData.id)
+            if not isUsable then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        elseif buttonData.type == "item" then
+            local usable, noMana = IsUsableItem(buttonData.id)
+            if not usable then
+                local uc = style.unusableColor or {0.3, 0.3, 0.6}
+                r, g, b = uc[1], uc[2], uc[3]
+            end
+        end
+    end
+    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
+        button._vertexR, button._vertexG, button._vertexB = r, g, b
+        button.icon:SetVertexColor(r, g, b)
+    end
+end
+
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
@@ -1272,43 +1313,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Icon tinting priority: out-of-range red > unusable dimming > normal white
-    local r, g, b = 1, 1, 1
-    if style.showOutOfRange then
-        if buttonData.type == "spell" then
-            if button._spellOutOfRange then
-                r, g, b = 1, 0.2, 0.2
-            end
-        elseif buttonData.type == "item" then
-            -- IsItemInRange is protected during combat lockdown; skip range tinting in combat
-            if not InCombatLockdown() then
-                local inRange = IsItemInRange(buttonData.id, "target")
-                -- inRange is nil when no target or item has no range; only tint on explicit false
-                if inRange == false then
-                    r, g, b = 1, 0.2, 0.2
-                end
-            end
-        end
-    end
-    if r == 1 and g == 1 and b == 1 and style.showUnusable then
-        if buttonData.type == "spell" then
-            local isUsable, insufficientPower = C_Spell.IsSpellUsable(buttonData.id)
-            if insufficientPower then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
-            end
-        elseif buttonData.type == "item" then
-            local usable, noMana = IsUsableItem(buttonData.id)
-            if not usable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
-            end
-        end
-    end
-    if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b then
-        button._vertexR, button._vertexG, button._vertexB = r, g, b
-        button.icon:SetVertexColor(r, g, b)
-    end
+    UpdateIconTint(button, buttonData, style)
 end
 
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
@@ -2286,6 +2291,9 @@ UpdateBarDisplay = function(button, fetchOk)
             button.icon:SetDesaturated(false)
         end
     end
+
+    -- Icon tinting (out-of-range red / unusable dimming)
+    UpdateIconTint(button, button.buttonData, style)
 
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor

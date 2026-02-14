@@ -1360,15 +1360,16 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell)
     local group = self.db.profile.groups[groupId]
     if not group then return end
-    
+
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = {
         type = buttonType,
         id = id,
         name = name,
+        isPetSpell = isPetSpell or nil,
     }
 
     -- Auto-detect charges for spells
@@ -1905,13 +1906,19 @@ end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
     if buttonData.type == "spell" then
-        if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id) then
+        local bank = buttonData.isPetSpell
+            and Enum.SpellBookSpellBank.Pet
+            or Enum.SpellBookSpellBank.Player
+        if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id, bank) then
             return true
         end
         -- Fallback: spell may be stored as an override form; check the base spell.
-        local baseID = C_Spell.GetBaseSpell(buttonData.id)
-        if baseID and baseID ~= buttonData.id then
-            return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)
+        -- Only relevant for player spells (pet spells don't have override forms).
+        if not buttonData.isPetSpell then
+            local baseID = C_Spell.GetBaseSpell(buttonData.id)
+            if baseID and baseID ~= buttonData.id then
+                return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)
+            end
         end
         return false
     elseif buttonData.type == "item" then

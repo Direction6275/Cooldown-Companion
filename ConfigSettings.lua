@@ -1777,7 +1777,6 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(gcdCb)
 
-    if not isBarMode then
     local rangeCb = AceGUI:Create("CheckBox")
     rangeCb:SetLabel("Show Out of Range")
     rangeCb:SetValue(style.showOutOfRange or false)
@@ -1806,7 +1805,6 @@ local function BuildExtrasTab(container)
         GameTooltip:Hide()
     end)
     table.insert(tabInfoButtons, rangeInfo)
-    end -- not isBarMode
 
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
@@ -1933,6 +1931,7 @@ local function BuildExtrasTab(container)
         end)
         container:AddChild(locColor)
     end
+    end -- not isBarMode
 
     -- Usability dimming
     local unusableCb = AceGUI:Create("CheckBox")
@@ -1981,6 +1980,7 @@ local function BuildExtrasTab(container)
         container:AddChild(unusableColor)
     end
 
+    if not isBarMode then
     -- Assisted Highlight section
     local assistedHeading = AceGUI:Create("Heading")
     assistedHeading:SetText("Assisted Highlight")
