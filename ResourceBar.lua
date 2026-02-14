@@ -169,6 +169,8 @@ local resourceBarFrames = {}   -- array of bar frame objects (ordered by stackin
 local activeResources = {}     -- array of power type ints currently displayed
 local isPreviewActive = false
 local pendingSpecChange = false
+local savedContainerAlpha = nil
+local alphaSyncFrame = nil
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -1076,6 +1078,46 @@ function CooldownCompanion:ApplyResourceBars()
     EnableEventFrame()
 
     isApplied = true
+
+    -- Alpha inheritance
+    if settings.inheritAlpha then
+        -- Save original alpha (only if not already saved)
+        if not savedContainerAlpha then
+            savedContainerAlpha = containerFrame:GetAlpha()
+        end
+
+        -- Apply alpha immediately
+        local groupAlpha = groupFrame:GetEffectiveAlpha()
+        containerFrame:SetAlpha(groupAlpha)
+
+        -- Start alpha sync OnUpdate (~30Hz polling)
+        if not alphaSyncFrame then
+            alphaSyncFrame = CreateFrame("Frame")
+        end
+        local lastAlpha = groupAlpha
+        local accumulator = 0
+        local SYNC_INTERVAL = 1 / 30
+        alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+            accumulator = accumulator + dt
+            if accumulator < SYNC_INTERVAL then return end
+            accumulator = 0
+            if not groupFrame then return end
+            local alpha = groupFrame:GetEffectiveAlpha()
+            if alpha ~= lastAlpha then
+                lastAlpha = alpha
+                if containerFrame then containerFrame:SetAlpha(alpha) end
+            end
+        end)
+    else
+        -- inheritAlpha is off — stop sync and restore original if we had it
+        if alphaSyncFrame then
+            alphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        if savedContainerAlpha and containerFrame then
+            containerFrame:SetAlpha(savedContainerAlpha)
+            savedContainerAlpha = nil
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1085,6 +1127,15 @@ end
 function CooldownCompanion:RevertResourceBars()
     if not isApplied then return end
     isApplied = false
+
+    -- Stop alpha sync and restore alpha
+    if alphaSyncFrame then
+        alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    if savedContainerAlpha and containerFrame then
+        containerFrame:SetAlpha(savedContainerAlpha)
+    end
+    savedContainerAlpha = nil
 
     -- Stop OnUpdate
     if onUpdateFrame then

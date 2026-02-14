@@ -19,8 +19,11 @@ local isApplied = false
 local hooksInstalled = false
 local savedPlayerAnchors = nil   -- array of {point, relativeTo, relativePoint, x, y}
 local savedTargetAnchors = nil
+local savedPlayerAlpha = nil
+local savedTargetAlpha = nil
 local playerFrameRef = nil
 local targetFrameRef = nil
+local alphaSyncFrame = nil
 
 ------------------------------------------------------------------------
 -- Constants
@@ -200,6 +203,55 @@ function CooldownCompanion:ApplyFrameAnchoring()
     end
 
     isApplied = true
+
+    -- Alpha inheritance
+    if settings.inheritAlpha then
+        -- Save original alpha (only if not already saved)
+        if playerFrame and not savedPlayerAlpha then
+            savedPlayerAlpha = playerFrame:GetAlpha()
+        end
+        if targetFrame and not savedTargetAlpha then
+            savedTargetAlpha = targetFrame:GetAlpha()
+        end
+
+        -- Apply alpha immediately
+        local groupAlpha = groupFrame:GetEffectiveAlpha()
+        if playerFrame then playerFrame:SetAlpha(groupAlpha) end
+        if targetFrame then targetFrame:SetAlpha(groupAlpha) end
+
+        -- Start alpha sync OnUpdate (~30Hz polling)
+        if not alphaSyncFrame then
+            alphaSyncFrame = CreateFrame("Frame")
+        end
+        local lastAlpha = groupAlpha
+        local accumulator = 0
+        local SYNC_INTERVAL = 1 / 30
+        alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+            accumulator = accumulator + dt
+            if accumulator < SYNC_INTERVAL then return end
+            accumulator = 0
+            if not groupFrame then return end
+            local alpha = groupFrame:GetEffectiveAlpha()
+            if alpha ~= lastAlpha then
+                lastAlpha = alpha
+                if playerFrameRef then playerFrameRef:SetAlpha(alpha) end
+                if targetFrameRef then targetFrameRef:SetAlpha(alpha) end
+            end
+        end)
+    else
+        -- inheritAlpha is off — stop sync and restore originals if we had them
+        if alphaSyncFrame then
+            alphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        if savedPlayerAlpha and playerFrameRef then
+            playerFrameRef:SetAlpha(savedPlayerAlpha)
+            savedPlayerAlpha = nil
+        end
+        if savedTargetAlpha and targetFrameRef then
+            targetFrameRef:SetAlpha(savedTargetAlpha)
+            savedTargetAlpha = nil
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -209,6 +261,19 @@ end
 function CooldownCompanion:RevertFrameAnchoring()
     if not isApplied then return end
     isApplied = false
+
+    -- Stop alpha sync and restore alpha
+    if alphaSyncFrame then
+        alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    if savedPlayerAlpha and playerFrameRef then
+        playerFrameRef:SetAlpha(savedPlayerAlpha)
+    end
+    if savedTargetAlpha and targetFrameRef then
+        targetFrameRef:SetAlpha(savedTargetAlpha)
+    end
+    savedPlayerAlpha = nil
+    savedTargetAlpha = nil
 
     -- Restore player frame
     if playerFrameRef and savedPlayerAnchors then

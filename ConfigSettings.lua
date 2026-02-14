@@ -4863,6 +4863,17 @@ BuildResourceBarAnchoringPanel = function(container)
     end)
     container:AddChild(previewCb)
 
+    -- Inherit group alpha checkbox
+    local alphaCb = AceGUI:Create("CheckBox")
+    alphaCb:SetLabel("Inherit group alpha")
+    alphaCb:SetValue(settings.inheritAlpha)
+    alphaCb:SetFullWidth(true)
+    alphaCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.inheritAlpha = val
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(alphaCb)
+
     -- ============ Position Section ============
     local posHeading = AceGUI:Create("Heading")
     posHeading:SetText("Position")
@@ -5735,6 +5746,17 @@ BuildFrameAnchoringPlayerPanel = function(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(mirrorCb)
+
+    -- Inherit group alpha checkbox
+    local alphaCb = AceGUI:Create("CheckBox")
+    alphaCb:SetLabel("Inherit group alpha")
+    alphaCb:SetValue(settings.inheritAlpha)
+    alphaCb:SetFullWidth(true)
+    alphaCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.inheritAlpha = val
+        CooldownCompanion:ApplyFrameAnchoring()
+    end)
+    container:AddChild(alphaCb)
 
     -- Player Frame section heading
     local playerHeading = AceGUI:Create("Heading")
