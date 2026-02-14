@@ -5714,25 +5714,73 @@ BuildFrameAnchoringPlayerPanel = function(container)
 
     -- Custom frame name editboxes (only when "Custom" selected)
     if settings.unitFrameAddon == "custom" then
+        -- Player frame row (editbox + pick button)
+        local playerRow = AceGUI:Create("SimpleGroup")
+        playerRow:SetFullWidth(true)
+        playerRow:SetLayout("Flow")
+
         local playerEdit = AceGUI:Create("EditBox")
         playerEdit:SetLabel("Player Frame Name")
         playerEdit:SetText(settings.customPlayerFrame or "")
-        playerEdit:SetFullWidth(true)
+        playerEdit:SetRelativeWidth(0.68)
         playerEdit:SetCallback("OnEnterPressed", function(widget, event, text)
             settings.customPlayerFrame = text
             CooldownCompanion:EvaluateFrameAnchoring()
         end)
-        container:AddChild(playerEdit)
+        playerRow:AddChild(playerEdit)
+
+        local playerPickBtn = AceGUI:Create("Button")
+        playerPickBtn:SetText("Pick")
+        playerPickBtn:SetRelativeWidth(0.24)
+        playerPickBtn:SetCallback("OnClick", function()
+            CS.StartPickFrame(function(name)
+                if CS.configFrame then
+                    CS.configFrame.frame:Show()
+                end
+                if name then
+                    settings.customPlayerFrame = name
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end)
+        playerRow:AddChild(playerPickBtn)
+
+        container:AddChild(playerRow)
+
+        -- Target frame row (editbox + pick button)
+        local targetRow = AceGUI:Create("SimpleGroup")
+        targetRow:SetFullWidth(true)
+        targetRow:SetLayout("Flow")
 
         local targetEdit = AceGUI:Create("EditBox")
         targetEdit:SetLabel("Target Frame Name")
         targetEdit:SetText(settings.customTargetFrame or "")
-        targetEdit:SetFullWidth(true)
+        targetEdit:SetRelativeWidth(0.68)
         targetEdit:SetCallback("OnEnterPressed", function(widget, event, text)
             settings.customTargetFrame = text
             CooldownCompanion:EvaluateFrameAnchoring()
         end)
-        container:AddChild(targetEdit)
+        targetRow:AddChild(targetEdit)
+
+        local targetPickBtn = AceGUI:Create("Button")
+        targetPickBtn:SetText("Pick")
+        targetPickBtn:SetRelativeWidth(0.24)
+        targetPickBtn:SetCallback("OnClick", function()
+            CS.StartPickFrame(function(name)
+                if CS.configFrame then
+                    CS.configFrame.frame:Show()
+                end
+                if name then
+                    settings.customTargetFrame = name
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end)
+        targetRow:AddChild(targetPickBtn)
+
+        container:AddChild(targetRow)
     end
 
     -- Mirroring checkbox
