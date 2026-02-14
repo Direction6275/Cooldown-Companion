@@ -5233,20 +5233,6 @@ local function BuildResourceBarStylingPanel(container)
     end)
 
     if not textCollapsed then
-        local fmtDrop = AceGUI:Create("Dropdown")
-        fmtDrop:SetLabel("Format")
-        fmtDrop:SetList({
-            current_max = "Current / Max",
-            current = "Current",
-        }, { "current_max", "current" })
-        fmtDrop:SetValue(settings.textFormat or "current_max")
-        fmtDrop:SetFullWidth(true)
-        fmtDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.textFormat = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        container:AddChild(fmtDrop)
-
         local fontDrop = AceGUI:Create("Dropdown")
         fontDrop:SetLabel("Font")
         fontDrop:SetList(CS.fontOptions)

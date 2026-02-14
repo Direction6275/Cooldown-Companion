@@ -713,6 +713,43 @@ end
 -- Event handling (must be defined before Apply/Revert which call these)
 ------------------------------------------------------------------------
 
+-- Lifecycle events: always registered while the feature is enabled.
+-- These trigger full re-evaluation (not just re-apply) so the bars
+-- come back after a form change that temporarily hides them.
+local lifecycleFrame = nil
+
+local function EnableLifecycleEvents()
+    if not lifecycleFrame then
+        lifecycleFrame = CreateFrame("Frame")
+        lifecycleFrame:SetScript("OnEvent", function(self, event, ...)
+            if event == "UPDATE_SHAPESHIFT_FORM" then
+                CooldownCompanion:EvaluateResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            elseif event == "ACTIVE_TALENT_GROUP_CHANGED"
+                or event == "PLAYER_SPECIALIZATION_CHANGED" then
+                if not pendingSpecChange then
+                    pendingSpecChange = true
+                    C_Timer.After(0.5, function()
+                        pendingSpecChange = false
+                        CooldownCompanion:EvaluateResourceBars()
+                        CooldownCompanion:UpdateAnchorStacking()
+                    end)
+                end
+            end
+        end)
+    end
+    lifecycleFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+    lifecycleFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+    lifecycleFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+end
+
+local function DisableLifecycleEvents()
+    if not lifecycleFrame then return end
+    lifecycleFrame:UnregisterAllEvents()
+    pendingSpecChange = false
+end
+
+-- Update events: only registered while bars are applied.
 local function EnableEventFrame()
     if not eventFrame then
         eventFrame = CreateFrame("Frame")
@@ -722,31 +759,15 @@ local function EnableEventFrame()
                 if unit == "player" then
                     CooldownCompanion:ApplyResourceBars()
                 end
-            elseif event == "UPDATE_SHAPESHIFT_FORM" then
-                CooldownCompanion:ApplyResourceBars()
-            elseif event == "ACTIVE_TALENT_GROUP_CHANGED"
-                or event == "PLAYER_SPECIALIZATION_CHANGED" then
-                if not pendingSpecChange then
-                    pendingSpecChange = true
-                    C_Timer.After(0.5, function()
-                        pendingSpecChange = false
-                        CooldownCompanion:ApplyResourceBars()
-                        CooldownCompanion:UpdateAnchorStacking()
-                    end)
-                end
             end
         end)
     end
     eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
-    eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-    eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
-    eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 end
 
 local function DisableEventFrame()
     if not eventFrame then return end
     eventFrame:UnregisterAllEvents()
-    pendingSpecChange = false
 end
 
 ------------------------------------------------------------------------
@@ -789,7 +810,7 @@ local function StyleContinuousBar(bar, powerType, settings)
         if ov.showText == false then showText = false end
     end
     bar.text:SetShown(showText)
-    bar._textFormat = settings.textFormat or "current_max"
+    bar._textFormat = settings.textFormat or "current"
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)
@@ -1040,9 +1061,11 @@ end
 function CooldownCompanion:EvaluateResourceBars()
     local settings = GetResourceBarSettings()
     if not settings or not settings.enabled then
+        DisableLifecycleEvents()
         self:RevertResourceBars()
         return
     end
+    EnableLifecycleEvents()
     self:ApplyResourceBars()
 end
 

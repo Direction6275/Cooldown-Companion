@@ -256,7 +256,7 @@ local defaults = {
             textFontSize = 10,
             textFontOutline = "OUTLINE",
             textFontColor = { 1, 1, 1, 1 },
-            textFormat = "current_max",
+            textFormat = "current",
         },
         castBar = {
             enabled = true,
