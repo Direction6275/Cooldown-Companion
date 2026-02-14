@@ -166,9 +166,15 @@ local function GetResourceBarSettings()
         and CooldownCompanion.db.profile.resourceBars
 end
 
+local function GetEffectiveAnchorGroupId(settings)
+    if not settings then return nil end
+    return settings.anchorGroupId or CooldownCompanion:GetFirstAvailableAnchorGroup()
+end
+
 local function GetAnchorGroupFrame(settings)
-    if not settings or not settings.anchorGroupId then return nil end
-    return CooldownCompanion.groupFrames[settings.anchorGroupId]
+    local groupId = GetEffectiveAnchorGroupId(settings)
+    if not groupId then return nil end
+    return CooldownCompanion.groupFrames[groupId]
 end
 
 local function GetCurrentSpecID()
@@ -846,7 +852,7 @@ function CooldownCompanion:ApplyResourceBars()
         return
     end
 
-    local groupId = settings.anchorGroupId
+    local groupId = GetEffectiveAnchorGroupId(settings)
     if not groupId then
         self:RevertResourceBars()
         return
@@ -858,7 +864,7 @@ function CooldownCompanion:ApplyResourceBars()
         return
     end
 
-    local groupFrame = GetAnchorGroupFrame(settings)
+    local groupFrame = CooldownCompanion.groupFrames[groupId]
     if not groupFrame or not groupFrame:IsShown() then
         self:RevertResourceBars()
         return
@@ -1118,7 +1124,7 @@ local function InstallHooks()
     -- When anchor group refreshes — re-evaluate
     hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
         local s = GetResourceBarSettings()
-        if s and s.enabled and s.anchorGroupId == groupId then
+        if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
             C_Timer.After(0, function()
                 CooldownCompanion:EvaluateResourceBars()
             end)

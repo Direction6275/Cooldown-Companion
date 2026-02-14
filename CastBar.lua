@@ -47,9 +47,15 @@ local function GetCastBarSettings()
     return CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.castBar
 end
 
+local function GetEffectiveAnchorGroupId(settings)
+    if not settings then return nil end
+    return settings.anchorGroupId or CooldownCompanion:GetFirstAvailableAnchorGroup()
+end
+
 local function GetAnchorGroupFrame(settings)
-    if not settings or not settings.anchorGroupId then return nil end
-    return CooldownCompanion.groupFrames[settings.anchorGroupId]
+    local groupId = GetEffectiveAnchorGroupId(settings)
+    if not groupId then return nil end
+    return CooldownCompanion.groupFrames[groupId]
 end
 
 --- Create or return the pixel border textures for the cast bar
@@ -787,7 +793,7 @@ function CooldownCompanion:ApplyCastBarSettings()
     end
 
     -- Validate anchor group
-    local groupId = settings.anchorGroupId
+    local groupId = GetEffectiveAnchorGroupId(settings)
     if not groupId then
         self:RevertCastBar()
         return
@@ -799,7 +805,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         return
     end
 
-    local groupFrame = GetAnchorGroupFrame(settings)
+    local groupFrame = CooldownCompanion.groupFrames[groupId]
     if not groupFrame or not groupFrame:IsShown() then
         self:RevertCastBar()
         return
@@ -1174,7 +1180,7 @@ local function InstallHooks()
         -- When anchor group refreshes (visibility changes) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
             local s = GetCastBarSettings()
-            if s and s.enabled and s.anchorGroupId == groupId then
+            if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
                 C_Timer.After(0, function()
                     CooldownCompanion:EvaluateCastBar()
                 end)

@@ -4098,10 +4098,10 @@ BuildCastBarAnchoringPanel = function(container)
     if not settings.enabled then return end
 
     -- Anchor Group dropdown
-    local groupDropValues = { [""] = "None" }
+    local groupDropValues = { [""] = "Auto (first available)" }
     local groupDropOrder = { "" }
     for groupId, group in pairs(db.groups) do
-        if group.displayMode == "icons" and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId) then
+        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
             groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
             table.insert(groupDropOrder, tostring(groupId))
         end
@@ -4118,6 +4118,13 @@ BuildCastBarAnchoringPanel = function(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(anchorDrop)
+
+    if #groupDropOrder <= 1 then
+        local noGroupsLabel = AceGUI:Create("Label")
+        noGroupsLabel:SetText("No icon groups are currently enabled for this spec. Enable an icon group to anchor here.")
+        noGroupsLabel:SetFullWidth(true)
+        container:AddChild(noGroupsLabel)
+    end
 
     -- Preview toggle (ephemeral — not saved to DB)
     local previewCb = AceGUI:Create("CheckBox")
@@ -4861,10 +4868,10 @@ BuildResourceBarAnchoringPanel = function(container)
     if not settings.enabled then return end
 
     -- Anchor Group dropdown
-    local groupDropValues = { [""] = "None" }
+    local groupDropValues = { [""] = "Auto (first available)" }
     local groupDropOrder = { "" }
     for groupId, group in pairs(db.groups) do
-        if group.displayMode == "icons" and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId) then
+        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
             groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
             table.insert(groupDropOrder, tostring(groupId))
         end
@@ -4882,6 +4889,13 @@ BuildResourceBarAnchoringPanel = function(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(anchorDrop)
+
+    if #groupDropOrder <= 1 then
+        local noGroupsLabel = AceGUI:Create("Label")
+        noGroupsLabel:SetText("No icon groups are currently enabled for this spec. Enable an icon group to anchor here.")
+        noGroupsLabel:SetFullWidth(true)
+        container:AddChild(noGroupsLabel)
+    end
 
     -- Preview toggle (ephemeral)
     local previewCb = AceGUI:Create("CheckBox")

@@ -237,7 +237,7 @@ local defaults = {
         auraDurationCache = {},
         cdmHidden = false,
         resourceBars = {
-            enabled = false,
+            enabled = true,
             anchorGroupId = nil,
             position = "below",
             yOffset = -2,
@@ -259,7 +259,7 @@ local defaults = {
             textFormat = "current_max",
         },
         castBar = {
-            enabled = false,
+            enabled = true,
             stylingEnabled = false,
             anchorGroupId = nil,
             position = "below",
@@ -1113,10 +1113,12 @@ local pendingStackUpdate = false
 
 function CooldownCompanion:GetCastBarHeight()
     local s = self.db and self.db.profile and self.db.profile.castBar
-    if not s or not s.enabled or not s.anchorGroupId then return 0 end
-    local gf = self.groupFrames[s.anchorGroupId]
+    if not s or not s.enabled then return 0 end
+    local groupId = s.anchorGroupId or self:GetFirstAvailableAnchorGroup()
+    if not groupId then return 0 end
+    local gf = self.groupFrames[groupId]
     if not gf or not gf:IsShown() then return 0 end
-    local group = self.db.profile.groups[s.anchorGroupId]
+    local group = self.db.profile.groups[groupId]
     if not group or group.displayMode ~= "icons" then return 0 end
     return s.stylingEnabled and (s.height or 14) or 11
 end
@@ -1126,8 +1128,10 @@ function CooldownCompanion:GetAnchorStackOffset(moduleId)
     local rb = self.db and self.db.profile and self.db.profile.resourceBars
     if not cb or not rb then return 0 end
     if not cb.enabled or not rb.enabled then return 0 end
-    if not cb.anchorGroupId or not rb.anchorGroupId then return 0 end
-    if cb.anchorGroupId ~= rb.anchorGroupId then return 0 end
+    local cbAnchor = cb.anchorGroupId or self:GetFirstAvailableAnchorGroup()
+    local rbAnchor = rb.anchorGroupId or self:GetFirstAvailableAnchorGroup()
+    if not cbAnchor or not rbAnchor then return 0 end
+    if cbAnchor ~= rbAnchor then return 0 end
 
     local cbPos = cb.position or "below"
     local rbPos = rb.position or "below"
@@ -1695,6 +1699,45 @@ end
 
 function CooldownCompanion:GetEffectiveSpecs(group)
     return group.specs, false
+end
+
+function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return false end
+    if group.displayMode ~= "icons" then return false end
+    if group.enabled == false then return false end
+    if not self:IsGroupVisibleToCurrentChar(groupId) then return false end
+
+    local effectiveSpecs = self:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
+        if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+            return false
+        end
+    end
+
+    if not self:CheckLoadConditions(group) then return false end
+
+    return true
+end
+
+function CooldownCompanion:GetFirstAvailableAnchorGroup()
+    local groups = self.db.profile.groups
+    if not groups then return nil end
+
+    local candidates = {}
+    for groupId in pairs(groups) do
+        if self:IsGroupAvailableForAnchoring(groupId) then
+            table.insert(candidates, groupId)
+        end
+    end
+    if #candidates == 0 then return nil end
+
+    table.sort(candidates, function(a, b)
+        local orderA = groups[a].order or a
+        local orderB = groups[b].order or b
+        return orderA < orderB
+    end)
+    return candidates[1]
 end
 
 function CooldownCompanion:CheckLoadConditions(group)
