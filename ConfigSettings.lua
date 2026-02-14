@@ -1344,39 +1344,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(chargeYSlider)
         end -- showChargeText
 
-        if group.displayMode == "bars" then
-            if group.style and group.style.showCooldownText then
-                local cdTextOnRechargeCb = AceGUI:Create("CheckBox")
-                cdTextOnRechargeCb:SetLabel("Anchor Cooldown Text to Recharging Bar")
-                cdTextOnRechargeCb:SetValue(buttonData.barCdTextOnRechargeBar or false)
-                cdTextOnRechargeCb:SetFullWidth(true)
-                cdTextOnRechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    buttonData.barCdTextOnRechargeBar = val
-                end)
-                scroll:AddChild(cdTextOnRechargeCb)
-            end
-
-            local reverseChargesCb = AceGUI:Create("CheckBox")
-            reverseChargesCb:SetLabel("Flip Charge Order")
-            reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-            reverseChargesCb:SetFullWidth(true)
-            reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.barReverseCharges = val or nil
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            scroll:AddChild(reverseChargesCb)
-
-            local chargeGapSlider = AceGUI:Create("Slider")
-            chargeGapSlider:SetLabel("Charge Bar Gap")
-            chargeGapSlider:SetSliderValues(0, 20, 1)
-            chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
-            chargeGapSlider:SetFullWidth(true)
-            chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.barChargeGap = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeGapSlider)
-        end
         end -- not chargesCollapsed
     end -- hasCharges
 
@@ -1549,56 +1516,11 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     end)
     scroll:AddChild(itemYSlider)
 
-    if group.displayMode == "bars" then
-        local chargeGapSlider = AceGUI:Create("Slider")
-        chargeGapSlider:SetLabel("Charge Bar Gap")
-        chargeGapSlider:SetSliderValues(0, 20, 1)
-        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
-        chargeGapSlider:SetFullWidth(true)
-        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barChargeGap = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(chargeGapSlider)
-
-        local reverseChargesCb = AceGUI:Create("CheckBox")
-        reverseChargesCb:SetLabel("Flip Charge Order")
-        reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-        reverseChargesCb:SetFullWidth(true)
-        reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barReverseCharges = val or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(reverseChargesCb)
-    end
 end
 
 local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-
-    if group.displayMode == "bars" then
-        local chargeGapSlider = AceGUI:Create("Slider")
-        chargeGapSlider:SetLabel("Charge Bar Gap")
-        chargeGapSlider:SetSliderValues(0, 20, 1)
-        chargeGapSlider:SetValue(buttonData.barChargeGap or 2)
-        chargeGapSlider:SetFullWidth(true)
-        chargeGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barChargeGap = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(chargeGapSlider)
-
-        local reverseChargesCb = AceGUI:Create("CheckBox")
-        reverseChargesCb:SetLabel("Flip Charge Order")
-        reverseChargesCb:SetValue(buttonData.barReverseCharges or false)
-        reverseChargesCb:SetFullWidth(true)
-        reverseChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.barReverseCharges = val or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(reverseChargesCb)
-    end
 end
 
 ------------------------------------------------------------------------

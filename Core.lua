@@ -499,13 +499,6 @@ end
 
 function CooldownCompanion:OnProcGlowShow(event, spellID)
     self.procOverlaySpells[spellID] = true
-    -- A proc overlay appeared for this spell. If it's a charged spell,
-    -- increment the charge count — during combat we can't read charges
-    -- from the API (secret values), so this is our signal that a charge
-    -- was granted by a proc.
-    if InCombatLockdown() then
-        self:IncrementChargeOnProc(spellID)
-    end
     self:UpdateAllCooldowns()
 end
 
@@ -514,87 +507,10 @@ function CooldownCompanion:OnProcGlowHide(event, spellID)
     self._cooldownsDirty = true
 end
 
-function CooldownCompanion:IncrementChargeOnProc(spellID)
-    self:ForEachButton(function(button, bd)
-        if bd.type == "spell"
-           and bd.id == spellID
-           and bd.hasCharges
-           and button._chargeCount ~= nil
-           and button._chargeMax
-           and button._chargeCount < button._chargeMax then
-            button._chargeCount = button._chargeCount + 1
-            if button._chargeCount >= button._chargeMax then
-                -- At max: no recharge in progress
-                button._chargeCDStart = nil
-                button._chargeCDDuration = nil
-            else
-                -- Mark approximate new-recharge start so the catch-up
-                -- loop in DecrementChargeOnCast doesn't re-detect this
-                -- recovery. The ticker readback corrects to the real
-                -- value on the same UpdateAllCooldowns pass.
-                button._chargeCDStart = GetTime()
-            end
-            button._chargeText = button._chargeCount
-            button.count:SetText(button._chargeCount)
-        end
-    end)
-end
-
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        if InCombatLockdown() then
-            self:DecrementChargeOnCast(spellID)
-        end
         self:UpdateAllCooldowns()
     end
-end
-
-function CooldownCompanion:DecrementChargeOnCast(spellID)
-    self:ForEachButton(function(button, bd)
-        if bd.type == "spell"
-           and bd.id == spellID
-           and bd.hasCharges
-           and button._chargeCount ~= nil then
-            -- Catch up on any charges that recovered since the last
-            -- ticker estimation (up to 0.1s stale). Without this, a
-            -- cast right after a recharge completes would see the old
-            -- count, skip the decrement, and desync.
-            if button._chargeCount < (button._chargeMax or 0)
-               and button._chargeCDStart and button._chargeCDDuration
-               and button._chargeCDDuration > 0 then
-                local now = GetTime()
-                while button._chargeCount < button._chargeMax
-                      and now >= button._chargeCDStart + button._chargeCDDuration do
-                    button._chargeCount = button._chargeCount + 1
-                    button._chargeCDStart = button._chargeCDStart + button._chargeCDDuration
-                end
-            end
-            -- Decrement the charge count.
-            if button._chargeCount > 0 then
-                button._chargeCount = button._chargeCount - 1
-                -- If we were at max charges, a recharge just started now
-                if button._chargeCount == (button._chargeMax or 0) - 1 then
-                    button._chargeCDStart = GetTime()
-                    -- If _chargeCDDuration is 0 (spell was at max charges
-                    -- pre-combat), use the persisted recharge duration
-                    if not button._chargeCDDuration or button._chargeCDDuration == 0 then
-                        button._chargeCDDuration = bd.chargeCooldownDuration or 0
-                    end
-                end
-            else
-                -- Estimation says 0 but the cast succeeded, so WoW
-                -- must have recovered a charge that our timing missed
-                -- (floating-point imprecision). Net result: 0 charges
-                -- (one recovered, one consumed). New recharge starts now.
-                button._chargeCDStart = GetTime()
-                if not button._chargeCDDuration or button._chargeCDDuration == 0 then
-                    button._chargeCDDuration = bd.chargeCooldownDuration or 0
-                end
-            end
-            button._chargeText = button._chargeCount
-            button.count:SetText(button._chargeCount)
-        end
-    end)
 end
 
 
@@ -1023,15 +939,25 @@ function CooldownCompanion:OnTalentsChanged()
 end
 
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
+-- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells.
 function CooldownCompanion:RefreshChargeFlags()
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" then
-                local charges = C_Spell.GetSpellCharges(buttonData.id)
-                local ok, result = pcall(function()
-                    return charges and charges.maxCharges and charges.maxCharges > 1
-                end)
-                buttonData.hasCharges = (ok and result) or nil
+                local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
+                buttonData.hasCharges = chargeInfo and true or nil
+                if chargeInfo then
+                    -- Read maxCharges directly (plain outside combat)
+                    local mc = chargeInfo.maxCharges
+                    if mc and mc > (buttonData.maxCharges or 0) then
+                        buttonData.maxCharges = mc
+                    end
+                    -- Secondary source: display count
+                    local displayCount = tonumber(C_Spell.GetSpellDisplayCount(buttonData.id))
+                    if displayCount and displayCount > (buttonData.maxCharges or 0) then
+                        buttonData.maxCharges = displayCount
+                    end
+                end
             end
         end
     end
@@ -1445,11 +1371,21 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name)
     }
 
     -- Auto-detect charges for spells
+    -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells
     if buttonType == "spell" then
-        local charges = C_Spell.GetSpellCharges(id)
-        if charges and charges.maxCharges and charges.maxCharges > 1 then
+        local chargeInfo = C_Spell.GetSpellCharges(id)
+        if chargeInfo then
             group.buttons[buttonIndex].hasCharges = true
             group.buttons[buttonIndex].showChargeText = true
+            local mc = chargeInfo.maxCharges
+            if mc and mc > 1 then
+                group.buttons[buttonIndex].maxCharges = mc
+            end
+            -- Secondary: display count
+            local displayCount = tonumber(C_Spell.GetSpellDisplayCount(id))
+            if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
+                group.buttons[buttonIndex].maxCharges = displayCount
+            end
         end
     end
 
@@ -1663,6 +1599,9 @@ function CooldownCompanion:MigrateRemoveBarChargeOldFields()
             for _, bd in ipairs(group.buttons) do
                 bd.barChargeMissingColor = nil
                 bd.barChargeSwipe = nil
+                bd.barChargeGap = nil
+                bd.barReverseCharges = nil
+                bd.barCdTextOnRechargeBar = nil
             end
         end
     end
