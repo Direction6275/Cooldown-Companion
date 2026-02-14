@@ -1295,8 +1295,14 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
     -- spells/auras; GetCooldownTimes() remains safe for items.
-    -- Passives never desaturate.
-    if style.desaturateOnCooldown and not buttonData.isPassive then
+    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
+    if buttonData.isPassive then
+        local wantDesat = (buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
@@ -1350,7 +1356,11 @@ local function UpdateIconModeGlows(button, buttonData, style)
         if button._procGlowPreview then
             showProc = true
         elseif buttonData.procGlow == true and buttonData.type == "spell" then
-            showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
+            if buttonData.isPassive then
+                showProc = button._auraActive or false
+            else
+                showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
+            end
         end
         SetProcGlow(button, showProc)
     end
@@ -2274,8 +2284,15 @@ UpdateBarDisplay = function(button, fetchOk)
         button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
-    -- Icon desaturation (skip during GCD, matching icon-mode behavior; passives never desaturate)
-    if style.desaturateOnCooldown and not button.buttonData.isPassive then
+    -- Icon desaturation (skip during GCD, matching icon-mode behavior)
+    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
+    if button.buttonData.isPassive then
+        local wantDesat = (button.buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then

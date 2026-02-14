@@ -196,6 +196,19 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
     end -- not buttonData.isPassive
 
+    -- Desaturate While Inactive toggle (passive/proc only — default on)
+    if buttonData.isPassive then
+        local desatInactiveCb = AceGUI:Create("CheckBox")
+        desatInactiveCb:SetLabel("Desaturate While Inactive")
+        desatInactiveCb:SetValue(buttonData.desaturateWhileInactive ~= false)
+        desatInactiveCb:SetFullWidth(true)
+        desatInactiveCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.desaturateWhileInactive = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        scroll:AddChild(desatInactiveCb)
+    end
+
     -- Spell ID Override row (always visible for spells, even without auto-detected aura)
     local overrideRow = AceGUI:Create("SimpleGroup")
     overrideRow:SetFullWidth(true)
