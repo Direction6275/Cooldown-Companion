@@ -171,6 +171,8 @@ local DRUID_DEFAULT_RESOURCES = { 0 }  -- No form: Mana
 -- State
 ------------------------------------------------------------------------
 
+local mwMaxStacks = 5  -- default, updated OOC from API
+
 local isApplied = false
 local hooksInstalled = false
 local eventFrame = nil
@@ -398,6 +400,14 @@ local function GetMWColors(settings)
         end
     end
     return baseColor, overlayColor, maxBaseColor, maxOverlayColor
+end
+
+--- Update cached MW max stacks from API (must be called OOC — value is secret in combat).
+local function UpdateMWMaxStacks()
+    local max = C_Spell.GetSpellMaxCumulativeAuraApplications(MW_SPELL_ID)
+    if max and max > 0 then
+        mwMaxStacks = max
+    end
 end
 
 --- Check if a specific resource is enabled in settings.
@@ -822,16 +832,14 @@ local function UpdateMaelstromWeaponBar(holder)
 
     local baseColor, overlayColor, maxBaseColor, maxOverlayColor = GetMWColors(GetResourceBarSettings())
 
-    -- Read aura stacks from viewer frame
+    -- Read aura stacks from viewer frame (applications is a plain integer)
     local stacks = 0
-    local hasAura = false
     local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
     local instId = viewerFrame and viewerFrame.auraInstanceID
     if instId then
-        local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instId)
-        if ok and auraData then
-            stacks = auraData.applications  -- may be secret in combat → SetValue accepts it
-            hasAura = true
+        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
+        if auraData then
+            stacks = auraData.applications or 0
         end
     end
 
@@ -841,26 +849,8 @@ local function UpdateMaelstromWeaponBar(holder)
         holder.overlaySegments[i]:SetValue(stacks)
     end
 
-    -- Max color detection (applications may be secret — pcall comparisons)
-    -- _capIsTen: latched true when stacks >= 6 detected (proves 10-stack talent)
-    local isMax = false
-    if hasAura then
-        local sixOk, sixResult = pcall(function() return stacks >= 6 end)
-        if sixOk and sixResult then
-            holder._capIsTen = true
-        end
-
-        if holder._capIsTen then
-            -- Cap is 10: max at stacks >= 10
-            local tenOk, tenResult = pcall(function() return stacks >= 10 end)
-            if tenOk then isMax = tenResult end
-        else
-            -- Cap is 5 (or unknown): max at stacks >= 5
-            local fiveOk, fiveResult = pcall(function() return stacks >= 5 end)
-            if fiveOk then isMax = fiveResult end
-        end
-    end
-
+    -- Max color: direct comparison (mwMaxStacks cached OOC from API)
+    local isMax = stacks > 0 and stacks == mwMaxStacks
     local activeBaseColor = isMax and maxBaseColor or baseColor
     local activeOverlayColor = isMax and maxOverlayColor or overlayColor
     for i = 1, 5 do
@@ -917,16 +907,22 @@ local function EnableLifecycleEvents()
                     pendingSpecChange = true
                     C_Timer.After(0.5, function()
                         pendingSpecChange = false
+                        UpdateMWMaxStacks()
                         CooldownCompanion:EvaluateResourceBars()
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
                 end
+            elseif event == "PLAYER_TALENT_UPDATE"
+                or event == "TRAIT_CONFIG_UPDATED" then
+                UpdateMWMaxStacks()
             end
         end)
     end
     lifecycleFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     lifecycleFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
     lifecycleFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    lifecycleFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+    lifecycleFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 end
 
 local function DisableLifecycleEvents()
@@ -1486,6 +1482,7 @@ initFrame:SetScript("OnEvent", function(self, event)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 
     C_Timer.After(0.5, function()
+        UpdateMWMaxStacks()
         InstallHooks()
         CooldownCompanion:EvaluateResourceBars()
     end)
