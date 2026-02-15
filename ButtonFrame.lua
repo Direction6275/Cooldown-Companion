@@ -1711,6 +1711,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Capture cooldown shown state for secret-path _chargeRecharging.
+    -- UpdateIconModeVisuals force-shows button.cooldown for the swipe display,
+    -- making IsShown() unreliable after that point.  Read it now while it
+    -- still reflects actual cooldown state from SetCooldown().
+    local cdShownForChargeCheck
+    if buttonData.hasCharges and not button._isBar
+       and buttonData._cooldownSecrecy ~= 0 then
+        cdShownForChargeCheck = button.cooldown:IsShown()
+    end
+
     if not button._isBar then
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     end
@@ -1741,8 +1751,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 scratchCooldown:Hide()
             else
                 -- SetCooldownFromDurationObject fails with secrets; fall back to
-                -- button.cooldown:IsShown() as recharge proxy (set via SetCooldown)
-                button._chargeRecharging = button.cooldown:IsShown()
+                -- the cooldown shown state captured before UpdateIconModeVisuals
+                -- force-showed button.cooldown (icon-mode swipe display).
+                -- For bar mode, cdShownForChargeCheck is nil so we fall back to
+                -- button.cooldown:IsShown() which is reliable (bars don't force-show).
+                if cdShownForChargeCheck ~= nil then
+                    button._chargeRecharging = cdShownForChargeCheck
+                else
+                    button._chargeRecharging = button.cooldown:IsShown()
+                end
             end
         else
             button._chargeRecharging = false
