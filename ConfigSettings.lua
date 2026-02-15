@@ -4717,11 +4717,12 @@ local POWER_NAMES_CONFIG = {
     [17] = "Fury",
     [18] = "Pain",
     [19] = "Essence",
+    [100] = "Maelstrom Weapon",
 }
 
 local SEGMENTED_TYPES_CONFIG = {
     [4]  = true, [5]  = true, [7]  = true, [9]  = true,
-    [12] = true, [16] = true, [19] = true,
+    [12] = true, [16] = true, [19] = true, [100] = true,
 }
 
 local DEFAULT_POWER_COLORS_CONFIG = {
@@ -4742,6 +4743,7 @@ local DEFAULT_POWER_COLORS_CONFIG = {
     [17] = { 0.788, 0.259, 0.992 },
     [18] = { 1, 0.612, 0 },
     [19] = { 0.286, 0.773, 0.541 },
+    [100] = { 0, 0.5, 1 },
 }
 
 local DEFAULT_COMBO_COLOR_CONFIG = { 1, 0.96, 0.41 }
@@ -4768,6 +4770,11 @@ local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
 local DEFAULT_ESSENCE_MAX_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 
+local DEFAULT_MW_BASE_COLOR_CONFIG = { 0, 0.5, 1 }
+local DEFAULT_MW_OVERLAY_COLOR_CONFIG = { 1, 0.84, 0 }
+local DEFAULT_MW_MAX_BASE_COLOR_CONFIG = { 0.5, 0.8, 1 }
+local DEFAULT_MW_MAX_OVERLAY_COLOR_CONFIG = { 1, 0.95, 0.5 }
+
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
     [1]  = { 1 },
@@ -4788,7 +4795,7 @@ local CLASS_RESOURCES_CONFIG = {
 local SPEC_RESOURCES_CONFIG = {
     [258] = { 13, 0 },
     [262] = { 11, 0 },
-    [263] = { 11, 0 },
+    [263] = { 100, 0 },
     [62]  = { 16, 0 },
     [269] = { 12, 3 },
     [268] = { 3 },
@@ -5614,6 +5621,75 @@ local function BuildResourceBarStylingPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpMax)
+            elseif pt == 100 then
+                -- Maelstrom Weapon: four color pickers (base, overlay, max base, max overlay)
+                local baseColor = settings.resources[100].mwBaseColor or DEFAULT_MW_BASE_COLOR_CONFIG
+                local cpBase = AceGUI:Create("ColorPicker")
+                cpBase:SetLabel("MW Stacks (Base)")
+                cpBase:SetColor(baseColor[1], baseColor[2], baseColor[3])
+                cpBase:SetHasAlpha(false)
+                cpBase:SetFullWidth(true)
+                cpBase:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwBaseColor = {r, g, b}
+                end)
+                cpBase:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwBaseColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpBase)
+
+                local overlayColor = settings.resources[100].mwOverlayColor or DEFAULT_MW_OVERLAY_COLOR_CONFIG
+                local cpOverlay = AceGUI:Create("ColorPicker")
+                cpOverlay:SetLabel("MW Stacks (Overlay 6-10)")
+                cpOverlay:SetColor(overlayColor[1], overlayColor[2], overlayColor[3])
+                cpOverlay:SetHasAlpha(false)
+                cpOverlay:SetFullWidth(true)
+                cpOverlay:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwOverlayColor = {r, g, b}
+                end)
+                cpOverlay:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwOverlayColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpOverlay)
+
+                local maxBaseColor = settings.resources[100].mwMaxBaseColor or DEFAULT_MW_MAX_BASE_COLOR_CONFIG
+                local cpMaxBase = AceGUI:Create("ColorPicker")
+                cpMaxBase:SetLabel("MW Stacks (Max Base)")
+                cpMaxBase:SetColor(maxBaseColor[1], maxBaseColor[2], maxBaseColor[3])
+                cpMaxBase:SetHasAlpha(false)
+                cpMaxBase:SetFullWidth(true)
+                cpMaxBase:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwMaxBaseColor = {r, g, b}
+                end)
+                cpMaxBase:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwMaxBaseColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMaxBase)
+
+                local maxOverlayColor = settings.resources[100].mwMaxOverlayColor or DEFAULT_MW_MAX_OVERLAY_COLOR_CONFIG
+                local cpMaxOverlay = AceGUI:Create("ColorPicker")
+                cpMaxOverlay:SetLabel("MW Stacks (Max Overlay)")
+                cpMaxOverlay:SetColor(maxOverlayColor[1], maxOverlayColor[2], maxOverlayColor[3])
+                cpMaxOverlay:SetHasAlpha(false)
+                cpMaxOverlay:SetFullWidth(true)
+                cpMaxOverlay:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwMaxOverlayColor = {r, g, b}
+                end)
+                cpMaxOverlay:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    if not settings.resources[100] then settings.resources[100] = {} end
+                    settings.resources[100].mwMaxOverlayColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpMaxOverlay)
             else
                 local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
 

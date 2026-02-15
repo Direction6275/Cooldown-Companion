@@ -32,6 +32,9 @@ local GetTime = GetTime
 
 local UPDATE_INTERVAL = 1 / 30  -- 30 Hz
 
+local RESOURCE_MAELSTROM_WEAPON = 100  -- Virtual power type for MW stacks (aura-based)
+local MW_SPELL_ID = 187880
+
 local DEFAULT_POWER_COLORS = {
     [0]  = { 0, 0, 1 },              -- Mana
     [1]  = { 1, 0, 0 },              -- Rage
@@ -50,6 +53,7 @@ local DEFAULT_POWER_COLORS = {
     [17] = { 0.788, 0.259, 0.992 },  -- Fury
     [18] = { 1, 0.612, 0 },          -- Pain
     [19] = { 0.286, 0.773, 0.541 },  -- Essence
+    [100] = { 0, 0.5, 1 },           -- Maelstrom Weapon (base)
 }
 
 local POWER_NAMES = {
@@ -70,6 +74,7 @@ local POWER_NAMES = {
     [17] = "Fury",
     [18] = "Pain",
     [19] = "Essence",
+    [100] = "Maelstrom Weapon",
 }
 
 local DEFAULT_COMBO_COLOR = { 1, 0.96, 0.41 }
@@ -96,6 +101,11 @@ local DEFAULT_ESSENCE_READY_COLOR = { 0.851, 0.482, 0.780 }
 local DEFAULT_ESSENCE_RECHARGING_COLOR = { 0.490, 0.490, 0.490 }
 local DEFAULT_ESSENCE_MAX_COLOR = { 0.851, 0.482, 0.780 }
 
+local DEFAULT_MW_BASE_COLOR = { 0, 0.5, 1 }
+local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
+local DEFAULT_MW_MAX_BASE_COLOR = { 0.5, 0.8, 1 }
+local DEFAULT_MW_MAX_OVERLAY_COLOR = { 1, 0.95, 0.5 }
+
 local SEGMENTED_TYPES = {
     [4]  = true,  -- ComboPoints
     [5]  = true,  -- Runes
@@ -104,6 +114,7 @@ local SEGMENTED_TYPES = {
     [12] = true,  -- Chi
     [16] = true,  -- ArcaneCharges
     [19] = true,  -- Essence
+    [100] = true, -- Maelstrom Weapon
 }
 
 -- Atlas info for class-specific bar textures (from PowerBarColorUtil.lua)
@@ -141,7 +152,7 @@ local CLASS_RESOURCES = {
 local SPEC_RESOURCES = {
     [258] = { 13, 0 },      -- Shadow Priest: Insanity, Mana
     [262] = { 11, 0 },      -- Elemental Shaman: Maelstrom, Mana
-    [263] = { 11, 0 },      -- Enhancement Shaman: Maelstrom, Mana
+    [263] = { 100, 0 },     -- Enhancement Shaman: Maelstrom Weapon, Mana
     [62]  = { 16, 0 },      -- Arcane Mage: ArcaneCharges, Mana
     [269] = { 12, 3 },      -- Windwalker Monk: Chi, Energy
     [268] = { 3 },          -- Brewmaster Monk: Energy
@@ -371,6 +382,24 @@ local function GetEssenceColors(settings)
     return readyColor, rechargingColor, maxColor
 end
 
+--- Get Maelstrom Weapon colors (base, overlay, maxBase, maxOverlay).
+local function GetMWColors(settings)
+    local baseColor = DEFAULT_MW_BASE_COLOR
+    local overlayColor = DEFAULT_MW_OVERLAY_COLOR
+    local maxBaseColor = DEFAULT_MW_MAX_BASE_COLOR
+    local maxOverlayColor = DEFAULT_MW_MAX_OVERLAY_COLOR
+    if settings and settings.resources then
+        local override = settings.resources[100]
+        if override then
+            if override.mwBaseColor then baseColor = override.mwBaseColor end
+            if override.mwOverlayColor then overlayColor = override.mwOverlayColor end
+            if override.mwMaxBaseColor then maxBaseColor = override.mwMaxBaseColor end
+            if override.mwMaxOverlayColor then maxOverlayColor = override.mwMaxOverlayColor end
+        end
+    end
+    return baseColor, overlayColor, maxBaseColor, maxOverlayColor
+end
+
 --- Check if a specific resource is enabled in settings.
 local function IsResourceEnabled(powerType, settings)
     if settings and settings.resources then
@@ -535,6 +564,84 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
         else
             HidePixelBorders(seg.borders)
         end
+    end
+end
+
+------------------------------------------------------------------------
+-- Frame creation: Maelstrom Weapon segmented bar (base + overlay)
+------------------------------------------------------------------------
+
+local function CreateMaelstromWeaponBar(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder._barType = "mw_segmented"
+
+    -- 5 base segments: min/max thresholds for stacks 1-5
+    holder.segments = {}
+    for i = 1, 5 do
+        local seg = CreateFrame("StatusBar", nil, holder)
+        seg:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        seg:SetMinMaxValues(i - 1, i)
+        seg:SetValue(0)
+
+        seg.bg = seg:CreateTexture(nil, "BACKGROUND")
+        seg.bg:SetAllPoints()
+        seg.bg:SetColorTexture(0, 0, 0, 0.5)
+
+        seg.borders = CreatePixelBorders(seg)
+
+        holder.segments[i] = seg
+    end
+
+    -- 5 overlay segments: min/max thresholds for stacks 6-10
+    holder.overlaySegments = {}
+    for i = 1, 5 do
+        local seg = CreateFrame("StatusBar", nil, holder)
+        seg:SetFrameLevel(holder:GetFrameLevel() + 2)
+        seg:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        seg:SetMinMaxValues(i + 4, i + 5)
+        seg:SetValue(0)
+
+        -- No background on overlay (transparent when empty, base bg shows through)
+
+        holder.overlaySegments[i] = seg
+    end
+
+    return holder
+end
+
+local function LayoutMaelstromWeaponSegments(holder, totalWidth, totalHeight, gap, settings)
+    if not holder or not holder.segments then return end
+
+    local subWidth = (totalWidth - 4 * gap) / 5
+    if subWidth < 1 then subWidth = 1 end
+
+    local barTexture = settings and settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
+    local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
+    local borderStyle = settings and settings.borderStyle or "pixel"
+    local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
+    local borderSize = settings and settings.borderSize or 1
+
+    for i = 1, 5 do
+        local seg = holder.segments[i]
+        seg:ClearAllPoints()
+        seg:SetSize(subWidth, totalHeight)
+        local xOfs = (i - 1) * (subWidth + gap)
+        seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+
+        seg:SetStatusBarTexture(barTexture)
+        seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+        if borderStyle == "pixel" then
+            ApplyPixelBorders(seg.borders, seg, borderColor, borderSize)
+        else
+            HidePixelBorders(seg.borders)
+        end
+
+        -- Position overlay segment exactly on top of base
+        local ov = holder.overlaySegments[i]
+        ov:ClearAllPoints()
+        ov:SetAllPoints(seg)
+        ov:SetStatusBarTexture(barTexture)
     end
 end
 
@@ -707,6 +814,62 @@ local function UpdateSegmentedBar(holder, powerType)
 end
 
 ------------------------------------------------------------------------
+-- Update logic: Maelstrom Weapon (aura-based, secret-safe)
+------------------------------------------------------------------------
+
+local function UpdateMaelstromWeaponBar(holder)
+    if not holder or not holder.segments then return end
+
+    local baseColor, overlayColor, maxBaseColor, maxOverlayColor = GetMWColors(GetResourceBarSettings())
+
+    -- Read aura stacks from viewer frame
+    local stacks = 0
+    local hasAura = false
+    local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
+    local instId = viewerFrame and viewerFrame.auraInstanceID
+    if instId then
+        local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instId)
+        if ok and auraData then
+            stacks = auraData.applications  -- may be secret in combat → SetValue accepts it
+            hasAura = true
+        end
+    end
+
+    -- Pass stacks to ALL 10 segments (StatusBar C-level clamping handles per-segment fill)
+    for i = 1, 5 do
+        holder.segments[i]:SetValue(stacks)
+        holder.overlaySegments[i]:SetValue(stacks)
+    end
+
+    -- Max color detection (applications may be secret — pcall comparisons)
+    -- _capIsTen: latched true when stacks >= 6 detected (proves 10-stack talent)
+    local isMax = false
+    if hasAura then
+        local sixOk, sixResult = pcall(function() return stacks >= 6 end)
+        if sixOk and sixResult then
+            holder._capIsTen = true
+        end
+
+        if holder._capIsTen then
+            -- Cap is 10: max at stacks >= 10
+            local tenOk, tenResult = pcall(function() return stacks >= 10 end)
+            if tenOk then isMax = tenResult end
+        else
+            -- Cap is 5 (or unknown): max at stacks >= 5
+            local fiveOk, fiveResult = pcall(function() return stacks >= 5 end)
+            if fiveOk then isMax = fiveResult end
+        end
+    end
+
+    local activeBaseColor = isMax and maxBaseColor or baseColor
+    local activeOverlayColor = isMax and maxOverlayColor or overlayColor
+    for i = 1, 5 do
+        holder.segments[i]:SetStatusBarColor(activeBaseColor[1], activeBaseColor[2], activeBaseColor[3], 1)
+        holder.overlaySegments[i]:SetStatusBarColor(activeOverlayColor[1], activeOverlayColor[2], activeOverlayColor[3], 1)
+    end
+end
+
+------------------------------------------------------------------------
 -- OnUpdate handler (30 Hz)
 ------------------------------------------------------------------------
 
@@ -725,6 +888,8 @@ local function OnUpdate(self, elapsed)
                 UpdateContinuousBar(barInfo.frame, barInfo.powerType)
             elseif barInfo.barType == "segmented" then
                 UpdateSegmentedBar(barInfo.frame, barInfo.powerType)
+            elseif barInfo.barType == "mw_segmented" then
+                UpdateMaelstromWeaponBar(barInfo.frame)
             end
         end
     end
@@ -994,7 +1159,33 @@ function CooldownCompanion:ApplyResourceBars()
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
 
-        if isSegmented then
+        if powerType == RESOURCE_MAELSTROM_WEAPON then
+            -- Maelstrom Weapon: aura-based segmented bar with overlay
+            -- Overlays always shown — they have no background, so when empty
+            -- they're transparent. StatusBar min/max clamping handles both
+            -- 5-max and 10-max cases automatically.
+            if not barInfo or barInfo.barType ~= "mw_segmented" then
+                if barInfo and barInfo.frame then
+                    barInfo.frame:Hide()
+                end
+                local holder = CreateMaelstromWeaponBar(containerFrame)
+                barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
+                resourceBarFrames[idx] = barInfo
+            else
+                barInfo.powerType = powerType
+            end
+
+            barInfo.frame:SetSize(totalWidth, barHeight)
+            LayoutMaelstromWeaponSegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings)
+
+            -- Apply colors — overlays always shown (transparent when empty via StatusBar clamping)
+            local baseColor, overlayColor = GetMWColors(settings)
+            for i = 1, 5 do
+                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                barInfo.frame.overlaySegments[i]:Show()
+            end
+        elseif isSegmented then
             local max = UnitPowerMax("player", powerType)
             if powerType == 5 then max = 6 end  -- Runes always 6
             if max < 1 then max = 1 end
@@ -1231,6 +1422,12 @@ local function ApplyPreviewData()
                     else
                         seg:SetValue(0)
                     end
+                end
+            elseif barInfo.barType == "mw_segmented" then
+                -- Preview at 7 stacks: all 5 base full, 2 overlay full
+                for i = 1, 5 do
+                    barInfo.frame.segments[i]:SetValue(7)
+                    barInfo.frame.overlaySegments[i]:SetValue(7)
                 end
             end
         end
