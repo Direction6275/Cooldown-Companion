@@ -1261,6 +1261,7 @@ end
 ------------------------------------------------------------------------
 local function IsPassiveOrProc(spellId)
     if C_Spell.IsSpellPassive(spellId) then return true end
+    if C_Spell.GetSpellCharges(spellId) then return false end
     local baseCooldown = GetSpellBaseCooldown(spellId)
     if (not baseCooldown or baseCooldown == 0) and IsSpellInCDMBuffBar(spellId) then
         return true

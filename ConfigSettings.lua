@@ -3712,18 +3712,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
 
     -- Hide While On Cooldown (skip for passives — no cooldown)
     if not buttonData.isPassive then
-    local hasCooldown = true
-    if buttonData.type == "spell" then
-        local baseCooldown = GetSpellBaseCooldown(buttonData.id)
-        hasCooldown = baseCooldown and baseCooldown > 1500
-    end
     local hideCDCb = AceGUI:Create("CheckBox")
     hideCDCb:SetLabel("Hide While On Cooldown")
     hideCDCb:SetValue(buttonData.hideWhileOnCooldown or false)
     hideCDCb:SetFullWidth(true)
-    if not hasCooldown then
-        hideCDCb:SetDisabled(true)
-    end
     hideCDCb:SetCallback("OnValueChanged", function(widget, event, val)
         ApplyToSelected("hideWhileOnCooldown", val or nil)
         if val then
@@ -3738,9 +3730,6 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     hideNotCDCb:SetLabel("Hide While Not On Cooldown")
     hideNotCDCb:SetValue(buttonData.hideWhileNotOnCooldown or false)
     hideNotCDCb:SetFullWidth(true)
-    if not hasCooldown then
-        hideNotCDCb:SetDisabled(true)
-    end
     hideNotCDCb:SetCallback("OnValueChanged", function(widget, event, val)
         ApplyToSelected("hideWhileNotOnCooldown", val or nil)
         if val then
