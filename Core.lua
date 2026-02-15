@@ -252,6 +252,7 @@ local defaults = {
             borderSize = 1,
             segmentGap = 4,
             hideManaForNonHealer = true,
+            reverseResourceOrder = false,
             stackOrder = "resource_first",
             resources = {},
             textFont = "Fonts\\FRIZQT__.TTF",

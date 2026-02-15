@@ -5040,6 +5040,17 @@ BuildResourceBarAnchoringPanel = function(container)
             container:AddChild(manaCb)
         end
 
+        local flipCb = AceGUI:Create("CheckBox")
+        flipCb:SetLabel("Flip primary and secondary bars")
+        flipCb:SetValue(settings.reverseResourceOrder)
+        flipCb:SetFullWidth(true)
+        flipCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.reverseResourceOrder = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(flipCb)
+
         -- Per-resource enable/disable
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do

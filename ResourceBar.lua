@@ -955,6 +955,13 @@ function CooldownCompanion:ApplyResourceBars()
         end
     end
 
+    if settings.reverseResourceOrder and #filtered > 1 then
+        local n = #filtered
+        for i = 1, math.floor(n / 2) do
+            filtered[i], filtered[n - i + 1] = filtered[n - i + 1], filtered[i]
+        end
+    end
+
     if #filtered == 0 then
         self:RevertResourceBars()
         return
