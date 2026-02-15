@@ -1594,8 +1594,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
             button.cooldown:SetCooldown(cdStart, cdDuration)
             fetchOk = true
-        elseif buttonData.isPassive and button.cooldown:IsShown() then
-            button.cooldown:Hide()
         end
     end
 
