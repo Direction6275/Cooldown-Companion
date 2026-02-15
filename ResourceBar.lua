@@ -223,6 +223,22 @@ local function GetPlayerClassID()
     return classID
 end
 
+local function GetSpecCustomAuraBars(settings)
+    local specID = GetCurrentSpecID()
+    if not specID then return {} end
+    if not settings.customAuraBars then
+        settings.customAuraBars = {}
+    end
+    if not settings.customAuraBars[specID] then
+        settings.customAuraBars[specID] = {
+            { enabled = false },
+            { enabled = false },
+            { enabled = false },
+        }
+    end
+    return settings.customAuraBars[specID]
+end
+
 local function IsHealerSpec()
     local specIdx = C_SpecializationInfo.GetSpecialization()
     if specIdx then
@@ -1254,7 +1270,7 @@ function CooldownCompanion:ApplyResourceBars()
     end
 
     -- Append enabled custom aura bars
-    local customBars = settings.customAuraBars or {}
+    local customBars = GetSpecCustomAuraBars(settings)
     for i = 1, MAX_CUSTOM_AURA_BARS do
         local cab = customBars[i]
         if cab and cab.enabled and cab.spellID then
@@ -1565,6 +1581,12 @@ function CooldownCompanion:RevertResourceBars()
 
     isPreviewActive = false
     activeResources = {}
+end
+
+function CooldownCompanion:GetSpecCustomAuraBars()
+    local settings = GetResourceBarSettings()
+    if not settings then return {} end
+    return GetSpecCustomAuraBars(settings)
 end
 
 ------------------------------------------------------------------------

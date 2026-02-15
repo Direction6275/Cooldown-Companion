@@ -462,6 +462,9 @@ function CooldownCompanion:OnEnable()
     -- Reverse-migrate: if MW was migrated to custom aura bar slot 1, restore it
     self:ReverseMigrateMW()
 
+    -- Migrate flat custom aura bars to spec-keyed format
+    self:MigrateCustomAuraBarsToSpecKeyed()
+
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
 
@@ -1009,6 +1012,7 @@ end
 function CooldownCompanion:OnSpecChanged()
     self:CacheCurrentSpec()
     self:RefreshChargeFlags()
+    self:EvaluateResourceBars()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
     -- Rebuild viewer map after a short delay to let the viewer re-populate
@@ -1701,6 +1705,16 @@ function CooldownCompanion:ReverseMigrateMW()
         for _, cab in pairs(rb.customAuraBars) do
             if cab then cab.maxColor = nil end
         end
+    end
+end
+
+function CooldownCompanion:MigrateCustomAuraBarsToSpecKeyed()
+    local rb = self.db.profile.resourceBars
+    if not rb or not rb.customAuraBars then return end
+    -- Old format has integer key [1] with an enabled field; spec IDs are 3+ digits
+    local first = rb.customAuraBars[1]
+    if first and type(first) == "table" and first.enabled ~= nil then
+        rb.customAuraBars = {}
     end
 end
 

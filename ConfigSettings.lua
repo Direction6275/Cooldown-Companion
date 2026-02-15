@@ -5735,11 +5735,26 @@ end
 BuildCustomAuraBarPanel = function(container)
     local db = CooldownCompanion.db.profile
     local settings = db.resourceBars
-    if not settings.customAuraBars then
-        settings.customAuraBars = {}
-    end
-    local customBars = settings.customAuraBars
+    local customBars = CooldownCompanion:GetSpecCustomAuraBars()
     local maxSlots = ST.MAX_CUSTOM_AURA_BARS or 3
+
+    -- Spec label
+    local specIdx = C_SpecializationInfo.GetSpecialization()
+    if specIdx then
+        local _, specName, _, specIcon = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+        if specName then
+            local specLabel = AceGUI:Create("Label")
+            specLabel:SetText("|T" .. specIcon .. ":14:14:0:0|t  Configuring: |cffffd100" .. specName .. "|r")
+            specLabel:SetFullWidth(true)
+            specLabel:SetFontObject(GameFontNormal)
+            container:AddChild(specLabel)
+
+            local spacer = AceGUI:Create("Label")
+            spacer:SetText(" ")
+            spacer:SetFullWidth(true)
+            container:AddChild(spacer)
+        end
+    end
 
     for slotIdx = 1, maxSlots do
         if not customBars[slotIdx] then
@@ -5982,6 +5997,58 @@ BuildCustomAuraBarPanel = function(container)
                 end
             end
         end
+    end
+
+    -- "Copy from..." button
+    local _, _, classID = UnitClass("player")
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID)
+    local currentSpecID
+    if specIdx then
+        currentSpecID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+    end
+    if currentSpecID and numSpecs and numSpecs > 1 then
+        local copySpacer = AceGUI:Create("Label")
+        copySpacer:SetText(" ")
+        copySpacer:SetFullWidth(true)
+        container:AddChild(copySpacer)
+
+        local copyBtn = AceGUI:Create("Button")
+        copyBtn:SetText("Copy from\226\128\166")
+        copyBtn:SetFullWidth(true)
+        copyBtn:SetCallback("OnClick", function()
+            local menuFrame = _G["CDCCopyCABMenu"]
+            if not menuFrame then
+                menuFrame = CreateFrame("Frame", "CDCCopyCABMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+            UIDropDownMenu_Initialize(menuFrame, function(self, level)
+                for i = 1, numSpecs do
+                    local sID, sName, _, sIcon = GetSpecializationInfoForClassID(classID, i)
+                    if sID and sID ~= currentSpecID then
+                        local info = UIDropDownMenu_CreateInfo()
+                        local sourceBars = settings.customAuraBars and settings.customAuraBars[sID]
+                        local hasData = false
+                        if sourceBars then
+                            for _, cab in ipairs(sourceBars) do
+                                if cab.enabled and cab.spellID then hasData = true; break end
+                            end
+                        end
+                        info.text = "|T" .. sIcon .. ":14:14:0:0|t " .. sName
+                        info.disabled = not hasData
+                        info.func = function()
+                            settings.customAuraBars[currentSpecID] = CopyTable(sourceBars)
+                            CooldownCompanion:ApplyResourceBars()
+                            CooldownCompanion:UpdateAnchorStacking()
+                            CooldownCompanion:RefreshConfigPanel()
+                            CloseDropDownMenus()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+            end, "MENU")
+            menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, menuFrame, "cursor", 0, 0)
+        end)
+        container:AddChild(copyBtn)
     end
 end
 
