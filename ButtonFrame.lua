@@ -582,7 +582,7 @@ end
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
+local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
@@ -612,7 +612,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
             end
         else
             -- Non-charged spells: _durationObj non-nil means active CD (secret-safe nil check)
-            if button._durationObj and not isOnGCD then
+            if button._durationObj and not isGCDOnly then
                 shouldHide = true
             end
         end
@@ -632,7 +632,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
             end
         else
             -- Non-charged spells: not on cooldown (or only on GCD)
-            if not button._durationObj or isOnGCD then
+            if not button._durationObj or isGCDOnly then
                 shouldHide = true
             end
         end
@@ -666,7 +666,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
             else
-                if button._durationObj and not isOnGCD then
+                if button._durationObj and not isGCDOnly then
                     otherHide = true
                 end
             end
@@ -678,7 +678,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if not wd or wd == 0 then otherHide = true end
             else
-                if not button._durationObj or isOnGCD then otherHide = true end
+                if not button._durationObj or isGCDOnly then otherHide = true end
             end
         end
         if buttonData.hideWhileAuraActive and auraOverrideActive then
@@ -704,7 +704,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
             else
-                if button._durationObj and not isOnGCD then
+                if button._durationObj and not isGCDOnly then
                     otherHide = true
                 end
             end
@@ -716,7 +716,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if not wd or wd == 0 then otherHide = true end
             else
-                if not button._durationObj or isOnGCD then otherHide = true end
+                if not button._durationObj or isGCDOnly then otherHide = true end
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then
@@ -1226,6 +1226,25 @@ local function UpdateChargeTracking(button, buttonData)
     return charges
 end
 
+-- Item charge tracking (e.g. Hellstone): simpler than spells, no secret values.
+-- Reads charge count via C_Item.GetItemCount with includeUses, updates text display.
+local function UpdateItemChargeTracking(button, buttonData)
+    local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+
+    -- Update persisted maxCharges upward when observable
+    if chargeCount > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = chargeCount
+    end
+
+    -- Display charge text with change detection
+    if not buttonData.showChargeText then
+        button.count:SetText("")
+    elseif button._chargeText ~= chargeCount then
+        button._chargeText = chargeCount
+        button.count:SetText(chargeCount)
+    end
+end
+
 -- Icon tinting: out-of-range red > unusable dimming > normal white.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
@@ -1417,6 +1436,7 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
+    local isGCDOnly = false
 
     -- Clear per-tick DurationObject; set below if cooldown/aura active.
     -- Used by bar fill, desaturation, visibility checks instead of
@@ -1580,6 +1600,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     fetchOk = true
                 end
             end)
+            -- GCD-only detection: compare spell's cooldown against GCD reference (61304).
+            -- More reliable than isOnGCD at GCD boundaries (Blizzard CooldownViewer pattern).
+            if cooldownInfo then
+                local gcdInfo = CooldownCompanion._gcdInfo
+                if gcdInfo then
+                    local ok, result = pcall(function()
+                        return cooldownInfo.startTime == gcdInfo.startTime
+                            and cooldownInfo.duration == gcdInfo.duration
+                    end)
+                    if ok then
+                        isGCDOnly = result
+                    else
+                        isGCDOnly = isOnGCD or false
+                    end
+                end
+            end
             -- DurationObject path: HasSecretValues gates IsZero comparison.
             -- Non-secret: use IsZero to filter zero-duration (spell ready).
             -- Secret: fall back to isOnGCD (NeverSecret) as activity signal.
@@ -1622,11 +1658,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and not buttonData.hasCharges and not buttonData.isPassive
     end
 
-    -- Charge count tracking: detect whether the main spell cooldown (0 charges)
+    -- Charge count tracking: detect whether the main cooldown (0 charges)
     -- is active.  Filter GCD so only real cooldown reads as true.
     -- Skip during aura override: button.cooldown shows the aura, not the main CD.
     if buttonData.hasCharges and not auraOverrideActive then
-        if button._isBar then
+        if buttonData.type == "item" then
+            -- Items: 0 charges = on cooldown. No GCD to filter.
+            local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+            button._mainCDShown = (chargeCount == 0)
+        elseif button._isBar then
             -- Bar mode: button.cooldown is not reused for recharge animation.
             button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
         else
@@ -1651,7 +1691,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     local charges
-    if buttonData.type == "spell" and buttonData.hasCharges then
+    if buttonData.hasCharges then
+      if buttonData.type == "spell" then
         charges = UpdateChargeTracking(button, buttonData)
 
         -- Bar mode: charge bars are driven by the recharge DurationObject, not
@@ -1696,10 +1737,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._durationObj = mainDurationObj
         end
 
+      elseif buttonData.type == "item" then
+        UpdateItemChargeTracking(button, buttonData)
+
+        -- Detect recharging via the cooldown widget (already set by item CD path above)
+        local _, widgetDuration = button.cooldown:GetCooldownTimes()
+        button._chargeRecharging = (widgetDuration and widgetDuration > 0) or false
+      end
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
-    if buttonData.type == "item" and not IsItemEquippable(buttonData) then
+    if buttonData.type == "item" and not buttonData.hasCharges and not IsItemEquippable(buttonData) then
         local count = C_Item.GetItemCount(buttonData.id)
         if button._itemCount ~= count then
             button._itemCount = count
@@ -1732,7 +1780,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Per-button visibility evaluation (after charge tracking)
-    EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
+    EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
 
     -- Track if hidden state changed (for compact layout dirty flag)
     if button._visibilityHidden ~= button._prevVisibilityHidden then

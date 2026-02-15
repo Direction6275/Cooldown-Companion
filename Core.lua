@@ -493,6 +493,7 @@ function CooldownCompanion:OnEnable()
             self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
         end
 
+        self._gcdInfo = C_Spell.GetSpellCooldown(61304)
         self:UpdateAllCooldowns()
         self:UpdateAllGroupLayouts()
         self._cooldownsDirty = false
@@ -983,6 +984,7 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
 end
 
 function CooldownCompanion:OnBagChanged()
+    self:RefreshChargeFlags()
     self:RefreshConfigPanel()
 end
 
@@ -1010,6 +1012,18 @@ function CooldownCompanion:RefreshChargeFlags()
                     local displayCount = tonumber(C_Spell.GetSpellDisplayCount(buttonData.id))
                     if displayCount and displayCount > (buttonData.maxCharges or 0) then
                         buttonData.maxCharges = displayCount
+                    end
+                end
+            elseif buttonData.type == "item" then
+                -- Never clear hasCharges for items: at 0 charges both count APIs
+                -- return 0, indistinguishable from "item not owned".
+                local plainCount = C_Item.GetItemCount(buttonData.id)
+                local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+                if chargeCount > plainCount then
+                    buttonData.hasCharges = true
+                    buttonData.showChargeText = true
+                    if chargeCount > (buttonData.maxCharges or 0) then
+                        buttonData.maxCharges = chargeCount
                     end
                 end
             end
@@ -1443,6 +1457,17 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
                 group.buttons[buttonIndex].maxCharges = displayCount
             end
+        end
+    end
+
+    -- Auto-detect charges for items (e.g. Hellstone: GetItemCount with includeUses > plain count)
+    if buttonType == "item" then
+        local plainCount = C_Item.GetItemCount(id)
+        local chargeCount = C_Item.GetItemCount(id, false, true)
+        if chargeCount > plainCount then
+            group.buttons[buttonIndex].hasCharges = true
+            group.buttons[buttonIndex].showChargeText = true
+            group.buttons[buttonIndex].maxCharges = chargeCount
         end
     end
 
@@ -2133,6 +2158,7 @@ function CooldownCompanion:IsButtonUsable(buttonData)
         end
         return false
     elseif buttonData.type == "item" then
+        if buttonData.hasCharges then return true end
         return C_Item.GetItemCount(buttonData.id) > 0
     end
     return true
