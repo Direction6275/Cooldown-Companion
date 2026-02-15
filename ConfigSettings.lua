@@ -2900,6 +2900,27 @@ local function BuildPositioningTab(container)
     end
 end
 
+local LSM = LibStub("LibSharedMedia-3.0")
+
+-- For resource bars: LSM textures + "Blizzard (Class)" special entry
+local function GetResourceBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    t["blizzard_class"] = "Blizzard (Class)"
+    return t
+end
+
+-- For cast bars and bar-mode buttons: LSM textures only
+local function GetBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    return t
+end
+
 local function BuildBarAppearanceTab(container, group, style)
     -- Bar Settings header
     local barHeading = AceGUI:Create("Heading")
@@ -4226,27 +4247,6 @@ end
 
 -- Collapsible section state for cast bar panel (persistent across rebuilds)
 local castBarCollapsedSections = {}
-
-local LSM = LibStub("LibSharedMedia-3.0")
-
--- For resource bars: LSM textures + "Blizzard (Class)" special entry
-local function GetResourceBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    t["blizzard_class"] = "Blizzard (Class)"
-    return t
-end
-
--- For cast bars and bar-mode buttons: LSM textures only
-local function GetBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    return t
-end
 
 BuildCastBarAnchoringPanel = function(container)
     local db = CooldownCompanion.db.profile
