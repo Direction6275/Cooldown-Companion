@@ -5868,7 +5868,25 @@ BuildCustomAuraBarPanel = function(container)
                 end
             end
 
-            -- Max Stacks editbox
+            -- Tracking Mode dropdown
+            local trackDrop = AceGUI:Create("Dropdown")
+            trackDrop:SetLabel("Tracking Mode")
+            trackDrop:SetList({
+                stacks = "Stack Count",
+                active = "Active (On/Off)",
+            }, { "stacks", "active" })
+            trackDrop:SetValue(cab.trackingMode or "stacks")
+            trackDrop:SetFullWidth(true)
+            trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                customBars[capturedIdx].trackingMode = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(trackDrop)
+
+            -- Max Stacks editbox (hidden in "active" tracking mode)
+            if (cab.trackingMode or "stacks") ~= "active" then
             local maxEdit = AceGUI:Create("EditBox")
             if maxEdit.editbox.Instructions then maxEdit.editbox.Instructions:Hide() end
             maxEdit:SetLabel("Max Stacks")
@@ -5884,8 +5902,10 @@ BuildCustomAuraBarPanel = function(container)
                 CooldownCompanion:UpdateAnchorStacking()
             end)
             container:AddChild(maxEdit)
+            end
 
-            -- Display Mode dropdown
+            -- Display Mode dropdown (hidden in "active" tracking mode)
+            if (cab.trackingMode or "stacks") ~= "active" then
             local modeDrop = AceGUI:Create("Dropdown")
             modeDrop:SetLabel("Display Mode")
             modeDrop:SetList({
@@ -5902,6 +5922,7 @@ BuildCustomAuraBarPanel = function(container)
                 CooldownCompanion:RefreshConfigPanel()
             end)
             container:AddChild(modeDrop)
+            end
 
             -- ---- Colors section (only when enabled and has spell ID) ----
             if cab.enabled and cab.spellID then
@@ -5920,6 +5941,7 @@ BuildCustomAuraBarPanel = function(container)
                 local cabIdx = capturedIdx
                 cpBar:SetCallback("OnValueChanged", function(widget, event, r, g, b)
                     customBars[cabIdx].barColor = {r, g, b}
+                    CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx])
                 end)
                 cpBar:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
                     customBars[cabIdx].barColor = {r, g, b}
@@ -5937,6 +5959,7 @@ BuildCustomAuraBarPanel = function(container)
                     cpOverlay:SetFullWidth(true)
                     cpOverlay:SetCallback("OnValueChanged", function(widget, event, r, g, b)
                         customBars[cabIdx].overlayColor = {r, g, b}
+                        CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx])
                     end)
                     cpOverlay:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
                         customBars[cabIdx].overlayColor = {r, g, b}

@@ -895,7 +895,11 @@ local function UpdateCustomAuraBar(barInfo)
     if instId then
         local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
         if auraData then
-            stacks = auraData.applications or 0
+            if cabConfig.trackingMode == "active" then
+                stacks = 1
+            else
+                stacks = auraData.applications or 0
+            end
         end
     end
 
@@ -964,6 +968,19 @@ local function StyleCustomAuraBar(barInfo, cabConfig, settings)
                 holder.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                 holder.overlaySegments[i]:Show()
             end
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Live recolor for custom aura bars (called from config color picker)
+------------------------------------------------------------------------
+
+function CooldownCompanion:RecolorCustomAuraBar(cabConfig)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.cabConfig == cabConfig then
+            StyleCustomAuraBar(barInfo, cabConfig, self.db.profile.settings)
+            break
         end
     end
 end
@@ -1306,8 +1323,9 @@ function CooldownCompanion:ApplyResourceBars()
             -- Custom aura bar
             local cabIndex = powerType - CUSTOM_AURA_BAR_BASE + 1
             local cabConfig = customBars[cabIndex]
-            local mode = cabConfig.displayMode or "segmented"
-            local maxStacks = cabConfig.maxStacks or 1
+            local isActive = cabConfig.trackingMode == "active"
+            local mode = isActive and "continuous" or (cabConfig.displayMode or "segmented")
+            local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
             local targetBarType = "custom_" .. mode
 
             -- Determine if bar needs recreation
@@ -1347,8 +1365,6 @@ function CooldownCompanion:ApplyResourceBars()
             elseif mode == "overlay" then
                 LayoutOverlaySegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings, barInfo.halfSegments)
             end
-            StyleCustomAuraBar(barInfo, cabConfig, settings)
-
             -- Continuous bar styling (text font, background, borders)
             if mode == "continuous" then
                 local tex = settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
@@ -1372,6 +1388,8 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.frame.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
                 barInfo.frame.brightnessOverlay:Hide()
             end
+            -- Apply bar color AFTER texture setup (SetStatusBarTexture resets vertex color)
+            StyleCustomAuraBar(barInfo, cabConfig, settings)
         elseif isSegmented then
             local max = UnitPowerMax("player", powerType)
             if powerType == 5 then max = 6 end  -- Runes always 6
