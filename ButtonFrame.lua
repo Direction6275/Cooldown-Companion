@@ -600,8 +600,8 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
     -- Check hideWhileOnCooldown
     if buttonData.hideWhileOnCooldown then
         if buttonData.hasCharges then
-            -- Charged spells: hide only when all charges consumed
-            if button._mainCDShown then
+            -- Charged spells: hide when recharging or all charges consumed
+            if button._mainCDShown or button._chargeRecharging then
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
@@ -621,8 +621,8 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
     -- Check hideWhileNotOnCooldown (inverse of hideWhileOnCooldown)
     if buttonData.hideWhileNotOnCooldown then
         if buttonData.hasCharges then
-            -- Charged spells: hide when any charges are available
-            if not button._mainCDShown then
+            -- Charged spells: hide only at max charges
+            if not button._mainCDShown and not button._chargeRecharging then
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
@@ -661,7 +661,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         local otherHide = false
         if buttonData.hideWhileOnCooldown then
             if buttonData.hasCharges then
-                if button._mainCDShown then otherHide = true end
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
@@ -673,7 +673,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         end
         if buttonData.hideWhileNotOnCooldown then
             if buttonData.hasCharges then
-                if not button._mainCDShown then otherHide = true end
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if not wd or wd == 0 then otherHide = true end
@@ -699,7 +699,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         local otherHide = false
         if buttonData.hideWhileOnCooldown then
             if buttonData.hasCharges then
-                if button._mainCDShown then otherHide = true end
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if wd and wd > 0 then otherHide = true end
@@ -711,7 +711,7 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         end
         if buttonData.hideWhileNotOnCooldown then
             if buttonData.hasCharges then
-                if not button._mainCDShown then otherHide = true end
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
                 local _, wd = button.cooldown:GetCooldownTimes()
                 if not wd or wd == 0 then otherHide = true end
