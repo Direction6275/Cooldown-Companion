@@ -960,7 +960,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
 
     -- Apply custom cooldown text font settings
-    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cooldownFontSize = style.cooldownFontSize or 12
     local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
     local region = button.cooldown:GetRegions()
@@ -980,7 +980,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Apply custom count text font/anchor settings from per-button data
     if buttonData.hasCharges or buttonData.isPassive then
-        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFont = CooldownCompanion:FetchFont(buttonData.chargeFont or "Friz Quadrata TT")
         local chargeFontSize = buttonData.chargeFontSize or 12
         local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
@@ -992,7 +992,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local chargeYOffset = buttonData.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = buttonData.itemCountFontSize or 12
         local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
@@ -1010,7 +1010,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
     do
-        local kbFont = style.keybindFont or "Fonts\\FRIZQT__.TTF"
+        local kbFont = CooldownCompanion:FetchFont(style.keybindFont or "Friz Quadrata TT")
         local kbSize = style.keybindFontSize or 10
         local kbOutline = style.keybindFontOutline or "OUTLINE"
         button.keybindText:SetFont(kbFont, kbSize, kbOutline)
@@ -1285,13 +1285,13 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if button._auraActive then
             showText = style.showAuraText ~= false
             fontColor = style.auraTextFontColor or {0, 0.925, 1, 1}
-            wantFont = style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+            wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
             wantSize = style.auraTextFontSize or 12
             wantOutline = style.auraTextFontOutline or "OUTLINE"
         else
             showText = style.showCooldownText
             fontColor = style.cooldownFontColor or {1, 1, 1, 1}
-            wantFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+            wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
             wantSize = style.cooldownFontSize or 12
             wantOutline = style.cooldownFontOutline or "OUTLINE"
         end
@@ -1837,7 +1837,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.cooldown:SetHideCountdownNumbers(false)
 
     -- Update cooldown font settings (default state; per-tick logic handles aura mode)
-    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cooldownFontSize = style.cooldownFontSize or 12
     local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
     local region = button.cooldown:GetRegions()
@@ -1852,7 +1852,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update count text font/anchor settings from per-button data
     button.count:ClearAllPoints()
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFont = CooldownCompanion:FetchFont(button.buttonData.chargeFont or "Friz Quadrata TT")
         local chargeFontSize = button.buttonData.chargeFontSize or 12
         local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
@@ -1865,7 +1865,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
-        local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(button.buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = button.buttonData.itemCountFontSize or 12
         local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
@@ -1882,7 +1882,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update keybind text overlay
     if button.keybindText then
-        local kbFont = style.keybindFont or "Fonts\\FRIZQT__.TTF"
+        local kbFont = CooldownCompanion:FetchFont(style.keybindFont or "Friz Quadrata TT")
         local kbSize = style.keybindFontSize or 10
         local kbOutline = style.keybindFontOutline or "OUTLINE"
         button.keybindText:SetFont(kbFont, kbSize, kbOutline)
@@ -2217,12 +2217,12 @@ UpdateBarFill = function(button)
             if button._barTextMode ~= mode then
                 button._barTextMode = mode
                 if button._auraActive then
-                    local f = button.style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+                    local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
                     local s = button.style.auraTextFontSize or 12
                     local o = button.style.auraTextFontOutline or "OUTLINE"
                     button.timeText:SetFont(f, s, o)
                 else
-                    local f = button.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+                    local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
                     local s = button.style.cooldownFontSize or 12
                     local o = button.style.cooldownFontOutline or "OUTLINE"
                     button.timeText:SetFont(f, s, o)
@@ -2259,7 +2259,7 @@ UpdateBarFill = function(button)
         if button.style.showBarReadyText then
             if button._barTextMode ~= "ready" then
                 button._barTextMode = "ready"
-                local f = button.style.barReadyFont or "Fonts\\FRIZQT__.TTF"
+                local f = CooldownCompanion:FetchFont(button.style.barReadyFont or "Friz Quadrata TT")
                 local s = button.style.barReadyFontSize or 12
                 local o = button.style.barReadyFontOutline or "OUTLINE"
                 button.timeText:SetFont(f, s, o)
@@ -2555,14 +2555,14 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.statusBar:SetMinMaxValues(0, 1)
     button.statusBar:SetValue(1)
     button.statusBar:SetReverseFill(style.barReverseFill or false)
-    button.statusBar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(style.barTexture or "Solid"))
     local barColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
     button.statusBar:EnableMouse(false)
 
     -- Name text
     button.nameText = button.statusBar:CreateFontString(nil, "OVERLAY")
-    local nameFont = style.barNameFont or "Fonts\\FRIZQT__.TTF"
+    local nameFont = CooldownCompanion:FetchFont(style.barNameFont or "Friz Quadrata TT")
     local nameFontSize = style.barNameFontSize or 10
     local nameFontOutline = style.barNameFontOutline or "OUTLINE"
     button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
@@ -2595,7 +2595,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Time text
     button.timeText = button.statusBar:CreateFontString(nil, "OVERLAY")
-    local cdFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cdFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cdFontSize = style.cooldownFontSize or 12
     local cdFontOutline = style.cooldownFontOutline or "OUTLINE"
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
@@ -2670,7 +2670,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if buttonData.hasCharges or buttonData.isPassive then
-        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFont = CooldownCompanion:FetchFont(buttonData.chargeFont or "Friz Quadrata TT")
         local chargeFontSize = buttonData.chargeFontSize or 12
         local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
@@ -2681,7 +2681,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         local chargeYOffset = buttonData.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = buttonData.itemCountFontSize or 12
         local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
@@ -2917,6 +2917,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.statusBar:SetOrientation("HORIZONTAL")
     end
     button.statusBar:SetReverseFill(newStyle.barReverseFill or false)
+    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(newStyle.barTexture or "Solid"))
     local barColor = newStyle.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
 
@@ -2945,7 +2946,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Update name text font and position
     local hasCustomName = button.buttonData and button.buttonData.customName
     if newStyle.showBarNameText ~= false or hasCustomName then
-        local nameFont = newStyle.barNameFont or "Fonts\\FRIZQT__.TTF"
+        local nameFont = CooldownCompanion:FetchFont(newStyle.barNameFont or "Friz Quadrata TT")
         local nameFontSize = newStyle.barNameFontSize or 10
         local nameFontOutline = newStyle.barNameFontOutline or "OUTLINE"
         button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
@@ -2957,7 +2958,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update time text font (default state; per-tick logic handles aura mode)
-    local cdFont = newStyle.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cdFont = CooldownCompanion:FetchFont(newStyle.cooldownFont or "Friz Quadrata TT")
     local cdFontSize = newStyle.cooldownFontSize or 12
     local cdFontOutline = newStyle.cooldownFontOutline or "OUTLINE"
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
@@ -3018,7 +3019,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
+        local chargeFont = CooldownCompanion:FetchFont(button.buttonData.chargeFont or "Friz Quadrata TT")
         local chargeFontSize = button.buttonData.chargeFontSize or 12
         local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
@@ -3030,7 +3031,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
-        local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(button.buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = button.buttonData.itemCountFontSize or 12
         local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)

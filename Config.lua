@@ -87,15 +87,32 @@ local CDM_VIEWER_NAMES = {
     "BuffBarCooldownViewer",
 }
 
--- Font options for dropdown
-local fontOptions = {
-    ["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata (Default)",
-    ["Fonts\\ARIALN.TTF"] = "Arial Narrow",
-    ["Fonts\\MORPHEUS.TTF"] = "Morpheus",
-    ["Fonts\\SKURRI.TTF"] = "Skurri",
-    ["Fonts\\2002.TTF"] = "2002",
-    ["Fonts\\NIMROD.TTF"] = "Nimrod",
-}
+-- Font options for dropdown (LSM-backed, returns fresh table each call)
+local LSM = LibStub("LibSharedMedia-3.0")
+local function GetFontOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("font")) do
+        t[name] = name
+    end
+    return t
+end
+
+-- Sets up a font dropdown with correct name→name list and per-item font preview
+local function SetupFontDropdown(dropdown)
+    dropdown:SetList(GetFontOptions())
+    dropdown:SetCallback("OnOpened", function(self)
+        for i, item in self.pullout:IterateItems() do
+            local fontName = item.userdata.value
+            if fontName and item.text then
+                local fontPath = LSM:Fetch("font", fontName)
+                if fontPath then
+                    local _, size, flags = item.text:GetFont()
+                    item.text:SetFont(fontPath, size or 11, flags or "")
+                end
+            end
+        end
+    end)
+end
 
 local outlineOptions = {
     [""] = "None",
@@ -141,7 +158,8 @@ ST._configState = {
     resourceBarPanelActive = false,
     frameAnchoringPanelActive = false,
     -- Static lookup tables
-    fontOptions = fontOptions,
+    fontOptions = GetFontOptions,
+    SetupFontDropdown = SetupFontDropdown,
     outlineOptions = outlineOptions,
     strataElementLabels = strataElementLabels,
     strataElementKeys = strataElementKeys,

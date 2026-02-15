@@ -509,7 +509,7 @@ end
 
 local function CreateContinuousBar(parent)
     local bar = CreateFrame("StatusBar", nil, parent)
-    bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+    bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
     bar:SetMinMaxValues(0, 100)
     bar:SetValue(0)
 
@@ -523,7 +523,7 @@ local function CreateContinuousBar(parent)
 
     -- Text
     bar.text = bar:CreateFontString(nil, "OVERLAY")
-    bar.text:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    bar.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
     bar.text:SetPoint("CENTER")
     bar.text:SetTextColor(1, 1, 1, 1)
 
@@ -546,7 +546,7 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.segments = {}
     for i = 1, numSegments do
         local seg = CreateFrame("StatusBar", nil, holder)
-        seg:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(0, 1)
         seg:SetValue(0)
 
@@ -576,7 +576,7 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
     local subWidth = (totalWidth - (n - 1) * gap) / n
     if subWidth < 1 then subWidth = 1 end
 
-    local barTexture = settings and settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
+    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
     local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = settings and settings.borderStyle or "pixel"
     local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
@@ -611,7 +611,7 @@ local function CreateOverlayBar(parent, halfSegments)
     holder.segments = {}
     for i = 1, halfSegments do
         local seg = CreateFrame("StatusBar", nil, holder)
-        seg:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(i - 1, i)
         seg:SetValue(0)
 
@@ -628,7 +628,7 @@ local function CreateOverlayBar(parent, halfSegments)
     for i = 1, halfSegments do
         local seg = CreateFrame("StatusBar", nil, holder)
         seg:SetFrameLevel(holder:GetFrameLevel() + 2)
-        seg:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(i + halfSegments - 1, i + halfSegments)
         seg:SetValue(0)
 
@@ -646,7 +646,7 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
     local subWidth = (totalWidth - (halfSegments - 1) * gap) / halfSegments
     if subWidth < 1 then subWidth = 1 end
 
-    local barTexture = settings and settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
+    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
     local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = settings and settings.borderStyle or "pixel"
     local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
@@ -1103,11 +1103,11 @@ end
 ------------------------------------------------------------------------
 
 local function StyleContinuousBar(bar, powerType, settings)
-    local tex = settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
+    local texName = settings.barTexture or "Solid"
     local atlasInfo = nil
     local useAtlas = false
 
-    if tex == "blizzard_class" then
+    if texName == "blizzard_class" then
         atlasInfo = POWER_ATLAS_INFO[powerType]
         if atlasInfo then
             useAtlas = true
@@ -1130,13 +1130,13 @@ local function StyleContinuousBar(bar, powerType, settings)
             end
         else
             -- Fallback for power types without class-specific atlas
-            bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+            bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Blizzard"))
             local color = GetPowerColor(powerType, settings)
             bar:SetStatusBarColor(color[1], color[2], color[3], 1)
             bar.brightnessOverlay:Hide()
         end
     else
-        bar:SetStatusBarTexture(tex)
+        bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texName))
         local color = GetPowerColor(powerType, settings)
         bar:SetStatusBarColor(color[1], color[2], color[3], 1)
         bar.brightnessOverlay:Hide()
@@ -1157,7 +1157,7 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
 
     -- Text setup
-    local textFont = settings.textFont or "Fonts\\FRIZQT__.TTF"
+    local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
     local textSize = settings.textFontSize or 10
     local textOutline = settings.textFontOutline or "OUTLINE"
     local textColor = settings.textFontColor or { 1, 1, 1, 1 }
@@ -1383,8 +1383,7 @@ function CooldownCompanion:ApplyResourceBars()
             end
             -- Continuous bar styling (text font, background, borders)
             if mode == "continuous" then
-                local tex = settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
-                barInfo.frame:SetStatusBarTexture(tex)
+                barInfo.frame:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid"))
                 local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
                 barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
                 local borderStyle = settings.borderStyle or "pixel"
@@ -1396,7 +1395,7 @@ function CooldownCompanion:ApplyResourceBars()
                     HidePixelBorders(barInfo.frame.borders)
                 end
                 -- Text setup
-                local textFont = settings.textFont or "Fonts\\FRIZQT__.TTF"
+                local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
                 local textSize = settings.textFontSize or 10
                 local textOutline = settings.textFontOutline or "OUTLINE"
                 local textColor = settings.textFontColor or { 1, 1, 1, 1 }

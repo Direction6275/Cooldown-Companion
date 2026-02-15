@@ -53,6 +53,9 @@ ST.DEFAULT_STRATA_ORDER = {"cooldown", "assistedHighlight", "chargeText", "procG
 local LDB = LibStub("LibDataBroker-1.1")
 local LDBIcon = LibStub("LibDBIcon-1.0")
 
+-- LibSharedMedia for font/texture selection
+local LSM = LibStub("LibSharedMedia-3.0")
+
 -- Masque skinning support (optional)
 local Masque = LibStub("Masque", true)
 local MasqueGroups = {} -- Maps groupId -> Masque Group object
@@ -112,10 +115,10 @@ local defaults = {
                         showCooldownText = true,
                         cooldownFontSize = 12,
                         cooldownFontOutline = "OUTLINE",
-                        cooldownFont = "Fonts\\FRIZQT__.TTF",
+                        cooldownFont = "Friz Quadrata TT",
                         cooldownFontColor = {1, 1, 1, 1},
                         showAuraText = true, -- nil defaults to true via ~= false
-                        auraTextFont = "Fonts\\FRIZQT__.TTF",
+                        auraTextFont = "Friz Quadrata TT",
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
                         auraTextFontColor = {0, 0.925, 1, 1},
@@ -140,7 +143,7 @@ local defaults = {
                         procGlowColor = {1, 1, 1, 1},
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                         showKeybindText = false,
-                        keybindFont = "Fonts\\FRIZQT__.TTF",
+                        keybindFont = "Friz Quadrata TT",
                         keybindFontSize = 10,
                         keybindFontOutline = "OUTLINE",
                         keybindFontColor = {1, 1, 1, 1},
@@ -185,7 +188,7 @@ local defaults = {
             borderColor = {0, 0, 0, 1},
             cooldownFontSize = 12,
             cooldownFontOutline = "OUTLINE",
-            cooldownFont = "Fonts\\FRIZQT__.TTF",
+            cooldownFont = "Friz Quadrata TT",
             cooldownFontColor = {1, 1, 1, 1},
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
@@ -208,7 +211,7 @@ local defaults = {
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
             showKeybindText = false,
-            keybindFont = "Fonts\\FRIZQT__.TTF",
+            keybindFont = "Friz Quadrata TT",
             keybindFontSize = 10,
             keybindFontOutline = "OUTLINE",
             keybindFontColor = {1, 1, 1, 1},
@@ -222,7 +225,7 @@ local defaults = {
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
             showBarNameText = true,
-            barNameFont = "Fonts\\FRIZQT__.TTF",
+            barNameFont = "Friz Quadrata TT",
             barNameFontSize = 10,
             barNameFontOutline = "OUTLINE",
             barNameFontColor = {1, 1, 1, 1},
@@ -230,9 +233,10 @@ local defaults = {
             barReadyText = "Ready",
             barReadyTextColor = {0.2, 1.0, 0.2, 1.0},
             barReadyFontSize = 12,
-            barReadyFont = "Fonts\\FRIZQT__.TTF",
+            barReadyFont = "Friz Quadrata TT",
             barReadyFontOutline = "OUTLINE",
             barUpdateInterval = 0.025,  -- seconds between bar fill updates (~40Hz default)
+            barTexture = "Solid",
         },
         locked = false,
         auraDurationCache = {},
@@ -245,7 +249,7 @@ local defaults = {
             yOffset = -3,
             barHeight = 12,
             barSpacing = 3.6,
-            barTexture = "Interface\\BUTTONS\\WHITE8X8",
+            barTexture = "Solid",
             backgroundColor = { 0, 0, 0, 0.5 },
             borderStyle = "pixel",
             borderColor = { 0, 0, 0, 1 },
@@ -263,7 +267,7 @@ local defaults = {
                 },
             },
             customAuraBars = {},
-            textFont = "Fonts\\FRIZQT__.TTF",
+            textFont = "Friz Quadrata TT",
             textFontSize = 10,
             textFontOutline = "OUTLINE",
             textFontColor = { 1, 1, 1, 1 },
@@ -278,7 +282,7 @@ local defaults = {
             height = 15,
             barColor = { 1.0, 0.7, 0.0, 1.0 },
             backgroundColor = { 0, 0, 0, 0.5 },
-            barTexture = "Interface\\BUTTONS\\WHITE8X8",
+            barTexture = "Solid",
             showIcon = true,
             iconSize = 16,
             iconFlipSide = false,
@@ -295,12 +299,12 @@ local defaults = {
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
             showNameText = true,
-            nameFont = "Fonts\\FRIZQT__.TTF",
+            nameFont = "Friz Quadrata TT",
             nameFontSize = 10,
             nameFontOutline = "OUTLINE",
             nameFontColor = { 1, 1, 1, 1 },
             showCastTimeText = true,
-            castTimeFont = "Fonts\\FRIZQT__.TTF",
+            castTimeFont = "Friz Quadrata TT",
             castTimeFontSize = 10,
             castTimeFontOutline = "OUTLINE",
             castTimeFontColor = { 1, 1, 1, 1 },
@@ -348,6 +352,13 @@ function CooldownCompanion:OnInitialize()
 
     -- Initialize config
     self:SetupConfig()
+
+    -- Re-apply fonts/textures when a SharedMedia pack registers new media
+    LSM.RegisterCallback(self, "LibSharedMedia_Registered", function(event, mediatype, key)
+        if mediatype == "font" or mediatype == "statusbar" then
+            self:RefreshAllMedia()
+        end
+    end)
 
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
@@ -464,6 +475,9 @@ function CooldownCompanion:OnEnable()
 
     -- Migrate flat custom aura bars to spec-keyed format
     self:MigrateCustomAuraBarsToSpecKeyed()
+
+    -- Migrate font/texture paths to LibSharedMedia names
+    self:MigrateLSMNames()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -1716,6 +1730,109 @@ function CooldownCompanion:MigrateCustomAuraBarsToSpecKeyed()
     if first and type(first) == "table" and first.enabled ~= nil then
         rb.customAuraBars = {}
     end
+end
+
+-- LSM path-to-name migration tables
+local FONT_PATH_TO_LSM = {
+    ["Fonts\\FRIZQT__.TTF"]  = "Friz Quadrata TT",
+    ["Fonts\\ARIALN.TTF"]    = "Arial Narrow",
+    ["Fonts\\MORPHEUS.TTF"]  = "Morpheus",
+    ["Fonts\\SKURRI.TTF"]    = "Skurri",
+    ["Fonts\\2002.TTF"]      = "2002",
+    ["Fonts\\NIMROD.TTF"]    = "Nimrod MT",
+}
+local TEXTURE_PATH_TO_LSM = {
+    ["Interface\\BUTTONS\\WHITE8X8"]                           = "Solid",
+    ["Interface\\TargetingFrame\\UI-StatusBar"]                = "Blizzard",
+    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]                 = "Blizzard Raid Bar",
+    ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Blizzard Character Skills Bar",
+}
+
+function CooldownCompanion:MigrateLSMNames()
+    local profile = self.db.profile
+    if profile.lsmMigrated then return end
+
+    -- Migrate group styles
+    for _, group in pairs(profile.groups) do
+        local s = group.style
+        if s then
+            for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont"}) do
+                if s[key] and FONT_PATH_TO_LSM[s[key]] then
+                    s[key] = FONT_PATH_TO_LSM[s[key]]
+                end
+            end
+            if s.barTexture and TEXTURE_PATH_TO_LSM[s.barTexture] then
+                s.barTexture = TEXTURE_PATH_TO_LSM[s.barTexture]
+            end
+        end
+        -- Per-button charge font
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.chargeFont and FONT_PATH_TO_LSM[bd.chargeFont] then
+                    bd.chargeFont = FONT_PATH_TO_LSM[bd.chargeFont]
+                end
+                if bd.itemCountFont and FONT_PATH_TO_LSM[bd.itemCountFont] then
+                    bd.itemCountFont = FONT_PATH_TO_LSM[bd.itemCountFont]
+                end
+            end
+        end
+    end
+
+    -- Migrate globalStyle
+    local gs = profile.globalStyle
+    if gs then
+        for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont"}) do
+            if gs[key] and FONT_PATH_TO_LSM[gs[key]] then
+                gs[key] = FONT_PATH_TO_LSM[gs[key]]
+            end
+        end
+        if gs.barTexture and TEXTURE_PATH_TO_LSM[gs.barTexture] then
+            gs.barTexture = TEXTURE_PATH_TO_LSM[gs.barTexture]
+        end
+    end
+
+    -- Migrate resourceBars
+    local rb = profile.resourceBars
+    if rb then
+        if rb.barTexture and TEXTURE_PATH_TO_LSM[rb.barTexture] then
+            rb.barTexture = TEXTURE_PATH_TO_LSM[rb.barTexture]
+        end
+        if rb.textFont and FONT_PATH_TO_LSM[rb.textFont] then
+            rb.textFont = FONT_PATH_TO_LSM[rb.textFont]
+        end
+    end
+
+    -- Migrate castBar
+    local cb = profile.castBar
+    if cb then
+        if cb.barTexture and TEXTURE_PATH_TO_LSM[cb.barTexture] then
+            cb.barTexture = TEXTURE_PATH_TO_LSM[cb.barTexture]
+        end
+        if cb.nameFont and FONT_PATH_TO_LSM[cb.nameFont] then
+            cb.nameFont = FONT_PATH_TO_LSM[cb.nameFont]
+        end
+        if cb.castTimeFont and FONT_PATH_TO_LSM[cb.castTimeFont] then
+            cb.castTimeFont = FONT_PATH_TO_LSM[cb.castTimeFont]
+        end
+    end
+
+    profile.lsmMigrated = true
+end
+
+-- LSM fetch helpers with fallback
+function CooldownCompanion:FetchFont(name)
+    return LSM:Fetch("font", name) or LSM:Fetch("font", "Friz Quadrata TT") or STANDARD_TEXT_FONT
+end
+
+function CooldownCompanion:FetchStatusBar(name)
+    return LSM:Fetch("statusbar", name) or LSM:Fetch("statusbar", "Solid") or [[Interface\BUTTONS\WHITE8X8]]
+end
+
+-- Re-apply all media after a SharedMedia pack registers new fonts/textures
+function CooldownCompanion:RefreshAllMedia()
+    self:RefreshAllGroups()
+    self:ApplyResourceBars()
+    self:ApplyCastBarSettings()
 end
 
 function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)

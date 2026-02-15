@@ -123,9 +123,15 @@ local function CreateNudger(frame, groupId)
 end
 
 function CooldownCompanion:CreateGroupFrame(groupId)
+    -- Return existing frame to prevent duplicates (SharedMedia callbacks
+    -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
+    if self.groupFrames[groupId] then
+        return self.groupFrames[groupId]
+    end
+
     local group = self.db.profile.groups[groupId]
     if not group then return end
-    
+
     -- Create main container frame
     local frameName = "CooldownCompanionGroup" .. groupId
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
