@@ -493,7 +493,6 @@ function CooldownCompanion:OnEnable()
             self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
         end
 
-        self._gcdInfo = C_Spell.GetSpellCooldown(61304)
         self:UpdateAllCooldowns()
         self:UpdateAllGroupLayouts()
         self._cooldownsDirty = false
@@ -2200,6 +2199,7 @@ function CooldownCompanion:RefreshAllGroups()
 end
 
 function CooldownCompanion:UpdateAllCooldowns()
+    self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
