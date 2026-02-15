@@ -1266,8 +1266,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
             local chargeFontDrop = AceGUI:Create("Dropdown")
             chargeFontDrop:SetLabel("Font")
-            chargeFontDrop:SetList(CS.fontOptions)
-            chargeFontDrop:SetValue(buttonData.chargeFont or "Fonts\\FRIZQT__.TTF")
+            CS.SetupFontDropdown(chargeFontDrop)
+            chargeFontDrop:SetValue(buttonData.chargeFont or "Friz Quadrata TT")
             chargeFontDrop:SetFullWidth(true)
             chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 buttonData.chargeFont = val
@@ -1464,8 +1464,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Item count font
     local itemFontDrop = AceGUI:Create("Dropdown")
     itemFontDrop:SetLabel("Font")
-    itemFontDrop:SetList(CS.fontOptions)
-    itemFontDrop:SetValue(buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF")
+    CS.SetupFontDropdown(itemFontDrop)
+    itemFontDrop:SetValue(buttonData.itemCountFont or "Friz Quadrata TT")
     itemFontDrop:SetFullWidth(true)
     itemFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.itemCountFont = val
@@ -2872,6 +2872,17 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(barColorPicker)
 
+    local barTexDrop = AceGUI:Create("Dropdown")
+    barTexDrop:SetLabel("Bar Texture")
+    barTexDrop:SetList(GetBarTextureOptions())
+    barTexDrop:SetValue(style.barTexture or "Solid")
+    barTexDrop:SetFullWidth(true)
+    barTexDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barTexture = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(barTexDrop)
+
     local barCdColorPicker = AceGUI:Create("ColorPicker")
     barCdColorPicker:SetLabel("Bar Cooldown Color")
     barCdColorPicker:SetHasAlpha(true)
@@ -2972,8 +2983,8 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local nameFontDrop = AceGUI:Create("Dropdown")
         nameFontDrop:SetLabel("Font")
-        nameFontDrop:SetList(CS.fontOptions)
-        nameFontDrop:SetValue(style.barNameFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(nameFontDrop)
+        nameFontDrop:SetValue(style.barNameFont or "Friz Quadrata TT")
         nameFontDrop:SetFullWidth(true)
         nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.barNameFont = val
@@ -3104,8 +3115,8 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local fontDrop = AceGUI:Create("Dropdown")
         fontDrop:SetLabel("Font")
-        fontDrop:SetList(CS.fontOptions)
-        fontDrop:SetValue(style.cooldownFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(fontDrop)
+        fontDrop:SetValue(style.cooldownFont or "Friz Quadrata TT")
         fontDrop:SetFullWidth(true)
         fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.cooldownFont = val
@@ -3194,8 +3205,8 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local auraFontDrop = AceGUI:Create("Dropdown")
         auraFontDrop:SetLabel("Font")
-        auraFontDrop:SetList(CS.fontOptions)
-        auraFontDrop:SetValue(style.auraTextFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(auraFontDrop)
+        auraFontDrop:SetValue(style.auraTextFont or "Friz Quadrata TT")
         auraFontDrop:SetFullWidth(true)
         auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.auraTextFont = val
@@ -3288,8 +3299,8 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local readyFontDrop = AceGUI:Create("Dropdown")
         readyFontDrop:SetLabel("Font")
-        readyFontDrop:SetList(CS.fontOptions)
-        readyFontDrop:SetValue(style.barReadyFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(readyFontDrop)
+        readyFontDrop:SetValue(style.barReadyFont or "Friz Quadrata TT")
         readyFontDrop:SetFullWidth(true)
         readyFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.barReadyFont = val
@@ -3479,8 +3490,8 @@ local function BuildAppearanceTab(container)
 
         local fontDrop = AceGUI:Create("Dropdown")
         fontDrop:SetLabel("Font")
-        fontDrop:SetList(CS.fontOptions)
-        fontDrop:SetValue(style.cooldownFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(fontDrop)
+        fontDrop:SetValue(style.cooldownFont or "Friz Quadrata TT")
         fontDrop:SetFullWidth(true)
         fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.cooldownFont = val
@@ -3547,8 +3558,8 @@ local function BuildAppearanceTab(container)
 
         local auraFontDrop = AceGUI:Create("Dropdown")
         auraFontDrop:SetLabel("Font")
-        auraFontDrop:SetList(CS.fontOptions)
-        auraFontDrop:SetValue(style.auraTextFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(auraFontDrop)
+        auraFontDrop:SetValue(style.auraTextFont or "Friz Quadrata TT")
         auraFontDrop:SetFullWidth(true)
         auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.auraTextFont = val
@@ -3631,8 +3642,8 @@ local function BuildAppearanceTab(container)
 
         local kbFontDrop = AceGUI:Create("Dropdown")
         kbFontDrop:SetLabel("Font")
-        kbFontDrop:SetList(CS.fontOptions)
-        kbFontDrop:SetValue(style.keybindFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(kbFontDrop)
+        kbFontDrop:SetValue(style.keybindFont or "Friz Quadrata TT")
         kbFontDrop:SetFullWidth(true)
         kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.keybindFont = val
@@ -4060,13 +4071,26 @@ end
 -- Collapsible section state for cast bar panel (persistent across rebuilds)
 local castBarCollapsedSections = {}
 
-local barTextureOptions = {
-    ["blizzard_class"]                                       = "Blizzard (Class)",
-    ["Interface\\TargetingFrame\\UI-StatusBar"]              = "Blizzard (Default)",
-    ["Interface\\BUTTONS\\WHITE8X8"]                         = "Flat",
-    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]               = "Raid",
-    ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Skills Bar",
-}
+local LSM = LibStub("LibSharedMedia-3.0")
+
+-- For resource bars: LSM textures + "Blizzard (Class)" special entry
+local function GetResourceBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    t["blizzard_class"] = "Blizzard (Class)"
+    return t
+end
+
+-- For cast bars and bar-mode buttons: LSM textures only
+local function GetBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    return t
+end
 
 BuildCastBarAnchoringPanel = function(container)
     local db = CooldownCompanion.db.profile
@@ -4318,8 +4342,8 @@ local function BuildCastBarStylingPanel(container)
         -- Bar Texture
         local texDrop = AceGUI:Create("Dropdown")
         texDrop:SetLabel("Bar Texture")
-        texDrop:SetList(barTextureOptions)
-        texDrop:SetValue(settings.barTexture or "Interface\\BUTTONS\\WHITE8X8")
+        texDrop:SetList(GetBarTextureOptions())
+        texDrop:SetValue(settings.barTexture or "Solid")
         texDrop:SetFullWidth(true)
         texDrop:SetCallback("OnValueChanged", function(widget, event, val)
             settings.barTexture = val
@@ -4527,8 +4551,8 @@ local function BuildCastBarStylingPanel(container)
             -- Font
             local nameFontDrop = AceGUI:Create("Dropdown")
             nameFontDrop:SetLabel("Font")
-            nameFontDrop:SetList(CS.fontOptions)
-            nameFontDrop:SetValue(settings.nameFont or "Fonts\\FRIZQT__.TTF")
+            CS.SetupFontDropdown(nameFontDrop)
+            nameFontDrop:SetValue(settings.nameFont or "Friz Quadrata TT")
             nameFontDrop:SetFullWidth(true)
             nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 settings.nameFont = val
@@ -4617,8 +4641,8 @@ local function BuildCastBarStylingPanel(container)
             -- Font
             local ctFontDrop = AceGUI:Create("Dropdown")
             ctFontDrop:SetLabel("Font")
-            ctFontDrop:SetList(CS.fontOptions)
-            ctFontDrop:SetValue(settings.castTimeFont or "Fonts\\FRIZQT__.TTF")
+            CS.SetupFontDropdown(ctFontDrop)
+            ctFontDrop:SetValue(settings.castTimeFont or "Friz Quadrata TT")
             ctFontDrop:SetFullWidth(true)
             ctFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 settings.castTimeFont = val
@@ -5103,8 +5127,8 @@ local function BuildResourceBarStylingPanel(container)
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
     texDrop:SetLabel("Bar Texture")
-    texDrop:SetList(barTextureOptions)
-    texDrop:SetValue(settings.barTexture or "Interface\\BUTTONS\\WHITE8X8")
+    texDrop:SetList(GetResourceBarTextureOptions())
+    texDrop:SetValue(settings.barTexture or "Solid")
     texDrop:SetFullWidth(true)
     texDrop:SetCallback("OnValueChanged", function(widget, event, val)
         settings.barTexture = val
@@ -5249,8 +5273,8 @@ local function BuildResourceBarStylingPanel(container)
     if not textCollapsed then
         local fontDrop = AceGUI:Create("Dropdown")
         fontDrop:SetLabel("Font")
-        fontDrop:SetList(CS.fontOptions)
-        fontDrop:SetValue(settings.textFont or "Fonts\\FRIZQT__.TTF")
+        CS.SetupFontDropdown(fontDrop)
+        fontDrop:SetValue(settings.textFont or "Friz Quadrata TT")
         fontDrop:SetFullWidth(true)
         fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
             settings.textFont = val
