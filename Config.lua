@@ -3749,8 +3749,39 @@ end
 ------------------------------------------------------------------------
 function RefreshColumn2()
     if not col2Scroll then return end
+    local col2 = configFrame and configFrame.col2
+
+    -- Resource bar panel mode: take over col2 with custom aura bar panel
+    if CS.resourceBarPanelActive then
+        CancelDrag()
+        HideAutocomplete()
+        col2Scroll.frame:Hide()
+        if col2 and col2._infoBtn then col2._infoBtn:Hide() end
+
+        if not col2._customAuraScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(col2.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+            col2._customAuraScroll = scroll
+        end
+        col2._customAuraScroll:ReleaseChildren()
+        col2._customAuraScroll.frame:Show()
+        ST._BuildCustomAuraBarPanel(col2._customAuraScroll)
+        return
+    end
+
+    -- Hide custom aura scroll when not in resource bar mode
+    if col2 and col2._customAuraScroll then
+        col2._customAuraScroll.frame:Hide()
+    end
+    if col2 and col2._infoBtn then col2._infoBtn:Show() end
+
     CancelDrag()
     HideAutocomplete()
+    col2Scroll.frame:Show()
     col2Scroll:ReleaseChildren()
 
     -- Multi-group selection: show inline action buttons instead of spell list
@@ -5308,6 +5339,7 @@ local function CreateConfigPanel()
     infoBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+    col2._infoBtn = infoBtn
 
     -- Button Settings column (between Spells/Items and Group Settings)
     local buttonSettingsCol = AceGUI:Create("InlineGroup")
@@ -5640,6 +5672,7 @@ function CooldownCompanion:RefreshConfigPanel()
 
     local saved1   = saveScroll(col1Scroll)
     local saved2   = saveScroll(col2Scroll)
+    local savedCab = configFrame.col2 and configFrame.col2._customAuraScroll and saveScroll(configFrame.col2._customAuraScroll)
     local savedBtn = saveScroll(buttonSettingsScroll)
 
     if configFrame.profileBar:IsShown() then
@@ -5656,15 +5689,19 @@ function CooldownCompanion:RefreshConfigPanel()
         configFrame.UpdateFrameAnchoringBtnHighlight()
     end
     if CS.castBarPanelActive then
+        configFrame.col2:SetTitle("Spells / Items")
         configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
         configFrame.col3:SetTitle("Cast Bar Styling")
     elseif CS.resourceBarPanelActive then
+        configFrame.col2:SetTitle("Custom Aura Bars")
         configFrame.buttonSettingsCol:SetTitle("Resource Anchoring")
         configFrame.col3:SetTitle("Resource Styling")
     elseif CS.frameAnchoringPanelActive then
+        configFrame.col2:SetTitle("Spells / Items")
         configFrame.buttonSettingsCol:SetTitle("Player Frame")
         configFrame.col3:SetTitle("Target Frame")
     else
+        configFrame.col2:SetTitle("Spells / Items")
         configFrame.buttonSettingsCol:SetTitle("Button Settings")
         configFrame.col3:SetTitle("Group Settings")
     end
@@ -5679,6 +5716,9 @@ function CooldownCompanion:RefreshConfigPanel()
     -- before that fires.
     restoreScroll(col1Scroll, saved1)
     restoreScroll(col2Scroll, saved2)
+    if configFrame.col2 and configFrame.col2._customAuraScroll then
+        restoreScroll(configFrame.col2._customAuraScroll, savedCab)
+    end
     restoreScroll(buttonSettingsScroll, savedBtn)
 
 end

@@ -1630,6 +1630,7 @@ end
 -- Forward declarations — defined after all collapsible-section state
 local BuildCastBarAnchoringPanel
 local BuildResourceBarAnchoringPanel
+local BuildCustomAuraBarPanel
 local BuildFrameAnchoringPlayerPanel
 local BuildFrameAnchoringTargetPanel
 
@@ -4720,9 +4721,13 @@ local POWER_NAMES_CONFIG = {
     [100] = "Maelstrom Weapon",
 }
 
+local DEFAULT_MW_BASE_COLOR_CONFIG = { 0, 0.5, 1 }
+local DEFAULT_MW_OVERLAY_COLOR_CONFIG = { 1, 0.84, 0 }
+local DEFAULT_MW_MAX_COLOR_CONFIG = { 0.5, 0.8, 1 }
+
 local SEGMENTED_TYPES_CONFIG = {
     [4]  = true, [5]  = true, [7]  = true, [9]  = true,
-    [12] = true, [16] = true, [19] = true, [100] = true,
+    [12] = true, [16] = true, [19] = true,
 }
 
 local DEFAULT_POWER_COLORS_CONFIG = {
@@ -4743,7 +4748,6 @@ local DEFAULT_POWER_COLORS_CONFIG = {
     [17] = { 0.788, 0.259, 0.992 },
     [18] = { 1, 0.612, 0 },
     [19] = { 0.286, 0.773, 0.541 },
-    [100] = { 0, 0.5, 1 },
 }
 
 local DEFAULT_COMBO_COLOR_CONFIG = { 1, 0.96, 0.41 }
@@ -4769,10 +4773,6 @@ local DEFAULT_ARCANE_MAX_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
 local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
 local DEFAULT_ESSENCE_MAX_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
-
-local DEFAULT_MW_BASE_COLOR_CONFIG = { 0, 0.5, 1 }
-local DEFAULT_MW_OVERLAY_COLOR_CONFIG = { 1, 0.84, 0 }
-local DEFAULT_MW_MAX_COLOR_CONFIG = { 0.5, 0.8, 1 }
 
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
@@ -5624,7 +5624,7 @@ local function BuildResourceBarStylingPanel(container)
                 -- Maelstrom Weapon: three color pickers (base, overlay, max)
                 local baseColor = settings.resources[100].mwBaseColor or DEFAULT_MW_BASE_COLOR_CONFIG
                 local cpBase = AceGUI:Create("ColorPicker")
-                cpBase:SetLabel("MW Stacks (Base)")
+                cpBase:SetLabel("MW (Base)")
                 cpBase:SetColor(baseColor[1], baseColor[2], baseColor[3])
                 cpBase:SetHasAlpha(false)
                 cpBase:SetFullWidth(true)
@@ -5641,7 +5641,7 @@ local function BuildResourceBarStylingPanel(container)
 
                 local overlayColor = settings.resources[100].mwOverlayColor or DEFAULT_MW_OVERLAY_COLOR_CONFIG
                 local cpOverlay = AceGUI:Create("ColorPicker")
-                cpOverlay:SetLabel("MW Stacks (Overlay 6-10)")
+                cpOverlay:SetLabel("MW (Overlay)")
                 cpOverlay:SetColor(overlayColor[1], overlayColor[2], overlayColor[3])
                 cpOverlay:SetHasAlpha(false)
                 cpOverlay:SetFullWidth(true)
@@ -5656,10 +5656,10 @@ local function BuildResourceBarStylingPanel(container)
                 end)
                 container:AddChild(cpOverlay)
 
-                local maxColor = settings.resources[100].mwMaxColor or DEFAULT_MW_MAX_COLOR_CONFIG
+                local mwMaxColor = settings.resources[100].mwMaxColor or DEFAULT_MW_MAX_COLOR_CONFIG
                 local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("MW Stacks (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
+                cpMax:SetLabel("MW (Max)")
+                cpMax:SetColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3])
                 cpMax:SetHasAlpha(false)
                 cpMax:SetFullWidth(true)
                 cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
@@ -5699,6 +5699,241 @@ local function BuildResourceBarStylingPanel(container)
                         CooldownCompanion:ApplyResourceBars()
                     end)
                     container:AddChild(cp)
+                end
+            end
+        end
+    end
+
+end
+
+------------------------------------------------------------------------
+-- Custom Aura Bar Panel (col2 takeover when resource bar panel active)
+------------------------------------------------------------------------
+
+BuildCustomAuraBarPanel = function(container)
+    local db = CooldownCompanion.db.profile
+    local settings = db.resourceBars
+    if not settings.customAuraBars then
+        settings.customAuraBars = {}
+    end
+    local customBars = settings.customAuraBars
+    local maxSlots = ST.MAX_CUSTOM_AURA_BARS or 3
+
+    for slotIdx = 1, maxSlots do
+        if not customBars[slotIdx] then
+            customBars[slotIdx] = { enabled = false }
+        end
+        local cab = customBars[slotIdx]
+
+        local slotKey = "rb_cab_slot_" .. slotIdx
+        local slotCollapsed = resourceBarCollapsedSections[slotKey]
+        local slotLabel = cab.label or ""
+        if cab.spellID then
+            local spellName = C_Spell.GetSpellName(cab.spellID)
+            if spellName then slotLabel = spellName end
+        end
+        if slotLabel == "" then slotLabel = "Empty" end
+
+        local slotHeading = AceGUI:Create("Heading")
+        slotHeading:SetText("Slot " .. slotIdx .. ": " .. slotLabel)
+        slotHeading:SetFullWidth(true)
+        container:AddChild(slotHeading)
+
+        local slotCollapseBtn = CreateFrame("Button", nil, slotHeading.frame)
+        slotCollapseBtn:SetSize(16, 16)
+        slotCollapseBtn:SetPoint("LEFT", slotHeading.label, "RIGHT", 4, 0)
+        slotHeading.right:SetPoint("LEFT", slotCollapseBtn, "RIGHT", 4, 0)
+        local slotArrow = slotCollapseBtn:CreateTexture(nil, "ARTWORK")
+        slotArrow:SetSize(12, 12)
+        slotArrow:SetPoint("CENTER")
+        slotArrow:SetAtlas(slotCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+        local capturedSlotKey = slotKey
+        slotCollapseBtn:SetScript("OnClick", function()
+            resourceBarCollapsedSections[capturedSlotKey] = not resourceBarCollapsedSections[capturedSlotKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        if not slotCollapsed then
+            local capturedIdx = slotIdx
+
+            -- Enable checkbox
+            local enableCab = AceGUI:Create("CheckBox")
+            enableCab:SetLabel("Enable")
+            enableCab:SetValue(cab.enabled == true)
+            enableCab:SetFullWidth(true)
+            enableCab:SetCallback("OnValueChanged", function(widget, event, val)
+                customBars[capturedIdx].enabled = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(enableCab)
+
+            -- Spell ID + Pick CDM row
+            local spellRow = AceGUI:Create("SimpleGroup")
+            spellRow:SetLayout("Flow")
+            spellRow:SetFullWidth(true)
+            container:AddChild(spellRow)
+
+            local spellEdit = AceGUI:Create("EditBox")
+            if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
+            spellEdit:SetLabel("Spell ID")
+            spellEdit:SetText(cab.spellID and tostring(cab.spellID) or "")
+            spellEdit:SetRelativeWidth(0.72)
+            spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+                text = text:gsub("%s", "")
+                local id = tonumber(text)
+                customBars[capturedIdx].spellID = id
+                if id then
+                    local spellName = C_Spell.GetSpellName(id)
+                    customBars[capturedIdx].label = spellName or ""
+                else
+                    customBars[capturedIdx].label = ""
+                end
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            spellRow:AddChild(spellEdit)
+
+            local pickBtn = AceGUI:Create("Button")
+            pickBtn:SetText("Pick CDM")
+            pickBtn:SetRelativeWidth(0.28)
+            pickBtn:SetCallback("OnClick", function()
+                local ci = capturedIdx
+                CS.StartPickCDM(function(spellID)
+                    if CS.configFrame then
+                        CS.configFrame.frame:Show()
+                    end
+                    if spellID then
+                        customBars[ci].spellID = spellID
+                        local spellName = C_Spell.GetSpellName(spellID)
+                        customBars[ci].label = spellName or ""
+                    end
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+            end)
+            pickBtn:SetCallback("OnEnter", function(widget)
+                GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+                GameTooltip:AddLine("Pick from Cooldown Manager")
+                GameTooltip:AddLine("Click a spell from the on-screen Cooldown Manager to populate the Spell ID.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            pickBtn:SetCallback("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            spellRow:AddChild(pickBtn)
+
+            -- Nudge Pick CDM button down to align with editbox
+            pickBtn.frame:SetScript("OnUpdate", function(self)
+                self:SetScript("OnUpdate", nil)
+                local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+                if yOfs then
+                    self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+                end
+            end)
+
+            -- Label (read-only display)
+            if cab.spellID then
+                local spellName = C_Spell.GetSpellName(cab.spellID)
+                if spellName then
+                    local labelDisplay = AceGUI:Create("Label")
+                    labelDisplay:SetText("|cff888888" .. spellName .. "|r")
+                    labelDisplay:SetFullWidth(true)
+                    container:AddChild(labelDisplay)
+                end
+            end
+
+            -- Max Stacks editbox
+            local maxEdit = AceGUI:Create("EditBox")
+            if maxEdit.editbox.Instructions then maxEdit.editbox.Instructions:Hide() end
+            maxEdit:SetLabel("Max Stacks")
+            maxEdit:SetText(tostring(cab.maxStacks or 1))
+            maxEdit:SetFullWidth(true)
+            maxEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+                local val = tonumber(text)
+                if val and val >= 1 and val <= 99 then
+                    customBars[capturedIdx].maxStacks = val
+                end
+                widget:SetText(tostring(customBars[capturedIdx].maxStacks or 1))
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(maxEdit)
+
+            -- Display Mode dropdown
+            local modeDrop = AceGUI:Create("Dropdown")
+            modeDrop:SetLabel("Display Mode")
+            modeDrop:SetList({
+                continuous = "Continuous",
+                segmented = "Segmented",
+                overlay = "Overlay",
+            }, { "continuous", "segmented", "overlay" })
+            modeDrop:SetValue(cab.displayMode or "segmented")
+            modeDrop:SetFullWidth(true)
+            modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                customBars[capturedIdx].displayMode = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(modeDrop)
+
+            -- ---- Colors section (only when enabled and has spell ID) ----
+            if cab.enabled and cab.spellID then
+                local colorHeading = AceGUI:Create("Heading")
+                colorHeading:SetText("Colors")
+                colorHeading:SetFullWidth(true)
+                container:AddChild(colorHeading)
+
+                -- Bar Color (all modes)
+                local barColor = cab.barColor or {0.5, 0.5, 1}
+                local cpBar = AceGUI:Create("ColorPicker")
+                cpBar:SetLabel("Bar Color")
+                cpBar:SetColor(barColor[1], barColor[2], barColor[3])
+                cpBar:SetHasAlpha(false)
+                cpBar:SetFullWidth(true)
+                local cabIdx = capturedIdx
+                cpBar:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    customBars[cabIdx].barColor = {r, g, b}
+                end)
+                cpBar:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    customBars[cabIdx].barColor = {r, g, b}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpBar)
+
+                -- Overlay Color (overlay mode only)
+                if cab.displayMode == "overlay" then
+                    local overlayColor = cab.overlayColor or {1, 0.84, 0}
+                    local cpOverlay = AceGUI:Create("ColorPicker")
+                    cpOverlay:SetLabel("Overlay Color")
+                    cpOverlay:SetColor(overlayColor[1], overlayColor[2], overlayColor[3])
+                    cpOverlay:SetHasAlpha(false)
+                    cpOverlay:SetFullWidth(true)
+                    cpOverlay:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                        customBars[cabIdx].overlayColor = {r, g, b}
+                    end)
+                    cpOverlay:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                        customBars[cabIdx].overlayColor = {r, g, b}
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(cpOverlay)
+                end
+
+                -- Show Text checkbox (continuous mode only)
+                if cab.displayMode == "continuous" then
+                    local textCb = AceGUI:Create("CheckBox")
+                    textCb:SetLabel("Show Text")
+                    textCb:SetValue(cab.showText == true)
+                    textCb:SetFullWidth(true)
+                    textCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].showText = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(textCb)
                 end
             end
         end
@@ -6042,5 +6277,6 @@ ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel
 ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
+ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
 ST._BuildFrameAnchoringPlayerPanel = BuildFrameAnchoringPlayerPanel
 ST._BuildFrameAnchoringTargetPanel = BuildFrameAnchoringTargetPanel

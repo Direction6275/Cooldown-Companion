@@ -254,7 +254,15 @@ local defaults = {
             hideManaForNonHealer = true,
             reverseResourceOrder = false,
             stackOrder = "resource_first",
-            resources = {},
+            resources = {
+                [100] = {
+                    enabled = true,
+                    mwBaseColor = nil,
+                    mwOverlayColor = nil,
+                    mwMaxColor = nil,
+                },
+            },
+            customAuraBars = {},
             textFont = "Fonts\\FRIZQT__.TTF",
             textFontSize = 10,
             textFontOutline = "OUTLINE",
@@ -450,6 +458,9 @@ function CooldownCompanion:OnEnable()
 
     -- Ensure folders table exists in profile
     self:MigrateFolders()
+
+    -- Reverse-migrate: if MW was migrated to custom aura bar slot 1, restore it
+    self:ReverseMigrateMW()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -1652,6 +1663,35 @@ function CooldownCompanion:MigrateFolders()
     end
     if self.db.profile.nextFolderId == nil then
         self.db.profile.nextFolderId = 1
+    end
+end
+
+function CooldownCompanion:ReverseMigrateMW()
+    local rb = self.db.profile.resourceBars
+    if not rb then return end
+
+    -- If MW was previously migrated to customAuraBars[1], restore it to resources[100]
+    if rb.migrationVersion and rb.migrationVersion >= 1 then
+        local cab1 = rb.customAuraBars and rb.customAuraBars[1]
+        if cab1 and cab1.spellID == 187880 then
+            if not rb.resources then rb.resources = {} end
+            rb.resources[100] = {
+                enabled = cab1.enabled ~= false,
+                mwBaseColor = cab1.barColor,
+                mwOverlayColor = cab1.overlayColor,
+                mwMaxColor = cab1.maxColor,
+            }
+            -- Clear the custom aura bar slot
+            rb.customAuraBars[1] = { enabled = false }
+        end
+        rb.migrationVersion = nil
+    end
+
+    -- Clean maxColor from any existing custom aura bar slots
+    if rb.customAuraBars then
+        for _, cab in pairs(rb.customAuraBars) do
+            if cab then cab.maxColor = nil end
+        end
     end
 end
 
