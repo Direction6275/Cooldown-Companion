@@ -1668,7 +1668,7 @@ local function RefreshButtonSettingsColumn()
         bsCol.castBarScroll.frame:Hide()
     end
 
-    -- Resource bar overlay: replace button settings with resource anchoring panel
+    -- Resource bar overlay: replace button settings with resource styling panel
     if CS.resourceBarPanelActive then
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
@@ -1686,7 +1686,7 @@ local function RefreshButtonSettingsColumn()
         end
         bsCol.resourceBarScroll:ReleaseChildren()
         bsCol.resourceBarScroll.frame:Show()
-        BuildResourceBarAnchoringPanel(bsCol.resourceBarScroll)
+        ST._BuildResourceBarStylingPanel(bsCol.resourceBarScroll)
         return
     end
 

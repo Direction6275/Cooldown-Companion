@@ -3840,31 +3840,31 @@ function RefreshColumn2()
     if not col2Scroll then return end
     local col2 = configFrame and configFrame.col2
 
-    -- Resource bar panel mode: take over col2 with custom aura bar panel
+    -- Resource bar panel mode: take over col2 with resource anchoring panel
     if CS.resourceBarPanelActive then
         CancelDrag()
         HideAutocomplete()
         col2Scroll.frame:Hide()
         if col2 and col2._infoBtn then col2._infoBtn:Hide() end
 
-        if not col2._customAuraScroll then
+        if not col2._resourceAnchoringScroll then
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             scroll.frame:SetParent(col2.content)
             scroll.frame:ClearAllPoints()
             scroll.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
             scroll.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
-            col2._customAuraScroll = scroll
+            col2._resourceAnchoringScroll = scroll
         end
-        col2._customAuraScroll:ReleaseChildren()
-        col2._customAuraScroll.frame:Show()
-        ST._BuildCustomAuraBarPanel(col2._customAuraScroll)
+        col2._resourceAnchoringScroll:ReleaseChildren()
+        col2._resourceAnchoringScroll.frame:Show()
+        ST._BuildResourceBarAnchoringPanel(col2._resourceAnchoringScroll)
         return
     end
 
-    -- Hide custom aura scroll when not in resource bar mode
-    if col2 and col2._customAuraScroll then
-        col2._customAuraScroll.frame:Hide()
+    -- Hide resource anchoring scroll when not in resource bar mode
+    if col2 and col2._resourceAnchoringScroll then
+        col2._resourceAnchoringScroll.frame:Hide()
     end
     if col2 and col2._infoBtn then col2._infoBtn:Show() end
 
@@ -4571,8 +4571,8 @@ function RefreshColumn3(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
-        if container.resourceBarScroll then
-            container.resourceBarScroll.frame:Hide()
+        if container.customAuraScroll then
+            container.customAuraScroll.frame:Hide()
         end
         if container.frameAnchoringScroll then
             container.frameAnchoringScroll.frame:Hide()
@@ -4598,7 +4598,7 @@ function RefreshColumn3(container)
         container.castBarScroll.frame:Hide()
     end
 
-    -- Resource Bar panel mode: show resource bar styling instead of group settings
+    -- Resource Bar panel mode: show custom aura bar panel instead of group settings
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
             container.placeholderLabel:Hide()
@@ -4609,24 +4609,23 @@ function RefreshColumn3(container)
         if container.frameAnchoringScroll then
             container.frameAnchoringScroll.frame:Hide()
         end
-        if not container.resourceBarScroll then
+        if not container.customAuraScroll then
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             scroll.frame:SetParent(container)
             scroll.frame:ClearAllPoints()
             scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
             scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-            container.resourceBarScroll = scroll
+            container.customAuraScroll = scroll
         end
-        container.resourceBarScroll:ReleaseChildren()
-        container.resourceBarScroll.frame:Show()
-        SyncConfigState()
-        ST._BuildResourceBarStylingPanel(container.resourceBarScroll)
+        container.customAuraScroll:ReleaseChildren()
+        container.customAuraScroll.frame:Show()
+        ST._BuildCustomAuraBarPanel(container.customAuraScroll)
         return
     end
-    -- Hide resource bar scroll if it exists
-    if container.resourceBarScroll then
-        container.resourceBarScroll.frame:Hide()
+    -- Hide custom aura scroll if it exists
+    if container.customAuraScroll then
+        container.customAuraScroll.frame:Hide()
     end
 
     -- Frame Anchoring panel mode: show target frame settings
@@ -5451,8 +5450,8 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Cast Bar Anchoring / FX")
             GameTooltip:AddLine("Anchoring, positioning, and visual effects for the cast bar.", 1, 1, 1, true)
         elseif CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Resource Anchoring")
-            GameTooltip:AddLine("Anchoring, positioning, and resource toggles for resource bars.", 1, 1, 1, true)
+            GameTooltip:AddLine("Resource Styling")
+            GameTooltip:AddLine("Appearance settings for class resource bars.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Button Settings")
             GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
@@ -5484,8 +5483,8 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Cast Bar Styling")
             GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
         elseif CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Resource Styling")
-            GameTooltip:AddLine("Appearance settings for class resource bars.", 1, 1, 1, true)
+            GameTooltip:AddLine("Custom Aura Bars")
+            GameTooltip:AddLine("Configure custom aura tracking bars for the resource display.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Group Settings")
             GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
@@ -5761,7 +5760,7 @@ function CooldownCompanion:RefreshConfigPanel()
 
     local saved1   = saveScroll(col1Scroll)
     local saved2   = saveScroll(col2Scroll)
-    local savedCab = configFrame.col2 and configFrame.col2._customAuraScroll and saveScroll(configFrame.col2._customAuraScroll)
+    local savedCab = col3Container and col3Container.customAuraScroll and saveScroll(col3Container.customAuraScroll)
     local savedBtn = saveScroll(buttonSettingsScroll)
 
     if configFrame.profileBar:IsShown() then
@@ -5782,9 +5781,9 @@ function CooldownCompanion:RefreshConfigPanel()
         configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
         configFrame.col3:SetTitle("Cast Bar Styling")
     elseif CS.resourceBarPanelActive then
-        configFrame.col2:SetTitle("Custom Aura Bars")
-        configFrame.buttonSettingsCol:SetTitle("Resource Anchoring")
-        configFrame.col3:SetTitle("Resource Styling")
+        configFrame.col2:SetTitle("Resource Anchoring")
+        configFrame.buttonSettingsCol:SetTitle("Resource Styling")
+        configFrame.col3:SetTitle("Custom Aura Bars")
     elseif CS.frameAnchoringPanelActive then
         configFrame.col2:SetTitle("Spells / Items")
         configFrame.buttonSettingsCol:SetTitle("Player Frame")
@@ -5805,8 +5804,8 @@ function CooldownCompanion:RefreshConfigPanel()
     -- before that fires.
     restoreScroll(col1Scroll, saved1)
     restoreScroll(col2Scroll, saved2)
-    if configFrame.col2 and configFrame.col2._customAuraScroll then
-        restoreScroll(configFrame.col2._customAuraScroll, savedCab)
+    if col3Container and col3Container.customAuraScroll then
+        restoreScroll(col3Container.customAuraScroll, savedCab)
     end
     restoreScroll(buttonSettingsScroll, savedBtn)
 
