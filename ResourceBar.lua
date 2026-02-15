@@ -84,6 +84,7 @@ local POWER_NAMES = {
 
 local DEFAULT_COMBO_COLOR = { 1, 0.96, 0.41 }
 local DEFAULT_COMBO_MAX_COLOR = { 1, 0.96, 0.41 }
+local DEFAULT_COMBO_CHARGED_COLOR = { 0.24, 0.65, 1.0 }
 
 local DEFAULT_RUNE_READY_COLOR = { 0.8, 0.8, 0.8 }
 local DEFAULT_RUNE_RECHARGING_COLOR = { 0.490, 0.490, 0.490 }
@@ -283,18 +284,20 @@ local function GetPowerColor(powerType, settings)
     return DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }
 end
 
---- Get combo point colors (normal vs at max).
+--- Get combo point colors (normal, max, charged).
 local function GetComboColors(settings)
     local normalColor = DEFAULT_COMBO_COLOR
     local maxColor = DEFAULT_COMBO_MAX_COLOR
+    local chargedColor = DEFAULT_COMBO_CHARGED_COLOR
     if settings and settings.resources then
         local override = settings.resources[4]
         if override then
             if override.comboColor then normalColor = override.comboColor end
             if override.comboMaxColor then maxColor = override.comboMaxColor end
+            if override.comboChargedColor then chargedColor = override.comboChargedColor end
         end
     end
-    return normalColor, maxColor
+    return normalColor, maxColor, chargedColor
 end
 
 --- Get rune-specific colors (ready, recharging, max).
@@ -779,18 +782,29 @@ local function UpdateSegmentedBar(holder, powerType)
         return
     end
 
-    -- Combo Points: color changes at max
+    -- Combo Points: color changes at max, charged coloring for Rogues
     if powerType == 4 then
         local current = UnitPower("player", 4)
         local max = UnitPowerMax("player", 4)
-        local normalColor, maxColor = GetComboColors(GetResourceBarSettings())
+        local normalColor, maxColor, chargedColor = GetComboColors(GetResourceBarSettings())
         local isMax = (current == max and max > 0)
-        local activeColor = isMax and maxColor or normalColor
+        local baseColor = isMax and maxColor or normalColor
+
+        -- Charged combo points (Rogue only)
+        local chargedPoints
+        if GetPlayerClassID() == 4 then
+            chargedPoints = GetUnitChargedPowerPoints("player")
+        end
+
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= current then
                 seg:SetValue(1)
-                seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+                if chargedPoints and tContains(chargedPoints, i) then
+                    seg:SetStatusBarColor(chargedColor[1], chargedColor[2], chargedColor[3], 1)
+                else
+                    seg:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                end
             else
                 seg:SetValue(0)
             end

@@ -4752,6 +4752,7 @@ local DEFAULT_POWER_COLORS_CONFIG = {
 
 local DEFAULT_COMBO_COLOR_CONFIG = { 1, 0.96, 0.41 }
 local DEFAULT_COMBO_MAX_COLOR_CONFIG = { 1, 0.96, 0.41 }
+local DEFAULT_COMBO_CHARGED_COLOR_CONFIG = { 0.24, 0.65, 1.0 }
 
 local DEFAULT_RUNE_READY_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
 local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
@@ -5359,6 +5360,27 @@ local function BuildResourceBarStylingPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpMax)
+
+                -- Charged combo point color (Rogue only)
+                local _, _, classID = UnitClass("player")
+                if classID == 4 then
+                    local chargedColor = settings.resources[4].comboChargedColor or DEFAULT_COMBO_CHARGED_COLOR_CONFIG
+                    local cpCharged = AceGUI:Create("ColorPicker")
+                    cpCharged:SetLabel("Combo Points (Charged)")
+                    cpCharged:SetColor(chargedColor[1], chargedColor[2], chargedColor[3])
+                    cpCharged:SetHasAlpha(false)
+                    cpCharged:SetFullWidth(true)
+                    cpCharged:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                        if not settings.resources[4] then settings.resources[4] = {} end
+                        settings.resources[4].comboChargedColor = {r, g, b}
+                    end)
+                    cpCharged:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                        if not settings.resources[4] then settings.resources[4] = {} end
+                        settings.resources[4].comboChargedColor = {r, g, b}
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(cpCharged)
+                end
             elseif pt == 5 then
                 -- Runes: three color pickers (ready, recharging, max)
                 local readyColor = settings.resources[5].runeReadyColor or DEFAULT_RUNE_READY_COLOR_CONFIG
