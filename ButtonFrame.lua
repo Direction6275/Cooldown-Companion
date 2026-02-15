@@ -1045,6 +1045,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.index = index
     button.style = style
 
+    -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
+    if buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
+    end
+
     -- Aura tracking runtime state
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
@@ -1200,7 +1205,9 @@ local function UpdateChargeTracking(button, buttonData)
     end
     local mx = buttonData.maxCharges  -- Cached from outside combat
 
-    -- Recharge DurationObject (always works, handles secrets internally)
+    -- Recharge DurationObject for multi-charge spells.
+    -- GetSpellChargeDuration returns nil for maxCharges=1 (Blizzard doesn't treat
+    -- single-charge as charge spells for duration purposes).
     if mx and mx > 1 then
         button._chargeDurationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
     end
@@ -1496,8 +1503,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
                 local unit = viewerFrame.auraDataUnit or auraUnit
-                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, viewerInstId)
-                if ok and durationObj then
+                local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
+                if durationObj then
                     button._durationObj = durationObj
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
                     button._auraInstanceID = viewerInstId
@@ -1509,23 +1516,24 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Covers spells where the viewer tracks the buff duration internally
                 -- (auraDataUnit set by GetAuraData) but doesn't expose auraInstanceID.
                 local viewerCooldown = viewerFrame.Cooldown
-                if viewerFrame.auraDataUnit and viewerCooldown then
-                    local startMs, durMs = viewerCooldown:GetCooldownTimes()
-                    -- Verify the cooldown hasn't elapsed; GetCooldownTimes() returns
-                    -- the original start/duration even after the buff expires.
-                    -- pcall: during pool cleanup the cooldown widget may hold
-                    -- secret values that reject arithmetic.
-                    local ok, active = pcall(function()
-                        return durMs > 0 and (startMs + durMs) > GetTime() * 1000
-                    end)
-                    if ok and active then
-                        button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                if viewerFrame.auraDataUnit and viewerCooldown and viewerCooldown:IsShown() then
+                    if not viewerCooldown:HasSecretValues() then
+                        -- Plain values: safe to do ms->s arithmetic
+                        local startMs, durMs = viewerCooldown:GetCooldownTimes()
+                        if durMs > 0 and (startMs + durMs) > GetTime() * 1000 then
+                            button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                            auraOverrideActive = true
+                            fetchOk = true
+                        end
+                    else
+                        -- Secret values: can't convert ms->s. Mark aura active;
+                        -- grace period covers continuity from previous tick's display.
                         auraOverrideActive = true
                         fetchOk = true
                     end
-                end
-                if button._auraInstanceID then
-                    button._auraInstanceID = nil
+                    if button._auraInstanceID then
+                        button._auraInstanceID = nil
+                    end
                 end
             end
         end
@@ -1588,31 +1596,30 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
-            -- pcall: SetCooldown fallback may receive secret startTime/duration.
-            local cooldownInfo
-            pcall(function()
-                cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
-                if cooldownInfo then
-                    isOnGCD = cooldownInfo.isOnGCD
-                    if not fetchOk then
-                        button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                    end
-                    fetchOk = true
+            -- SetCooldown accepts secret startTime/duration values.
+            local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
+            if cooldownInfo then
+                isOnGCD = cooldownInfo.isOnGCD
+                if not fetchOk then
+                    button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
                 end
-            end)
+                fetchOk = true
+            end
             -- GCD-only detection: compare spell's cooldown against GCD reference (61304).
             -- More reliable than isOnGCD at GCD boundaries (Blizzard CooldownViewer pattern).
             if cooldownInfo then
                 local gcdInfo = CooldownCompanion._gcdInfo
                 if gcdInfo then
-                    local ok, result = pcall(function()
-                        return cooldownInfo.startTime == gcdInfo.startTime
-                            and cooldownInfo.duration == gcdInfo.duration
-                    end)
-                    if ok then
-                        isGCDOnly = result
+                    if buttonData._cooldownSecrecy == 0 then
+                        -- NeverSecret: direct comparison is safe
+                        isGCDOnly = (cooldownInfo.startTime == gcdInfo.startTime
+                            and cooldownInfo.duration == gcdInfo.duration)
                     else
-                        isGCDOnly = isOnGCD or false
+                        -- Secret cooldown: both signals must agree to avoid false positives.
+                        -- isOnGCD (NeverSecret) = Blizzard's per-spell GCD flag.
+                        -- _gcdActive = widget-level GCD signal (covers boundary where
+                        -- isOnGCD lingers true after GCD ends).
+                        isGCDOnly = isOnGCD and CooldownCompanion._gcdActive
                     end
                 end
             end
@@ -1668,20 +1675,38 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._mainCDShown = (chargeCount == 0)
         elseif button._isBar then
             -- Bar mode: button.cooldown is not reused for recharge animation.
-            button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
-        else
-            -- Icon mode: button.cooldown is reused for the recharge radial, so
-            -- IsShown() stays true even with charges available (SetCooldown(0,0)
-            -- doesn't fully clear a prior SetCooldownFromDurationObject).
-            -- Use scratchCooldown with the spell's main CD DurationObject instead.
-            local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
-            if mainCDDuration then
-                scratchCooldown:Hide()
-                scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
-                button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
-                scratchCooldown:Hide()
+            -- For secret spells, require both GCD signals to agree before filtering,
+            -- preventing false negatives at GCD boundaries.
+            if buttonData._cooldownSecrecy == 0 then
+                button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
             else
-                button._mainCDShown = false
+                button._mainCDShown = button.cooldown:IsShown()
+                    and not (isOnGCD and CooldownCompanion._gcdActive)
+            end
+        else
+            -- Icon mode
+            if buttonData._cooldownSecrecy == 0 then
+                -- NeverSecret: button.cooldown is reused for the recharge radial,
+                -- so IsShown() stays true even with charges available. Use
+                -- scratchCooldown with the spell's main CD DurationObject instead.
+                local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+                if mainCDDuration then
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
+                    button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                    scratchCooldown:Hide()
+                else
+                    button._mainCDShown = false
+                end
+            else
+                -- ContextuallySecret: SetCooldownFromDurationObject is NOT in
+                -- acceptsecrets.md, so the scratchCooldown pattern silently fails
+                -- for secret DurationObjects. Fall back to button.cooldown:IsShown()
+                -- which was set via SetCooldown() (in acceptsecrets.md). The stale-
+                -- IsShown issue (from prior SetCooldownFromDurationObject) doesn't
+                -- apply during combat because that API also fails with secrets.
+                button._mainCDShown = button.cooldown:IsShown()
+                    and not (isOnGCD and CooldownCompanion._gcdActive)
             end
         end
     end
@@ -1709,10 +1734,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Charge DurationObjects may report non-zero even at full charges (stale data);
         -- scratchCooldown auto-show is the ground truth.
         if button._chargeDurationObj then
-            scratchCooldown:Hide()
-            scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
-            button._chargeRecharging = scratchCooldown:IsShown()
-            scratchCooldown:Hide()
+            if buttonData._cooldownSecrecy == 0 then
+                scratchCooldown:Hide()
+                scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                button._chargeRecharging = scratchCooldown:IsShown()
+                scratchCooldown:Hide()
+            else
+                -- SetCooldownFromDurationObject fails with secrets; fall back to
+                -- button.cooldown:IsShown() as recharge proxy (set via SetCooldown)
+                button._chargeRecharging = button.cooldown:IsShown()
+            end
         else
             button._chargeRecharging = false
         end
@@ -1721,7 +1752,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if not button._isBar then
                 -- Icon mode: always set _durationObj, show recharge radial
                 button._durationObj = button._chargeDurationObj
-                button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                if buttonData._cooldownSecrecy == 0 then
+                    button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                elseif charges then
+                    -- Secret: SetCooldownFromDurationObject fails; use SetCooldown
+                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                end
             elseif button._chargeRecharging then
                 -- Bar mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
@@ -2771,6 +2807,11 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.buttonData = buttonData
     button.index = index
     button.style = style
+
+    -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
+    if buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
+    end
 
     -- Bar fill interpolation OnUpdate
     button._barFillElapsed = 0

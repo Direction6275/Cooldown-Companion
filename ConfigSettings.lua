@@ -67,11 +67,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     -- Query the CDM's authoritative category lists for TrackedBuff and TrackedBar.
     local buffTrackableSpells = {}
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and info then
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info then
                     buffTrackableSpells[info.spellID] = true
                     if info.overrideSpellID then
                         buffTrackableSpells[info.overrideSpellID] = true
@@ -702,11 +702,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- not colorCollapsed
 
             -- Pandemic indicator collapsible section
-            local pandemicOk, pandemicCapable = pcall(function()
-                return viewerFrame and viewerFrame.CanTriggerAlertType
-                    and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
-            end)
-            if pandemicOk and pandemicCapable then
+            local pandemicCapable = viewerFrame
+                and viewerFrame.CanTriggerAlertType
+                and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
+            if pandemicCapable then
             local pandemicHeading = AceGUI:Create("Heading")
             pandemicHeading:SetText("Pandemic Indicator")
             pandemicHeading:SetFullWidth(true)

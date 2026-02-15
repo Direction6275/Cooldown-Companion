@@ -1484,26 +1484,18 @@ local function FindDeepestNamedChild(frame, cx, cy)
     local bestFrame, bestName, bestArea = nil, nil, math.huge
     local children = { frame:GetChildren() }
     for _, child in ipairs(children) do
-        -- IsVisible/GetEffectiveAlpha may return secret values in restricted combat; pcall to skip
-        local okVis, visible = pcall(function()
-            if child.IsForbidden and child:IsForbidden() then return false end
-            return child:IsVisible() and child:GetEffectiveAlpha() > 0
-        end)
-        if okVis and visible then
+        local visible = not (child.IsForbidden and child:IsForbidden()) and child:IsVisible()
+        if visible then
             local name = child:GetName()
             if name and name ~= "" and not IsAddonFrame(name) then
-                -- GetRect may return secret values in restricted combat; pcall to skip
-                local ok, inside, area = pcall(function()
-                    local left, bottom, width, height = child:GetRect()
-                    if not left or not width or width <= 0 or height <= 0 then
-                        return false, 0
-                    end
+                local left, bottom, width, height = child:GetRect()
+                local inside, area = false, 0
+                if left and width and width > 0 and height > 0 then
                     if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
-                        return true, width * height
+                        inside, area = true, width * height
                     end
-                    return false, 0
-                end)
-                if ok and inside and area < bestArea and HasVisibleContent(child) then
+                end
+                if inside and area < bestArea and HasVisibleContent(child) then
                     bestFrame, bestName, bestArea = child, name, area
                 end
             end
@@ -1632,8 +1624,8 @@ local function StartPickFrame(callback)
             self.label:SetText(name)
 
             -- Position highlight around the resolved frame
-            local ok, left, bottom, width, height = pcall(resolvedFrame.GetRect, resolvedFrame)
-            if ok and left and width and width > 0 and height > 0 then
+            local left, bottom, width, height = resolvedFrame:GetRect()
+            if left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
                 self.highlight:SetSize(width, height)
@@ -1753,8 +1745,8 @@ local function StartPickCDM(callback)
                     local isAuraViewer = viewerName == "BuffIconCooldownViewer" or viewerName == "BuffBarCooldownViewer"
                     for _, child in pairs({viewer:GetChildren()}) do
                         if child.cooldownInfo and child:IsVisible() then
-                            local ok, left, bottom, width, height = pcall(child.GetRect, child)
-                            if ok and left and width and width > 0 and height > 0 then
+                            local left, bottom, width, height = child:GetRect()
+                            if left and width and width > 0 and height > 0 then
                                 if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
                                     local area = width * height
                                     if not bestArea or area < bestArea then
@@ -1785,8 +1777,8 @@ local function StartPickCDM(callback)
                         local isAuraCat = catObj and (catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBuff or catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBar)
                         for item in categoryDisplay.itemPool:EnumerateActive() do
                             if item:IsVisible() and not item:IsEmptyCategory() then
-                                local ok, left, bottom, width, height = pcall(item.GetRect, item)
-                                if ok and left and width and width > 0 and height > 0 then
+                                local left, bottom, width, height = item:GetRect()
+                                if left and width and width > 0 and height > 0 then
                                     if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
                                         local area = width * height
                                         if not bestArea or area < bestArea then
@@ -1829,8 +1821,8 @@ local function StartPickCDM(callback)
             local suffix = bestIsAuraViewer and "TRACKABLE AURA" or "NOT AN AURA"
             self.label:SetText(bestName .. "  |  " .. bestSpellID .. "  |  " .. suffix)
 
-            local ok, left, bottom, width, height = pcall(bestChild.GetRect, bestChild)
-            if ok and left and width and width > 0 and height > 0 then
+            local left, bottom, width, height = bestChild:GetRect()
+            if left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
                 self.highlight:SetSize(width, height)
@@ -1904,11 +1896,11 @@ CS.StartPickCDM = StartPickCDM
 ------------------------------------------------------------------------
 local function IsSpellInCDMBuffBar(spellId)
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and info then
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info then
                     if info.spellID == spellId or info.overrideSpellID == spellId
                        or info.overrideTooltipSpellID == spellId then
                         return true
@@ -1925,11 +1917,11 @@ end
 ------------------------------------------------------------------------
 local function IsSpellInCDMCooldown(spellId)
     for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and info then
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info then
                     if info.spellID == spellId or info.overrideSpellID == spellId
                        or info.overrideTooltipSpellID == spellId then
                         return true
@@ -2242,11 +2234,11 @@ local function BuildAutocompleteCache()
     -- Pre-compute dual-CDM spell set (spells in both cooldown and buff CDM categories)
     local cdmCooldownSet = {}
     for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and info and info.spellID then
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and info.spellID then
                     cdmCooldownSet[info.spellID] = true
                     if info.overrideSpellID then cdmCooldownSet[info.overrideSpellID] = true end
                     if info.overrideTooltipSpellID then cdmCooldownSet[info.overrideTooltipSpellID] = true end
@@ -2256,11 +2248,11 @@ local function BuildAutocompleteCache()
     end
     local cdmBuffSet = {}
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and info and info.spellID then
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and info.spellID then
                     cdmBuffSet[info.spellID] = true
                     if info.overrideSpellID then cdmBuffSet[info.overrideSpellID] = true end
                     if info.overrideTooltipSpellID then cdmBuffSet[info.overrideTooltipSpellID] = true end
@@ -2382,11 +2374,11 @@ local function BuildAutocompleteCache()
 
     -- Iterate CDM TrackedBuff + TrackedBar for passive/proc spells
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, cdInfo = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and cdInfo and cdInfo.spellID then
+                local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if cdInfo and cdInfo.spellID then
                     local id = cdInfo.spellID
                     if not seen[id] then
                         local spellInfo = C_Spell.GetSpellInfo(id)

@@ -20,7 +20,6 @@ local pairs = pairs
 local ipairs = ipairs
 local wipe = wipe
 local select = select
-local pcall = pcall
 local tostring = tostring
 local tonumber = tonumber
 local table_remove = table.remove
@@ -342,6 +341,11 @@ function CooldownCompanion:OnInitialize()
     -- Initialize storage tables
     self.groupFrames = {}
     self.buttonFrames = {}
+
+    -- Hidden scratch CooldownFrame for secret-safe GCD activity detection
+    local gcdScratchParent = CreateFrame("Frame")
+    gcdScratchParent:Hide()
+    self._gcdScratch = CreateFrame("Cooldown", nil, gcdScratchParent, "CooldownFrameTemplate")
 
     -- Register minimap icon
     LDBIcon:Register(ADDON_NAME, minimapButton, self.db.profile.minimap)
@@ -2200,6 +2204,16 @@ end
 
 function CooldownCompanion:UpdateAllCooldowns()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
+    -- Widget-level GCD activity signal (secret-safe, plain boolean)
+    local gcdDuration = C_Spell.GetSpellCooldownDuration(61304)
+    if gcdDuration then
+        self._gcdScratch:Hide()
+        self._gcdScratch:SetCooldownFromDurationObject(gcdDuration)
+        self._gcdActive = self._gcdScratch:IsShown()
+        self._gcdScratch:Hide()
+    else
+        self._gcdActive = false
+    end
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
