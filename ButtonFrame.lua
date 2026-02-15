@@ -810,6 +810,22 @@ end
 
 -- Setup tooltip OnEnter/OnLeave scripts on a button frame.
 -- Shared between icon-mode (CreateButtonFrame) and bar-mode (CreateBarFrame).
+-- Returns the raw Applications FontString text from a viewer frame.
+-- The text is a secret value in combat, so return it as-is for pass-through
+-- to SetText(). Blizzard sets it to "" when stacks <= 1 and to the count
+-- string when stacks > 1.
+local function GetViewerAuraStackText(viewerFrame)
+    -- BuffIcon viewer items: Applications frame -> Applications FontString
+    if viewerFrame.Applications and viewerFrame.Applications.Applications then
+        return viewerFrame.Applications.Applications:GetText()
+    end
+    -- BuffBar viewer items: Icon frame -> Applications FontString
+    if viewerFrame.Icon and viewerFrame.Icon.Applications then
+        return viewerFrame.Icon.Applications:GetText()
+    end
+    return ""
+end
+
 local function SetupTooltipScripts(button)
     button:SetScript("OnEnter", function(self)
         GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
@@ -963,7 +979,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count:SetText("")
 
     -- Apply custom count text font/anchor settings from per-button data
-    if buttonData.hasCharges then
+    if buttonData.hasCharges or buttonData.isPassive then
         local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = buttonData.chargeFontSize or 12
         local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
@@ -1489,7 +1505,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- expiry directly — clears instantly when the aura has genuinely ended.
         -- Slow path (combat, HasSecretValues=true): bounded tick counter.
         if not auraOverrideActive and button._auraActive
-           and prevAuraDurationObj then
+           and prevAuraDurationObj and not buttonData.isPassive then
             local expired = false
             if not prevAuraDurationObj:HasSecretValues() then
                 expired = prevAuraDurationObj:GetRemainingDuration() <= 0
@@ -1510,6 +1526,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._auraGraceTicks = nil
         end
         button._auraActive = auraOverrideActive
+
+        -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
+        if buttonData.isPassive then
+            if auraOverrideActive and viewerFrame then
+                button._auraStackText = GetViewerAuraStackText(viewerFrame)
+            else
+                button._auraStackText = ""
+            end
+        end
 
         -- Pandemic window check: read Blizzard's PandemicIcon from the viewer frame.
         -- Blizzard calculates the exact per-spell pandemic window internally and
@@ -1569,6 +1594,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
             button.cooldown:SetCooldown(cdStart, cdDuration)
             fetchOk = true
+        elseif buttonData.isPassive and button.cooldown:IsShown() then
+            button.cooldown:Hide()
         end
     end
 
@@ -1674,6 +1701,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Aura stack count display (passive/proc spells with stackable auras)
+    -- Text is a secret value in combat — pass through directly to SetText.
+    -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
+    if buttonData.isPassive then
+        button.count:SetText(button._auraStackText or "")
+    end
+
     -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
     if buttonData.chargeFontColor or buttonData.chargeFontColorMissing or buttonData.chargeFontColorZero then
         local cc
@@ -1774,6 +1808,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
+    button._auraStackText = nil
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -1818,7 +1853,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update count text font/anchor settings from per-button data
     button.count:ClearAllPoints()
-    if button.buttonData and button.buttonData.hasCharges then
+    if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
         local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = button.buttonData.chargeFontSize or 12
         local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
@@ -2636,7 +2671,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
-    if buttonData.hasCharges then
+    if buttonData.hasCharges or buttonData.isPassive then
         local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = buttonData.chargeFontSize or 12
         local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
@@ -2814,6 +2849,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
+    button._auraStackText = nil
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -2983,7 +3019,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
-    if button.buttonData and button.buttonData.hasCharges then
+    if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
         local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
         local chargeFontSize = button.buttonData.chargeFontSize or 12
         local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
