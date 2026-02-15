@@ -642,6 +642,8 @@ function CooldownCompanion:SlashCommand(input)
         self.db:ResetProfile()
         self:RefreshAllGroups()
         self:Print("Profile reset.")
+    elseif input == "debugimport" then
+        self:OpenDiagnosticDecodePanel()
     else
         self:ToggleConfig()
     end
