@@ -34,6 +34,7 @@ local UPDATE_INTERVAL = 1 / 30  -- 30 Hz
 
 local RESOURCE_MAELSTROM_WEAPON = 100  -- Virtual power type for MW stacks (aura-based)
 local MW_SPELL_ID = 187880
+local RAGING_MAELSTROM_SPELL_ID = 384143
 
 local DEFAULT_POWER_COLORS = {
     [0]  = { 0, 0, 1 },              -- Mana
@@ -103,8 +104,7 @@ local DEFAULT_ESSENCE_MAX_COLOR = { 0.851, 0.482, 0.780 }
 
 local DEFAULT_MW_BASE_COLOR = { 0, 0.5, 1 }
 local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
-local DEFAULT_MW_MAX_BASE_COLOR = { 0.5, 0.8, 1 }
-local DEFAULT_MW_MAX_OVERLAY_COLOR = { 1, 0.95, 0.5 }
+local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
 
 local SEGMENTED_TYPES = {
     [4]  = true,  -- ComboPoints
@@ -384,30 +384,26 @@ local function GetEssenceColors(settings)
     return readyColor, rechargingColor, maxColor
 end
 
---- Get Maelstrom Weapon colors (base, overlay, maxBase, maxOverlay).
+--- Get Maelstrom Weapon colors (base, overlay, max).
 local function GetMWColors(settings)
     local baseColor = DEFAULT_MW_BASE_COLOR
     local overlayColor = DEFAULT_MW_OVERLAY_COLOR
-    local maxBaseColor = DEFAULT_MW_MAX_BASE_COLOR
-    local maxOverlayColor = DEFAULT_MW_MAX_OVERLAY_COLOR
+    local maxColor = DEFAULT_MW_MAX_COLOR
     if settings and settings.resources then
         local override = settings.resources[100]
         if override then
             if override.mwBaseColor then baseColor = override.mwBaseColor end
             if override.mwOverlayColor then overlayColor = override.mwOverlayColor end
-            if override.mwMaxBaseColor then maxBaseColor = override.mwMaxBaseColor end
-            if override.mwMaxOverlayColor then maxOverlayColor = override.mwMaxOverlayColor end
+            if override.mwMaxColor then maxColor = override.mwMaxColor end
         end
     end
-    return baseColor, overlayColor, maxBaseColor, maxOverlayColor
+    return baseColor, overlayColor, maxColor
 end
 
---- Update cached MW max stacks from API (must be called OOC — value is secret in combat).
+--- Update cached MW max stacks based on Raging Maelstrom talent (OOC only — talents can't change in combat).
 local function UpdateMWMaxStacks()
-    local max = C_Spell.GetSpellMaxCumulativeAuraApplications(MW_SPELL_ID)
-    if max and max > 0 then
-        mwMaxStacks = max
-    end
+    local hasRagingMaelstrom = C_SpellBook.IsSpellKnown(RAGING_MAELSTROM_SPELL_ID, Enum.SpellBookSpellBank.Player)
+    mwMaxStacks = hasRagingMaelstrom and 10 or 5
 end
 
 --- Check if a specific resource is enabled in settings.
@@ -830,7 +826,7 @@ end
 local function UpdateMaelstromWeaponBar(holder)
     if not holder or not holder.segments then return end
 
-    local baseColor, overlayColor, maxBaseColor, maxOverlayColor = GetMWColors(GetResourceBarSettings())
+    local baseColor, overlayColor, maxColor = GetMWColors(GetResourceBarSettings())
 
     -- Read aura stacks from viewer frame (applications is a plain integer)
     local stacks = 0
@@ -851,11 +847,16 @@ local function UpdateMaelstromWeaponBar(holder)
 
     -- Max color: direct comparison (mwMaxStacks cached OOC from API)
     local isMax = stacks > 0 and stacks == mwMaxStacks
-    local activeBaseColor = isMax and maxBaseColor or baseColor
-    local activeOverlayColor = isMax and maxOverlayColor or overlayColor
-    for i = 1, 5 do
-        holder.segments[i]:SetStatusBarColor(activeBaseColor[1], activeBaseColor[2], activeBaseColor[3], 1)
-        holder.overlaySegments[i]:SetStatusBarColor(activeOverlayColor[1], activeOverlayColor[2], activeOverlayColor[3], 1)
+    if isMax then
+        for i = 1, 5 do
+            holder.segments[i]:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
+            holder.overlaySegments[i]:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
+        end
+    else
+        for i = 1, 5 do
+            holder.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+            holder.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+        end
     end
 end
 
