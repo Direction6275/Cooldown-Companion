@@ -1218,6 +1218,27 @@ local function IsSpellInCDMBuffBar(spellId)
 end
 
 ------------------------------------------------------------------------
+-- Helper: Check if a spell is in CDM Essential or Utility categories
+------------------------------------------------------------------------
+local function IsSpellInCDMCooldown(spellId)
+    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            for _, cdID in ipairs(ids) do
+                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if ok2 and info then
+                    if info.spellID == spellId or info.overrideSpellID == spellId
+                       or info.overrideTooltipSpellID == spellId then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+------------------------------------------------------------------------
 -- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)
 ------------------------------------------------------------------------
 local function IsPassiveOrProc(spellId)
@@ -1232,7 +1253,7 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input, isPetSpell)
+local function TryAddSpell(input, isPetSpell, forceAura)
     if input == "" or not selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -1258,11 +1279,17 @@ local function TryAddSpell(input, isPetSpell)
             return false
         end
         local passiveOrProc = IsPassiveOrProc(spellId)
+        -- forceAura overrides passive/proc classification for dual-CDM spells
+        if forceAura == false then
+            passiveOrProc = false   -- Cooldown mode: treat as normal spell
+        elseif forceAura == true then
+            passiveOrProc = true    -- Buff mode: treat as passive/proc
+        end
         if passiveOrProc and not IsSpellInCDMBuffBar(spellId) then
             CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
             return false
         end
-        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil)
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
     else
@@ -1366,7 +1393,11 @@ local function TryAdd(input)
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
-            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name)
+            local forceAura = nil
+            if IsSpellInCDMCooldown(id) and IsSpellInCDMBuffBar(id) then
+                forceAura = false  -- dual-CDM: default to cooldown mode
+            end
+            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
             CooldownCompanion:Print("Added spell: " .. spellInfo.name)
             return true
         end
@@ -1504,6 +1535,42 @@ local function BuildAutocompleteCache()
     local cache = {}
     local seen = {}
 
+    -- Pre-compute dual-CDM spell set (spells in both cooldown and buff CDM categories)
+    local cdmCooldownSet = {}
+    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            for _, cdID in ipairs(ids) do
+                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if ok2 and info and info.spellID then
+                    cdmCooldownSet[info.spellID] = true
+                    if info.overrideSpellID then cdmCooldownSet[info.overrideSpellID] = true end
+                    if info.overrideTooltipSpellID then cdmCooldownSet[info.overrideTooltipSpellID] = true end
+                end
+            end
+        end
+    end
+    local cdmBuffSet = {}
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            for _, cdID in ipairs(ids) do
+                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if ok2 and info and info.spellID then
+                    cdmBuffSet[info.spellID] = true
+                    if info.overrideSpellID then cdmBuffSet[info.overrideSpellID] = true end
+                    if info.overrideTooltipSpellID then cdmBuffSet[info.overrideTooltipSpellID] = true end
+                end
+            end
+        end
+    end
+    local dualCDMSet = {}
+    for id in pairs(cdmCooldownSet) do
+        if cdmBuffSet[id] then
+            dualCDMSet[id] = true
+        end
+    end
+
     -- Iterate spellbook skill lines
     local numLines = C_SpellBook.GetNumSpellBookSkillLines()
     for lineIdx = 1, numLines do
@@ -1522,14 +1589,36 @@ local function BuildAutocompleteCache()
                     local id = itemInfo.spellID
                     if not seen[id] then
                         seen[id] = true
-                        table.insert(cache, {
-                            id = id,
-                            name = itemInfo.name,
-                            nameLower = itemInfo.name:lower(),
-                            icon = itemInfo.iconID or 134400,
-                            category = category,
-                            isItem = false,
-                        })
+                        if dualCDMSet[id] then
+                            -- Dual-CDM spell: insert separate Cooldown and Buff entries
+                            table.insert(cache, {
+                                id = id,
+                                name = itemInfo.name .. " (Cooldown)",
+                                nameLower = itemInfo.name:lower(),
+                                icon = itemInfo.iconID or 134400,
+                                category = category,
+                                isItem = false,
+                                forceAura = false,
+                            })
+                            table.insert(cache, {
+                                id = id,
+                                name = itemInfo.name .. " (Buff)",
+                                nameLower = itemInfo.name:lower(),
+                                icon = itemInfo.iconID or 134400,
+                                category = "Tracked Buff",
+                                isItem = false,
+                                forceAura = true,
+                            })
+                        else
+                            table.insert(cache, {
+                                id = id,
+                                name = itemInfo.name,
+                                nameLower = itemInfo.name:lower(),
+                                icon = itemInfo.iconID or 134400,
+                                category = category,
+                                isItem = false,
+                            })
+                        end
                     end
                 end
             end
@@ -1714,7 +1803,7 @@ local function OnAutocompleteSelect(entry)
     if entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        added = TryAddSpell(tostring(entry.id), entry.isPetSpell)
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura)
     end
     if added then
         newInput = ""

@@ -1394,7 +1394,7 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1426,51 +1426,60 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         end
     end
 
-    -- Force aura tracking for passive/proc spells
-    if isPassive then
+    -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
+    if forceAura == true then
         group.buttons[buttonIndex].auraTracking = true
-    end
-
-    -- Auto-detect aura tracking for spells with viewer aura frames
-    if buttonType == "spell" then
-        local newButton = group.buttons[buttonIndex]
-        local viewerFrame
-        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
-        viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
-                and self.viewerAuraFrames[resolvedAuraId])
-            or self.viewerAuraFrames[id]
-        if not viewerFrame then
-            local child = self:FindViewerChildForSpell(id)
-            if child then
-                self.viewerAuraFrames[id] = child
-                viewerFrame = child
-            end
+    elseif forceAura == nil then
+        -- Force aura tracking for passive/proc spells
+        if isPassive then
+            group.buttons[buttonIndex].auraTracking = true
         end
-        if not viewerFrame then
-            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-            if overrideBuffs then
-                for buffId in overrideBuffs:gmatch("%d+") do
-                    viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
-                    if viewerFrame then break end
+
+        -- Auto-detect aura tracking for spells with viewer aura frames
+        if buttonType == "spell" then
+            local newButton = group.buttons[buttonIndex]
+            local viewerFrame
+            local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
+            viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
+                    and self.viewerAuraFrames[resolvedAuraId])
+                or self.viewerAuraFrames[id]
+            if not viewerFrame then
+                local child = self:FindViewerChildForSpell(id)
+                if child then
+                    self.viewerAuraFrames[id] = child
+                    viewerFrame = child
+                end
+            end
+            if not viewerFrame then
+                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
+                if overrideBuffs then
+                    for buffId in overrideBuffs:gmatch("%d+") do
+                        viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
+                        if viewerFrame then break end
+                    end
+                end
+            end
+            local hasViewerFrame = false
+            if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+                local parent = viewerFrame:GetParent()
+                local parentName = parent and parent:GetName()
+                hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
+            end
+            if hasViewerFrame then
+                newButton.auraTracking = true
+                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
+                if overrideBuffs then
+                    newButton.auraSpellID = overrideBuffs
+                end
+                if C_Spell.IsSpellHarmful(id) then
+                    newButton.auraUnit = "target"
                 end
             end
         end
-        local hasViewerFrame = false
-        if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
-            local parent = viewerFrame:GetParent()
-            local parentName = parent and parent:GetName()
-            hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
-        end
-        if hasViewerFrame then
-            newButton.auraTracking = true
-            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-            if overrideBuffs then
-                newButton.auraSpellID = overrideBuffs
-            end
-            if C_Spell.IsSpellHarmful(id) then
-                newButton.auraUnit = "target"
-            end
-        end
+    end
+    -- forceAura == false: skip all aura auto-detection (track as cooldown)
+    if forceAura == false then
+        group.buttons[buttonIndex].auraTracking = false
     end
 
     self:RefreshGroupFrame(groupId)
