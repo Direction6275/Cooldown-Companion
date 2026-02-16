@@ -26,7 +26,7 @@ local function UpdateCoordLabel(frame, x, y)
 end
 
 -- Nudger constants
-local NUDGE_BTN_SIZE = 14
+local NUDGE_BTN_SIZE = 12
 local NUDGE_REPEAT_DELAY = 0.5
 local NUDGE_REPEAT_INTERVAL = 0.05
 
@@ -45,10 +45,10 @@ local function CreateNudger(frame, groupId)
     CreatePixelBorders(nudger)
 
     local directions = {
-        { rotation = math.pi / 2,   anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
-        { rotation = -math.pi / 2,  anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },  -- down
-        { rotation = math.pi,       anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },          -- left
-        { rotation = 0,             anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
+        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
+        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },  -- down
+        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },          -- left
+        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
     }
 
     for _, dir in ipairs(directions) do
@@ -58,7 +58,7 @@ local function CreateNudger(frame, groupId)
         btn:EnableMouse(true)
 
         local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetTexture("Interface\\CHATFRAME\\ChatFrameExpandArrow")
+        arrow:SetAtlas(dir.atlas)
         arrow:SetAllPoints()
         arrow:SetRotation(dir.rotation)
         arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
