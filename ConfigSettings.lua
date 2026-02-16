@@ -67,11 +67,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     -- Query the CDM's authoritative category lists for TrackedBuff and TrackedBar.
     local buffTrackableSpells = {}
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
-        if ok and ids then
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
             for _, cdID in ipairs(ids) do
-                local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-                if ok2 and info then
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info then
                     buffTrackableSpells[info.spellID] = true
                     if info.overrideSpellID then
                         buffTrackableSpells[info.overrideSpellID] = true
@@ -702,11 +702,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- not colorCollapsed
 
             -- Pandemic indicator collapsible section
-            local pandemicOk, pandemicCapable = pcall(function()
-                return viewerFrame and viewerFrame.CanTriggerAlertType
-                    and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
-            end)
-            if pandemicOk and pandemicCapable then
+            local pandemicCapable = viewerFrame
+                and viewerFrame.CanTriggerAlertType
+                and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
+            if pandemicCapable then
             local pandemicHeading = AceGUI:Create("Heading")
             pandemicHeading:SetText("Pandemic Indicator")
             pandemicHeading:SetFullWidth(true)
@@ -2901,6 +2900,27 @@ local function BuildPositioningTab(container)
     end
 end
 
+local LSM = LibStub("LibSharedMedia-3.0")
+
+-- For resource bars: LSM textures + "Blizzard (Class)" special entry
+local function GetResourceBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    t["blizzard_class"] = "Blizzard (Class)"
+    return t
+end
+
+-- For cast bars and bar-mode buttons: LSM textures only
+local function GetBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    return t
+end
+
 local function BuildBarAppearanceTab(container, group, style)
     -- Bar Settings header
     local barHeading = AceGUI:Create("Heading")
@@ -4227,27 +4247,6 @@ end
 
 -- Collapsible section state for cast bar panel (persistent across rebuilds)
 local castBarCollapsedSections = {}
-
-local LSM = LibStub("LibSharedMedia-3.0")
-
--- For resource bars: LSM textures + "Blizzard (Class)" special entry
-local function GetResourceBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    t["blizzard_class"] = "Blizzard (Class)"
-    return t
-end
-
--- For cast bars and bar-mode buttons: LSM textures only
-local function GetBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    return t
-end
 
 BuildCastBarAnchoringPanel = function(container)
     local db = CooldownCompanion.db.profile
