@@ -98,6 +98,12 @@ local function AttachCollapseButton(heading, isCollapsed, onClickFn)
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    heading:SetCallback("OnRelease", function()
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end)
+
     return btn
 end
 
@@ -214,7 +220,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CS.collapsedSections[auraKey] = not CS.collapsedSections[auraKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    table.insert(CS.buttonSettingsCollapseButtons, auraCollapseBtn)
+
 
     if not auraCollapsed then
 
@@ -642,7 +648,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CS.collapsedSections[indicatorKey] = not CS.collapsedSections[indicatorKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    table.insert(CS.buttonSettingsCollapseButtons, indicatorCollapseBtn)
+
 
     if not indicatorCollapsed then
     -- Proc Glow toggle
@@ -729,7 +735,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
         CS.collapsedSections[itemKey] = not CS.collapsedSections[itemKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    table.insert(CS.buttonSettingsCollapseButtons, itemCollapseBtn)
+
 
     if not itemCollapsed then
     -- Item count font size
@@ -5424,7 +5430,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         CS.collapsedSections[visKey] = not CS.collapsedSections[visKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    table.insert(CS.buttonSettingsCollapseButtons, visCollapseBtn)
+
 
     if not visCollapsed then
     -- Hide While On Cooldown (skip for passives — no cooldown)
@@ -8054,7 +8060,7 @@ local function BuildCustomNameSection(scroll, buttonData)
         CS.collapsedSections[customNameKey] = not CS.collapsedSections[customNameKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    table.insert(CS.buttonSettingsCollapseButtons, customNameCollapseBtn)
+
 
     if not customNameCollapsed then
     local customNameBox = AceGUI:Create("EditBox")

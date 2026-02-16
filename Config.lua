@@ -35,7 +35,7 @@ local col3Scroll = nil    -- Current AceGUI ScrollFrame in column 3
 local col1BarWidgets = {}
 local profileBarAceWidgets = {}
 local buttonSettingsInfoButtons = {}
-local buttonSettingsCollapseButtons = {}
+
 local buttonSettingsScroll = nil
 local columnInfoButtons = {}
 local moveMenuFrame = nil
@@ -145,7 +145,7 @@ ST._configState = {
     -- UI state tables (both files read/write)
     collapsedSections = collapsedSections,
     buttonSettingsInfoButtons = buttonSettingsInfoButtons,
-    buttonSettingsCollapseButtons = buttonSettingsCollapseButtons,
+
     buttonSettingsScroll = nil,   -- set by Config.lua
     configFrame = nil,            -- set by Config.lua
     col3Container = nil,          -- set by Config.lua
@@ -4402,8 +4402,7 @@ function RefreshColumn1(preserveDrag)
         local heading = AceGUI:Create("Heading")
         heading:SetText(headingText)
         heading:SetFullWidth(true)
-        -- Hide stale collapse button from AceGUI widget recycling
-        if heading.frame._cdcCollapseBtn then heading.frame._cdcCollapseBtn:Hide() end
+
         if section == "char" then
             local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
             if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
@@ -6346,12 +6345,7 @@ local function CreateConfigPanel()
             btn:SetParent(nil)
         end
         wipe(CS.buttonSettingsInfoButtons)
-        for _, btn in ipairs(CS.buttonSettingsCollapseButtons) do
-            btn:ClearAllPoints()
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-        wipe(CS.buttonSettingsCollapseButtons)
+
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
