@@ -230,6 +230,8 @@ local function TintProcGlowFrame(frame, color)
     end
 end
 
+local PixelGlowOnUpdate
+
 -- Hide all glow sub-styles in a container table (solidTextures, procFrame, pixelFrame).
 -- Works for procGlow, auraGlow, barAuraEffect, and assistedHighlight containers.
 local function HideGlowStyles(container)
@@ -347,7 +349,7 @@ local function SetAssistedHighlight(button, show)
 end
 
 -- Shared pixel glow OnUpdate animation (used by icon proc glow and bar aura effect)
-local function PixelGlowOnUpdate(self, elapsed)
+PixelGlowOnUpdate = function(self, elapsed)
     self._elapsed = self._elapsed + elapsed
     local btn = self._parentButton
     local w, h = btn:GetSize()
