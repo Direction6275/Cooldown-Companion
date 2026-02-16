@@ -660,6 +660,7 @@ local function BuildDiagnosticSnapshot()
 
     snapshot.runtime = {
         currentInstanceType = CooldownCompanion._currentInstanceType,
+        currentSpecId = CooldownCompanion._currentSpecId,
         isResting = CooldownCompanion._isResting,
         cdmHidden = db.profile.cdmHidden,
         assistedSpellID = CooldownCompanion.assistedSpellID,
@@ -786,6 +787,7 @@ local function FormatDiagnosticAsText(diag)
     -- Runtime
     add("")
     add("--- Runtime ---")
+    add(("Cached Spec ID: %s"):format(tostring(r.currentSpecId or "nil")))
     add(("Assisted Spell: %s"):format(tostring(r.assistedSpellID or "none")))
 
     local function formatIDList(t)
