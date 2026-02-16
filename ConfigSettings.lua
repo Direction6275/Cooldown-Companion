@@ -723,6 +723,15 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     itemHeading:SetFullWidth(true)
     scroll:AddChild(itemHeading)
 
+    local itemKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_itemsettings"
+    local itemCollapsed = CS.collapsedSections[itemKey]
+    local itemCollapseBtn = AttachCollapseButton(itemHeading, itemCollapsed, function()
+        CS.collapsedSections[itemKey] = not CS.collapsedSections[itemKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    table.insert(CS.buttonSettingsCollapseButtons, itemCollapseBtn)
+
+    if not itemCollapsed then
     -- Item count font size
     local itemFontSizeSlider = AceGUI:Create("Slider")
     itemFontSizeSlider:SetLabel("Item Stack Font Size")
@@ -819,6 +828,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end)
     scroll:AddChild(itemYSlider)
+
+    end -- not itemCollapsed
 
 end
 
@@ -1065,7 +1076,10 @@ local appearanceTabElements = CS.appearanceTabElements
 local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
     local promoteBtn = CreateFrame("Button", nil, headingWidget.frame)
     promoteBtn:SetSize(16, 16)
-    promoteBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+    local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
+    promoteBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
+    headingWidget.right:ClearAllPoints()
+    headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
     headingWidget.right:SetPoint("LEFT", promoteBtn, "RIGHT", 4, 0)
 
     local icon = promoteBtn:CreateTexture(nil, "OVERLAY")
@@ -1121,7 +1135,10 @@ end
 local function CreateRevertButton(headingWidget, buttonData, sectionId)
     local revertBtn = CreateFrame("Button", nil, headingWidget.frame)
     revertBtn:SetSize(16, 16)
-    revertBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+    local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
+    revertBtn:SetPoint("LEFT", anchorAfter, "RIGHT", 4, 0)
+    headingWidget.right:ClearAllPoints()
+    headingWidget.right:SetPoint("RIGHT", headingWidget.frame, "RIGHT", -3, 0)
     headingWidget.right:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
 
     local icon = revertBtn:CreateTexture(nil, "OVERLAY")
@@ -2548,12 +2565,22 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                 heading:SetFullWidth(true)
                 scroll:AddChild(heading)
 
+                local overrideKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_override_" .. sectionId
+                local overrideCollapsed = CS.collapsedSections[overrideKey]
+
+                AttachCollapseButton(heading, overrideCollapsed, function()
+                    CS.collapsedSections[overrideKey] = not CS.collapsedSections[overrideKey]
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+
                 local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
                 table.insert(infoButtons, revertBtn)
 
+                if not overrideCollapsed then
                 local builder = sectionBuilders[sectionId]
                 if builder then
                     builder(scroll, overrides, refreshCallback)
+                end
                 end
             end
         end
@@ -2993,6 +3020,13 @@ local function BuildExtrasTab(container)
     compactHeading:SetFullWidth(true)
     container:AddChild(compactHeading)
 
+    local compactCollapsed = CS.collapsedSections["extras_compact"]
+    AttachCollapseButton(compactHeading, compactCollapsed, function()
+        CS.collapsedSections["extras_compact"] = not CS.collapsedSections["extras_compact"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not compactCollapsed then
     local compactCb = AceGUI:Create("CheckBox")
     compactCb:SetLabel("Use Compact Layout")
     compactCb:SetValue(group.compactLayout or false)
@@ -3059,6 +3093,7 @@ local function BuildExtrasTab(container)
         maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
         table.insert(tabInfoButtons, maxVisInfo)
     end
+    end -- not compactCollapsed
 
     if not isBarMode then
     -- Assisted Highlight section
@@ -3068,6 +3103,13 @@ local function BuildExtrasTab(container)
     assistedHeading:SetFullWidth(true)
     container:AddChild(assistedHeading)
 
+    local assistedCollapsed = CS.collapsedSections["extras_highlight"]
+    AttachCollapseButton(assistedHeading, assistedCollapsed, function()
+        CS.collapsedSections["extras_highlight"] = not CS.collapsedSections["extras_highlight"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not assistedCollapsed then
     local assistedCb = AceGUI:Create("CheckBox")
     assistedCb:SetLabel("Show Assisted Highlight")
     assistedCb:SetValue(style.showAssistedHighlight or false)
@@ -3162,6 +3204,7 @@ local function BuildExtrasTab(container)
             container:AddChild(procSlider)
         end
     end
+    end -- not assistedCollapsed
 
     end -- not isBarMode
 
@@ -3172,9 +3215,17 @@ local function BuildExtrasTab(container)
     alphaHeading:SetFullWidth(true)
     container:AddChild(alphaHeading)
 
+    local alphaCollapsed = CS.collapsedSections["extras_alpha"]
+    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
+        CS.collapsedSections["extras_alpha"] = not CS.collapsedSections["extras_alpha"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
     local alphaInfo = CreateFrame("Button", nil, alphaHeading.frame)
     alphaInfo:SetSize(16, 16)
-    alphaInfo:SetPoint("LEFT", alphaHeading.label, "RIGHT", 4, 0)
+    alphaInfo:SetPoint("LEFT", alphaHeading.frame._cdcCollapseBtn, "RIGHT", 4, 0)
+    alphaHeading.right:ClearAllPoints()
+    alphaHeading.right:SetPoint("RIGHT", alphaHeading.frame, "RIGHT", -3, 0)
     alphaHeading.right:SetPoint("LEFT", alphaInfo, "RIGHT", 4, 0)
     local alphaInfoIcon = alphaInfo:CreateTexture(nil, "OVERLAY")
     alphaInfoIcon:SetSize(12, 12)
@@ -3191,6 +3242,7 @@ local function BuildExtrasTab(container)
     end)
     table.insert(tabInfoButtons, alphaInfo)
 
+    if not alphaCollapsed then
     -- Baseline Alpha slider
     local baseAlphaSlider = AceGUI:Create("Slider")
     baseAlphaSlider:SetLabel("Baseline Alpha")
@@ -3347,6 +3399,7 @@ local function BuildExtrasTab(container)
         end)
         container:AddChild(fadeOutSlider)
     end
+    end -- not alphaCollapsed
 
     -- Apply "Hide CDC Tooltips" to tab info buttons created above
     if CooldownCompanion.db.profile.hideInfoButtons then
@@ -3364,6 +3417,13 @@ local function BuildExtrasTab(container)
         otherHeading:SetFullWidth(true)
         container:AddChild(otherHeading)
 
+        local otherCollapsed = CS.collapsedSections["extras_other"]
+        AttachCollapseButton(otherHeading, otherCollapsed, function()
+            CS.collapsedSections["extras_other"] = not CS.collapsedSections["extras_other"]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        if not otherCollapsed then
         local masqueCb = AceGUI:Create("CheckBox")
         masqueCb:SetLabel("Enable Masque Skinning")
         masqueCb:SetValue(group.masqueEnabled or false)
@@ -3400,6 +3460,7 @@ local function BuildExtrasTab(container)
         if CooldownCompanion.db.profile.hideInfoButtons then
             masqueInfo:Hide()
         end
+        end -- not otherCollapsed
     end
 
 end
@@ -3645,6 +3706,13 @@ local function BuildPositioningTab(container)
     strataHeading:SetFullWidth(true)
     container:AddChild(strataHeading)
 
+    local strataCollapsed = CS.collapsedSections["positioning_strata"]
+    AttachCollapseButton(strataHeading, strataCollapsed, function()
+        CS.collapsedSections["positioning_strata"] = not CS.collapsedSections["positioning_strata"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not strataCollapsed then
     local style = group.style
     local customStrataEnabled = type(style.strataOrder) == "table"
 
@@ -3750,6 +3818,7 @@ local function BuildPositioningTab(container)
             strataDropdowns[pos] = drop
         end
     end
+    end -- not strataCollapsed
     end -- not bars (strata)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons created above
@@ -3789,6 +3858,13 @@ local function BuildBarAppearanceTab(container, group, style)
     barHeading:SetFullWidth(true)
     container:AddChild(barHeading)
 
+    local barSettingsCollapsed = CS.collapsedSections["barappearance_settings"]
+    AttachCollapseButton(barHeading, barSettingsCollapsed, function()
+        CS.collapsedSections["barappearance_settings"] = not CS.collapsedSections["barappearance_settings"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not barSettingsCollapsed then
     local lengthSlider = AceGUI:Create("Slider")
     lengthSlider:SetLabel("Bar Length")
     lengthSlider:SetSliderValues(50, 400, 1)
@@ -3904,6 +3980,7 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(borderColor)
+    end -- not barSettingsCollapsed
 
     -- Bar Colors heading
     local barColorsHeading = AceGUI:Create("Heading")
@@ -3911,8 +3988,15 @@ local function BuildBarAppearanceTab(container, group, style)
     ColorHeading(barColorsHeading)
     barColorsHeading:SetFullWidth(true)
     container:AddChild(barColorsHeading)
+
+    local barColorsCollapsed = CS.collapsedSections["barappearance_colors"]
+    AttachCollapseButton(barColorsHeading, barColorsCollapsed, function()
+        CS.collapsedSections["barappearance_colors"] = not CS.collapsedSections["barappearance_colors"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(barColorsHeading, "barColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not barColorsCollapsed then
     local barColorPicker = AceGUI:Create("ColorPicker")
     barColorPicker:SetLabel("Bar Color")
     barColorPicker:SetHasAlpha(true)
@@ -3987,6 +4071,7 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(barBgColorPicker)
+    end -- not barColorsCollapsed
 
     -- Name Text heading
     local nameHeading = AceGUI:Create("Heading")
@@ -3994,8 +4079,15 @@ local function BuildBarAppearanceTab(container, group, style)
     ColorHeading(nameHeading)
     nameHeading:SetFullWidth(true)
     container:AddChild(nameHeading)
+
+    local nameTextCollapsed = CS.collapsedSections["barappearance_nametext"]
+    AttachCollapseButton(nameHeading, nameTextCollapsed, function()
+        CS.collapsedSections["barappearance_nametext"] = not CS.collapsedSections["barappearance_nametext"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(nameHeading, "barNameText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not nameTextCollapsed then
     local nameRow = AceGUI:Create("SimpleGroup")
     nameRow:SetFullWidth(true)
     nameRow:SetLayout("Flow")
@@ -4100,6 +4192,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(nameOffYSlider)
     end
+    end -- not nameTextCollapsed
 
     -- Time Text heading
     local timeHeading = AceGUI:Create("Heading")
@@ -4107,8 +4200,15 @@ local function BuildBarAppearanceTab(container, group, style)
     ColorHeading(timeHeading)
     timeHeading:SetFullWidth(true)
     container:AddChild(timeHeading)
+
+    local timeTextCollapsed = CS.collapsedSections["barappearance_timetext"]
+    AttachCollapseButton(timeHeading, timeTextCollapsed, function()
+        CS.collapsedSections["barappearance_timetext"] = not CS.collapsedSections["barappearance_timetext"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(timeHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not timeTextCollapsed then
     local timeRow = AceGUI:Create("SimpleGroup")
     timeRow:SetFullWidth(true)
     timeRow:SetLayout("Flow")
@@ -4234,6 +4334,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(cdOffYSlider)
     end
+    end -- not timeTextCollapsed
 
 end
 
@@ -4247,11 +4348,19 @@ local function BuildBarEffectsTab(container, group, style)
     ColorHeading(barAuraHeading)
     barAuraHeading:SetFullWidth(true)
     container:AddChild(barAuraHeading)
+
+    local barActiveAuraCollapsed = CS.collapsedSections["bareffects_activeaura"]
+    AttachCollapseButton(barAuraHeading, barActiveAuraCollapsed, function()
+        CS.collapsedSections["bareffects_activeaura"] = not CS.collapsedSections["bareffects_activeaura"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(barAuraHeading, "barActiveAura", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not barActiveAuraCollapsed then
     BuildBarActiveAuraControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    end
 
     -- Aura Text section
     local auraTextHeading = AceGUI:Create("Heading")
@@ -4259,8 +4368,15 @@ local function BuildBarEffectsTab(container, group, style)
     ColorHeading(auraTextHeading)
     auraTextHeading:SetFullWidth(true)
     container:AddChild(auraTextHeading)
+
+    local barAuraTextCollapsed = CS.collapsedSections["bareffects_auratext"]
+    AttachCollapseButton(auraTextHeading, barAuraTextCollapsed, function()
+        CS.collapsedSections["bareffects_auratext"] = not CS.collapsedSections["bareffects_auratext"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not barAuraTextCollapsed then
     local auraTextCb = AceGUI:Create("CheckBox")
     auraTextCb:SetLabel("Show Aura Text")
     auraTextCb:SetValue(style.showAuraText ~= false)
@@ -4322,6 +4438,7 @@ local function BuildBarEffectsTab(container, group, style)
         end)
         container:AddChild(auraFontColor)
     end
+    end -- not barAuraTextCollapsed
 
     -- Pandemic Indicator section
     local pandemicBarHeading = AceGUI:Create("Heading")
@@ -4329,11 +4446,19 @@ local function BuildBarEffectsTab(container, group, style)
     ColorHeading(pandemicBarHeading)
     pandemicBarHeading:SetFullWidth(true)
     container:AddChild(pandemicBarHeading)
+
+    local barPandemicCollapsed = CS.collapsedSections["bareffects_pandemic"]
+    AttachCollapseButton(pandemicBarHeading, barPandemicCollapsed, function()
+        CS.collapsedSections["bareffects_pandemic"] = not CS.collapsedSections["bareffects_pandemic"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(pandemicBarHeading, "pandemicBar", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not barPandemicCollapsed then
     BuildPandemicBarControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    end
 
     -- Ready Text heading
     local readyHeading = AceGUI:Create("Heading")
@@ -4341,8 +4466,15 @@ local function BuildBarEffectsTab(container, group, style)
     ColorHeading(readyHeading)
     readyHeading:SetFullWidth(true)
     container:AddChild(readyHeading)
+
+    local barReadyTextCollapsed = CS.collapsedSections["bareffects_readytext"]
+    AttachCollapseButton(readyHeading, barReadyTextCollapsed, function()
+        CS.collapsedSections["bareffects_readytext"] = not CS.collapsedSections["bareffects_readytext"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(readyHeading, "barReadyText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not barReadyTextCollapsed then
     local showReadyCb = AceGUI:Create("CheckBox")
     showReadyCb:SetLabel("Show Ready Text")
     showReadyCb:SetValue(style.showBarReadyText or false)
@@ -4415,6 +4547,7 @@ local function BuildBarEffectsTab(container, group, style)
         end)
         container:AddChild(readyOutlineDrop)
     end
+    end -- not barReadyTextCollapsed
 end
 
 local function BuildEffectsTab(container)
@@ -4437,11 +4570,19 @@ local function BuildEffectsTab(container)
     ColorHeading(auraIndicatorHeading)
     auraIndicatorHeading:SetFullWidth(true)
     container:AddChild(auraIndicatorHeading)
+
+    local auraGlowCollapsed = CS.collapsedSections["effects_auraglow"]
+    AttachCollapseButton(auraIndicatorHeading, auraGlowCollapsed, function()
+        CS.collapsedSections["effects_auraglow"] = not CS.collapsedSections["effects_auraglow"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(auraIndicatorHeading, "auraIndicator", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not auraGlowCollapsed then
     BuildAuraIndicatorControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    end
 
     -- Aura Text section
     local auraTextHeading = AceGUI:Create("Heading")
@@ -4449,8 +4590,15 @@ local function BuildEffectsTab(container)
     ColorHeading(auraTextHeading)
     auraTextHeading:SetFullWidth(true)
     container:AddChild(auraTextHeading)
+
+    local iconAuraTextCollapsed = CS.collapsedSections["effects_auratext"]
+    AttachCollapseButton(auraTextHeading, iconAuraTextCollapsed, function()
+        CS.collapsedSections["effects_auratext"] = not CS.collapsedSections["effects_auratext"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not iconAuraTextCollapsed then
     local auraTextCb = AceGUI:Create("CheckBox")
     auraTextCb:SetLabel("Show Aura Text")
     auraTextCb:SetValue(style.showAuraText ~= false)
@@ -4512,6 +4660,7 @@ local function BuildEffectsTab(container)
         end)
         container:AddChild(auraFontColor)
     end
+    end -- not iconAuraTextCollapsed
 
     -- Pandemic Glow section
     local pandemicGlowHeading = AceGUI:Create("Heading")
@@ -4519,11 +4668,19 @@ local function BuildEffectsTab(container)
     ColorHeading(pandemicGlowHeading)
     pandemicGlowHeading:SetFullWidth(true)
     container:AddChild(pandemicGlowHeading)
+
+    local pandemicGlowCollapsed = CS.collapsedSections["effects_pandemic"]
+    AttachCollapseButton(pandemicGlowHeading, pandemicGlowCollapsed, function()
+        CS.collapsedSections["effects_pandemic"] = not CS.collapsedSections["effects_pandemic"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(pandemicGlowHeading, "pandemicGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not pandemicGlowCollapsed then
     BuildPandemicGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    end
 
     -- Proc Glow section
     local procGlowHeading = AceGUI:Create("Heading")
@@ -4531,11 +4688,19 @@ local function BuildEffectsTab(container)
     ColorHeading(procGlowHeading)
     procGlowHeading:SetFullWidth(true)
     container:AddChild(procGlowHeading)
+
+    local procGlowCollapsed = CS.collapsedSections["effects_procglow"]
+    AttachCollapseButton(procGlowHeading, procGlowCollapsed, function()
+        CS.collapsedSections["effects_procglow"] = not CS.collapsedSections["effects_procglow"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not procGlowCollapsed then
     BuildProcGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    end
 end
 
 local function BuildAppearanceTab(container)
@@ -4565,6 +4730,13 @@ local function BuildAppearanceTab(container)
     iconHeading:SetFullWidth(true)
     container:AddChild(iconHeading)
 
+    local iconSettingsCollapsed = CS.collapsedSections["appearance_icons"]
+    AttachCollapseButton(iconHeading, iconSettingsCollapsed, function()
+        CS.collapsedSections["appearance_icons"] = not CS.collapsedSections["appearance_icons"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not iconSettingsCollapsed then
     local squareCb = AceGUI:Create("CheckBox")
     squareCb:SetLabel("Square Icons")
     squareCb:SetValue(style.maintainAspectRatio or false)
@@ -4638,6 +4810,7 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(spacingSlider)
     end
+    end -- not iconSettingsCollapsed
 
     -- Border heading
     local borderHeading = AceGUI:Create("Heading")
@@ -4645,8 +4818,15 @@ local function BuildAppearanceTab(container)
     ColorHeading(borderHeading)
     borderHeading:SetFullWidth(true)
     container:AddChild(borderHeading)
+
+    local borderCollapsed = CS.collapsedSections["appearance_border"]
+    AttachCollapseButton(borderHeading, borderCollapsed, function()
+        CS.collapsedSections["appearance_border"] = not CS.collapsedSections["appearance_border"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not borderCollapsed then
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")
     borderSlider:SetSliderValues(0, 5, 0.1)
@@ -4681,6 +4861,7 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(borderColor)
+    end -- not borderCollapsed
 
     -- Text Settings header
     local textHeading = AceGUI:Create("Heading")
@@ -4688,8 +4869,15 @@ local function BuildAppearanceTab(container)
     ColorHeading(textHeading)
     textHeading:SetFullWidth(true)
     container:AddChild(textHeading)
+
+    local textCollapsed = CS.collapsedSections["appearance_text"]
+    AttachCollapseButton(textHeading, textCollapsed, function()
+        CS.collapsedSections["appearance_text"] = not CS.collapsedSections["appearance_text"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(textHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not textCollapsed then
     -- Toggles first
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
@@ -4753,6 +4941,7 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(cdFontColor)
     end
+    end -- not textCollapsed
 
     -- Keybind Text section
     local kbHeading = AceGUI:Create("Heading")
@@ -4760,8 +4949,15 @@ local function BuildAppearanceTab(container)
     ColorHeading(kbHeading)
     kbHeading:SetFullWidth(true)
     container:AddChild(kbHeading)
+
+    local keybindCollapsed = CS.collapsedSections["appearance_keybind"]
+    AttachCollapseButton(kbHeading, keybindCollapsed, function()
+        CS.collapsedSections["appearance_keybind"] = not CS.collapsedSections["appearance_keybind"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(kbHeading, "keybindText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not keybindCollapsed then
     local kbCb = AceGUI:Create("CheckBox")
     kbCb:SetLabel("Show Keybind Text")
     kbCb:SetValue(style.showKeybindText or false)
@@ -4839,6 +5035,7 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(kbFontColor)
     end
+    end -- not keybindCollapsed
 
     -- Charge Text section
     local chargeHeading = AceGUI:Create("Heading")
@@ -4846,8 +5043,15 @@ local function BuildAppearanceTab(container)
     ColorHeading(chargeHeading)
     chargeHeading:SetFullWidth(true)
     container:AddChild(chargeHeading)
+
+    local chargeCollapsed = CS.collapsedSections["appearance_charge"]
+    AttachCollapseButton(chargeHeading, chargeCollapsed, function()
+        CS.collapsedSections["appearance_charge"] = not CS.collapsedSections["appearance_charge"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
     CreatePromoteButton(chargeHeading, "chargeText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
+    if not chargeCollapsed then
     local chargeTextCb = AceGUI:Create("CheckBox")
     chargeTextCb:SetLabel("Show Charge Text")
     chargeTextCb:SetValue(style.showChargeText ~= false)
@@ -4978,6 +5182,7 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(chargeYSlider)
     end
+    end -- not chargeCollapsed
 end
 
 ------------------------------------------------------------------------
@@ -5011,6 +5216,15 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
+    local visKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility"
+    local visCollapsed = CS.collapsedSections[visKey]
+    local visCollapseBtn = AttachCollapseButton(heading, visCollapsed, function()
+        CS.collapsedSections[visKey] = not CS.collapsedSections[visKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    table.insert(CS.buttonSettingsCollapseButtons, visCollapseBtn)
+
+    if not visCollapsed then
     -- Hide While On Cooldown (skip for passives — no cooldown)
     if not buttonData.isPassive then
     local hideCDCb = AceGUI:Create("CheckBox")
@@ -5197,6 +5411,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         scroll:AddChild(warnLabel)
     end
 
+    end -- not visCollapsed
+
 end
 
 ------------------------------------------------------------------------
@@ -5249,6 +5465,13 @@ local function BuildLoadConditionsTab(container)
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
+    local instanceCollapsed = CS.collapsedSections["loadconditions_instance"]
+    AttachCollapseButton(heading, instanceCollapsed, function()
+        CS.collapsedSections["loadconditions_instance"] = not CS.collapsedSections["loadconditions_instance"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not instanceCollapsed then
     local conditions = {
         { key = "raid",          label = "Raid" },
         { key = "dungeon",       label = "Dungeon" },
@@ -5262,6 +5485,7 @@ local function BuildLoadConditionsTab(container)
     for _, cond in ipairs(conditions) do
         container:AddChild(CreateLoadConditionToggle(cond.label, cond.key))
     end
+    end -- not instanceCollapsed
 
     -- Specialization heading
     local specHeading = AceGUI:Create("Heading")
@@ -5270,6 +5494,13 @@ local function BuildLoadConditionsTab(container)
     specHeading:SetFullWidth(true)
     container:AddChild(specHeading)
 
+    local specCollapsed = CS.collapsedSections["loadconditions_spec"]
+    AttachCollapseButton(specHeading, specCollapsed, function()
+        CS.collapsedSections["loadconditions_spec"] = not CS.collapsedSections["loadconditions_spec"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not specCollapsed then
     -- Current class spec checkboxes
     local numSpecs = GetNumSpecializations()
     for i = 1, numSpecs do
@@ -5344,6 +5575,7 @@ local function BuildLoadConditionsTab(container)
             end
         end
     end
+    end -- not specCollapsed
 end
 
 ------------------------------------------------------------------------

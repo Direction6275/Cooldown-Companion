@@ -4402,6 +4402,12 @@ function RefreshColumn1(preserveDrag)
         local heading = AceGUI:Create("Heading")
         heading:SetText(headingText)
         heading:SetFullWidth(true)
+        -- Hide stale collapse button from AceGUI widget recycling
+        if heading.frame._cdcCollapseBtn then heading.frame._cdcCollapseBtn:Hide() end
+        if section == "char" then
+            local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+            if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
+        end
         col1Scroll:AddChild(heading)
 
         if isEmpty and showPhantomSections then
