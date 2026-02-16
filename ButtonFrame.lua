@@ -465,15 +465,16 @@ local function SetProcGlow(button, show)
     local desiredState
     if show then
         local bd = button.buttonData
+        local style = button.style
         local glowStyle = bd.procGlowStyle or "glow"
-        local c = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
+        local c = (style and style.procGlowColor) or {1, 1, 1, 1}
         local sz, th
         if glowStyle == "solid" then
             sz = bd.procGlowSize or 2
         elseif glowStyle == "pixel" then
             sz = bd.procGlowSize or 4
         else
-            sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
+            sz = (style and style.procGlowOverhang) or 32
         end
         th = (glowStyle == "pixel") and (bd.procGlowThickness or 2) or 0
         local spd = (glowStyle == "pixel") and (bd.procGlowSpeed or 60) or 0
@@ -487,15 +488,16 @@ local function SetProcGlow(button, show)
     if not desiredState then return end
 
     local bd = button.buttonData
+    local style = button.style
     local glowStyle = bd.procGlowStyle or "glow"
-    local color = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
+    local color = (style and style.procGlowColor) or {1, 1, 1, 1}
     local sz
     if glowStyle == "solid" then
         sz = bd.procGlowSize or 2
     elseif glowStyle == "pixel" then
         sz = bd.procGlowSize or 4
     else
-        sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
+        sz = (style and style.procGlowOverhang) or 32
     end
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
@@ -992,18 +994,18 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
-    -- Apply custom count text font/anchor settings from per-button data
+    -- Apply custom count text font/anchor settings from effective style
     if buttonData.hasCharges or buttonData.isPassive then
-        local chargeFont = CooldownCompanion:FetchFont(buttonData.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = buttonData.chargeFontSize or 12
-        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
 
-        local chargeAnchor = buttonData.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = buttonData.chargeXOffset or -2
-        local chargeYOffset = buttonData.chargeYOffset or 2
+        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = style.chargeXOffset or -2
+        local chargeYOffset = style.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
         local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
@@ -1215,7 +1217,8 @@ local function UpdateChargeTracking(button, buttonData)
     end
 
     -- Display charge text via secret-safe widget methods
-    if not buttonData.showChargeText then
+    local showChargeText = button.style and button.style.showChargeText
+    if not showChargeText then
         button.count:SetText("")
     else
         if cur then
@@ -1246,7 +1249,8 @@ local function UpdateItemChargeTracking(button, buttonData)
     end
 
     -- Display charge text with change detection
-    if not buttonData.showChargeText then
+    local showChargeText = button.style and button.style.showChargeText
+    if not showChargeText then
         button.count:SetText("")
     elseif button._chargeText ~= chargeCount then
         button._chargeText = chargeCount
@@ -1809,14 +1813,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
-    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing or buttonData.chargeFontColorZero then
+    if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
         local cc
         if button._mainCDShown then
-            cc = buttonData.chargeFontColorZero or {1, 1, 1, 1}
+            cc = style.chargeFontColorZero or {1, 1, 1, 1}
         elseif button._chargeRecharging then
-            cc = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
+            cc = style.chargeFontColorMissing or {1, 1, 1, 1}
         else
-            cc = buttonData.chargeFontColor or {1, 1, 1, 1}
+            cc = style.chargeFontColor or {1, 1, 1, 1}
         end
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
@@ -1956,19 +1960,19 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._cdTextMode = nil
 
-    -- Update count text font/anchor settings from per-button data
+    -- Update count text font/anchor settings from effective style
     button.count:ClearAllPoints()
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = CooldownCompanion:FetchFont(button.buttonData.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = button.buttonData.chargeFontSize or 12
-        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
 
-        local chargeAnchor = button.buttonData.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = button.buttonData.chargeXOffset or -2
-        local chargeYOffset = button.buttonData.chargeYOffset or 2
+        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = style.chargeXOffset or -2
+        local chargeYOffset = style.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
@@ -2789,15 +2793,15 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if buttonData.hasCharges or buttonData.isPassive then
-        local chargeFont = CooldownCompanion:FetchFont(buttonData.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = buttonData.chargeFontSize or 12
-        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = buttonData.chargeAnchor or defAnchor
-        local chargeXOffset = buttonData.chargeXOffset or defXOff
-        local chargeYOffset = buttonData.chargeYOffset or defYOff
+        local chargeAnchor = style.chargeAnchor or defAnchor
+        local chargeXOffset = style.chargeXOffset or defXOff
+        local chargeYOffset = style.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
         local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
@@ -3143,15 +3147,15 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = CooldownCompanion:FetchFont(button.buttonData.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = button.buttonData.chargeFontSize or 12
-        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = button.buttonData.chargeAnchor or defAnchor
-        local chargeXOffset = button.buttonData.chargeXOffset or defXOff
-        local chargeYOffset = button.buttonData.chargeYOffset or defYOff
+        local chargeAnchor = style.chargeAnchor or defAnchor
+        local chargeXOffset = style.chargeXOffset or defXOff
+        local chargeYOffset = style.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then

@@ -1103,18 +1103,25 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 end)
                 scroll:AddChild(procStyleDrop)
 
-                -- Color picker (per-button, falls back to group style)
+                -- Color picker (per-button override or group style fallback)
                 local procGlowColor = AceGUI:Create("ColorPicker")
                 procGlowColor:SetLabel("Glow Color")
                 procGlowColor:SetHasAlpha(true)
-                local pgc = buttonData.procGlowColor or group.style.procGlowColor or {1, 1, 1, 1}
+                local pgc = (buttonData.styleOverrides and buttonData.styleOverrides.procGlowColor)
+                    or group.style.procGlowColor or {1, 1, 1, 1}
                 procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
                 procGlowColor:SetFullWidth(true)
                 procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.procGlowColor = {r, g, b, a}
+                    if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
+                    if not buttonData.overrideSections then buttonData.overrideSections = {} end
+                    buttonData.styleOverrides.procGlowColor = {r, g, b, a}
+                    buttonData.overrideSections.procGlow = true
                 end)
                 procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.procGlowColor = {r, g, b, a}
+                    if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
+                    if not buttonData.overrideSections then buttonData.overrideSections = {} end
+                    buttonData.styleOverrides.procGlowColor = {r, g, b, a}
+                    buttonData.overrideSections.procGlow = true
                     CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
                 end)
                 scroll:AddChild(procGlowColor)
@@ -1209,172 +1216,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end -- not procCollapsed
     end -- not bars (proc glow)
 
-    -- Charge settings (for charge-based spells and items)
-    if buttonData.hasCharges then
-        local chargeHeading = AceGUI:Create("Heading")
-        chargeHeading:SetText("Charge Settings")
-        chargeHeading:SetFullWidth(true)
-        scroll:AddChild(chargeHeading)
-
-        local chargeKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_charges"
-        local chargesCollapsed = CS.collapsedSections[chargeKey]
-
-        local chargeCollapseBtn = CreateFrame("Button", nil, chargeHeading.frame)
-        table.insert(CS.buttonSettingsCollapseButtons, chargeCollapseBtn)
-        chargeCollapseBtn:SetSize(16, 16)
-        chargeCollapseBtn:SetPoint("LEFT", chargeHeading.label, "RIGHT", 4, 0)
-        chargeHeading.right:SetPoint("LEFT", chargeCollapseBtn, "RIGHT", 4, 0)
-        local chargeCollapseArrow = chargeCollapseBtn:CreateTexture(nil, "ARTWORK")
-        chargeCollapseArrow:SetSize(12, 12)
-        chargeCollapseArrow:SetPoint("CENTER")
-        chargeCollapseArrow:SetAtlas(chargesCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-        chargeCollapseBtn:SetScript("OnClick", function()
-            CS.collapsedSections[chargeKey] = not CS.collapsedSections[chargeKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        chargeCollapseBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(chargesCollapsed and "Expand" or "Collapse")
-            GameTooltip:Show()
-        end)
-        chargeCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        if not chargesCollapsed then
-        local showChargeTextCb = AceGUI:Create("CheckBox")
-        showChargeTextCb:SetLabel("Show Charge Count Text")
-        showChargeTextCb:SetValue(buttonData.showChargeText or false)
-        showChargeTextCb:SetFullWidth(true)
-        showChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.showChargeText = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(showChargeTextCb)
-
-        if buttonData.showChargeText then
-            local chargeFontSizeSlider = AceGUI:Create("Slider")
-            chargeFontSizeSlider:SetLabel("Font Size")
-            chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-            chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
-            chargeFontSizeSlider:SetFullWidth(true)
-            chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontSize = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontSizeSlider)
-
-            local chargeFontDrop = AceGUI:Create("Dropdown")
-            chargeFontDrop:SetLabel("Font")
-            CS.SetupFontDropdown(chargeFontDrop)
-            chargeFontDrop:SetValue(buttonData.chargeFont or "Friz Quadrata TT")
-            chargeFontDrop:SetFullWidth(true)
-            chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFont = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontDrop)
-
-            local chargeOutlineDrop = AceGUI:Create("Dropdown")
-            chargeOutlineDrop:SetLabel("Font Outline")
-            chargeOutlineDrop:SetList(CS.outlineOptions)
-            chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
-            chargeOutlineDrop:SetFullWidth(true)
-            chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontOutline = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeOutlineDrop)
-
-            local chargeFontColor = AceGUI:Create("ColorPicker")
-            chargeFontColor:SetLabel("Font Color (Max Charges)")
-            chargeFontColor:SetHasAlpha(true)
-            local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
-            chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
-            chargeFontColor:SetFullWidth(true)
-            chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-            end)
-            chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColor)
-
-            local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-            chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-            chargeFontColorMissing:SetHasAlpha(true)
-            local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
-            chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
-            chargeFontColorMissing:SetFullWidth(true)
-            chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-            end)
-            chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColorMissing)
-
-            local chargeFontColorZero = AceGUI:Create("ColorPicker")
-            chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
-            chargeFontColorZero:SetHasAlpha(true)
-            local chz = buttonData.chargeFontColorZero or {1, 1, 1, 1}
-            chargeFontColorZero:SetColor(chz[1], chz[2], chz[3], chz[4])
-            chargeFontColorZero:SetFullWidth(true)
-            chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorZero = {r, g, b, a}
-            end)
-            chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorZero = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColorZero)
-
-            local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
-            local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
-            local defChargeX = barNoIcon and 0 or -2
-            local defChargeY = 2
-
-            local chargeAnchorValues = {}
-            for _, pt in ipairs(CS.anchorPoints) do
-                chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
-            end
-            local chargeAnchorDrop = AceGUI:Create("Dropdown")
-            chargeAnchorDrop:SetLabel("Anchor Point")
-            chargeAnchorDrop:SetList(chargeAnchorValues)
-            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or defChargeAnchor)
-            chargeAnchorDrop:SetFullWidth(true)
-            chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeAnchor = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeAnchorDrop)
-
-            local chargeXSlider = AceGUI:Create("Slider")
-            chargeXSlider:SetLabel("X Offset")
-            chargeXSlider:SetSliderValues(-20, 20, 1)
-            chargeXSlider:SetValue(buttonData.chargeXOffset or defChargeX)
-            chargeXSlider:SetFullWidth(true)
-            chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeXOffset = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeXSlider)
-
-            local chargeYSlider = AceGUI:Create("Slider")
-            chargeYSlider:SetLabel("Y Offset")
-            chargeYSlider:SetSliderValues(-20, 20, 1)
-            chargeYSlider:SetValue(buttonData.chargeYOffset or defChargeY)
-            chargeYSlider:SetFullWidth(true)
-            chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeYOffset = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeYSlider)
-        end -- showChargeText
-
-        end -- not chargesCollapsed
-    end -- hasCharges
+    -- Charge text settings now live in group Appearance tab (with per-button overrides)
 
     if group.displayMode == "bars" then
         local customNameHeading = AceGUI:Create("Heading")
@@ -1443,173 +1285,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
-    -- Charge items (e.g. Hellstone): show Charge Settings instead of stack count settings
-    if buttonData.hasCharges then
-        local chargeHeading = AceGUI:Create("Heading")
-        chargeHeading:SetText("Charge Settings")
-        chargeHeading:SetFullWidth(true)
-        scroll:AddChild(chargeHeading)
-
-        local chargeKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_charges"
-        local chargesCollapsed = CS.collapsedSections[chargeKey]
-
-        local chargeCollapseBtn = CreateFrame("Button", nil, chargeHeading.frame)
-        table.insert(CS.buttonSettingsCollapseButtons, chargeCollapseBtn)
-        chargeCollapseBtn:SetSize(16, 16)
-        chargeCollapseBtn:SetPoint("LEFT", chargeHeading.label, "RIGHT", 4, 0)
-        chargeHeading.right:SetPoint("LEFT", chargeCollapseBtn, "RIGHT", 4, 0)
-        local chargeCollapseArrow = chargeCollapseBtn:CreateTexture(nil, "ARTWORK")
-        chargeCollapseArrow:SetSize(12, 12)
-        chargeCollapseArrow:SetPoint("CENTER")
-        chargeCollapseArrow:SetAtlas(chargesCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-        chargeCollapseBtn:SetScript("OnClick", function()
-            CS.collapsedSections[chargeKey] = not CS.collapsedSections[chargeKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        chargeCollapseBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(chargesCollapsed and "Expand" or "Collapse")
-            GameTooltip:Show()
-        end)
-        chargeCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        if not chargesCollapsed then
-        local showChargeTextCb = AceGUI:Create("CheckBox")
-        showChargeTextCb:SetLabel("Show Charge Count Text")
-        showChargeTextCb:SetValue(buttonData.showChargeText or false)
-        showChargeTextCb:SetFullWidth(true)
-        showChargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.showChargeText = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(showChargeTextCb)
-
-        if buttonData.showChargeText then
-            local chargeFontSizeSlider = AceGUI:Create("Slider")
-            chargeFontSizeSlider:SetLabel("Font Size")
-            chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-            chargeFontSizeSlider:SetValue(buttonData.chargeFontSize or 12)
-            chargeFontSizeSlider:SetFullWidth(true)
-            chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontSize = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontSizeSlider)
-
-            local chargeFontDrop = AceGUI:Create("Dropdown")
-            chargeFontDrop:SetLabel("Font")
-            CS.SetupFontDropdown(chargeFontDrop)
-            chargeFontDrop:SetValue(buttonData.chargeFont or "Friz Quadrata TT")
-            chargeFontDrop:SetFullWidth(true)
-            chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFont = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontDrop)
-
-            local chargeOutlineDrop = AceGUI:Create("Dropdown")
-            chargeOutlineDrop:SetLabel("Font Outline")
-            chargeOutlineDrop:SetList(CS.outlineOptions)
-            chargeOutlineDrop:SetValue(buttonData.chargeFontOutline or "OUTLINE")
-            chargeOutlineDrop:SetFullWidth(true)
-            chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeFontOutline = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeOutlineDrop)
-
-            local chargeFontColor = AceGUI:Create("ColorPicker")
-            chargeFontColor:SetLabel("Font Color (Max Charges)")
-            chargeFontColor:SetHasAlpha(true)
-            local chc = buttonData.chargeFontColor or {1, 1, 1, 1}
-            chargeFontColor:SetColor(chc[1], chc[2], chc[3], chc[4])
-            chargeFontColor:SetFullWidth(true)
-            chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-            end)
-            chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColor = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColor)
-
-            local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-            chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-            chargeFontColorMissing:SetHasAlpha(true)
-            local chm = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
-            chargeFontColorMissing:SetColor(chm[1], chm[2], chm[3], chm[4])
-            chargeFontColorMissing:SetFullWidth(true)
-            chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-            end)
-            chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorMissing = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColorMissing)
-
-            local chargeFontColorZero = AceGUI:Create("ColorPicker")
-            chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
-            chargeFontColorZero:SetHasAlpha(true)
-            local chz = buttonData.chargeFontColorZero or {1, 1, 1, 1}
-            chargeFontColorZero:SetColor(chz[1], chz[2], chz[3], chz[4])
-            chargeFontColorZero:SetFullWidth(true)
-            chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorZero = {r, g, b, a}
-            end)
-            chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                buttonData.chargeFontColorZero = {r, g, b, a}
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeFontColorZero)
-
-            local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
-            local defChargeAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
-            local defChargeX = barNoIcon and 0 or -2
-            local defChargeY = 2
-
-            local chargeAnchorValues = {}
-            for _, pt in ipairs(CS.anchorPoints) do
-                chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
-            end
-            local chargeAnchorDrop = AceGUI:Create("Dropdown")
-            chargeAnchorDrop:SetLabel("Anchor Point")
-            chargeAnchorDrop:SetList(chargeAnchorValues)
-            chargeAnchorDrop:SetValue(buttonData.chargeAnchor or defChargeAnchor)
-            chargeAnchorDrop:SetFullWidth(true)
-            chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeAnchor = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeAnchorDrop)
-
-            local chargeXSlider = AceGUI:Create("Slider")
-            chargeXSlider:SetLabel("X Offset")
-            chargeXSlider:SetSliderValues(-20, 20, 1)
-            chargeXSlider:SetValue(buttonData.chargeXOffset or defChargeX)
-            chargeXSlider:SetFullWidth(true)
-            chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeXOffset = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeXSlider)
-
-            local chargeYSlider = AceGUI:Create("Slider")
-            chargeYSlider:SetLabel("Y Offset")
-            chargeYSlider:SetSliderValues(-20, 20, 1)
-            chargeYSlider:SetValue(buttonData.chargeYOffset or defChargeY)
-            chargeYSlider:SetFullWidth(true)
-            chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.chargeYOffset = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            scroll:AddChild(chargeYSlider)
-        end -- showChargeText
-
-        end -- not chargesCollapsed
-        return
-    end
+    -- Charge text settings now live in group Appearance tab (with per-button overrides)
+    if buttonData.hasCharges then return end
 
     local itemHeading = AceGUI:Create("Heading")
     itemHeading:SetText("Item Settings")
@@ -1949,6 +1626,977 @@ end
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
+------------------------------------------------------------------------
+-- PROMOTE BUTTON HELPER
+------------------------------------------------------------------------
+-- Creates a small button next to a heading label that promotes a section
+-- to per-button style overrides.
+local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
+    local promoteBtn = CreateFrame("Button", nil, headingWidget.frame)
+    promoteBtn:SetSize(16, 16)
+    promoteBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+    headingWidget.right:SetPoint("LEFT", promoteBtn, "RIGHT", 4, 0)
+
+    local icon = promoteBtn:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(12, 12)
+    icon:SetPoint("CENTER")
+
+    -- Determine if promote is available
+    local multiCount = 0
+    if CS.selectedButtons then
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+    end
+    local canPromote = CS.selectedButton ~= nil and multiCount < 2
+        and buttonData ~= nil
+        and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
+
+    if canPromote then
+        icon:SetAtlas("Crosshair_VehichleCursor_32")
+        promoteBtn:Enable()
+    else
+        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
+        promoteBtn:Disable()
+    end
+
+    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+    local sectionLabel = sectionDef and sectionDef.label or sectionId
+
+    promoteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if canPromote then
+            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        else
+            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+        end
+        GameTooltip:Show()
+    end)
+    promoteBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    promoteBtn:SetScript("OnClick", function()
+        if not canPromote then return end
+        CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    table.insert(tabInfoButtons, promoteBtn)
+    return promoteBtn
+end
+
+------------------------------------------------------------------------
+-- REVERT BUTTON HELPER (for Overrides tab headings)
+------------------------------------------------------------------------
+local function CreateRevertButton(headingWidget, buttonData, sectionId)
+    local revertBtn = CreateFrame("Button", nil, headingWidget.frame)
+    revertBtn:SetSize(16, 16)
+    revertBtn:SetPoint("LEFT", headingWidget.label, "RIGHT", 4, 0)
+    headingWidget.right:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
+
+    local icon = revertBtn:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(12, 12)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("common-search-clearbutton")
+
+    revertBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+        GameTooltip:AddLine("Revert " .. (sectionDef and sectionDef.label or sectionId) .. " to group defaults")
+        GameTooltip:Show()
+    end)
+    revertBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    revertBtn:SetScript("OnClick", function()
+        CooldownCompanion:RevertSection(buttonData, sectionId)
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    return revertBtn
+end
+
+------------------------------------------------------------------------
+-- REUSABLE SECTION BUILDER FUNCTIONS
+------------------------------------------------------------------------
+-- Each builder takes (container, styleTable, refreshCallback) and adds
+-- AceGUI widgets to the container, reading/writing values from styleTable.
+
+local function BuildCooldownTextControls(container, styleTable, refreshCallback)
+    local cdTextCb = AceGUI:Create("CheckBox")
+    cdTextCb:SetLabel("Show Cooldown Text")
+    cdTextCb:SetValue(styleTable.showCooldownText or false)
+    cdTextCb:SetFullWidth(true)
+    cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showCooldownText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(cdTextCb)
+
+    if styleTable.showCooldownText then
+        local fontSizeSlider = AceGUI:Create("Slider")
+        fontSizeSlider:SetLabel("Font Size")
+        fontSizeSlider:SetSliderValues(8, 32, 1)
+        fontSizeSlider:SetValue(styleTable.cooldownFontSize or 12)
+        fontSizeSlider:SetFullWidth(true)
+        fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(fontSizeSlider)
+
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(fontDrop)
+        fontDrop:SetValue(styleTable.cooldownFont or "Friz Quadrata TT")
+        fontDrop:SetFullWidth(true)
+        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownFont = val
+            refreshCallback()
+        end)
+        container:AddChild(fontDrop)
+
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Font Outline")
+        outlineDrop:SetList(CS.outlineOptions)
+        outlineDrop:SetValue(styleTable.cooldownFontOutline or "OUTLINE")
+        outlineDrop:SetFullWidth(true)
+        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(outlineDrop)
+
+        local cdFontColor = AceGUI:Create("ColorPicker")
+        cdFontColor:SetLabel("Font Color")
+        cdFontColor:SetHasAlpha(true)
+        local cdc = styleTable.cooldownFontColor or {1, 1, 1, 1}
+        cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
+        cdFontColor:SetFullWidth(true)
+        cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.cooldownFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.cooldownFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(cdFontColor)
+    end
+end
+
+local function BuildAuraTextControls(container, styleTable, refreshCallback)
+    local auraTextCb = AceGUI:Create("CheckBox")
+    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetValue(styleTable.showAuraText ~= false)
+    auraTextCb:SetFullWidth(true)
+    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showAuraText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraTextCb)
+
+    if styleTable.showAuraText ~= false then
+        local auraFontSizeSlider = AceGUI:Create("Slider")
+        auraFontSizeSlider:SetLabel("Font Size")
+        auraFontSizeSlider:SetSliderValues(8, 32, 1)
+        auraFontSizeSlider:SetValue(styleTable.auraTextFontSize or 12)
+        auraFontSizeSlider:SetFullWidth(true)
+        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraTextFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(auraFontSizeSlider)
+
+        local auraFontDrop = AceGUI:Create("Dropdown")
+        auraFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(auraFontDrop)
+        auraFontDrop:SetValue(styleTable.auraTextFont or "Friz Quadrata TT")
+        auraFontDrop:SetFullWidth(true)
+        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraTextFont = val
+            refreshCallback()
+        end)
+        container:AddChild(auraFontDrop)
+
+        local auraOutlineDrop = AceGUI:Create("Dropdown")
+        auraOutlineDrop:SetLabel("Font Outline")
+        auraOutlineDrop:SetList(CS.outlineOptions)
+        auraOutlineDrop:SetValue(styleTable.auraTextFontOutline or "OUTLINE")
+        auraOutlineDrop:SetFullWidth(true)
+        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraTextFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(auraOutlineDrop)
+
+        local auraFontColor = AceGUI:Create("ColorPicker")
+        auraFontColor:SetLabel("Font Color")
+        auraFontColor:SetHasAlpha(true)
+        local ac = styleTable.auraTextFontColor or {0, 0.925, 1, 1}
+        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
+        auraFontColor:SetFullWidth(true)
+        auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.auraTextFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        auraFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.auraTextFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(auraFontColor)
+    end
+end
+
+local function BuildKeybindTextControls(container, styleTable, refreshCallback)
+    local kbCb = AceGUI:Create("CheckBox")
+    kbCb:SetLabel("Show Keybind Text")
+    kbCb:SetValue(styleTable.showKeybindText or false)
+    kbCb:SetFullWidth(true)
+    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showKeybindText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(kbCb)
+
+    if styleTable.showKeybindText then
+        local kbAnchorDrop = AceGUI:Create("Dropdown")
+        kbAnchorDrop:SetLabel("Anchor")
+        local kbAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            kbAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        kbAnchorDrop:SetList(kbAnchorValues, CS.anchorPoints)
+        kbAnchorDrop:SetValue(styleTable.keybindAnchor or "TOPRIGHT")
+        kbAnchorDrop:SetFullWidth(true)
+        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.keybindAnchor = val
+            refreshCallback()
+        end)
+        container:AddChild(kbAnchorDrop)
+
+        local kbFontSizeSlider = AceGUI:Create("Slider")
+        kbFontSizeSlider:SetLabel("Font Size")
+        kbFontSizeSlider:SetSliderValues(6, 24, 1)
+        kbFontSizeSlider:SetValue(styleTable.keybindFontSize or 10)
+        kbFontSizeSlider:SetFullWidth(true)
+        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.keybindFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(kbFontSizeSlider)
+
+        local kbFontDrop = AceGUI:Create("Dropdown")
+        kbFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(kbFontDrop)
+        kbFontDrop:SetValue(styleTable.keybindFont or "Friz Quadrata TT")
+        kbFontDrop:SetFullWidth(true)
+        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.keybindFont = val
+            refreshCallback()
+        end)
+        container:AddChild(kbFontDrop)
+
+        local kbOutlineDrop = AceGUI:Create("Dropdown")
+        kbOutlineDrop:SetLabel("Font Outline")
+        kbOutlineDrop:SetList(CS.outlineOptions)
+        kbOutlineDrop:SetValue(styleTable.keybindFontOutline or "OUTLINE")
+        kbOutlineDrop:SetFullWidth(true)
+        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.keybindFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(kbOutlineDrop)
+
+        local kbFontColor = AceGUI:Create("ColorPicker")
+        kbFontColor:SetLabel("Font Color")
+        kbFontColor:SetHasAlpha(true)
+        local kbc = styleTable.keybindFontColor or {1, 1, 1, 1}
+        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
+        kbFontColor:SetFullWidth(true)
+        kbFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.keybindFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        kbFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.keybindFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(kbFontColor)
+    end
+end
+
+local function BuildChargeTextControls(container, styleTable, refreshCallback)
+    local chargeTextCb = AceGUI:Create("CheckBox")
+    chargeTextCb:SetLabel("Show Charge Text")
+    chargeTextCb:SetValue(styleTable.showChargeText ~= false)
+    chargeTextCb:SetFullWidth(true)
+    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showChargeText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(chargeTextCb)
+
+    if styleTable.showChargeText ~= false then
+        local chargeFontSizeSlider = AceGUI:Create("Slider")
+        chargeFontSizeSlider:SetLabel("Font Size")
+        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+        chargeFontSizeSlider:SetValue(styleTable.chargeFontSize or 12)
+        chargeFontSizeSlider:SetFullWidth(true)
+        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.chargeFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(chargeFontSizeSlider)
+
+        local chargeFontDrop = AceGUI:Create("Dropdown")
+        chargeFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(chargeFontDrop)
+        chargeFontDrop:SetValue(styleTable.chargeFont or "Friz Quadrata TT")
+        chargeFontDrop:SetFullWidth(true)
+        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.chargeFont = val
+            refreshCallback()
+        end)
+        container:AddChild(chargeFontDrop)
+
+        local chargeOutlineDrop = AceGUI:Create("Dropdown")
+        chargeOutlineDrop:SetLabel("Font Outline")
+        chargeOutlineDrop:SetList(CS.outlineOptions)
+        chargeOutlineDrop:SetValue(styleTable.chargeFontOutline or "OUTLINE")
+        chargeOutlineDrop:SetFullWidth(true)
+        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.chargeFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(chargeOutlineDrop)
+
+        local chargeFontColor = AceGUI:Create("ColorPicker")
+        chargeFontColor:SetLabel("Font Color (Max Charges)")
+        chargeFontColor:SetHasAlpha(true)
+        local cfc = styleTable.chargeFontColor or {1, 1, 1, 1}
+        chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
+        chargeFontColor:SetFullWidth(true)
+        chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.chargeFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.chargeFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(chargeFontColor)
+
+        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
+        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
+        chargeFontColorMissing:SetHasAlpha(true)
+        local cfcm = styleTable.chargeFontColorMissing or {1, 1, 1, 1}
+        chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
+        chargeFontColorMissing:SetFullWidth(true)
+        chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.chargeFontColorMissing = {r, g, b, a}
+            refreshCallback()
+        end)
+        chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.chargeFontColorMissing = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(chargeFontColorMissing)
+
+        local chargeFontColorZero = AceGUI:Create("ColorPicker")
+        chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
+        chargeFontColorZero:SetHasAlpha(true)
+        local cfcz = styleTable.chargeFontColorZero or {1, 1, 1, 1}
+        chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
+        chargeFontColorZero:SetFullWidth(true)
+        chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.chargeFontColorZero = {r, g, b, a}
+            refreshCallback()
+        end)
+        chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.chargeFontColorZero = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(chargeFontColorZero)
+
+        local chargeAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local chargeAnchorDrop = AceGUI:Create("Dropdown")
+        chargeAnchorDrop:SetLabel("Anchor")
+        chargeAnchorDrop:SetList(chargeAnchorValues, CS.anchorPoints)
+        chargeAnchorDrop:SetValue(styleTable.chargeAnchor or "BOTTOMRIGHT")
+        chargeAnchorDrop:SetFullWidth(true)
+        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.chargeAnchor = val
+            refreshCallback()
+        end)
+        container:AddChild(chargeAnchorDrop)
+
+        local chargeXSlider = AceGUI:Create("Slider")
+        chargeXSlider:SetLabel("X Offset")
+        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetValue(styleTable.chargeXOffset or -2)
+        chargeXSlider:SetFullWidth(true)
+        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.chargeXOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(chargeXSlider)
+
+        local chargeYSlider = AceGUI:Create("Slider")
+        chargeYSlider:SetLabel("Y Offset")
+        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetValue(styleTable.chargeYOffset or 2)
+        chargeYSlider:SetFullWidth(true)
+        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.chargeYOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(chargeYSlider)
+    end
+end
+
+local function BuildBorderControls(container, styleTable, refreshCallback)
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.borderSize = val
+        refreshCallback()
+    end)
+    container:AddChild(borderSlider)
+
+    local borderColor = AceGUI:Create("ColorPicker")
+    borderColor:SetLabel("Border Color")
+    borderColor:SetHasAlpha(true)
+    local bc = styleTable.borderColor or {0, 0, 0, 1}
+    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
+    borderColor:SetFullWidth(true)
+    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.borderColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.borderColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(borderColor)
+end
+
+local function BuildBackgroundColorControls(container, styleTable, refreshCallback)
+    local bgColor = AceGUI:Create("ColorPicker")
+    bgColor:SetLabel("Background Color")
+    bgColor:SetHasAlpha(true)
+    local bgc = styleTable.backgroundColor or {0, 0, 0, 0.5}
+    bgColor:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
+    bgColor:SetFullWidth(true)
+    bgColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.backgroundColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    bgColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.backgroundColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(bgColor)
+end
+
+local function BuildDesaturationControls(container, styleTable, refreshCallback)
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetValue(styleTable.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.desaturateOnCooldown = val
+        refreshCallback()
+    end)
+    container:AddChild(desatCb)
+end
+
+local function BuildLossOfControlControls(container, styleTable, refreshCallback)
+    local locCb = AceGUI:Create("CheckBox")
+    locCb:SetLabel("Show Loss of Control")
+    locCb:SetValue(styleTable.showLossOfControl or false)
+    locCb:SetFullWidth(true)
+    locCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showLossOfControl = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(locCb)
+
+    if styleTable.showLossOfControl then
+        local locColor = AceGUI:Create("ColorPicker")
+        locColor:SetLabel("LoC Overlay Color")
+        locColor:SetHasAlpha(true)
+        local lc = styleTable.lossOfControlColor or {1, 0, 0, 0.5}
+        locColor:SetColor(lc[1], lc[2], lc[3], lc[4])
+        locColor:SetFullWidth(true)
+        locColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.lossOfControlColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        locColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.lossOfControlColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(locColor)
+    end
+end
+
+local function BuildUnusableDimmingControls(container, styleTable, refreshCallback)
+    local unusableCb = AceGUI:Create("CheckBox")
+    unusableCb:SetLabel("Show Unusable Dimming")
+    unusableCb:SetValue(styleTable.showUnusable or false)
+    unusableCb:SetFullWidth(true)
+    unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showUnusable = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(unusableCb)
+
+    if styleTable.showUnusable then
+        local unusableColor = AceGUI:Create("ColorPicker")
+        unusableColor:SetLabel("Unusable Tint Color")
+        unusableColor:SetHasAlpha(false)
+        local uc = styleTable.unusableColor or {0.3, 0.3, 0.6}
+        unusableColor:SetColor(uc[1], uc[2], uc[3])
+        unusableColor:SetFullWidth(true)
+        unusableColor:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+            styleTable.unusableColor = {r, g, b}
+            refreshCallback()
+        end)
+        unusableColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+            styleTable.unusableColor = {r, g, b}
+            refreshCallback()
+        end)
+        container:AddChild(unusableColor)
+    end
+end
+
+local function BuildAssistedHighlightControls(container, styleTable, refreshCallback)
+    local assistedCb = AceGUI:Create("CheckBox")
+    assistedCb:SetLabel("Show Assisted Highlight")
+    assistedCb:SetValue(styleTable.showAssistedHighlight or false)
+    assistedCb:SetFullWidth(true)
+    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showAssistedHighlight = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(assistedCb)
+
+    if styleTable.showAssistedHighlight then
+        local highlightStyles = {
+            blizzard = "Blizzard (Marching Ants)",
+            proc = "Proc Glow",
+            solid = "Solid Border",
+        }
+        local styleDrop = AceGUI:Create("Dropdown")
+        styleDrop:SetLabel("Highlight Style")
+        styleDrop:SetList(highlightStyles)
+        styleDrop:SetValue(styleTable.assistedHighlightStyle or "blizzard")
+        styleDrop:SetFullWidth(true)
+        styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.assistedHighlightStyle = val
+            refreshCallback()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(styleDrop)
+
+        if styleTable.assistedHighlightStyle == "solid" then
+            local hlColor = AceGUI:Create("ColorPicker")
+            hlColor:SetLabel("Highlight Color")
+            hlColor:SetHasAlpha(true)
+            local c = styleTable.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+            hlColor:SetColor(c[1], c[2], c[3], c[4])
+            hlColor:SetFullWidth(true)
+            hlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                styleTable.assistedHighlightColor = {r, g, b, a}
+                refreshCallback()
+            end)
+            hlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                styleTable.assistedHighlightColor = {r, g, b, a}
+                refreshCallback()
+            end)
+            container:AddChild(hlColor)
+
+            local hlSizeSlider = AceGUI:Create("Slider")
+            hlSizeSlider:SetLabel("Border Size")
+            hlSizeSlider:SetSliderValues(1, 6, 0.5)
+            hlSizeSlider:SetValue(styleTable.assistedHighlightBorderSize or 2)
+            hlSizeSlider:SetFullWidth(true)
+            hlSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.assistedHighlightBorderSize = val
+                refreshCallback()
+            end)
+            container:AddChild(hlSizeSlider)
+        elseif styleTable.assistedHighlightStyle == "blizzard" then
+            local blizzSlider = AceGUI:Create("Slider")
+            blizzSlider:SetLabel("Glow Size")
+            blizzSlider:SetSliderValues(0, 60, 1)
+            blizzSlider:SetValue(styleTable.assistedHighlightBlizzardOverhang or 32)
+            blizzSlider:SetFullWidth(true)
+            blizzSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.assistedHighlightBlizzardOverhang = val
+                refreshCallback()
+            end)
+            container:AddChild(blizzSlider)
+        elseif styleTable.assistedHighlightStyle == "proc" then
+            local procHlColor = AceGUI:Create("ColorPicker")
+            procHlColor:SetLabel("Glow Color")
+            procHlColor:SetHasAlpha(true)
+            local phc = styleTable.assistedHighlightProcColor or {1, 1, 1, 1}
+            procHlColor:SetColor(phc[1], phc[2], phc[3], phc[4])
+            procHlColor:SetFullWidth(true)
+            procHlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                styleTable.assistedHighlightProcColor = {r, g, b, a}
+                refreshCallback()
+            end)
+            procHlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                styleTable.assistedHighlightProcColor = {r, g, b, a}
+                refreshCallback()
+            end)
+            container:AddChild(procHlColor)
+
+            local procSlider = AceGUI:Create("Slider")
+            procSlider:SetLabel("Glow Size")
+            procSlider:SetSliderValues(0, 60, 1)
+            procSlider:SetValue(styleTable.assistedHighlightProcOverhang or 32)
+            procSlider:SetFullWidth(true)
+            procSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.assistedHighlightProcOverhang = val
+                refreshCallback()
+            end)
+            container:AddChild(procSlider)
+        end
+    end
+end
+
+local function BuildProcGlowControls(container, styleTable, refreshCallback)
+    local procGlowSizeSlider = AceGUI:Create("Slider")
+    procGlowSizeSlider:SetLabel("Glow Size")
+    procGlowSizeSlider:SetSliderValues(0, 60, 1)
+    procGlowSizeSlider:SetValue(styleTable.procGlowOverhang or 32)
+    procGlowSizeSlider:SetFullWidth(true)
+    procGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.procGlowOverhang = val
+        refreshCallback()
+    end)
+    container:AddChild(procGlowSizeSlider)
+
+    local procGlowColor = AceGUI:Create("ColorPicker")
+    procGlowColor:SetLabel("Glow Color")
+    procGlowColor:SetHasAlpha(true)
+    local pgc = styleTable.procGlowColor or {1, 1, 1, 1}
+    procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
+    procGlowColor:SetFullWidth(true)
+    procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.procGlowColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.procGlowColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(procGlowColor)
+end
+
+local function BuildBarColorsControls(container, styleTable, refreshCallback)
+    local barColorPicker = AceGUI:Create("ColorPicker")
+    barColorPicker:SetLabel("Bar Color")
+    barColorPicker:SetHasAlpha(true)
+    local brc = styleTable.barColor or {0.2, 0.6, 1.0, 1.0}
+    barColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
+    barColorPicker:SetFullWidth(true)
+    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.barColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.barColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(barColorPicker)
+
+    local barCdColorPicker = AceGUI:Create("ColorPicker")
+    barCdColorPicker:SetLabel("Bar Cooldown Color")
+    barCdColorPicker:SetHasAlpha(true)
+    local bcc = styleTable.barCooldownColor or {0.6, 0.6, 0.6, 1.0}
+    barCdColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
+    barCdColorPicker:SetFullWidth(true)
+    barCdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.barCooldownColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    barCdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.barCooldownColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(barCdColorPicker)
+
+    local barChargeColorPicker = AceGUI:Create("ColorPicker")
+    barChargeColorPicker:SetLabel("Bar Recharging Color")
+    barChargeColorPicker:SetHasAlpha(true)
+    local bchc = styleTable.barChargeColor or {1.0, 0.82, 0.0, 1.0}
+    barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
+    barChargeColorPicker:SetFullWidth(true)
+    barChargeColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.barChargeColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    barChargeColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.barChargeColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(barChargeColorPicker)
+
+    local barBgColorPicker = AceGUI:Create("ColorPicker")
+    barBgColorPicker:SetLabel("Bar Background Color")
+    barBgColorPicker:SetHasAlpha(true)
+    local bbg = styleTable.barBgColor or {0.1, 0.1, 0.1, 0.8}
+    barBgColorPicker:SetColor(bbg[1], bbg[2], bbg[3], bbg[4])
+    barBgColorPicker:SetFullWidth(true)
+    barBgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.barBgColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    barBgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.barBgColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(barBgColorPicker)
+end
+
+local function BuildBarNameTextControls(container, styleTable, refreshCallback)
+    local showNameCb = AceGUI:Create("CheckBox")
+    showNameCb:SetLabel("Show Name Text")
+    showNameCb:SetValue(styleTable.showBarNameText ~= false)
+    showNameCb:SetFullWidth(true)
+    showNameCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showBarNameText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(showNameCb)
+
+    if styleTable.showBarNameText ~= false then
+        local flipNameCheck = AceGUI:Create("CheckBox")
+        flipNameCheck:SetLabel("Flip Name Text")
+        flipNameCheck:SetValue(styleTable.barNameTextReverse or false)
+        flipNameCheck:SetFullWidth(true)
+        flipNameCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barNameTextReverse = val or nil
+            refreshCallback()
+        end)
+        container:AddChild(flipNameCheck)
+
+        local nameFontSizeSlider = AceGUI:Create("Slider")
+        nameFontSizeSlider:SetLabel("Font Size")
+        nameFontSizeSlider:SetSliderValues(6, 24, 1)
+        nameFontSizeSlider:SetValue(styleTable.barNameFontSize or 10)
+        nameFontSizeSlider:SetFullWidth(true)
+        nameFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barNameFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(nameFontSizeSlider)
+
+        local nameFontDrop = AceGUI:Create("Dropdown")
+        nameFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(nameFontDrop)
+        nameFontDrop:SetValue(styleTable.barNameFont or "Friz Quadrata TT")
+        nameFontDrop:SetFullWidth(true)
+        nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barNameFont = val
+            refreshCallback()
+        end)
+        container:AddChild(nameFontDrop)
+
+        local nameOutlineDrop = AceGUI:Create("Dropdown")
+        nameOutlineDrop:SetLabel("Font Outline")
+        nameOutlineDrop:SetList(CS.outlineOptions)
+        nameOutlineDrop:SetValue(styleTable.barNameFontOutline or "OUTLINE")
+        nameOutlineDrop:SetFullWidth(true)
+        nameOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barNameFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(nameOutlineDrop)
+
+        local nameFontColor = AceGUI:Create("ColorPicker")
+        nameFontColor:SetLabel("Font Color")
+        nameFontColor:SetHasAlpha(true)
+        local nfc = styleTable.barNameFontColor or {1, 1, 1, 1}
+        nameFontColor:SetColor(nfc[1], nfc[2], nfc[3], nfc[4])
+        nameFontColor:SetFullWidth(true)
+        nameFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.barNameFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        nameFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.barNameFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(nameFontColor)
+    end
+end
+
+local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
+    local showReadyCb = AceGUI:Create("CheckBox")
+    showReadyCb:SetLabel("Show Ready Text")
+    showReadyCb:SetValue(styleTable.showBarReadyText or false)
+    showReadyCb:SetFullWidth(true)
+    showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showBarReadyText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(showReadyCb)
+
+    if styleTable.showBarReadyText then
+        local readyTextBox = AceGUI:Create("EditBox")
+        if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
+        readyTextBox:SetLabel("Ready Text")
+        readyTextBox:SetText(styleTable.barReadyText or "Ready")
+        readyTextBox:SetFullWidth(true)
+        readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
+            styleTable.barReadyText = val
+            refreshCallback()
+        end)
+        container:AddChild(readyTextBox)
+
+        local readyColorPicker = AceGUI:Create("ColorPicker")
+        readyColorPicker:SetLabel("Ready Text Color")
+        readyColorPicker:SetHasAlpha(true)
+        local rtc = styleTable.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
+        readyColorPicker:SetColor(rtc[1], rtc[2], rtc[3], rtc[4])
+        readyColorPicker:SetFullWidth(true)
+        readyColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.barReadyTextColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        readyColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.barReadyTextColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(readyColorPicker)
+
+        local readyFontSizeSlider = AceGUI:Create("Slider")
+        readyFontSizeSlider:SetLabel("Font Size")
+        readyFontSizeSlider:SetSliderValues(6, 24, 1)
+        readyFontSizeSlider:SetValue(styleTable.barReadyFontSize or 12)
+        readyFontSizeSlider:SetFullWidth(true)
+        readyFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barReadyFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(readyFontSizeSlider)
+
+        local readyFontDrop = AceGUI:Create("Dropdown")
+        readyFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(readyFontDrop)
+        readyFontDrop:SetValue(styleTable.barReadyFont or "Friz Quadrata TT")
+        readyFontDrop:SetFullWidth(true)
+        readyFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barReadyFont = val
+            refreshCallback()
+        end)
+        container:AddChild(readyFontDrop)
+
+        local readyOutlineDrop = AceGUI:Create("Dropdown")
+        readyOutlineDrop:SetLabel("Font Outline")
+        readyOutlineDrop:SetList(CS.outlineOptions)
+        readyOutlineDrop:SetValue(styleTable.barReadyFontOutline or "OUTLINE")
+        readyOutlineDrop:SetFullWidth(true)
+        readyOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barReadyFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(readyOutlineDrop)
+    end
+end
+
+------------------------------------------------------------------------
+-- OVERRIDES TAB (per-button style overrides)
+------------------------------------------------------------------------
+local function BuildOverridesTab(scroll, buttonData, infoButtons)
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+
+    local displayMode = group.displayMode or "icons"
+
+    -- Check if any overrides exist
+    if not buttonData.overrideSections or not next(buttonData.overrideSections) then
+        local noOverridesLabel = AceGUI:Create("Label")
+        noOverridesLabel:SetText("|cff888888No appearance overrides.\n\nTo customize this button's appearance, select it and click the export icon next to a group settings section heading.|r")
+        noOverridesLabel:SetFullWidth(true)
+        scroll:AddChild(noOverridesLabel)
+        return
+    end
+
+    local overrides = buttonData.styleOverrides
+    if not overrides then return end
+
+    local refreshCallback = function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end
+
+    -- Ordered list of sections to display (maintain consistent ordering)
+    local sectionOrder = {
+        "borderSettings", "backgroundColor", "cooldownText", "auraText",
+        "keybindText", "chargeText", "desaturation", "lossOfControl",
+        "unusableDimming", "assistedHighlight", "procGlow",
+        "barColors", "barNameText", "barReadyText",
+    }
+
+    -- Map of section IDs to builder functions
+    local sectionBuilders = {
+        borderSettings = BuildBorderControls,
+        backgroundColor = BuildBackgroundColorControls,
+        cooldownText = BuildCooldownTextControls,
+        auraText = BuildAuraTextControls,
+        keybindText = BuildKeybindTextControls,
+        chargeText = BuildChargeTextControls,
+        desaturation = BuildDesaturationControls,
+        lossOfControl = BuildLossOfControlControls,
+        unusableDimming = BuildUnusableDimmingControls,
+        assistedHighlight = BuildAssistedHighlightControls,
+        procGlow = BuildProcGlowControls,
+        barColors = BuildBarColorsControls,
+        barNameText = BuildBarNameTextControls,
+        barReadyText = BuildBarReadyTextControls,
+    }
+
+    for _, sectionId in ipairs(sectionOrder) do
+        if buttonData.overrideSections[sectionId] then
+            local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+            -- Skip sections not applicable to current display mode
+            if sectionDef and sectionDef.modes[displayMode] then
+                local heading = AceGUI:Create("Heading")
+                heading:SetText(sectionDef.label)
+                heading:SetFullWidth(true)
+                scroll:AddChild(heading)
+
+                local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
+                table.insert(infoButtons, revertBtn)
+
+                local builder = sectionBuilders[sectionId]
+                if builder then
+                    builder(scroll, overrides, refreshCallback)
+                end
+            end
+        end
+    end
+end
+
 local function BuildExtrasTab(container)
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -1979,6 +2627,48 @@ local function BuildExtrasTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(desatCb)
+
+    -- Inline promote button for desaturation
+    do
+        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+        local desatPromote = CreateFrame("Button", nil, desatCb.frame)
+        desatPromote:SetSize(16, 16)
+        desatPromote:SetPoint("LEFT", desatCb.checkbg, "RIGHT", desatCb.text:GetStringWidth() + 20, 0)
+        local desatPromoteIcon = desatPromote:CreateTexture(nil, "OVERLAY")
+        desatPromoteIcon:SetSize(12, 12)
+        desatPromoteIcon:SetPoint("CENTER")
+        local multiCount = 0
+        if CS.selectedButtons then
+            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        end
+        local canPromote = CS.selectedButton ~= nil and multiCount < 2
+            and btnData ~= nil
+            and not (btnData.overrideSections and btnData.overrideSections.desaturation)
+        if canPromote then
+            desatPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
+            desatPromote:Enable()
+        else
+            desatPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
+            desatPromote:Disable()
+        end
+        desatPromote:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if canPromote then
+                GameTooltip:AddLine("Override Desaturation for this button")
+            else
+                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+            end
+            GameTooltip:Show()
+        end)
+        desatPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        desatPromote:SetScript("OnClick", function()
+            if not canPromote then return end
+            CooldownCompanion:PromoteSection(btnData, style, "desaturation")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        table.insert(tabInfoButtons, desatPromote)
+    end
 
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel(isBarMode and "Show GCD" or "Show GCD Swipe")
@@ -2128,6 +2818,48 @@ local function BuildExtrasTab(container)
     end)
     table.insert(tabInfoButtons, locInfo)
 
+    -- Inline promote button for loss of control
+    do
+        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+        local locPromote = CreateFrame("Button", nil, locCb.frame)
+        locPromote:SetSize(16, 16)
+        locPromote:SetPoint("LEFT", locInfo, "RIGHT", 4, 0)
+        local locPromoteIcon = locPromote:CreateTexture(nil, "OVERLAY")
+        locPromoteIcon:SetSize(12, 12)
+        locPromoteIcon:SetPoint("CENTER")
+        local multiCount = 0
+        if CS.selectedButtons then
+            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        end
+        local canPromote = CS.selectedButton ~= nil and multiCount < 2
+            and btnData ~= nil
+            and not (btnData.overrideSections and btnData.overrideSections.lossOfControl)
+        if canPromote then
+            locPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
+            locPromote:Enable()
+        else
+            locPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
+            locPromote:Disable()
+        end
+        locPromote:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if canPromote then
+                GameTooltip:AddLine("Override Loss of Control for this button")
+            else
+                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+            end
+            GameTooltip:Show()
+        end)
+        locPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        locPromote:SetScript("OnClick", function()
+            if not canPromote then return end
+            CooldownCompanion:PromoteSection(btnData, style, "lossOfControl")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        table.insert(tabInfoButtons, locPromote)
+    end
+
     if style.showLossOfControl then
         local locColor = AceGUI:Create("ColorPicker")
         locColor:SetLabel("LoC Overlay Color")
@@ -2175,6 +2907,48 @@ local function BuildExtrasTab(container)
     end)
     table.insert(tabInfoButtons, unusableInfo)
 
+    -- Inline promote button for unusable dimming
+    do
+        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+        local unusablePromote = CreateFrame("Button", nil, unusableCb.frame)
+        unusablePromote:SetSize(16, 16)
+        unusablePromote:SetPoint("LEFT", unusableInfo, "RIGHT", 4, 0)
+        local unusablePromoteIcon = unusablePromote:CreateTexture(nil, "OVERLAY")
+        unusablePromoteIcon:SetSize(12, 12)
+        unusablePromoteIcon:SetPoint("CENTER")
+        local multiCount = 0
+        if CS.selectedButtons then
+            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        end
+        local canPromote = CS.selectedButton ~= nil and multiCount < 2
+            and btnData ~= nil
+            and not (btnData.overrideSections and btnData.overrideSections.unusableDimming)
+        if canPromote then
+            unusablePromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
+            unusablePromote:Enable()
+        else
+            unusablePromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
+            unusablePromote:Disable()
+        end
+        unusablePromote:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if canPromote then
+                GameTooltip:AddLine("Override Unusable Dimming for this button")
+            else
+                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+            end
+            GameTooltip:Show()
+        end)
+        unusablePromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        unusablePromote:SetScript("OnClick", function()
+            if not canPromote then return end
+            CooldownCompanion:PromoteSection(btnData, style, "unusableDimming")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        table.insert(tabInfoButtons, unusablePromote)
+    end
+
     if style.showUnusable then
         local unusableColor = AceGUI:Create("ColorPicker")
         unusableColor:SetLabel("Unusable Tint Color")
@@ -2197,6 +2971,7 @@ local function BuildExtrasTab(container)
     assistedHeading:SetText("Assisted Highlight")
     assistedHeading:SetFullWidth(true)
     container:AddChild(assistedHeading)
+    CreatePromoteButton(assistedHeading, "assistedHighlight", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local assistedCb = AceGUI:Create("CheckBox")
     assistedCb:SetLabel("Show Assisted Highlight")
@@ -2292,6 +3067,16 @@ local function BuildExtrasTab(container)
             container:AddChild(procSlider)
         end
     end
+
+    -- Proc Glow heading (only when a button is selected)
+    if CS.selectedButton then
+        local procGlowHeading = AceGUI:Create("Heading")
+        procGlowHeading:SetText("Proc Glow")
+        procGlowHeading:SetFullWidth(true)
+        container:AddChild(procGlowHeading)
+        CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    end
+
     end -- not isBarMode
 
     -- "Alpha" heading with (?) info button
@@ -3044,6 +3829,13 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(borderColor)
 
+    -- Bar Colors heading
+    local barColorsHeading = AceGUI:Create("Heading")
+    barColorsHeading:SetText("Bar Colors")
+    barColorsHeading:SetFullWidth(true)
+    container:AddChild(barColorsHeading)
+    CreatePromoteButton(barColorsHeading, "barColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
     local barColorPicker = AceGUI:Create("ColorPicker")
     barColorPicker:SetLabel("Bar Color")
     barColorPicker:SetHasAlpha(true)
@@ -3124,6 +3916,7 @@ local function BuildBarAppearanceTab(container, group, style)
     nameHeading:SetText("Name Text")
     nameHeading:SetFullWidth(true)
     container:AddChild(nameHeading)
+    CreatePromoteButton(nameHeading, "barNameText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local nameRow = AceGUI:Create("SimpleGroup")
     nameRow:SetFullWidth(true)
@@ -3235,6 +4028,7 @@ local function BuildBarAppearanceTab(container, group, style)
     timeHeading:SetText("Time Text")
     timeHeading:SetFullWidth(true)
     container:AddChild(timeHeading)
+    CreatePromoteButton(timeHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local timeRow = AceGUI:Create("SimpleGroup")
     timeRow:SetFullWidth(true)
@@ -3367,6 +4161,7 @@ local function BuildBarAppearanceTab(container, group, style)
     auraTextHeading:SetText("Aura Text")
     auraTextHeading:SetFullWidth(true)
     container:AddChild(auraTextHeading)
+    CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local auraTextCb = AceGUI:Create("CheckBox")
     auraTextCb:SetLabel("Show Aura Text")
@@ -3430,10 +4225,12 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(auraFontColor)
     end
 
-    local readySep = AceGUI:Create("Heading")
-    readySep:SetText("")
-    readySep:SetFullWidth(true)
-    container:AddChild(readySep)
+    -- Ready Text heading
+    local readyHeading = AceGUI:Create("Heading")
+    readyHeading:SetText("Ready Text")
+    readyHeading:SetFullWidth(true)
+    container:AddChild(readyHeading)
+    CreatePromoteButton(readyHeading, "barReadyText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local showReadyCb = AceGUI:Create("CheckBox")
     showReadyCb:SetLabel("Show Ready Text")
@@ -3610,6 +4407,13 @@ local function BuildAppearanceTab(container)
         container:AddChild(spacingSlider)
     end
 
+    -- Border heading
+    local borderHeading = AceGUI:Create("Heading")
+    borderHeading:SetText("Border")
+    borderHeading:SetFullWidth(true)
+    container:AddChild(borderHeading)
+    CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")
     borderSlider:SetSliderValues(0, 5, 0.1)
@@ -3650,6 +4454,7 @@ local function BuildAppearanceTab(container)
     textHeading:SetText("Text Settings")
     textHeading:SetFullWidth(true)
     container:AddChild(textHeading)
+    CreatePromoteButton(textHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     -- Toggles first
     local cdTextCb = AceGUI:Create("CheckBox")
@@ -3720,6 +4525,7 @@ local function BuildAppearanceTab(container)
     auraTextHeading:SetText("Aura Text")
     auraTextHeading:SetFullWidth(true)
     container:AddChild(auraTextHeading)
+    CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local auraTextCb = AceGUI:Create("CheckBox")
     auraTextCb:SetLabel("Show Aura Text")
@@ -3788,6 +4594,7 @@ local function BuildAppearanceTab(container)
     kbHeading:SetText("Keybind Text")
     kbHeading:SetFullWidth(true)
     container:AddChild(kbHeading)
+    CreatePromoteButton(kbHeading, "keybindText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local kbCb = AceGUI:Create("CheckBox")
     kbCb:SetLabel("Show Keybind Text")
@@ -3865,6 +4672,144 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(kbFontColor)
+    end
+
+    -- Charge Text section
+    local chargeHeading = AceGUI:Create("Heading")
+    chargeHeading:SetText("Charge Text")
+    chargeHeading:SetFullWidth(true)
+    container:AddChild(chargeHeading)
+    CreatePromoteButton(chargeHeading, "chargeText", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    local chargeTextCb = AceGUI:Create("CheckBox")
+    chargeTextCb:SetLabel("Show Charge Text")
+    chargeTextCb:SetValue(style.showChargeText ~= false)
+    chargeTextCb:SetFullWidth(true)
+    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showChargeText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(chargeTextCb)
+
+    if style.showChargeText ~= false then
+        local chargeFontSizeSlider = AceGUI:Create("Slider")
+        chargeFontSizeSlider:SetLabel("Font Size")
+        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+        chargeFontSizeSlider:SetValue(style.chargeFontSize or 12)
+        chargeFontSizeSlider:SetFullWidth(true)
+        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontSizeSlider)
+
+        local chargeFontDrop = AceGUI:Create("Dropdown")
+        chargeFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(chargeFontDrop)
+        chargeFontDrop:SetValue(style.chargeFont or "Friz Quadrata TT")
+        chargeFontDrop:SetFullWidth(true)
+        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontDrop)
+
+        local chargeOutlineDrop = AceGUI:Create("Dropdown")
+        chargeOutlineDrop:SetLabel("Font Outline")
+        chargeOutlineDrop:SetList(CS.outlineOptions)
+        chargeOutlineDrop:SetValue(style.chargeFontOutline or "OUTLINE")
+        chargeOutlineDrop:SetFullWidth(true)
+        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeOutlineDrop)
+
+        local chargeFontColor = AceGUI:Create("ColorPicker")
+        chargeFontColor:SetLabel("Font Color (Max Charges)")
+        chargeFontColor:SetHasAlpha(true)
+        local cfc = style.chargeFontColor or {1, 1, 1, 1}
+        chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
+        chargeFontColor:SetFullWidth(true)
+        chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.chargeFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.chargeFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontColor)
+
+        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
+        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
+        chargeFontColorMissing:SetHasAlpha(true)
+        local cfcm = style.chargeFontColorMissing or {1, 1, 1, 1}
+        chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
+        chargeFontColorMissing:SetFullWidth(true)
+        chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.chargeFontColorMissing = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.chargeFontColorMissing = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontColorMissing)
+
+        local chargeFontColorZero = AceGUI:Create("ColorPicker")
+        chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
+        chargeFontColorZero:SetHasAlpha(true)
+        local cfcz = style.chargeFontColorZero or {1, 1, 1, 1}
+        chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
+        chargeFontColorZero:SetFullWidth(true)
+        chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.chargeFontColorZero = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.chargeFontColorZero = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontColorZero)
+
+        local chargeAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local chargeAnchorDrop = AceGUI:Create("Dropdown")
+        chargeAnchorDrop:SetLabel("Anchor")
+        chargeAnchorDrop:SetList(chargeAnchorValues, CS.anchorPoints)
+        chargeAnchorDrop:SetValue(style.chargeAnchor or "BOTTOMRIGHT")
+        chargeAnchorDrop:SetFullWidth(true)
+        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeAnchorDrop)
+
+        local chargeXSlider = AceGUI:Create("Slider")
+        chargeXSlider:SetLabel("X Offset")
+        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetValue(style.chargeXOffset or -2)
+        chargeXSlider:SetFullWidth(true)
+        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeXSlider)
+
+        local chargeYSlider = AceGUI:Create("Slider")
+        chargeYSlider:SetLabel("Y Offset")
+        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetValue(style.chargeYOffset or 2)
+        chargeYSlider:SetFullWidth(true)
+        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeYSlider)
     end
 end
 
@@ -6572,3 +7517,4 @@ ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
 ST._BuildFrameAnchoringPlayerPanel = BuildFrameAnchoringPlayerPanel
 ST._BuildFrameAnchoringTargetPanel = BuildFrameAnchoringTargetPanel
+ST._BuildOverridesTab = BuildOverridesTab

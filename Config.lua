@@ -141,7 +141,7 @@ ST._configState = {
     selectedButtons = selectedButtons,
     selectedGroups = selectedGroups,
     selectedTab = nil,      -- set/read by both files
-    buttonSettingsTab = "settings", -- "settings" or "visibility"
+    buttonSettingsTab = "settings", -- "settings", "overrides", or "visibility"
     -- UI state tables (both files read/write)
     collapsedSections = collapsedSections,
     buttonSettingsInfoButtons = buttonSettingsInfoButtons,
@@ -2688,6 +2688,7 @@ local function CleanRecycledEntry(entry)
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
     end
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
+    if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     entry.image:SetAlpha(1)
 end
@@ -5097,6 +5098,39 @@ function RefreshColumn2()
             warnBtn:Show()
         end
 
+        -- Override badge: show a small icon if button has style overrides
+        if entry.frame._cdcOverrideBadge then
+            entry.frame._cdcOverrideBadge:Hide()
+        end
+        if CooldownCompanion:HasStyleOverrides(buttonData) then
+            local badge = entry.frame._cdcOverrideBadge
+            if not badge then
+                badge = CreateFrame("Frame", nil, entry.frame)
+                badge:SetSize(16, 16)
+                local badgeIcon = badge:CreateTexture(nil, "OVERLAY")
+                badgeIcon:SetSize(12, 12)
+                badgeIcon:SetPoint("CENTER")
+                badgeIcon:SetAtlas("Professions-Icon-Export")
+                badge:EnableMouse(true)
+                badge:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Has appearance overrides")
+                    GameTooltip:Show()
+                end)
+                badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                entry.frame._cdcOverrideBadge = badge
+            end
+            -- Position to the left of the warning icon (or right side if no warning)
+            badge:ClearAllPoints()
+            if not usable and entry.frame._cdcWarnBtn then
+                badge:SetPoint("RIGHT", entry.frame._cdcWarnBtn, "LEFT", -2, 0)
+            else
+                badge:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
+            end
+            badge:SetFrameLevel(entry.frame:GetFrameLevel() + 5)
+            badge:Show()
+        end
+
         -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
         -- so that mousedown doesn't trigger selection; we handle clicks on mouseup instead
         entry:SetCallback("OnClick", function() end)
@@ -6243,6 +6277,7 @@ local function CreateConfigPanel()
     bsTabGroup:SetTabs({
         { value = "settings",   text = "Settings" },
         { value = "visibility", text = "Visibility" },
+        { value = "overrides",  text = "Overrides" },
     })
     bsTabGroup:SetLayout("Fill")
 
@@ -6288,6 +6323,8 @@ local function CreateConfigPanel()
             elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
                 ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
+        elseif tab == "overrides" then
+            ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "visibility" then
             ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end

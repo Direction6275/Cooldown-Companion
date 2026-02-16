@@ -457,11 +457,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     for i, buttonData in ipairs(group.buttons) do
         if self:IsButtonUsable(buttonData) then
             visibleIndex = visibleIndex + 1
+            local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local button
             if isBarMode then
-                button = self:CreateBarFrame(frame, i, buttonData, style)
+                button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
             else
-                button = self:CreateButtonFrame(frame, i, buttonData, style)
+                button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
             end
 
             -- Position the button using visibleIndex for gap-free layout
@@ -693,11 +694,12 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 
     if not frame or not group then return end
 
-    local style = group.style or {}
+    local groupStyle = group.style or {}
 
-    -- Update all buttons
+    -- Update all buttons with per-button effective style
     for _, button in ipairs(frame.buttons) do
-        button:UpdateStyle(style)
+        local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
+        button:UpdateStyle(effectiveStyle)
     end
 
     -- Update group frame clickthrough

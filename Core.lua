@@ -147,6 +147,16 @@ local defaults = {
                         keybindFontOutline = "OUTLINE",
                         keybindFontColor = {1, 1, 1, 1},
                         keybindAnchor = "TOPRIGHT",
+                        showChargeText = true,
+                        chargeFont = "Friz Quadrata TT",
+                        chargeFontSize = 12,
+                        chargeFontOutline = "OUTLINE",
+                        chargeFontColor = {1, 1, 1, 1},
+                        chargeFontColorMissing = {1, 1, 1, 1},
+                        chargeFontColorZero = {1, 1, 1, 1},
+                        chargeAnchor = "BOTTOMRIGHT",
+                        chargeXOffset = -2,
+                        chargeYOffset = 2,
                     },
                     enabled = true,
                     displayMode = "icons",    -- "icons" or "bars"
@@ -215,6 +225,16 @@ local defaults = {
             keybindFontOutline = "OUTLINE",
             keybindFontColor = {1, 1, 1, 1},
             keybindAnchor = "TOPRIGHT",
+            showChargeText = true,
+            chargeFont = "Friz Quadrata TT",
+            chargeFontSize = 12,
+            chargeFontOutline = "OUTLINE",
+            chargeFontColor = {1, 1, 1, 1},
+            chargeFontColorMissing = {1, 1, 1, 1},
+            chargeFontColorZero = {1, 1, 1, 1},
+            chargeAnchor = "BOTTOMRIGHT",
+            chargeXOffset = -2,
+            chargeYOffset = 2,
             -- Bar display mode defaults
             barLength = 180,
             barHeight = 20,
@@ -333,6 +353,152 @@ local defaults = {
         },
     },
 }
+
+------------------------------------------------------------------------
+-- OVERRIDE SECTIONS REGISTRY
+-- Maps section IDs to their labels, style keys, and applicable display modes.
+-- Used by promote/revert logic and UI builders.
+------------------------------------------------------------------------
+ST.OVERRIDE_SECTIONS = {
+    -- Icon Mode — Appearance Tab
+    borderSettings = {
+        label = "Border",
+        keys = {"borderSize", "borderColor"},
+        modes = {icons = true, bars = true},
+    },
+    backgroundColor = {
+        label = "Background Color",
+        keys = {"backgroundColor"},
+        modes = {icons = true},
+    },
+    cooldownText = {
+        label = "Cooldown Text",
+        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor"},
+        modes = {icons = true, bars = true},
+    },
+    auraText = {
+        label = "Aura Text",
+        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor"},
+        modes = {icons = true, bars = true},
+    },
+    keybindText = {
+        label = "Keybind Text",
+        keys = {"showKeybindText", "keybindFont", "keybindFontSize", "keybindFontOutline", "keybindFontColor", "keybindAnchor"},
+        modes = {icons = true},
+    },
+    chargeText = {
+        label = "Charge Text",
+        keys = {"showChargeText", "chargeFont", "chargeFontSize", "chargeFontOutline", "chargeFontColor", "chargeFontColorMissing", "chargeFontColorZero", "chargeAnchor", "chargeXOffset", "chargeYOffset"},
+        modes = {icons = true, bars = true},
+    },
+    -- Icon Mode — Extras Tab
+    desaturation = {
+        label = "Desaturation",
+        keys = {"desaturateOnCooldown"},
+        modes = {icons = true, bars = true},
+    },
+    lossOfControl = {
+        label = "Loss of Control",
+        keys = {"showLossOfControl", "lossOfControlColor"},
+        modes = {icons = true},
+    },
+    unusableDimming = {
+        label = "Unusable Dimming",
+        keys = {"showUnusable", "unusableColor"},
+        modes = {icons = true},
+    },
+    assistedHighlight = {
+        label = "Assisted Highlight",
+        keys = {"showAssistedHighlight", "assistedHighlightStyle", "assistedHighlightColor", "assistedHighlightBorderSize", "assistedHighlightBlizzardOverhang", "assistedHighlightProcOverhang", "assistedHighlightProcColor"},
+        modes = {icons = true},
+    },
+    procGlow = {
+        label = "Proc Glow",
+        keys = {"procGlowOverhang", "procGlowColor"},
+        modes = {icons = true},
+    },
+    -- Bar Mode — Appearance Tab
+    barColors = {
+        label = "Bar Colors",
+        keys = {"barColor", "barCooldownColor", "barChargeColor", "barBgColor"},
+        modes = {bars = true},
+    },
+    barNameText = {
+        label = "Name Text",
+        keys = {"showBarNameText", "barNameTextReverse", "barNameFont", "barNameFontSize", "barNameFontOutline", "barNameFontColor"},
+        modes = {bars = true},
+    },
+    barReadyText = {
+        label = "Ready Text",
+        keys = {"showBarReadyText", "barReadyText", "barReadyTextColor", "barReadyFontSize", "barReadyFont", "barReadyFontOutline"},
+        modes = {bars = true},
+    },
+}
+
+------------------------------------------------------------------------
+-- EFFECTIVE STYLE UTILITIES
+------------------------------------------------------------------------
+
+--- Compute the effective style for a button, merging per-button overrides
+--- with group defaults via metatable __index fallback.
+function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
+    if buttonData and buttonData.styleOverrides
+       and buttonData.overrideSections and next(buttonData.overrideSections) then
+        return setmetatable(buttonData.styleOverrides, { __index = groupStyle })
+    end
+    return groupStyle
+end
+
+--- Promote a section: copy current group values into buttonData.styleOverrides,
+--- mark the section as active in overrideSections.
+function CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
+    local section = ST.OVERRIDE_SECTIONS[sectionId]
+    if not section then return end
+
+    if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
+    if not buttonData.overrideSections then buttonData.overrideSections = {} end
+
+    -- Copy current group values into overrides
+    for _, key in ipairs(section.keys) do
+        local val = groupStyle[key]
+        if type(val) == "table" then
+            buttonData.styleOverrides[key] = CopyTable(val)
+        else
+            buttonData.styleOverrides[key] = val
+        end
+    end
+
+    buttonData.overrideSections[sectionId] = true
+end
+
+--- Revert a section: remove section keys from styleOverrides,
+--- clear the section from overrideSections.
+function CooldownCompanion:RevertSection(buttonData, sectionId)
+    local section = ST.OVERRIDE_SECTIONS[sectionId]
+    if not section then return end
+
+    if buttonData.styleOverrides then
+        for _, key in ipairs(section.keys) do
+            buttonData.styleOverrides[key] = nil
+        end
+        -- Clean up empty styleOverrides table
+        if not next(buttonData.styleOverrides) then
+            buttonData.styleOverrides = nil
+        end
+    end
+
+    if buttonData.overrideSections then
+        buttonData.overrideSections[sectionId] = nil
+        if not next(buttonData.overrideSections) then
+            buttonData.overrideSections = nil
+        end
+    end
+end
+
+--- Check if a button has any active style overrides.
+function CooldownCompanion:HasStyleOverrides(buttonData)
+    return buttonData and buttonData.overrideSections and next(buttonData.overrideSections) ~= nil
+end
 
 function CooldownCompanion:OnInitialize()
     -- Initialize database
@@ -482,6 +648,12 @@ function CooldownCompanion:OnEnable()
 
     -- Migrate font/texture paths to LibSharedMedia names
     self:MigrateLSMNames()
+
+    -- Migrate per-button charge text to group style defaults + per-button overrides
+    self:MigrateChargeTextToGroupStyle()
+
+    -- Migrate per-button proc glow to style overrides
+    self:MigrateProcGlowToStyleOverrides()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -1024,7 +1196,6 @@ function CooldownCompanion:RefreshChargeFlags()
                 local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
                 if chargeCount > plainCount then
                     buttonData.hasCharges = true
-                    buttonData.showChargeText = true
                     if chargeCount > (buttonData.maxCharges or 0) then
                         buttonData.maxCharges = chargeCount
                     end
@@ -1786,7 +1957,7 @@ function CooldownCompanion:MigrateLSMNames()
     for _, group in pairs(profile.groups) do
         local s = group.style
         if s then
-            for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont"}) do
+            for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont", "chargeFont"}) do
                 if s[key] and FONT_PATH_TO_LSM[s[key]] then
                     s[key] = FONT_PATH_TO_LSM[s[key]]
                 end
@@ -1795,7 +1966,7 @@ function CooldownCompanion:MigrateLSMNames()
                 s.barTexture = TEXTURE_PATH_TO_LSM[s.barTexture]
             end
         end
-        -- Per-button charge font
+        -- Per-button fonts (charge font on legacy buttonData, or in styleOverrides)
         if group.buttons then
             for _, bd in ipairs(group.buttons) do
                 if bd.chargeFont and FONT_PATH_TO_LSM[bd.chargeFont] then
@@ -1804,6 +1975,14 @@ function CooldownCompanion:MigrateLSMNames()
                 if bd.itemCountFont and FONT_PATH_TO_LSM[bd.itemCountFont] then
                     bd.itemCountFont = FONT_PATH_TO_LSM[bd.itemCountFont]
                 end
+                -- styleOverrides fonts
+                if bd.styleOverrides then
+                    for _, key in ipairs({"chargeFont", "cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont"}) do
+                        if bd.styleOverrides[key] and FONT_PATH_TO_LSM[bd.styleOverrides[key]] then
+                            bd.styleOverrides[key] = FONT_PATH_TO_LSM[bd.styleOverrides[key]]
+                        end
+                    end
+                end
             end
         end
     end
@@ -1811,7 +1990,7 @@ function CooldownCompanion:MigrateLSMNames()
     -- Migrate globalStyle
     local gs = profile.globalStyle
     if gs then
-        for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont"}) do
+        for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont", "chargeFont"}) do
             if gs[key] and FONT_PATH_TO_LSM[gs[key]] then
                 gs[key] = FONT_PATH_TO_LSM[gs[key]]
             end
@@ -1847,6 +2026,164 @@ function CooldownCompanion:MigrateLSMNames()
     end
 
     profile.lsmMigrated = true
+end
+
+-- Charge text keys that migrate from buttonData to group.style
+local CHARGE_TEXT_KEYS = {
+    "showChargeText", "chargeFont", "chargeFontSize", "chargeFontOutline",
+    "chargeFontColor", "chargeFontColorMissing", "chargeFontColorZero",
+    "chargeAnchor", "chargeXOffset", "chargeYOffset",
+}
+
+local CHARGE_TEXT_DEFAULTS = {
+    showChargeText = true,
+    chargeFont = "Friz Quadrata TT",
+    chargeFontSize = 12,
+    chargeFontOutline = "OUTLINE",
+    chargeFontColor = {1, 1, 1, 1},
+    chargeFontColorMissing = {1, 1, 1, 1},
+    chargeFontColorZero = {1, 1, 1, 1},
+    chargeAnchor = "BOTTOMRIGHT",
+    chargeXOffset = -2,
+    chargeYOffset = 2,
+}
+
+function CooldownCompanion:MigrateChargeTextToGroupStyle()
+    local profile = self.db.profile
+    if profile.chargeTextMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style and style.chargeFont == nil then
+            -- Find the first button with charge text settings to adopt as group defaults
+            local adopted = false
+            if group.buttons then
+                for _, bd in ipairs(group.buttons) do
+                    if bd.chargeFont or bd.chargeFontSize or bd.chargeFontOutline then
+                        -- Adopt this button's values as the group defaults
+                        for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                            if bd[key] ~= nil then
+                                if type(bd[key]) == "table" then
+                                    style[key] = CopyTable(bd[key])
+                                else
+                                    style[key] = bd[key]
+                                end
+                            else
+                                style[key] = CHARGE_TEXT_DEFAULTS[key]
+                                if type(style[key]) == "table" then
+                                    style[key] = CopyTable(style[key])
+                                end
+                            end
+                        end
+                        adopted = true
+                        break
+                    end
+                end
+            end
+
+            -- No button had custom charge text → apply defaults to group style
+            if not adopted then
+                for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                    local def = CHARGE_TEXT_DEFAULTS[key]
+                    if type(def) == "table" then
+                        style[key] = CopyTable(def)
+                    else
+                        style[key] = def
+                    end
+                end
+            end
+
+            -- Now scan all buttons: create overrides for buttons that differ from group defaults
+            if group.buttons then
+                for _, bd in ipairs(group.buttons) do
+                    local hasDiff = false
+                    for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                        if bd[key] ~= nil then
+                            local bdVal = bd[key]
+                            local grpVal = style[key]
+                            if type(bdVal) == "table" and type(grpVal) == "table" then
+                                for k = 1, #bdVal do
+                                    if bdVal[k] ~= grpVal[k] then hasDiff = true; break end
+                                end
+                            elseif bdVal ~= grpVal then
+                                hasDiff = true
+                            end
+                            if hasDiff then break end
+                        end
+                    end
+
+                    if hasDiff then
+                        if not bd.styleOverrides then bd.styleOverrides = {} end
+                        if not bd.overrideSections then bd.overrideSections = {} end
+                        for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                            if bd[key] ~= nil then
+                                if type(bd[key]) == "table" then
+                                    bd.styleOverrides[key] = CopyTable(bd[key])
+                                else
+                                    bd.styleOverrides[key] = bd[key]
+                                end
+                            else
+                                -- Use group default for keys this button didn't customize
+                                local def = style[key]
+                                if type(def) == "table" then
+                                    bd.styleOverrides[key] = CopyTable(def)
+                                else
+                                    bd.styleOverrides[key] = def
+                                end
+                            end
+                        end
+                        bd.overrideSections.chargeText = true
+                    end
+
+                    -- Remove old per-button charge text fields
+                    for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                        bd[key] = nil
+                    end
+                end
+            end
+        end
+    end
+
+    -- Also ensure globalStyle has charge text defaults
+    local gs = profile.globalStyle
+    if gs and gs.chargeFont == nil then
+        for _, key in ipairs(CHARGE_TEXT_KEYS) do
+            local def = CHARGE_TEXT_DEFAULTS[key]
+            if type(def) == "table" then
+                gs[key] = CopyTable(def)
+            else
+                gs[key] = def
+            end
+        end
+    end
+
+    profile.chargeTextMigrated = true
+end
+
+function CooldownCompanion:MigrateProcGlowToStyleOverrides()
+    local profile = self.db.profile
+    if profile.procGlowOverrideMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.procGlowColor then
+                    if not bd.styleOverrides then bd.styleOverrides = {} end
+                    if not bd.overrideSections then bd.overrideSections = {} end
+                    bd.styleOverrides.procGlowColor = bd.procGlowColor
+                    bd.procGlowColor = nil
+                    -- Also copy group default for procGlowOverhang into overrides
+                    -- so the section is complete
+                    if not bd.styleOverrides.procGlowOverhang and group.style then
+                        bd.styleOverrides.procGlowOverhang = group.style.procGlowOverhang or 32
+                    end
+                    bd.overrideSections.procGlow = true
+                end
+            end
+        end
+    end
+
+    profile.procGlowOverrideMigrated = true
 end
 
 -- LSM fetch helpers with fallback
