@@ -1641,7 +1641,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 if useIt then
                     button._durationObj = spellCooldownDuration
-                    button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    if not spellCooldownDuration:HasSecretValues() then
+                        button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    end
                     fetchOk = true
                 end
             end
@@ -1684,29 +1686,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     and not (isOnGCD and CooldownCompanion._gcdActive)
             end
         else
-            -- Icon mode
-            if buttonData._cooldownSecrecy == 0 then
-                -- NeverSecret: button.cooldown is reused for the recharge radial,
-                -- so IsShown() stays true even with charges available. Use
-                -- scratchCooldown with the spell's main CD DurationObject instead.
-                local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
-                if mainCDDuration then
-                    scratchCooldown:Hide()
-                    scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
-                    button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
-                    scratchCooldown:Hide()
-                else
-                    button._mainCDShown = false
-                end
-            else
-                -- ContextuallySecret: SetCooldownFromDurationObject is NOT in
-                -- acceptsecrets.md, so the scratchCooldown pattern silently fails
-                -- for secret DurationObjects. Fall back to button.cooldown:IsShown()
-                -- which was set via SetCooldown() (in acceptsecrets.md). The stale-
-                -- IsShown issue (from prior SetCooldownFromDurationObject) doesn't
-                -- apply during combat because that API also fails with secrets.
+            -- Icon mode: prefer scratchCooldown when DurationObject values are plain.
+            -- button.cooldown:IsShown() is unreliable because UpdateIconModeVisuals
+            -- force-shows it and SetCooldown(0,0) does not auto-hide.
+            local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            if mainCDDuration and not mainCDDuration:HasSecretValues() then
+                scratchCooldown:Hide()
+                scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
+                button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                scratchCooldown:Hide()
+            elseif mainCDDuration then
+                -- Secret values (combat): scratchCooldown fails, fall back to IsShown()
                 button._mainCDShown = button.cooldown:IsShown()
                     and not (isOnGCD and CooldownCompanion._gcdActive)
+            else
+                button._mainCDShown = false
             end
         end
     end
@@ -1744,13 +1738,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Charge DurationObjects may report non-zero even at full charges (stale data);
         -- scratchCooldown auto-show is the ground truth.
         if button._chargeDurationObj then
-            if buttonData._cooldownSecrecy == 0 then
+            if not button._chargeDurationObj:HasSecretValues() then
                 scratchCooldown:Hide()
                 scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
                 button._chargeRecharging = scratchCooldown:IsShown()
                 scratchCooldown:Hide()
             else
-                -- SetCooldownFromDurationObject fails with secrets; fall back to
+                -- Secret values (combat): scratchCooldown fails, fall back to
                 -- the cooldown shown state captured before UpdateIconModeVisuals
                 -- force-showed button.cooldown (icon-mode swipe display).
                 -- For bar mode, cdShownForChargeCheck is nil so we fall back to
@@ -1769,7 +1763,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if not button._isBar then
                 -- Icon mode: always set _durationObj, show recharge radial
                 button._durationObj = button._chargeDurationObj
-                if buttonData._cooldownSecrecy == 0 then
+                if not button._chargeDurationObj:HasSecretValues() then
                     button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
                 elseif charges then
                     -- Secret: SetCooldownFromDurationObject fails; use SetCooldown
@@ -1862,6 +1856,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     else
         -- Compact mode: Show/Hide handled by UpdateGroupLayout
         if button._visibilityHidden then
+            -- Prevent stale cooldown shown state from persisting across ticks.
+            -- SetCooldown(0,0) does not auto-hide, and UpdateIconModeVisuals
+            -- force-shows the frame; explicitly clearing here ensures the
+            -- in-combat IsShown() fallback reads clean state next tick.
+            if not button._isBar then
+                button.cooldown:Hide()
+            end
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
