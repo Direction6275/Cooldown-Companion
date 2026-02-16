@@ -1260,26 +1260,25 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
 end
 
 function CooldownCompanion:OnBagChanged()
-    self:RefreshChargeFlags()
+    self:RefreshChargeFlags("item")
     self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnTalentsChanged()
-    self:RefreshChargeFlags()
+    self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
 end
 
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells.
-function CooldownCompanion:RefreshChargeFlags()
+function CooldownCompanion:RefreshChargeFlags(typeFilter)
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
-            if buttonData.type == "spell" then
+            if buttonData.type == "spell" and typeFilter ~= "item" then
                 local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
                 buttonData.hasCharges = chargeInfo and true or nil
                 if chargeInfo then
-                    -- Read maxCharges directly (plain outside combat)
                     local mc = chargeInfo.maxCharges
                     if mc and mc > (buttonData.maxCharges or 0) then
                         buttonData.maxCharges = mc
@@ -1290,7 +1289,7 @@ function CooldownCompanion:RefreshChargeFlags()
                         buttonData.maxCharges = displayCount
                     end
                 end
-            elseif buttonData.type == "item" then
+            elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items: at 0 charges both count APIs
                 -- return 0, indistinguishable from "item not owned".
                 local plainCount = C_Item.GetItemCount(buttonData.id)
