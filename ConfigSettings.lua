@@ -10,6 +10,14 @@ local AceGUI = LibStub("AceGUI-3.0")
 -- Shared config state (populated by Config.lua before this file loads)
 local CS = ST._configState
 
+-- Helper: tint AceGUI Heading labels with player class color
+local function ColorHeading(heading)
+    local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if cc then
+        heading.label:SetTextColor(cc.r, cc.g, cc.b)
+    end
+end
+
 ------------------------------------------------------------------------
 -- BUTTON SETTINGS BUILDERS
 ------------------------------------------------------------------------
@@ -112,6 +120,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if buttonData.type == "spell" then
     local auraHeading = AceGUI:Create("Heading")
     auraHeading:SetText("Aura Tracking")
+    ColorHeading(auraHeading)
     auraHeading:SetFullWidth(true)
     scroll:AddChild(auraHeading)
 
@@ -553,6 +562,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if group.displayMode ~= "bars" then
     local indicatorHeading = AceGUI:Create("Heading")
     indicatorHeading:SetText("Indicators")
+    ColorHeading(indicatorHeading)
     indicatorHeading:SetFullWidth(true)
     scroll:AddChild(indicatorHeading)
 
@@ -647,6 +657,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if group.displayMode == "bars" then
         local customNameHeading = AceGUI:Create("Heading")
         customNameHeading:SetText("Custom Name")
+        ColorHeading(customNameHeading)
         customNameHeading:SetFullWidth(true)
         scroll:AddChild(customNameHeading)
 
@@ -716,6 +727,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
 
     local itemHeading = AceGUI:Create("Heading")
     itemHeading:SetText("Item Settings")
+    ColorHeading(itemHeading)
     itemHeading:SetFullWidth(true)
     scroll:AddChild(itemHeading)
 
@@ -830,6 +842,7 @@ end
 local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices)
     local heading = AceGUI:Create("Heading")
     heading:SetText(multiCount .. " Selected")
+    ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
@@ -2498,6 +2511,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
             if sectionDef and sectionDef.modes[displayMode] then
                 local heading = AceGUI:Create("Heading")
                 heading:SetText(sectionDef.label)
+                ColorHeading(heading)
                 heading:SetFullWidth(true)
                 scroll:AddChild(heading)
 
@@ -2885,6 +2899,7 @@ local function BuildExtrasTab(container)
     -- Assisted Highlight section
     local assistedHeading = AceGUI:Create("Heading")
     assistedHeading:SetText("Assisted Highlight")
+    ColorHeading(assistedHeading)
     assistedHeading:SetFullWidth(true)
     container:AddChild(assistedHeading)
     CreatePromoteButton(assistedHeading, "assistedHighlight", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -2989,6 +3004,7 @@ local function BuildExtrasTab(container)
     -- "Alpha" heading with (?) info button
     local alphaHeading = AceGUI:Create("Heading")
     alphaHeading:SetText("Alpha")
+    ColorHeading(alphaHeading)
     alphaHeading:SetFullWidth(true)
     container:AddChild(alphaHeading)
 
@@ -3082,6 +3098,7 @@ local function BuildExtrasTab(container)
         -- Heading
         local overridesHeading = AceGUI:Create("Heading")
         overridesHeading:SetText("Visibility Overrides")
+        ColorHeading(overridesHeading)
         overridesHeading:SetFullWidth(true)
         container:AddChild(overridesHeading)
 
@@ -3194,6 +3211,7 @@ local function BuildExtrasTab(container)
     if CooldownCompanion.Masque and not isBarMode then
         local otherHeading = AceGUI:Create("Heading")
         otherHeading:SetText("Other")
+        ColorHeading(otherHeading)
         otherHeading:SetFullWidth(true)
         container:AddChild(otherHeading)
 
@@ -3474,6 +3492,7 @@ local function BuildPositioningTab(container)
     if group.displayMode ~= "bars" then
     local strataHeading = AceGUI:Create("Heading")
     strataHeading:SetText("Strata")
+    ColorHeading(strataHeading)
     strataHeading:SetFullWidth(true)
     container:AddChild(strataHeading)
 
@@ -3617,6 +3636,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Bar Settings header
     local barHeading = AceGUI:Create("Heading")
     barHeading:SetText("Bar Settings")
+    ColorHeading(barHeading)
     barHeading:SetFullWidth(true)
     container:AddChild(barHeading)
 
@@ -3739,6 +3759,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Bar Colors heading
     local barColorsHeading = AceGUI:Create("Heading")
     barColorsHeading:SetText("Bar Colors")
+    ColorHeading(barColorsHeading)
     barColorsHeading:SetFullWidth(true)
     container:AddChild(barColorsHeading)
     CreatePromoteButton(barColorsHeading, "barColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -3821,6 +3842,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Name Text heading
     local nameHeading = AceGUI:Create("Heading")
     nameHeading:SetText("Name Text")
+    ColorHeading(nameHeading)
     nameHeading:SetFullWidth(true)
     container:AddChild(nameHeading)
     CreatePromoteButton(nameHeading, "barNameText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -3933,6 +3955,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Time Text heading
     local timeHeading = AceGUI:Create("Heading")
     timeHeading:SetText("Time Text")
+    ColorHeading(timeHeading)
     timeHeading:SetFullWidth(true)
     container:AddChild(timeHeading)
     CreatePromoteButton(timeHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4072,6 +4095,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- Active Aura Indicator section
     local barAuraHeading = AceGUI:Create("Heading")
     barAuraHeading:SetText("Active Aura Indicator")
+    ColorHeading(barAuraHeading)
     barAuraHeading:SetFullWidth(true)
     container:AddChild(barAuraHeading)
     CreatePromoteButton(barAuraHeading, "barActiveAura", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4083,6 +4107,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- Aura Text section
     local auraTextHeading = AceGUI:Create("Heading")
     auraTextHeading:SetText("Aura Text")
+    ColorHeading(auraTextHeading)
     auraTextHeading:SetFullWidth(true)
     container:AddChild(auraTextHeading)
     CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4152,6 +4177,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- Pandemic Indicator section
     local pandemicBarHeading = AceGUI:Create("Heading")
     pandemicBarHeading:SetText("Pandemic Indicator")
+    ColorHeading(pandemicBarHeading)
     pandemicBarHeading:SetFullWidth(true)
     container:AddChild(pandemicBarHeading)
     CreatePromoteButton(pandemicBarHeading, "pandemicBar", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4163,6 +4189,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- Ready Text heading
     local readyHeading = AceGUI:Create("Heading")
     readyHeading:SetText("Ready Text")
+    ColorHeading(readyHeading)
     readyHeading:SetFullWidth(true)
     container:AddChild(readyHeading)
     CreatePromoteButton(readyHeading, "barReadyText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4258,6 +4285,7 @@ local function BuildEffectsTab(container)
     -- Active Aura Glow section
     local auraIndicatorHeading = AceGUI:Create("Heading")
     auraIndicatorHeading:SetText("Active Aura Glow")
+    ColorHeading(auraIndicatorHeading)
     auraIndicatorHeading:SetFullWidth(true)
     container:AddChild(auraIndicatorHeading)
     CreatePromoteButton(auraIndicatorHeading, "auraIndicator", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4269,6 +4297,7 @@ local function BuildEffectsTab(container)
     -- Aura Text section
     local auraTextHeading = AceGUI:Create("Heading")
     auraTextHeading:SetText("Aura Text")
+    ColorHeading(auraTextHeading)
     auraTextHeading:SetFullWidth(true)
     container:AddChild(auraTextHeading)
     CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4338,6 +4367,7 @@ local function BuildEffectsTab(container)
     -- Pandemic Glow section
     local pandemicGlowHeading = AceGUI:Create("Heading")
     pandemicGlowHeading:SetText("Pandemic Glow")
+    ColorHeading(pandemicGlowHeading)
     pandemicGlowHeading:SetFullWidth(true)
     container:AddChild(pandemicGlowHeading)
     CreatePromoteButton(pandemicGlowHeading, "pandemicGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4349,6 +4379,7 @@ local function BuildEffectsTab(container)
     -- Proc Glow section
     local procGlowHeading = AceGUI:Create("Heading")
     procGlowHeading:SetText("Proc Glow")
+    ColorHeading(procGlowHeading)
     procGlowHeading:SetFullWidth(true)
     container:AddChild(procGlowHeading)
     CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4381,6 +4412,7 @@ local function BuildAppearanceTab(container)
     -- Icon Settings header
     local iconHeading = AceGUI:Create("Heading")
     iconHeading:SetText("Icon Settings")
+    ColorHeading(iconHeading)
     iconHeading:SetFullWidth(true)
     container:AddChild(iconHeading)
 
@@ -4461,6 +4493,7 @@ local function BuildAppearanceTab(container)
     -- Border heading
     local borderHeading = AceGUI:Create("Heading")
     borderHeading:SetText("Border")
+    ColorHeading(borderHeading)
     borderHeading:SetFullWidth(true)
     container:AddChild(borderHeading)
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4503,6 +4536,7 @@ local function BuildAppearanceTab(container)
     -- Text Settings header
     local textHeading = AceGUI:Create("Heading")
     textHeading:SetText("Text Settings")
+    ColorHeading(textHeading)
     textHeading:SetFullWidth(true)
     container:AddChild(textHeading)
     CreatePromoteButton(textHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4574,6 +4608,7 @@ local function BuildAppearanceTab(container)
     -- Keybind Text section
     local kbHeading = AceGUI:Create("Heading")
     kbHeading:SetText("Keybind Text")
+    ColorHeading(kbHeading)
     kbHeading:SetFullWidth(true)
     container:AddChild(kbHeading)
     CreatePromoteButton(kbHeading, "keybindText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4659,6 +4694,7 @@ local function BuildAppearanceTab(container)
     -- Charge Text section
     local chargeHeading = AceGUI:Create("Heading")
     chargeHeading:SetText("Charge Text")
+    ColorHeading(chargeHeading)
     chargeHeading:SetFullWidth(true)
     container:AddChild(chargeHeading)
     CreatePromoteButton(chargeHeading, "chargeText", CS.selectedButton and group.buttons[CS.selectedButton], style)
@@ -4822,6 +4858,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
 
     local heading = AceGUI:Create("Heading")
     heading:SetText("Visibility Rules")
+    ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
@@ -5059,6 +5096,7 @@ local function BuildLoadConditionsTab(container)
 
     local heading = AceGUI:Create("Heading")
     heading:SetText("Do Not Load When In")
+    ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
@@ -5079,6 +5117,7 @@ local function BuildLoadConditionsTab(container)
     -- Specialization heading
     local specHeading = AceGUI:Create("Heading")
     specHeading:SetText("Specialization Filter")
+    ColorHeading(specHeading)
     specHeading:SetFullWidth(true)
     container:AddChild(specHeading)
 
@@ -5239,6 +5278,7 @@ BuildCastBarAnchoringPanel = function(container)
     -- ============ Position Section ============
     local posHeading = AceGUI:Create("Heading")
     posHeading:SetText("Position")
+    ColorHeading(posHeading)
     posHeading:SetFullWidth(true)
     container:AddChild(posHeading)
 
@@ -5288,6 +5328,7 @@ BuildCastBarAnchoringPanel = function(container)
     -- ============ Cast Effects Section ============
     local fxHeading = AceGUI:Create("Heading")
     fxHeading:SetText("Cast Effects")
+    ColorHeading(fxHeading)
     fxHeading:SetFullWidth(true)
     container:AddChild(fxHeading)
 
@@ -5386,6 +5427,7 @@ local function BuildCastBarStylingPanel(container)
     -- ============ Bar Visuals Section ============
     local visHeading = AceGUI:Create("Heading")
     visHeading:SetText("Bar Visuals")
+    ColorHeading(visHeading)
     visHeading:SetFullWidth(true)
     container:AddChild(visHeading)
 
@@ -5598,6 +5640,7 @@ local function BuildCastBarStylingPanel(container)
     -- ============ Spell Name Text Section ============
     local nameHeading = AceGUI:Create("Heading")
     nameHeading:SetText("Spell Name Text")
+    ColorHeading(nameHeading)
     nameHeading:SetFullWidth(true)
     container:AddChild(nameHeading)
 
@@ -5688,6 +5731,7 @@ local function BuildCastBarStylingPanel(container)
     -- ============ Cast Time Text Section ============
     local ctHeading = AceGUI:Create("Heading")
     ctHeading:SetText("Cast Time Text")
+    ColorHeading(ctHeading)
     ctHeading:SetFullWidth(true)
     container:AddChild(ctHeading)
 
@@ -6008,6 +6052,7 @@ BuildResourceBarAnchoringPanel = function(container)
     -- ============ Position Section ============
     local posHeading = AceGUI:Create("Heading")
     posHeading:SetText("Position")
+    ColorHeading(posHeading)
     posHeading:SetFullWidth(true)
     container:AddChild(posHeading)
 
@@ -6080,6 +6125,7 @@ BuildResourceBarAnchoringPanel = function(container)
     -- ============ Stacking Section ============
     local stackHeading = AceGUI:Create("Heading")
     stackHeading:SetText("Stacking")
+    ColorHeading(stackHeading)
     stackHeading:SetFullWidth(true)
     container:AddChild(stackHeading)
 
@@ -6118,6 +6164,7 @@ BuildResourceBarAnchoringPanel = function(container)
     -- ============ Resource Toggles Section ============
     local toggleHeading = AceGUI:Create("Heading")
     toggleHeading:SetText("Resource Toggles")
+    ColorHeading(toggleHeading)
     toggleHeading:SetFullWidth(true)
     container:AddChild(toggleHeading)
 
@@ -6254,6 +6301,7 @@ local function BuildResourceBarStylingPanel(container)
     -- ============ Border Section ============
     local borderHeading = AceGUI:Create("Heading")
     borderHeading:SetText("Border")
+    ColorHeading(borderHeading)
     borderHeading:SetFullWidth(true)
     container:AddChild(borderHeading)
 
@@ -6334,6 +6382,7 @@ local function BuildResourceBarStylingPanel(container)
     -- ============ Text Section ============
     local textHeading = AceGUI:Create("Heading")
     textHeading:SetText("Text")
+    ColorHeading(textHeading)
     textHeading:SetFullWidth(true)
     container:AddChild(textHeading)
 
@@ -6406,6 +6455,7 @@ local function BuildResourceBarStylingPanel(container)
     -- ============ Per-Resource Colors Section ============
     local colorHeading = AceGUI:Create("Heading")
     colorHeading:SetText("Per-Resource Colors")
+    ColorHeading(colorHeading)
     colorHeading:SetFullWidth(true)
     container:AddChild(colorHeading)
 
@@ -6880,6 +6930,7 @@ BuildCustomAuraBarPanel = function(container)
 
         local slotHeading = AceGUI:Create("Heading")
         slotHeading:SetText("Slot " .. slotIdx .. ": " .. slotLabel)
+        ColorHeading(slotHeading)
         slotHeading:SetFullWidth(true)
         container:AddChild(slotHeading)
 
@@ -7050,6 +7101,7 @@ BuildCustomAuraBarPanel = function(container)
             if cab.enabled and cab.spellID then
                 local colorHeading = AceGUI:Create("Heading")
                 colorHeading:SetText("Colors")
+                ColorHeading(colorHeading)
                 colorHeading:SetFullWidth(true)
                 container:AddChild(colorHeading)
 
@@ -7349,6 +7401,7 @@ BuildFrameAnchoringPlayerPanel = function(container)
     -- Player Frame section heading
     local playerHeading = AceGUI:Create("Heading")
     playerHeading:SetText("Player Frame Position")
+    ColorHeading(playerHeading)
     playerHeading:SetFullWidth(true)
     container:AddChild(playerHeading)
 
@@ -7426,6 +7479,7 @@ BuildFrameAnchoringTargetPanel = function(container)
         -- Independent target settings
         local targetHeading = AceGUI:Create("Heading")
         targetHeading:SetText("Target Frame Position")
+        ColorHeading(targetHeading)
         targetHeading:SetFullWidth(true)
         container:AddChild(targetHeading)
 

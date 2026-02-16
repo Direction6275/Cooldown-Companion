@@ -4582,6 +4582,8 @@ function RefreshColumn2()
 
         local heading = AceGUI:Create("Heading")
         heading:SetText(multiGroupCount .. " Groups Selected")
+        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
         heading:SetFullWidth(true)
         col2Scroll:AddChild(heading)
 
@@ -5035,6 +5037,8 @@ function RefreshColumn2()
     -- Separator
     local sep = AceGUI:Create("Heading")
     sep:SetText("")
+    local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if cc then sep.label:SetTextColor(cc.r, cc.g, cc.b) end
     sep:SetFullWidth(true)
     col2Scroll:AddChild(sep)
 
