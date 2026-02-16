@@ -141,7 +141,7 @@ ST._configState = {
     selectedButtons = selectedButtons,
     selectedGroups = selectedGroups,
     selectedTab = nil,      -- set/read by both files
-    buttonSettingsTab = "settings", -- "settings", "overrides", or "visibility"
+    buttonSettingsTab = "settings", -- "settings" or "overrides"
     -- UI state tables (both files read/write)
     collapsedSections = collapsedSections,
     buttonSettingsInfoButtons = buttonSettingsInfoButtons,
@@ -6286,12 +6286,11 @@ local function CreateConfigPanel()
     scroll2.frame:Show()
     col2Scroll = scroll2
 
-    -- Button Settings TabGroup (Settings + Visibility tabs)
+    -- Button Settings TabGroup (Settings + Overrides tabs)
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
-        { value = "settings",   text = "Settings" },
-        { value = "visibility", text = "Visibility" },
-        { value = "overrides",  text = "Overrides" },
+        { value = "settings",  text = "Settings" },
+        { value = "overrides", text = "Overrides" },
     })
     bsTabGroup:SetLayout("Fill")
 
@@ -6337,10 +6336,10 @@ local function CreateConfigPanel()
             elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
                 ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
+            ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            ST._BuildCustomNameSection(scroll, buttonData)
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-        elseif tab == "visibility" then
-            ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
 
         -- Apply hideInfoButtons setting

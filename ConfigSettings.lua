@@ -653,69 +653,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end -- buttonData.type == "spell"
 
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
-
-    if group.displayMode == "bars" then
-        local customNameHeading = AceGUI:Create("Heading")
-        customNameHeading:SetText("Custom Name")
-        ColorHeading(customNameHeading)
-        customNameHeading:SetFullWidth(true)
-        scroll:AddChild(customNameHeading)
-
-        local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
-        local customNameCollapsed = CS.collapsedSections[customNameKey]
-
-        local customNameCollapseBtn = CreateFrame("Button", nil, customNameHeading.frame)
-        table.insert(CS.buttonSettingsCollapseButtons, customNameCollapseBtn)
-        customNameCollapseBtn:SetSize(16, 16)
-        customNameCollapseBtn:SetPoint("LEFT", customNameHeading.label, "RIGHT", 4, 0)
-        customNameHeading.right:SetPoint("LEFT", customNameCollapseBtn, "RIGHT", 4, 0)
-        local customNameCollapseArrow = customNameCollapseBtn:CreateTexture(nil, "ARTWORK")
-        customNameCollapseArrow:SetSize(12, 12)
-        customNameCollapseArrow:SetPoint("CENTER")
-        customNameCollapseArrow:SetAtlas(customNameCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-        customNameCollapseBtn:SetScript("OnClick", function()
-            CS.collapsedSections[customNameKey] = not CS.collapsedSections[customNameKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        customNameCollapseBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(customNameCollapsed and "Expand" or "Collapse")
-            GameTooltip:Show()
-        end)
-        customNameCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        if not customNameCollapsed then
-        local customNameBox = AceGUI:Create("EditBox")
-        customNameBox:SetLabel("")
-        customNameBox:SetText(buttonData.customName or "")
-        customNameBox:SetFullWidth(true)
-        customNameBox:SetCallback("OnEnterPressed", function(widget, event, text)
-            text = strtrim(text)
-            buttonData.customName = text ~= "" and text or nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        scroll:AddChild(customNameBox)
-
-        local editFrame = customNameBox.editbox
-        editFrame.Instructions = editFrame.Instructions or editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-        editFrame.Instructions:SetPoint("LEFT", editFrame, "LEFT", 0, 0)
-        editFrame.Instructions:SetPoint("RIGHT", editFrame, "RIGHT", 0, 0)
-        editFrame.Instructions:SetText("add custom name here, leave blank for default")
-        editFrame.Instructions:SetTextColor(0.5, 0.5, 0.5)
-        if (buttonData.customName or "") ~= "" then
-            editFrame.Instructions:Hide()
-        else
-            editFrame.Instructions:Show()
-        end
-        customNameBox:SetCallback("OnTextChanged", function(widget, event, text)
-            if text == "" then
-                editFrame.Instructions:Show()
-            else
-                editFrame.Instructions:Hide()
-            end
-        end)
-        end -- not customNameCollapsed
-    end
 end
 
 local function BuildItemSettings(scroll, buttonData, infoButtons)
@@ -4922,7 +4859,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     hideAuraInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Hide While Aura Active")
-        GameTooltip:AddLine("Requires Aura Tracking to be enabled in the Settings tab.", 1, 1, 1, true)
+        GameTooltip:AddLine("Requires Aura Tracking to be enabled above.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     hideAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -4992,7 +4929,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     hideNoAuraInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Hide While Aura Not Active")
-        GameTooltip:AddLine("Requires Aura Tracking to be enabled in the Settings tab.", 1, 1, 1, true)
+        GameTooltip:AddLine("Requires Aura Tracking to be enabled above.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     hideNoAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -5043,7 +4980,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         scroll:AddChild(warnSpacer)
 
         local warnLabel = AceGUI:Create("Label")
-        warnLabel:SetText("|cffff8800Warning: Aura Tracking is not enabled in the Settings tab. Aura-based visibility will have no effect.|r")
+        warnLabel:SetText("|cffff8800Warning: Aura Tracking is not enabled. Enable it above for aura-based visibility to take effect.|r")
         warnLabel:SetFullWidth(true)
         scroll:AddChild(warnLabel)
     end
@@ -7535,6 +7472,75 @@ BuildFrameAnchoringTargetPanel = function(container)
     end
 end
 
+------------------------------------------------------------------------
+-- CUSTOM NAME SECTION (bar groups only)
+------------------------------------------------------------------------
+local function BuildCustomNameSection(scroll, buttonData)
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group or group.displayMode ~= "bars" then return end
+
+    local customNameHeading = AceGUI:Create("Heading")
+    customNameHeading:SetText("Custom Name")
+    ColorHeading(customNameHeading)
+    customNameHeading:SetFullWidth(true)
+    scroll:AddChild(customNameHeading)
+
+    local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
+    local customNameCollapsed = CS.collapsedSections[customNameKey]
+
+    local customNameCollapseBtn = CreateFrame("Button", nil, customNameHeading.frame)
+    table.insert(CS.buttonSettingsCollapseButtons, customNameCollapseBtn)
+    customNameCollapseBtn:SetSize(16, 16)
+    customNameCollapseBtn:SetPoint("LEFT", customNameHeading.label, "RIGHT", 4, 0)
+    customNameHeading.right:SetPoint("LEFT", customNameCollapseBtn, "RIGHT", 4, 0)
+    local customNameCollapseArrow = customNameCollapseBtn:CreateTexture(nil, "ARTWORK")
+    customNameCollapseArrow:SetSize(12, 12)
+    customNameCollapseArrow:SetPoint("CENTER")
+    customNameCollapseArrow:SetAtlas(customNameCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    customNameCollapseBtn:SetScript("OnClick", function()
+        CS.collapsedSections[customNameKey] = not CS.collapsedSections[customNameKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    customNameCollapseBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(customNameCollapsed and "Expand" or "Collapse")
+        GameTooltip:Show()
+    end)
+    customNameCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    if not customNameCollapsed then
+    local customNameBox = AceGUI:Create("EditBox")
+    customNameBox:SetLabel("")
+    customNameBox:SetText(buttonData.customName or "")
+    customNameBox:SetFullWidth(true)
+    customNameBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        text = strtrim(text)
+        buttonData.customName = text ~= "" and text or nil
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    scroll:AddChild(customNameBox)
+
+    local editFrame = customNameBox.editbox
+    editFrame.Instructions = editFrame.Instructions or editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    editFrame.Instructions:SetPoint("LEFT", editFrame, "LEFT", 0, 0)
+    editFrame.Instructions:SetPoint("RIGHT", editFrame, "RIGHT", 0, 0)
+    editFrame.Instructions:SetText("add custom name here, leave blank for default")
+    editFrame.Instructions:SetTextColor(0.5, 0.5, 0.5)
+    if (buttonData.customName or "") ~= "" then
+        editFrame.Instructions:Hide()
+    else
+        editFrame.Instructions:Show()
+    end
+    customNameBox:SetCallback("OnTextChanged", function(widget, event, text)
+        if text == "" then
+            editFrame.Instructions:Show()
+        else
+            editFrame.Instructions:Hide()
+        end
+    end)
+    end -- not customNameCollapsed
+end
+
 -- Expose builder functions for Config.lua to call
 ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
@@ -7542,6 +7548,7 @@ ST._BuildEquipItemSettings = BuildEquipItemSettings
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
 ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
 ST._BuildVisibilitySettings = BuildVisibilitySettings
+ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildPositioningTab = BuildPositioningTab
 ST._BuildExtrasTab = BuildExtrasTab
