@@ -1185,6 +1185,11 @@ function CooldownCompanion:UpdateButtonIcon(button)
         button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
     end
 
+    -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
+    if displayId ~= prevDisplayId and buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(displayId)
+    end
+
     -- Update bar name text when the display spell changes (e.g. transform)
     if button.nameText and buttonData.type == "spell" and displayId ~= prevDisplayId then
         local spellName = C_Spell.GetSpellName(displayId)
@@ -1449,6 +1454,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local style = button.style
     local isGCDOnly = false
 
+    -- For transforming spells (e.g. Command Demon → pet ability), use the
+    -- current override spell for cooldown queries. _displaySpellId is set
+    -- by UpdateButtonIcon on SPELL_UPDATE_ICON and creation.
+    local cooldownSpellId = button._displaySpellId or buttonData.id
+
     -- Clear per-tick DurationObject; set below if cooldown/aura active.
     -- Used by bar fill, desaturation, visibility checks instead of
     -- GetCooldownTimes() which returns secret values after
@@ -1601,7 +1611,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if buttonData.type == "spell" and not buttonData.isPassive then
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
             -- SetCooldown accepts secret startTime/duration values.
-            local cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
+            local cooldownInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
             if cooldownInfo then
                 isOnGCD = cooldownInfo.isOnGCD
                 if not fetchOk then
@@ -1630,7 +1640,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- DurationObject path: HasSecretValues gates IsZero comparison.
             -- Non-secret: use IsZero to filter zero-duration (spell ready).
             -- Secret: fall back to isOnGCD (NeverSecret) as activity signal.
-            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
             if spellCooldownDuration then
                 local useIt = false
                 if not spellCooldownDuration:HasSecretValues() then
@@ -1695,7 +1705,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Icon mode: prefer scratchCooldown when DurationObject values are plain.
             -- button.cooldown:IsShown() is unreliable because UpdateIconModeVisuals
             -- force-shows it and SetCooldown(0,0) does not auto-hide.
-            local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
             if mainCDDuration and not mainCDDuration:HasSecretValues() then
                 scratchCooldown:Hide()
                 scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
