@@ -1744,15 +1744,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._chargeRecharging = scratchCooldown:IsShown()
                 scratchCooldown:Hide()
             else
-                -- Secret values (combat): scratchCooldown fails, fall back to
-                -- the cooldown shown state captured before UpdateIconModeVisuals
-                -- force-showed button.cooldown (icon-mode swipe display).
-                -- For bar mode, cdShownForChargeCheck is nil so we fall back to
-                -- button.cooldown:IsShown() which is reliable (bars don't force-show).
+                -- Secret values (combat): SetCooldownFromDurationObject fails
+                -- with secret DurationObjects.  Use mode-specific fallbacks.
                 if cdShownForChargeCheck ~= nil then
+                    -- Icon mode: captured before UpdateIconModeVisuals force-show.
                     button._chargeRecharging = cdShownForChargeCheck
+                elseif charges then
+                    -- Bar mode: button.cooldown reflects the main spell CD, not
+                    -- the recharge cycle — IsShown() is false when charges remain.
+                    -- Probe scratchCooldown with charge timing data instead
+                    -- (SetCooldown accepts secrets; IsShown returns plain bool).
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                    button._chargeRecharging = scratchCooldown:IsShown()
+                    scratchCooldown:Hide()
                 else
-                    button._chargeRecharging = button.cooldown:IsShown()
+                    button._chargeRecharging = false
                 end
             end
         else
