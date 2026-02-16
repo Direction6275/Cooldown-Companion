@@ -57,6 +57,50 @@ local function ColorHeading(heading)
     end
 end
 
+-- Helper: attach a reusable collapse/expand arrow button to an AceGUI Heading.
+-- Stores the button on heading.frame._cdcCollapseBtn so it survives widget
+-- recycling without creating duplicate textures or stale handlers.
+local COLLAPSE_ARROW_ATLAS = "glues-characterSelect-icon-arrowDown-small"
+local COLLAPSE_ROTATION_RIGHT = math.pi / 2   -- collapsed: arrow points right
+local COLLAPSE_ROTATION_DOWN  = 0              -- expanded:  arrow points down
+
+local function AttachCollapseButton(heading, isCollapsed, onClickFn)
+    local frame = heading.frame
+    local btn = frame._cdcCollapseBtn
+
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(16, 16)
+        btn._arrow = btn:CreateTexture(nil, "ARTWORK")
+        btn._arrow:SetSize(12, 12)
+        btn._arrow:SetPoint("CENTER")
+        btn._arrow:SetAtlas(COLLAPSE_ARROW_ATLAS)
+        frame._cdcCollapseBtn = btn
+    end
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    btn:SetPoint("LEFT", heading.label, "RIGHT", 4, 0)
+    btn:Show()
+    btn._arrow:Show()
+
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", btn, "RIGHT", 4, 0)
+
+    btn._arrow:SetRotation(isCollapsed and COLLAPSE_ROTATION_RIGHT or COLLAPSE_ROTATION_DOWN)
+
+    btn:SetScript("OnClick", onClickFn)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(isCollapsed and "Expand" or "Collapse")
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    return btn
+end
+
 ------------------------------------------------------------------------
 -- BUTTON SETTINGS BUILDERS
 ------------------------------------------------------------------------
@@ -166,25 +210,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     local auraKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_aura"
     local auraCollapsed = CS.collapsedSections[auraKey]
 
-    local auraCollapseBtn = CreateFrame("Button", nil, auraHeading.frame)
-    table.insert(CS.buttonSettingsCollapseButtons, auraCollapseBtn)
-    auraCollapseBtn:SetSize(16, 16)
-    auraCollapseBtn:SetPoint("LEFT", auraHeading.label, "RIGHT", 4, 0)
-    auraHeading.right:SetPoint("LEFT", auraCollapseBtn, "RIGHT", 4, 0)
-    local auraCollapseArrow = auraCollapseBtn:CreateTexture(nil, "ARTWORK")
-    auraCollapseArrow:SetSize(12, 12)
-    auraCollapseArrow:SetPoint("CENTER")
-    auraCollapseArrow:SetAtlas(auraCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    auraCollapseBtn:SetScript("OnClick", function()
+    local auraCollapseBtn = AttachCollapseButton(auraHeading, auraCollapsed, function()
         CS.collapsedSections[auraKey] = not CS.collapsedSections[auraKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    auraCollapseBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(auraCollapsed and "Expand" or "Collapse")
-        GameTooltip:Show()
-    end)
-    auraCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(CS.buttonSettingsCollapseButtons, auraCollapseBtn)
 
     if not auraCollapsed then
 
@@ -608,25 +638,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     local indicatorKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_indicators"
     local indicatorCollapsed = CS.collapsedSections[indicatorKey]
 
-    local indicatorCollapseBtn = CreateFrame("Button", nil, indicatorHeading.frame)
-    table.insert(CS.buttonSettingsCollapseButtons, indicatorCollapseBtn)
-    indicatorCollapseBtn:SetSize(16, 16)
-    indicatorCollapseBtn:SetPoint("LEFT", indicatorHeading.label, "RIGHT", 4, 0)
-    indicatorHeading.right:SetPoint("LEFT", indicatorCollapseBtn, "RIGHT", 4, 0)
-    local indicatorCollapseArrow = indicatorCollapseBtn:CreateTexture(nil, "ARTWORK")
-    indicatorCollapseArrow:SetSize(12, 12)
-    indicatorCollapseArrow:SetPoint("CENTER")
-    indicatorCollapseArrow:SetAtlas(indicatorCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    indicatorCollapseBtn:SetScript("OnClick", function()
+    local indicatorCollapseBtn = AttachCollapseButton(indicatorHeading, indicatorCollapsed, function()
         CS.collapsedSections[indicatorKey] = not CS.collapsedSections[indicatorKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    indicatorCollapseBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(indicatorCollapsed and "Expand" or "Collapse")
-        GameTooltip:Show()
-    end)
-    indicatorCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(CS.buttonSettingsCollapseButtons, indicatorCollapseBtn)
 
     if not indicatorCollapsed then
     -- Proc Glow toggle
@@ -5254,16 +5270,6 @@ local function BuildLoadConditionsTab(container)
     specHeading:SetFullWidth(true)
     container:AddChild(specHeading)
 
-    local specDesc = AceGUI:Create("Label")
-    specDesc:SetText("When any spec is checked, the group only shows for those specs. Unchecking all removes the filter (always show).")
-    specDesc:SetFullWidth(true)
-    container:AddChild(specDesc)
-
-    local spacer2 = AceGUI:Create("Label")
-    spacer2:SetText(" ")
-    spacer2:SetFullWidth(true)
-    container:AddChild(spacer2)
-
     -- Current class spec checkboxes
     local numSpecs = GetNumSpecializations()
     for i = 1, numSpecs do
@@ -5418,15 +5424,7 @@ BuildCastBarAnchoringPanel = function(container)
     local posKey = "castbar_position"
     local posCollapsed = castBarCollapsedSections[posKey]
 
-    local posCollapseBtn = CreateFrame("Button", nil, posHeading.frame)
-    posCollapseBtn:SetSize(16, 16)
-    posCollapseBtn:SetPoint("LEFT", posHeading.label, "RIGHT", 4, 0)
-    posHeading.right:SetPoint("LEFT", posCollapseBtn, "RIGHT", 4, 0)
-    local posArrow = posCollapseBtn:CreateTexture(nil, "ARTWORK")
-    posArrow:SetSize(12, 12)
-    posArrow:SetPoint("CENTER")
-    posArrow:SetAtlas(posCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    posCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(posHeading, posCollapsed, function()
         castBarCollapsedSections[posKey] = not castBarCollapsedSections[posKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -5468,15 +5466,7 @@ BuildCastBarAnchoringPanel = function(container)
     local fxKey = "castbar_fx"
     local fxCollapsed = castBarCollapsedSections[fxKey]
 
-    local fxCollapseBtn = CreateFrame("Button", nil, fxHeading.frame)
-    fxCollapseBtn:SetSize(16, 16)
-    fxCollapseBtn:SetPoint("LEFT", fxHeading.label, "RIGHT", 4, 0)
-    fxHeading.right:SetPoint("LEFT", fxCollapseBtn, "RIGHT", 4, 0)
-    local fxArrow = fxCollapseBtn:CreateTexture(nil, "ARTWORK")
-    fxArrow:SetSize(12, 12)
-    fxArrow:SetPoint("CENTER")
-    fxArrow:SetAtlas(fxCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    fxCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(fxHeading, fxCollapsed, function()
         castBarCollapsedSections[fxKey] = not castBarCollapsedSections[fxKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -5567,15 +5557,7 @@ local function BuildCastBarStylingPanel(container)
     local visKey = "castbar_visuals"
     local visCollapsed = castBarCollapsedSections[visKey]
 
-    local visCollapseBtn = CreateFrame("Button", nil, visHeading.frame)
-    visCollapseBtn:SetSize(16, 16)
-    visCollapseBtn:SetPoint("LEFT", visHeading.label, "RIGHT", 4, 0)
-    visHeading.right:SetPoint("LEFT", visCollapseBtn, "RIGHT", 4, 0)
-    local visArrow = visCollapseBtn:CreateTexture(nil, "ARTWORK")
-    visArrow:SetSize(12, 12)
-    visArrow:SetPoint("CENTER")
-    visArrow:SetAtlas(visCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    visCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(visHeading, visCollapsed, function()
         castBarCollapsedSections[visKey] = not castBarCollapsedSections[visKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -5780,15 +5762,7 @@ local function BuildCastBarStylingPanel(container)
     local nameKey = "castbar_nametext"
     local nameCollapsed = castBarCollapsedSections[nameKey]
 
-    local nameCollapseBtn = CreateFrame("Button", nil, nameHeading.frame)
-    nameCollapseBtn:SetSize(16, 16)
-    nameCollapseBtn:SetPoint("LEFT", nameHeading.label, "RIGHT", 4, 0)
-    nameHeading.right:SetPoint("LEFT", nameCollapseBtn, "RIGHT", 4, 0)
-    local nameArrow = nameCollapseBtn:CreateTexture(nil, "ARTWORK")
-    nameArrow:SetSize(12, 12)
-    nameArrow:SetPoint("CENTER")
-    nameArrow:SetAtlas(nameCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    nameCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(nameHeading, nameCollapsed, function()
         castBarCollapsedSections[nameKey] = not castBarCollapsedSections[nameKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -5871,15 +5845,7 @@ local function BuildCastBarStylingPanel(container)
     local ctKey = "castbar_casttime"
     local ctCollapsed = castBarCollapsedSections[ctKey]
 
-    local ctCollapseBtn = CreateFrame("Button", nil, ctHeading.frame)
-    ctCollapseBtn:SetSize(16, 16)
-    ctCollapseBtn:SetPoint("LEFT", ctHeading.label, "RIGHT", 4, 0)
-    ctHeading.right:SetPoint("LEFT", ctCollapseBtn, "RIGHT", 4, 0)
-    local ctArrow = ctCollapseBtn:CreateTexture(nil, "ARTWORK")
-    ctArrow:SetSize(12, 12)
-    ctArrow:SetPoint("CENTER")
-    ctArrow:SetAtlas(ctCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    ctCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(ctHeading, ctCollapsed, function()
         castBarCollapsedSections[ctKey] = not castBarCollapsedSections[ctKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -6192,15 +6158,7 @@ BuildResourceBarAnchoringPanel = function(container)
     local posKey = "rb_position"
     local posCollapsed = resourceBarCollapsedSections[posKey]
 
-    local posCollapseBtn = CreateFrame("Button", nil, posHeading.frame)
-    posCollapseBtn:SetSize(16, 16)
-    posCollapseBtn:SetPoint("LEFT", posHeading.label, "RIGHT", 4, 0)
-    posHeading.right:SetPoint("LEFT", posCollapseBtn, "RIGHT", 4, 0)
-    local posArrow = posCollapseBtn:CreateTexture(nil, "ARTWORK")
-    posArrow:SetSize(12, 12)
-    posArrow:SetPoint("CENTER")
-    posArrow:SetAtlas(posCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    posCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(posHeading, posCollapsed, function()
         resourceBarCollapsedSections[posKey] = not resourceBarCollapsedSections[posKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -6265,15 +6223,7 @@ BuildResourceBarAnchoringPanel = function(container)
     local stackKey = "rb_stacking"
     local stackCollapsed = resourceBarCollapsedSections[stackKey]
 
-    local stackCollapseBtn = CreateFrame("Button", nil, stackHeading.frame)
-    stackCollapseBtn:SetSize(16, 16)
-    stackCollapseBtn:SetPoint("LEFT", stackHeading.label, "RIGHT", 4, 0)
-    stackHeading.right:SetPoint("LEFT", stackCollapseBtn, "RIGHT", 4, 0)
-    local stackArrow = stackCollapseBtn:CreateTexture(nil, "ARTWORK")
-    stackArrow:SetSize(12, 12)
-    stackArrow:SetPoint("CENTER")
-    stackArrow:SetAtlas(stackCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    stackCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(stackHeading, stackCollapsed, function()
         resourceBarCollapsedSections[stackKey] = not resourceBarCollapsedSections[stackKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -6304,15 +6254,7 @@ BuildResourceBarAnchoringPanel = function(container)
     local toggleKey = "rb_toggles"
     local toggleCollapsed = resourceBarCollapsedSections[toggleKey]
 
-    local toggleCollapseBtn = CreateFrame("Button", nil, toggleHeading.frame)
-    toggleCollapseBtn:SetSize(16, 16)
-    toggleCollapseBtn:SetPoint("LEFT", toggleHeading.label, "RIGHT", 4, 0)
-    toggleHeading.right:SetPoint("LEFT", toggleCollapseBtn, "RIGHT", 4, 0)
-    local toggleArrow = toggleCollapseBtn:CreateTexture(nil, "ARTWORK")
-    toggleArrow:SetSize(12, 12)
-    toggleArrow:SetPoint("CENTER")
-    toggleArrow:SetAtlas(toggleCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    toggleCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(toggleHeading, toggleCollapsed, function()
         resourceBarCollapsedSections[toggleKey] = not resourceBarCollapsedSections[toggleKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -6441,15 +6383,7 @@ local function BuildResourceBarStylingPanel(container)
     local borderKey = "rb_border"
     local borderCollapsed = resourceBarCollapsedSections[borderKey]
 
-    local borderCollapseBtn = CreateFrame("Button", nil, borderHeading.frame)
-    borderCollapseBtn:SetSize(16, 16)
-    borderCollapseBtn:SetPoint("LEFT", borderHeading.label, "RIGHT", 4, 0)
-    borderHeading.right:SetPoint("LEFT", borderCollapseBtn, "RIGHT", 4, 0)
-    local borderArrow = borderCollapseBtn:CreateTexture(nil, "ARTWORK")
-    borderArrow:SetSize(12, 12)
-    borderArrow:SetPoint("CENTER")
-    borderArrow:SetAtlas(borderCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    borderCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(borderHeading, borderCollapsed, function()
         resourceBarCollapsedSections[borderKey] = not resourceBarCollapsedSections[borderKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -6522,15 +6456,7 @@ local function BuildResourceBarStylingPanel(container)
     local textKey = "rb_text"
     local textCollapsed = resourceBarCollapsedSections[textKey]
 
-    local textCollapseBtn = CreateFrame("Button", nil, textHeading.frame)
-    textCollapseBtn:SetSize(16, 16)
-    textCollapseBtn:SetPoint("LEFT", textHeading.label, "RIGHT", 4, 0)
-    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
-    local textArrow = textCollapseBtn:CreateTexture(nil, "ARTWORK")
-    textArrow:SetSize(12, 12)
-    textArrow:SetPoint("CENTER")
-    textArrow:SetAtlas(textCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    textCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(textHeading, textCollapsed, function()
         resourceBarCollapsedSections[textKey] = not resourceBarCollapsedSections[textKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -6595,15 +6521,7 @@ local function BuildResourceBarStylingPanel(container)
     local colorKey = "rb_colors"
     local colorCollapsed = resourceBarCollapsedSections[colorKey]
 
-    local colorCollapseBtn = CreateFrame("Button", nil, colorHeading.frame)
-    colorCollapseBtn:SetSize(16, 16)
-    colorCollapseBtn:SetPoint("LEFT", colorHeading.label, "RIGHT", 4, 0)
-    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
-    local colorArrow = colorCollapseBtn:CreateTexture(nil, "ARTWORK")
-    colorArrow:SetSize(12, 12)
-    colorArrow:SetPoint("CENTER")
-    colorArrow:SetAtlas(colorCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    colorCollapseBtn:SetScript("OnClick", function()
+    AttachCollapseButton(colorHeading, colorCollapsed, function()
         resourceBarCollapsedSections[colorKey] = not resourceBarCollapsedSections[colorKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -7072,16 +6990,8 @@ BuildCustomAuraBarPanel = function(container)
         slotHeading:SetFullWidth(true)
         container:AddChild(slotHeading)
 
-        local slotCollapseBtn = CreateFrame("Button", nil, slotHeading.frame)
-        slotCollapseBtn:SetSize(16, 16)
-        slotCollapseBtn:SetPoint("LEFT", slotHeading.label, "RIGHT", 4, 0)
-        slotHeading.right:SetPoint("LEFT", slotCollapseBtn, "RIGHT", 4, 0)
-        local slotArrow = slotCollapseBtn:CreateTexture(nil, "ARTWORK")
-        slotArrow:SetSize(12, 12)
-        slotArrow:SetPoint("CENTER")
-        slotArrow:SetAtlas(slotCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
         local capturedSlotKey = slotKey
-        slotCollapseBtn:SetScript("OnClick", function()
+        AttachCollapseButton(slotHeading, slotCollapsed, function()
             resourceBarCollapsedSections[capturedSlotKey] = not resourceBarCollapsedSections[capturedSlotKey]
             CooldownCompanion:RefreshConfigPanel()
         end)
@@ -7681,25 +7591,11 @@ local function BuildCustomNameSection(scroll, buttonData)
     local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
     local customNameCollapsed = CS.collapsedSections[customNameKey]
 
-    local customNameCollapseBtn = CreateFrame("Button", nil, customNameHeading.frame)
-    table.insert(CS.buttonSettingsCollapseButtons, customNameCollapseBtn)
-    customNameCollapseBtn:SetSize(16, 16)
-    customNameCollapseBtn:SetPoint("LEFT", customNameHeading.label, "RIGHT", 4, 0)
-    customNameHeading.right:SetPoint("LEFT", customNameCollapseBtn, "RIGHT", 4, 0)
-    local customNameCollapseArrow = customNameCollapseBtn:CreateTexture(nil, "ARTWORK")
-    customNameCollapseArrow:SetSize(12, 12)
-    customNameCollapseArrow:SetPoint("CENTER")
-    customNameCollapseArrow:SetAtlas(customNameCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-    customNameCollapseBtn:SetScript("OnClick", function()
+    local customNameCollapseBtn = AttachCollapseButton(customNameHeading, customNameCollapsed, function()
         CS.collapsedSections[customNameKey] = not CS.collapsedSections[customNameKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    customNameCollapseBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(customNameCollapsed and "Expand" or "Collapse")
-        GameTooltip:Show()
-    end)
-    customNameCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(CS.buttonSettingsCollapseButtons, customNameCollapseBtn)
 
     if not customNameCollapsed then
     local customNameBox = AceGUI:Create("EditBox")
