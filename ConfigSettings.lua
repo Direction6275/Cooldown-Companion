@@ -6741,6 +6741,31 @@ local function BuildResourceBarStylingPanel(container)
             CooldownCompanion:ApplyResourceBars()
         end)
         container:AddChild(textColorPicker)
+
+        -- Per-resource "Show Text" checkboxes (continuous bars only)
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            if not SEGMENTED_TYPES_CONFIG[pt] and pt ~= 100 then
+                if not settings.resources[pt] then
+                    settings.resources[pt] = {}
+                end
+                local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+                local cb = AceGUI:Create("CheckBox")
+                cb:SetLabel("Show " .. name .. " Text")
+                cb:SetValue(settings.resources[pt].showText ~= false)
+                cb:SetFullWidth(true)
+                cb:SetCallback("OnValueChanged", function(widget, event, val)
+                    if not settings.resources[pt] then settings.resources[pt] = {} end
+                    if val then
+                        settings.resources[pt].showText = nil
+                    else
+                        settings.resources[pt].showText = false
+                    end
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cb)
+            end
+        end
     end
 
     -- ============ Per-Resource Colors Section ============
