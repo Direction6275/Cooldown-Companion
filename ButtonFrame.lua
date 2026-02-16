@@ -984,6 +984,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        region:ClearAllPoints()
+        local cdAnchor = style.cooldownTextAnchor or "CENTER"
+        local cdXOff = style.cooldownTextXOffset or 0
+        local cdYOff = style.cooldownTextYOffset or 0
+        region:SetPoint(cdAnchor, cdXOff, cdYOff)
         button._cdTextRegion = region
     end
 
@@ -1033,8 +1038,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local kbColor = style.keybindFontColor or {1, 1, 1, 1}
         button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
         local anchor = style.keybindAnchor or "TOPRIGHT"
-        local xOff = (anchor == "TOPLEFT" or anchor == "BOTTOMLEFT") and 2 or -2
-        local yOff = (anchor == "TOPLEFT" or anchor == "TOPRIGHT") and -2 or 2
+        local xOff = style.keybindXOffset or -2
+        local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
         local text = CooldownCompanion:GetKeybindText(buttonData)
         button.keybindText:SetText(text or "")
@@ -1956,6 +1961,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        region:ClearAllPoints()
+        local cdAnchor = style.cooldownTextAnchor or "CENTER"
+        local cdXOff = style.cooldownTextXOffset or 0
+        local cdYOff = style.cooldownTextYOffset or 0
+        region:SetPoint(cdAnchor, cdXOff, cdYOff)
     end
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._cdTextMode = nil
@@ -2001,8 +2011,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
         button.keybindText:ClearAllPoints()
         local anchor = style.keybindAnchor or "TOPRIGHT"
-        local xOff = (anchor == "TOPLEFT" or anchor == "BOTTOMLEFT") and 2 or -2
-        local yOff = (anchor == "TOPLEFT" or anchor == "TOPRIGHT") and -2 or 2
+        local xOff = style.keybindXOffset or -2
+        local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
         local text = CooldownCompanion:GetKeybindText(button.buttonData)
         button.keybindText:SetText(text or "")

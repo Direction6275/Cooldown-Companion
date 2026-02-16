@@ -116,6 +116,9 @@ local defaults = {
                         cooldownFontOutline = "OUTLINE",
                         cooldownFont = "Friz Quadrata TT",
                         cooldownFontColor = {1, 1, 1, 1},
+                        cooldownTextAnchor = "CENTER",
+                        cooldownTextXOffset = 0,
+                        cooldownTextYOffset = 0,
                         showAuraText = true, -- nil defaults to true via ~= false
                         auraTextFont = "Friz Quadrata TT",
                         auraTextFontSize = 12,
@@ -173,6 +176,8 @@ local defaults = {
                         keybindFontOutline = "OUTLINE",
                         keybindFontColor = {1, 1, 1, 1},
                         keybindAnchor = "TOPRIGHT",
+                        keybindXOffset = -2,
+                        keybindYOffset = -2,
                         showChargeText = true,
                         chargeFont = "Friz Quadrata TT",
                         chargeFontSize = 12,
@@ -225,6 +230,9 @@ local defaults = {
             cooldownFontOutline = "OUTLINE",
             cooldownFont = "Friz Quadrata TT",
             cooldownFontColor = {1, 1, 1, 1},
+            cooldownTextAnchor = "CENTER",
+            cooldownTextXOffset = 0,
+            cooldownTextYOffset = 0,
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
@@ -277,6 +285,8 @@ local defaults = {
             keybindFontOutline = "OUTLINE",
             keybindFontColor = {1, 1, 1, 1},
             keybindAnchor = "TOPRIGHT",
+            keybindXOffset = -2,
+            keybindYOffset = -2,
             showChargeText = true,
             chargeFont = "Friz Quadrata TT",
             chargeFontSize = 12,
@@ -425,7 +435,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownText = {
         label = "Cooldown Text",
-        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor"},
+        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
     auraText = {
@@ -435,7 +445,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     keybindText = {
         label = "Keybind Text",
-        keys = {"showKeybindText", "keybindFont", "keybindFontSize", "keybindFontOutline", "keybindFontColor", "keybindAnchor"},
+        keys = {"showKeybindText", "keybindFont", "keybindFontSize", "keybindFontOutline", "keybindFontColor", "keybindAnchor", "keybindXOffset", "keybindYOffset"},
         modes = {icons = true},
     },
     chargeText = {

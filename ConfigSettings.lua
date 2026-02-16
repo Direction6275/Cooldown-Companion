@@ -1229,6 +1229,64 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
             refreshCallback()
         end)
         container:AddChild(cdFontColor)
+
+        local cdAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            cdAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local cdAnchorDrop = AceGUI:Create("Dropdown")
+        cdAnchorDrop:SetLabel("Anchor")
+        cdAnchorDrop:SetList(cdAnchorValues, CS.anchorPoints)
+        cdAnchorDrop:SetValue(styleTable.cooldownTextAnchor or "CENTER")
+        cdAnchorDrop:SetFullWidth(true)
+        cdAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownTextAnchor = val
+            refreshCallback()
+        end)
+        container:AddChild(cdAnchorDrop)
+
+        -- (?) tooltip for shared positioning
+        local cdPosInfo = CreateFrame("Button", nil, cdAnchorDrop.frame)
+        cdPosInfo:SetSize(16, 16)
+        cdPosInfo:SetPoint("LEFT", cdAnchorDrop.label, "RIGHT", 4, 0)
+        local cdPosInfoIcon = cdPosInfo:CreateTexture(nil, "OVERLAY")
+        cdPosInfoIcon:SetSize(12, 12)
+        cdPosInfoIcon:SetPoint("CENTER")
+        cdPosInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        cdPosInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Shared Position")
+            GameTooltip:AddLine("Anchor and offset settings are shared between Cooldown Text and Aura Text since they use the same text element.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        cdPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        cdAnchorDrop:SetCallback("OnRelease", function()
+            cdPosInfo:ClearAllPoints()
+            cdPosInfo:Hide()
+            cdPosInfo:SetParent(nil)
+        end)
+
+        local cdXSlider = AceGUI:Create("Slider")
+        cdXSlider:SetLabel("X Offset")
+        cdXSlider:SetSliderValues(-20, 20, 1)
+        cdXSlider:SetValue(styleTable.cooldownTextXOffset or 0)
+        cdXSlider:SetFullWidth(true)
+        cdXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownTextXOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(cdXSlider)
+
+        local cdYSlider = AceGUI:Create("Slider")
+        cdYSlider:SetLabel("Y Offset")
+        cdYSlider:SetSliderValues(-20, 20, 1)
+        cdYSlider:SetValue(styleTable.cooldownTextYOffset or 0)
+        cdYSlider:SetFullWidth(true)
+        cdYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownTextYOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(cdYSlider)
     end
 end
 
@@ -1243,6 +1301,27 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(auraTextCb)
+
+    -- (?) tooltip for shared positioning note
+    local auraPosInfo = CreateFrame("Button", nil, auraTextCb.frame)
+    auraPosInfo:SetSize(16, 16)
+    auraPosInfo:SetPoint("LEFT", auraTextCb.checkbg, "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0)
+    local auraPosInfoIcon = auraPosInfo:CreateTexture(nil, "OVERLAY")
+    auraPosInfoIcon:SetSize(12, 12)
+    auraPosInfoIcon:SetPoint("CENTER")
+    auraPosInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    auraPosInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Shared Position")
+        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Text share the same text element.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    auraPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    auraTextCb:SetCallback("OnRelease", function()
+        auraPosInfo:ClearAllPoints()
+        auraPosInfo:Hide()
+        auraPosInfo:SetParent(nil)
+    end)
 
     if styleTable.showAuraText ~= false then
         local auraFontSizeSlider = AceGUI:Create("Slider")
@@ -1323,6 +1402,28 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
             refreshCallback()
         end)
         container:AddChild(kbAnchorDrop)
+
+        local kbXSlider = AceGUI:Create("Slider")
+        kbXSlider:SetLabel("X Offset")
+        kbXSlider:SetSliderValues(-20, 20, 1)
+        kbXSlider:SetValue(styleTable.keybindXOffset or -2)
+        kbXSlider:SetFullWidth(true)
+        kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.keybindXOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(kbXSlider)
+
+        local kbYSlider = AceGUI:Create("Slider")
+        kbYSlider:SetLabel("Y Offset")
+        kbYSlider:SetSliderValues(-20, 20, 1)
+        kbYSlider:SetValue(styleTable.keybindYOffset or -2)
+        kbYSlider:SetFullWidth(true)
+        kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.keybindYOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(kbYSlider)
 
         local kbFontSizeSlider = AceGUI:Create("Slider")
         kbFontSizeSlider:SetLabel("Font Size")
@@ -4610,6 +4711,27 @@ local function BuildEffectsTab(container)
     end)
     container:AddChild(auraTextCb)
 
+    -- (?) tooltip for shared positioning note
+    local auraPosInfo = CreateFrame("Button", nil, auraTextCb.frame)
+    auraPosInfo:SetSize(16, 16)
+    auraPosInfo:SetPoint("LEFT", auraTextCb.checkbg, "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0)
+    local auraPosInfoIcon = auraPosInfo:CreateTexture(nil, "OVERLAY")
+    auraPosInfoIcon:SetSize(12, 12)
+    auraPosInfoIcon:SetPoint("CENTER")
+    auraPosInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    auraPosInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Shared Position")
+        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Text share the same text element.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    auraPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    auraTextCb:SetCallback("OnRelease", function()
+        auraPosInfo:ClearAllPoints()
+        auraPosInfo:Hide()
+        auraPosInfo:SetParent(nil)
+    end)
+
     if style.showAuraText ~= false then
         local auraFontSizeSlider = AceGUI:Create("Slider")
         auraFontSizeSlider:SetLabel("Font Size")
@@ -4940,6 +5062,64 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(cdFontColor)
+
+        local cdAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            cdAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local cdAnchorDrop = AceGUI:Create("Dropdown")
+        cdAnchorDrop:SetLabel("Anchor")
+        cdAnchorDrop:SetList(cdAnchorValues, CS.anchorPoints)
+        cdAnchorDrop:SetValue(style.cooldownTextAnchor or "CENTER")
+        cdAnchorDrop:SetFullWidth(true)
+        cdAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownTextAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(cdAnchorDrop)
+
+        -- (?) tooltip for shared positioning
+        local cdPosInfo = CreateFrame("Button", nil, cdAnchorDrop.frame)
+        cdPosInfo:SetSize(16, 16)
+        cdPosInfo:SetPoint("LEFT", cdAnchorDrop.label, "RIGHT", 4, 0)
+        local cdPosInfoIcon = cdPosInfo:CreateTexture(nil, "OVERLAY")
+        cdPosInfoIcon:SetSize(12, 12)
+        cdPosInfoIcon:SetPoint("CENTER")
+        cdPosInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        cdPosInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Shared Position")
+            GameTooltip:AddLine("Anchor and offset settings are shared between Cooldown Text and Aura Text since they use the same text element.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        cdPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        cdAnchorDrop:SetCallback("OnRelease", function()
+            cdPosInfo:ClearAllPoints()
+            cdPosInfo:Hide()
+            cdPosInfo:SetParent(nil)
+        end)
+
+        local cdXSlider = AceGUI:Create("Slider")
+        cdXSlider:SetLabel("X Offset")
+        cdXSlider:SetSliderValues(-20, 20, 1)
+        cdXSlider:SetValue(style.cooldownTextXOffset or 0)
+        cdXSlider:SetFullWidth(true)
+        cdXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownTextXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(cdXSlider)
+
+        local cdYSlider = AceGUI:Create("Slider")
+        cdYSlider:SetLabel("Y Offset")
+        cdYSlider:SetSliderValues(-20, 20, 1)
+        cdYSlider:SetValue(style.cooldownTextYOffset or 0)
+        cdYSlider:SetFullWidth(true)
+        cdYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownTextYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(cdYSlider)
     end
     end -- not textCollapsed
 
@@ -4985,6 +5165,28 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(kbAnchorDrop)
+
+        local kbXSlider = AceGUI:Create("Slider")
+        kbXSlider:SetLabel("X Offset")
+        kbXSlider:SetSliderValues(-20, 20, 1)
+        kbXSlider:SetValue(style.keybindXOffset or -2)
+        kbXSlider:SetFullWidth(true)
+        kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbXSlider)
+
+        local kbYSlider = AceGUI:Create("Slider")
+        kbYSlider:SetLabel("Y Offset")
+        kbYSlider:SetSliderValues(-20, 20, 1)
+        kbYSlider:SetValue(style.keybindYOffset or -2)
+        kbYSlider:SetFullWidth(true)
+        kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbYSlider)
 
         local kbFontSizeSlider = AceGUI:Create("Slider")
         kbFontSizeSlider:SetLabel("Font Size")
