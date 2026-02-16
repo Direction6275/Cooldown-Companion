@@ -1455,6 +1455,7 @@ function CooldownCompanion:ApplyResourceBars()
 
     containerFrame:ClearAllPoints()
     containerFrame:SetSize(totalWidth, 1) -- height set by content
+    containerFrame._lastAppliedWidth = totalWidth
 
     if position == "above" then
         containerFrame:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, -yOfs + stackOffset)
@@ -1725,6 +1726,22 @@ local function InstallHooks()
         C_Timer.After(0.1, function()
             CooldownCompanion:EvaluateResourceBars()
         end)
+    end)
+
+    -- When compact layout changes visible buttons — re-apply if width changed
+    hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+        local s = GetResourceBarSettings()
+        if not s or not s.enabled then return end
+        local anchorGroupId = GetEffectiveAnchorGroupId(s)
+        if anchorGroupId ~= groupId then return end
+        local groupFrame = CooldownCompanion.groupFrames[groupId]
+        if not groupFrame or not containerFrame then return end
+        local newWidth = groupFrame:GetWidth()
+        if containerFrame._lastAppliedWidth
+            and math_abs(newWidth - containerFrame._lastAppliedWidth) < 0.1 then
+            return
+        end
+        CooldownCompanion:ApplyResourceBars()
     end)
 end
 
