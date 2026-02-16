@@ -449,6 +449,21 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"desaturateOnCooldown"},
         modes = {icons = true, bars = true},
     },
+    showGCDSwipe = {
+        label = "Show GCD Swipe",
+        keys = {"showGCDSwipe"},
+        modes = {icons = true, bars = true},
+    },
+    showOutOfRange = {
+        label = "Show Out of Range",
+        keys = {"showOutOfRange"},
+        modes = {icons = true, bars = true},
+    },
+    showTooltips = {
+        label = "Show Tooltips",
+        keys = {"showTooltips"},
+        modes = {icons = true, bars = true},
+    },
     lossOfControl = {
         label = "Loss of Control",
         keys = {"showLossOfControl", "lossOfControlColor"},

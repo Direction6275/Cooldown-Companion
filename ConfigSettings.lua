@@ -1495,6 +1495,44 @@ local function BuildDesaturationControls(container, styleTable, refreshCallback)
     container:AddChild(desatCb)
 end
 
+local function BuildShowTooltipsControls(container, styleTable, refreshCallback)
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Show Tooltips")
+    cb:SetValue(styleTable.showTooltips == true)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showTooltips = val
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+end
+
+local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback)
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Show Out of Range")
+    cb:SetValue(styleTable.showOutOfRange or false)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showOutOfRange = val
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+end
+
+local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local isBarMode = group and group.displayMode == "bars"
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel(isBarMode and "Show GCD" or "Show GCD Swipe")
+    cb:SetValue(styleTable.showGCDSwipe == true)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showGCDSwipe = val
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+end
+
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
@@ -2414,8 +2452,8 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     -- Ordered list of sections to display (maintain consistent ordering)
     local sectionOrder = {
         "borderSettings", "backgroundColor", "cooldownText", "auraText",
-        "keybindText", "chargeText", "desaturation", "lossOfControl",
-        "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator",
+        "keybindText", "chargeText", "desaturation", "showGCDSwipe", "showOutOfRange", "showTooltips",
+        "lossOfControl", "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
     }
 
@@ -2428,6 +2466,9 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         keybindText = BuildKeybindTextControls,
         chargeText = BuildChargeTextControls,
         desaturation = BuildDesaturationControls,
+        showGCDSwipe = BuildShowGCDSwipeControls,
+        showOutOfRange = BuildShowOutOfRangeControls,
+        showTooltips = BuildShowTooltipsControls,
         lossOfControl = BuildLossOfControlControls,
         unusableDimming = BuildUnusableDimmingControls,
         assistedHighlight = BuildAssistedHighlightControls,
@@ -2547,6 +2588,48 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(gcdCb)
 
+    -- Inline promote button for show GCD swipe
+    do
+        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+        local gcdPromote = CreateFrame("Button", nil, gcdCb.frame)
+        gcdPromote:SetSize(16, 16)
+        gcdPromote:SetPoint("LEFT", gcdCb.checkbg, "RIGHT", gcdCb.text:GetStringWidth() + 20, 0)
+        local gcdPromoteIcon = gcdPromote:CreateTexture(nil, "OVERLAY")
+        gcdPromoteIcon:SetSize(12, 12)
+        gcdPromoteIcon:SetPoint("CENTER")
+        local multiCount = 0
+        if CS.selectedButtons then
+            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        end
+        local canPromote = CS.selectedButton ~= nil and multiCount < 2
+            and btnData ~= nil
+            and not (btnData.overrideSections and btnData.overrideSections.showGCDSwipe)
+        if canPromote then
+            gcdPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
+            gcdPromote:Enable()
+        else
+            gcdPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
+            gcdPromote:Disable()
+        end
+        gcdPromote:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if canPromote then
+                GameTooltip:AddLine("Override Show GCD Swipe for this button")
+            else
+                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+            end
+            GameTooltip:Show()
+        end)
+        gcdPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        gcdPromote:SetScript("OnClick", function()
+            if not canPromote then return end
+            CooldownCompanion:PromoteSection(btnData, style, "showGCDSwipe")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        table.insert(tabInfoButtons, gcdPromote)
+    end
+
     local rangeCb = AceGUI:Create("CheckBox")
     rangeCb:SetLabel("Show Out of Range")
     rangeCb:SetValue(style.showOutOfRange or false)
@@ -2576,6 +2659,48 @@ local function BuildExtrasTab(container)
     end)
     table.insert(tabInfoButtons, rangeInfo)
 
+    -- Inline promote button for show out of range
+    do
+        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+        local rangePromote = CreateFrame("Button", nil, rangeCb.frame)
+        rangePromote:SetSize(16, 16)
+        rangePromote:SetPoint("LEFT", rangeInfo, "RIGHT", 4, 0)
+        local rangePromoteIcon = rangePromote:CreateTexture(nil, "OVERLAY")
+        rangePromoteIcon:SetSize(12, 12)
+        rangePromoteIcon:SetPoint("CENTER")
+        local multiCount = 0
+        if CS.selectedButtons then
+            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        end
+        local canPromote = CS.selectedButton ~= nil and multiCount < 2
+            and btnData ~= nil
+            and not (btnData.overrideSections and btnData.overrideSections.showOutOfRange)
+        if canPromote then
+            rangePromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
+            rangePromote:Enable()
+        else
+            rangePromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
+            rangePromote:Disable()
+        end
+        rangePromote:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if canPromote then
+                GameTooltip:AddLine("Override Show Out of Range for this button")
+            else
+                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+            end
+            GameTooltip:Show()
+        end)
+        rangePromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        rangePromote:SetScript("OnClick", function()
+            if not canPromote then return end
+            CooldownCompanion:PromoteSection(btnData, style, "showOutOfRange")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        table.insert(tabInfoButtons, rangePromote)
+    end
+
     local tooltipCb = AceGUI:Create("CheckBox")
     tooltipCb:SetLabel("Show Tooltips")
     tooltipCb:SetValue(style.showTooltips == true)
@@ -2586,72 +2711,46 @@ local function BuildExtrasTab(container)
     end)
     container:AddChild(tooltipCb)
 
-    -- Compact Layout (per-button visibility feature)
-    local compactCb = AceGUI:Create("CheckBox")
-    compactCb:SetLabel("Compact Layout")
-    compactCb:SetValue(group.compactLayout or false)
-    compactCb:SetFullWidth(true)
-    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.compactLayout = val or false
-        CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then frame._layoutDirty = true end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(compactCb)
-
-    -- (?) tooltip for compact layout
-    local compactInfo = CreateFrame("Button", nil, compactCb.frame)
-    compactInfo:SetSize(16, 16)
-    compactInfo:SetPoint("LEFT", compactCb.checkbg, "RIGHT", compactCb.text:GetStringWidth() + 4, 0)
-    local compactInfoIcon = compactInfo:CreateTexture(nil, "OVERLAY")
-    compactInfoIcon:SetSize(12, 12)
-    compactInfoIcon:SetPoint("CENTER")
-    compactInfoIcon:SetAtlas("QuestRepeatableTurnin")
-    compactInfo:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Compact Layout")
-        GameTooltip:AddLine("When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    compactInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    table.insert(tabInfoButtons, compactInfo)
-
-    if group.compactLayout then
-        local totalButtons = #group.buttons
-        local maxVisSlider = AceGUI:Create("Slider")
-        maxVisSlider:SetLabel("Max Visible Buttons")
-        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
-        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
-        maxVisSlider:SetFullWidth(true)
-        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            val = math.floor(val + 0.5)
-            if val >= totalButtons then
-                group.maxVisibleButtons = 0
-            else
-                group.maxVisibleButtons = val
-            end
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then frame._layoutDirty = true end
-        end)
-        container:AddChild(maxVisSlider)
-
-        -- (?) tooltip for max visible buttons
-        local maxVisInfo = CreateFrame("Button", nil, maxVisSlider.frame)
-        maxVisInfo:SetSize(16, 16)
-        maxVisInfo:SetPoint("LEFT", maxVisSlider.label, "RIGHT", 4, 0)
-        local maxVisInfoIcon = maxVisInfo:CreateTexture(nil, "OVERLAY")
-        maxVisInfoIcon:SetSize(12, 12)
-        maxVisInfoIcon:SetPoint("CENTER")
-        maxVisInfoIcon:SetAtlas("QuestRepeatableTurnin")
-        maxVisInfo:SetScript("OnEnter", function(self)
+    -- Inline promote button for show tooltips
+    do
+        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+        local tooltipPromote = CreateFrame("Button", nil, tooltipCb.frame)
+        tooltipPromote:SetSize(16, 16)
+        tooltipPromote:SetPoint("LEFT", tooltipCb.checkbg, "RIGHT", tooltipCb.text:GetStringWidth() + 20, 0)
+        local tooltipPromoteIcon = tooltipPromote:CreateTexture(nil, "OVERLAY")
+        tooltipPromoteIcon:SetSize(12, 12)
+        tooltipPromoteIcon:SetPoint("CENTER")
+        local multiCount = 0
+        if CS.selectedButtons then
+            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        end
+        local canPromote = CS.selectedButton ~= nil and multiCount < 2
+            and btnData ~= nil
+            and not (btnData.overrideSections and btnData.overrideSections.showTooltips)
+        if canPromote then
+            tooltipPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
+            tooltipPromote:Enable()
+        else
+            tooltipPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
+            tooltipPromote:Disable()
+        end
+        tooltipPromote:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Max Visible Buttons")
-            GameTooltip:AddLine("Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true)
+            if canPromote then
+                GameTooltip:AddLine("Override Show Tooltips for this button")
+            else
+                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+            end
             GameTooltip:Show()
         end)
-        maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        table.insert(tabInfoButtons, maxVisInfo)
+        tooltipPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        tooltipPromote:SetScript("OnClick", function()
+            if not canPromote then return end
+            CooldownCompanion:PromoteSection(btnData, style, "showTooltips")
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        table.insert(tabInfoButtons, tooltipPromote)
     end
 
     -- Loss of control
@@ -2832,6 +2931,80 @@ local function BuildExtrasTab(container)
         container:AddChild(unusableColor)
     end
 
+    -- Compact Layout section
+    local compactHeading = AceGUI:Create("Heading")
+    compactHeading:SetText("Compact Layout")
+    ColorHeading(compactHeading)
+    compactHeading:SetFullWidth(true)
+    container:AddChild(compactHeading)
+
+    local compactCb = AceGUI:Create("CheckBox")
+    compactCb:SetLabel("Use Compact Layout")
+    compactCb:SetValue(group.compactLayout or false)
+    compactCb:SetFullWidth(true)
+    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.compactLayout = val or false
+        CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
+        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+        if frame then frame._layoutDirty = true end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(compactCb)
+
+    -- (?) tooltip for compact layout
+    local compactInfo = CreateFrame("Button", nil, compactCb.frame)
+    compactInfo:SetSize(16, 16)
+    compactInfo:SetPoint("LEFT", compactCb.checkbg, "RIGHT", compactCb.text:GetStringWidth() + 4, 0)
+    local compactInfoIcon = compactInfo:CreateTexture(nil, "OVERLAY")
+    compactInfoIcon:SetSize(12, 12)
+    compactInfoIcon:SetPoint("CENTER")
+    compactInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    compactInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Compact Layout")
+        GameTooltip:AddLine("When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    compactInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(tabInfoButtons, compactInfo)
+
+    if group.compactLayout then
+        local totalButtons = #group.buttons
+        local maxVisSlider = AceGUI:Create("Slider")
+        maxVisSlider:SetLabel("Max Visible Buttons")
+        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
+        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
+        maxVisSlider:SetFullWidth(true)
+        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            val = math.floor(val + 0.5)
+            if val >= totalButtons then
+                group.maxVisibleButtons = 0
+            else
+                group.maxVisibleButtons = val
+            end
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame then frame._layoutDirty = true end
+        end)
+        container:AddChild(maxVisSlider)
+
+        -- (?) tooltip for max visible buttons
+        local maxVisInfo = CreateFrame("Button", nil, maxVisSlider.frame)
+        maxVisInfo:SetSize(16, 16)
+        maxVisInfo:SetPoint("LEFT", maxVisSlider.label, "RIGHT", 4, 0)
+        local maxVisInfoIcon = maxVisInfo:CreateTexture(nil, "OVERLAY")
+        maxVisInfoIcon:SetSize(12, 12)
+        maxVisInfoIcon:SetPoint("CENTER")
+        maxVisInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        maxVisInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Max Visible Buttons")
+            GameTooltip:AddLine("Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(tabInfoButtons, maxVisInfo)
+    end
+
     if not isBarMode then
     -- Assisted Highlight section
     local assistedHeading = AceGUI:Create("Heading")
@@ -2839,7 +3012,6 @@ local function BuildExtrasTab(container)
     ColorHeading(assistedHeading)
     assistedHeading:SetFullWidth(true)
     container:AddChild(assistedHeading)
-    CreatePromoteButton(assistedHeading, "assistedHighlight", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local assistedCb = AceGUI:Create("CheckBox")
     assistedCb:SetLabel("Show Assisted Highlight")
@@ -2956,7 +3128,7 @@ local function BuildExtrasTab(container)
     alphaInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Alpha")
-        GameTooltip:AddLine("Controls the transparency of this group. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nSetting baseline alpha below 1 reveals visibility override options.\n\nThe first three options (In Combat, Out of Combat, Mounted) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true)
+        GameTooltip:AddLine("Controls the transparency of this group. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nThe first three options (In Combat, Out of Combat, Mounted) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     alphaInfo:SetScript("OnLeave", function()
@@ -2986,17 +3158,9 @@ local function BuildExtrasTab(container)
             state.fadeDuration = 0
         end
     end)
-    baseAlphaSlider:SetCallback("OnMouseUp", function()
-        -- Rebuild UI when crossing the 1.0 boundary to show/hide conditional section
-        CooldownCompanion:RefreshConfigPanel()
-    end)
     container:AddChild(baseAlphaSlider)
 
-    -- Conditional section: visible when baselineAlpha < 1 OR any forceHide toggle is active
-    local showConditional = (group.baselineAlpha or 1) < 1
-        or group.forceHideInCombat or group.forceHideOutOfCombat
-        or group.forceHideMounted
-    if showConditional then
+    do
         -- Helper: convert forceAlpha/forceHide pair to tristate value
         -- true = Force Visible, nil = Force Hidden, false = Disabled
         local function GetTriState(visibleKey, hiddenKey)
@@ -3031,13 +3195,6 @@ local function BuildExtrasTab(container)
             end)
             return cb
         end
-
-        -- Heading
-        local overridesHeading = AceGUI:Create("Heading")
-        overridesHeading:SetText("Visibility Overrides")
-        ColorHeading(overridesHeading)
-        overridesHeading:SetFullWidth(true)
-        container:AddChild(overridesHeading)
 
         -- 3-way tristate toggles (Disabled / Force Visible / Force Hidden)
         container:AddChild(CreateTriStateToggle("In Combat", "forceAlphaInCombat", "forceHideInCombat"))
