@@ -35,7 +35,7 @@ local col3Scroll = nil    -- Current AceGUI ScrollFrame in column 3
 local col1BarWidgets = {}
 local profileBarAceWidgets = {}
 local buttonSettingsInfoButtons = {}
-local buttonSettingsCollapseButtons = {}
+
 local buttonSettingsScroll = nil
 local columnInfoButtons = {}
 local moveMenuFrame = nil
@@ -87,15 +87,32 @@ local CDM_VIEWER_NAMES = {
     "BuffBarCooldownViewer",
 }
 
--- Font options for dropdown
-local fontOptions = {
-    ["Fonts\\FRIZQT__.TTF"] = "Friz Quadrata (Default)",
-    ["Fonts\\ARIALN.TTF"] = "Arial Narrow",
-    ["Fonts\\MORPHEUS.TTF"] = "Morpheus",
-    ["Fonts\\SKURRI.TTF"] = "Skurri",
-    ["Fonts\\2002.TTF"] = "2002",
-    ["Fonts\\NIMROD.TTF"] = "Nimrod",
-}
+-- Font options for dropdown (LSM-backed, returns fresh table each call)
+local LSM = LibStub("LibSharedMedia-3.0")
+local function GetFontOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("font")) do
+        t[name] = name
+    end
+    return t
+end
+
+-- Sets up a font dropdown with correct name→name list and per-item font preview
+local function SetupFontDropdown(dropdown)
+    dropdown:SetList(GetFontOptions())
+    dropdown:SetCallback("OnOpened", function(self)
+        for i, item in self.pullout:IterateItems() do
+            local fontName = item.userdata.value
+            if fontName and item.text then
+                local fontPath = LSM:Fetch("font", fontName)
+                if fontPath then
+                    local _, size, flags = item.text:GetFont()
+                    item.text:SetFont(fontPath, size or 11, flags or "")
+                end
+            end
+        end
+    end)
+end
 
 local outlineOptions = {
     [""] = "None",
@@ -124,11 +141,11 @@ ST._configState = {
     selectedButtons = selectedButtons,
     selectedGroups = selectedGroups,
     selectedTab = nil,      -- set/read by both files
-    buttonSettingsTab = "settings", -- "settings" or "visibility"
+    buttonSettingsTab = "settings", -- "settings" or "overrides"
     -- UI state tables (both files read/write)
     collapsedSections = collapsedSections,
     buttonSettingsInfoButtons = buttonSettingsInfoButtons,
-    buttonSettingsCollapseButtons = buttonSettingsCollapseButtons,
+
     buttonSettingsScroll = nil,   -- set by Config.lua
     configFrame = nil,            -- set by Config.lua
     col3Container = nil,          -- set by Config.lua
@@ -139,8 +156,10 @@ ST._configState = {
     appearanceTabElements = {},
     castBarPanelActive = false,
     resourceBarPanelActive = false,
+    frameAnchoringPanelActive = false,
     -- Static lookup tables
-    fontOptions = fontOptions,
+    fontOptions = GetFontOptions,
+    SetupFontDropdown = SetupFontDropdown,
     outlineOptions = outlineOptions,
     strataElementLabels = strataElementLabels,
     strataElementKeys = strataElementKeys,
@@ -164,6 +183,11 @@ CS.InitPendingStrataOrder = nil  -- set after definition below
 CS.StartPickFrame = nil          -- set after definition below
 CS.StartPickCDM = nil            -- set after definition below
 CS.ShowPopupAboveConfig = nil    -- set after definition below
+CS.ShowAutocompleteResults = nil -- set after definition below
+CS.HideAutocomplete = nil       -- set after definition below
+CS.SearchAutocompleteInCache = nil   -- set after definition below
+CS.HandleAutocompleteKeyDown = nil   -- set after definition below
+CS.ConsumeAutocompleteEnter = nil    -- set after definition below
 
 local function IsStrataOrderComplete(order)
     if not order then return false end
@@ -505,6 +529,10 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
     OnAccept = function(self)
         local text = self.EditBox:GetText()
         if text and text ~= "" then
+            if text:sub(1, 8) == "CDCdiag:" then
+                CooldownCompanion:Print("This is a bug report string, not a profile export.")
+                return
+            end
             local success, data
             -- Detect format: legacy AceSerialized strings start with "^1"
             if text:sub(1, 2) == "^1" then
@@ -546,6 +574,689 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+-------------------------------------------------------------------------
+-- Diagnostic export system (bug report generation + decode panel)
+-------------------------------------------------------------------------
+local decodedDiagnostic = nil
+
+local RESOURCE_NAMES = {
+    [0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
+    [4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
+    [7] = "Soul Shards", [8] = "Lunar Power", [9] = "Holy Power",
+    [10] = "Alternate", [11] = "Maelstrom", [12] = "Chi",
+    [13] = "Insanity", [16] = "Arcane Charges", [17] = "Fury",
+    [18] = "Pain", [19] = "Essence", [100] = "Maelstrom Weapon",
+}
+
+local function BuildDiagnosticSnapshot()
+    local db = CooldownCompanion.db
+    local snapshot = { _v = 1 }
+
+    -- Meta
+    local _, classFilename, classID = UnitClass("player")
+    local specIndex = C_SpecializationInfo.GetSpecialization()
+    local specID, specName
+    if specIndex then
+        specID, specName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+    end
+    local buildVersion, _, _, interfaceVersion = GetBuildInfo()
+    local addonVersion = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "unknown"
+
+    local totalButtons = 0
+    local groupCount = 0
+    for _, group in pairs(db.profile.groups) do
+        groupCount = groupCount + 1
+        if group.buttons then
+            totalButtons = totalButtons + #group.buttons
+        end
+    end
+
+    local charName = UnitName("player")
+
+    snapshot.meta = {
+        addonVersion = addonVersion,
+        buildVersion = buildVersion,
+        interfaceVersion = interfaceVersion,
+        locale = GetLocale(),
+        charName = charName,
+        className = classFilename,
+        classID = classID,
+        specID = specID,
+        specName = specName,
+        realmName = GetRealmName(),
+        timestamp = date("%Y-%m-%d %H:%M:%S"),
+        groupCount = groupCount,
+        totalButtons = totalButtons,
+        instanceType = CooldownCompanion._currentInstanceType,
+    }
+
+    -- Runtime
+    local viewerAuraSpells = {}
+    for spellID in pairs(CooldownCompanion.viewerAuraFrames) do
+        viewerAuraSpells[#viewerAuraSpells + 1] = spellID
+    end
+    table.sort(viewerAuraSpells)
+
+    local procOverlaySpells = {}
+    for spellID in pairs(CooldownCompanion.procOverlaySpells) do
+        procOverlaySpells[#procOverlaySpells + 1] = spellID
+    end
+    table.sort(procOverlaySpells)
+
+    local rangeCheckSpells = {}
+    for spellID in pairs(CooldownCompanion._rangeCheckSpells) do
+        rangeCheckSpells[#rangeCheckSpells + 1] = spellID
+    end
+    table.sort(rangeCheckSpells)
+
+    local groupFrameStates = {}
+    for groupId, frame in pairs(CooldownCompanion.groupFrames) do
+        groupFrameStates[tostring(groupId)] = {
+            exists = true,
+            shown = frame:IsShown(),
+        }
+    end
+
+    snapshot.runtime = {
+        currentInstanceType = CooldownCompanion._currentInstanceType,
+        currentSpecId = CooldownCompanion._currentSpecId,
+        isResting = CooldownCompanion._isResting,
+        cdmHidden = db.profile.cdmHidden,
+        assistedSpellID = CooldownCompanion.assistedSpellID,
+        viewerAuraSpells = viewerAuraSpells,
+        procOverlaySpells = procOverlaySpells,
+        rangeCheckSpells = rangeCheckSpells,
+        groupFrameStates = groupFrameStates,
+    }
+
+    -- Build spec name cache for all referenced spec IDs
+    local specNameCache = {}
+    for _, group in pairs(db.profile.groups) do
+        if group.specs then
+            for _, sid in ipairs(group.specs) do
+                if not specNameCache[sid] then
+                    specNameCache[sid] = GetSpecializationNameForSpecID(sid) or nil
+                end
+            end
+        end
+    end
+    if db.profile.resourceBars and db.profile.resourceBars.customAuraBars then
+        for sid in pairs(db.profile.resourceBars.customAuraBars) do
+            if sid ~= 0 and not specNameCache[sid] then
+                specNameCache[sid] = GetSpecializationNameForSpecID(sid) or nil
+            end
+        end
+    end
+    snapshot.meta.specNameCache = specNameCache
+
+    -- Profile (full copy, same as profile export)
+    snapshot.profile = db.profile
+
+    return snapshot
+end
+
+local function FormatDiagnosticAsText(diag)
+    local lines = {}
+    local function add(s) lines[#lines + 1] = s end
+
+    local function formatValue(v)
+        if type(v) ~= "table" then return tostring(v) end
+        local n = 0
+        for _ in pairs(v) do n = n + 1 end
+        if n == 0 then return "{}" end
+        if n > 10 then return "{" .. n .. " entries}" end
+        if #v > 0 and #v == n then
+            local parts = {}
+            for _, val in ipairs(v) do parts[#parts + 1] = tostring(val) end
+            return "{" .. table.concat(parts, ",") .. "}"
+        else
+            local parts = {}
+            for k, val in pairs(v) do
+                parts[#parts + 1] = tostring(k) .. "=" .. tostring(val)
+            end
+            table.sort(parts)
+            return "{" .. table.concat(parts, ", ") .. "}"
+        end
+    end
+
+    local function dumpKV(t)
+        local parts = {}
+        for k, v in pairs(t) do
+            parts[#parts + 1] = tostring(k) .. "=" .. formatValue(v)
+        end
+        table.sort(parts)
+        return table.concat(parts, " ")
+    end
+
+    -- Explicitly include nil-valued keys that are important for debugging
+    local function dumpKVWithNils(t, importantKeys)
+        local parts = {}
+        local seen = {}
+        for k, v in pairs(t) do
+            seen[k] = true
+            parts[#parts + 1] = tostring(k) .. "=" .. formatValue(v)
+        end
+        if importantKeys then
+            for _, k in ipairs(importantKeys) do
+                if not seen[k] then
+                    parts[#parts + 1] = k .. "=nil"
+                end
+            end
+        end
+        table.sort(parts)
+        return table.concat(parts, " ")
+    end
+
+    local m = diag.meta or {}
+    local r = diag.runtime or {}
+    local p = diag.profile or {}
+    local specNames = m.specNameCache or {}
+
+    -- Build viewer aura set for cross-referencing with buttons
+    local viewerAuraSet = {}
+    if r.viewerAuraSpells then
+        for _, sid in ipairs(r.viewerAuraSpells) do
+            viewerAuraSet[sid] = true
+        end
+    end
+
+    -- Build group visibility map from runtime groupFrameStates
+    local groupFrameVisible = {}  -- [groupId number] = true/false, nil = no frame
+    if r.groupFrameStates then
+        for id, state in pairs(r.groupFrameStates) do
+            groupFrameVisible[tonumber(id)] = state.shown
+        end
+    end
+
+    -- Header
+    add(("=== CDC BUG REPORT (v%s) ==="):format(tostring(diag._v or "?")))
+    add(("Addon: %s | WoW: %s (%s) | Locale: %s"):format(
+        tostring(m.addonVersion or "?"), tostring(m.buildVersion or "?"),
+        tostring(m.interfaceVersion or "?"), tostring(m.locale or "?")))
+    add(("Character: %s - %s | %s %s (class:%s spec:%s)"):format(
+        tostring(m.charName or "?"), tostring(m.realmName or "?"),
+        tostring(m.specName or "?"), tostring(m.className or "?"),
+        tostring(m.classID or "?"), tostring(m.specID or "?")))
+    add(("Instance: %s | Resting: %s | CDM Hidden: %s"):format(
+        tostring(m.instanceType or "?"), tostring(r.isResting), tostring(r.cdmHidden)))
+    add(("Timestamp: %s"):format(tostring(m.timestamp or "?")))
+    add(("Groups: %s | Total Buttons: %s"):format(
+        tostring(m.groupCount or "?"), tostring(m.totalButtons or "?")))
+
+    -- Runtime
+    add("")
+    add("--- Runtime ---")
+    add(("Cached Spec ID: %s"):format(tostring(r.currentSpecId or "nil")))
+    add(("Assisted Spell: %s"):format(tostring(r.assistedSpellID or "none")))
+
+    local function formatIDList(t)
+        if not t or #t == 0 then return "none" end
+        local parts = {}
+        for _, v in ipairs(t) do parts[#parts + 1] = tostring(v) end
+        return table.concat(parts, ", ")
+    end
+
+    add(("Viewer Aura Spells: %s"):format(formatIDList(r.viewerAuraSpells)))
+    add(("Proc Overlay Spells: %s"):format(formatIDList(r.procOverlaySpells)))
+    add(("Range Check Spells: %s"):format(formatIDList(r.rangeCheckSpells)))
+
+    if r.groupFrameStates then
+        local parts = {}
+        local ids = {}
+        for id in pairs(r.groupFrameStates) do ids[#ids + 1] = id end
+        table.sort(ids, function(a, b) return tonumber(a) < tonumber(b) end)
+        for _, id in ipairs(ids) do
+            local state = r.groupFrameStates[id]
+            parts[#parts + 1] = ("[%s] %s"):format(id, state.shown and "shown" or "hidden")
+        end
+        add("Group Frame States:")
+        add("  " .. (#parts > 0 and table.concat(parts, "  ") or "none"))
+    end
+
+    -- Groups (sorted by display order, not ID)
+    add("")
+    add("--- Groups ---")
+    if p.groups then
+        local groupIds = {}
+        for id in pairs(p.groups) do groupIds[#groupIds + 1] = id end
+        table.sort(groupIds, function(a, b)
+            local oa = p.groups[a] and p.groups[a].order or 999
+            local ob = p.groups[b] and p.groups[b].order or 999
+            if oa ~= ob then return oa < ob end
+            return a < b
+        end)
+
+        for _, gid in ipairs(groupIds) do
+            local g = p.groups[gid]
+
+            -- Specs display: nil = no filter, {} = all specs, {71,72} = specific
+            local specStr
+            if not g.specs then
+                specStr = "nil (no filter)"
+            elseif #g.specs == 0 then
+                specStr = "all"
+            else
+                local ss = {}
+                for _, s in ipairs(g.specs) do
+                    local name = specNames[s]
+                    ss[#ss + 1] = name and (tostring(s) .. "(" .. name .. ")") or tostring(s)
+                end
+                specStr = table.concat(ss, ", ")
+            end
+
+            -- Visibility status from runtime frame states
+            local visStr
+            if groupFrameVisible[gid] == true then
+                visStr = "VISIBLE"
+            elseif groupFrameVisible[gid] == false then
+                visStr = "HIDDEN"
+            else
+                visStr = "NO FRAME"
+            end
+
+            local btnCount = g.buttons and #g.buttons or 0
+
+            -- Group header with all key info on one line
+            add(("[%d] %q | %s | %s | %s | %d buttons | specs: %s"):format(
+                gid, g.name or "?",
+                g.displayMode or "icons",
+                g.enabled ~= false and "enabled" or "DISABLED",
+                visStr,
+                btnCount,
+                specStr))
+
+            -- Anchor
+            local a = g.anchor
+            if a then
+                add(("  anchor: %s > %s > %s (%.1f, %.1f)"):format(
+                    a.point or "?", a.relativeTo or "?", a.relativePoint or "?",
+                    a.x or 0, a.y or 0))
+            end
+
+            -- Style (all values)
+            if g.style then
+                add("  style: " .. dumpKV(g.style))
+            end
+
+            -- Alpha/visibility
+            local alphaKeys = {
+                "baselineAlpha", "forceAlphaInCombat", "forceAlphaOutOfCombat",
+                "forceAlphaMounted", "forceAlphaTargetExists", "forceAlphaMouseover",
+                "forceHideInCombat", "forceHideOutOfCombat", "forceHideMounted",
+                "fadeDelay", "fadeInDuration", "fadeOutDuration",
+            }
+            local alphaParts = {}
+            for _, k in ipairs(alphaKeys) do
+                if g[k] ~= nil then
+                    alphaParts[#alphaParts + 1] = k .. "=" .. tostring(g[k])
+                end
+            end
+            if #alphaParts > 0 then
+                add("  alpha: " .. table.concat(alphaParts, " "))
+            end
+
+            -- Load conditions
+            if g.loadConditions then
+                add("  load: " .. dumpKV(g.loadConditions))
+            end
+
+            -- Other group-level keys not handled above
+            local groupHandledKeys = {
+                name=1, buttons=1, style=1, anchor=1, loadConditions=1,
+                specs=1, displayMode=1, enabled=1,
+                baselineAlpha=1, forceAlphaInCombat=1, forceAlphaOutOfCombat=1,
+                forceAlphaMounted=1, forceAlphaTargetExists=1, forceAlphaMouseover=1,
+                forceHideInCombat=1, forceHideOutOfCombat=1, forceHideMounted=1,
+                fadeDelay=1, fadeInDuration=1, fadeOutDuration=1,
+            }
+            local extraParts = {}
+            for k, v in pairs(g) do
+                if not groupHandledKeys[k] then
+                    extraParts[#extraParts + 1] = tostring(k) .. "=" .. formatValue(v)
+                end
+            end
+            table.sort(extraParts)
+            if #extraParts > 0 then
+                add("  other: " .. table.concat(extraParts, " "))
+            end
+
+            -- Buttons with annotations
+            if g.buttons and #g.buttons > 0 then
+                add("  buttons:")
+                for i, btn in ipairs(g.buttons) do
+                    local main = ("    %d. %s:%s %q"):format(
+                        i, btn.type or "?", tostring(btn.id or "?"), btn.name or "?")
+                    local extras = {}
+                    for k, v in pairs(btn) do
+                        if k ~= "type" and k ~= "id" and k ~= "name" then
+                            extras[#extras + 1] = tostring(k) .. "=" .. formatValue(v)
+                        end
+                    end
+                    -- Annotate: show default auraUnit when auraTracking is on but unit not specified
+                    if btn.auraTracking and not btn.auraUnit then
+                        extras[#extras + 1] = "auraUnit=player(default)"
+                    end
+                    -- Annotate: cross-reference with CDM viewer aura tracking
+                    if btn.type == "spell" and btn.id and viewerAuraSet[btn.id] then
+                        extras[#extras + 1] = "~viewerAura=yes"
+                    end
+                    table.sort(extras)
+                    if #extras > 0 then
+                        main = main .. " " .. table.concat(extras, " ")
+                    end
+                    add(main)
+                end
+            end
+            add("")
+        end
+    end
+
+    -- Resource Bars (with type names and explicit anchorGroupId)
+    add("--- Resource Bars ---")
+    local rb = p.resourceBars
+    if rb then
+        local rbSimple = {}
+        local hasAnchorGroupId = false
+        for k, v in pairs(rb) do
+            if k == "anchorGroupId" then hasAnchorGroupId = true end
+            if k ~= "resources" and k ~= "customAuraBars" then
+                rbSimple[#rbSimple + 1] = tostring(k) .. "=" .. formatValue(v)
+            end
+        end
+        if not hasAnchorGroupId then
+            rbSimple[#rbSimple + 1] = "anchorGroupId=nil"
+        end
+        table.sort(rbSimple)
+        add(table.concat(rbSimple, " "))
+
+        if rb.resources then
+            add("resources:")
+            local rids = {}
+            for id in pairs(rb.resources) do rids[#rids + 1] = id end
+            table.sort(rids)
+            for _, id in ipairs(rids) do
+                local typeName = RESOURCE_NAMES[id]
+                local label = typeName
+                    and ("[%s] (%s)"):format(tostring(id), typeName)
+                    or ("[%s]"):format(tostring(id))
+                local kv = dumpKV(rb.resources[id])
+                add(("  %s %s"):format(label, kv ~= "" and kv or "(default)"))
+            end
+        end
+
+        if rb.customAuraBars then
+            local hasAny = false
+            for _ in pairs(rb.customAuraBars) do hasAny = true; break end
+            if hasAny then
+                add("customAuraBars:")
+                local specIds = {}
+                for sid in pairs(rb.customAuraBars) do specIds[#specIds + 1] = sid end
+                table.sort(specIds)
+                for _, sid in ipairs(specIds) do
+                    local sName = sid == 0 and "Default" or specNames[sid]
+                    local label = sName
+                        and ("[%s] (%s)"):format(tostring(sid), sName)
+                        or ("[%s]"):format(tostring(sid))
+                    add(("  %s"):format(label))
+                    local specBars = rb.customAuraBars[sid]
+                    local slots = {}
+                    for slot in pairs(specBars) do slots[#slots + 1] = slot end
+                    table.sort(slots, function(a, b) return tostring(a) < tostring(b) end)
+                    for _, slot in ipairs(slots) do
+                        add(("    %s: %s"):format(tostring(slot), dumpKV(specBars[slot])))
+                    end
+                end
+            end
+        end
+    end
+
+    -- Cast Bar (with explicit anchorGroupId)
+    add("")
+    add("--- Cast Bar ---")
+    if p.castBar then
+        add(dumpKVWithNils(p.castBar, {"anchorGroupId"}))
+    end
+
+    -- Frame Anchoring (with explicit anchorGroupId)
+    add("")
+    add("--- Frame Anchoring ---")
+    if p.frameAnchoring then
+        local faSimple = {}
+        local faComplex = {}
+        local hasAnchorGroupId = false
+        for k, v in pairs(p.frameAnchoring) do
+            if k == "anchorGroupId" then hasAnchorGroupId = true end
+            if type(v) == "table" then
+                faComplex[k] = v
+            else
+                faSimple[#faSimple + 1] = tostring(k) .. "=" .. tostring(v)
+            end
+        end
+        if not hasAnchorGroupId then
+            faSimple[#faSimple + 1] = "anchorGroupId=nil"
+        end
+        table.sort(faSimple)
+        add(table.concat(faSimple, " "))
+        local cKeys = {}
+        for k in pairs(faComplex) do cKeys[#cKeys + 1] = k end
+        table.sort(cKeys)
+        for _, k in ipairs(cKeys) do
+            add(("  %s: %s"):format(k, dumpKV(faComplex[k])))
+        end
+    end
+
+    -- Global Style
+    add("")
+    add("--- Global Style ---")
+    if p.globalStyle then
+        add(dumpKV(p.globalStyle))
+    end
+
+    -- Folders (with member group listing)
+    if p.folders then
+        local hasAny = false
+        for _ in pairs(p.folders) do hasAny = true; break end
+        if hasAny then
+            add("")
+            add("--- Folders ---")
+            local folderIds = {}
+            for id in pairs(p.folders) do folderIds[#folderIds + 1] = id end
+            table.sort(folderIds)
+            for _, fid in ipairs(folderIds) do
+                local f = p.folders[fid]
+                -- List which groups belong to this folder
+                local memberGroups = {}
+                if p.groups then
+                    for gid, g in pairs(p.groups) do
+                        if g.folderId == fid then
+                            memberGroups[#memberGroups + 1] = ("%d(%q)"):format(gid, g.name or "?")
+                        end
+                    end
+                end
+                table.sort(memberGroups)
+                local membersStr = #memberGroups > 0 and table.concat(memberGroups, ", ") or "empty"
+                add(("[%s] %q section=%s order=%s | groups: %s"):format(
+                    tostring(fid), f.name or "?", f.section or "?", tostring(f.order), membersStr))
+            end
+        end
+    end
+
+    -- Other top-level profile keys
+    add("")
+    add("--- Other ---")
+    local skipTopLevel = {
+        groups=1, resourceBars=1, castBar=1, frameAnchoring=1,
+        globalStyle=1, folders=1,
+    }
+    local otherParts = {}
+    for k, v in pairs(p) do
+        if not skipTopLevel[k] then
+            if k == "auraDurationCache" and type(v) == "table" then
+                -- Show full cache contents for aura debugging
+                local entries = {}
+                for spellId, dur in pairs(v) do
+                    entries[#entries + 1] = tostring(spellId) .. "=" .. tostring(dur)
+                end
+                table.sort(entries)
+                if #entries == 0 then
+                    otherParts[#otherParts + 1] = "auraDurationCache={}"
+                else
+                    otherParts[#otherParts + 1] = "auraDurationCache={" .. table.concat(entries, ", ") .. "}"
+                end
+            else
+                otherParts[#otherParts + 1] = tostring(k) .. "=" .. formatValue(v)
+            end
+        end
+    end
+    table.sort(otherParts)
+    for _, line in ipairs(otherParts) do
+        add(line)
+    end
+
+    return table.concat(lines, "\n")
+end
+
+StaticPopupDialogs["CDC_DIAGNOSTIC_EXPORT"] = {
+    text = "Bug report string (Ctrl+C to copy, paste in Discord):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        local snapshot = BuildDiagnosticSnapshot()
+        local serialized = AceSerializer:Serialize(snapshot)
+        local compressed = LibDeflate:CompressDeflate(serialized)
+        local encoded = LibDeflate:EncodeForPrint(compressed)
+        self.EditBox:SetText("CDCdiag:" .. encoded)
+        self.EditBox:HighlightText()
+        self.EditBox:SetFocus()
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
+    text = "Import this bug report's profile into your addon? Your current profile will be overwritten.",
+    button1 = "Import",
+    button2 = "Cancel",
+    OnAccept = function()
+        if decodedDiagnostic and decodedDiagnostic.profile then
+            local db = CooldownCompanion.db
+            for k, v in pairs(decodedDiagnostic.profile) do
+                db.profile[k] = v
+            end
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:RefreshAllGroups()
+            CooldownCompanion:Print("Diagnostic profile imported.")
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+local diagnosticDecodeFrame = nil
+
+local function OpenDiagnosticDecodePanel()
+    if diagnosticDecodeFrame then
+        diagnosticDecodeFrame:Show()
+        return
+    end
+
+    local frame = AceGUI:Create("Window")
+    frame:SetTitle("CDC Diagnostic Decode")
+    frame:SetWidth(700)
+    frame:SetHeight(600)
+    frame:SetLayout("List")
+    diagnosticDecodeFrame = frame
+
+    local inputBox = AceGUI:Create("MultiLineEditBox")
+    inputBox:SetLabel("Paste diagnostic string:")
+    inputBox:SetFullWidth(true)
+    inputBox:SetNumLines(6)
+    inputBox.button:Hide()
+    frame:AddChild(inputBox)
+
+    local outputBox = AceGUI:Create("MultiLineEditBox")
+    outputBox:SetLabel("Decoded report:")
+    outputBox:SetFullWidth(true)
+    outputBox:SetNumLines(20)
+    outputBox.button:Hide()
+
+    local btnGroup = AceGUI:Create("SimpleGroup")
+    btnGroup:SetFullWidth(true)
+    btnGroup:SetLayout("Flow")
+
+    local decodeBtn = AceGUI:Create("Button")
+    decodeBtn:SetText("Decode")
+    decodeBtn:SetWidth(120)
+    decodeBtn:SetCallback("OnClick", function()
+        local text = inputBox:GetText()
+        if not text or text == "" then return end
+        text = text:gsub("%s+", "")
+        if text:sub(1, 8) == "CDCdiag:" then
+            text = text:sub(9)
+        end
+        local decoded = LibDeflate:DecodeForPrint(text)
+        if not decoded then
+            outputBox:SetText("Error: Failed to decode string.")
+            return
+        end
+        local decompressed = LibDeflate:DecompressDeflate(decoded)
+        if not decompressed then
+            outputBox:SetText("Error: Failed to decompress.")
+            return
+        end
+        local success, data = AceSerializer:Deserialize(decompressed)
+        if not success or type(data) ~= "table" then
+            outputBox:SetText("Error: Failed to deserialize.")
+            return
+        end
+        decodedDiagnostic = data
+        outputBox:SetText(FormatDiagnosticAsText(data))
+    end)
+    btnGroup:AddChild(decodeBtn)
+
+    local copyBtn = AceGUI:Create("Button")
+    copyBtn:SetText("Copy as Text")
+    copyBtn:SetWidth(120)
+    copyBtn:SetCallback("OnClick", function()
+        if not decodedDiagnostic then return end
+        outputBox.editBox:HighlightText()
+        outputBox.editBox:SetFocus()
+    end)
+    btnGroup:AddChild(copyBtn)
+
+    local importBtn = AceGUI:Create("Button")
+    importBtn:SetText("Import Profile")
+    importBtn:SetWidth(120)
+    importBtn:SetCallback("OnClick", function()
+        if not decodedDiagnostic or not decodedDiagnostic.profile then
+            CooldownCompanion:Print("No diagnostic data to import.")
+            return
+        end
+        StaticPopup_Show("CDC_DIAGNOSTIC_IMPORT_CONFIRM")
+    end)
+    btnGroup:AddChild(importBtn)
+
+    frame:AddChild(btnGroup)
+    frame:AddChild(outputBox)
+
+    frame:SetCallback("OnClose", function(widget)
+        AceGUI:Release(widget)
+        diagnosticDecodeFrame = nil
+        decodedDiagnostic = nil
+    end)
+end
+
+function CooldownCompanion:OpenDiagnosticDecodePanel()
+    OpenDiagnosticDecodePanel()
+end
 
 StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
     text = "This will remove all spec filters and turn '%s' into a group for your current character. Continue?",
@@ -780,26 +1491,18 @@ local function FindDeepestNamedChild(frame, cx, cy)
     local bestFrame, bestName, bestArea = nil, nil, math.huge
     local children = { frame:GetChildren() }
     for _, child in ipairs(children) do
-        -- IsVisible/GetEffectiveAlpha may return secret values in restricted combat; pcall to skip
-        local okVis, visible = pcall(function()
-            if child.IsForbidden and child:IsForbidden() then return false end
-            return child:IsVisible() and child:GetEffectiveAlpha() > 0
-        end)
-        if okVis and visible then
+        local visible = not (child.IsForbidden and child:IsForbidden()) and child:IsVisible()
+        if visible then
             local name = child:GetName()
             if name and name ~= "" and not IsAddonFrame(name) then
-                -- GetRect may return secret values in restricted combat; pcall to skip
-                local ok, inside, area = pcall(function()
-                    local left, bottom, width, height = child:GetRect()
-                    if not left or not width or width <= 0 or height <= 0 then
-                        return false, 0
-                    end
+                local left, bottom, width, height = child:GetRect()
+                local inside, area = false, 0
+                if left and width and width > 0 and height > 0 then
                     if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
-                        return true, width * height
+                        inside, area = true, width * height
                     end
-                    return false, 0
-                end)
-                if ok and inside and area < bestArea and HasVisibleContent(child) then
+                end
+                if inside and area < bestArea and HasVisibleContent(child) then
                     bestFrame, bestName, bestArea = child, name, area
                 end
             end
@@ -928,8 +1631,8 @@ local function StartPickFrame(callback)
             self.label:SetText(name)
 
             -- Position highlight around the resolved frame
-            local ok, left, bottom, width, height = pcall(resolvedFrame.GetRect, resolvedFrame)
-            if ok and left and width and width > 0 and height > 0 then
+            local left, bottom, width, height = resolvedFrame:GetRect()
+            if left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
                 self.highlight:SetSize(width, height)
@@ -1049,8 +1752,8 @@ local function StartPickCDM(callback)
                     local isAuraViewer = viewerName == "BuffIconCooldownViewer" or viewerName == "BuffBarCooldownViewer"
                     for _, child in pairs({viewer:GetChildren()}) do
                         if child.cooldownInfo and child:IsVisible() then
-                            local ok, left, bottom, width, height = pcall(child.GetRect, child)
-                            if ok and left and width and width > 0 and height > 0 then
+                            local left, bottom, width, height = child:GetRect()
+                            if left and width and width > 0 and height > 0 then
                                 if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
                                     local area = width * height
                                     if not bestArea or area < bestArea then
@@ -1081,8 +1784,8 @@ local function StartPickCDM(callback)
                         local isAuraCat = catObj and (catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBuff or catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBar)
                         for item in categoryDisplay.itemPool:EnumerateActive() do
                             if item:IsVisible() and not item:IsEmptyCategory() then
-                                local ok, left, bottom, width, height = pcall(item.GetRect, item)
-                                if ok and left and width and width > 0 and height > 0 then
+                                local left, bottom, width, height = item:GetRect()
+                                if left and width and width > 0 and height > 0 then
                                     if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
                                         local area = width * height
                                         if not bestArea or area < bestArea then
@@ -1125,8 +1828,8 @@ local function StartPickCDM(callback)
             local suffix = bestIsAuraViewer and "TRACKABLE AURA" or "NOT AN AURA"
             self.label:SetText(bestName .. "  |  " .. bestSpellID .. "  |  " .. suffix)
 
-            local ok, left, bottom, width, height = pcall(bestChild.GetRect, bestChild)
-            if ok and left and width and width > 0 and height > 0 then
+            local left, bottom, width, height = bestChild:GetRect()
+            if left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
                 self.highlight:SetSize(width, height)
@@ -1196,9 +1899,64 @@ CS.StartPickFrame = StartPickFrame
 CS.StartPickCDM = StartPickCDM
 
 ------------------------------------------------------------------------
+-- Helper: Check if a spell is in CDM TrackedBuff or TrackedBar categories
+------------------------------------------------------------------------
+local function IsSpellInCDMBuffBar(spellId)
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info then
+                    if info.spellID == spellId or info.overrideSpellID == spellId
+                       or info.overrideTooltipSpellID == spellId then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Helper: Check if a spell is in CDM Essential or Utility categories
+------------------------------------------------------------------------
+local function IsSpellInCDMCooldown(spellId)
+    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info then
+                    if info.spellID == spellId or info.overrideSpellID == spellId
+                       or info.overrideTooltipSpellID == spellId then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)
+------------------------------------------------------------------------
+local function IsPassiveOrProc(spellId)
+    if C_Spell.IsSpellPassive(spellId) then return true end
+    if C_Spell.GetSpellCharges(spellId) then return false end
+    local baseCooldown = GetSpellBaseCooldown(spellId)
+    if (not baseCooldown or baseCooldown == 0) and IsSpellInCDMBuffBar(spellId) then
+        return true
+    end
+    return false
+end
+
+------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input, isPetSpell)
+local function TryAddSpell(input, isPetSpell, forceAura)
     if input == "" or not selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -1219,15 +1977,22 @@ local function TryAddSpell(input, isPetSpell)
     end
 
     if spellId and spellName then
-        if C_Spell.IsSpellPassive(spellId) then
-            CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
-            return false
-        end
         if spellName == "Single-Button Assistant" then
             CooldownCompanion:Print("Cannot track Single-Button Assistant")
             return false
         end
-        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell)
+        local passiveOrProc = IsPassiveOrProc(spellId)
+        -- forceAura overrides passive/proc classification for dual-CDM spells
+        if forceAura == false then
+            passiveOrProc = false   -- Cooldown mode: treat as normal spell
+        elseif forceAura == true then
+            passiveOrProc = true    -- Buff mode: treat as passive/proc
+        end
+        if passiveOrProc and not IsSpellInCDMBuffBar(spellId) then
+            CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
+            return false
+        end
+        CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
     else
@@ -1317,11 +2082,25 @@ local function TryAdd(input)
         -- ID-based input: check both spell and item
         local spellInfo = C_Spell.GetSpellInfo(id)
         local spellFound = spellInfo and spellInfo.name
-        local isPassive = spellFound and C_Spell.IsSpellPassive(id)
+        local passiveOrProc = spellFound and IsPassiveOrProc(id)
+
+        -- Passive/proc spell: require CDM presence
+        if spellFound and passiveOrProc then
+            if IsSpellInCDMBuffBar(id) then
+                CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name, nil, true)
+                CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+                return true
+            end
+            -- Not in CDM — fall through to try as item, then report error
+        end
 
         -- Non-passive spell → add it
-        if spellFound and not isPassive then
-            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name)
+        if spellFound and not passiveOrProc then
+            local forceAura = nil
+            if IsSpellInCDMCooldown(id) and IsSpellInCDMBuffBar(id) then
+                forceAura = false  -- dual-CDM: default to cooldown mode
+            end
+            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
             CooldownCompanion:Print("Added spell: " .. spellInfo.name)
             return true
         end
@@ -1333,9 +2112,9 @@ local function TryAdd(input)
             if C_Item.IsItemDataCachedByID(itemId) then
                 local result = FinalizeAddItem(itemId, selectedGroup)
                 if result then return true end
-                -- Item had no use effect; if spell was passive, report that
-                if isPassive then
-                    CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                -- Item had no use effect; if spell was passive, report CDM error
+                if passiveOrProc then
+                    CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
                     return false
                 end
                 -- FinalizeAddItem already printed "no usable effect"
@@ -1355,8 +2134,8 @@ local function TryAdd(input)
                 CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
                 CooldownCompanion.pendingItemLoad = nil
                 if not success then
-                    if isPassive then
-                        CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                    if passiveOrProc then
+                        CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
                     else
                         CooldownCompanion:Print("Not found: " .. input)
                     end
@@ -1364,16 +2143,16 @@ local function TryAdd(input)
                 end
                 if FinalizeAddItem(itemId, capturedGroup) then
                     CooldownCompanion:RefreshConfigPanel()
-                elseif isPassive then
-                    CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+                elseif passiveOrProc then
+                    CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
                 end
             end)
             return false
         end
 
         -- No item match
-        if isPassive then
-            CooldownCompanion:Print("Cannot track passive spell: " .. spellInfo.name)
+        if passiveOrProc then
+            CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
             return false
         end
 
@@ -1390,10 +2169,20 @@ local function TryAdd(input)
             spellId, spellName = CooldownCompanion:FindTalentSpellByName(input)
         end
 
-        if spellId and spellName and not C_Spell.IsSpellPassive(spellId) then
-            CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
-            CooldownCompanion:Print("Added spell: " .. spellName)
-            return true
+        if spellId and spellName then
+            local passiveOrProc = IsPassiveOrProc(spellId)
+            if passiveOrProc then
+                if IsSpellInCDMBuffBar(spellId) then
+                    CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, nil, true)
+                    CooldownCompanion:Print("Added spell: " .. spellName)
+                    return true
+                end
+                -- Not in CDM — fall through to try as item, then report error
+            else
+                CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName)
+                CooldownCompanion:Print("Added spell: " .. spellName)
+                return true
+            end
         end
 
         -- Try as item
@@ -1402,9 +2191,9 @@ local function TryAdd(input)
             return FinalizeAddItem(itemId, selectedGroup)
         end
 
-        -- Passive spell, no item match
+        -- Passive/proc spell, no item match — report CDM error
         if spellId and spellName then
-            CooldownCompanion:Print("Cannot track passive spell: " .. spellName)
+            CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
             return false
         end
 
@@ -1449,6 +2238,42 @@ local function BuildAutocompleteCache()
     local cache = {}
     local seen = {}
 
+    -- Pre-compute dual-CDM spell set (spells in both cooldown and buff CDM categories)
+    local cdmCooldownSet = {}
+    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and info.spellID then
+                    cdmCooldownSet[info.spellID] = true
+                    if info.overrideSpellID then cdmCooldownSet[info.overrideSpellID] = true end
+                    if info.overrideTooltipSpellID then cdmCooldownSet[info.overrideTooltipSpellID] = true end
+                end
+            end
+        end
+    end
+    local cdmBuffSet = {}
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and info.spellID then
+                    cdmBuffSet[info.spellID] = true
+                    if info.overrideSpellID then cdmBuffSet[info.overrideSpellID] = true end
+                    if info.overrideTooltipSpellID then cdmBuffSet[info.overrideTooltipSpellID] = true end
+                end
+            end
+        end
+    end
+    local dualCDMSet = {}
+    for id in pairs(cdmCooldownSet) do
+        if cdmBuffSet[id] then
+            dualCDMSet[id] = true
+        end
+    end
+
     -- Iterate spellbook skill lines
     local numLines = C_SpellBook.GetNumSpellBookSkillLines()
     for lineIdx = 1, numLines do
@@ -1467,14 +2292,36 @@ local function BuildAutocompleteCache()
                     local id = itemInfo.spellID
                     if not seen[id] then
                         seen[id] = true
-                        table.insert(cache, {
-                            id = id,
-                            name = itemInfo.name,
-                            nameLower = itemInfo.name:lower(),
-                            icon = itemInfo.iconID or 134400,
-                            category = category,
-                            isItem = false,
-                        })
+                        if dualCDMSet[id] then
+                            -- Dual-CDM spell: insert separate Cooldown and Buff entries
+                            table.insert(cache, {
+                                id = id,
+                                name = itemInfo.name .. " (Cooldown)",
+                                nameLower = itemInfo.name:lower(),
+                                icon = itemInfo.iconID or 134400,
+                                category = category,
+                                isItem = false,
+                                forceAura = false,
+                            })
+                            table.insert(cache, {
+                                id = id,
+                                name = itemInfo.name .. " (Buff)",
+                                nameLower = itemInfo.name:lower(),
+                                icon = itemInfo.iconID or 134400,
+                                category = "Tracked Buff",
+                                isItem = false,
+                                forceAura = true,
+                            })
+                        else
+                            table.insert(cache, {
+                                id = id,
+                                name = itemInfo.name,
+                                nameLower = itemInfo.name:lower(),
+                                icon = itemInfo.iconID or 134400,
+                                category = category,
+                                isItem = false,
+                            })
+                        end
                     end
                 end
             end
@@ -1532,6 +2379,34 @@ local function BuildAutocompleteCache()
         end
     end
 
+    -- Iterate CDM TrackedBuff + TrackedBar for passive/proc spells
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if cdInfo and cdInfo.spellID then
+                    local id = cdInfo.spellID
+                    if not seen[id] then
+                        local spellInfo = C_Spell.GetSpellInfo(id)
+                        if spellInfo and spellInfo.name and IsPassiveOrProc(id) then
+                            seen[id] = true
+                            table.insert(cache, {
+                                id = id,
+                                name = spellInfo.name,
+                                nameLower = spellInfo.name:lower(),
+                                icon = spellInfo.iconID or 134400,
+                                category = "Cooldown Manager",
+                                isItem = false,
+                                isPassive = true,
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     autocompleteCache = cache
     return cache
 end
@@ -1539,10 +2414,9 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Search cache for matches
 ------------------------------------------------------------------------
-local function SearchAutocomplete(query)
+local function SearchAutocompleteInCache(query, cache)
     if not query or #query < 1 then return nil end
 
-    local cache = autocompleteCache or BuildAutocompleteCache()
     local queryLower = query:lower()
     local queryNum = tonumber(query)
     local prefixMatches = {}
@@ -1595,6 +2469,10 @@ local function SearchAutocomplete(query)
     return #results > 0 and results or nil
 end
 
+local function SearchAutocomplete(query)
+    return SearchAutocompleteInCache(query, autocompleteCache or BuildAutocompleteCache())
+end
+
 ------------------------------------------------------------------------
 -- Autocomplete: Hide dropdown
 ------------------------------------------------------------------------
@@ -1631,7 +2509,7 @@ local function OnAutocompleteSelect(entry)
     if entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        added = TryAddSpell(tostring(entry.id), entry.isPetSpell)
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura)
     end
     if added then
         newInput = ""
@@ -1703,8 +2581,8 @@ local function GetOrCreateAutocompleteDropdown()
 
         row:SetScript("OnClick", function()
             dropdown._clickInProgress = false
-            if row.entry then
-                OnAutocompleteSelect(row.entry)
+            if row.entry and dropdown._onSelect then
+                dropdown._onSelect(row.entry)
             end
         end)
 
@@ -1727,8 +2605,10 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Show results anchored to an edit box widget
 ------------------------------------------------------------------------
-local function ShowAutocompleteResults(results, anchorWidget)
+local function ShowAutocompleteResults(results, anchorWidget, onSelect)
     local dropdown = GetOrCreateAutocompleteDropdown()
+    dropdown._onSelect = onSelect
+    dropdown._editbox = anchorWidget.editbox
 
     if not results then
         dropdown:Hide()
@@ -1764,6 +2644,54 @@ local function ShowAutocompleteResults(results, anchorWidget)
     dropdown:Show()
     UpdateAutocompleteHighlight()
 end
+
+------------------------------------------------------------------------
+-- Autocomplete: Centralized keyboard handler for arrow/enter navigation
+------------------------------------------------------------------------
+local function HandleAutocompleteKeyDown(key)
+    if not autocompleteDropdown or not autocompleteDropdown:IsShown() then return end
+    local maxIdx = autocompleteDropdown._numResults or 0
+    if maxIdx == 0 then return end
+    if key == "DOWN" then
+        local idx = (autocompleteDropdown._highlightIndex or 0) + 1
+        if idx > maxIdx then idx = 1 end
+        autocompleteDropdown._highlightIndex = idx
+        UpdateAutocompleteHighlight()
+    elseif key == "UP" then
+        local idx = (autocompleteDropdown._highlightIndex or 0) - 1
+        if idx < 1 then idx = maxIdx end
+        autocompleteDropdown._highlightIndex = idx
+        UpdateAutocompleteHighlight()
+    elseif key == "ENTER" then
+        local idx = autocompleteDropdown._highlightIndex or 0
+        if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
+            autocompleteDropdown._enterConsumed = true
+            if autocompleteDropdown._onSelect then
+                autocompleteDropdown._onSelect(autocompleteDropdown.rows[idx].entry)
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Check and clear enter-consumed flag
+------------------------------------------------------------------------
+local function ConsumeAutocompleteEnter()
+    if autocompleteDropdown and autocompleteDropdown._enterConsumed then
+        autocompleteDropdown._enterConsumed = nil
+        return true
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Expose autocomplete functions for reuse by other config modules
+------------------------------------------------------------------------
+CS.ShowAutocompleteResults = ShowAutocompleteResults
+CS.HideAutocomplete = HideAutocomplete
+CS.SearchAutocompleteInCache = SearchAutocompleteInCache
+CS.HandleAutocompleteKeyDown = HandleAutocompleteKeyDown
+CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 
 ------------------------------------------------------------------------
 -- Helper: Get icon for a button data entry
@@ -1820,6 +2748,7 @@ local function CleanRecycledEntry(entry)
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
     end
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
+    if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     entry.image:SetAlpha(1)
 end
@@ -2980,6 +3909,7 @@ function RefreshColumn1(preserveDrag)
                 selectedButton = nil
                 wipe(selectedButtons)
                 CS.castBarPanelActive = false
+                CS.frameAnchoringPanelActive = false
                 CooldownCompanion:StopCastBarPreview()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
@@ -3474,6 +4404,11 @@ function RefreshColumn1(preserveDrag)
         local heading = AceGUI:Create("Heading")
         heading:SetText(headingText)
         heading:SetFullWidth(true)
+
+        if section == "char" then
+            local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+            if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
+        end
         col1Scroll:AddChild(heading)
 
         if isEmpty and showPhantomSections then
@@ -3665,8 +4600,39 @@ end
 ------------------------------------------------------------------------
 function RefreshColumn2()
     if not col2Scroll then return end
+    local col2 = configFrame and configFrame.col2
+
+    -- Resource bar panel mode: take over col2 with resource anchoring panel
+    if CS.resourceBarPanelActive then
+        CancelDrag()
+        HideAutocomplete()
+        col2Scroll.frame:Hide()
+        if col2 and col2._infoBtn then col2._infoBtn:Hide() end
+
+        if not col2._resourceAnchoringScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(col2.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+            col2._resourceAnchoringScroll = scroll
+        end
+        col2._resourceAnchoringScroll:ReleaseChildren()
+        col2._resourceAnchoringScroll.frame:Show()
+        ST._BuildResourceBarAnchoringPanel(col2._resourceAnchoringScroll)
+        return
+    end
+
+    -- Hide resource anchoring scroll when not in resource bar mode
+    if col2 and col2._resourceAnchoringScroll then
+        col2._resourceAnchoringScroll.frame:Hide()
+    end
+    if col2 and col2._infoBtn then col2._infoBtn:Show() end
+
     CancelDrag()
     HideAutocomplete()
+    col2Scroll.frame:Show()
     col2Scroll:ReleaseChildren()
 
     -- Multi-group selection: show inline action buttons instead of spell list
@@ -3681,6 +4647,8 @@ function RefreshColumn2()
 
         local heading = AceGUI:Create("Heading")
         heading:SetText(multiGroupCount .. " Groups Selected")
+        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
         heading:SetFullWidth(true)
         col2Scroll:AddChild(heading)
 
@@ -4036,11 +5004,7 @@ function RefreshColumn2()
     inputBox:DisableButton(true)
     inputBox:SetFullWidth(true)
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        -- If arrow-key selection was confirmed via Enter, the hook already handled it
-        if autocompleteDropdown and autocompleteDropdown._enterConsumed then
-            autocompleteDropdown._enterConsumed = nil
-            return
-        end
+        if ConsumeAutocompleteEnter() then return end
         HideAutocomplete()
         newInput = text
         if newInput ~= "" and selectedGroup then
@@ -4054,10 +5018,7 @@ function RefreshColumn2()
         newInput = text
         if text and #text >= 1 then
             local results = SearchAutocomplete(text)
-            ShowAutocompleteResults(results, widget)
-            if autocompleteDropdown then
-                autocompleteDropdown._editbox = widget.editbox
-            end
+            ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
         else
             HideAutocomplete()
         end
@@ -4070,26 +5031,7 @@ function RefreshColumn2()
     if not editboxFrame._cdcAutocompHooked then
         editboxFrame._cdcAutocompHooked = true
         editboxFrame:HookScript("OnKeyDown", function(self, key)
-            if not autocompleteDropdown or not autocompleteDropdown:IsShown() then return end
-            local maxIdx = autocompleteDropdown._numResults or 0
-            if maxIdx == 0 then return end
-            if key == "DOWN" then
-                local idx = (autocompleteDropdown._highlightIndex or 0) + 1
-                if idx > maxIdx then idx = 1 end
-                autocompleteDropdown._highlightIndex = idx
-                UpdateAutocompleteHighlight()
-            elseif key == "UP" then
-                local idx = (autocompleteDropdown._highlightIndex or 0) - 1
-                if idx < 1 then idx = maxIdx end
-                autocompleteDropdown._highlightIndex = idx
-                UpdateAutocompleteHighlight()
-            elseif key == "ENTER" then
-                local idx = autocompleteDropdown._highlightIndex or 0
-                if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
-                    autocompleteDropdown._enterConsumed = true
-                    OnAutocompleteSelect(autocompleteDropdown.rows[idx].entry)
-                end
-            end
+            HandleAutocompleteKeyDown(key)
         end)
     end
     col2Scroll:AddChild(inputBox)
@@ -4134,6 +5076,8 @@ function RefreshColumn2()
     -- Separator
     local sep = AceGUI:Create("Heading")
     sep:SetText("")
+    local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if cc then sep.label:SetTextColor(cc.r, cc.g, cc.b) end
     sep:SetFullWidth(true)
     col2Scroll:AddChild(sep)
 
@@ -4195,6 +5139,39 @@ function RefreshColumn2()
             end
             warnBtn:SetFrameLevel(entry.frame:GetFrameLevel() + 5)
             warnBtn:Show()
+        end
+
+        -- Override badge: show a small icon if button has style overrides
+        if entry.frame._cdcOverrideBadge then
+            entry.frame._cdcOverrideBadge:Hide()
+        end
+        if CooldownCompanion:HasStyleOverrides(buttonData) then
+            local badge = entry.frame._cdcOverrideBadge
+            if not badge then
+                badge = CreateFrame("Frame", nil, entry.frame)
+                badge:SetSize(16, 16)
+                local badgeIcon = badge:CreateTexture(nil, "OVERLAY")
+                badgeIcon:SetSize(12, 12)
+                badgeIcon:SetPoint("CENTER")
+                badgeIcon:SetAtlas("Professions-Icon-Export")
+                badge:EnableMouse(true)
+                badge:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Has appearance overrides")
+                    GameTooltip:Show()
+                end)
+                badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                entry.frame._cdcOverrideBadge = badge
+            end
+            -- Position to the left of the warning icon (or right side if no warning)
+            badge:ClearAllPoints()
+            if not usable and entry.frame._cdcWarnBtn then
+                badge:SetPoint("RIGHT", entry.frame._cdcWarnBtn, "LEFT", -2, 0)
+            else
+                badge:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
+            end
+            badge:SetFrameLevel(entry.frame:GetFrameLevel() + 5)
+            badge:Show()
         end
 
         -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
@@ -4367,8 +5344,11 @@ function RefreshColumn3(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
-        if container.resourceBarScroll then
-            container.resourceBarScroll.frame:Hide()
+        if container.customAuraScroll then
+            container.customAuraScroll.frame:Hide()
+        end
+        if container.frameAnchoringScroll then
+            container.frameAnchoringScroll.frame:Hide()
         end
         -- Create or reuse the cast bar scroll frame
         if not container.castBarScroll then
@@ -4391,7 +5371,7 @@ function RefreshColumn3(container)
         container.castBarScroll.frame:Hide()
     end
 
-    -- Resource Bar panel mode: show resource bar styling instead of group settings
+    -- Resource Bar panel mode: show custom aura bar panel instead of group settings
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
             container.placeholderLabel:Hide()
@@ -4399,24 +5379,54 @@ function RefreshColumn3(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
-        if not container.resourceBarScroll then
+        if container.frameAnchoringScroll then
+            container.frameAnchoringScroll.frame:Hide()
+        end
+        if not container.customAuraScroll then
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             scroll.frame:SetParent(container)
             scroll.frame:ClearAllPoints()
             scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
             scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-            container.resourceBarScroll = scroll
+            container.customAuraScroll = scroll
         end
-        container.resourceBarScroll:ReleaseChildren()
-        container.resourceBarScroll.frame:Show()
-        SyncConfigState()
-        ST._BuildResourceBarStylingPanel(container.resourceBarScroll)
+        container.customAuraScroll:ReleaseChildren()
+        container.customAuraScroll.frame:Show()
+        ST._BuildCustomAuraBarPanel(container.customAuraScroll)
         return
     end
-    -- Hide resource bar scroll if it exists
-    if container.resourceBarScroll then
-        container.resourceBarScroll.frame:Hide()
+    -- Hide custom aura scroll if it exists
+    if container.customAuraScroll then
+        container.customAuraScroll.frame:Hide()
+    end
+
+    -- Frame Anchoring panel mode: show target frame settings
+    if CS.frameAnchoringPanelActive then
+        if container.placeholderLabel then
+            container.placeholderLabel:Hide()
+        end
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        if not container.frameAnchoringScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(container)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.frameAnchoringScroll = scroll
+        end
+        container.frameAnchoringScroll:ReleaseChildren()
+        container.frameAnchoringScroll.frame:Show()
+        SyncConfigState()
+        ST._BuildFrameAnchoringTargetPanel(container.frameAnchoringScroll)
+        return
+    end
+    -- Hide frame anchoring scroll if it exists
+    if container.frameAnchoringScroll then
+        container.frameAnchoringScroll.frame:Hide()
     end
 
     -- Multi-group selection: show placeholder
@@ -4456,12 +5466,6 @@ function RefreshColumn3(container)
     -- Create the TabGroup once, reuse on subsequent refreshes
     if not container.tabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
-        tabGroup:SetTabs({
-            { value = "appearance",      text = "Appearance" },
-            { value = "positioning",     text = "Positioning" },
-            { value = "extras",          text = "Extras" },
-            { value = "loadconditions",  text = "Load Conditions" },
-        })
         tabGroup:SetLayout("Fill")
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
@@ -4488,6 +5492,8 @@ function RefreshColumn3(container)
                 ST._BuildPositioningTab(scroll)
             elseif tab == "extras" then
                 ST._BuildExtrasTab(scroll)
+            elseif tab == "effects" then
+                ST._BuildEffectsTab(scroll)
             elseif tab == "loadconditions" then
                 ST._BuildLoadConditionsTab(scroll)
             end
@@ -4501,6 +5507,20 @@ function RefreshColumn3(container)
 
         container.tabGroup = tabGroup
     end
+
+    -- Update tabs every refresh so the effects tab label reflects current group mode
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local effectsLabel = "Effects"
+    if group then
+        effectsLabel = (group.displayMode == "bars") and "Indicators" or "Glows"
+    end
+    container.tabGroup:SetTabs({
+        { value = "appearance",      text = "Appearance" },
+        { value = "positioning",     text = "Positioning" },
+        { value = "extras",          text = "Extras" },
+        { value = "effects",         text = effectsLabel },
+        { value = "loadconditions",  text = "Load Conditions" },
+    })
 
     -- Save AceGUI scroll state before tab re-select (old col3Scroll will be released)
     local savedOffset, savedScrollvalue
@@ -4674,7 +5694,7 @@ local function CreateConfigPanel()
     end
     local versionText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     versionText:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 20, 25)
-    versionText:SetText("v1.3  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default"))
+    versionText:SetText("v1.7  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default"))
     versionText:SetTextColor(1, 0.82, 0)
 
     -- Prevent AceGUI from releasing on close - just hide
@@ -4747,6 +5767,15 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
+    -- Frame Anchoring button — leftmost in cluster
+    local frameAnchoringBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    frameAnchoringBtn:SetSize(16, 16)
+    local frameAnchoringIcon = frameAnchoringBtn:CreateTexture(nil, "ARTWORK")
+    frameAnchoringIcon:SetAtlas("squad_size_duos")
+    frameAnchoringIcon:SetAllPoints()
+    frameAnchoringBtn:SetHighlightAtlas("squad_size_duos")
+    frameAnchoringBtn:GetHighlightTexture():SetAlpha(0.3)
+
     -- Resource Bar button — left of Cast Bar button
     local resourceBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
     resourceBarBtn:SetSize(16, 16)
@@ -4765,9 +5794,26 @@ local function CreateConfigPanel()
     castBarBtn:SetHighlightAtlas("icons_16x16_magic")
     castBarBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Highlight functions (defined after both buttons exist so closures can capture both)
+    -- Highlight functions (defined after all buttons exist so closures can capture all)
+    local frameAnchoringBtnBorder = nil
     local resourceBarBtnBorder = nil
     local castBarBtnBorder = nil
+
+    local function UpdateFrameAnchoringBtnHighlight()
+        if CS.frameAnchoringPanelActive then
+            if not frameAnchoringBtnBorder then
+                frameAnchoringBtnBorder = frameAnchoringBtn:CreateTexture(nil, "OVERLAY")
+                frameAnchoringBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                frameAnchoringBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                frameAnchoringBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            frameAnchoringBtnBorder:Show()
+        else
+            if frameAnchoringBtnBorder then
+                frameAnchoringBtnBorder:Hide()
+            end
+        end
+    end
 
     local function UpdateResourceBarBtnHighlight()
         if CS.resourceBarPanelActive then
@@ -4801,7 +5847,34 @@ local function CreateConfigPanel()
         end
     end
 
-    -- OnClick handlers (both highlight functions in scope)
+    -- OnClick handlers (all highlight functions in scope)
+    frameAnchoringBtn:SetScript("OnClick", function()
+        if CS.frameAnchoringPanelActive then
+            CS.frameAnchoringPanelActive = false
+        else
+            CS.frameAnchoringPanelActive = true
+            CS.castBarPanelActive = false
+            CS.resourceBarPanelActive = false
+            CooldownCompanion:StopCastBarPreview()
+            CooldownCompanion:StopResourceBarPreview()
+            selectedGroup = nil
+            selectedButton = nil
+            wipe(selectedButtons)
+            wipe(selectedGroups)
+        end
+        UpdateFrameAnchoringBtnHighlight()
+        UpdateResourceBarBtnHighlight()
+        UpdateCastBarBtnHighlight()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    frameAnchoringBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Frame Anchoring")
+        GameTooltip:AddLine("Anchor player and target unit frames to icon groups", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    frameAnchoringBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     resourceBarBtn:SetScript("OnClick", function()
         if CS.resourceBarPanelActive then
             CS.resourceBarPanelActive = false
@@ -4809,12 +5882,14 @@ local function CreateConfigPanel()
         else
             CS.resourceBarPanelActive = true
             CS.castBarPanelActive = false
+            CS.frameAnchoringPanelActive = false
             CooldownCompanion:StopCastBarPreview()
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
             wipe(selectedGroups)
         end
+        UpdateFrameAnchoringBtnHighlight()
         UpdateResourceBarBtnHighlight()
         UpdateCastBarBtnHighlight()
         CooldownCompanion:RefreshConfigPanel()
@@ -4834,12 +5909,14 @@ local function CreateConfigPanel()
         else
             CS.castBarPanelActive = true
             CS.resourceBarPanelActive = false
+            CS.frameAnchoringPanelActive = false
             CooldownCompanion:StopResourceBarPreview()
             selectedGroup = nil
             selectedButton = nil
             wipe(selectedButtons)
             wipe(selectedGroups)
         end
+        UpdateFrameAnchoringBtnHighlight()
         UpdateCastBarBtnHighlight()
         UpdateResourceBarBtnHighlight()
         CooldownCompanion:RefreshConfigPanel()
@@ -4858,6 +5935,7 @@ local function CreateConfigPanel()
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     resourceBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
     castBarBtn:SetPoint("RIGHT", resourceBarBtn, "LEFT", -4, 0)
+    frameAnchoringBtn:SetPoint("RIGHT", castBarBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -4899,6 +5977,15 @@ local function CreateConfigPanel()
                 CooldownCompanion.db.profile.escClosesConfig = not CooldownCompanion.db.profile.escClosesConfig
             end
             UIDropDownMenu_AddButton(info2, level)
+
+            local info3 = UIDropDownMenu_CreateInfo()
+            info3.text = "  Generate Bug Report"
+            info3.notCheckable = true
+            info3.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DIAGNOSTIC_EXPORT")
+            end
+            UIDropDownMenu_AddButton(info3, level)
         end, "MENU")
         gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, gearDropdownFrame, gearBtn, 0, 0)
@@ -5132,6 +6219,7 @@ local function CreateConfigPanel()
     infoBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+    col2._infoBtn = infoBtn
 
     -- Button Settings column (between Spells/Items and Group Settings)
     local buttonSettingsCol = AceGUI:Create("InlineGroup")
@@ -5154,8 +6242,8 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Cast Bar Anchoring / FX")
             GameTooltip:AddLine("Anchoring, positioning, and visual effects for the cast bar.", 1, 1, 1, true)
         elseif CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Resource Anchoring")
-            GameTooltip:AddLine("Anchoring, positioning, and resource toggles for resource bars.", 1, 1, 1, true)
+            GameTooltip:AddLine("Resource Styling")
+            GameTooltip:AddLine("Appearance settings for class resource bars.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Button Settings")
             GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
@@ -5187,8 +6275,13 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Cast Bar Styling")
             GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
         elseif CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Resource Styling")
-            GameTooltip:AddLine("Appearance settings for class resource bars.", 1, 1, 1, true)
+            GameTooltip:AddLine("Custom Aura Bars")
+            GameTooltip:AddLine("Track any buff or bar aura from the Cooldown Manager as a resource-style bar. These do not track duration and have no animation -- for that, use spells and auras tracked with icon or bar groups.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Tracking Modes", 1, 0.82, 0)
+            GameTooltip:AddLine("Stack Count: fills the bar based on the aura's current stack count (e.g. 3/5 stacks = 60%).", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Active: shows a full bar when the aura is present and an empty bar when it is not.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Group Settings")
             GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
@@ -5237,11 +6330,11 @@ local function CreateConfigPanel()
     scroll2.frame:Show()
     col2Scroll = scroll2
 
-    -- Button Settings TabGroup (Settings + Visibility tabs)
+    -- Button Settings TabGroup (Settings + Overrides tabs)
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
-        { value = "settings",   text = "Settings" },
-        { value = "visibility", text = "Visibility" },
+        { value = "settings",  text = "Settings" },
+        { value = "overrides", text = "Overrides" },
     })
     bsTabGroup:SetLayout("Fill")
 
@@ -5254,12 +6347,7 @@ local function CreateConfigPanel()
             btn:SetParent(nil)
         end
         wipe(CS.buttonSettingsInfoButtons)
-        for _, btn in ipairs(CS.buttonSettingsCollapseButtons) do
-            btn:ClearAllPoints()
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-        wipe(CS.buttonSettingsCollapseButtons)
+
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
@@ -5287,8 +6375,10 @@ local function CreateConfigPanel()
             elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
                 ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
-        elseif tab == "visibility" then
             ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            ST._BuildCustomNameSection(scroll, buttonData)
+        elseif tab == "overrides" then
+            ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
 
         -- Apply hideInfoButtons setting
@@ -5429,6 +6519,7 @@ local function CreateConfigPanel()
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCastBarBtnHighlight = UpdateCastBarBtnHighlight
     frame.UpdateResourceBarBtnHighlight = UpdateResourceBarBtnHighlight
+    frame.UpdateFrameAnchoringBtnHighlight = UpdateFrameAnchoringBtnHighlight
 
     configFrame = frame
     CS.configFrame = frame
@@ -5463,25 +6554,36 @@ function CooldownCompanion:RefreshConfigPanel()
 
     local saved1   = saveScroll(col1Scroll)
     local saved2   = saveScroll(col2Scroll)
+    local savedCab = col3Container and col3Container.customAuraScroll and saveScroll(col3Container.customAuraScroll)
     local savedBtn = saveScroll(buttonSettingsScroll)
 
     if configFrame.profileBar:IsShown() then
         RefreshProfileBar(configFrame.profileBar)
     end
-    configFrame.versionText:SetText("v1.3  |  " .. (self.db:GetCurrentProfile() or "Default"))
+    configFrame.versionText:SetText("v1.7  |  " .. (self.db:GetCurrentProfile() or "Default"))
     if configFrame.UpdateCastBarBtnHighlight then
         configFrame.UpdateCastBarBtnHighlight()
     end
     if configFrame.UpdateResourceBarBtnHighlight then
         configFrame.UpdateResourceBarBtnHighlight()
     end
+    if configFrame.UpdateFrameAnchoringBtnHighlight then
+        configFrame.UpdateFrameAnchoringBtnHighlight()
+    end
     if CS.castBarPanelActive then
+        configFrame.col2:SetTitle("Spells / Items")
         configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
         configFrame.col3:SetTitle("Cast Bar Styling")
     elseif CS.resourceBarPanelActive then
-        configFrame.buttonSettingsCol:SetTitle("Resource Anchoring")
-        configFrame.col3:SetTitle("Resource Styling")
+        configFrame.col2:SetTitle("Resource Anchoring")
+        configFrame.buttonSettingsCol:SetTitle("Resource Styling")
+        configFrame.col3:SetTitle("Custom Aura Bars")
+    elseif CS.frameAnchoringPanelActive then
+        configFrame.col2:SetTitle("Spells / Items")
+        configFrame.buttonSettingsCol:SetTitle("Player Frame")
+        configFrame.col3:SetTitle("Target Frame")
     else
+        configFrame.col2:SetTitle("Spells / Items")
         configFrame.buttonSettingsCol:SetTitle("Button Settings")
         configFrame.col3:SetTitle("Group Settings")
     end
@@ -5496,6 +6598,9 @@ function CooldownCompanion:RefreshConfigPanel()
     -- before that fires.
     restoreScroll(col1Scroll, saved1)
     restoreScroll(col2Scroll, saved2)
+    if col3Container and col3Container.customAuraScroll then
+        restoreScroll(col3Container.customAuraScroll, savedCab)
+    end
     restoreScroll(buttonSettingsScroll, savedBtn)
 
 end
@@ -5578,6 +6683,7 @@ function CooldownCompanion:SetupConfig()
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
         CS.resourceBarPanelActive = false
+        CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
@@ -5594,6 +6700,7 @@ function CooldownCompanion:SetupConfig()
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
         CS.resourceBarPanelActive = false
+        CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
@@ -5610,6 +6717,7 @@ function CooldownCompanion:SetupConfig()
         wipe(collapsedFolders)
         CS.castBarPanelActive = false
         CS.resourceBarPanelActive = false
+        CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 

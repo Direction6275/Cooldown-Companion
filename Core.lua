@@ -20,7 +20,6 @@ local pairs = pairs
 local ipairs = ipairs
 local wipe = wipe
 local select = select
-local pcall = pcall
 local tostring = tostring
 local tonumber = tonumber
 local table_remove = table.remove
@@ -52,6 +51,9 @@ ST.DEFAULT_STRATA_ORDER = {"cooldown", "assistedHighlight", "chargeText", "procG
 -- Minimap icon setup using LibDataBroker and LibDBIcon
 local LDB = LibStub("LibDataBroker-1.1")
 local LDBIcon = LibStub("LibDBIcon-1.0")
+
+-- LibSharedMedia for font/texture selection
+local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Masque skinning support (optional)
 local Masque = LibStub("Masque", true)
@@ -112,10 +114,13 @@ local defaults = {
                         showCooldownText = true,
                         cooldownFontSize = 12,
                         cooldownFontOutline = "OUTLINE",
-                        cooldownFont = "Fonts\\FRIZQT__.TTF",
+                        cooldownFont = "Friz Quadrata TT",
                         cooldownFontColor = {1, 1, 1, 1},
+                        cooldownTextAnchor = "CENTER",
+                        cooldownTextXOffset = 0,
+                        cooldownTextYOffset = 0,
                         showAuraText = true, -- nil defaults to true via ~= false
-                        auraTextFont = "Fonts\\FRIZQT__.TTF",
+                        auraTextFont = "Friz Quadrata TT",
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
                         auraTextFontColor = {0, 0.925, 1, 1},
@@ -138,13 +143,51 @@ local defaults = {
                         lossOfControlColor = {1, 0, 0, 0.5},
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
+                        procGlowStyle = "glow",
+                        procGlowSize = 32,
+                        procGlowThickness = 2,
+                        procGlowSpeed = 60,
+                        pandemicGlowStyle = "solid",
+                        pandemicGlowColor = {1, 0.5, 0, 1},
+                        pandemicGlowSize = 2,
+                        pandemicGlowThickness = 2,
+                        pandemicGlowSpeed = 60,
+                        barPandemicColor = {1, 0.5, 0, 1},
+                        pandemicBarEffect = "none",
+                        pandemicBarEffectColor = {1, 0.5, 0, 1},
+                        pandemicBarEffectSize = 2,
+                        pandemicBarEffectThickness = 2,
+                        pandemicBarEffectSpeed = 60,
+                        auraGlowStyle = "pixel",
+                        auraGlowColor = {1, 0.84, 0, 0.9},
+                        auraGlowSize = 4,
+                        auraGlowThickness = 2,
+                        auraGlowSpeed = 60,
+                        barAuraColor = {0.2, 1.0, 0.2, 1.0},
+                        barAuraEffect = "none",
+                        barAuraEffectColor = {1, 0.84, 0, 0.9},
+                        barAuraEffectSize = 4,
+                        barAuraEffectThickness = 2,
+                        barAuraEffectSpeed = 60,
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                         showKeybindText = false,
-                        keybindFont = "Fonts\\FRIZQT__.TTF",
+                        keybindFont = "Friz Quadrata TT",
                         keybindFontSize = 10,
                         keybindFontOutline = "OUTLINE",
                         keybindFontColor = {1, 1, 1, 1},
                         keybindAnchor = "TOPRIGHT",
+                        keybindXOffset = -2,
+                        keybindYOffset = -2,
+                        showChargeText = true,
+                        chargeFont = "Friz Quadrata TT",
+                        chargeFontSize = 12,
+                        chargeFontOutline = "OUTLINE",
+                        chargeFontColor = {1, 1, 1, 1},
+                        chargeFontColorMissing = {1, 1, 1, 1},
+                        chargeFontColorZero = {1, 1, 1, 1},
+                        chargeAnchor = "BOTTOMRIGHT",
+                        chargeXOffset = -2,
+                        chargeYOffset = 2,
                     },
                     enabled = true,
                     displayMode = "icons",    -- "icons" or "bars"
@@ -185,8 +228,11 @@ local defaults = {
             borderColor = {0, 0, 0, 1},
             cooldownFontSize = 12,
             cooldownFontOutline = "OUTLINE",
-            cooldownFont = "Fonts\\FRIZQT__.TTF",
+            cooldownFont = "Friz Quadrata TT",
             cooldownFontColor = {1, 1, 1, 1},
+            cooldownTextAnchor = "CENTER",
+            cooldownTextXOffset = 0,
+            cooldownTextYOffset = 0,
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
@@ -205,14 +251,52 @@ local defaults = {
             lossOfControlColor = {1, 0, 0, 0.5},
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
+            procGlowStyle = "glow",
+            procGlowSize = 32,
+            procGlowThickness = 2,
+            procGlowSpeed = 60,
+            pandemicGlowStyle = "solid",
+            pandemicGlowColor = {1, 0.5, 0, 1},
+            pandemicGlowSize = 2,
+            pandemicGlowThickness = 2,
+            pandemicGlowSpeed = 60,
+            barPandemicColor = {1, 0.5, 0, 1},
+            pandemicBarEffect = "none",
+            pandemicBarEffectColor = {1, 0.5, 0, 1},
+            pandemicBarEffectSize = 2,
+            pandemicBarEffectThickness = 2,
+            pandemicBarEffectSpeed = 60,
+            auraGlowStyle = "pixel",
+            auraGlowColor = {1, 0.84, 0, 0.9},
+            auraGlowSize = 4,
+            auraGlowThickness = 2,
+            auraGlowSpeed = 60,
+            barAuraColor = {0.2, 1.0, 0.2, 1.0},
+            barAuraEffect = "none",
+            barAuraEffectColor = {1, 0.84, 0, 0.9},
+            barAuraEffectSize = 4,
+            barAuraEffectThickness = 2,
+            barAuraEffectSpeed = 60,
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
             showKeybindText = false,
-            keybindFont = "Fonts\\FRIZQT__.TTF",
+            keybindFont = "Friz Quadrata TT",
             keybindFontSize = 10,
             keybindFontOutline = "OUTLINE",
             keybindFontColor = {1, 1, 1, 1},
             keybindAnchor = "TOPRIGHT",
+            keybindXOffset = -2,
+            keybindYOffset = -2,
+            showChargeText = true,
+            chargeFont = "Friz Quadrata TT",
+            chargeFontSize = 12,
+            chargeFontOutline = "OUTLINE",
+            chargeFontColor = {1, 1, 1, 1},
+            chargeFontColorMissing = {1, 1, 1, 1},
+            chargeFontColorZero = {1, 1, 1, 1},
+            chargeAnchor = "BOTTOMRIGHT",
+            chargeXOffset = -2,
+            chargeYOffset = 2,
             -- Bar display mode defaults
             barLength = 180,
             barHeight = 20,
@@ -222,7 +306,7 @@ local defaults = {
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
             showBarNameText = true,
-            barNameFont = "Fonts\\FRIZQT__.TTF",
+            barNameFont = "Friz Quadrata TT",
             barNameFontSize = 10,
             barNameFontOutline = "OUTLINE",
             barNameFontColor = {1, 1, 1, 1},
@@ -230,9 +314,10 @@ local defaults = {
             barReadyText = "Ready",
             barReadyTextColor = {0.2, 1.0, 0.2, 1.0},
             barReadyFontSize = 12,
-            barReadyFont = "Fonts\\FRIZQT__.TTF",
+            barReadyFont = "Friz Quadrata TT",
             barReadyFontOutline = "OUTLINE",
             barUpdateInterval = 0.025,  -- seconds between bar fill updates (~40Hz default)
+            barTexture = "Solid",
         },
         locked = false,
         auraDurationCache = {},
@@ -240,20 +325,30 @@ local defaults = {
         resourceBars = {
             enabled = true,
             anchorGroupId = nil,
+            inheritAlpha = false,
             position = "below",
             yOffset = -3,
             barHeight = 12,
             barSpacing = 3.6,
-            barTexture = "Interface\\BUTTONS\\WHITE8X8",
+            barTexture = "Solid",
             backgroundColor = { 0, 0, 0, 0.5 },
             borderStyle = "pixel",
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
             segmentGap = 4,
             hideManaForNonHealer = true,
+            reverseResourceOrder = false,
             stackOrder = "resource_first",
-            resources = {},
-            textFont = "Fonts\\FRIZQT__.TTF",
+            resources = {
+                [100] = {
+                    enabled = true,
+                    mwBaseColor = nil,
+                    mwOverlayColor = nil,
+                    mwMaxColor = nil,
+                },
+            },
+            customAuraBars = {},
+            textFont = "Friz Quadrata TT",
             textFontSize = 10,
             textFontOutline = "OUTLINE",
             textFontColor = { 1, 1, 1, 1 },
@@ -268,7 +363,7 @@ local defaults = {
             height = 15,
             barColor = { 1.0, 0.7, 0.0, 1.0 },
             backgroundColor = { 0, 0, 0, 0.5 },
-            barTexture = "Interface\\BUTTONS\\WHITE8X8",
+            barTexture = "Solid",
             showIcon = true,
             iconSize = 16,
             iconFlipSide = false,
@@ -285,20 +380,222 @@ local defaults = {
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
             showNameText = true,
-            nameFont = "Fonts\\FRIZQT__.TTF",
+            nameFont = "Friz Quadrata TT",
             nameFontSize = 10,
             nameFontOutline = "OUTLINE",
             nameFontColor = { 1, 1, 1, 1 },
             showCastTimeText = true,
-            castTimeFont = "Fonts\\FRIZQT__.TTF",
+            castTimeFont = "Friz Quadrata TT",
             castTimeFontSize = 10,
             castTimeFontOutline = "OUTLINE",
             castTimeFontColor = { 1, 1, 1, 1 },
             castTimeXOffset = 0,
             castTimeYOffset = 0,
         },
+        frameAnchoring = {
+            enabled = false,
+            anchorGroupId = nil,
+            mirroring = true,
+            inheritAlpha = false,
+            unitFrameAddon = nil,
+            customPlayerFrame = "",
+            customTargetFrame = "",
+            player = {
+                anchorPoint = "RIGHT",
+                relativePoint = "LEFT",
+                xOffset = -10,
+                yOffset = 0,
+            },
+            target = {
+                anchorPoint = "LEFT",
+                relativePoint = "RIGHT",
+                xOffset = 10,
+                yOffset = 0,
+            },
+        },
     },
 }
+
+------------------------------------------------------------------------
+-- OVERRIDE SECTIONS REGISTRY
+-- Maps section IDs to their labels, style keys, and applicable display modes.
+-- Used by promote/revert logic and UI builders.
+------------------------------------------------------------------------
+ST.OVERRIDE_SECTIONS = {
+    -- Icon Mode — Appearance Tab
+    borderSettings = {
+        label = "Border",
+        keys = {"borderSize", "borderColor"},
+        modes = {icons = true, bars = true},
+    },
+    backgroundColor = {
+        label = "Background Color",
+        keys = {"backgroundColor"},
+        modes = {icons = true},
+    },
+    cooldownText = {
+        label = "Cooldown Text",
+        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        modes = {icons = true, bars = true},
+    },
+    auraText = {
+        label = "Aura Text",
+        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor"},
+        modes = {icons = true, bars = true},
+    },
+    keybindText = {
+        label = "Keybind Text",
+        keys = {"showKeybindText", "keybindFont", "keybindFontSize", "keybindFontOutline", "keybindFontColor", "keybindAnchor", "keybindXOffset", "keybindYOffset"},
+        modes = {icons = true},
+    },
+    chargeText = {
+        label = "Charge Text",
+        keys = {"showChargeText", "chargeFont", "chargeFontSize", "chargeFontOutline", "chargeFontColor", "chargeFontColorMissing", "chargeFontColorZero", "chargeAnchor", "chargeXOffset", "chargeYOffset"},
+        modes = {icons = true, bars = true},
+    },
+    -- Icon Mode — Extras Tab
+    desaturation = {
+        label = "Desaturation",
+        keys = {"desaturateOnCooldown"},
+        modes = {icons = true, bars = true},
+    },
+    showGCDSwipe = {
+        label = "Show GCD Swipe",
+        keys = {"showGCDSwipe"},
+        modes = {icons = true, bars = true},
+    },
+    showOutOfRange = {
+        label = "Show Out of Range",
+        keys = {"showOutOfRange"},
+        modes = {icons = true, bars = true},
+    },
+    showTooltips = {
+        label = "Show Tooltips",
+        keys = {"showTooltips"},
+        modes = {icons = true, bars = true},
+    },
+    lossOfControl = {
+        label = "Loss of Control",
+        keys = {"showLossOfControl", "lossOfControlColor"},
+        modes = {icons = true},
+    },
+    unusableDimming = {
+        label = "Unusable Dimming",
+        keys = {"showUnusable", "unusableColor"},
+        modes = {icons = true},
+    },
+    assistedHighlight = {
+        label = "Assisted Highlight",
+        keys = {"showAssistedHighlight", "assistedHighlightStyle", "assistedHighlightColor", "assistedHighlightBorderSize", "assistedHighlightBlizzardOverhang", "assistedHighlightProcOverhang", "assistedHighlightProcColor"},
+        modes = {icons = true},
+    },
+    procGlow = {
+        label = "Proc Glow",
+        keys = {"procGlowStyle", "procGlowColor", "procGlowSize", "procGlowThickness", "procGlowSpeed"},
+        modes = {icons = true},
+    },
+    pandemicGlow = {
+        label = "Pandemic Glow",
+        keys = {"pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed"},
+        modes = {icons = true},
+    },
+    auraIndicator = {
+        label = "Active Aura Glow",
+        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed"},
+        modes = {icons = true},
+    },
+    -- Bar Mode — Appearance Tab
+    pandemicBar = {
+        label = "Pandemic Indicator",
+        keys = {"barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed"},
+        modes = {bars = true},
+    },
+    barActiveAura = {
+        label = "Active Aura Indicator",
+        keys = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed"},
+        modes = {bars = true},
+    },
+    barColors = {
+        label = "Bar Colors",
+        keys = {"barColor", "barCooldownColor", "barChargeColor", "barBgColor"},
+        modes = {bars = true},
+    },
+    barNameText = {
+        label = "Name Text",
+        keys = {"showBarNameText", "barNameTextReverse", "barNameFont", "barNameFontSize", "barNameFontOutline", "barNameFontColor"},
+        modes = {bars = true},
+    },
+    barReadyText = {
+        label = "Ready Text",
+        keys = {"showBarReadyText", "barReadyText", "barReadyTextColor", "barReadyFontSize", "barReadyFont", "barReadyFontOutline"},
+        modes = {bars = true},
+    },
+}
+
+------------------------------------------------------------------------
+-- EFFECTIVE STYLE UTILITIES
+------------------------------------------------------------------------
+
+--- Compute the effective style for a button, merging per-button overrides
+--- with group defaults via metatable __index fallback.
+function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
+    if buttonData and buttonData.styleOverrides
+       and buttonData.overrideSections and next(buttonData.overrideSections) then
+        return setmetatable(buttonData.styleOverrides, { __index = groupStyle })
+    end
+    return groupStyle
+end
+
+--- Promote a section: copy current group values into buttonData.styleOverrides,
+--- mark the section as active in overrideSections.
+function CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
+    local section = ST.OVERRIDE_SECTIONS[sectionId]
+    if not section then return end
+
+    if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
+    if not buttonData.overrideSections then buttonData.overrideSections = {} end
+
+    -- Copy current group values into overrides
+    for _, key in ipairs(section.keys) do
+        local val = groupStyle[key]
+        if type(val) == "table" then
+            buttonData.styleOverrides[key] = CopyTable(val)
+        else
+            buttonData.styleOverrides[key] = val
+        end
+    end
+
+    buttonData.overrideSections[sectionId] = true
+end
+
+--- Revert a section: remove section keys from styleOverrides,
+--- clear the section from overrideSections.
+function CooldownCompanion:RevertSection(buttonData, sectionId)
+    local section = ST.OVERRIDE_SECTIONS[sectionId]
+    if not section then return end
+
+    if buttonData.styleOverrides then
+        for _, key in ipairs(section.keys) do
+            buttonData.styleOverrides[key] = nil
+        end
+        -- Clean up empty styleOverrides table
+        if not next(buttonData.styleOverrides) then
+            buttonData.styleOverrides = nil
+        end
+    end
+
+    if buttonData.overrideSections then
+        buttonData.overrideSections[sectionId] = nil
+        if not next(buttonData.overrideSections) then
+            buttonData.overrideSections = nil
+        end
+    end
+end
+
+--- Check if a button has any active style overrides.
+function CooldownCompanion:HasStyleOverrides(buttonData)
+    return buttonData and buttonData.overrideSections and next(buttonData.overrideSections) ~= nil
+end
 
 function CooldownCompanion:OnInitialize()
     -- Initialize database
@@ -307,6 +604,11 @@ function CooldownCompanion:OnInitialize()
     -- Initialize storage tables
     self.groupFrames = {}
     self.buttonFrames = {}
+
+    -- Hidden scratch CooldownFrame for secret-safe GCD activity detection
+    local gcdScratchParent = CreateFrame("Frame")
+    gcdScratchParent:Hide()
+    self._gcdScratch = CreateFrame("Cooldown", nil, gcdScratchParent, "CooldownFrameTemplate")
 
     -- Register minimap icon
     LDBIcon:Register(ADDON_NAME, minimapButton, self.db.profile.minimap)
@@ -317,6 +619,13 @@ function CooldownCompanion:OnInitialize()
 
     -- Initialize config
     self:SetupConfig()
+
+    -- Re-apply fonts/textures when a SharedMedia pack registers new media
+    LSM.RegisterCallback(self, "LibSharedMedia_Registered", function(event, mediatype, key)
+        if mediatype == "font" or mediatype == "statusbar" then
+            self:RefreshAllMedia()
+        end
+    end)
 
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
@@ -427,6 +736,25 @@ function CooldownCompanion:OnEnable()
 
     -- Ensure folders table exists in profile
     self:MigrateFolders()
+
+    -- Reverse-migrate: if MW was migrated to custom aura bar slot 1, restore it
+    self:ReverseMigrateMW()
+
+    -- Migrate flat custom aura bars to spec-keyed format
+    self:MigrateCustomAuraBarsToSpecKeyed()
+
+    -- Migrate font/texture paths to LibSharedMedia names
+    self:MigrateLSMNames()
+
+    -- Migrate per-button charge text to group style defaults + per-button overrides
+    self:MigrateChargeTextToGroupStyle()
+
+    -- Migrate per-button proc glow to style overrides
+    self:MigrateProcGlowToStyleOverrides()
+
+    -- Migrate glow appearance settings from per-button to group style
+    self:MigrateGlowSettingsToGroupStyle()
+    self:MigrateAuraIndicatorToGroupStyle()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -591,6 +919,8 @@ function CooldownCompanion:SlashCommand(input)
         self.db:ResetProfile()
         self:RefreshAllGroups()
         self:Print("Profile reset.")
+    elseif input == "debugimport" then
+        self:OpenDiagnosticDecodePanel()
     else
         self:ToggleConfig()
     end
@@ -901,7 +1231,7 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and button.style and button.style.showOutOfRange then
+        if bd.type == "spell" and not bd.isPassive and button.style and button.style.showOutOfRange then
             newSet[bd.id] = true
         end
     end)
@@ -930,25 +1260,25 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
 end
 
 function CooldownCompanion:OnBagChanged()
+    self:RefreshChargeFlags("item")
     self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnTalentsChanged()
-    self:RefreshChargeFlags()
+    self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
 end
 
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells.
-function CooldownCompanion:RefreshChargeFlags()
+function CooldownCompanion:RefreshChargeFlags(typeFilter)
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
-            if buttonData.type == "spell" then
+            if buttonData.type == "spell" and typeFilter ~= "item" then
                 local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
                 buttonData.hasCharges = chargeInfo and true or nil
                 if chargeInfo then
-                    -- Read maxCharges directly (plain outside combat)
                     local mc = chargeInfo.maxCharges
                     if mc and mc > (buttonData.maxCharges or 0) then
                         buttonData.maxCharges = mc
@@ -957,6 +1287,17 @@ function CooldownCompanion:RefreshChargeFlags()
                     local displayCount = tonumber(C_Spell.GetSpellDisplayCount(buttonData.id))
                     if displayCount and displayCount > (buttonData.maxCharges or 0) then
                         buttonData.maxCharges = displayCount
+                    end
+                end
+            elseif buttonData.type == "item" and typeFilter ~= "spell" then
+                -- Never clear hasCharges for items: at 0 charges both count APIs
+                -- return 0, indistinguishable from "item not owned".
+                local plainCount = C_Item.GetItemCount(buttonData.id)
+                local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+                if chargeCount > plainCount then
+                    buttonData.hasCharges = true
+                    if chargeCount > (buttonData.maxCharges or 0) then
+                        buttonData.maxCharges = chargeCount
                     end
                 end
             end
@@ -975,6 +1316,7 @@ end
 function CooldownCompanion:OnSpecChanged()
     self:CacheCurrentSpec()
     self:RefreshChargeFlags()
+    self:EvaluateResourceBars()
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
     -- Rebuild viewer map after a short delay to let the viewer re-populate
@@ -1360,7 +1702,7 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1370,11 +1712,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         id = id,
         name = name,
         isPetSpell = isPetSpell or nil,
+        isPassive = isPassive or nil,
     }
 
-    -- Auto-detect charges for spells
+    -- Auto-detect charges for spells (skip for passives — no cooldown)
     -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells
-    if buttonType == "spell" then
+    if buttonType == "spell" and not isPassive then
         local chargeInfo = C_Spell.GetSpellCharges(id)
         if chargeInfo then
             group.buttons[buttonIndex].hasCharges = true
@@ -1391,46 +1734,71 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         end
     end
 
-    -- Auto-detect aura tracking for spells with viewer aura frames
-    if buttonType == "spell" then
-        local newButton = group.buttons[buttonIndex]
-        local viewerFrame
-        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
-        viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
-                and self.viewerAuraFrames[resolvedAuraId])
-            or self.viewerAuraFrames[id]
-        if not viewerFrame then
-            local child = self:FindViewerChildForSpell(id)
-            if child then
-                self.viewerAuraFrames[id] = child
-                viewerFrame = child
-            end
+    -- Auto-detect charges for items (e.g. Hellstone: GetItemCount with includeUses > plain count)
+    if buttonType == "item" then
+        local plainCount = C_Item.GetItemCount(id)
+        local chargeCount = C_Item.GetItemCount(id, false, true)
+        if chargeCount > plainCount then
+            group.buttons[buttonIndex].hasCharges = true
+            group.buttons[buttonIndex].showChargeText = true
+            group.buttons[buttonIndex].maxCharges = chargeCount
         end
-        if not viewerFrame then
-            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-            if overrideBuffs then
-                for buffId in overrideBuffs:gmatch("%d+") do
-                    viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
-                    if viewerFrame then break end
+    end
+
+    -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
+    if forceAura == true then
+        group.buttons[buttonIndex].auraTracking = true
+    elseif forceAura == nil then
+        -- Force aura tracking for passive/proc spells
+        if isPassive then
+            group.buttons[buttonIndex].auraTracking = true
+        end
+
+        -- Auto-detect aura tracking for spells with viewer aura frames
+        if buttonType == "spell" then
+            local newButton = group.buttons[buttonIndex]
+            local viewerFrame
+            local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
+            viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
+                    and self.viewerAuraFrames[resolvedAuraId])
+                or self.viewerAuraFrames[id]
+            if not viewerFrame then
+                local child = self:FindViewerChildForSpell(id)
+                if child then
+                    self.viewerAuraFrames[id] = child
+                    viewerFrame = child
+                end
+            end
+            if not viewerFrame then
+                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
+                if overrideBuffs then
+                    for buffId in overrideBuffs:gmatch("%d+") do
+                        viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
+                        if viewerFrame then break end
+                    end
+                end
+            end
+            local hasViewerFrame = false
+            if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+                local parent = viewerFrame:GetParent()
+                local parentName = parent and parent:GetName()
+                hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
+            end
+            if hasViewerFrame then
+                newButton.auraTracking = true
+                local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
+                if overrideBuffs then
+                    newButton.auraSpellID = overrideBuffs
+                end
+                if C_Spell.IsSpellHarmful(id) then
+                    newButton.auraUnit = "target"
                 end
             end
         end
-        local hasViewerFrame = false
-        if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
-            local parent = viewerFrame:GetParent()
-            local parentName = parent and parent:GetName()
-            hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
-        end
-        if hasViewerFrame then
-            newButton.auraTracking = true
-            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-            if overrideBuffs then
-                newButton.auraSpellID = overrideBuffs
-            end
-            if C_Spell.IsSpellHarmful(id) then
-                newButton.auraUnit = "target"
-            end
-        end
+    end
+    -- forceAura == false: skip all aura auto-detection (track as cooldown)
+    if forceAura == false then
+        group.buttons[buttonIndex].auraTracking = false
     end
 
     self:RefreshGroupFrame(groupId)
@@ -1517,7 +1885,6 @@ function CooldownCompanion:FindTalentSpellByName(name)
     -- 1) Search talent tree (covers all talent choices across specs)
     local result = WalkTalentTree(function(defInfo)
         if defInfo.spellID then
-            if C_Spell.IsSpellPassive(defInfo.spellID) then return nil end
             local spellInfo = C_Spell.GetSpellInfo(defInfo.spellID)
             if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
                 return { defInfo.spellID, spellInfo.name }
@@ -1530,9 +1897,7 @@ function CooldownCompanion:FindTalentSpellByName(name)
     result = FindDisplaySpell(function(spellID)
         local spellInfo = C_Spell.GetSpellInfo(spellID)
         if spellInfo and spellInfo.name and spellInfo.name:lower() == lowerName then
-            if not C_Spell.IsSpellPassive(spellID) then
-                return { spellID, spellInfo.name }
-            end
+            return { spellID, spellInfo.name }
         end
     end)
     if result then return result[1], result[2] end
@@ -1627,6 +1992,650 @@ function CooldownCompanion:MigrateFolders()
     if self.db.profile.nextFolderId == nil then
         self.db.profile.nextFolderId = 1
     end
+end
+
+function CooldownCompanion:ReverseMigrateMW()
+    local rb = self.db.profile.resourceBars
+    if not rb then return end
+
+    -- If MW was previously migrated to customAuraBars[1], restore it to resources[100]
+    if rb.migrationVersion and rb.migrationVersion >= 1 then
+        local cab1 = rb.customAuraBars and rb.customAuraBars[1]
+        if cab1 and cab1.spellID == 187880 then
+            if not rb.resources then rb.resources = {} end
+            rb.resources[100] = {
+                enabled = cab1.enabled ~= false,
+                mwBaseColor = cab1.barColor,
+                mwOverlayColor = cab1.overlayColor,
+                mwMaxColor = cab1.maxColor,
+            }
+            -- Clear the custom aura bar slot
+            rb.customAuraBars[1] = { enabled = false }
+        end
+        rb.migrationVersion = nil
+    end
+
+    -- Clean maxColor from any existing custom aura bar slots
+    if rb.customAuraBars then
+        for _, cab in pairs(rb.customAuraBars) do
+            if cab then cab.maxColor = nil end
+        end
+    end
+end
+
+function CooldownCompanion:MigrateCustomAuraBarsToSpecKeyed()
+    local rb = self.db.profile.resourceBars
+    if not rb or not rb.customAuraBars then return end
+    -- Old format has integer key [1] with an enabled field; spec IDs are 3+ digits
+    local first = rb.customAuraBars[1]
+    if first and type(first) == "table" and first.enabled ~= nil then
+        rb.customAuraBars = {}
+    end
+end
+
+-- LSM path-to-name migration tables
+local FONT_PATH_TO_LSM = {
+    ["Fonts\\FRIZQT__.TTF"]  = "Friz Quadrata TT",
+    ["Fonts\\ARIALN.TTF"]    = "Arial Narrow",
+    ["Fonts\\MORPHEUS.TTF"]  = "Morpheus",
+    ["Fonts\\SKURRI.TTF"]    = "Skurri",
+    ["Fonts\\2002.TTF"]      = "2002",
+    ["Fonts\\NIMROD.TTF"]    = "Nimrod MT",
+}
+local TEXTURE_PATH_TO_LSM = {
+    ["Interface\\BUTTONS\\WHITE8X8"]                           = "Solid",
+    ["Interface\\TargetingFrame\\UI-StatusBar"]                = "Blizzard",
+    ["Interface\\RaidFrame\\Raid-Bar-Hp-Fill"]                 = "Blizzard Raid Bar",
+    ["Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"] = "Blizzard Character Skills Bar",
+}
+
+function CooldownCompanion:MigrateLSMNames()
+    local profile = self.db.profile
+    if profile.lsmMigrated then return end
+
+    -- Migrate group styles
+    for _, group in pairs(profile.groups) do
+        local s = group.style
+        if s then
+            for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont", "chargeFont"}) do
+                if s[key] and FONT_PATH_TO_LSM[s[key]] then
+                    s[key] = FONT_PATH_TO_LSM[s[key]]
+                end
+            end
+            if s.barTexture and TEXTURE_PATH_TO_LSM[s.barTexture] then
+                s.barTexture = TEXTURE_PATH_TO_LSM[s.barTexture]
+            end
+        end
+        -- Per-button fonts (charge font on legacy buttonData, or in styleOverrides)
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.chargeFont and FONT_PATH_TO_LSM[bd.chargeFont] then
+                    bd.chargeFont = FONT_PATH_TO_LSM[bd.chargeFont]
+                end
+                if bd.itemCountFont and FONT_PATH_TO_LSM[bd.itemCountFont] then
+                    bd.itemCountFont = FONT_PATH_TO_LSM[bd.itemCountFont]
+                end
+                -- styleOverrides fonts
+                if bd.styleOverrides then
+                    for _, key in ipairs({"chargeFont", "cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont"}) do
+                        if bd.styleOverrides[key] and FONT_PATH_TO_LSM[bd.styleOverrides[key]] then
+                            bd.styleOverrides[key] = FONT_PATH_TO_LSM[bd.styleOverrides[key]]
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Migrate globalStyle
+    local gs = profile.globalStyle
+    if gs then
+        for _, key in ipairs({"cooldownFont", "keybindFont", "auraTextFont", "barNameFont", "barReadyFont", "chargeFont"}) do
+            if gs[key] and FONT_PATH_TO_LSM[gs[key]] then
+                gs[key] = FONT_PATH_TO_LSM[gs[key]]
+            end
+        end
+        if gs.barTexture and TEXTURE_PATH_TO_LSM[gs.barTexture] then
+            gs.barTexture = TEXTURE_PATH_TO_LSM[gs.barTexture]
+        end
+    end
+
+    -- Migrate resourceBars
+    local rb = profile.resourceBars
+    if rb then
+        if rb.barTexture and TEXTURE_PATH_TO_LSM[rb.barTexture] then
+            rb.barTexture = TEXTURE_PATH_TO_LSM[rb.barTexture]
+        end
+        if rb.textFont and FONT_PATH_TO_LSM[rb.textFont] then
+            rb.textFont = FONT_PATH_TO_LSM[rb.textFont]
+        end
+    end
+
+    -- Migrate castBar
+    local cb = profile.castBar
+    if cb then
+        if cb.barTexture and TEXTURE_PATH_TO_LSM[cb.barTexture] then
+            cb.barTexture = TEXTURE_PATH_TO_LSM[cb.barTexture]
+        end
+        if cb.nameFont and FONT_PATH_TO_LSM[cb.nameFont] then
+            cb.nameFont = FONT_PATH_TO_LSM[cb.nameFont]
+        end
+        if cb.castTimeFont and FONT_PATH_TO_LSM[cb.castTimeFont] then
+            cb.castTimeFont = FONT_PATH_TO_LSM[cb.castTimeFont]
+        end
+    end
+
+    profile.lsmMigrated = true
+end
+
+-- Charge text keys that migrate from buttonData to group.style
+local CHARGE_TEXT_KEYS = {
+    "showChargeText", "chargeFont", "chargeFontSize", "chargeFontOutline",
+    "chargeFontColor", "chargeFontColorMissing", "chargeFontColorZero",
+    "chargeAnchor", "chargeXOffset", "chargeYOffset",
+}
+
+local CHARGE_TEXT_DEFAULTS = {
+    showChargeText = true,
+    chargeFont = "Friz Quadrata TT",
+    chargeFontSize = 12,
+    chargeFontOutline = "OUTLINE",
+    chargeFontColor = {1, 1, 1, 1},
+    chargeFontColorMissing = {1, 1, 1, 1},
+    chargeFontColorZero = {1, 1, 1, 1},
+    chargeAnchor = "BOTTOMRIGHT",
+    chargeXOffset = -2,
+    chargeYOffset = 2,
+}
+
+function CooldownCompanion:MigrateChargeTextToGroupStyle()
+    local profile = self.db.profile
+    if profile.chargeTextMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style and style.chargeFont == nil then
+            -- Find the first button with charge text settings to adopt as group defaults
+            local adopted = false
+            if group.buttons then
+                for _, bd in ipairs(group.buttons) do
+                    if bd.chargeFont or bd.chargeFontSize or bd.chargeFontOutline then
+                        -- Adopt this button's values as the group defaults
+                        for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                            if bd[key] ~= nil then
+                                if type(bd[key]) == "table" then
+                                    style[key] = CopyTable(bd[key])
+                                else
+                                    style[key] = bd[key]
+                                end
+                            else
+                                style[key] = CHARGE_TEXT_DEFAULTS[key]
+                                if type(style[key]) == "table" then
+                                    style[key] = CopyTable(style[key])
+                                end
+                            end
+                        end
+                        adopted = true
+                        break
+                    end
+                end
+            end
+
+            -- No button had custom charge text → apply defaults to group style
+            if not adopted then
+                for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                    local def = CHARGE_TEXT_DEFAULTS[key]
+                    if type(def) == "table" then
+                        style[key] = CopyTable(def)
+                    else
+                        style[key] = def
+                    end
+                end
+            end
+
+            -- Now scan all buttons: create overrides for buttons that differ from group defaults
+            if group.buttons then
+                for _, bd in ipairs(group.buttons) do
+                    local hasDiff = false
+                    for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                        if bd[key] ~= nil then
+                            local bdVal = bd[key]
+                            local grpVal = style[key]
+                            if type(bdVal) == "table" and type(grpVal) == "table" then
+                                for k = 1, #bdVal do
+                                    if bdVal[k] ~= grpVal[k] then hasDiff = true; break end
+                                end
+                            elseif bdVal ~= grpVal then
+                                hasDiff = true
+                            end
+                            if hasDiff then break end
+                        end
+                    end
+
+                    if hasDiff then
+                        if not bd.styleOverrides then bd.styleOverrides = {} end
+                        if not bd.overrideSections then bd.overrideSections = {} end
+                        for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                            if bd[key] ~= nil then
+                                if type(bd[key]) == "table" then
+                                    bd.styleOverrides[key] = CopyTable(bd[key])
+                                else
+                                    bd.styleOverrides[key] = bd[key]
+                                end
+                            else
+                                -- Use group default for keys this button didn't customize
+                                local def = style[key]
+                                if type(def) == "table" then
+                                    bd.styleOverrides[key] = CopyTable(def)
+                                else
+                                    bd.styleOverrides[key] = def
+                                end
+                            end
+                        end
+                        bd.overrideSections.chargeText = true
+                    end
+
+                    -- Remove old per-button charge text fields
+                    for _, key in ipairs(CHARGE_TEXT_KEYS) do
+                        bd[key] = nil
+                    end
+                end
+            end
+        end
+    end
+
+    -- Also ensure globalStyle has charge text defaults
+    local gs = profile.globalStyle
+    if gs and gs.chargeFont == nil then
+        for _, key in ipairs(CHARGE_TEXT_KEYS) do
+            local def = CHARGE_TEXT_DEFAULTS[key]
+            if type(def) == "table" then
+                gs[key] = CopyTable(def)
+            else
+                gs[key] = def
+            end
+        end
+    end
+
+    profile.chargeTextMigrated = true
+end
+
+function CooldownCompanion:MigrateProcGlowToStyleOverrides()
+    local profile = self.db.profile
+    if profile.procGlowOverrideMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.procGlowColor then
+                    if not bd.styleOverrides then bd.styleOverrides = {} end
+                    if not bd.overrideSections then bd.overrideSections = {} end
+                    bd.styleOverrides.procGlowColor = bd.procGlowColor
+                    bd.procGlowColor = nil
+                    -- Also copy group default for procGlowOverhang into overrides
+                    -- so the section is complete
+                    if not bd.styleOverrides.procGlowOverhang and group.style then
+                        bd.styleOverrides.procGlowOverhang = group.style.procGlowOverhang or 32
+                    end
+                    bd.overrideSections.procGlow = true
+                end
+            end
+        end
+    end
+
+    profile.procGlowOverrideMigrated = true
+end
+
+------------------------------------------------------------------------
+-- MIGRATION: Move glow appearance settings from per-button to group style
+------------------------------------------------------------------------
+local PROC_GLOW_KEYS = {"procGlowStyle", "procGlowSize", "procGlowThickness", "procGlowSpeed"}
+local PROC_GLOW_DEFAULTS = {procGlowStyle = "glow", procGlowSize = 32, procGlowThickness = 2, procGlowSpeed = 60}
+
+local PANDEMIC_GLOW_KEYS = {"pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed"}
+local PANDEMIC_GLOW_DEFAULTS = {pandemicGlowStyle = "solid", pandemicGlowColor = {1, 0.5, 0, 1}, pandemicGlowSize = 2, pandemicGlowThickness = 2, pandemicGlowSpeed = 60}
+
+local PANDEMIC_BAR_KEYS = {"barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed"}
+local PANDEMIC_BAR_DEFAULTS = {barPandemicColor = {1, 0.5, 0, 1}, pandemicBarEffect = "none", pandemicBarEffectColor = {1, 0.5, 0, 1}, pandemicBarEffectSize = 2, pandemicBarEffectThickness = 2, pandemicBarEffectSpeed = 60}
+
+local AURA_INDICATOR_KEYS = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed"}
+local AURA_INDICATOR_DEFAULTS = {auraGlowStyle = "pixel", auraGlowColor = {1, 0.84, 0, 0.9}, auraGlowSize = 4, auraGlowThickness = 2, auraGlowSpeed = 60}
+
+local BAR_ACTIVE_AURA_KEYS = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed"}
+local BAR_ACTIVE_AURA_DEFAULTS = {barAuraColor = {0.2, 1.0, 0.2, 1.0}, barAuraEffect = "none", barAuraEffectColor = {1, 0.84, 0, 0.9}, barAuraEffectSize = 4, barAuraEffectThickness = 2, barAuraEffectSpeed = 60}
+
+-- Compare two values (handles tables and scalars)
+local function ValuesMatch(a, b)
+    if type(a) == "table" and type(b) == "table" then
+        for k = 1, math.max(#a, #b) do
+            if a[k] ~= b[k] then return false end
+        end
+        return true
+    end
+    return a == b
+end
+
+-- Copy a value (deep copy tables)
+local function CopyVal(v)
+    if type(v) == "table" then return CopyTable(v) end
+    return v
+end
+
+-- Generic migration helper: moves per-button keys to group style defaults,
+-- creating overrides for buttons that differ.
+-- keysList: ordered list of style keys
+-- defaultsMap: default values for each key
+-- sectionId: override section ID
+-- resolveButtonValue: function(bd, key) -> value to use for this button (handles renames/fallbacks)
+-- cleanupButton: function(bd) to remove old per-button keys
+local function MigrateKeysToGroupStyle(group, keysList, defaultsMap, sectionId, resolveButtonValue, cleanupButton)
+    local style = group.style
+
+    -- Find first button with any of these keys set → adopt as group defaults
+    local adopted = false
+    if group.buttons then
+        for _, bd in ipairs(group.buttons) do
+            local hasAny = false
+            for _, key in ipairs(keysList) do
+                if resolveButtonValue(bd, key) ~= nil then
+                    hasAny = true
+                    break
+                end
+            end
+            if hasAny then
+                for _, key in ipairs(keysList) do
+                    local val = resolveButtonValue(bd, key)
+                    if val ~= nil then
+                        style[key] = CopyVal(val)
+                    else
+                        style[key] = CopyVal(defaultsMap[key])
+                    end
+                end
+                adopted = true
+                break
+            end
+        end
+    end
+
+    -- No button had custom values → apply defaults to group style
+    if not adopted then
+        for _, key in ipairs(keysList) do
+            if style[key] == nil then
+                style[key] = CopyVal(defaultsMap[key])
+            end
+        end
+    end
+
+    -- Scan all buttons: create overrides for buttons that differ from group defaults
+    if group.buttons then
+        for _, bd in ipairs(group.buttons) do
+            local hasDiff = false
+            for _, key in ipairs(keysList) do
+                local bdVal = resolveButtonValue(bd, key)
+                if bdVal ~= nil then
+                    if not ValuesMatch(bdVal, style[key]) then
+                        hasDiff = true
+                        break
+                    end
+                end
+            end
+
+            if hasDiff then
+                if not bd.styleOverrides then bd.styleOverrides = {} end
+                if not bd.overrideSections then bd.overrideSections = {} end
+                for _, key in ipairs(keysList) do
+                    local bdVal = resolveButtonValue(bd, key)
+                    if bdVal ~= nil then
+                        bd.styleOverrides[key] = CopyVal(bdVal)
+                    else
+                        bd.styleOverrides[key] = CopyVal(style[key])
+                    end
+                end
+                bd.overrideSections[sectionId] = true
+            end
+
+            -- Clean up old per-button keys
+            cleanupButton(bd)
+        end
+    end
+end
+
+function CooldownCompanion:MigrateGlowSettingsToGroupStyle()
+    local profile = self.db.profile
+    if profile.glowSettingsMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style then
+
+        -- 1. Proc Glow (icon mode): migrate procGlowStyle/Size/Thickness/Speed
+        -- Sentinel: procGlowStyle == nil means pre-migration
+        if style.procGlowStyle == nil then
+            -- Handle procGlowOverhang → procGlowSize rename on group style
+            if style.procGlowOverhang then
+                style.procGlowSize = style.procGlowOverhang
+            end
+
+            MigrateKeysToGroupStyle(group, PROC_GLOW_KEYS, PROC_GLOW_DEFAULTS, "procGlow",
+                function(bd, key)
+                    if key == "procGlowSize" then
+                        -- Check for procGlowSize first, then fallback aliases
+                        if bd.procGlowSize ~= nil then return bd.procGlowSize end
+                        return nil
+                    end
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.procGlowStyle = nil
+                    bd.procGlowSize = nil
+                    bd.procGlowThickness = nil
+                    bd.procGlowSpeed = nil
+                    -- Also handle procGlowOverhang in existing styleOverrides
+                    if bd.styleOverrides and bd.styleOverrides.procGlowOverhang then
+                        bd.styleOverrides.procGlowSize = bd.styleOverrides.procGlowSize or bd.styleOverrides.procGlowOverhang
+                        bd.styleOverrides.procGlowOverhang = nil
+                    end
+                end
+            )
+            -- procGlowColor is already on style (handled by prior migration) — add to override section keys
+            -- If any button already has procGlow override with procGlowColor, ensure new keys are populated
+            if group.buttons then
+                for _, bd in ipairs(group.buttons) do
+                    if bd.overrideSections and bd.overrideSections.procGlow and bd.styleOverrides then
+                        -- Ensure all 5 keys are present in override
+                        for _, key in ipairs(PROC_GLOW_KEYS) do
+                            if bd.styleOverrides[key] == nil then
+                                bd.styleOverrides[key] = CopyVal(style[key])
+                            end
+                        end
+                        if bd.styleOverrides.procGlowColor == nil then
+                            bd.styleOverrides.procGlowColor = CopyVal(style.procGlowColor or {1, 1, 1, 1})
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 2. Pandemic Glow (icon mode)
+        if style.pandemicGlowStyle == nil then
+            MigrateKeysToGroupStyle(group, PANDEMIC_GLOW_KEYS, PANDEMIC_GLOW_DEFAULTS, "pandemicGlow",
+                function(bd, key)
+                    -- Resolve legacy fallbacks: auraGlowStyle → pandemicGlowStyle, etc.
+                    if key == "pandemicGlowStyle" then
+                        return bd.pandemicGlowStyle or bd.auraGlowStyle
+                    elseif key == "pandemicGlowSize" then
+                        return bd.pandemicGlowSize or bd.auraGlowSize
+                    elseif key == "pandemicGlowThickness" then
+                        return bd.pandemicGlowThickness or bd.auraGlowThickness
+                    elseif key == "pandemicGlowSpeed" then
+                        return bd.pandemicGlowSpeed or bd.auraGlowSpeed
+                    end
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.pandemicGlowStyle = nil
+                    bd.pandemicGlowColor = nil
+                    bd.pandemicGlowSize = nil
+                    bd.pandemicGlowThickness = nil
+                    bd.pandemicGlowSpeed = nil
+                end
+            )
+        end
+
+        -- 3. Pandemic Bar
+        if style.barPandemicColor == nil then
+            MigrateKeysToGroupStyle(group, PANDEMIC_BAR_KEYS, PANDEMIC_BAR_DEFAULTS, "pandemicBar",
+                function(bd, key)
+                    if key == "pandemicBarEffectColor" then
+                        -- Old code used pandemicGlowColor for bar effect color
+                        return bd.pandemicGlowColor
+                    elseif key == "pandemicBarEffect" then
+                        return bd.pandemicBarEffect or bd.barAuraEffect
+                    end
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.barPandemicColor = nil
+                    bd.pandemicBarEffect = nil
+                    -- pandemicGlowColor in bar context → now pandemicBarEffectColor
+                    -- (pandemicGlowColor already cleaned up by pandemic glow icon migration above)
+                    bd.pandemicBarEffectSize = nil
+                    bd.pandemicBarEffectThickness = nil
+                    bd.pandemicBarEffectSpeed = nil
+                end
+            )
+        end
+
+        end -- if style
+    end
+
+    -- Ensure globalStyle has the new keys
+    local gs = profile.globalStyle
+    if gs then
+        for _, key in ipairs(PROC_GLOW_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(PROC_GLOW_DEFAULTS[key]) end
+        end
+        for _, key in ipairs(PANDEMIC_GLOW_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(PANDEMIC_GLOW_DEFAULTS[key]) end
+        end
+        for _, key in ipairs(PANDEMIC_BAR_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(PANDEMIC_BAR_DEFAULTS[key]) end
+        end
+    end
+
+    profile.glowSettingsMigrated = true
+end
+
+function CooldownCompanion:MigrateAuraIndicatorToGroupStyle()
+    local profile = self.db.profile
+    if profile.auraIndicatorMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style then
+
+        -- 4. Active Aura Indicator (icon mode)
+        if style.auraGlowStyle == nil then
+            -- Pre-scan: record which buttons had non-"none" aura indicator before migration cleans up keys
+            local enabledButtons = {}
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if bd.auraGlowStyle and bd.auraGlowStyle ~= "none" then
+                        enabledButtons[i] = true
+                    end
+                end
+            end
+
+            MigrateKeysToGroupStyle(group, AURA_INDICATOR_KEYS, AURA_INDICATOR_DEFAULTS, "auraIndicator",
+                function(bd, key)
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.auraGlowStyle = nil
+                    bd.auraGlowColor = nil
+                    bd.auraGlowSize = nil
+                    bd.auraGlowThickness = nil
+                    bd.auraGlowSpeed = nil
+                end
+            )
+
+            -- Convert enable state: set auraIndicatorEnabled for buttons that had non-"none" styles
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if enabledButtons[i] then
+                        bd.auraIndicatorEnabled = true
+                    end
+                end
+            end
+        end
+
+        -- 5. Active Aura Indicator (bar mode)
+        if style.barAuraColor == nil then
+            -- Pre-scan: record which buttons had bar aura indicator enabled
+            local enabledButtons = {}
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if bd.barAuraColor or (bd.barAuraEffect and bd.barAuraEffect ~= "none") then
+                        enabledButtons[i] = true
+                    end
+                end
+            end
+
+            MigrateKeysToGroupStyle(group, BAR_ACTIVE_AURA_KEYS, BAR_ACTIVE_AURA_DEFAULTS, "barActiveAura",
+                function(bd, key)
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.barAuraColor = nil
+                    bd.barAuraEffect = nil
+                    bd.barAuraEffectColor = nil
+                    bd.barAuraEffectSize = nil
+                    bd.barAuraEffectThickness = nil
+                    bd.barAuraEffectSpeed = nil
+                end
+            )
+
+            -- Convert enable state
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if enabledButtons[i] then
+                        bd.auraIndicatorEnabled = true
+                    end
+                end
+            end
+        end
+
+        end -- if style
+    end
+
+    -- Ensure globalStyle has the new keys
+    local gs = profile.globalStyle
+    if gs then
+        for _, key in ipairs(AURA_INDICATOR_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(AURA_INDICATOR_DEFAULTS[key]) end
+        end
+        for _, key in ipairs(BAR_ACTIVE_AURA_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(BAR_ACTIVE_AURA_DEFAULTS[key]) end
+        end
+    end
+
+    profile.auraIndicatorMigrated = true
+end
+
+-- LSM fetch helpers with fallback
+function CooldownCompanion:FetchFont(name)
+    return LSM:Fetch("font", name) or LSM:Fetch("font", "Friz Quadrata TT") or STANDARD_TEXT_FONT
+end
+
+function CooldownCompanion:FetchStatusBar(name)
+    return LSM:Fetch("statusbar", name) or LSM:Fetch("statusbar", "Solid") or [[Interface\BUTTONS\WHITE8X8]]
+end
+
+-- Re-apply all media after a SharedMedia pack registers new fonts/textures
+function CooldownCompanion:RefreshAllMedia()
+    self:RefreshAllGroups()
+    self:ApplyResourceBars()
+    self:ApplyCastBarSettings()
 end
 
 function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
@@ -1905,6 +2914,9 @@ function CooldownCompanion:ToggleGroupGlobal(groupId)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
+    -- Passive/proc spells are tracked via aura, not spellbook presence
+    if buttonData.isPassive then return true end
+
     if buttonData.type == "spell" then
         local bank = buttonData.isPetSpell
             and Enum.SpellBookSpellBank.Pet
@@ -1922,6 +2934,8 @@ function CooldownCompanion:IsButtonUsable(buttonData)
         end
         return false
     elseif buttonData.type == "item" then
+        if buttonData.hasCharges then return true end
+        if not CooldownCompanion.IsItemEquippable(buttonData) then return true end
         return C_Item.GetItemCount(buttonData.id) > 0
     end
     return true
@@ -1963,6 +2977,17 @@ function CooldownCompanion:RefreshAllGroups()
 end
 
 function CooldownCompanion:UpdateAllCooldowns()
+    self._gcdInfo = C_Spell.GetSpellCooldown(61304)
+    -- Widget-level GCD activity signal (secret-safe, plain boolean)
+    local gcdDuration = C_Spell.GetSpellCooldownDuration(61304)
+    if gcdDuration then
+        self._gcdScratch:Hide()
+        self._gcdScratch:SetCooldownFromDurationObject(gcdDuration)
+        self._gcdActive = self._gcdScratch:IsShown()
+        self._gcdScratch:Hide()
+    else
+        self._gcdActive = false
+    end
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()

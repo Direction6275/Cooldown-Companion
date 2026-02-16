@@ -26,7 +26,7 @@ local function UpdateCoordLabel(frame, x, y)
 end
 
 -- Nudger constants
-local NUDGE_BTN_SIZE = 14
+local NUDGE_BTN_SIZE = 12
 local NUDGE_REPEAT_DELAY = 0.5
 local NUDGE_REPEAT_INTERVAL = 0.05
 
@@ -45,10 +45,10 @@ local function CreateNudger(frame, groupId)
     CreatePixelBorders(nudger)
 
     local directions = {
-        { rotation = math.pi / 2,   anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
-        { rotation = -math.pi / 2,  anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },  -- down
-        { rotation = math.pi,       anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },          -- left
-        { rotation = 0,             anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
+        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
+        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },  -- down
+        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },          -- left
+        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
     }
 
     for _, dir in ipairs(directions) do
@@ -58,7 +58,7 @@ local function CreateNudger(frame, groupId)
         btn:EnableMouse(true)
 
         local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetTexture("Interface\\CHATFRAME\\ChatFrameExpandArrow")
+        arrow:SetAtlas(dir.atlas)
         arrow:SetAllPoints()
         arrow:SetRotation(dir.rotation)
         arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
@@ -123,9 +123,15 @@ local function CreateNudger(frame, groupId)
 end
 
 function CooldownCompanion:CreateGroupFrame(groupId)
+    -- Return existing frame to prevent duplicates (SharedMedia callbacks
+    -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
+    if self.groupFrames[groupId] then
+        return self.groupFrames[groupId]
+    end
+
     local group = self.db.profile.groups[groupId]
     if not group then return end
-    
+
     -- Create main container frame
     local frameName = "CooldownCompanionGroup" .. groupId
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
@@ -451,11 +457,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     for i, buttonData in ipairs(group.buttons) do
         if self:IsButtonUsable(buttonData) then
             visibleIndex = visibleIndex + 1
+            local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local button
             if isBarMode then
-                button = self:CreateBarFrame(frame, i, buttonData, style)
+                button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
             else
-                button = self:CreateButtonFrame(frame, i, buttonData, style)
+                button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
             end
 
             -- Position the button using visibleIndex for gap-free layout
@@ -687,11 +694,12 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 
     if not frame or not group then return end
 
-    local style = group.style or {}
+    local groupStyle = group.style or {}
 
-    -- Update all buttons
+    -- Update all buttons with per-button effective style
     for _, button in ipairs(frame.buttons) do
-        button:UpdateStyle(style)
+        local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
+        button:UpdateStyle(effectiveStyle)
     end
 
     -- Update group frame clickthrough

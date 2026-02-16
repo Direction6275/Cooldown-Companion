@@ -7,11 +7,14 @@
 ## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: Ace3, Masque
+## OptionalDeps: Ace3, LibSharedMedia-3.0, Masque
 
 # Libraries - LibStub must be first
 Libs\Ace3\LibStub\LibStub.lua
 Libs\Ace3\CallbackHandler-1.0\CallbackHandler-1.0.xml
+
+# Shared Media Library
+Libs\LibSharedMedia-3.0\lib.xml
 
 # Ace3 Core Libraries
 Libs\Ace3\AceAddon-3.0\AceAddon-3.0.xml
@@ -39,5 +42,6 @@ ButtonFrame.lua
 GroupFrame.lua
 CastBar.lua
 ResourceBar.lua
+FrameAnchoring.lua
 Config.lua
 ConfigSettings.lua

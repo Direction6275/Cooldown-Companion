@@ -32,6 +32,15 @@ local GetTime = GetTime
 
 local UPDATE_INTERVAL = 1 / 30  -- 30 Hz
 
+local CUSTOM_AURA_BAR_BASE = 201  -- 201, 202, 203 for slots 1-3
+local MAX_CUSTOM_AURA_BARS = 3
+local MW_SPELL_ID = 187880
+local RAGING_MAELSTROM_SPELL_ID = 384143
+local RESOURCE_MAELSTROM_WEAPON = 100
+local DEFAULT_MW_BASE_COLOR = { 0, 0.5, 1 }
+local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
+local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
+
 local DEFAULT_POWER_COLORS = {
     [0]  = { 0, 0, 1 },              -- Mana
     [1]  = { 1, 0, 0 },              -- Rage
@@ -68,12 +77,14 @@ local POWER_NAMES = {
     [13] = "Insanity",
     [16] = "Arcane Charges",
     [17] = "Fury",
+    [100] = "Maelstrom Weapon",
     [18] = "Pain",
     [19] = "Essence",
 }
 
 local DEFAULT_COMBO_COLOR = { 1, 0.96, 0.41 }
 local DEFAULT_COMBO_MAX_COLOR = { 1, 0.96, 0.41 }
+local DEFAULT_COMBO_CHARGED_COLOR = { 0.24, 0.65, 1.0 }
 
 local DEFAULT_RUNE_READY_COLOR = { 0.8, 0.8, 0.8 }
 local DEFAULT_RUNE_RECHARGING_COLOR = { 0.490, 0.490, 0.490 }
@@ -119,6 +130,10 @@ local POWER_ATLAS_INFO = {
 -- Expose atlas-backed power types for ConfigSettings to check
 ST.POWER_ATLAS_TYPES = { [8] = true, [11] = true, [13] = true, [17] = true, [18] = true }
 
+-- Expose custom aura bar constants for ConfigSettings
+ST.CUSTOM_AURA_BAR_BASE = CUSTOM_AURA_BAR_BASE
+ST.MAX_CUSTOM_AURA_BARS = MAX_CUSTOM_AURA_BARS
+
 -- Class-to-resource mapping (classID -> ordered list of power types)
 -- Order = stacking order (first = closest to anchor)
 local CLASS_RESOURCES = {
@@ -141,7 +156,7 @@ local CLASS_RESOURCES = {
 local SPEC_RESOURCES = {
     [258] = { 13, 0 },      -- Shadow Priest: Insanity, Mana
     [262] = { 11, 0 },      -- Elemental Shaman: Maelstrom, Mana
-    [263] = { 11, 0 },      -- Enhancement Shaman: Maelstrom, Mana
+    [263] = { 100, 0 },      -- Enhancement Shaman: MW, Mana
     [62]  = { 16, 0 },      -- Arcane Mage: ArcaneCharges, Mana
     [269] = { 12, 3 },      -- Windwalker Monk: Chi, Energy
     [268] = { 3 },          -- Brewmaster Monk: Energy
@@ -160,6 +175,8 @@ local DRUID_DEFAULT_RESOURCES = { 0 }  -- No form: Mana
 -- State
 ------------------------------------------------------------------------
 
+local mwMaxStacks = 5
+
 local isApplied = false
 local hooksInstalled = false
 local eventFrame = nil
@@ -169,6 +186,8 @@ local resourceBarFrames = {}   -- array of bar frame objects (ordered by stackin
 local activeResources = {}     -- array of power type ints currently displayed
 local isPreviewActive = false
 local pendingSpecChange = false
+local savedContainerAlpha = nil
+local alphaSyncFrame = nil
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -202,6 +221,22 @@ end
 local function GetPlayerClassID()
     local _, _, classID = UnitClass("player")
     return classID
+end
+
+local function GetSpecCustomAuraBars(settings)
+    local specID = GetCurrentSpecID()
+    if not specID then return {} end
+    if not settings.customAuraBars then
+        settings.customAuraBars = {}
+    end
+    if not settings.customAuraBars[specID] then
+        settings.customAuraBars[specID] = {
+            { enabled = false },
+            { enabled = false },
+            { enabled = false },
+        }
+    end
+    return settings.customAuraBars[specID]
 end
 
 local function IsHealerSpec()
@@ -265,18 +300,20 @@ local function GetPowerColor(powerType, settings)
     return DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }
 end
 
---- Get combo point colors (normal vs at max).
+--- Get combo point colors (normal, max, charged).
 local function GetComboColors(settings)
     local normalColor = DEFAULT_COMBO_COLOR
     local maxColor = DEFAULT_COMBO_MAX_COLOR
+    local chargedColor = DEFAULT_COMBO_CHARGED_COLOR
     if settings and settings.resources then
         local override = settings.resources[4]
         if override then
             if override.comboColor then normalColor = override.comboColor end
             if override.comboMaxColor then maxColor = override.comboMaxColor end
+            if override.comboChargedColor then chargedColor = override.comboChargedColor end
         end
     end
-    return normalColor, maxColor
+    return normalColor, maxColor, chargedColor
 end
 
 --- Get rune-specific colors (ready, recharging, max).
@@ -369,6 +406,32 @@ local function GetEssenceColors(settings)
     return readyColor, rechargingColor, maxColor
 end
 
+--- Get MW colors (base, overlay, max).
+local function GetMWColors(settings)
+    local baseColor = DEFAULT_MW_BASE_COLOR
+    local overlayColor = DEFAULT_MW_OVERLAY_COLOR
+    local maxColor = DEFAULT_MW_MAX_COLOR
+    if settings and settings.resources then
+        local override = settings.resources[100]
+        if override then
+            if override.mwBaseColor then baseColor = override.mwBaseColor end
+            if override.mwOverlayColor then overlayColor = override.mwOverlayColor end
+            if override.mwMaxColor then maxColor = override.mwMaxColor end
+        end
+    end
+    return baseColor, overlayColor, maxColor
+end
+
+--- Update cached MW max stacks based on Raging Maelstrom talent (OOC only — talents can't change in combat).
+local function UpdateMWMaxStacks()
+    local hasRagingMaelstrom = C_SpellBook.IsSpellKnown(RAGING_MAELSTROM_SPELL_ID, Enum.SpellBookSpellBank.Player)
+    local newMax = hasRagingMaelstrom and 10 or 5
+    if mwMaxStacks ~= newMax then
+        mwMaxStacks = newMax
+        CooldownCompanion:ApplyResourceBars()  -- segment count changed, rebuild
+    end
+end
+
 --- Check if a specific resource is enabled in settings.
 local function IsResourceEnabled(powerType, settings)
     if settings and settings.resources then
@@ -446,7 +509,7 @@ end
 
 local function CreateContinuousBar(parent)
     local bar = CreateFrame("StatusBar", nil, parent)
-    bar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+    bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
     bar:SetMinMaxValues(0, 100)
     bar:SetValue(0)
 
@@ -460,7 +523,7 @@ local function CreateContinuousBar(parent)
 
     -- Text
     bar.text = bar:CreateFontString(nil, "OVERLAY")
-    bar.text:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    bar.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
     bar.text:SetPoint("CENTER")
     bar.text:SetTextColor(1, 1, 1, 1)
 
@@ -483,7 +546,7 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.segments = {}
     for i = 1, numSegments do
         local seg = CreateFrame("StatusBar", nil, holder)
-        seg:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(0, 1)
         seg:SetValue(0)
 
@@ -513,7 +576,7 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
     local subWidth = (totalWidth - (n - 1) * gap) / n
     if subWidth < 1 then subWidth = 1 end
 
-    local barTexture = settings and settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
+    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
     local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = settings and settings.borderStyle or "pixel"
     local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
@@ -533,6 +596,83 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
         else
             HidePixelBorders(seg.borders)
         end
+    end
+end
+
+------------------------------------------------------------------------
+-- Frame creation: Overlay bar (base + overlay segments)
+-- Used by custom aura bars in "overlay" display mode.
+-- halfSegments = number of segments per layer (e.g. 5 for 10-max).
+------------------------------------------------------------------------
+
+local function CreateOverlayBar(parent, halfSegments)
+    local holder = CreateFrame("Frame", nil, parent)
+
+    holder.segments = {}
+    for i = 1, halfSegments do
+        local seg = CreateFrame("StatusBar", nil, holder)
+        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
+        seg:SetMinMaxValues(i - 1, i)
+        seg:SetValue(0)
+
+        seg.bg = seg:CreateTexture(nil, "BACKGROUND")
+        seg.bg:SetAllPoints()
+        seg.bg:SetColorTexture(0, 0, 0, 0.5)
+
+        seg.borders = CreatePixelBorders(seg)
+
+        holder.segments[i] = seg
+    end
+
+    holder.overlaySegments = {}
+    for i = 1, halfSegments do
+        local seg = CreateFrame("StatusBar", nil, holder)
+        seg:SetFrameLevel(holder:GetFrameLevel() + 2)
+        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
+        seg:SetMinMaxValues(i + halfSegments - 1, i + halfSegments)
+        seg:SetValue(0)
+
+        -- No background on overlay (transparent when empty, base bg shows through)
+
+        holder.overlaySegments[i] = seg
+    end
+
+    return holder
+end
+
+local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments)
+    if not holder or not holder.segments then return end
+
+    local subWidth = (totalWidth - (halfSegments - 1) * gap) / halfSegments
+    if subWidth < 1 then subWidth = 1 end
+
+    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
+    local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
+    local borderStyle = settings and settings.borderStyle or "pixel"
+    local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
+    local borderSize = settings and settings.borderSize or 1
+
+    for i = 1, halfSegments do
+        local seg = holder.segments[i]
+        seg:ClearAllPoints()
+        seg:SetSize(subWidth, totalHeight)
+        local xOfs = (i - 1) * (subWidth + gap)
+        seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+
+        seg:SetStatusBarTexture(barTexture)
+        seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+        if borderStyle == "pixel" then
+            ApplyPixelBorders(seg.borders, seg, borderColor, borderSize)
+        else
+            HidePixelBorders(seg.borders)
+        end
+
+        -- Position overlay segment exactly on top of base
+        local ov = holder.overlaySegments[i]
+        ov:ClearAllPoints()
+        ov:SetAllPoints(seg)
+        ov:SetStatusBarTexture(barTexture)
     end
 end
 
@@ -658,18 +798,29 @@ local function UpdateSegmentedBar(holder, powerType)
         return
     end
 
-    -- Combo Points: color changes at max
+    -- Combo Points: color changes at max, charged coloring for Rogues
     if powerType == 4 then
         local current = UnitPower("player", 4)
         local max = UnitPowerMax("player", 4)
-        local normalColor, maxColor = GetComboColors(GetResourceBarSettings())
+        local normalColor, maxColor, chargedColor = GetComboColors(GetResourceBarSettings())
         local isMax = (current == max and max > 0)
-        local activeColor = isMax and maxColor or normalColor
+        local baseColor = isMax and maxColor or normalColor
+
+        -- Charged combo points (Rogue only)
+        local chargedPoints
+        if GetPlayerClassID() == 4 then
+            chargedPoints = GetUnitChargedPowerPoints("player")
+        end
+
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= current then
                 seg:SetValue(1)
-                seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+                if chargedPoints and tContains(chargedPoints, i) then
+                    seg:SetStatusBarColor(chargedColor[1], chargedColor[2], chargedColor[3], 1)
+                else
+                    seg:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                end
             else
                 seg:SetValue(0)
             end
@@ -705,6 +856,152 @@ local function UpdateSegmentedBar(holder, powerType)
 end
 
 ------------------------------------------------------------------------
+-- Update logic: Maelstrom Weapon (overlay bar, plain applications)
+------------------------------------------------------------------------
+
+local function UpdateMaelstromWeaponBar(holder)
+    if not holder or not holder.segments then return end
+
+    -- Read stacks from viewer frame (applications is plain for MW)
+    local stacks = 0
+    local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
+    local instId = viewerFrame and viewerFrame.auraInstanceID
+    if instId then
+        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
+        if auraData then
+            stacks = auraData.applications or 0
+        end
+    end
+
+    -- Pass stacks to all segments (StatusBar C-level clamping handles fill)
+    local half = #holder.segments
+    for i = 1, half do
+        holder.segments[i]:SetValue(stacks)
+        holder.overlaySegments[i]:SetValue(stacks)
+    end
+
+    -- Color: direct comparison is safe since MW applications are plain
+    local baseColor, overlayColor, maxColor = GetMWColors(GetResourceBarSettings())
+    local isMax = stacks > 0 and stacks == mwMaxStacks
+    if isMax then
+        for i = 1, half do
+            holder.segments[i]:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
+            holder.overlaySegments[i]:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
+        end
+    else
+        for i = 1, half do
+            holder.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+            holder.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Update logic: Custom aura bars (aura-based, secret-safe)
+------------------------------------------------------------------------
+
+local function UpdateCustomAuraBar(barInfo)
+    local cabConfig = barInfo.cabConfig
+    if not cabConfig or not cabConfig.spellID then return end
+
+    -- Read aura stacks from viewer frame (applications may be secret in combat)
+    local stacks = 0
+    local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[cabConfig.spellID]
+    local instId = viewerFrame and viewerFrame.auraInstanceID
+    if instId then
+        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
+        if auraData then
+            if cabConfig.trackingMode == "active" then
+                stacks = 1
+            else
+                stacks = auraData.applications or 0
+            end
+        end
+    end
+
+    local maxStacks = cabConfig.maxStacks or 1
+    local barColor = cabConfig.barColor or {0.5, 0.5, 1}
+
+    if barInfo.barType == "custom_continuous" then
+        local bar = barInfo.frame
+        bar:SetMinMaxValues(0, maxStacks)
+        bar:SetValue(stacks)  -- SetValue accepts secrets
+        if bar.text and bar.text:IsShown() then
+            bar.text:SetFormattedText("%d / %d", stacks, maxStacks)  -- SetFormattedText accepts secrets
+        end
+
+    elseif barInfo.barType == "custom_segmented" then
+        local holder = barInfo.frame
+        if not holder.segments then return end
+        -- Each segment has MinMax(i-1, i) — SetValue(stacks) with C-level clamping
+        -- handles fill/empty without comparing the secret stacks value in Lua
+        for i = 1, #holder.segments do
+            holder.segments[i]:SetValue(stacks)
+        end
+
+    elseif barInfo.barType == "custom_overlay" then
+        local holder = barInfo.frame
+        if not holder.segments then return end
+        local half = barInfo.halfSegments or 1
+
+        -- Pass stacks to ALL segments (StatusBar C-level clamping handles per-segment fill)
+        for i = 1, half do
+            holder.segments[i]:SetValue(stacks)
+            holder.overlaySegments[i]:SetValue(stacks)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Styling: Custom aura bars
+------------------------------------------------------------------------
+
+local function StyleCustomAuraBar(barInfo, cabConfig, settings)
+    local barColor = cabConfig.barColor or {0.5, 0.5, 1}
+
+    if barInfo.barType == "custom_continuous" then
+        local bar = barInfo.frame
+        bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
+        if bar.text then
+            bar.text:SetShown(cabConfig.showText == true)
+        end
+
+    elseif barInfo.barType == "custom_segmented" then
+        local holder = barInfo.frame
+        if holder.segments then
+            for _, seg in ipairs(holder.segments) do
+                seg:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
+            end
+        end
+
+    elseif barInfo.barType == "custom_overlay" then
+        local holder = barInfo.frame
+        local overlayColor = cabConfig.overlayColor or {1, 0.84, 0}
+        local half = barInfo.halfSegments or 1
+        if holder.segments then
+            for i = 1, half do
+                holder.segments[i]:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
+                holder.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                holder.overlaySegments[i]:Show()
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Live recolor for custom aura bars (called from config color picker)
+------------------------------------------------------------------------
+
+function CooldownCompanion:RecolorCustomAuraBar(cabConfig)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.cabConfig == cabConfig then
+            StyleCustomAuraBar(barInfo, cabConfig, self.db.profile.settings)
+            break
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- OnUpdate handler (30 Hz)
 ------------------------------------------------------------------------
 
@@ -723,6 +1020,12 @@ local function OnUpdate(self, elapsed)
                 UpdateContinuousBar(barInfo.frame, barInfo.powerType)
             elseif barInfo.barType == "segmented" then
                 UpdateSegmentedBar(barInfo.frame, barInfo.powerType)
+            elseif barInfo.barType == "mw_segmented" then
+                UpdateMaelstromWeaponBar(barInfo.frame)
+            elseif barInfo.barType == "custom_continuous"
+                or barInfo.barType == "custom_segmented"
+                or barInfo.barType == "custom_overlay" then
+                UpdateCustomAuraBar(barInfo)
             end
         end
     end
@@ -750,16 +1053,22 @@ local function EnableLifecycleEvents()
                     pendingSpecChange = true
                     C_Timer.After(0.5, function()
                         pendingSpecChange = false
+                        UpdateMWMaxStacks()
                         CooldownCompanion:EvaluateResourceBars()
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
                 end
+            elseif event == "PLAYER_TALENT_UPDATE"
+                or event == "TRAIT_CONFIG_UPDATED" then
+                UpdateMWMaxStacks()
             end
         end)
     end
     lifecycleFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     lifecycleFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
     lifecycleFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    lifecycleFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+    lifecycleFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 end
 
 local function DisableLifecycleEvents()
@@ -794,11 +1103,11 @@ end
 ------------------------------------------------------------------------
 
 local function StyleContinuousBar(bar, powerType, settings)
-    local tex = settings.barTexture or "Interface\\BUTTONS\\WHITE8X8"
+    local texName = settings.barTexture or "Solid"
     local atlasInfo = nil
     local useAtlas = false
 
-    if tex == "blizzard_class" then
+    if texName == "blizzard_class" then
         atlasInfo = POWER_ATLAS_INFO[powerType]
         if atlasInfo then
             useAtlas = true
@@ -821,13 +1130,13 @@ local function StyleContinuousBar(bar, powerType, settings)
             end
         else
             -- Fallback for power types without class-specific atlas
-            bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+            bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Blizzard"))
             local color = GetPowerColor(powerType, settings)
             bar:SetStatusBarColor(color[1], color[2], color[3], 1)
             bar.brightnessOverlay:Hide()
         end
     else
-        bar:SetStatusBarTexture(tex)
+        bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texName))
         local color = GetPowerColor(powerType, settings)
         bar:SetStatusBarColor(color[1], color[2], color[3], 1)
         bar.brightnessOverlay:Hide()
@@ -848,7 +1157,7 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
 
     -- Text setup
-    local textFont = settings.textFont or "Fonts\\FRIZQT__.TTF"
+    local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
     local textSize = settings.textFontSize or 10
     local textOutline = settings.textFontOutline or "OUTLINE"
     local textColor = settings.textFontColor or { 1, 1, 1, 1 }
@@ -953,6 +1262,22 @@ function CooldownCompanion:ApplyResourceBars()
         end
     end
 
+    if settings.reverseResourceOrder and #filtered > 1 then
+        local n = #filtered
+        for i = 1, math.floor(n / 2) do
+            filtered[i], filtered[n - i + 1] = filtered[n - i + 1], filtered[i]
+        end
+    end
+
+    -- Append enabled custom aura bars
+    local customBars = GetSpecCustomAuraBars(settings)
+    for i = 1, MAX_CUSTOM_AURA_BARS do
+        local cab = customBars[i]
+        if cab and cab.enabled and cab.spellID then
+            table.insert(filtered, CUSTOM_AURA_BAR_BASE + i - 1)
+        end
+    end
+
     if #filtered == 0 then
         self:RevertResourceBars()
         return
@@ -985,7 +1310,102 @@ function CooldownCompanion:ApplyResourceBars()
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
 
-        if isSegmented then
+        if powerType == RESOURCE_MAELSTROM_WEAPON then
+            -- Maelstrom Weapon: overlay bar with dedicated update
+            local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
+
+            if not barInfo or barInfo.barType ~= "mw_segmented"
+                or #barInfo.frame.segments ~= halfSegments then
+                if barInfo and barInfo.frame then barInfo.frame:Hide() end
+                local holder = CreateOverlayBar(containerFrame, halfSegments)
+                barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
+                resourceBarFrames[idx] = barInfo
+            else
+                barInfo.powerType = powerType
+            end
+
+            barInfo.frame:SetSize(totalWidth, barHeight)
+            LayoutOverlaySegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings, halfSegments)
+
+            -- Apply initial colors
+            local baseColor, overlayColor = GetMWColors(settings)
+            for i = 1, halfSegments do
+                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                barInfo.frame.overlaySegments[i]:Show()
+            end
+
+        elseif powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
+            -- Custom aura bar
+            local cabIndex = powerType - CUSTOM_AURA_BAR_BASE + 1
+            local cabConfig = customBars[cabIndex]
+            local isActive = cabConfig.trackingMode == "active"
+            local mode = isActive and "continuous" or (cabConfig.displayMode or "segmented")
+            local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
+            local targetBarType = "custom_" .. mode
+
+            -- Determine if bar needs recreation
+            local needsRecreate = not barInfo or barInfo.barType ~= targetBarType
+            if not needsRecreate and mode == "segmented" then
+                needsRecreate = barInfo.frame._numSegments ~= maxStacks
+            end
+            if not needsRecreate and mode == "overlay" then
+                needsRecreate = barInfo.halfSegments ~= math.ceil(maxStacks / 2)
+            end
+
+            if needsRecreate then
+                if barInfo and barInfo.frame then barInfo.frame:Hide() end
+                if mode == "continuous" then
+                    local bar = CreateContinuousBar(containerFrame)
+                    bar:SetMinMaxValues(0, maxStacks)
+                    barInfo = { frame = bar, barType = "custom_continuous", powerType = powerType }
+                elseif mode == "segmented" then
+                    local holder = CreateSegmentedBar(containerFrame, maxStacks)
+                    -- Set per-segment MinMax for secret-safe SetValue(stacks) clamping
+                    for si = 1, maxStacks do
+                        holder.segments[si]:SetMinMaxValues(si - 1, si)
+                    end
+                    barInfo = { frame = holder, barType = "custom_segmented", powerType = powerType }
+                elseif mode == "overlay" then
+                    local half = math.ceil(maxStacks / 2)
+                    local holder = CreateOverlayBar(containerFrame, half)
+                    barInfo = { frame = holder, barType = "custom_overlay", powerType = powerType, halfSegments = half }
+                end
+                resourceBarFrames[idx] = barInfo
+            end
+
+            barInfo.cabConfig = cabConfig
+            barInfo.frame:SetSize(totalWidth, barHeight)
+            if mode == "segmented" then
+                LayoutSegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings)
+            elseif mode == "overlay" then
+                LayoutOverlaySegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings, barInfo.halfSegments)
+            end
+            -- Continuous bar styling (text font, background, borders)
+            if mode == "continuous" then
+                barInfo.frame:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid"))
+                local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+                barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
+                local borderStyle = settings.borderStyle or "pixel"
+                local borderColor = settings.borderColor or { 0, 0, 0, 1 }
+                local borderSize = settings.borderSize or 1
+                if borderStyle == "pixel" then
+                    ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize)
+                else
+                    HidePixelBorders(barInfo.frame.borders)
+                end
+                -- Text setup
+                local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
+                local textSize = settings.textFontSize or 10
+                local textOutline = settings.textFontOutline or "OUTLINE"
+                local textColor = settings.textFontColor or { 1, 1, 1, 1 }
+                barInfo.frame.text:SetFont(textFont, textSize, textOutline)
+                barInfo.frame.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
+                barInfo.frame.brightnessOverlay:Hide()
+            end
+            -- Apply bar color AFTER texture setup (SetStatusBarTexture resets vertex color)
+            StyleCustomAuraBar(barInfo, cabConfig, settings)
+        elseif isSegmented then
             local max = UnitPowerMax("player", powerType)
             if powerType == 5 then max = 6 end  -- Runes always 6
             if max < 1 then max = 1 end
@@ -1035,6 +1455,7 @@ function CooldownCompanion:ApplyResourceBars()
 
     containerFrame:ClearAllPoints()
     containerFrame:SetSize(totalWidth, 1) -- height set by content
+    containerFrame._lastAppliedWidth = totalWidth
 
     if position == "above" then
         containerFrame:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, -yOfs + stackOffset)
@@ -1076,6 +1497,46 @@ function CooldownCompanion:ApplyResourceBars()
     EnableEventFrame()
 
     isApplied = true
+
+    -- Alpha inheritance
+    if settings.inheritAlpha then
+        -- Save original alpha (only if not already saved)
+        if not savedContainerAlpha then
+            savedContainerAlpha = containerFrame:GetAlpha()
+        end
+
+        -- Apply alpha immediately
+        local groupAlpha = groupFrame:GetEffectiveAlpha()
+        containerFrame:SetAlpha(groupAlpha)
+
+        -- Start alpha sync OnUpdate (~30Hz polling)
+        if not alphaSyncFrame then
+            alphaSyncFrame = CreateFrame("Frame")
+        end
+        local lastAlpha = groupAlpha
+        local accumulator = 0
+        local SYNC_INTERVAL = 1 / 30
+        alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+            accumulator = accumulator + dt
+            if accumulator < SYNC_INTERVAL then return end
+            accumulator = 0
+            if not groupFrame then return end
+            local alpha = groupFrame:GetEffectiveAlpha()
+            if alpha ~= lastAlpha then
+                lastAlpha = alpha
+                if containerFrame then containerFrame:SetAlpha(alpha) end
+            end
+        end)
+    else
+        -- inheritAlpha is off — stop sync and restore original if we had it
+        if alphaSyncFrame then
+            alphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        if savedContainerAlpha and containerFrame then
+            containerFrame:SetAlpha(savedContainerAlpha)
+            savedContainerAlpha = nil
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1085,6 +1546,15 @@ end
 function CooldownCompanion:RevertResourceBars()
     if not isApplied then return end
     isApplied = false
+
+    -- Stop alpha sync and restore alpha
+    if alphaSyncFrame then
+        alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    if savedContainerAlpha and containerFrame then
+        containerFrame:SetAlpha(savedContainerAlpha)
+    end
+    savedContainerAlpha = nil
 
     -- Stop OnUpdate
     if onUpdateFrame then
@@ -1111,6 +1581,12 @@ function CooldownCompanion:RevertResourceBars()
 
     isPreviewActive = false
     activeResources = {}
+end
+
+function CooldownCompanion:GetSpecCustomAuraBars()
+    local settings = GetResourceBarSettings()
+    if not settings then return {} end
+    return GetSpecCustomAuraBars(settings)
 end
 
 ------------------------------------------------------------------------
@@ -1174,6 +1650,38 @@ local function ApplyPreviewData()
                         seg:SetValue(0)
                     end
                 end
+            elseif barInfo.barType == "mw_segmented" then
+                -- Preview at 7 stacks (all 5 base full, 2 overlay full)
+                local half = #barInfo.frame.segments
+                for i = 1, half do
+                    barInfo.frame.segments[i]:SetValue(7)
+                    barInfo.frame.overlaySegments[i]:SetValue(7)
+                end
+            elseif barInfo.barType == "custom_continuous" then
+                local cabConfig = barInfo.cabConfig
+                local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+                barInfo.frame:SetMinMaxValues(0, maxStacks)
+                local val = math.ceil(maxStacks * 0.65)
+                barInfo.frame:SetValue(val)
+                if barInfo.frame.text and barInfo.frame.text:IsShown() then
+                    barInfo.frame.text:SetFormattedText("%d / %d", val, maxStacks)
+                end
+            elseif barInfo.barType == "custom_segmented" then
+                local n = #barInfo.frame.segments
+                local fill = math.ceil(n * 0.6)
+                -- Segments have MinMax(i-1, i); C-level clamping handles fill/empty
+                for _, seg in ipairs(barInfo.frame.segments) do
+                    seg:SetValue(fill)
+                end
+            elseif barInfo.barType == "custom_overlay" then
+                local cabConfig = barInfo.cabConfig
+                local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+                local previewStacks = math.ceil(maxStacks * 0.7)
+                local half = barInfo.halfSegments or 1
+                for i = 1, half do
+                    barInfo.frame.segments[i]:SetValue(previewStacks)
+                    barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+                end
             end
         end
     end
@@ -1219,6 +1727,22 @@ local function InstallHooks()
             CooldownCompanion:EvaluateResourceBars()
         end)
     end)
+
+    -- When compact layout changes visible buttons — re-apply if width changed
+    hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+        local s = GetResourceBarSettings()
+        if not s or not s.enabled then return end
+        local anchorGroupId = GetEffectiveAnchorGroupId(s)
+        if anchorGroupId ~= groupId then return end
+        local groupFrame = CooldownCompanion.groupFrames[groupId]
+        if not groupFrame or not containerFrame then return end
+        local newWidth = groupFrame:GetWidth()
+        if containerFrame._lastAppliedWidth
+            and math_abs(newWidth - containerFrame._lastAppliedWidth) < 0.1 then
+            return
+        end
+        CooldownCompanion:ApplyResourceBars()
+    end)
 end
 
 ------------------------------------------------------------------------
@@ -1231,6 +1755,7 @@ initFrame:SetScript("OnEvent", function(self, event)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 
     C_Timer.After(0.5, function()
+        UpdateMWMaxStacks()
         InstallHooks()
         CooldownCompanion:EvaluateResourceBars()
     end)

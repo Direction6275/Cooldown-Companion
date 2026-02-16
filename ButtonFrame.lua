@@ -230,6 +230,8 @@ local function TintProcGlowFrame(frame, color)
     end
 end
 
+local PixelGlowOnUpdate
+
 -- Hide all glow sub-styles in a container table (solidTextures, procFrame, pixelFrame).
 -- Works for procGlow, auraGlow, barAuraEffect, and assistedHighlight containers.
 local function HideGlowStyles(container)
@@ -347,7 +349,7 @@ local function SetAssistedHighlight(button, show)
 end
 
 -- Shared pixel glow OnUpdate animation (used by icon proc glow and bar aura effect)
-local function PixelGlowOnUpdate(self, elapsed)
+PixelGlowOnUpdate = function(self, elapsed)
     self._elapsed = self._elapsed + elapsed
     local btn = self._parentButton
     local w, h = btn:GetSize()
@@ -462,19 +464,19 @@ local function SetProcGlow(button, show)
     -- Build a cache key that includes style, color and size so changes trigger an update
     local desiredState
     if show then
-        local bd = button.buttonData
-        local glowStyle = bd.procGlowStyle or "glow"
-        local c = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
+        local style = button.style
+        local glowStyle = (style and style.procGlowStyle) or "glow"
+        local c = (style and style.procGlowColor) or {1, 1, 1, 1}
         local sz, th
         if glowStyle == "solid" then
-            sz = bd.procGlowSize or 2
+            sz = (style and style.procGlowSize) or 2
         elseif glowStyle == "pixel" then
-            sz = bd.procGlowSize or 4
+            sz = (style and style.procGlowSize) or 4
         else
-            sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
+            sz = (style and style.procGlowSize) or 32
         end
-        th = (glowStyle == "pixel") and (bd.procGlowThickness or 2) or 0
-        local spd = (glowStyle == "pixel") and (bd.procGlowSpeed or 60) or 0
+        th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
+        local spd = (glowStyle == "pixel") and ((style and style.procGlowSpeed) or 60) or 0
         desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
     end
     if button._procGlowActive == desiredState then return end
@@ -484,21 +486,21 @@ local function SetProcGlow(button, show)
 
     if not desiredState then return end
 
-    local bd = button.buttonData
-    local glowStyle = bd.procGlowStyle or "glow"
-    local color = bd.procGlowColor or (button.style and button.style.procGlowColor) or {1, 1, 1, 1}
+    local style = button.style
+    local glowStyle = (style and style.procGlowStyle) or "glow"
+    local color = (style and style.procGlowColor) or {1, 1, 1, 1}
     local sz
     if glowStyle == "solid" then
-        sz = bd.procGlowSize or 2
+        sz = (style and style.procGlowSize) or 2
     elseif glowStyle == "pixel" then
-        sz = bd.procGlowSize or 4
+        sz = (style and style.procGlowSize) or 4
     else
-        sz = bd.procGlowSize or (button.style and button.style.procGlowOverhang) or 32
+        sz = (style and style.procGlowSize) or 32
     end
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
-        thickness = bd.procGlowThickness or 2,
-        speed = bd.procGlowSpeed or 60,
+        thickness = (style and style.procGlowThickness) or 2,
+        speed = (style and style.procGlowSpeed) or 60,
     })
 end
 
@@ -513,27 +515,28 @@ local function SetAuraGlow(button, show, pandemicOverride)
     local desiredState
     if show then
         local bd = button.buttonData
-        local style
+        local btnStyle = button.style
+        local glowStyle
         local c
         if pandemicOverride then
-            style = bd.pandemicGlowStyle or bd.auraGlowStyle or "solid"
-            c = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+            glowStyle = (btnStyle and btnStyle.pandemicGlowStyle) or "solid"
+            c = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
         else
-            style = bd.auraGlowStyle or "none"
-            c = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+            glowStyle = (btnStyle and btnStyle.auraGlowStyle) or "pixel"
+            c = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
         end
-        if style ~= "none" then
+        if glowStyle ~= "none" then
             local sz, th, spd
             if pandemicOverride then
-                sz = bd.pandemicGlowSize or bd.auraGlowSize or (style == "solid" and 2 or style == "pixel" and 4 or 32)
-                th = (style == "pixel") and (bd.pandemicGlowThickness or bd.auraGlowThickness or 2) or 0
-                spd = (style == "pixel") and (bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60) or 0
+                sz = (btnStyle and btnStyle.pandemicGlowSize) or (glowStyle == "solid" and 2 or glowStyle == "pixel" and 4 or 32)
+                th = (glowStyle == "pixel") and ((btnStyle and btnStyle.pandemicGlowThickness) or 2) or 0
+                spd = (glowStyle == "pixel") and ((btnStyle and btnStyle.pandemicGlowSpeed) or 60) or 0
             else
-                sz = bd.auraGlowSize or (style == "solid" and 2 or style == "pixel" and 4 or 32)
-                th = (style == "pixel") and (bd.auraGlowThickness or 2) or 0
-                spd = (style == "pixel") and (bd.auraGlowSpeed or 60) or 0
+                sz = (btnStyle and btnStyle.auraGlowSize) or (glowStyle == "solid" and 2 or glowStyle == "pixel" and 4 or 32)
+                th = (glowStyle == "pixel") and ((btnStyle and btnStyle.auraGlowThickness) or 2) or 0
+                spd = (glowStyle == "pixel") and ((btnStyle and btnStyle.auraGlowSpeed) or 60) or 0
             end
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
         end
     end
 
@@ -545,33 +548,34 @@ local function SetAuraGlow(button, show, pandemicOverride)
     if not desiredState then return end
 
     local bd = button.buttonData
-    local style, color
+    local btnStyle = button.style
+    local glowStyle, color
     if pandemicOverride then
-        style = bd.pandemicGlowStyle or bd.auraGlowStyle or "solid"
-        color = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+        glowStyle = (btnStyle and btnStyle.pandemicGlowStyle) or "solid"
+        color = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
     else
-        style = bd.auraGlowStyle
-        color = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+        glowStyle = (btnStyle and btnStyle.auraGlowStyle) or "pixel"
+        color = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
     end
     local size
     if pandemicOverride then
-        size = bd.pandemicGlowSize or bd.auraGlowSize
+        size = (btnStyle and btnStyle.pandemicGlowSize)
     else
-        size = bd.auraGlowSize
+        size = btnStyle and btnStyle.auraGlowSize
     end
     local thickness, speed
     if pandemicOverride then
-        thickness = bd.pandemicGlowThickness or bd.auraGlowThickness or 2
-        speed = bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60
+        thickness = (btnStyle and btnStyle.pandemicGlowThickness) or 2
+        speed = (btnStyle and btnStyle.pandemicGlowSpeed) or 60
     else
-        thickness = bd.auraGlowThickness or 2
-        speed = bd.auraGlowSpeed or 60
+        thickness = (btnStyle and btnStyle.auraGlowThickness) or 2
+        speed = (btnStyle and btnStyle.auraGlowSpeed) or 60
     end
     -- Default size depends on style
     if not size then
-        size = (style == "solid" and 2) or (style == "pixel" and 4) or 32
+        size = (glowStyle == "solid" and 2) or (glowStyle == "pixel" and 4) or 32
     end
-    ShowGlowStyle(ag, style, button, color, {
+    ShowGlowStyle(ag, glowStyle, button, color, {
         size = size,
         thickness = thickness,
         speed = speed,
@@ -582,12 +586,14 @@ end
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
+local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
        and not buttonData.hideWhileAuraNotActive
-       and not buttonData.hideWhileAuraActive then
+       and not buttonData.hideWhileAuraActive
+       and not buttonData.hideWhileZeroCharges
+       and not buttonData.hideWhileZeroStacks then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
         return
@@ -600,19 +606,18 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
     -- Check hideWhileOnCooldown
     if buttonData.hideWhileOnCooldown then
         if buttonData.hasCharges then
-            -- Charged spells: hide only when all charges consumed
-            if button._mainCDShown then
+            -- Charged spells: hide when recharging or all charges consumed
+            if button._mainCDShown or button._chargeRecharging then
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
-            -- Items: check cooldown widget directly (no GCD concept)
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            if widgetDuration and widgetDuration > 0 then
+            -- Items: check stored cooldown values (no GCD concept)
+            if button._itemCdDuration and button._itemCdDuration > 0 then
                 shouldHide = true
             end
         else
             -- Non-charged spells: _durationObj non-nil means active CD (secret-safe nil check)
-            if button._durationObj and not isOnGCD then
+            if button._durationObj and not isGCDOnly then
                 shouldHide = true
             end
         end
@@ -621,18 +626,17 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
     -- Check hideWhileNotOnCooldown (inverse of hideWhileOnCooldown)
     if buttonData.hideWhileNotOnCooldown then
         if buttonData.hasCharges then
-            -- Charged spells: hide when any charges are available
-            if not button._mainCDShown then
+            -- Charged spells: hide only at max charges
+            if not button._mainCDShown and not button._chargeRecharging then
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            if not widgetDuration or widgetDuration == 0 then
+            if not button._itemCdDuration or button._itemCdDuration == 0 then
                 shouldHide = true
             end
         else
             -- Non-charged spells: not on cooldown (or only on GCD)
-            if not button._durationObj or isOnGCD then
+            if not button._durationObj or isGCDOnly then
                 shouldHide = true
             end
         end
@@ -654,6 +658,24 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         end
     end
 
+    -- Check hideWhileZeroCharges (charge-based items)
+    local hidReasonZeroCharges = false
+    if buttonData.hideWhileZeroCharges then
+        if button._mainCDShown then
+            shouldHide = true
+            hidReasonZeroCharges = true
+        end
+    end
+
+    -- Check hideWhileZeroStacks (stack-based items)
+    local hidReasonZeroStacks = false
+    if buttonData.hideWhileZeroStacks then
+        if (button._itemCount or 0) == 0 then
+            shouldHide = true
+            hidReasonZeroStacks = true
+        end
+    end
+
     -- Baseline alpha fallback: if the ONLY reason we're hiding is aura-not-active
     -- and useBaselineAlphaFallback is enabled, dim instead of hiding
     if shouldHide and hidReasonAuraNotActive and buttonData.useBaselineAlphaFallback then
@@ -661,29 +683,29 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         local otherHide = false
         if buttonData.hideWhileOnCooldown then
             if buttonData.hasCharges then
-                if button._mainCDShown then otherHide = true end
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if wd and wd > 0 then otherHide = true end
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
             else
-                if button._durationObj and not isOnGCD then
+                if button._durationObj and not isGCDOnly then
                     otherHide = true
                 end
             end
         end
         if buttonData.hideWhileNotOnCooldown then
             if buttonData.hasCharges then
-                if not button._mainCDShown then otherHide = true end
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if not wd or wd == 0 then otherHide = true end
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
             else
-                if not button._durationObj or isOnGCD then otherHide = true end
+                if not button._durationObj or isGCDOnly then otherHide = true end
             end
         end
         if buttonData.hideWhileAuraActive and auraOverrideActive then
             otherHide = true
         end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -699,29 +721,89 @@ local function EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrid
         local otherHide = false
         if buttonData.hideWhileOnCooldown then
             if buttonData.hasCharges then
-                if button._mainCDShown then otherHide = true end
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if wd and wd > 0 then otherHide = true end
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
             else
-                if button._durationObj and not isOnGCD then
+                if button._durationObj and not isGCDOnly then
                     otherHide = true
                 end
             end
         end
         if buttonData.hideWhileNotOnCooldown then
             if buttonData.hasCharges then
-                if not button._mainCDShown then otherHide = true end
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if not wd or wd == 0 then otherHide = true end
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
             else
-                if not button._durationObj or isOnGCD then otherHide = true end
+                if not button._durationObj or isGCDOnly then otherHide = true end
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then
             otherHide = true
         end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is zero charges
+    -- and useBaselineAlphaFallbackZeroCharges is enabled, dim instead of hiding
+    if shouldHide and hidReasonZeroCharges and buttonData.useBaselineAlphaFallbackZeroCharges then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.hasCharges then
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown then
+            if buttonData.hasCharges then
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is zero stacks
+    -- and useBaselineAlphaFallbackZeroStacks is enabled, dim instead of hiding
+    if shouldHide and hidReasonZeroStacks and buttonData.useBaselineAlphaFallbackZeroStacks then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.hasCharges then
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown then
+            if buttonData.hasCharges then
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -741,7 +823,7 @@ end
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
-    if button.style.showLossOfControl and button.buttonData.type == "spell" then
+    if button.style.showLossOfControl and button.buttonData.type == "spell" and not button.buttonData.isPassive then
         local locDuration = C_Spell.GetSpellLossOfControlCooldownDuration(button.buttonData.id)
         if locDuration then
             button.locCooldown:SetCooldownFromDurationObject(locDuration)
@@ -810,6 +892,22 @@ end
 
 -- Setup tooltip OnEnter/OnLeave scripts on a button frame.
 -- Shared between icon-mode (CreateButtonFrame) and bar-mode (CreateBarFrame).
+-- Returns the raw Applications FontString text from a viewer frame.
+-- The text is a secret value in combat, so return it as-is for pass-through
+-- to SetText(). Blizzard sets it to "" when stacks <= 1 and to the count
+-- string when stacks > 1.
+local function GetViewerAuraStackText(viewerFrame)
+    -- BuffIcon viewer items: Applications frame -> Applications FontString
+    if viewerFrame.Applications and viewerFrame.Applications.Applications then
+        return viewerFrame.Applications.Applications:GetText()
+    end
+    -- BuffBar viewer items: Icon frame -> Applications FontString
+    if viewerFrame.Icon and viewerFrame.Icon.Applications then
+        return viewerFrame.Icon.Applications:GetText()
+    end
+    return ""
+end
+
 local function SetupTooltipScripts(button)
     button:SetScript("OnEnter", function(self)
         GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
@@ -921,6 +1019,12 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
 
+    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
+    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
+       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
+        button.cooldown:SetDrawBling(false)
+    end
+
     -- Loss of control cooldown frame (red swipe showing lockout duration)
     button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
     button.locCooldown:SetAllPoints(button.icon)
@@ -931,8 +1035,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
+    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
+    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
+       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
+        button.locCooldown:SetDrawBling(false)
+    end
+
     -- Proc glow elements (solid border + animated glow + pixel glow)
-    button.procGlow = CreateGlowContainer(button, style.procGlowOverhang or 32)
+    button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
 
     -- Aura active glow elements (solid border + animated glow + pixel glow)
     button.auraGlow = CreateGlowContainer(button, 32)
@@ -944,7 +1054,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
 
     -- Apply custom cooldown text font settings
-    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cooldownFontSize = style.cooldownFontSize or 12
     local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
     local region = button.cooldown:GetRegions()
@@ -952,6 +1062,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        region:ClearAllPoints()
+        local cdAnchor = style.cooldownTextAnchor or "CENTER"
+        local cdXOff = style.cooldownTextXOffset or 0
+        local cdYOff = style.cooldownTextYOffset or 0
+        region:SetPoint(cdAnchor, cdXOff, cdYOff)
         button._cdTextRegion = region
     end
 
@@ -962,21 +1077,21 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
-    -- Apply custom count text font/anchor settings from per-button data
-    if buttonData.hasCharges then
-        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
-        local chargeFontSize = buttonData.chargeFontSize or 12
-        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+    -- Apply custom count text font/anchor settings from effective style
+    if buttonData.hasCharges or buttonData.isPassive then
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
 
-        local chargeAnchor = buttonData.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = buttonData.chargeXOffset or -2
-        local chargeYOffset = buttonData.chargeYOffset or 2
+        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = style.chargeXOffset or -2
+        local chargeYOffset = style.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = buttonData.itemCountFontSize or 12
         local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
@@ -994,15 +1109,15 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
     do
-        local kbFont = style.keybindFont or "Fonts\\FRIZQT__.TTF"
+        local kbFont = CooldownCompanion:FetchFont(style.keybindFont or "Friz Quadrata TT")
         local kbSize = style.keybindFontSize or 10
         local kbOutline = style.keybindFontOutline or "OUTLINE"
         button.keybindText:SetFont(kbFont, kbSize, kbOutline)
         local kbColor = style.keybindFontColor or {1, 1, 1, 1}
         button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
         local anchor = style.keybindAnchor or "TOPRIGHT"
-        local xOff = (anchor == "TOPLEFT" or anchor == "BOTTOMLEFT") and 2 or -2
-        local yOff = (anchor == "TOPLEFT" or anchor == "TOPRIGHT") and -2 or 2
+        local xOff = style.keybindXOffset or -2
+        local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
         local text = CooldownCompanion:GetKeybindText(buttonData)
         button.keybindText:SetText(text or "")
@@ -1016,6 +1131,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.buttonData = buttonData
     button.index = index
     button.style = style
+
+    -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
+    if buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
+    end
 
     -- Aura tracking runtime state
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
@@ -1149,6 +1269,11 @@ function CooldownCompanion:UpdateButtonIcon(button)
         button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
     end
 
+    -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
+    if displayId ~= prevDisplayId and buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(displayId)
+    end
+
     -- Update bar name text when the display spell changes (e.g. transform)
     if button.nameText and buttonData.type == "spell" and displayId ~= prevDisplayId then
         local spellName = C_Spell.GetSpellName(displayId)
@@ -1172,13 +1297,16 @@ local function UpdateChargeTracking(button, buttonData)
     end
     local mx = buttonData.maxCharges  -- Cached from outside combat
 
-    -- Recharge DurationObject (always works, handles secrets internally)
+    -- Recharge DurationObject for multi-charge spells.
+    -- GetSpellChargeDuration returns nil for maxCharges=1 (Blizzard doesn't treat
+    -- single-charge as charge spells for duration purposes).
     if mx and mx > 1 then
         button._chargeDurationObj = C_Spell.GetSpellChargeDuration(buttonData.id)
     end
 
     -- Display charge text via secret-safe widget methods
-    if not buttonData.showChargeText then
+    local showChargeText = button.style and button.style.showChargeText
+    if not showChargeText then
         button.count:SetText("")
     else
         if cur then
@@ -1198,9 +1326,36 @@ local function UpdateChargeTracking(button, buttonData)
     return charges
 end
 
+-- Item charge tracking (e.g. Hellstone): simpler than spells, no secret values.
+-- Reads charge count via C_Item.GetItemCount with includeUses, updates text display.
+local function UpdateItemChargeTracking(button, buttonData)
+    local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+
+    -- Update persisted maxCharges upward when observable
+    if chargeCount > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = chargeCount
+    end
+
+    -- Display charge text with change detection
+    local showChargeText = button.style and button.style.showChargeText
+    if not showChargeText then
+        button.count:SetText("")
+    elseif button._chargeText ~= chargeCount then
+        button._chargeText = chargeCount
+        button.count:SetText(chargeCount)
+    end
+end
+
 -- Icon tinting: out-of-range red > unusable dimming > normal white.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
+    if buttonData.isPassive then
+        if button._vertexR ~= 1 or button._vertexG ~= 1 or button._vertexB ~= 1 then
+            button._vertexR, button._vertexG, button._vertexB = 1, 1, 1
+            button.icon:SetVertexColor(1, 1, 1)
+        end
+        return
+    end
     local r, g, b = 1, 1, 1
     if style.showOutOfRange then
         if buttonData.type == "spell" then
@@ -1242,7 +1397,8 @@ end
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
-    if fetchOk then
+    -- Passives never suppress — always show cooldown widget for aura swipe
+    if fetchOk and not buttonData.isPassive then
         local suppressGCD = not style.showGCDSwipe and isOnGCD
 
         if suppressGCD then
@@ -1261,13 +1417,13 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if button._auraActive then
             showText = style.showAuraText ~= false
             fontColor = style.auraTextFontColor or {0, 0.925, 1, 1}
-            wantFont = style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+            wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
             wantSize = style.auraTextFontSize or 12
             wantOutline = style.auraTextFontOutline or "OUTLINE"
         else
             showText = style.showCooldownText
             fontColor = style.cooldownFontColor or {1, 1, 1, 1}
-            wantFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+            wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
             wantSize = style.cooldownFontSize or 12
             wantOutline = style.cooldownFontOutline or "OUTLINE"
         end
@@ -1286,8 +1442,15 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     end
 
     -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
-    -- spells/auras; GetCooldownTimes() remains safe for items.
-    if style.desaturateOnCooldown then
+    -- spells/auras; items use stored _itemCdDuration.
+    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
+    if buttonData.isPassive then
+        local wantDesat = (buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
@@ -1295,12 +1458,23 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             elseif button._durationObj then
                 wantDesat = true
             elseif buttonData.type == "item" then
-                local _, widgetDuration = button.cooldown:GetCooldownTimes()
-                wantDesat = widgetDuration and widgetDuration > 0
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
         if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
             wantDesat = false
+        end
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
+        local wantDesat = false
+        if buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+            wantDesat = true
+        end
+        if buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
@@ -1341,7 +1515,11 @@ local function UpdateIconModeGlows(button, buttonData, style)
         if button._procGlowPreview then
             showProc = true
         elseif buttonData.procGlow == true and buttonData.type == "spell" then
-            showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
+            if buttonData.isPassive then
+                showProc = button._auraActive or false
+            else
+                showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
+            end
         end
         SetProcGlow(button, showProc)
     end
@@ -1359,7 +1537,7 @@ local function UpdateIconModeGlows(button, buttonData, style)
             if button._inPandemic then
                 showAuraGlow = true
                 pandemicOverride = true
-            elseif buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+            elseif buttonData.auraIndicatorEnabled then
                 showAuraGlow = true
             end
         end
@@ -1370,6 +1548,12 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
+    local isGCDOnly = false
+
+    -- For transforming spells (e.g. Command Demon → pet ability), use the
+    -- current override spell for cooldown queries. _displaySpellId is set
+    -- by UpdateButtonIcon on SPELL_UPDATE_ICON and creation.
+    local cooldownSpellId = button._displaySpellId or buttonData.id
 
     -- Clear per-tick DurationObject; set below if cooldown/aura active.
     -- Used by bar fill, desaturation, visibility checks instead of
@@ -1429,8 +1613,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
                 local unit = viewerFrame.auraDataUnit or auraUnit
-                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, viewerInstId)
-                if ok and durationObj then
+                local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
+                if durationObj then
                     button._durationObj = durationObj
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
                     button._auraInstanceID = viewerInstId
@@ -1442,23 +1626,24 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Covers spells where the viewer tracks the buff duration internally
                 -- (auraDataUnit set by GetAuraData) but doesn't expose auraInstanceID.
                 local viewerCooldown = viewerFrame.Cooldown
-                if viewerFrame.auraDataUnit and viewerCooldown then
-                    local startMs, durMs = viewerCooldown:GetCooldownTimes()
-                    -- Verify the cooldown hasn't elapsed; GetCooldownTimes() returns
-                    -- the original start/duration even after the buff expires.
-                    -- pcall: during pool cleanup the cooldown widget may hold
-                    -- secret values that reject arithmetic.
-                    local ok, active = pcall(function()
-                        return durMs > 0 and (startMs + durMs) > GetTime() * 1000
-                    end)
-                    if ok and active then
-                        button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                if viewerFrame.auraDataUnit and viewerCooldown and viewerCooldown:IsShown() then
+                    if not viewerCooldown:HasSecretValues() then
+                        -- Plain values: safe to do ms->s arithmetic
+                        local startMs, durMs = viewerCooldown:GetCooldownTimes()
+                        if durMs > 0 and (startMs + durMs) > GetTime() * 1000 then
+                            button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                            auraOverrideActive = true
+                            fetchOk = true
+                        end
+                    else
+                        -- Secret values: can't convert ms->s. Mark aura active;
+                        -- grace period covers continuity from previous tick's display.
                         auraOverrideActive = true
                         fetchOk = true
                     end
-                end
-                if button._auraInstanceID then
-                    button._auraInstanceID = nil
+                    if button._auraInstanceID then
+                        button._auraInstanceID = nil
+                    end
                 end
             end
         end
@@ -1470,7 +1655,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- expiry directly — clears instantly when the aura has genuinely ended.
         -- Slow path (combat, HasSecretValues=true): bounded tick counter.
         if not auraOverrideActive and button._auraActive
-           and prevAuraDurationObj then
+           and prevAuraDurationObj and not buttonData.isPassive then
             local expired = false
             if not prevAuraDurationObj:HasSecretValues() then
                 expired = prevAuraDurationObj:GetRemainingDuration() <= 0
@@ -1492,6 +1677,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
         button._auraActive = auraOverrideActive
 
+        -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
+        if buttonData.isPassive then
+            if auraOverrideActive and viewerFrame then
+                button._auraStackText = GetViewerAuraStackText(viewerFrame)
+            else
+                button._auraStackText = ""
+            end
+        end
+
         -- Pandemic window check: read Blizzard's PandemicIcon from the viewer frame.
         -- Blizzard calculates the exact per-spell pandemic window internally and
         -- shows/hides PandemicIcon accordingly.  Use IsVisible() so that a
@@ -1510,24 +1704,39 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if not auraOverrideActive then
-        if buttonData.type == "spell" then
+        if buttonData.type == "spell" and not buttonData.isPassive then
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
-            -- pcall: SetCooldown fallback may receive secret startTime/duration.
-            local cooldownInfo
-            pcall(function()
-                cooldownInfo = C_Spell.GetSpellCooldown(buttonData.id)
-                if cooldownInfo then
-                    isOnGCD = cooldownInfo.isOnGCD
-                    if not fetchOk then
-                        button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                    end
-                    fetchOk = true
+            -- SetCooldown accepts secret startTime/duration values.
+            local cooldownInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+            if cooldownInfo then
+                isOnGCD = cooldownInfo.isOnGCD
+                if not fetchOk then
+                    button.cooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
                 end
-            end)
+                fetchOk = true
+            end
+            -- GCD-only detection: compare spell's cooldown against GCD reference (61304).
+            -- More reliable than isOnGCD at GCD boundaries (Blizzard CooldownViewer pattern).
+            if cooldownInfo then
+                local gcdInfo = CooldownCompanion._gcdInfo
+                if gcdInfo then
+                    if buttonData._cooldownSecrecy == 0 then
+                        -- NeverSecret: direct comparison is safe
+                        isGCDOnly = (cooldownInfo.startTime == gcdInfo.startTime
+                            and cooldownInfo.duration == gcdInfo.duration)
+                    else
+                        -- Secret cooldown: both signals must agree to avoid false positives.
+                        -- isOnGCD (NeverSecret) = Blizzard's per-spell GCD flag.
+                        -- _gcdActive = widget-level GCD signal (covers boundary where
+                        -- isOnGCD lingers true after GCD ends).
+                        isGCDOnly = isOnGCD and CooldownCompanion._gcdActive
+                    end
+                end
+            end
             -- DurationObject path: HasSecretValues gates IsZero comparison.
             -- Non-secret: use IsZero to filter zero-duration (spell ready).
             -- Secret: fall back to isOnGCD (NeverSecret) as activity signal.
-            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
+            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
             if spellCooldownDuration then
                 local useIt = false
                 if not spellCooldownDuration:HasSecretValues() then
@@ -1542,13 +1751,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 if useIt then
                     button._durationObj = spellCooldownDuration
-                    button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    if not spellCooldownDuration:HasSecretValues() then
+                        button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    end
                     fetchOk = true
                 end
             end
         elseif buttonData.type == "item" then
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
             button.cooldown:SetCooldown(cdStart, cdDuration)
+            button._itemCdStart = cdStart
+            button._itemCdDuration = cdDuration
             fetchOk = true
         end
     end
@@ -1563,27 +1776,41 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
-            and not buttonData.hasCharges
+            and not buttonData.hasCharges and not buttonData.isPassive
     end
 
-    -- Charge count tracking: detect whether the main spell cooldown (0 charges)
+    -- Charge count tracking: detect whether the main cooldown (0 charges)
     -- is active.  Filter GCD so only real cooldown reads as true.
     -- Skip during aura override: button.cooldown shows the aura, not the main CD.
     if buttonData.hasCharges and not auraOverrideActive then
-        if button._isBar then
+        if buttonData.type == "item" then
+            -- Items: 0 charges = on cooldown. No GCD to filter.
+            local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+            button._mainCDShown = (chargeCount == 0)
+        elseif button._isBar then
             -- Bar mode: button.cooldown is not reused for recharge animation.
-            button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+            -- For secret spells, require both GCD signals to agree before filtering,
+            -- preventing false negatives at GCD boundaries.
+            if buttonData._cooldownSecrecy == 0 then
+                button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
+            else
+                button._mainCDShown = button.cooldown:IsShown()
+                    and not (isOnGCD and CooldownCompanion._gcdActive)
+            end
         else
-            -- Icon mode: button.cooldown is reused for the recharge radial, so
-            -- IsShown() stays true even with charges available (SetCooldown(0,0)
-            -- doesn't fully clear a prior SetCooldownFromDurationObject).
-            -- Use scratchCooldown with the spell's main CD DurationObject instead.
-            local mainCDDuration = C_Spell.GetSpellCooldownDuration(buttonData.id)
-            if mainCDDuration then
+            -- Icon mode: prefer scratchCooldown when DurationObject values are plain.
+            -- button.cooldown:IsShown() is unreliable because UpdateIconModeVisuals
+            -- force-shows it and SetCooldown(0,0) does not auto-hide.
+            local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
+            if mainCDDuration and not mainCDDuration:HasSecretValues() then
                 scratchCooldown:Hide()
                 scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
                 button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
                 scratchCooldown:Hide()
+            elseif mainCDDuration then
+                -- Secret values (combat): scratchCooldown fails, fall back to IsShown()
+                button._mainCDShown = button.cooldown:IsShown()
+                    and not (isOnGCD and CooldownCompanion._gcdActive)
             else
                 button._mainCDShown = false
             end
@@ -1595,7 +1822,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     local charges
-    if buttonData.type == "spell" and buttonData.hasCharges then
+    if buttonData.hasCharges then
+      if buttonData.type == "spell" then
         charges = UpdateChargeTracking(button, buttonData)
 
         -- Bar mode: charge bars are driven by the recharge DurationObject, not
@@ -1612,10 +1840,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Charge DurationObjects may report non-zero even at full charges (stale data);
         -- scratchCooldown auto-show is the ground truth.
         if button._chargeDurationObj then
-            scratchCooldown:Hide()
-            scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
-            button._chargeRecharging = scratchCooldown:IsShown()
-            scratchCooldown:Hide()
+            if not button._chargeDurationObj:HasSecretValues() then
+                scratchCooldown:Hide()
+                scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                button._chargeRecharging = scratchCooldown:IsShown()
+                scratchCooldown:Hide()
+            else
+                -- Secret values (combat): SetCooldownFromDurationObject fails.
+                -- Probe scratchCooldown with charge timing data instead
+                -- (SetCooldown accepts secrets; IsShown returns plain bool).
+                -- Uses charge-specific timing, not the main cooldown (which
+                -- includes GCD for on-GCD charge spells like Fire Breath).
+                if charges then
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                    button._chargeRecharging = scratchCooldown:IsShown()
+                    scratchCooldown:Hide()
+                else
+                    button._chargeRecharging = false
+                end
+            end
         else
             button._chargeRecharging = false
         end
@@ -1624,7 +1868,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if not button._isBar then
                 -- Icon mode: always set _durationObj, show recharge radial
                 button._durationObj = button._chargeDurationObj
-                button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                if not button._chargeDurationObj:HasSecretValues() then
+                    button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                elseif charges then
+                    -- Secret: SetCooldownFromDurationObject fails; use SetCooldown
+                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+                end
             elseif button._chargeRecharging then
                 -- Bar mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
@@ -1640,14 +1889,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._durationObj = mainDurationObj
         end
 
+      elseif buttonData.type == "item" then
+        UpdateItemChargeTracking(button, buttonData)
+
+        -- Detect recharging via stored item cooldown values
+        button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0) or false
+      end
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
-    if buttonData.type == "item" and not IsItemEquippable(buttonData) then
+    if buttonData.type == "item" and not buttonData.hasCharges and not IsItemEquippable(buttonData) then
         local count = C_Item.GetItemCount(buttonData.id)
         if button._itemCount ~= count then
             button._itemCount = count
-            if count and count > 1 then
+            if count and count >= 1 then
                 button.count:SetText(count)
             else
                 button.count:SetText("")
@@ -1655,21 +1910,28 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Aura stack count display (passive/proc spells with stackable auras)
+    -- Text is a secret value in combat — pass through directly to SetText.
+    -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
+    if buttonData.isPassive then
+        button.count:SetText(button._auraStackText or "")
+    end
+
     -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
-    if buttonData.chargeFontColor or buttonData.chargeFontColorMissing or buttonData.chargeFontColorZero then
+    if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
         local cc
         if button._mainCDShown then
-            cc = buttonData.chargeFontColorZero or {1, 1, 1, 1}
+            cc = style.chargeFontColorZero or {1, 1, 1, 1}
         elseif button._chargeRecharging then
-            cc = buttonData.chargeFontColorMissing or {1, 1, 1, 1}
+            cc = style.chargeFontColorMissing or {1, 1, 1, 1}
         else
-            cc = buttonData.chargeFontColor or {1, 1, 1, 1}
+            cc = style.chargeFontColor or {1, 1, 1, 1}
         end
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
 
     -- Per-button visibility evaluation (after charge tracking)
-    EvaluateButtonVisibility(button, buttonData, isOnGCD, auraOverrideActive)
+    EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
 
     -- Track if hidden state changed (for compact layout dirty flag)
     if button._visibilityHidden ~= button._prevVisibilityHidden then
@@ -1683,6 +1945,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if not group or not group.compactLayout then
         -- Non-compact mode: alpha=0 for hidden, restore for visible
         if button._visibilityHidden then
+            button.cooldown:Hide()  -- prevent stale IsShown() across ticks
             if button._lastVisAlpha ~= 0 then
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
@@ -1698,6 +1961,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     else
         -- Compact mode: Show/Hide handled by UpdateGroupLayout
         if button._visibilityHidden then
+            -- Prevent stale IsShown() across ticks. SetCooldown(0,0) does not
+            -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
+            -- and icon mode force-show both read stale true on next tick.
+            button.cooldown:Hide()
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1755,6 +2022,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
+    button._auraStackText = nil
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -1785,7 +2053,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.cooldown:SetHideCountdownNumbers(false)
 
     -- Update cooldown font settings (default state; per-tick logic handles aura mode)
-    local cooldownFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cooldownFontSize = style.cooldownFontSize or 12
     local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
     local region = button.cooldown:GetRegions()
@@ -1793,27 +2061,32 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        region:ClearAllPoints()
+        local cdAnchor = style.cooldownTextAnchor or "CENTER"
+        local cdXOff = style.cooldownTextXOffset or 0
+        local cdYOff = style.cooldownTextYOffset or 0
+        region:SetPoint(cdAnchor, cdXOff, cdYOff)
     end
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._cdTextMode = nil
 
-    -- Update count text font/anchor settings from per-button data
+    -- Update count text font/anchor settings from effective style
     button.count:ClearAllPoints()
-    if button.buttonData and button.buttonData.hasCharges then
-        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
-        local chargeFontSize = button.buttonData.chargeFontSize or 12
-        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+    if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
 
-        local chargeAnchor = button.buttonData.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = button.buttonData.chargeXOffset or -2
-        local chargeYOffset = button.buttonData.chargeYOffset or 2
+        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = style.chargeXOffset or -2
+        local chargeYOffset = style.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
-        local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(button.buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = button.buttonData.itemCountFontSize or 12
         local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
@@ -1830,7 +2103,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update keybind text overlay
     if button.keybindText then
-        local kbFont = style.keybindFont or "Fonts\\FRIZQT__.TTF"
+        local kbFont = CooldownCompanion:FetchFont(style.keybindFont or "Friz Quadrata TT")
         local kbSize = style.keybindFontSize or 10
         local kbOutline = style.keybindFontOutline or "OUTLINE"
         button.keybindText:SetFont(kbFont, kbSize, kbOutline)
@@ -1838,8 +2111,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
         button.keybindText:ClearAllPoints()
         local anchor = style.keybindAnchor or "TOPRIGHT"
-        local xOff = (anchor == "TOPLEFT" or anchor == "BOTTOMLEFT") and 2 or -2
-        local yOff = (anchor == "TOPLEFT" or anchor == "TOPRIGHT") and -2 or 2
+        local xOff = style.keybindXOffset or -2
+        local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
         local text = CooldownCompanion:GetKeybindText(button.buttonData)
         button.keybindText:SetText(text or "")
@@ -1870,8 +2143,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update proc glow frames
     if button.procGlow then
         button.procGlow.solidFrame:SetAllPoints()
-        ApplyEdgePositions(button.procGlow.solidTextures, button, button.buttonData.procGlowSize or 2)
-        FitHighlightFrame(button.procGlow.procFrame, button, button.buttonData.procGlowSize or (style.procGlowOverhang or 32))
+        ApplyEdgePositions(button.procGlow.solidTextures, button, style.procGlowSize or 2)
+        FitHighlightFrame(button.procGlow.procFrame, button, style.procGlowSize or 32)
         if button.procGlow.pixelFrame then
             button.procGlow.pixelFrame:SetAllPoints()
         end
@@ -1881,8 +2154,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update aura glow frames
     if button.auraGlow then
         button.auraGlow.solidFrame:SetAllPoints()
-        ApplyEdgePositions(button.auraGlow.solidTextures, button, button.buttonData.auraGlowSize or 2)
-        FitHighlightFrame(button.auraGlow.procFrame, button, button.buttonData.auraGlowSize or 32)
+        ApplyEdgePositions(button.auraGlow.solidTextures, button, button.style.auraGlowSize or 2)
+        FitHighlightFrame(button.auraGlow.procFrame, button, button.style.auraGlowSize or 32)
         if button.auraGlow.pixelFrame then
             button.auraGlow.pixelFrame:SetAllPoints()
         end
@@ -2122,7 +2395,7 @@ UpdateBarFill = function(button)
     -- DurationObject percent methods return secret values during combat in 12.0.1,
     -- but SetValue() accepts secrets (C-side widget method).  HasSecretValues gates
     -- expiry detection and time text formatting.
-    -- Items use SetCooldown() so GetCooldownTimes() remains non-secret for them.
+    -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0
 
@@ -2135,10 +2408,11 @@ UpdateBarFill = function(button)
             button.statusBar:SetValue(button._durationObj:GetElapsedPercent())     -- fill: 0→1
         end
     elseif button.buttonData.type == "item" then
-        -- Items: GetCooldownTimes() is safe (no DurationObject tainting)
-        local startMs, durationMs = button.cooldown:GetCooldownTimes()
+        -- Items: use stored C_Item.GetItemCooldown values (avoids hidden-widget staleness)
+        local startMs = (button._itemCdStart or 0) * 1000
+        local durationMs = (button._itemCdDuration or 0) * 1000
         local now = GetTime() * 1000
-        onCooldown = durationMs and durationMs > 0
+        onCooldown = durationMs > 0
         if onCooldown and button._barGCDSuppressed then onCooldown = false end
         if onCooldown then
             local elapsed = now - startMs
@@ -2165,12 +2439,12 @@ UpdateBarFill = function(button)
             if button._barTextMode ~= mode then
                 button._barTextMode = mode
                 if button._auraActive then
-                    local f = button.style.auraTextFont or "Fonts\\FRIZQT__.TTF"
+                    local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
                     local s = button.style.auraTextFontSize or 12
                     local o = button.style.auraTextFontOutline or "OUTLINE"
                     button.timeText:SetFont(f, s, o)
                 else
-                    local f = button.style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+                    local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
                     local s = button.style.cooldownFontSize or 12
                     local o = button.style.cooldownFontOutline or "OUTLINE"
                     button.timeText:SetFont(f, s, o)
@@ -2207,7 +2481,7 @@ UpdateBarFill = function(button)
         if button.style.showBarReadyText then
             if button._barTextMode ~= "ready" then
                 button._barTextMode = "ready"
-                local f = button.style.barReadyFont or "Fonts\\FRIZQT__.TTF"
+                local f = CooldownCompanion:FetchFont(button.style.barReadyFont or "Friz Quadrata TT")
                 local s = button.style.barReadyFontSize or 12
                 local o = button.style.barReadyFontOutline or "OUTLINE"
                 button.timeText:SetFont(f, s, o)
@@ -2230,8 +2504,7 @@ UpdateBarDisplay = function(button, fetchOk)
     if button._durationObj then
         onCooldown = not button._barGCDSuppressed
     elseif button.buttonData.type == "item" then
-        local _, durationMs = button.cooldown:GetCooldownTimes()
-        onCooldown = durationMs and durationMs > 0
+        onCooldown = button._itemCdDuration and button._itemCdDuration > 0
         if onCooldown and button._barGCDSuppressed then
             onCooldown = false
         end
@@ -2266,7 +2539,14 @@ UpdateBarDisplay = function(button, fetchOk)
     end
 
     -- Icon desaturation (skip during GCD, matching icon-mode behavior)
-    if style.desaturateOnCooldown then
+    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
+    if button.buttonData.isPassive then
+        local wantDesat = (button.buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif style.desaturateOnCooldown then
         local wantDesat = false
         if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then
@@ -2274,12 +2554,23 @@ UpdateBarDisplay = function(button, fetchOk)
             elseif button._durationObj then
                 wantDesat = true
             elseif button.buttonData.type == "item" then
-                local _, durationMs = button.cooldown:GetCooldownTimes()
-                wantDesat = durationMs and durationMs > 0
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
         if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
             wantDesat = false
+        end
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
+        local wantDesat = false
+        if button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+            wantDesat = true
+        end
+        if button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
@@ -2301,12 +2592,12 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
     if button._pandemicPreview then
-        wantAuraColor = button.buttonData.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
+        wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
     elseif button._auraActive then
         if button._inPandemic then
-            wantAuraColor = button.buttonData.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
-        else
-            wantAuraColor = button.buttonData.barAuraColor or DEFAULT_BAR_AURA_COLOR
+            wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
+        elseif button.buttonData.auraIndicatorEnabled then
+            wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
         end
     end
     if button._barAuraColor ~= wantAuraColor then
@@ -2332,7 +2623,9 @@ UpdateBarDisplay = function(button, fetchOk)
 
     -- Bar aura effect (pandemic overrides effect color)
     local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow)
-    SetBarAuraEffect(button, button._auraActive or button._barAuraEffectPreview or button._pandemicPreview, barAuraEffectPandemic or false)
+    local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
+        or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled))
+    SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
     if button.cooldown:IsShown() then
@@ -2348,26 +2641,27 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
     local desiredState
     if show then
         local bd = button.buttonData
+        local btnStyle = button.style
         local effect
         if pandemicOverride then
-            effect = bd.pandemicBarEffect or bd.barAuraEffect or "none"
+            effect = (btnStyle and btnStyle.pandemicBarEffect) or "none"
         else
-            effect = bd.barAuraEffect or "none"
+            effect = (btnStyle and btnStyle.barAuraEffect) or "none"
         end
         if effect ~= "none" then
             local c
             if pandemicOverride then
-                c = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+                c = (btnStyle and btnStyle.pandemicBarEffectColor) or {1, 0.5, 0, 1}
             else
-                c = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+                c = (btnStyle and btnStyle.barAuraEffectColor) or {1, 0.84, 0, 0.9}
             end
             local sz, th
             if pandemicOverride then
-                sz = bd.pandemicBarEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
-                th = (effect == "pixel") and (bd.pandemicBarEffectThickness or 2) or 0
+                sz = (btnStyle and btnStyle.pandemicBarEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
+                th = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or 0
             else
-                sz = bd.barAuraEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
-                th = (effect == "pixel") and (bd.barAuraEffectThickness or 2) or 0
+                sz = (btnStyle and btnStyle.barAuraEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
+                th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 2) or 0
             end
             desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, pandemicOverride and "P" or "")
         end
@@ -2381,30 +2675,31 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
     if not desiredState then return end
 
     local bd = button.buttonData
+    local btnStyle = button.style
     local effect
     if pandemicOverride then
-        effect = bd.pandemicBarEffect or bd.barAuraEffect
+        effect = (btnStyle and btnStyle.pandemicBarEffect) or "none"
     else
-        effect = bd.barAuraEffect
+        effect = (btnStyle and btnStyle.barAuraEffect) or "none"
     end
     local color
     if pandemicOverride then
-        color = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+        color = (btnStyle and btnStyle.pandemicBarEffectColor) or {1, 0.5, 0, 1}
     else
-        color = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+        color = (btnStyle and btnStyle.barAuraEffectColor) or {1, 0.84, 0, 0.9}
     end
     local size
     if pandemicOverride then
-        size = bd.pandemicBarEffectSize
+        size = btnStyle and btnStyle.pandemicBarEffectSize
     else
-        size = bd.barAuraEffectSize
+        size = btnStyle and btnStyle.barAuraEffectSize
     end
     -- Default size depends on effect style
     if not size then
         size = (effect == "solid" and 2) or (effect == "pixel" and 4) or 32
     end
-    local thickness = (pandemicOverride and bd.pandemicBarEffectThickness or bd.barAuraEffectThickness) or 2
-    local speed = (pandemicOverride and bd.pandemicBarEffectSpeed or bd.barAuraEffectSpeed) or 60
+    local thickness = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or (btnStyle and btnStyle.barAuraEffectThickness)) or 2
+    local speed = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 60) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 60
     ShowGlowStyle(ae, effect, button, color, {
         size = size,
         thickness = thickness,
@@ -2496,14 +2791,14 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.statusBar:SetMinMaxValues(0, 1)
     button.statusBar:SetValue(1)
     button.statusBar:SetReverseFill(style.barReverseFill or false)
-    button.statusBar:SetStatusBarTexture("Interface\\BUTTONS\\WHITE8X8")
+    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(style.barTexture or "Solid"))
     local barColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
     button.statusBar:EnableMouse(false)
 
     -- Name text
     button.nameText = button.statusBar:CreateFontString(nil, "OVERLAY")
-    local nameFont = style.barNameFont or "Fonts\\FRIZQT__.TTF"
+    local nameFont = CooldownCompanion:FetchFont(style.barNameFont or "Friz Quadrata TT")
     local nameFontSize = style.barNameFontSize or 10
     local nameFontOutline = style.barNameFontOutline or "OUTLINE"
     button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
@@ -2536,7 +2831,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Time text
     button.timeText = button.statusBar:CreateFontString(nil, "OVERLAY")
-    local cdFont = style.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cdFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cdFontSize = style.cooldownFontSize or 12
     local cdFontOutline = style.cooldownFontOutline or "OUTLINE"
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
@@ -2590,6 +2885,12 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
+    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
+    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
+       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
+        button.locCooldown:SetDrawBling(false)
+    end
+
     -- Hidden cooldown frame for GetCooldownTimes() reads
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetSize(1, 1)
@@ -2598,6 +2899,12 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.cooldown:SetHideCountdownNumbers(true)
     button.cooldown:Hide()
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+
+    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
+    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
+       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
+        button.cooldown:SetDrawBling(false)
+    end
 
     -- Charge/item count text (overlay)
     button.overlayFrame = CreateFrame("Frame", nil, button)
@@ -2610,19 +2917,19 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
-    if buttonData.hasCharges then
-        local chargeFont = buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
-        local chargeFontSize = buttonData.chargeFontSize or 12
-        local chargeFontOutline = buttonData.chargeFontOutline or "OUTLINE"
+    if buttonData.hasCharges or buttonData.isPassive then
+        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = style.chargeFontSize or 12
+        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = buttonData.chargeAnchor or defAnchor
-        local chargeXOffset = buttonData.chargeXOffset or defXOff
-        local chargeYOffset = buttonData.chargeYOffset or defYOff
+        local chargeAnchor = style.chargeAnchor or defAnchor
+        local chargeXOffset = style.chargeXOffset or defXOff
+        local chargeYOffset = style.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        local itemFont = buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = buttonData.itemCountFontSize or 12
         local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
@@ -2640,6 +2947,11 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.buttonData = buttonData
     button.index = index
     button.style = style
+
+    -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
+    if buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
+    end
 
     -- Bar fill interpolation OnUpdate
     button._barFillElapsed = 0
@@ -2788,6 +3100,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
+    button._auraStackText = nil
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -2857,6 +3170,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.statusBar:SetOrientation("HORIZONTAL")
     end
     button.statusBar:SetReverseFill(newStyle.barReverseFill or false)
+    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(newStyle.barTexture or "Solid"))
     local barColor = newStyle.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
 
@@ -2885,7 +3199,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Update name text font and position
     local hasCustomName = button.buttonData and button.buttonData.customName
     if newStyle.showBarNameText ~= false or hasCustomName then
-        local nameFont = newStyle.barNameFont or "Fonts\\FRIZQT__.TTF"
+        local nameFont = CooldownCompanion:FetchFont(newStyle.barNameFont or "Friz Quadrata TT")
         local nameFontSize = newStyle.barNameFontSize or 10
         local nameFontOutline = newStyle.barNameFontOutline or "OUTLINE"
         button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
@@ -2897,7 +3211,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update time text font (default state; per-tick logic handles aura mode)
-    local cdFont = newStyle.cooldownFont or "Fonts\\FRIZQT__.TTF"
+    local cdFont = CooldownCompanion:FetchFont(newStyle.cooldownFont or "Friz Quadrata TT")
     local cdFontSize = newStyle.cooldownFontSize or 12
     local cdFontOutline = newStyle.cooldownFontOutline or "OUTLINE"
     button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
@@ -2957,20 +3271,20 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
-    if button.buttonData and button.buttonData.hasCharges then
-        local chargeFont = button.buttonData.chargeFont or "Fonts\\FRIZQT__.TTF"
-        local chargeFontSize = button.buttonData.chargeFontSize or 12
-        local chargeFontOutline = button.buttonData.chargeFontOutline or "OUTLINE"
+    if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
+        local chargeFont = CooldownCompanion:FetchFont(newStyle.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = newStyle.chargeFontSize or 12
+        local chargeFontOutline = newStyle.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = button.buttonData.chargeFontColor or {1, 1, 1, 1}
+        local chColor = newStyle.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = button.buttonData.chargeAnchor or defAnchor
-        local chargeXOffset = button.buttonData.chargeXOffset or defXOff
-        local chargeYOffset = button.buttonData.chargeYOffset or defYOff
+        local chargeAnchor = newStyle.chargeAnchor or defAnchor
+        local chargeXOffset = newStyle.chargeXOffset or defXOff
+        local chargeYOffset = newStyle.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
-        local itemFont = button.buttonData.itemCountFont or "Fonts\\FRIZQT__.TTF"
+        local itemFont = CooldownCompanion:FetchFont(button.buttonData.itemCountFont or "Friz Quadrata TT")
         local itemFontSize = button.buttonData.itemCountFontSize or 12
         local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
         button.count:SetFont(itemFont, itemFontSize, itemFontOutline)

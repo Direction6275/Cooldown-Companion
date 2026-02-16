@@ -516,7 +516,7 @@ local function DeferredReapply()
     if s.stylingEnabled then
         -- Re-apply custom bar texture (Blizzard resets to atlas on each cast event)
         if s.barTexture and s.barTexture ~= "" then
-            cb:SetStatusBarTexture(s.barTexture)
+            cb:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(s.barTexture))
         end
 
         -- Re-apply custom bar color
@@ -847,7 +847,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         -- Bar fill texture (C widget method — safe)
         local tex = settings.barTexture
         if tex and tex ~= "" then
-            cb:SetStatusBarTexture(tex)
+            cb:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(tex))
         end
 
         -- Background color (C methods on child — safe)
@@ -944,7 +944,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         if cb.Text then
             if settings.showNameText then
                 cb.Text:Show()
-                local nf = settings.nameFont or "Fonts\\FRIZQT__.TTF"
+                local nf = CooldownCompanion:FetchFont(settings.nameFont or "Friz Quadrata TT")
                 local ns = settings.nameFontSize or 10
                 local no = settings.nameFontOutline or "OUTLINE"
                 cb.Text:SetFont(nf, ns, no)
@@ -966,7 +966,7 @@ function CooldownCompanion:ApplyCastBarSettings()
         -- Cast time text — C methods only, NOT showCastTimeSetting
         if cb.CastTimeText then
             if settings.showCastTimeText then
-                local ctf = settings.castTimeFont or "Fonts\\FRIZQT__.TTF"
+                local ctf = CooldownCompanion:FetchFont(settings.castTimeFont or "Friz Quadrata TT")
                 local cts = settings.castTimeFontSize or 10
                 local cto = settings.castTimeFontOutline or "OUTLINE"
                 cb.CastTimeText:SetFont(ctf, cts, cto)
@@ -1184,6 +1184,25 @@ local function InstallHooks()
             C_Timer.After(0.1, function()
                 CooldownCompanion:EvaluateCastBar()
             end)
+        end)
+
+        -- When compact layout changes visible buttons — re-apply FX scaling
+        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+            local s = GetCastBarSettings()
+            if not s or not s.enabled then return end
+            local anchorGroupId = GetEffectiveAnchorGroupId(s)
+            if anchorGroupId ~= groupId then return end
+            if not isApplied then return end
+            local cb = PlayerCastingBarFrame
+            if not cb then return end
+            local groupFrame = CooldownCompanion.groupFrames[groupId]
+            if not groupFrame then return end
+            local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
+            local barWidth = groupFrame:GetWidth()
+            if s.showIcon and not s.iconOffset and s.stylingEnabled then
+                barWidth = barWidth - effectiveHeight
+            end
+            ApplyFXScaling(cb, barWidth, effectiveHeight)
         end)
     end
 end
