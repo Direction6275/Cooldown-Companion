@@ -407,278 +407,41 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 buttonData.auraUnit = nil
             end
 
-            -- Color Settings collapsible section
-            local colorHeading = AceGUI:Create("Heading")
-            colorHeading:SetText("Color Settings")
-            colorHeading:SetFullWidth(true)
-            scroll:AddChild(colorHeading)
-
-            local colorKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_colorSettings"
-            local colorCollapsed = CS.collapsedSections[colorKey]
-
-            local colorCollapseBtn = CreateFrame("Button", nil, colorHeading.frame)
-            table.insert(CS.buttonSettingsCollapseButtons, colorCollapseBtn)
-            colorCollapseBtn:SetSize(16, 16)
-            colorCollapseBtn:SetPoint("LEFT", colorHeading.label, "RIGHT", 4, 0)
-            colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
-            local colorCollapseArrow = colorCollapseBtn:CreateTexture(nil, "ARTWORK")
-            colorCollapseArrow:SetSize(12, 12)
-            colorCollapseArrow:SetPoint("CENTER")
-            colorCollapseArrow:SetAtlas(colorCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-            colorCollapseBtn:SetScript("OnClick", function()
-                CS.collapsedSections[colorKey] = not CS.collapsedSections[colorKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            colorCollapseBtn:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine(colorCollapsed and "Expand" or "Collapse")
-                GameTooltip:Show()
-            end)
-            colorCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-            if not colorCollapsed then
-            local auraNoDesatCb = AceGUI:Create("CheckBox")
-            auraNoDesatCb:SetLabel("Don't Desaturate While Active")
-            auraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
-            auraNoDesatCb:SetFullWidth(true)
-            auraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraNoDesaturate = val or nil
-            end)
-            scroll:AddChild(auraNoDesatCb)
-
-            -- Active buff/debuff indicator controls (hidden for bar mode)
-            if group.displayMode ~= "bars" then
-            local auraGlowDrop = AceGUI:Create("Dropdown")
-            auraGlowDrop:SetLabel("Active Aura Indicator")
-            auraGlowDrop:SetList({
-                ["none"] = "None",
-                ["solid"] = "Solid Border",
-                ["pixel"] = "Pixel Glow",
-                ["glow"] = "Glow",
-            }, {"none", "solid", "pixel", "glow"})
-            auraGlowDrop:SetValue(buttonData.auraGlowStyle or "none")
-            auraGlowDrop:SetFullWidth(true)
-            auraGlowDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraGlowStyle = (val ~= "none") and val or nil
+            -- Enable Active Aura Indicator toggle
+            local auraIndicatorCb = AceGUI:Create("CheckBox")
+            auraIndicatorCb:SetLabel("Enable Active Aura Indicator")
+            auraIndicatorCb:SetValue(buttonData.auraIndicatorEnabled == true)
+            auraIndicatorCb:SetFullWidth(true)
+            auraIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.auraIndicatorEnabled = val or nil
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            scroll:AddChild(auraGlowDrop)
+            scroll:AddChild(auraIndicatorCb)
 
-            if buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
-                local auraGlowColorPicker = AceGUI:Create("ColorPicker")
-                auraGlowColorPicker:SetLabel("Indicator Color")
-                local agc = buttonData.auraGlowColor or {1, 0.84, 0, 0.9}
-                auraGlowColorPicker:SetColor(agc[1], agc[2], agc[3], agc[4] or 0.9)
-                auraGlowColorPicker:SetHasAlpha(true)
-                auraGlowColorPicker:SetFullWidth(true)
-                auraGlowColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                end)
-                auraGlowColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.auraGlowColor = {r, g, b, a}
-                    CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                end)
-                scroll:AddChild(auraGlowColorPicker)
-
-                if buttonData.auraGlowStyle == "solid" then
-                    local auraGlowSizeSlider = AceGUI:Create("Slider")
-                    auraGlowSizeSlider:SetLabel("Border Size")
-                    auraGlowSizeSlider:SetSliderValues(1, 8, 1)
-                    auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 2)
-                    auraGlowSizeSlider:SetFullWidth(true)
-                    auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(auraGlowSizeSlider)
-                elseif buttonData.auraGlowStyle == "pixel" then
-                    local auraGlowSizeSlider = AceGUI:Create("Slider")
-                    auraGlowSizeSlider:SetLabel("Line Length")
-                    auraGlowSizeSlider:SetSliderValues(1, 12, 1)
-                    auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 4)
-                    auraGlowSizeSlider:SetFullWidth(true)
-                    auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(auraGlowSizeSlider)
-
-                    local auraGlowThicknessSlider = AceGUI:Create("Slider")
-                    auraGlowThicknessSlider:SetLabel("Line Thickness")
-                    auraGlowThicknessSlider:SetSliderValues(1, 6, 1)
-                    auraGlowThicknessSlider:SetValue(buttonData.auraGlowThickness or 2)
-                    auraGlowThicknessSlider:SetFullWidth(true)
-                    auraGlowThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowThickness = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(auraGlowThicknessSlider)
-
-                    local auraGlowSpeedSlider = AceGUI:Create("Slider")
-                    auraGlowSpeedSlider:SetLabel("Speed")
-                    auraGlowSpeedSlider:SetSliderValues(10, 200, 5)
-                    auraGlowSpeedSlider:SetValue(buttonData.auraGlowSpeed or 60)
-                    auraGlowSpeedSlider:SetFullWidth(true)
-                    auraGlowSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSpeed = val
-                        -- Live-update the active pixel frame speed
-                        local gf = CooldownCompanion.groupFrames[CS.selectedGroup]
-                        if gf then
-                            for _, btn in ipairs(gf.buttons) do
-                                if btn.index == CS.selectedButton and btn.auraGlow and btn.auraGlow.pixelFrame then
-                                    btn.auraGlow.pixelFrame._speed = val
-                                end
+            if buttonData.auraIndicatorEnabled then
+                if group.displayMode ~= "bars" then
+                    -- Icon mode: preview toggle
+                    local auraGlowPreviewCb = AceGUI:Create("CheckBox")
+                    auraGlowPreviewCb:SetLabel("Preview")
+                    local auraGlowPreviewActive = false
+                    local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
+                    if gFrame then
+                        for _, btn in ipairs(gFrame.buttons) do
+                            if btn.index == CS.selectedButton and btn._auraGlowPreview then
+                                auraGlowPreviewActive = true
+                                break
                             end
                         end
-                    end)
-                    scroll:AddChild(auraGlowSpeedSlider)
-                elseif buttonData.auraGlowStyle == "glow" then
-                    local auraGlowSizeSlider = AceGUI:Create("Slider")
-                    auraGlowSizeSlider:SetLabel("Glow Size")
-                    auraGlowSizeSlider:SetSliderValues(0, 60, 1)
-                    auraGlowSizeSlider:SetValue(buttonData.auraGlowSize or 32)
-                    auraGlowSizeSlider:SetFullWidth(true)
-                    auraGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.auraGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(auraGlowSizeSlider)
-                end
-
-                -- Preview toggle
-                local auraGlowPreviewCb = AceGUI:Create("CheckBox")
-                auraGlowPreviewCb:SetLabel("Preview")
-                local auraGlowPreviewActive = false
-                local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                if gFrame then
-                    for _, btn in ipairs(gFrame.buttons) do
-                        if btn.index == CS.selectedButton and btn._auraGlowPreview then
-                            auraGlowPreviewActive = true
-                            break
-                        end
                     end
-                end
-                auraGlowPreviewCb:SetValue(auraGlowPreviewActive)
-                auraGlowPreviewCb:SetFullWidth(true)
-                auraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    CooldownCompanion:SetAuraGlowPreview(CS.selectedGroup, CS.selectedButton, val)
-                end)
-                scroll:AddChild(auraGlowPreviewCb)
-            end
-            else -- bars: bar-specific aura effect controls
-                local barAuraColorPicker = AceGUI:Create("ColorPicker")
-                barAuraColorPicker:SetLabel(isHarmful and "Bar Color While Debuff Active" or "Bar Color While Buff Active")
-                barAuraColorPicker:SetHasAlpha(true)
-                local bac = buttonData.barAuraColor or {0.2, 1.0, 0.2, 1.0}
-                barAuraColorPicker:SetColor(bac[1], bac[2], bac[3], bac[4])
-                barAuraColorPicker:SetFullWidth(true)
-                barAuraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.barAuraColor = {r, g, b, a}
-                end)
-                barAuraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.barAuraColor = {r, g, b, a}
-                end)
-                scroll:AddChild(barAuraColorPicker)
-
-                local barAuraEffectDrop = AceGUI:Create("Dropdown")
-                barAuraEffectDrop:SetLabel("Bar Active Effect")
-                barAuraEffectDrop:SetList({
-                    ["none"] = "None",
-                    ["pixel"] = "Pixel Glow",
-                    ["solid"] = "Solid Border",
-                    ["glow"] = "Proc Glow",
-                }, {"none", "pixel", "solid", "glow"})
-                barAuraEffectDrop:SetValue(buttonData.barAuraEffect or "none")
-                barAuraEffectDrop:SetFullWidth(true)
-                barAuraEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    buttonData.barAuraEffect = (val ~= "none") and val or nil
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                scroll:AddChild(barAuraEffectDrop)
-
-                if buttonData.barAuraEffect and buttonData.barAuraEffect ~= "none" then
-                    local barAuraEffectColorPicker = AceGUI:Create("ColorPicker")
-                    barAuraEffectColorPicker:SetLabel("Effect Color")
-                    local baec = buttonData.barAuraEffectColor or {1, 0.84, 0, 0.9}
-                    barAuraEffectColorPicker:SetColor(baec[1], baec[2], baec[3], baec[4] or 0.9)
-                    barAuraEffectColorPicker:SetHasAlpha(true)
-                    barAuraEffectColorPicker:SetFullWidth(true)
-                    barAuraEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                        buttonData.barAuraEffectColor = {r, g, b, a}
-                        CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
+                    auraGlowPreviewCb:SetValue(auraGlowPreviewActive)
+                    auraGlowPreviewCb:SetFullWidth(true)
+                    auraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        CooldownCompanion:SetAuraGlowPreview(CS.selectedGroup, CS.selectedButton, val)
                     end)
-                    barAuraEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                        buttonData.barAuraEffectColor = {r, g, b, a}
-                        CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(barAuraEffectColorPicker)
-
-                    if buttonData.barAuraEffect == "solid" then
-                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
-                        barAuraEffectSizeSlider:SetLabel("Border Size")
-                        barAuraEffectSizeSlider:SetSliderValues(1, 8, 1)
-                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 2)
-                        barAuraEffectSizeSlider:SetFullWidth(true)
-                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                            buttonData.barAuraEffectSize = val
-                            CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        end)
-                        scroll:AddChild(barAuraEffectSizeSlider)
-                    elseif buttonData.barAuraEffect == "pixel" then
-                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
-                        barAuraEffectSizeSlider:SetLabel("Line Length")
-                        barAuraEffectSizeSlider:SetSliderValues(2, 12, 1)
-                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 4)
-                        barAuraEffectSizeSlider:SetFullWidth(true)
-                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                            buttonData.barAuraEffectSize = val
-                            CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        end)
-                        scroll:AddChild(barAuraEffectSizeSlider)
-                        local barAuraEffectThicknessSlider = AceGUI:Create("Slider")
-                        barAuraEffectThicknessSlider:SetLabel("Line Thickness")
-                        barAuraEffectThicknessSlider:SetSliderValues(1, 6, 1)
-                        barAuraEffectThicknessSlider:SetValue(buttonData.barAuraEffectThickness or 2)
-                        barAuraEffectThicknessSlider:SetFullWidth(true)
-                        barAuraEffectThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                            buttonData.barAuraEffectThickness = val
-                            CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        end)
-                        scroll:AddChild(barAuraEffectThicknessSlider)
-                        local barAuraEffectSpeedSlider = AceGUI:Create("Slider")
-                        barAuraEffectSpeedSlider:SetLabel("Speed")
-                        barAuraEffectSpeedSlider:SetSliderValues(10, 200, 5)
-                        barAuraEffectSpeedSlider:SetValue(buttonData.barAuraEffectSpeed or 60)
-                        barAuraEffectSpeedSlider:SetFullWidth(true)
-                        barAuraEffectSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                            buttonData.barAuraEffectSpeed = val
-                            -- Update speed live without invalidating (no visual state change)
-                            local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                            if gFrame then
-                                for _, btn in ipairs(gFrame.buttons) do
-                                    if btn.index == CS.selectedButton and btn.barAuraEffect and btn.barAuraEffect.pixelFrame then
-                                        btn.barAuraEffect.pixelFrame._speed = val
-                                    end
-                                end
-                            end
-                        end)
-                        scroll:AddChild(barAuraEffectSpeedSlider)
-                    elseif buttonData.barAuraEffect == "glow" then
-                        local barAuraEffectSizeSlider = AceGUI:Create("Slider")
-                        barAuraEffectSizeSlider:SetLabel("Glow Size")
-                        barAuraEffectSizeSlider:SetSliderValues(0, 60, 1)
-                        barAuraEffectSizeSlider:SetValue(buttonData.barAuraEffectSize or 32)
-                        barAuraEffectSizeSlider:SetFullWidth(true)
-                        barAuraEffectSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                            buttonData.barAuraEffectSize = val
-                            CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        end)
-                        scroll:AddChild(barAuraEffectSizeSlider)
-                    end
-
-                    -- Preview toggle
+                    scroll:AddChild(auraGlowPreviewCb)
+                else
+                    -- Bar mode: preview toggle
                     local barAuraPreviewCb = AceGUI:Create("CheckBox")
                     barAuraPreviewCb:SetLabel("Preview")
                     local barAuraPreviewActive = false
@@ -698,45 +461,25 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                     end)
                     scroll:AddChild(barAuraPreviewCb)
                 end
-            end -- icon/bar color settings branch
-            end -- not colorCollapsed
+            end
 
-            -- Pandemic indicator collapsible section
+            -- Don't Desaturate While Active (aura tracking related)
+            local auraNoDesatCb = AceGUI:Create("CheckBox")
+            auraNoDesatCb:SetLabel("Don't Desaturate While Active")
+            auraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
+            auraNoDesatCb:SetFullWidth(true)
+            auraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
+                buttonData.auraNoDesaturate = val or nil
+            end)
+            scroll:AddChild(auraNoDesatCb)
+
+            -- Pandemic glow/indicator toggles (aura tracking related)
             local pandemicCapable = viewerFrame
                 and viewerFrame.CanTriggerAlertType
                 and viewerFrame:CanTriggerAlertType(Enum.CooldownViewerAlertEventType.PandemicTime)
             if pandemicCapable then
-            local pandemicHeading = AceGUI:Create("Heading")
-            pandemicHeading:SetText("Pandemic Indicator")
-            pandemicHeading:SetFullWidth(true)
-            scroll:AddChild(pandemicHeading)
-
-            local pandemicKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_pandemic"
-            local pandemicCollapsed = CS.collapsedSections[pandemicKey]
-
-            local pandemicCollapseBtn = CreateFrame("Button", nil, pandemicHeading.frame)
-            table.insert(CS.buttonSettingsCollapseButtons, pandemicCollapseBtn)
-            pandemicCollapseBtn:SetSize(16, 16)
-            pandemicCollapseBtn:SetPoint("LEFT", pandemicHeading.label, "RIGHT", 4, 0)
-            pandemicHeading.right:SetPoint("LEFT", pandemicCollapseBtn, "RIGHT", 4, 0)
-            local pandemicCollapseArrow = pandemicCollapseBtn:CreateTexture(nil, "ARTWORK")
-            pandemicCollapseArrow:SetSize(12, 12)
-            pandemicCollapseArrow:SetPoint("CENTER")
-            pandemicCollapseArrow:SetAtlas(pandemicCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-            pandemicCollapseBtn:SetScript("OnClick", function()
-                CS.collapsedSections[pandemicKey] = not CS.collapsedSections[pandemicKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            pandemicCollapseBtn:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine(pandemicCollapsed and "Expand" or "Collapse")
-                GameTooltip:Show()
-            end)
-            pandemicCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-            if not pandemicCollapsed then
             if group.displayMode ~= "bars" then
-            -- Icon mode pandemic controls
+            -- Icon mode: Pandemic Glow toggle
             local pandemicCb = AceGUI:Create("CheckBox")
             pandemicCb:SetLabel("Enable Pandemic Glow")
             pandemicCb:SetValue(buttonData.pandemicGlow == true)
@@ -748,103 +491,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(pandemicCb)
 
             if buttonData.pandemicGlow then
-                local pandemicStyleDrop = AceGUI:Create("Dropdown")
-                pandemicStyleDrop:SetLabel("Pandemic Glow Style")
-                pandemicStyleDrop:SetList({
-                    ["solid"] = "Solid Border",
-                    ["pixel"] = "Pixel Glow",
-                    ["glow"] = "Glow",
-                }, {"solid", "pixel", "glow"})
-                pandemicStyleDrop:SetValue(buttonData.pandemicGlowStyle or buttonData.auraGlowStyle or "solid")
-                pandemicStyleDrop:SetFullWidth(true)
-                pandemicStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    buttonData.pandemicGlowStyle = val
-                    CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                scroll:AddChild(pandemicStyleDrop)
-
-                local pandemicColorPicker = AceGUI:Create("ColorPicker")
-                pandemicColorPicker:SetLabel("Pandemic Glow Color")
-                local pgc = buttonData.pandemicGlowColor or {1, 0.5, 0, 1}
-                pandemicColorPicker:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-                pandemicColorPicker:SetHasAlpha(true)
-                pandemicColorPicker:SetFullWidth(true)
-                pandemicColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    buttonData.pandemicGlowColor = {r, g, b, a}
-                end)
-                pandemicColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    buttonData.pandemicGlowColor = {r, g, b, a}
-                    CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                end)
-                scroll:AddChild(pandemicColorPicker)
-
-                -- Size sliders (varies by pandemic glow style)
-                local currentPandemicStyle = buttonData.pandemicGlowStyle or buttonData.auraGlowStyle or "solid"
-                if currentPandemicStyle == "solid" then
-                    local pandemicSizeSlider = AceGUI:Create("Slider")
-                    pandemicSizeSlider:SetLabel("Border Size")
-                    pandemicSizeSlider:SetSliderValues(1, 8, 1)
-                    pandemicSizeSlider:SetValue(buttonData.pandemicGlowSize or buttonData.auraGlowSize or 2)
-                    pandemicSizeSlider:SetFullWidth(true)
-                    pandemicSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.pandemicGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(pandemicSizeSlider)
-                elseif currentPandemicStyle == "pixel" then
-                    local pandemicSizeSlider = AceGUI:Create("Slider")
-                    pandemicSizeSlider:SetLabel("Line Length")
-                    pandemicSizeSlider:SetSliderValues(1, 12, 1)
-                    pandemicSizeSlider:SetValue(buttonData.pandemicGlowSize or buttonData.auraGlowSize or 4)
-                    pandemicSizeSlider:SetFullWidth(true)
-                    pandemicSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.pandemicGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(pandemicSizeSlider)
-
-                    local pandemicThicknessSlider = AceGUI:Create("Slider")
-                    pandemicThicknessSlider:SetLabel("Line Thickness")
-                    pandemicThicknessSlider:SetSliderValues(1, 6, 1)
-                    pandemicThicknessSlider:SetValue(buttonData.pandemicGlowThickness or buttonData.auraGlowThickness or 2)
-                    pandemicThicknessSlider:SetFullWidth(true)
-                    pandemicThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.pandemicGlowThickness = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(pandemicThicknessSlider)
-
-                    local pandemicSpeedSlider = AceGUI:Create("Slider")
-                    pandemicSpeedSlider:SetLabel("Speed")
-                    pandemicSpeedSlider:SetSliderValues(10, 200, 5)
-                    pandemicSpeedSlider:SetValue(buttonData.pandemicGlowSpeed or buttonData.auraGlowSpeed or 60)
-                    pandemicSpeedSlider:SetFullWidth(true)
-                    pandemicSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.pandemicGlowSpeed = val
-                        local gf = CooldownCompanion.groupFrames[CS.selectedGroup]
-                        if gf then
-                            for _, btn in ipairs(gf.buttons) do
-                                if btn.index == CS.selectedButton and btn.auraGlow and btn.auraGlow.pixelFrame then
-                                    btn.auraGlow.pixelFrame._speed = val
-                                end
-                            end
-                        end
-                    end)
-                    scroll:AddChild(pandemicSpeedSlider)
-                elseif currentPandemicStyle == "glow" then
-                    local pandemicSizeSlider = AceGUI:Create("Slider")
-                    pandemicSizeSlider:SetLabel("Glow Size")
-                    pandemicSizeSlider:SetSliderValues(0, 60, 1)
-                    pandemicSizeSlider:SetValue(buttonData.pandemicGlowSize or buttonData.auraGlowSize or 32)
-                    pandemicSizeSlider:SetFullWidth(true)
-                    pandemicSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.pandemicGlowSize = val
-                        CooldownCompanion:InvalidateAuraGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(pandemicSizeSlider)
-                end
-
                 -- Preview toggle (transient — not saved)
                 local pandemicPreviewCb = AceGUI:Create("CheckBox")
                 pandemicPreviewCb:SetLabel("Preview")
@@ -877,120 +523,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 scroll:AddChild(pandemicCb)
 
                 if buttonData.pandemicGlow then
-                    local pandemicBarColorPicker = AceGUI:Create("ColorPicker")
-                    pandemicBarColorPicker:SetLabel("Pandemic Bar Color")
-                    local bpc = buttonData.barPandemicColor or {1, 0.5, 0, 1}
-                    pandemicBarColorPicker:SetColor(bpc[1], bpc[2], bpc[3], bpc[4])
-                    pandemicBarColorPicker:SetHasAlpha(true)
-                    pandemicBarColorPicker:SetFullWidth(true)
-                    pandemicBarColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                        buttonData.barPandemicColor = {r, g, b, a}
-                    end)
-                    pandemicBarColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                        buttonData.barPandemicColor = {r, g, b, a}
-                    end)
-                    scroll:AddChild(pandemicBarColorPicker)
-
-                    local pandemicEffectDrop = AceGUI:Create("Dropdown")
-                    pandemicEffectDrop:SetLabel("Pandemic Effect")
-                    pandemicEffectDrop:SetList({
-                        ["none"] = "None",
-                        ["pixel"] = "Pixel Glow",
-                        ["solid"] = "Solid Border",
-                        ["glow"] = "Proc Glow",
-                    }, {"none", "pixel", "solid", "glow"})
-                    pandemicEffectDrop:SetValue(buttonData.pandemicBarEffect or buttonData.barAuraEffect or "none")
-                    pandemicEffectDrop:SetFullWidth(true)
-                    pandemicEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.pandemicBarEffect = (val ~= "none") and val or nil
-                        CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                    scroll:AddChild(pandemicEffectDrop)
-
-                    local pandemicEffect = buttonData.pandemicBarEffect or buttonData.barAuraEffect or "none"
-                    if pandemicEffect ~= "none" then
-                        local pandemicEffectColorPicker = AceGUI:Create("ColorPicker")
-                        pandemicEffectColorPicker:SetLabel("Pandemic Effect Color")
-                        local pgc = buttonData.pandemicGlowColor or {1, 0.5, 0, 1}
-                        pandemicEffectColorPicker:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-                        pandemicEffectColorPicker:SetHasAlpha(true)
-                        pandemicEffectColorPicker:SetFullWidth(true)
-                        pandemicEffectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                            buttonData.pandemicGlowColor = {r, g, b, a}
-                            CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        end)
-                        pandemicEffectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                            buttonData.pandemicGlowColor = {r, g, b, a}
-                            CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                        end)
-                        scroll:AddChild(pandemicEffectColorPicker)
-
-                        if pandemicEffect == "solid" then
-                            local pandemicBorderSizeSlider = AceGUI:Create("Slider")
-                            pandemicBorderSizeSlider:SetLabel("Border Size")
-                            pandemicBorderSizeSlider:SetSliderValues(1, 8, 1)
-                            pandemicBorderSizeSlider:SetValue(buttonData.pandemicBarEffectSize or 2)
-                            pandemicBorderSizeSlider:SetFullWidth(true)
-                            pandemicBorderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                                buttonData.pandemicBarEffectSize = val
-                                CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                            end)
-                            scroll:AddChild(pandemicBorderSizeSlider)
-                        elseif pandemicEffect == "pixel" then
-                            local pandemicLineLengthSlider = AceGUI:Create("Slider")
-                            pandemicLineLengthSlider:SetLabel("Line Length")
-                            pandemicLineLengthSlider:SetSliderValues(2, 12, 1)
-                            pandemicLineLengthSlider:SetValue(buttonData.pandemicBarEffectSize or 4)
-                            pandemicLineLengthSlider:SetFullWidth(true)
-                            pandemicLineLengthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                                buttonData.pandemicBarEffectSize = val
-                                CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                            end)
-                            scroll:AddChild(pandemicLineLengthSlider)
-
-                            local pandemicLineThicknessSlider = AceGUI:Create("Slider")
-                            pandemicLineThicknessSlider:SetLabel("Line Thickness")
-                            pandemicLineThicknessSlider:SetSliderValues(1, 6, 1)
-                            pandemicLineThicknessSlider:SetValue(buttonData.pandemicBarEffectThickness or 2)
-                            pandemicLineThicknessSlider:SetFullWidth(true)
-                            pandemicLineThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                                buttonData.pandemicBarEffectThickness = val
-                                CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                            end)
-                            scroll:AddChild(pandemicLineThicknessSlider)
-
-                            local pandemicSpeedSlider = AceGUI:Create("Slider")
-                            pandemicSpeedSlider:SetLabel("Speed")
-                            pandemicSpeedSlider:SetSliderValues(10, 200, 5)
-                            pandemicSpeedSlider:SetValue(buttonData.pandemicBarEffectSpeed or 60)
-                            pandemicSpeedSlider:SetFullWidth(true)
-                            pandemicSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                                buttonData.pandemicBarEffectSpeed = val
-                                local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                                if gFrame then
-                                    for _, btn in ipairs(gFrame.buttons) do
-                                        if btn.index == CS.selectedButton and btn.barAuraEffect and btn.barAuraEffect.pixelFrame then
-                                            btn.barAuraEffect.pixelFrame._speed = val
-                                        end
-                                    end
-                                end
-                            end)
-                            scroll:AddChild(pandemicSpeedSlider)
-                        elseif pandemicEffect == "glow" then
-                            local pandemicGlowSizeSlider = AceGUI:Create("Slider")
-                            pandemicGlowSizeSlider:SetLabel("Glow Size")
-                            pandemicGlowSizeSlider:SetSliderValues(0, 60, 1)
-                            pandemicGlowSizeSlider:SetValue(buttonData.pandemicBarEffectSize or 32)
-                            pandemicGlowSizeSlider:SetFullWidth(true)
-                            pandemicGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                                buttonData.pandemicBarEffectSize = val
-                                CooldownCompanion:InvalidateBarAuraEffect(CS.selectedGroup, CS.selectedButton)
-                            end)
-                            scroll:AddChild(pandemicGlowSizeSlider)
-                        end
-                    end
-
                     -- Preview toggle (transient — not saved)
                     local pandemicPreviewCb = AceGUI:Create("CheckBox")
                     pandemicPreviewCb:SetLabel("Preview")
@@ -1012,209 +544,103 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                     scroll:AddChild(pandemicPreviewCb)
                 end
             end -- icon/bar pandemic branch
-            end -- not pandemicCollapsed
             end -- pandemicCapable
     end -- hasViewerFrame and auraTracking
     end -- canTrackAura
     end -- not auraCollapsed
-    end -- buttonData.type == "spell"
 
-    -- Proc Glow collapsible section (icon mode only)
+    -- Indicators section (available for all spells, icon mode only)
     if group.displayMode ~= "bars" then
-            local procHeading = AceGUI:Create("Heading")
-            procHeading:SetText("Proc Glow")
-            procHeading:SetFullWidth(true)
-            scroll:AddChild(procHeading)
+    local indicatorHeading = AceGUI:Create("Heading")
+    indicatorHeading:SetText("Indicators")
+    indicatorHeading:SetFullWidth(true)
+    scroll:AddChild(indicatorHeading)
 
-            local procKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_procGlow"
-            local procCollapsed = CS.collapsedSections[procKey]
+    local indicatorKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_indicators"
+    local indicatorCollapsed = CS.collapsedSections[indicatorKey]
 
-            local procHeadingCollapseBtn = CreateFrame("Button", nil, procHeading.frame)
-            table.insert(CS.buttonSettingsCollapseButtons, procHeadingCollapseBtn)
-            procHeadingCollapseBtn:SetSize(16, 16)
-            procHeadingCollapseBtn:SetPoint("LEFT", procHeading.label, "RIGHT", 4, 0)
-            procHeading.right:SetPoint("LEFT", procHeadingCollapseBtn, "RIGHT", 4, 0)
-            local procHeadingArrow = procHeadingCollapseBtn:CreateTexture(nil, "ARTWORK")
-            procHeadingArrow:SetSize(12, 12)
-            procHeadingArrow:SetPoint("CENTER")
-            procHeadingArrow:SetAtlas(procCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
-            procHeadingCollapseBtn:SetScript("OnClick", function()
-                CS.collapsedSections[procKey] = not CS.collapsedSections[procKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            procHeadingCollapseBtn:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine(procCollapsed and "Expand" or "Collapse")
-                GameTooltip:Show()
-            end)
-            procHeadingCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    local indicatorCollapseBtn = CreateFrame("Button", nil, indicatorHeading.frame)
+    table.insert(CS.buttonSettingsCollapseButtons, indicatorCollapseBtn)
+    indicatorCollapseBtn:SetSize(16, 16)
+    indicatorCollapseBtn:SetPoint("LEFT", indicatorHeading.label, "RIGHT", 4, 0)
+    indicatorHeading.right:SetPoint("LEFT", indicatorCollapseBtn, "RIGHT", 4, 0)
+    local indicatorCollapseArrow = indicatorCollapseBtn:CreateTexture(nil, "ARTWORK")
+    indicatorCollapseArrow:SetSize(12, 12)
+    indicatorCollapseArrow:SetPoint("CENTER")
+    indicatorCollapseArrow:SetAtlas(indicatorCollapsed and "glues-characterSelect-icon-arrowUp-small" or "glues-characterSelect-icon-arrowDown-small")
+    indicatorCollapseBtn:SetScript("OnClick", function()
+        CS.collapsedSections[indicatorKey] = not CS.collapsedSections[indicatorKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    indicatorCollapseBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(indicatorCollapsed and "Expand" or "Collapse")
+        GameTooltip:Show()
+    end)
+    indicatorCollapseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-            if not procCollapsed then
-            local procCb = AceGUI:Create("CheckBox")
-            procCb:SetLabel("Show Proc Glow")
-            procCb:SetValue(buttonData.procGlow == true)
-            procCb:SetFullWidth(true)
-            procCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.procGlow = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(procCb)
+    if not indicatorCollapsed then
+    -- Proc Glow toggle
+    local procCb = AceGUI:Create("CheckBox")
+    procCb:SetLabel("Show Proc Glow")
+    procCb:SetValue(buttonData.procGlow == true)
+    procCb:SetFullWidth(true)
+    procCb:SetCallback("OnValueChanged", function(widget, event, val)
+        buttonData.procGlow = val
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(procCb)
 
-            -- (?) tooltip for proc glow
-            local procInfo = CreateFrame("Button", nil, procCb.frame)
-            procInfo:SetSize(16, 16)
-            procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
-            local procInfoIcon = procInfo:CreateTexture(nil, "OVERLAY")
-            procInfoIcon:SetSize(12, 12)
-            procInfoIcon:SetPoint("CENTER")
-            procInfoIcon:SetAtlas("QuestRepeatableTurnin")
-            procInfo:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Proc Glow")
-                GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("If this spell does not have a proc associated with it, these settings will have no effect.", 0.7, 0.7, 0.7, true)
-                GameTooltip:Show()
-            end)
-            procInfo:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            table.insert(infoButtons, procInfo)
-            if CooldownCompanion.db.profile.hideInfoButtons then
-                procInfo:Hide()
-            end
+    -- (?) tooltip for proc glow
+    local procInfo = CreateFrame("Button", nil, procCb.frame)
+    procInfo:SetSize(16, 16)
+    procInfo:SetPoint("LEFT", procCb.checkbg, "RIGHT", procCb.text:GetStringWidth() + 4, 0)
+    local procInfoIcon = procInfo:CreateTexture(nil, "OVERLAY")
+    procInfoIcon:SetSize(12, 12)
+    procInfoIcon:SetPoint("CENTER")
+    procInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    procInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Proc Glow")
+        GameTooltip:AddLine("Check this if you want procs associated with this spell to cause the icon's border to glow.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("If this spell does not have a proc associated with it, these settings will have no effect.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    procInfo:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    table.insert(infoButtons, procInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        procInfo:Hide()
+    end
 
-            if buttonData.procGlow == true then
-                -- Style dropdown
-                local procStyleDrop = AceGUI:Create("Dropdown")
-                procStyleDrop:SetLabel("Glow Style")
-                procStyleDrop:SetList({
-                    ["solid"] = "Solid Border",
-                    ["pixel"] = "Pixel Glow",
-                    ["glow"] = "Glow",
-                }, {"solid", "pixel", "glow"})
-                procStyleDrop:SetValue(buttonData.procGlowStyle or "glow")
-                procStyleDrop:SetFullWidth(true)
-                procStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    buttonData.procGlowStyle = val
-                    CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                scroll:AddChild(procStyleDrop)
-
-                -- Color picker (per-button override or group style fallback)
-                local procGlowColor = AceGUI:Create("ColorPicker")
-                procGlowColor:SetLabel("Glow Color")
-                procGlowColor:SetHasAlpha(true)
-                local pgc = (buttonData.styleOverrides and buttonData.styleOverrides.procGlowColor)
-                    or group.style.procGlowColor or {1, 1, 1, 1}
-                procGlowColor:SetColor(pgc[1], pgc[2], pgc[3], pgc[4])
-                procGlowColor:SetFullWidth(true)
-                procGlowColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
-                    if not buttonData.overrideSections then buttonData.overrideSections = {} end
-                    buttonData.styleOverrides.procGlowColor = {r, g, b, a}
-                    buttonData.overrideSections.procGlow = true
-                end)
-                procGlowColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
-                    if not buttonData.overrideSections then buttonData.overrideSections = {} end
-                    buttonData.styleOverrides.procGlowColor = {r, g, b, a}
-                    buttonData.overrideSections.procGlow = true
-                    CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
-                end)
-                scroll:AddChild(procGlowColor)
-
-                -- Size slider (varies by style)
-                local currentProcStyle = buttonData.procGlowStyle or "glow"
-                if currentProcStyle == "solid" then
-                    local procSizeSlider = AceGUI:Create("Slider")
-                    procSizeSlider:SetLabel("Border Size")
-                    procSizeSlider:SetSliderValues(1, 8, 1)
-                    procSizeSlider:SetValue(buttonData.procGlowSize or 2)
-                    procSizeSlider:SetFullWidth(true)
-                    procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.procGlowSize = val
-                        CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(procSizeSlider)
-                elseif currentProcStyle == "pixel" then
-                    local procSizeSlider = AceGUI:Create("Slider")
-                    procSizeSlider:SetLabel("Line Length")
-                    procSizeSlider:SetSliderValues(1, 12, 1)
-                    procSizeSlider:SetValue(buttonData.procGlowSize or 4)
-                    procSizeSlider:SetFullWidth(true)
-                    procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.procGlowSize = val
-                        CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(procSizeSlider)
-
-                    local procThicknessSlider = AceGUI:Create("Slider")
-                    procThicknessSlider:SetLabel("Line Thickness")
-                    procThicknessSlider:SetSliderValues(1, 6, 1)
-                    procThicknessSlider:SetValue(buttonData.procGlowThickness or 2)
-                    procThicknessSlider:SetFullWidth(true)
-                    procThicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.procGlowThickness = val
-                        CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(procThicknessSlider)
-
-                    local procSpeedSlider = AceGUI:Create("Slider")
-                    procSpeedSlider:SetLabel("Speed")
-                    procSpeedSlider:SetSliderValues(10, 200, 5)
-                    procSpeedSlider:SetValue(buttonData.procGlowSpeed or 60)
-                    procSpeedSlider:SetFullWidth(true)
-                    procSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.procGlowSpeed = val
-                        -- Live-update the active pixel frame speed
-                        local gf = CooldownCompanion.groupFrames[CS.selectedGroup]
-                        if gf then
-                            for _, btn in ipairs(gf.buttons) do
-                                if btn.index == CS.selectedButton and btn.procGlow and btn.procGlow.pixelFrame then
-                                    btn.procGlow.pixelFrame._speed = val
-                                end
-                            end
-                        end
-                    end)
-                    scroll:AddChild(procSpeedSlider)
-                elseif currentProcStyle == "glow" then
-                    local procSizeSlider = AceGUI:Create("Slider")
-                    procSizeSlider:SetLabel("Glow Size")
-                    procSizeSlider:SetSliderValues(0, 60, 1)
-                    procSizeSlider:SetValue(buttonData.procGlowSize or group.style.procGlowOverhang or 32)
-                    procSizeSlider:SetFullWidth(true)
-                    procSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        buttonData.procGlowSize = val
-                        CooldownCompanion:InvalidateProcGlow(CS.selectedGroup, CS.selectedButton)
-                    end)
-                    scroll:AddChild(procSizeSlider)
+    if buttonData.procGlow == true then
+        -- Preview toggle (transient — not saved)
+        local previewCb = AceGUI:Create("CheckBox")
+        previewCb:SetLabel("Preview")
+        local previewActive = false
+        local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
+        if gFrame then
+            for _, btn in ipairs(gFrame.buttons) do
+                if btn.index == CS.selectedButton and btn._procGlowPreview then
+                    previewActive = true
+                    break
                 end
-
-                -- Preview toggle (transient — not saved)
-                local previewCb = AceGUI:Create("CheckBox")
-                previewCb:SetLabel("Preview")
-                local previewActive = false
-                local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                if gFrame then
-                    for _, btn in ipairs(gFrame.buttons) do
-                        if btn.index == CS.selectedButton and btn._procGlowPreview then
-                            previewActive = true
-                            break
-                        end
-                    end
-                end
-                previewCb:SetValue(previewActive)
-                previewCb:SetFullWidth(true)
-                previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    CooldownCompanion:SetProcGlowPreview(CS.selectedGroup, CS.selectedButton, val)
-                end)
-                scroll:AddChild(previewCb)
             end
-            end -- not procCollapsed
-    end -- not bars (proc glow)
+        end
+        previewCb:SetValue(previewActive)
+        previewCb:SetFullWidth(true)
+        previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+            CooldownCompanion:SetProcGlowPreview(CS.selectedGroup, CS.selectedButton, val)
+        end)
+        scroll:AddChild(previewCb)
+    end
+    end -- not indicatorCollapsed
+    end -- icon mode
+
+    end -- buttonData.type == "spell"
 
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
 
@@ -2281,17 +1707,24 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
 end
 
 local function BuildProcGlowControls(container, styleTable, refreshCallback)
-    local procGlowSizeSlider = AceGUI:Create("Slider")
-    procGlowSizeSlider:SetLabel("Glow Size")
-    procGlowSizeSlider:SetSliderValues(0, 60, 1)
-    procGlowSizeSlider:SetValue(styleTable.procGlowOverhang or 32)
-    procGlowSizeSlider:SetFullWidth(true)
-    procGlowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.procGlowOverhang = val
+    -- Style dropdown
+    local procStyleDrop = AceGUI:Create("Dropdown")
+    procStyleDrop:SetLabel("Glow Style")
+    procStyleDrop:SetList({
+        ["solid"] = "Solid Border",
+        ["pixel"] = "Pixel Glow",
+        ["glow"] = "Glow",
+    }, {"solid", "pixel", "glow"})
+    procStyleDrop:SetValue(styleTable.procGlowStyle or "glow")
+    procStyleDrop:SetFullWidth(true)
+    procStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.procGlowStyle = val
         refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(procGlowSizeSlider)
+    container:AddChild(procStyleDrop)
 
+    -- Color picker
     local procGlowColor = AceGUI:Create("ColorPicker")
     procGlowColor:SetLabel("Glow Color")
     procGlowColor:SetHasAlpha(true)
@@ -2307,6 +1740,485 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
         refreshCallback()
     end)
     container:AddChild(procGlowColor)
+
+    -- Size/thickness/speed sliders (conditional on style)
+    local currentStyle = styleTable.procGlowStyle or "glow"
+    if currentStyle == "solid" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Border Size")
+        sizeSlider:SetSliderValues(1, 8, 1)
+        sizeSlider:SetValue(styleTable.procGlowSize or 2)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.procGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+    elseif currentStyle == "pixel" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Line Length")
+        sizeSlider:SetSliderValues(1, 12, 1)
+        sizeSlider:SetValue(styleTable.procGlowSize or 4)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.procGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+
+        local thicknessSlider = AceGUI:Create("Slider")
+        thicknessSlider:SetLabel("Line Thickness")
+        thicknessSlider:SetSliderValues(1, 6, 1)
+        thicknessSlider:SetValue(styleTable.procGlowThickness or 2)
+        thicknessSlider:SetFullWidth(true)
+        thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.procGlowThickness = val
+            refreshCallback()
+        end)
+        container:AddChild(thicknessSlider)
+
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Speed")
+        speedSlider:SetSliderValues(10, 200, 5)
+        speedSlider:SetValue(styleTable.procGlowSpeed or 60)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.procGlowSpeed = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
+    elseif currentStyle == "glow" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Glow Size")
+        sizeSlider:SetSliderValues(0, 60, 1)
+        sizeSlider:SetValue(styleTable.procGlowSize or 32)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.procGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+    end
+end
+
+local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
+    -- Style dropdown
+    local styleDrop = AceGUI:Create("Dropdown")
+    styleDrop:SetLabel("Glow Style")
+    styleDrop:SetList({
+        ["solid"] = "Solid Border",
+        ["pixel"] = "Pixel Glow",
+        ["glow"] = "Glow",
+    }, {"solid", "pixel", "glow"})
+    styleDrop:SetValue(styleTable.pandemicGlowStyle or "solid")
+    styleDrop:SetFullWidth(true)
+    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.pandemicGlowStyle = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(styleDrop)
+
+    -- Color picker
+    local colorPicker = AceGUI:Create("ColorPicker")
+    colorPicker:SetLabel("Glow Color")
+    colorPicker:SetHasAlpha(true)
+    local c = styleTable.pandemicGlowColor or {1, 0.5, 0, 1}
+    colorPicker:SetColor(c[1], c[2], c[3], c[4])
+    colorPicker:SetFullWidth(true)
+    colorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.pandemicGlowColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    colorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.pandemicGlowColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(colorPicker)
+
+    -- Size/thickness/speed sliders (conditional on style)
+    local currentStyle = styleTable.pandemicGlowStyle or "solid"
+    if currentStyle == "solid" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Border Size")
+        sizeSlider:SetSliderValues(1, 8, 1)
+        sizeSlider:SetValue(styleTable.pandemicGlowSize or 2)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.pandemicGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+    elseif currentStyle == "pixel" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Line Length")
+        sizeSlider:SetSliderValues(1, 12, 1)
+        sizeSlider:SetValue(styleTable.pandemicGlowSize or 4)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.pandemicGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+
+        local thicknessSlider = AceGUI:Create("Slider")
+        thicknessSlider:SetLabel("Line Thickness")
+        thicknessSlider:SetSliderValues(1, 6, 1)
+        thicknessSlider:SetValue(styleTable.pandemicGlowThickness or 2)
+        thicknessSlider:SetFullWidth(true)
+        thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.pandemicGlowThickness = val
+            refreshCallback()
+        end)
+        container:AddChild(thicknessSlider)
+
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Speed")
+        speedSlider:SetSliderValues(10, 200, 5)
+        speedSlider:SetValue(styleTable.pandemicGlowSpeed or 60)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.pandemicGlowSpeed = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
+    elseif currentStyle == "glow" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Glow Size")
+        sizeSlider:SetSliderValues(0, 60, 1)
+        sizeSlider:SetValue(styleTable.pandemicGlowSize or 32)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.pandemicGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+    end
+end
+
+local function BuildPandemicBarControls(container, styleTable, refreshCallback)
+    -- Pandemic bar color
+    local barColorPicker = AceGUI:Create("ColorPicker")
+    barColorPicker:SetLabel("Pandemic Bar Color")
+    barColorPicker:SetHasAlpha(true)
+    local bpc = styleTable.barPandemicColor or {1, 0.5, 0, 1}
+    barColorPicker:SetColor(bpc[1], bpc[2], bpc[3], bpc[4])
+    barColorPicker:SetFullWidth(true)
+    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.barPandemicColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.barPandemicColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(barColorPicker)
+
+    -- Effect dropdown
+    local effectDrop = AceGUI:Create("Dropdown")
+    effectDrop:SetLabel("Pandemic Effect")
+    effectDrop:SetList({
+        ["none"] = "None",
+        ["pixel"] = "Pixel Glow",
+        ["solid"] = "Solid Border",
+        ["glow"] = "Proc Glow",
+    }, {"none", "pixel", "solid", "glow"})
+    effectDrop:SetValue(styleTable.pandemicBarEffect or "none")
+    effectDrop:SetFullWidth(true)
+    effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.pandemicBarEffect = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(effectDrop)
+
+    local currentEffect = styleTable.pandemicBarEffect or "none"
+    if currentEffect ~= "none" then
+        -- Effect color
+        local effectColorPicker = AceGUI:Create("ColorPicker")
+        effectColorPicker:SetLabel("Pandemic Effect Color")
+        effectColorPicker:SetHasAlpha(true)
+        local ec = styleTable.pandemicBarEffectColor or {1, 0.5, 0, 1}
+        effectColorPicker:SetColor(ec[1], ec[2], ec[3], ec[4])
+        effectColorPicker:SetFullWidth(true)
+        effectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.pandemicBarEffectColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        effectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.pandemicBarEffectColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(effectColorPicker)
+
+        -- Size/thickness/speed sliders (conditional on effect)
+        if currentEffect == "solid" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Border Size")
+            sizeSlider:SetSliderValues(1, 8, 1)
+            sizeSlider:SetValue(styleTable.pandemicBarEffectSize or 2)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.pandemicBarEffectSize = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+        elseif currentEffect == "pixel" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Line Length")
+            sizeSlider:SetSliderValues(2, 12, 1)
+            sizeSlider:SetValue(styleTable.pandemicBarEffectSize or 4)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.pandemicBarEffectSize = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+
+            local thicknessSlider = AceGUI:Create("Slider")
+            thicknessSlider:SetLabel("Line Thickness")
+            thicknessSlider:SetSliderValues(1, 6, 1)
+            thicknessSlider:SetValue(styleTable.pandemicBarEffectThickness or 2)
+            thicknessSlider:SetFullWidth(true)
+            thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.pandemicBarEffectThickness = val
+                refreshCallback()
+            end)
+            container:AddChild(thicknessSlider)
+
+            local speedSlider = AceGUI:Create("Slider")
+            speedSlider:SetLabel("Speed")
+            speedSlider:SetSliderValues(10, 200, 5)
+            speedSlider:SetValue(styleTable.pandemicBarEffectSpeed or 60)
+            speedSlider:SetFullWidth(true)
+            speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.pandemicBarEffectSpeed = val
+                refreshCallback()
+            end)
+            container:AddChild(speedSlider)
+        elseif currentEffect == "glow" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Glow Size")
+            sizeSlider:SetSliderValues(0, 60, 1)
+            sizeSlider:SetValue(styleTable.pandemicBarEffectSize or 32)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.pandemicBarEffectSize = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+        end
+    end
+end
+
+local function BuildAuraIndicatorControls(container, styleTable, refreshCallback)
+    -- Style dropdown (no "none" — toggle handles enable/disable)
+    local styleDrop = AceGUI:Create("Dropdown")
+    styleDrop:SetLabel("Glow Style")
+    styleDrop:SetList({
+        ["solid"] = "Solid Border",
+        ["pixel"] = "Pixel Glow",
+        ["glow"] = "Glow",
+    }, {"solid", "pixel", "glow"})
+    styleDrop:SetValue(styleTable.auraGlowStyle or "pixel")
+    styleDrop:SetFullWidth(true)
+    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.auraGlowStyle = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(styleDrop)
+
+    -- Color picker
+    local colorPicker = AceGUI:Create("ColorPicker")
+    colorPicker:SetLabel("Indicator Color")
+    colorPicker:SetHasAlpha(true)
+    local c = styleTable.auraGlowColor or {1, 0.84, 0, 0.9}
+    colorPicker:SetColor(c[1], c[2], c[3], c[4])
+    colorPicker:SetFullWidth(true)
+    colorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.auraGlowColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    colorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.auraGlowColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(colorPicker)
+
+    -- Size/thickness/speed sliders (conditional on style)
+    local currentStyle = styleTable.auraGlowStyle or "pixel"
+    if currentStyle == "solid" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Border Size")
+        sizeSlider:SetSliderValues(1, 8, 1)
+        sizeSlider:SetValue(styleTable.auraGlowSize or 2)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+    elseif currentStyle == "pixel" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Line Length")
+        sizeSlider:SetSliderValues(1, 12, 1)
+        sizeSlider:SetValue(styleTable.auraGlowSize or 4)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+
+        local thicknessSlider = AceGUI:Create("Slider")
+        thicknessSlider:SetLabel("Line Thickness")
+        thicknessSlider:SetSliderValues(1, 6, 1)
+        thicknessSlider:SetValue(styleTable.auraGlowThickness or 2)
+        thicknessSlider:SetFullWidth(true)
+        thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraGlowThickness = val
+            refreshCallback()
+        end)
+        container:AddChild(thicknessSlider)
+
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Speed")
+        speedSlider:SetSliderValues(10, 200, 5)
+        speedSlider:SetValue(styleTable.auraGlowSpeed or 60)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraGlowSpeed = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
+    elseif currentStyle == "glow" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Glow Size")
+        sizeSlider:SetSliderValues(0, 60, 1)
+        sizeSlider:SetValue(styleTable.auraGlowSize or 32)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraGlowSize = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+    end
+end
+
+local function BuildBarActiveAuraControls(container, styleTable, refreshCallback)
+    -- Bar aura color
+    local barColorPicker = AceGUI:Create("ColorPicker")
+    barColorPicker:SetLabel("Active Aura Bar Color")
+    barColorPicker:SetHasAlpha(true)
+    local bac = styleTable.barAuraColor or {0.2, 1.0, 0.2, 1.0}
+    barColorPicker:SetColor(bac[1], bac[2], bac[3], bac[4])
+    barColorPicker:SetFullWidth(true)
+    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.barAuraColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.barAuraColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(barColorPicker)
+
+    -- Effect dropdown
+    local effectDrop = AceGUI:Create("Dropdown")
+    effectDrop:SetLabel("Active Aura Effect")
+    effectDrop:SetList({
+        ["none"] = "None",
+        ["pixel"] = "Pixel Glow",
+        ["solid"] = "Solid Border",
+        ["glow"] = "Proc Glow",
+    }, {"none", "pixel", "solid", "glow"})
+    effectDrop:SetValue(styleTable.barAuraEffect or "none")
+    effectDrop:SetFullWidth(true)
+    effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.barAuraEffect = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(effectDrop)
+
+    local currentEffect = styleTable.barAuraEffect or "none"
+    if currentEffect ~= "none" then
+        -- Effect color
+        local effectColorPicker = AceGUI:Create("ColorPicker")
+        effectColorPicker:SetLabel("Effect Color")
+        effectColorPicker:SetHasAlpha(true)
+        local ec = styleTable.barAuraEffectColor or {1, 0.84, 0, 0.9}
+        effectColorPicker:SetColor(ec[1], ec[2], ec[3], ec[4])
+        effectColorPicker:SetFullWidth(true)
+        effectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.barAuraEffectColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        effectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.barAuraEffectColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(effectColorPicker)
+
+        -- Size/thickness/speed sliders (conditional on effect)
+        if currentEffect == "solid" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Border Size")
+            sizeSlider:SetSliderValues(1, 8, 1)
+            sizeSlider:SetValue(styleTable.barAuraEffectSize or 2)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.barAuraEffectSize = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+        elseif currentEffect == "pixel" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Line Length")
+            sizeSlider:SetSliderValues(2, 12, 1)
+            sizeSlider:SetValue(styleTable.barAuraEffectSize or 4)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.barAuraEffectSize = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+
+            local thicknessSlider = AceGUI:Create("Slider")
+            thicknessSlider:SetLabel("Line Thickness")
+            thicknessSlider:SetSliderValues(1, 6, 1)
+            thicknessSlider:SetValue(styleTable.barAuraEffectThickness or 2)
+            thicknessSlider:SetFullWidth(true)
+            thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.barAuraEffectThickness = val
+                refreshCallback()
+            end)
+            container:AddChild(thicknessSlider)
+
+            local speedSlider = AceGUI:Create("Slider")
+            speedSlider:SetLabel("Speed")
+            speedSlider:SetSliderValues(10, 200, 5)
+            speedSlider:SetValue(styleTable.barAuraEffectSpeed or 60)
+            speedSlider:SetFullWidth(true)
+            speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.barAuraEffectSpeed = val
+                refreshCallback()
+            end)
+            container:AddChild(speedSlider)
+        elseif currentEffect == "glow" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Glow Size")
+            sizeSlider:SetSliderValues(0, 60, 1)
+            sizeSlider:SetValue(styleTable.barAuraEffectSize or 32)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable.barAuraEffectSize = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+        end
+    end
 end
 
 local function BuildBarColorsControls(container, styleTable, refreshCallback)
@@ -2553,8 +2465,8 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     local sectionOrder = {
         "borderSettings", "backgroundColor", "cooldownText", "auraText",
         "keybindText", "chargeText", "desaturation", "lossOfControl",
-        "unusableDimming", "assistedHighlight", "procGlow",
-        "barColors", "barNameText", "barReadyText",
+        "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator",
+        "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
     }
 
     -- Map of section IDs to builder functions
@@ -2570,9 +2482,13 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         unusableDimming = BuildUnusableDimmingControls,
         assistedHighlight = BuildAssistedHighlightControls,
         procGlow = BuildProcGlowControls,
+        pandemicGlow = BuildPandemicGlowControls,
+        auraIndicator = BuildAuraIndicatorControls,
         barColors = BuildBarColorsControls,
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
+        pandemicBar = BuildPandemicBarControls,
+        barActiveAura = BuildBarActiveAuraControls,
     }
 
     for _, sectionId in ipairs(sectionOrder) do
@@ -3066,15 +2982,6 @@ local function BuildExtrasTab(container)
             end)
             container:AddChild(procSlider)
         end
-    end
-
-    -- Proc Glow heading (only when a button is selected)
-    if CS.selectedButton then
-        local procGlowHeading = AceGUI:Create("Heading")
-        procGlowHeading:SetText("Proc Glow")
-        procGlowHeading:SetFullWidth(true)
-        container:AddChild(procGlowHeading)
-        CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
     end
 
     end -- not isBarMode
@@ -4305,6 +4212,28 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(readyOutlineDrop)
     end
 
+    -- Pandemic Indicator section
+    local pandemicBarHeading = AceGUI:Create("Heading")
+    pandemicBarHeading:SetText("Pandemic Indicator")
+    pandemicBarHeading:SetFullWidth(true)
+    container:AddChild(pandemicBarHeading)
+    CreatePromoteButton(pandemicBarHeading, "pandemicBar", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildPandemicBarControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
+    -- Active Aura Indicator section
+    local barAuraHeading = AceGUI:Create("Heading")
+    barAuraHeading:SetText("Active Aura Indicator")
+    barAuraHeading:SetFullWidth(true)
+    container:AddChild(barAuraHeading)
+    CreatePromoteButton(barAuraHeading, "barActiveAura", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildBarActiveAuraControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
 end
 
 local function BuildAppearanceTab(container)
@@ -4811,6 +4740,39 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(chargeYSlider)
     end
+
+    -- Proc Glow section
+    local procGlowHeading = AceGUI:Create("Heading")
+    procGlowHeading:SetText("Proc Glow")
+    procGlowHeading:SetFullWidth(true)
+    container:AddChild(procGlowHeading)
+    CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildProcGlowControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
+    -- Pandemic Glow section
+    local pandemicGlowHeading = AceGUI:Create("Heading")
+    pandemicGlowHeading:SetText("Pandemic Glow")
+    pandemicGlowHeading:SetFullWidth(true)
+    container:AddChild(pandemicGlowHeading)
+    CreatePromoteButton(pandemicGlowHeading, "pandemicGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildPandemicGlowControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
+    -- Active Aura Indicator section
+    local auraIndicatorHeading = AceGUI:Create("Heading")
+    auraIndicatorHeading:SetText("Active Aura Indicator")
+    auraIndicatorHeading:SetFullWidth(true)
+    container:AddChild(auraIndicatorHeading)
+    CreatePromoteButton(auraIndicatorHeading, "auraIndicator", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildAuraIndicatorControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
 end
 
 ------------------------------------------------------------------------

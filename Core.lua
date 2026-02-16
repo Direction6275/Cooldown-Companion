@@ -140,6 +140,32 @@ local defaults = {
                         lossOfControlColor = {1, 0, 0, 0.5},
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
+                        procGlowStyle = "glow",
+                        procGlowSize = 32,
+                        procGlowThickness = 2,
+                        procGlowSpeed = 60,
+                        pandemicGlowStyle = "solid",
+                        pandemicGlowColor = {1, 0.5, 0, 1},
+                        pandemicGlowSize = 2,
+                        pandemicGlowThickness = 2,
+                        pandemicGlowSpeed = 60,
+                        barPandemicColor = {1, 0.5, 0, 1},
+                        pandemicBarEffect = "none",
+                        pandemicBarEffectColor = {1, 0.5, 0, 1},
+                        pandemicBarEffectSize = 2,
+                        pandemicBarEffectThickness = 2,
+                        pandemicBarEffectSpeed = 60,
+                        auraGlowStyle = "pixel",
+                        auraGlowColor = {1, 0.84, 0, 0.9},
+                        auraGlowSize = 4,
+                        auraGlowThickness = 2,
+                        auraGlowSpeed = 60,
+                        barAuraColor = {0.2, 1.0, 0.2, 1.0},
+                        barAuraEffect = "none",
+                        barAuraEffectColor = {1, 0.84, 0, 0.9},
+                        barAuraEffectSize = 4,
+                        barAuraEffectThickness = 2,
+                        barAuraEffectSpeed = 60,
                         strataOrder = nil, -- custom layer order (array of 4 keys) or nil for default
                         showKeybindText = false,
                         keybindFont = "Friz Quadrata TT",
@@ -217,6 +243,32 @@ local defaults = {
             lossOfControlColor = {1, 0, 0, 0.5},
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
+            procGlowStyle = "glow",
+            procGlowSize = 32,
+            procGlowThickness = 2,
+            procGlowSpeed = 60,
+            pandemicGlowStyle = "solid",
+            pandemicGlowColor = {1, 0.5, 0, 1},
+            pandemicGlowSize = 2,
+            pandemicGlowThickness = 2,
+            pandemicGlowSpeed = 60,
+            barPandemicColor = {1, 0.5, 0, 1},
+            pandemicBarEffect = "none",
+            pandemicBarEffectColor = {1, 0.5, 0, 1},
+            pandemicBarEffectSize = 2,
+            pandemicBarEffectThickness = 2,
+            pandemicBarEffectSpeed = 60,
+            auraGlowStyle = "pixel",
+            auraGlowColor = {1, 0.84, 0, 0.9},
+            auraGlowSize = 4,
+            auraGlowThickness = 2,
+            auraGlowSpeed = 60,
+            barAuraColor = {0.2, 1.0, 0.2, 1.0},
+            barAuraEffect = "none",
+            barAuraEffectColor = {1, 0.84, 0, 0.9},
+            barAuraEffectSize = 4,
+            barAuraEffectThickness = 2,
+            barAuraEffectSpeed = 60,
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
             showKeybindText = false,
@@ -414,10 +466,30 @@ ST.OVERRIDE_SECTIONS = {
     },
     procGlow = {
         label = "Proc Glow",
-        keys = {"procGlowOverhang", "procGlowColor"},
+        keys = {"procGlowStyle", "procGlowColor", "procGlowSize", "procGlowThickness", "procGlowSpeed"},
+        modes = {icons = true},
+    },
+    pandemicGlow = {
+        label = "Pandemic Glow",
+        keys = {"pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed"},
+        modes = {icons = true},
+    },
+    auraIndicator = {
+        label = "Active Aura Indicator",
+        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed"},
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab
+    pandemicBar = {
+        label = "Pandemic Indicator",
+        keys = {"barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed"},
+        modes = {bars = true},
+    },
+    barActiveAura = {
+        label = "Active Aura Indicator",
+        keys = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed"},
+        modes = {bars = true},
+    },
     barColors = {
         label = "Bar Colors",
         keys = {"barColor", "barCooldownColor", "barChargeColor", "barBgColor"},
@@ -654,6 +726,10 @@ function CooldownCompanion:OnEnable()
 
     -- Migrate per-button proc glow to style overrides
     self:MigrateProcGlowToStyleOverrides()
+
+    -- Migrate glow appearance settings from per-button to group style
+    self:MigrateGlowSettingsToGroupStyle()
+    self:MigrateAuraIndicatorToGroupStyle()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
@@ -2184,6 +2260,342 @@ function CooldownCompanion:MigrateProcGlowToStyleOverrides()
     end
 
     profile.procGlowOverrideMigrated = true
+end
+
+------------------------------------------------------------------------
+-- MIGRATION: Move glow appearance settings from per-button to group style
+------------------------------------------------------------------------
+local PROC_GLOW_KEYS = {"procGlowStyle", "procGlowSize", "procGlowThickness", "procGlowSpeed"}
+local PROC_GLOW_DEFAULTS = {procGlowStyle = "glow", procGlowSize = 32, procGlowThickness = 2, procGlowSpeed = 60}
+
+local PANDEMIC_GLOW_KEYS = {"pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed"}
+local PANDEMIC_GLOW_DEFAULTS = {pandemicGlowStyle = "solid", pandemicGlowColor = {1, 0.5, 0, 1}, pandemicGlowSize = 2, pandemicGlowThickness = 2, pandemicGlowSpeed = 60}
+
+local PANDEMIC_BAR_KEYS = {"barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed"}
+local PANDEMIC_BAR_DEFAULTS = {barPandemicColor = {1, 0.5, 0, 1}, pandemicBarEffect = "none", pandemicBarEffectColor = {1, 0.5, 0, 1}, pandemicBarEffectSize = 2, pandemicBarEffectThickness = 2, pandemicBarEffectSpeed = 60}
+
+local AURA_INDICATOR_KEYS = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed"}
+local AURA_INDICATOR_DEFAULTS = {auraGlowStyle = "pixel", auraGlowColor = {1, 0.84, 0, 0.9}, auraGlowSize = 4, auraGlowThickness = 2, auraGlowSpeed = 60}
+
+local BAR_ACTIVE_AURA_KEYS = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed"}
+local BAR_ACTIVE_AURA_DEFAULTS = {barAuraColor = {0.2, 1.0, 0.2, 1.0}, barAuraEffect = "none", barAuraEffectColor = {1, 0.84, 0, 0.9}, barAuraEffectSize = 4, barAuraEffectThickness = 2, barAuraEffectSpeed = 60}
+
+-- Compare two values (handles tables and scalars)
+local function ValuesMatch(a, b)
+    if type(a) == "table" and type(b) == "table" then
+        for k = 1, math.max(#a, #b) do
+            if a[k] ~= b[k] then return false end
+        end
+        return true
+    end
+    return a == b
+end
+
+-- Copy a value (deep copy tables)
+local function CopyVal(v)
+    if type(v) == "table" then return CopyTable(v) end
+    return v
+end
+
+-- Generic migration helper: moves per-button keys to group style defaults,
+-- creating overrides for buttons that differ.
+-- keysList: ordered list of style keys
+-- defaultsMap: default values for each key
+-- sectionId: override section ID
+-- resolveButtonValue: function(bd, key) -> value to use for this button (handles renames/fallbacks)
+-- cleanupButton: function(bd) to remove old per-button keys
+local function MigrateKeysToGroupStyle(group, keysList, defaultsMap, sectionId, resolveButtonValue, cleanupButton)
+    local style = group.style
+
+    -- Find first button with any of these keys set → adopt as group defaults
+    local adopted = false
+    if group.buttons then
+        for _, bd in ipairs(group.buttons) do
+            local hasAny = false
+            for _, key in ipairs(keysList) do
+                if resolveButtonValue(bd, key) ~= nil then
+                    hasAny = true
+                    break
+                end
+            end
+            if hasAny then
+                for _, key in ipairs(keysList) do
+                    local val = resolveButtonValue(bd, key)
+                    if val ~= nil then
+                        style[key] = CopyVal(val)
+                    else
+                        style[key] = CopyVal(defaultsMap[key])
+                    end
+                end
+                adopted = true
+                break
+            end
+        end
+    end
+
+    -- No button had custom values → apply defaults to group style
+    if not adopted then
+        for _, key in ipairs(keysList) do
+            if style[key] == nil then
+                style[key] = CopyVal(defaultsMap[key])
+            end
+        end
+    end
+
+    -- Scan all buttons: create overrides for buttons that differ from group defaults
+    if group.buttons then
+        for _, bd in ipairs(group.buttons) do
+            local hasDiff = false
+            for _, key in ipairs(keysList) do
+                local bdVal = resolveButtonValue(bd, key)
+                if bdVal ~= nil then
+                    if not ValuesMatch(bdVal, style[key]) then
+                        hasDiff = true
+                        break
+                    end
+                end
+            end
+
+            if hasDiff then
+                if not bd.styleOverrides then bd.styleOverrides = {} end
+                if not bd.overrideSections then bd.overrideSections = {} end
+                for _, key in ipairs(keysList) do
+                    local bdVal = resolveButtonValue(bd, key)
+                    if bdVal ~= nil then
+                        bd.styleOverrides[key] = CopyVal(bdVal)
+                    else
+                        bd.styleOverrides[key] = CopyVal(style[key])
+                    end
+                end
+                bd.overrideSections[sectionId] = true
+            end
+
+            -- Clean up old per-button keys
+            cleanupButton(bd)
+        end
+    end
+end
+
+function CooldownCompanion:MigrateGlowSettingsToGroupStyle()
+    local profile = self.db.profile
+    if profile.glowSettingsMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style then
+
+        -- 1. Proc Glow (icon mode): migrate procGlowStyle/Size/Thickness/Speed
+        -- Sentinel: procGlowStyle == nil means pre-migration
+        if style.procGlowStyle == nil then
+            -- Handle procGlowOverhang → procGlowSize rename on group style
+            if style.procGlowOverhang then
+                style.procGlowSize = style.procGlowOverhang
+            end
+
+            MigrateKeysToGroupStyle(group, PROC_GLOW_KEYS, PROC_GLOW_DEFAULTS, "procGlow",
+                function(bd, key)
+                    if key == "procGlowSize" then
+                        -- Check for procGlowSize first, then fallback aliases
+                        if bd.procGlowSize ~= nil then return bd.procGlowSize end
+                        return nil
+                    end
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.procGlowStyle = nil
+                    bd.procGlowSize = nil
+                    bd.procGlowThickness = nil
+                    bd.procGlowSpeed = nil
+                    -- Also handle procGlowOverhang in existing styleOverrides
+                    if bd.styleOverrides and bd.styleOverrides.procGlowOverhang then
+                        bd.styleOverrides.procGlowSize = bd.styleOverrides.procGlowSize or bd.styleOverrides.procGlowOverhang
+                        bd.styleOverrides.procGlowOverhang = nil
+                    end
+                end
+            )
+            -- procGlowColor is already on style (handled by prior migration) — add to override section keys
+            -- If any button already has procGlow override with procGlowColor, ensure new keys are populated
+            if group.buttons then
+                for _, bd in ipairs(group.buttons) do
+                    if bd.overrideSections and bd.overrideSections.procGlow and bd.styleOverrides then
+                        -- Ensure all 5 keys are present in override
+                        for _, key in ipairs(PROC_GLOW_KEYS) do
+                            if bd.styleOverrides[key] == nil then
+                                bd.styleOverrides[key] = CopyVal(style[key])
+                            end
+                        end
+                        if bd.styleOverrides.procGlowColor == nil then
+                            bd.styleOverrides.procGlowColor = CopyVal(style.procGlowColor or {1, 1, 1, 1})
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 2. Pandemic Glow (icon mode)
+        if style.pandemicGlowStyle == nil then
+            MigrateKeysToGroupStyle(group, PANDEMIC_GLOW_KEYS, PANDEMIC_GLOW_DEFAULTS, "pandemicGlow",
+                function(bd, key)
+                    -- Resolve legacy fallbacks: auraGlowStyle → pandemicGlowStyle, etc.
+                    if key == "pandemicGlowStyle" then
+                        return bd.pandemicGlowStyle or bd.auraGlowStyle
+                    elseif key == "pandemicGlowSize" then
+                        return bd.pandemicGlowSize or bd.auraGlowSize
+                    elseif key == "pandemicGlowThickness" then
+                        return bd.pandemicGlowThickness or bd.auraGlowThickness
+                    elseif key == "pandemicGlowSpeed" then
+                        return bd.pandemicGlowSpeed or bd.auraGlowSpeed
+                    end
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.pandemicGlowStyle = nil
+                    bd.pandemicGlowColor = nil
+                    bd.pandemicGlowSize = nil
+                    bd.pandemicGlowThickness = nil
+                    bd.pandemicGlowSpeed = nil
+                end
+            )
+        end
+
+        -- 3. Pandemic Bar
+        if style.barPandemicColor == nil then
+            MigrateKeysToGroupStyle(group, PANDEMIC_BAR_KEYS, PANDEMIC_BAR_DEFAULTS, "pandemicBar",
+                function(bd, key)
+                    if key == "pandemicBarEffectColor" then
+                        -- Old code used pandemicGlowColor for bar effect color
+                        return bd.pandemicGlowColor
+                    elseif key == "pandemicBarEffect" then
+                        return bd.pandemicBarEffect or bd.barAuraEffect
+                    end
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.barPandemicColor = nil
+                    bd.pandemicBarEffect = nil
+                    -- pandemicGlowColor in bar context → now pandemicBarEffectColor
+                    -- (pandemicGlowColor already cleaned up by pandemic glow icon migration above)
+                    bd.pandemicBarEffectSize = nil
+                    bd.pandemicBarEffectThickness = nil
+                    bd.pandemicBarEffectSpeed = nil
+                end
+            )
+        end
+
+        end -- if style
+    end
+
+    -- Ensure globalStyle has the new keys
+    local gs = profile.globalStyle
+    if gs then
+        for _, key in ipairs(PROC_GLOW_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(PROC_GLOW_DEFAULTS[key]) end
+        end
+        for _, key in ipairs(PANDEMIC_GLOW_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(PANDEMIC_GLOW_DEFAULTS[key]) end
+        end
+        for _, key in ipairs(PANDEMIC_BAR_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(PANDEMIC_BAR_DEFAULTS[key]) end
+        end
+    end
+
+    profile.glowSettingsMigrated = true
+end
+
+function CooldownCompanion:MigrateAuraIndicatorToGroupStyle()
+    local profile = self.db.profile
+    if profile.auraIndicatorMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style then
+
+        -- 4. Active Aura Indicator (icon mode)
+        if style.auraGlowStyle == nil then
+            -- Pre-scan: record which buttons had non-"none" aura indicator before migration cleans up keys
+            local enabledButtons = {}
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if bd.auraGlowStyle and bd.auraGlowStyle ~= "none" then
+                        enabledButtons[i] = true
+                    end
+                end
+            end
+
+            MigrateKeysToGroupStyle(group, AURA_INDICATOR_KEYS, AURA_INDICATOR_DEFAULTS, "auraIndicator",
+                function(bd, key)
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.auraGlowStyle = nil
+                    bd.auraGlowColor = nil
+                    bd.auraGlowSize = nil
+                    bd.auraGlowThickness = nil
+                    bd.auraGlowSpeed = nil
+                end
+            )
+
+            -- Convert enable state: set auraIndicatorEnabled for buttons that had non-"none" styles
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if enabledButtons[i] then
+                        bd.auraIndicatorEnabled = true
+                    end
+                end
+            end
+        end
+
+        -- 5. Active Aura Indicator (bar mode)
+        if style.barAuraColor == nil then
+            -- Pre-scan: record which buttons had bar aura indicator enabled
+            local enabledButtons = {}
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if bd.barAuraColor or (bd.barAuraEffect and bd.barAuraEffect ~= "none") then
+                        enabledButtons[i] = true
+                    end
+                end
+            end
+
+            MigrateKeysToGroupStyle(group, BAR_ACTIVE_AURA_KEYS, BAR_ACTIVE_AURA_DEFAULTS, "barActiveAura",
+                function(bd, key)
+                    return bd[key]
+                end,
+                function(bd)
+                    bd.barAuraColor = nil
+                    bd.barAuraEffect = nil
+                    bd.barAuraEffectColor = nil
+                    bd.barAuraEffectSize = nil
+                    bd.barAuraEffectThickness = nil
+                    bd.barAuraEffectSpeed = nil
+                end
+            )
+
+            -- Convert enable state
+            if group.buttons then
+                for i, bd in ipairs(group.buttons) do
+                    if enabledButtons[i] then
+                        bd.auraIndicatorEnabled = true
+                    end
+                end
+            end
+        end
+
+        end -- if style
+    end
+
+    -- Ensure globalStyle has the new keys
+    local gs = profile.globalStyle
+    if gs then
+        for _, key in ipairs(AURA_INDICATOR_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(AURA_INDICATOR_DEFAULTS[key]) end
+        end
+        for _, key in ipairs(BAR_ACTIVE_AURA_KEYS) do
+            if gs[key] == nil then gs[key] = CopyVal(BAR_ACTIVE_AURA_DEFAULTS[key]) end
+        end
+    end
+
+    profile.auraIndicatorMigrated = true
 end
 
 -- LSM fetch helpers with fallback

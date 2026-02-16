@@ -464,20 +464,19 @@ local function SetProcGlow(button, show)
     -- Build a cache key that includes style, color and size so changes trigger an update
     local desiredState
     if show then
-        local bd = button.buttonData
         local style = button.style
-        local glowStyle = bd.procGlowStyle or "glow"
+        local glowStyle = (style and style.procGlowStyle) or "glow"
         local c = (style and style.procGlowColor) or {1, 1, 1, 1}
         local sz, th
         if glowStyle == "solid" then
-            sz = bd.procGlowSize or 2
+            sz = (style and style.procGlowSize) or 2
         elseif glowStyle == "pixel" then
-            sz = bd.procGlowSize or 4
+            sz = (style and style.procGlowSize) or 4
         else
-            sz = (style and style.procGlowOverhang) or 32
+            sz = (style and style.procGlowSize) or 32
         end
-        th = (glowStyle == "pixel") and (bd.procGlowThickness or 2) or 0
-        local spd = (glowStyle == "pixel") and (bd.procGlowSpeed or 60) or 0
+        th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
+        local spd = (glowStyle == "pixel") and ((style and style.procGlowSpeed) or 60) or 0
         desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
     end
     if button._procGlowActive == desiredState then return end
@@ -487,22 +486,21 @@ local function SetProcGlow(button, show)
 
     if not desiredState then return end
 
-    local bd = button.buttonData
     local style = button.style
-    local glowStyle = bd.procGlowStyle or "glow"
+    local glowStyle = (style and style.procGlowStyle) or "glow"
     local color = (style and style.procGlowColor) or {1, 1, 1, 1}
     local sz
     if glowStyle == "solid" then
-        sz = bd.procGlowSize or 2
+        sz = (style and style.procGlowSize) or 2
     elseif glowStyle == "pixel" then
-        sz = bd.procGlowSize or 4
+        sz = (style and style.procGlowSize) or 4
     else
-        sz = (style and style.procGlowOverhang) or 32
+        sz = (style and style.procGlowSize) or 32
     end
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
-        thickness = bd.procGlowThickness or 2,
-        speed = bd.procGlowSpeed or 60,
+        thickness = (style and style.procGlowThickness) or 2,
+        speed = (style and style.procGlowSpeed) or 60,
     })
 end
 
@@ -517,27 +515,28 @@ local function SetAuraGlow(button, show, pandemicOverride)
     local desiredState
     if show then
         local bd = button.buttonData
-        local style
+        local btnStyle = button.style
+        local glowStyle
         local c
         if pandemicOverride then
-            style = bd.pandemicGlowStyle or bd.auraGlowStyle or "solid"
-            c = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+            glowStyle = (btnStyle and btnStyle.pandemicGlowStyle) or "solid"
+            c = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
         else
-            style = bd.auraGlowStyle or "none"
-            c = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+            glowStyle = (btnStyle and btnStyle.auraGlowStyle) or "pixel"
+            c = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
         end
-        if style ~= "none" then
+        if glowStyle ~= "none" then
             local sz, th, spd
             if pandemicOverride then
-                sz = bd.pandemicGlowSize or bd.auraGlowSize or (style == "solid" and 2 or style == "pixel" and 4 or 32)
-                th = (style == "pixel") and (bd.pandemicGlowThickness or bd.auraGlowThickness or 2) or 0
-                spd = (style == "pixel") and (bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60) or 0
+                sz = (btnStyle and btnStyle.pandemicGlowSize) or (glowStyle == "solid" and 2 or glowStyle == "pixel" and 4 or 32)
+                th = (glowStyle == "pixel") and ((btnStyle and btnStyle.pandemicGlowThickness) or 2) or 0
+                spd = (glowStyle == "pixel") and ((btnStyle and btnStyle.pandemicGlowSpeed) or 60) or 0
             else
-                sz = bd.auraGlowSize or (style == "solid" and 2 or style == "pixel" and 4 or 32)
-                th = (style == "pixel") and (bd.auraGlowThickness or 2) or 0
-                spd = (style == "pixel") and (bd.auraGlowSpeed or 60) or 0
+                sz = (btnStyle and btnStyle.auraGlowSize) or (glowStyle == "solid" and 2 or glowStyle == "pixel" and 4 or 32)
+                th = (glowStyle == "pixel") and ((btnStyle and btnStyle.auraGlowThickness) or 2) or 0
+                spd = (glowStyle == "pixel") and ((btnStyle and btnStyle.auraGlowSpeed) or 60) or 0
             end
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", style, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
         end
     end
 
@@ -549,33 +548,34 @@ local function SetAuraGlow(button, show, pandemicOverride)
     if not desiredState then return end
 
     local bd = button.buttonData
-    local style, color
+    local btnStyle = button.style
+    local glowStyle, color
     if pandemicOverride then
-        style = bd.pandemicGlowStyle or bd.auraGlowStyle or "solid"
-        color = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+        glowStyle = (btnStyle and btnStyle.pandemicGlowStyle) or "solid"
+        color = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
     else
-        style = bd.auraGlowStyle
-        color = bd.auraGlowColor or {1, 0.84, 0, 0.9}
+        glowStyle = (btnStyle and btnStyle.auraGlowStyle) or "pixel"
+        color = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
     end
     local size
     if pandemicOverride then
-        size = bd.pandemicGlowSize or bd.auraGlowSize
+        size = (btnStyle and btnStyle.pandemicGlowSize)
     else
-        size = bd.auraGlowSize
+        size = btnStyle and btnStyle.auraGlowSize
     end
     local thickness, speed
     if pandemicOverride then
-        thickness = bd.pandemicGlowThickness or bd.auraGlowThickness or 2
-        speed = bd.pandemicGlowSpeed or bd.auraGlowSpeed or 60
+        thickness = (btnStyle and btnStyle.pandemicGlowThickness) or 2
+        speed = (btnStyle and btnStyle.pandemicGlowSpeed) or 60
     else
-        thickness = bd.auraGlowThickness or 2
-        speed = bd.auraGlowSpeed or 60
+        thickness = (btnStyle and btnStyle.auraGlowThickness) or 2
+        speed = (btnStyle and btnStyle.auraGlowSpeed) or 60
     end
     -- Default size depends on style
     if not size then
-        size = (style == "solid" and 2) or (style == "pixel" and 4) or 32
+        size = (glowStyle == "solid" and 2) or (glowStyle == "pixel" and 4) or 32
     end
-    ShowGlowStyle(ag, style, button, color, {
+    ShowGlowStyle(ag, glowStyle, button, color, {
         size = size,
         thickness = thickness,
         speed = speed,
@@ -964,7 +964,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
 
     -- Proc glow elements (solid border + animated glow + pixel glow)
-    button.procGlow = CreateGlowContainer(button, style.procGlowOverhang or 32)
+    button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
 
     -- Aura active glow elements (solid border + animated glow + pixel glow)
     button.auraGlow = CreateGlowContainer(button, 32)
@@ -1438,7 +1438,7 @@ local function UpdateIconModeGlows(button, buttonData, style)
             if button._inPandemic then
                 showAuraGlow = true
                 pandemicOverride = true
-            elseif buttonData.auraGlowStyle and buttonData.auraGlowStyle ~= "none" then
+            elseif buttonData.auraIndicatorEnabled then
                 showAuraGlow = true
             end
         end
@@ -2033,8 +2033,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update proc glow frames
     if button.procGlow then
         button.procGlow.solidFrame:SetAllPoints()
-        ApplyEdgePositions(button.procGlow.solidTextures, button, button.buttonData.procGlowSize or 2)
-        FitHighlightFrame(button.procGlow.procFrame, button, button.buttonData.procGlowSize or (style.procGlowOverhang or 32))
+        ApplyEdgePositions(button.procGlow.solidTextures, button, style.procGlowSize or 2)
+        FitHighlightFrame(button.procGlow.procFrame, button, style.procGlowSize or 32)
         if button.procGlow.pixelFrame then
             button.procGlow.pixelFrame:SetAllPoints()
         end
@@ -2044,8 +2044,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update aura glow frames
     if button.auraGlow then
         button.auraGlow.solidFrame:SetAllPoints()
-        ApplyEdgePositions(button.auraGlow.solidTextures, button, button.buttonData.auraGlowSize or 2)
-        FitHighlightFrame(button.auraGlow.procFrame, button, button.buttonData.auraGlowSize or 32)
+        ApplyEdgePositions(button.auraGlow.solidTextures, button, button.style.auraGlowSize or 2)
+        FitHighlightFrame(button.auraGlow.procFrame, button, button.style.auraGlowSize or 32)
         if button.auraGlow.pixelFrame then
             button.auraGlow.pixelFrame:SetAllPoints()
         end
@@ -2471,12 +2471,12 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
     if button._pandemicPreview then
-        wantAuraColor = button.buttonData.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
+        wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
     elseif button._auraActive then
         if button._inPandemic then
-            wantAuraColor = button.buttonData.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
-        else
-            wantAuraColor = button.buttonData.barAuraColor or DEFAULT_BAR_AURA_COLOR
+            wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
+        elseif button.buttonData.auraIndicatorEnabled then
+            wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
         end
     end
     if button._barAuraColor ~= wantAuraColor then
@@ -2502,7 +2502,9 @@ UpdateBarDisplay = function(button, fetchOk)
 
     -- Bar aura effect (pandemic overrides effect color)
     local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow)
-    SetBarAuraEffect(button, button._auraActive or button._barAuraEffectPreview or button._pandemicPreview, barAuraEffectPandemic or false)
+    local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
+        or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled))
+    SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
     if button.cooldown:IsShown() then
@@ -2518,26 +2520,27 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
     local desiredState
     if show then
         local bd = button.buttonData
+        local btnStyle = button.style
         local effect
         if pandemicOverride then
-            effect = bd.pandemicBarEffect or bd.barAuraEffect or "none"
+            effect = (btnStyle and btnStyle.pandemicBarEffect) or "none"
         else
-            effect = bd.barAuraEffect or "none"
+            effect = (btnStyle and btnStyle.barAuraEffect) or "none"
         end
         if effect ~= "none" then
             local c
             if pandemicOverride then
-                c = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+                c = (btnStyle and btnStyle.pandemicBarEffectColor) or {1, 0.5, 0, 1}
             else
-                c = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+                c = (btnStyle and btnStyle.barAuraEffectColor) or {1, 0.84, 0, 0.9}
             end
             local sz, th
             if pandemicOverride then
-                sz = bd.pandemicBarEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
-                th = (effect == "pixel") and (bd.pandemicBarEffectThickness or 2) or 0
+                sz = (btnStyle and btnStyle.pandemicBarEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
+                th = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or 0
             else
-                sz = bd.barAuraEffectSize or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
-                th = (effect == "pixel") and (bd.barAuraEffectThickness or 2) or 0
+                sz = (btnStyle and btnStyle.barAuraEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
+                th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 2) or 0
             end
             desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, pandemicOverride and "P" or "")
         end
@@ -2551,30 +2554,31 @@ SetBarAuraEffect = function(button, show, pandemicOverride)
     if not desiredState then return end
 
     local bd = button.buttonData
+    local btnStyle = button.style
     local effect
     if pandemicOverride then
-        effect = bd.pandemicBarEffect or bd.barAuraEffect
+        effect = (btnStyle and btnStyle.pandemicBarEffect) or "none"
     else
-        effect = bd.barAuraEffect
+        effect = (btnStyle and btnStyle.barAuraEffect) or "none"
     end
     local color
     if pandemicOverride then
-        color = bd.pandemicGlowColor or {1, 0.5, 0, 1}
+        color = (btnStyle and btnStyle.pandemicBarEffectColor) or {1, 0.5, 0, 1}
     else
-        color = bd.barAuraEffectColor or {1, 0.84, 0, 0.9}
+        color = (btnStyle and btnStyle.barAuraEffectColor) or {1, 0.84, 0, 0.9}
     end
     local size
     if pandemicOverride then
-        size = bd.pandemicBarEffectSize
+        size = btnStyle and btnStyle.pandemicBarEffectSize
     else
-        size = bd.barAuraEffectSize
+        size = btnStyle and btnStyle.barAuraEffectSize
     end
     -- Default size depends on effect style
     if not size then
         size = (effect == "solid" and 2) or (effect == "pixel" and 4) or 32
     end
-    local thickness = (pandemicOverride and bd.pandemicBarEffectThickness or bd.barAuraEffectThickness) or 2
-    local speed = (pandemicOverride and bd.pandemicBarEffectSpeed or bd.barAuraEffectSpeed) or 60
+    local thickness = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or (btnStyle and btnStyle.barAuraEffectThickness)) or 2
+    local speed = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 60) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 60
     ShowGlowStyle(ae, effect, button, color, {
         size = size,
         thickness = thickness,
