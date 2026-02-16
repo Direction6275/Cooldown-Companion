@@ -183,6 +183,11 @@ CS.InitPendingStrataOrder = nil  -- set after definition below
 CS.StartPickFrame = nil          -- set after definition below
 CS.StartPickCDM = nil            -- set after definition below
 CS.ShowPopupAboveConfig = nil    -- set after definition below
+CS.ShowAutocompleteResults = nil -- set after definition below
+CS.HideAutocomplete = nil       -- set after definition below
+CS.SearchAutocompleteInCache = nil   -- set after definition below
+CS.HandleAutocompleteKeyDown = nil   -- set after definition below
+CS.ConsumeAutocompleteEnter = nil    -- set after definition below
 
 local function IsStrataOrderComplete(order)
     if not order then return false end
@@ -2407,10 +2412,9 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Search cache for matches
 ------------------------------------------------------------------------
-local function SearchAutocomplete(query)
+local function SearchAutocompleteInCache(query, cache)
     if not query or #query < 1 then return nil end
 
-    local cache = autocompleteCache or BuildAutocompleteCache()
     local queryLower = query:lower()
     local queryNum = tonumber(query)
     local prefixMatches = {}
@@ -2461,6 +2465,10 @@ local function SearchAutocomplete(query)
     end
 
     return #results > 0 and results or nil
+end
+
+local function SearchAutocomplete(query)
+    return SearchAutocompleteInCache(query, autocompleteCache or BuildAutocompleteCache())
 end
 
 ------------------------------------------------------------------------
@@ -2571,8 +2579,8 @@ local function GetOrCreateAutocompleteDropdown()
 
         row:SetScript("OnClick", function()
             dropdown._clickInProgress = false
-            if row.entry then
-                OnAutocompleteSelect(row.entry)
+            if row.entry and dropdown._onSelect then
+                dropdown._onSelect(row.entry)
             end
         end)
 
@@ -2595,8 +2603,10 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Show results anchored to an edit box widget
 ------------------------------------------------------------------------
-local function ShowAutocompleteResults(results, anchorWidget)
+local function ShowAutocompleteResults(results, anchorWidget, onSelect)
     local dropdown = GetOrCreateAutocompleteDropdown()
+    dropdown._onSelect = onSelect
+    dropdown._editbox = anchorWidget.editbox
 
     if not results then
         dropdown:Hide()
@@ -2632,6 +2642,54 @@ local function ShowAutocompleteResults(results, anchorWidget)
     dropdown:Show()
     UpdateAutocompleteHighlight()
 end
+
+------------------------------------------------------------------------
+-- Autocomplete: Centralized keyboard handler for arrow/enter navigation
+------------------------------------------------------------------------
+local function HandleAutocompleteKeyDown(key)
+    if not autocompleteDropdown or not autocompleteDropdown:IsShown() then return end
+    local maxIdx = autocompleteDropdown._numResults or 0
+    if maxIdx == 0 then return end
+    if key == "DOWN" then
+        local idx = (autocompleteDropdown._highlightIndex or 0) + 1
+        if idx > maxIdx then idx = 1 end
+        autocompleteDropdown._highlightIndex = idx
+        UpdateAutocompleteHighlight()
+    elseif key == "UP" then
+        local idx = (autocompleteDropdown._highlightIndex or 0) - 1
+        if idx < 1 then idx = maxIdx end
+        autocompleteDropdown._highlightIndex = idx
+        UpdateAutocompleteHighlight()
+    elseif key == "ENTER" then
+        local idx = autocompleteDropdown._highlightIndex or 0
+        if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
+            autocompleteDropdown._enterConsumed = true
+            if autocompleteDropdown._onSelect then
+                autocompleteDropdown._onSelect(autocompleteDropdown.rows[idx].entry)
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Autocomplete: Check and clear enter-consumed flag
+------------------------------------------------------------------------
+local function ConsumeAutocompleteEnter()
+    if autocompleteDropdown and autocompleteDropdown._enterConsumed then
+        autocompleteDropdown._enterConsumed = nil
+        return true
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- Expose autocomplete functions for reuse by other config modules
+------------------------------------------------------------------------
+CS.ShowAutocompleteResults = ShowAutocompleteResults
+CS.HideAutocomplete = HideAutocomplete
+CS.SearchAutocompleteInCache = SearchAutocompleteInCache
+CS.HandleAutocompleteKeyDown = HandleAutocompleteKeyDown
+CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 
 ------------------------------------------------------------------------
 -- Helper: Get icon for a button data entry
@@ -4939,11 +4997,7 @@ function RefreshColumn2()
     inputBox:DisableButton(true)
     inputBox:SetFullWidth(true)
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        -- If arrow-key selection was confirmed via Enter, the hook already handled it
-        if autocompleteDropdown and autocompleteDropdown._enterConsumed then
-            autocompleteDropdown._enterConsumed = nil
-            return
-        end
+        if ConsumeAutocompleteEnter() then return end
         HideAutocomplete()
         newInput = text
         if newInput ~= "" and selectedGroup then
@@ -4957,10 +5011,7 @@ function RefreshColumn2()
         newInput = text
         if text and #text >= 1 then
             local results = SearchAutocomplete(text)
-            ShowAutocompleteResults(results, widget)
-            if autocompleteDropdown then
-                autocompleteDropdown._editbox = widget.editbox
-            end
+            ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
         else
             HideAutocomplete()
         end
@@ -4973,26 +5024,7 @@ function RefreshColumn2()
     if not editboxFrame._cdcAutocompHooked then
         editboxFrame._cdcAutocompHooked = true
         editboxFrame:HookScript("OnKeyDown", function(self, key)
-            if not autocompleteDropdown or not autocompleteDropdown:IsShown() then return end
-            local maxIdx = autocompleteDropdown._numResults or 0
-            if maxIdx == 0 then return end
-            if key == "DOWN" then
-                local idx = (autocompleteDropdown._highlightIndex or 0) + 1
-                if idx > maxIdx then idx = 1 end
-                autocompleteDropdown._highlightIndex = idx
-                UpdateAutocompleteHighlight()
-            elseif key == "UP" then
-                local idx = (autocompleteDropdown._highlightIndex or 0) - 1
-                if idx < 1 then idx = maxIdx end
-                autocompleteDropdown._highlightIndex = idx
-                UpdateAutocompleteHighlight()
-            elseif key == "ENTER" then
-                local idx = autocompleteDropdown._highlightIndex or 0
-                if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
-                    autocompleteDropdown._enterConsumed = true
-                    OnAutocompleteSelect(autocompleteDropdown.rows[idx].entry)
-                end
-            end
+            HandleAutocompleteKeyDown(key)
         end)
     end
     col2Scroll:AddChild(inputBox)
@@ -6237,7 +6269,12 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
         elseif CS.resourceBarPanelActive then
             GameTooltip:AddLine("Custom Aura Bars")
-            GameTooltip:AddLine("Configure custom aura tracking bars for the resource display.", 1, 1, 1, true)
+            GameTooltip:AddLine("Track any buff or bar aura from the Cooldown Manager as a resource-style bar. These do not track duration and have no animation -- for that, use spells and auras tracked with icon or bar groups.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Tracking Modes", 1, 0.82, 0)
+            GameTooltip:AddLine("Stack Count: fills the bar based on the aura's current stack count (e.g. 3/5 stacks = 60%).", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Active: shows a full bar when the aura is present and an empty bar when it is not.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Group Settings")
             GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)

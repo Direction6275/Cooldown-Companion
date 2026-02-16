@@ -10,6 +10,45 @@ local AceGUI = LibStub("AceGUI-3.0")
 -- Shared config state (populated by Config.lua before this file loads)
 local CS = ST._configState
 
+------------------------------------------------------------------------
+-- Aura bar autocomplete cache (TrackedBuff + TrackedBar spells only)
+------------------------------------------------------------------------
+local auraBarAutocompleteCache = nil
+
+local function BuildAuraBarAutocompleteCache()
+    local cache = {}
+    local seen = {}
+    for _, cat in ipairs({
+        Enum.CooldownViewerCategory.TrackedBuff,
+        Enum.CooldownViewerCategory.TrackedBar,
+    }) do
+        local catLabel = (cat == Enum.CooldownViewerCategory.TrackedBuff)
+            and "Tracked Buff" or "Tracked Bar"
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and info.spellID and not seen[info.spellID] then
+                    seen[info.spellID] = true
+                    local name = C_Spell.GetSpellName(info.spellID)
+                    local icon = C_Spell.GetSpellTexture(info.spellID)
+                    if name then
+                        cache[#cache + 1] = {
+                            id = info.spellID,
+                            name = name,
+                            nameLower = name:lower(),
+                            icon = icon or 134400,
+                            category = catLabel,
+                        }
+                    end
+                end
+            end
+        end
+    end
+    auraBarAutocompleteCache = cache
+    return cache
+end
+
 -- Helper: tint AceGUI Heading labels with player class color
 local function ColorHeading(heading)
     local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
@@ -6984,6 +7023,7 @@ end
 ------------------------------------------------------------------------
 
 BuildCustomAuraBarPanel = function(container)
+    auraBarAutocompleteCache = nil
     local db = CooldownCompanion.db.profile
     local settings = db.resourceBars
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
@@ -7015,15 +7055,19 @@ BuildCustomAuraBarPanel = function(container)
 
         local slotKey = "rb_cab_slot_" .. slotIdx
         local slotCollapsed = resourceBarCollapsedSections[slotKey]
-        local slotLabel = cab.label or ""
-        if cab.spellID then
-            local spellName = C_Spell.GetSpellName(cab.spellID)
-            if spellName then slotLabel = spellName end
+        local slotHeadingText = "Slot " .. slotIdx
+        if cab.enabled then
+            local slotLabel = cab.label or ""
+            if cab.spellID then
+                local spellName = C_Spell.GetSpellName(cab.spellID)
+                if spellName then slotLabel = spellName end
+            end
+            if slotLabel == "" then slotLabel = "Empty" end
+            slotHeadingText = slotHeadingText .. ": " .. slotLabel
         end
-        if slotLabel == "" then slotLabel = "Empty" end
 
         local slotHeading = AceGUI:Create("Heading")
-        slotHeading:SetText("Slot " .. slotIdx .. ": " .. slotLabel)
+        slotHeading:SetText(slotHeadingText)
         ColorHeading(slotHeading)
         slotHeading:SetFullWidth(true)
         container:AddChild(slotHeading)
@@ -7058,71 +7102,62 @@ BuildCustomAuraBarPanel = function(container)
             end)
             container:AddChild(enableCab)
 
-            -- Spell ID + Pick CDM row
-            local spellRow = AceGUI:Create("SimpleGroup")
-            spellRow:SetLayout("Flow")
-            spellRow:SetFullWidth(true)
-            container:AddChild(spellRow)
+            if cab.enabled then
 
+            -- Spell ID edit box with autocomplete
             local spellEdit = AceGUI:Create("EditBox")
             if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
-            spellEdit:SetLabel("Spell ID")
+            spellEdit:SetLabel("Spell ID or Name")
             spellEdit:SetText(cab.spellID and tostring(cab.spellID) or "")
-            spellEdit:SetRelativeWidth(0.72)
+            spellEdit:SetFullWidth(true)
+            spellEdit:DisableButton(true)
+
+            -- Autocomplete: onSelect closure for this slot
+            local function onAuraBarSelect(entry)
+                CS.HideAutocomplete()
+                local bars = CooldownCompanion:GetSpecCustomAuraBars()
+                bars[capturedIdx].spellID = entry.id
+                bars[capturedIdx].label = C_Spell.GetSpellName(entry.id) or ""
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end
+
             spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+                if CS.ConsumeAutocompleteEnter() then return end
+                CS.HideAutocomplete()
                 text = text:gsub("%s", "")
                 local id = tonumber(text)
-                customBars[capturedIdx].spellID = id
+                local bars = CooldownCompanion:GetSpecCustomAuraBars()
+                bars[capturedIdx].spellID = id
                 if id then
-                    local spellName = C_Spell.GetSpellName(id)
-                    customBars[capturedIdx].label = spellName or ""
+                    bars[capturedIdx].label = C_Spell.GetSpellName(id) or ""
                 else
-                    customBars[capturedIdx].label = ""
+                    bars[capturedIdx].label = ""
                 end
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            spellRow:AddChild(spellEdit)
-
-            local pickBtn = AceGUI:Create("Button")
-            pickBtn:SetText("Pick CDM")
-            pickBtn:SetRelativeWidth(0.28)
-            pickBtn:SetCallback("OnClick", function()
-                local ci = capturedIdx
-                CS.StartPickCDM(function(spellID)
-                    if CS.configFrame then
-                        CS.configFrame.frame:Show()
-                    end
-                    if spellID then
-                        customBars[ci].spellID = spellID
-                        local spellName = C_Spell.GetSpellName(spellID)
-                        customBars[ci].label = spellName or ""
-                    end
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-            end)
-            pickBtn:SetCallback("OnEnter", function(widget)
-                GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-                GameTooltip:AddLine("Pick from Cooldown Manager")
-                GameTooltip:AddLine("Click a spell from the on-screen Cooldown Manager to populate the Spell ID.", 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            pickBtn:SetCallback("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            spellRow:AddChild(pickBtn)
-
-            -- Nudge Pick CDM button down to align with editbox
-            pickBtn.frame:SetScript("OnUpdate", function(self)
-                self:SetScript("OnUpdate", nil)
-                local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-                if yOfs then
-                    self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+            spellEdit:SetCallback("OnTextChanged", function(widget, event, text)
+                if text and #text >= 1 then
+                    local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
+                    local results = CS.SearchAutocompleteInCache(text, cache)
+                    CS.ShowAutocompleteResults(results, widget, onAuraBarSelect)
+                else
+                    CS.HideAutocomplete()
                 end
             end)
+
+            local editboxFrame = spellEdit.editbox
+            if not editboxFrame._cdcAutocompHooked then
+                editboxFrame._cdcAutocompHooked = true
+                editboxFrame:HookScript("OnKeyDown", function(self, key)
+                    CS.HandleAutocompleteKeyDown(key)
+                end)
+            end
+
+            container:AddChild(spellEdit)
 
             -- Label (read-only display)
             if cab.spellID then
@@ -7191,8 +7226,8 @@ BuildCustomAuraBarPanel = function(container)
             container:AddChild(modeDrop)
             end
 
-            -- ---- Colors section (only when enabled and has spell ID) ----
-            if cab.enabled and cab.spellID then
+            -- ---- Colors section (only when has spell ID) ----
+            if cab.spellID then
                 local colorHeading = AceGUI:Create("Heading")
                 colorHeading:SetText("Colors")
                 ColorHeading(colorHeading)
@@ -7249,6 +7284,7 @@ BuildCustomAuraBarPanel = function(container)
                     container:AddChild(textCb)
                 end
             end
+            end -- if cab.enabled
         end
     end
 
