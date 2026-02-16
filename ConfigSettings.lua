@@ -4063,6 +4063,23 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(cdOffYSlider)
     end
 
+end
+
+------------------------------------------------------------------------
+-- EFFECTS TAB (Glows / Indicators)
+------------------------------------------------------------------------
+local function BuildBarEffectsTab(container, group, style)
+    -- Active Aura Indicator section
+    local barAuraHeading = AceGUI:Create("Heading")
+    barAuraHeading:SetText("Active Aura Indicator")
+    barAuraHeading:SetFullWidth(true)
+    container:AddChild(barAuraHeading)
+    CreatePromoteButton(barAuraHeading, "barActiveAura", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildBarActiveAuraControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
     -- Aura Text section
     local auraTextHeading = AceGUI:Create("Heading")
     auraTextHeading:SetText("Aura Text")
@@ -4131,6 +4148,17 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(auraFontColor)
     end
+
+    -- Pandemic Indicator section
+    local pandemicBarHeading = AceGUI:Create("Heading")
+    pandemicBarHeading:SetText("Pandemic Indicator")
+    pandemicBarHeading:SetFullWidth(true)
+    container:AddChild(pandemicBarHeading)
+    CreatePromoteButton(pandemicBarHeading, "pandemicBar", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildPandemicBarControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
 
     -- Ready Text heading
     local readyHeading = AceGUI:Create("Heading")
@@ -4211,29 +4239,123 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(readyOutlineDrop)
     end
+end
 
-    -- Pandemic Indicator section
-    local pandemicBarHeading = AceGUI:Create("Heading")
-    pandemicBarHeading:SetText("Pandemic Indicator")
-    pandemicBarHeading:SetFullWidth(true)
-    container:AddChild(pandemicBarHeading)
-    CreatePromoteButton(pandemicBarHeading, "pandemicBar", CS.selectedButton and group.buttons[CS.selectedButton], style)
+local function BuildEffectsTab(container)
+    if not CS.selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+    local style = group.style
 
-    BuildPandemicBarControls(container, style, function()
+    -- Branch for bar mode
+    if group.displayMode == "bars" then
+        BuildBarEffectsTab(container, group, style)
+        return
+    end
+
+    -- Icon mode: Glows tab
+
+    -- Active Aura Glow section
+    local auraIndicatorHeading = AceGUI:Create("Heading")
+    auraIndicatorHeading:SetText("Active Aura Glow")
+    auraIndicatorHeading:SetFullWidth(true)
+    container:AddChild(auraIndicatorHeading)
+    CreatePromoteButton(auraIndicatorHeading, "auraIndicator", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildAuraIndicatorControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
 
-    -- Active Aura Indicator section
-    local barAuraHeading = AceGUI:Create("Heading")
-    barAuraHeading:SetText("Active Aura Indicator")
-    barAuraHeading:SetFullWidth(true)
-    container:AddChild(barAuraHeading)
-    CreatePromoteButton(barAuraHeading, "barActiveAura", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    -- Aura Text section
+    local auraTextHeading = AceGUI:Create("Heading")
+    auraTextHeading:SetText("Aura Text")
+    auraTextHeading:SetFullWidth(true)
+    container:AddChild(auraTextHeading)
+    CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
-    BuildBarActiveAuraControls(container, style, function()
+    local auraTextCb = AceGUI:Create("CheckBox")
+    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetValue(style.showAuraText ~= false)
+    auraTextCb:SetFullWidth(true)
+    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraTextCb)
+
+    if style.showAuraText ~= false then
+        local auraFontSizeSlider = AceGUI:Create("Slider")
+        auraFontSizeSlider:SetLabel("Font Size")
+        auraFontSizeSlider:SetSliderValues(8, 32, 1)
+        auraFontSizeSlider:SetValue(style.auraTextFontSize or 12)
+        auraFontSizeSlider:SetFullWidth(true)
+        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(auraFontSizeSlider)
+
+        local auraFontDrop = AceGUI:Create("Dropdown")
+        auraFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(auraFontDrop)
+        auraFontDrop:SetValue(style.auraTextFont or "Friz Quadrata TT")
+        auraFontDrop:SetFullWidth(true)
+        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(auraFontDrop)
+
+        local auraOutlineDrop = AceGUI:Create("Dropdown")
+        auraOutlineDrop:SetLabel("Font Outline")
+        auraOutlineDrop:SetList(CS.outlineOptions)
+        auraOutlineDrop:SetValue(style.auraTextFontOutline or "OUTLINE")
+        auraOutlineDrop:SetFullWidth(true)
+        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraTextFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(auraOutlineDrop)
+
+        local auraFontColor = AceGUI:Create("ColorPicker")
+        auraFontColor:SetLabel("Font Color")
+        auraFontColor:SetHasAlpha(true)
+        local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
+        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
+        auraFontColor:SetFullWidth(true)
+        auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.auraTextFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        auraFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.auraTextFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(auraFontColor)
+    end
+
+    -- Pandemic Glow section
+    local pandemicGlowHeading = AceGUI:Create("Heading")
+    pandemicGlowHeading:SetText("Pandemic Glow")
+    pandemicGlowHeading:SetFullWidth(true)
+    container:AddChild(pandemicGlowHeading)
+    CreatePromoteButton(pandemicGlowHeading, "pandemicGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildPandemicGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
 
+    -- Proc Glow section
+    local procGlowHeading = AceGUI:Create("Heading")
+    procGlowHeading:SetText("Proc Glow")
+    procGlowHeading:SetFullWidth(true)
+    container:AddChild(procGlowHeading)
+    CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    BuildProcGlowControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
 end
 
 local function BuildAppearanceTab(container)
@@ -4447,75 +4569,6 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(cdFontColor)
-    end
-
-    -- Aura Text section
-    local auraTextHeading = AceGUI:Create("Heading")
-    auraTextHeading:SetText("Aura Text")
-    auraTextHeading:SetFullWidth(true)
-    container:AddChild(auraTextHeading)
-    CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Text")
-    auraTextCb:SetValue(style.showAuraText ~= false)
-    auraTextCb:SetFullWidth(true)
-    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAuraText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(auraTextCb)
-
-    if style.showAuraText ~= false then
-        local auraFontSizeSlider = AceGUI:Create("Slider")
-        auraFontSizeSlider:SetLabel("Font Size")
-        auraFontSizeSlider:SetSliderValues(8, 32, 1)
-        auraFontSizeSlider:SetValue(style.auraTextFontSize or 12)
-        auraFontSizeSlider:SetFullWidth(true)
-        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontSizeSlider)
-
-        local auraFontDrop = AceGUI:Create("Dropdown")
-        auraFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(auraFontDrop)
-        auraFontDrop:SetValue(style.auraTextFont or "Friz Quadrata TT")
-        auraFontDrop:SetFullWidth(true)
-        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontDrop)
-
-        local auraOutlineDrop = AceGUI:Create("Dropdown")
-        auraOutlineDrop:SetLabel("Font Outline")
-        auraOutlineDrop:SetList(CS.outlineOptions)
-        auraOutlineDrop:SetValue(style.auraTextFontOutline or "OUTLINE")
-        auraOutlineDrop:SetFullWidth(true)
-        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraOutlineDrop)
-
-        local auraFontColor = AceGUI:Create("ColorPicker")
-        auraFontColor:SetLabel("Font Color")
-        auraFontColor:SetHasAlpha(true)
-        local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
-        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
-        auraFontColor:SetFullWidth(true)
-        auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            style.auraTextFontColor = {r, g, b, a}
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        auraFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            style.auraTextFontColor = {r, g, b, a}
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontColor)
     end
 
     -- Keybind Text section
@@ -4740,39 +4793,6 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(chargeYSlider)
     end
-
-    -- Proc Glow section
-    local procGlowHeading = AceGUI:Create("Heading")
-    procGlowHeading:SetText("Proc Glow")
-    procGlowHeading:SetFullWidth(true)
-    container:AddChild(procGlowHeading)
-    CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    BuildProcGlowControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
-    -- Pandemic Glow section
-    local pandemicGlowHeading = AceGUI:Create("Heading")
-    pandemicGlowHeading:SetText("Pandemic Glow")
-    pandemicGlowHeading:SetFullWidth(true)
-    container:AddChild(pandemicGlowHeading)
-    CreatePromoteButton(pandemicGlowHeading, "pandemicGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    BuildPandemicGlowControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
-    -- Active Aura Indicator section
-    local auraIndicatorHeading = AceGUI:Create("Heading")
-    auraIndicatorHeading:SetText("Active Aura Indicator")
-    auraIndicatorHeading:SetFullWidth(true)
-    container:AddChild(auraIndicatorHeading)
-    CreatePromoteButton(auraIndicatorHeading, "auraIndicator", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    BuildAuraIndicatorControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
 end
 
 ------------------------------------------------------------------------
@@ -7471,6 +7491,7 @@ ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildPositioningTab = BuildPositioningTab
 ST._BuildExtrasTab = BuildExtrasTab
+ST._BuildEffectsTab = BuildEffectsTab
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel

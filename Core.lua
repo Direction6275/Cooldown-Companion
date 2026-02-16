@@ -475,7 +475,7 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true},
     },
     auraIndicator = {
-        label = "Active Aura Indicator",
+        label = "Active Aura Glow",
         keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed"},
         modes = {icons = true},
     },

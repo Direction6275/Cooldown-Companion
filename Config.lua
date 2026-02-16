@@ -5423,12 +5423,6 @@ function RefreshColumn3(container)
     -- Create the TabGroup once, reuse on subsequent refreshes
     if not container.tabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
-        tabGroup:SetTabs({
-            { value = "appearance",      text = "Appearance" },
-            { value = "positioning",     text = "Positioning" },
-            { value = "extras",          text = "Extras" },
-            { value = "loadconditions",  text = "Load Conditions" },
-        })
         tabGroup:SetLayout("Fill")
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
@@ -5455,6 +5449,8 @@ function RefreshColumn3(container)
                 ST._BuildPositioningTab(scroll)
             elseif tab == "extras" then
                 ST._BuildExtrasTab(scroll)
+            elseif tab == "effects" then
+                ST._BuildEffectsTab(scroll)
             elseif tab == "loadconditions" then
                 ST._BuildLoadConditionsTab(scroll)
             end
@@ -5468,6 +5464,20 @@ function RefreshColumn3(container)
 
         container.tabGroup = tabGroup
     end
+
+    -- Update tabs every refresh so the effects tab label reflects current group mode
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local effectsLabel = "Effects"
+    if group then
+        effectsLabel = (group.displayMode == "bars") and "Indicators" or "Glows"
+    end
+    container.tabGroup:SetTabs({
+        { value = "appearance",      text = "Appearance" },
+        { value = "positioning",     text = "Positioning" },
+        { value = "extras",          text = "Extras" },
+        { value = "effects",         text = effectsLabel },
+        { value = "loadconditions",  text = "Load Conditions" },
+    })
 
     -- Save AceGUI scroll state before tab re-select (old col3Scroll will be released)
     local savedOffset, savedScrollvalue

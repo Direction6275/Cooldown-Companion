@@ -3151,15 +3151,15 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = style.chargeFontSize or 12
-        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
+        local chargeFont = CooldownCompanion:FetchFont(newStyle.chargeFont or "Friz Quadrata TT")
+        local chargeFontSize = newStyle.chargeFontSize or 12
+        local chargeFontOutline = newStyle.chargeFontOutline or "OUTLINE"
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = style.chargeFontColor or {1, 1, 1, 1}
+        local chColor = newStyle.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = style.chargeAnchor or defAnchor
-        local chargeXOffset = style.chargeXOffset or defXOff
-        local chargeYOffset = style.chargeYOffset or defYOff
+        local chargeAnchor = newStyle.chargeAnchor or defAnchor
+        local chargeXOffset = newStyle.chargeXOffset or defXOff
+        local chargeYOffset = newStyle.chargeYOffset or defYOff
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
