@@ -1705,16 +1705,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Capture cooldown shown state for secret-path _chargeRecharging.
-    -- UpdateIconModeVisuals force-shows button.cooldown for the swipe display,
-    -- making IsShown() unreliable after that point.  Read it now while it
-    -- still reflects actual cooldown state from SetCooldown().
-    local cdShownForChargeCheck
-    if buttonData.hasCharges and not button._isBar
-       and buttonData._cooldownSecrecy ~= 0 then
-        cdShownForChargeCheck = button.cooldown:IsShown()
-    end
-
     if not button._isBar then
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     end
@@ -1744,16 +1734,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._chargeRecharging = scratchCooldown:IsShown()
                 scratchCooldown:Hide()
             else
-                -- Secret values (combat): SetCooldownFromDurationObject fails
-                -- with secret DurationObjects.  Use mode-specific fallbacks.
-                if cdShownForChargeCheck ~= nil then
-                    -- Icon mode: captured before UpdateIconModeVisuals force-show.
-                    button._chargeRecharging = cdShownForChargeCheck
-                elseif charges then
-                    -- Bar mode: button.cooldown reflects the main spell CD, not
-                    -- the recharge cycle — IsShown() is false when charges remain.
-                    -- Probe scratchCooldown with charge timing data instead
-                    -- (SetCooldown accepts secrets; IsShown returns plain bool).
+                -- Secret values (combat): SetCooldownFromDurationObject fails.
+                -- Probe scratchCooldown with charge timing data instead
+                -- (SetCooldown accepts secrets; IsShown returns plain bool).
+                -- Uses charge-specific timing, not the main cooldown (which
+                -- includes GCD for on-GCD charge spells like Fire Breath).
+                if charges then
                     scratchCooldown:Hide()
                     scratchCooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
                     button._chargeRecharging = scratchCooldown:IsShown()
