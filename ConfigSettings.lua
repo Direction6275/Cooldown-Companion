@@ -5463,8 +5463,141 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     scroll:AddChild(hideNotCDCb)
     end -- not buttonData.isPassive
 
-    -- Hide While Aura Active
-    local auraDisabled = isItem or not buttonData.auraTracking
+    -- Item-specific zero charges/stacks visibility toggles
+    if isItem and not CooldownCompanion.IsItemEquippable(buttonData) then
+        if buttonData.hasCharges then
+            -- Hide While At Zero Charges
+            local hideZeroChargesCb = AceGUI:Create("CheckBox")
+            hideZeroChargesCb:SetLabel("Hide While At Zero Charges")
+            hideZeroChargesCb:SetValue(buttonData.hideWhileZeroCharges or false)
+            hideZeroChargesCb:SetFullWidth(true)
+            hideZeroChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+                ApplyToSelected("hideWhileZeroCharges", val or nil)
+                if val then
+                    ApplyToSelected("desaturateWhileZeroCharges", nil)
+                else
+                    ApplyToSelected("useBaselineAlphaFallbackZeroCharges", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(hideZeroChargesCb)
+
+            -- Baseline Alpha Fallback (nested under hideWhileZeroCharges)
+            if buttonData.hideWhileZeroCharges then
+                local fallbackZeroChargesCb = AceGUI:Create("CheckBox")
+                fallbackZeroChargesCb:SetLabel("Use Baseline Alpha Fallback")
+                fallbackZeroChargesCb:SetValue(buttonData.useBaselineAlphaFallbackZeroCharges or false)
+                fallbackZeroChargesCb:SetFullWidth(true)
+                fallbackZeroChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    ApplyToSelected("useBaselineAlphaFallbackZeroCharges", val or nil)
+                end)
+                scroll:AddChild(fallbackZeroChargesCb)
+
+                -- (?) tooltip
+                local fallbackZCInfo = CreateFrame("Button", nil, fallbackZeroChargesCb.frame)
+                fallbackZCInfo:SetSize(16, 16)
+                fallbackZCInfo:SetPoint("LEFT", fallbackZeroChargesCb.checkbg, "RIGHT", fallbackZeroChargesCb.text:GetStringWidth() + 4, 0)
+                local fallbackZCInfoIcon = fallbackZCInfo:CreateTexture(nil, "OVERLAY")
+                fallbackZCInfoIcon:SetSize(12, 12)
+                fallbackZCInfoIcon:SetPoint("CENTER")
+                fallbackZCInfoIcon:SetAtlas("QuestRepeatableTurnin")
+                fallbackZCInfo:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Use Baseline Alpha Fallback")
+                    GameTooltip:AddLine("Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                fallbackZCInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                table.insert(infoButtons, fallbackZCInfo)
+                if CooldownCompanion.db.profile.hideInfoButtons then
+                    fallbackZCInfo:Hide()
+                end
+            end
+
+            -- Desaturate While At Zero Charges
+            local desatZeroChargesCb = AceGUI:Create("CheckBox")
+            desatZeroChargesCb:SetLabel("Desaturate While At Zero Charges")
+            desatZeroChargesCb:SetValue(buttonData.desaturateWhileZeroCharges or false)
+            desatZeroChargesCb:SetFullWidth(true)
+            desatZeroChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+                ApplyToSelected("desaturateWhileZeroCharges", val or nil)
+                if val then
+                    ApplyToSelected("hideWhileZeroCharges", nil)
+                    ApplyToSelected("useBaselineAlphaFallbackZeroCharges", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(desatZeroChargesCb)
+        else
+            -- Stack-based items
+            -- Hide While At Zero Stacks
+            local hideZeroStacksCb = AceGUI:Create("CheckBox")
+            hideZeroStacksCb:SetLabel("Hide While At Zero Stacks")
+            hideZeroStacksCb:SetValue(buttonData.hideWhileZeroStacks or false)
+            hideZeroStacksCb:SetFullWidth(true)
+            hideZeroStacksCb:SetCallback("OnValueChanged", function(widget, event, val)
+                ApplyToSelected("hideWhileZeroStacks", val or nil)
+                if val then
+                    ApplyToSelected("desaturateWhileZeroStacks", nil)
+                else
+                    ApplyToSelected("useBaselineAlphaFallbackZeroStacks", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(hideZeroStacksCb)
+
+            -- Baseline Alpha Fallback (nested under hideWhileZeroStacks)
+            if buttonData.hideWhileZeroStacks then
+                local fallbackZeroStacksCb = AceGUI:Create("CheckBox")
+                fallbackZeroStacksCb:SetLabel("Use Baseline Alpha Fallback")
+                fallbackZeroStacksCb:SetValue(buttonData.useBaselineAlphaFallbackZeroStacks or false)
+                fallbackZeroStacksCb:SetFullWidth(true)
+                fallbackZeroStacksCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    ApplyToSelected("useBaselineAlphaFallbackZeroStacks", val or nil)
+                end)
+                scroll:AddChild(fallbackZeroStacksCb)
+
+                -- (?) tooltip
+                local fallbackZSInfo = CreateFrame("Button", nil, fallbackZeroStacksCb.frame)
+                fallbackZSInfo:SetSize(16, 16)
+                fallbackZSInfo:SetPoint("LEFT", fallbackZeroStacksCb.checkbg, "RIGHT", fallbackZeroStacksCb.text:GetStringWidth() + 4, 0)
+                local fallbackZSInfoIcon = fallbackZSInfo:CreateTexture(nil, "OVERLAY")
+                fallbackZSInfoIcon:SetSize(12, 12)
+                fallbackZSInfoIcon:SetPoint("CENTER")
+                fallbackZSInfoIcon:SetAtlas("QuestRepeatableTurnin")
+                fallbackZSInfo:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Use Baseline Alpha Fallback")
+                    GameTooltip:AddLine("Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                fallbackZSInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                table.insert(infoButtons, fallbackZSInfo)
+                if CooldownCompanion.db.profile.hideInfoButtons then
+                    fallbackZSInfo:Hide()
+                end
+            end
+
+            -- Desaturate While At Zero Stacks
+            local desatZeroStacksCb = AceGUI:Create("CheckBox")
+            desatZeroStacksCb:SetLabel("Desaturate While At Zero Stacks")
+            desatZeroStacksCb:SetValue(buttonData.desaturateWhileZeroStacks or false)
+            desatZeroStacksCb:SetFullWidth(true)
+            desatZeroStacksCb:SetCallback("OnValueChanged", function(widget, event, val)
+                ApplyToSelected("desaturateWhileZeroStacks", val or nil)
+                if val then
+                    ApplyToSelected("hideWhileZeroStacks", nil)
+                    ApplyToSelected("useBaselineAlphaFallbackZeroStacks", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(desatZeroStacksCb)
+        end
+    end
+
+    -- Hide While Aura Active (not applicable for items)
+    if not isItem then
+    local auraDisabled = not buttonData.auraTracking
     local hideAuraCb = AceGUI:Create("CheckBox")
     hideAuraCb:SetLabel("Hide While Aura Active")
     hideAuraCb:SetValue(buttonData.hideWhileAuraActive or false)
@@ -5618,6 +5751,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         warnLabel:SetFullWidth(true)
         scroll:AddChild(warnLabel)
     end
+    end -- not isItem
 
     end -- not visCollapsed
 

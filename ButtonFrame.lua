@@ -591,7 +591,9 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
        and not buttonData.hideWhileAuraNotActive
-       and not buttonData.hideWhileAuraActive then
+       and not buttonData.hideWhileAuraActive
+       and not buttonData.hideWhileZeroCharges
+       and not buttonData.hideWhileZeroStacks then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
         return
@@ -656,6 +658,24 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
     end
 
+    -- Check hideWhileZeroCharges (charge-based items)
+    local hidReasonZeroCharges = false
+    if buttonData.hideWhileZeroCharges then
+        if button._mainCDShown then
+            shouldHide = true
+            hidReasonZeroCharges = true
+        end
+    end
+
+    -- Check hideWhileZeroStacks (stack-based items)
+    local hidReasonZeroStacks = false
+    if buttonData.hideWhileZeroStacks then
+        if (button._itemCount or 0) == 0 then
+            shouldHide = true
+            hidReasonZeroStacks = true
+        end
+    end
+
     -- Baseline alpha fallback: if the ONLY reason we're hiding is aura-not-active
     -- and useBaselineAlphaFallback is enabled, dim instead of hiding
     if shouldHide and hidReasonAuraNotActive and buttonData.useBaselineAlphaFallback then
@@ -684,6 +704,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraActive and auraOverrideActive then
             otherHide = true
         end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -720,6 +742,68 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then
             otherHide = true
         end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is zero charges
+    -- and useBaselineAlphaFallbackZeroCharges is enabled, dim instead of hiding
+    if shouldHide and hidReasonZeroCharges and buttonData.useBaselineAlphaFallbackZeroCharges then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.hasCharges then
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown then
+            if buttonData.hasCharges then
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is zero stacks
+    -- and useBaselineAlphaFallbackZeroStacks is enabled, dim instead of hiding
+    if shouldHide and hidReasonZeroStacks and buttonData.useBaselineAlphaFallbackZeroStacks then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.hasCharges then
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown then
+            if buttonData.hasCharges then
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -1384,6 +1468,18 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
+    elseif buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
+        local wantDesat = false
+        if buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+            wantDesat = true
+        end
+        if buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
+        end
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
     else
         if button._desaturated ~= false then
             button._desaturated = false
@@ -1806,7 +1902,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local count = C_Item.GetItemCount(buttonData.id)
         if button._itemCount ~= count then
             button._itemCount = count
-            if count and count > 1 then
+            if count and count >= 1 then
                 button.count:SetText(count)
             else
                 button.count:SetText("")
@@ -2463,6 +2559,18 @@ UpdateBarDisplay = function(button, fetchOk)
         end
         if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
             wantDesat = false
+        end
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+    elseif button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
+        local wantDesat = false
+        if button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+            wantDesat = true
+        end
+        if button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat

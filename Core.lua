@@ -2935,6 +2935,7 @@ function CooldownCompanion:IsButtonUsable(buttonData)
         return false
     elseif buttonData.type == "item" then
         if buttonData.hasCharges then return true end
+        if not CooldownCompanion.IsItemEquippable(buttonData) then return true end
         return C_Item.GetItemCount(buttonData.id) > 0
     end
     return true
