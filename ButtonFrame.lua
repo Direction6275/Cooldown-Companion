@@ -1841,6 +1841,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if not group or not group.compactLayout then
         -- Non-compact mode: alpha=0 for hidden, restore for visible
         if button._visibilityHidden then
+            button.cooldown:Hide()  -- prevent stale IsShown() across ticks
             if button._lastVisAlpha ~= 0 then
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
@@ -1856,13 +1857,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     else
         -- Compact mode: Show/Hide handled by UpdateGroupLayout
         if button._visibilityHidden then
-            -- Prevent stale cooldown shown state from persisting across ticks.
-            -- SetCooldown(0,0) does not auto-hide, and UpdateIconModeVisuals
-            -- force-shows the frame; explicitly clearing here ensures the
-            -- in-combat IsShown() fallback reads clean state next tick.
-            if not button._isBar then
-                button.cooldown:Hide()
-            end
+            -- Prevent stale IsShown() across ticks. SetCooldown(0,0) does not
+            -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
+            -- and icon mode force-show both read stale true on next tick.
+            button.cooldown:Hide()
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
