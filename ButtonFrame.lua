@@ -609,9 +609,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
-            -- Items: check cooldown widget directly (no GCD concept)
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            if widgetDuration and widgetDuration > 0 then
+            -- Items: check stored cooldown values (no GCD concept)
+            if button._itemCdDuration and button._itemCdDuration > 0 then
                 shouldHide = true
             end
         else
@@ -630,8 +629,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
                 shouldHide = true
             end
         elseif buttonData.type == "item" then
-            local _, widgetDuration = button.cooldown:GetCooldownTimes()
-            if not widgetDuration or widgetDuration == 0 then
+            if not button._itemCdDuration or button._itemCdDuration == 0 then
                 shouldHide = true
             end
         else
@@ -667,8 +665,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             if buttonData.hasCharges then
                 if button._mainCDShown or button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if wd and wd > 0 then otherHide = true end
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
             else
                 if button._durationObj and not isGCDOnly then
                     otherHide = true
@@ -679,8 +676,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             if buttonData.hasCharges then
                 if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if not wd or wd == 0 then otherHide = true end
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
             else
                 if not button._durationObj or isGCDOnly then otherHide = true end
             end
@@ -705,8 +701,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             if buttonData.hasCharges then
                 if button._mainCDShown or button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if wd and wd > 0 then otherHide = true end
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
             else
                 if button._durationObj and not isGCDOnly then
                     otherHide = true
@@ -717,8 +712,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             if buttonData.hasCharges then
                 if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
             elseif buttonData.type == "item" then
-                local _, wd = button.cooldown:GetCooldownTimes()
-                if not wd or wd == 0 then otherHide = true end
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
             else
                 if not button._durationObj or isGCDOnly then otherHide = true end
             end
@@ -1359,7 +1353,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     end
 
     -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
-    -- spells/auras; GetCooldownTimes() remains safe for items.
+    -- spells/auras; items use stored _itemCdDuration.
     -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
     if buttonData.isPassive then
         local wantDesat = (buttonData.desaturateWhileInactive ~= false) and not button._auraActive
@@ -1375,8 +1369,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             elseif button._durationObj then
                 wantDesat = true
             elseif buttonData.type == "item" then
-                local _, widgetDuration = button.cooldown:GetCooldownTimes()
-                wantDesat = widgetDuration and widgetDuration > 0
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
         if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
@@ -1661,6 +1654,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         elseif buttonData.type == "item" then
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
             button.cooldown:SetCooldown(cdStart, cdDuration)
+            button._itemCdStart = cdStart
+            button._itemCdDuration = cdDuration
             fetchOk = true
         end
     end
@@ -1791,9 +1786,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
       elseif buttonData.type == "item" then
         UpdateItemChargeTracking(button, buttonData)
 
-        -- Detect recharging via the cooldown widget (already set by item CD path above)
-        local _, widgetDuration = button.cooldown:GetCooldownTimes()
-        button._chargeRecharging = (widgetDuration and widgetDuration > 0) or false
+        -- Detect recharging via stored item cooldown values
+        button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0) or false
       end
     end
 
@@ -2295,7 +2289,7 @@ UpdateBarFill = function(button)
     -- DurationObject percent methods return secret values during combat in 12.0.1,
     -- but SetValue() accepts secrets (C-side widget method).  HasSecretValues gates
     -- expiry detection and time text formatting.
-    -- Items use SetCooldown() so GetCooldownTimes() remains non-secret for them.
+    -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0
 
@@ -2308,10 +2302,11 @@ UpdateBarFill = function(button)
             button.statusBar:SetValue(button._durationObj:GetElapsedPercent())     -- fill: 0→1
         end
     elseif button.buttonData.type == "item" then
-        -- Items: GetCooldownTimes() is safe (no DurationObject tainting)
-        local startMs, durationMs = button.cooldown:GetCooldownTimes()
+        -- Items: use stored C_Item.GetItemCooldown values (avoids hidden-widget staleness)
+        local startMs = (button._itemCdStart or 0) * 1000
+        local durationMs = (button._itemCdDuration or 0) * 1000
         local now = GetTime() * 1000
-        onCooldown = durationMs and durationMs > 0
+        onCooldown = durationMs > 0
         if onCooldown and button._barGCDSuppressed then onCooldown = false end
         if onCooldown then
             local elapsed = now - startMs
@@ -2403,8 +2398,7 @@ UpdateBarDisplay = function(button, fetchOk)
     if button._durationObj then
         onCooldown = not button._barGCDSuppressed
     elseif button.buttonData.type == "item" then
-        local _, durationMs = button.cooldown:GetCooldownTimes()
-        onCooldown = durationMs and durationMs > 0
+        onCooldown = button._itemCdDuration and button._itemCdDuration > 0
         if onCooldown and button._barGCDSuppressed then
             onCooldown = false
         end
@@ -2454,8 +2448,7 @@ UpdateBarDisplay = function(button, fetchOk)
             elseif button._durationObj then
                 wantDesat = true
             elseif button.buttonData.type == "item" then
-                local _, durationMs = button.cooldown:GetCooldownTimes()
-                wantDesat = durationMs and durationMs > 0
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
         if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
