@@ -3045,81 +3045,6 @@ local function BuildLayoutTab(container)
     container:AddChild(ySlider)
 
     -- ================================================================
-    -- Compact Layout
-    -- ================================================================
-    local compactCb = AceGUI:Create("CheckBox")
-    compactCb:SetLabel("Use Compact Layout")
-    compactCb:SetValue(group.compactLayout or false)
-    compactCb:SetFullWidth(true)
-    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
-        group.compactLayout = val or false
-        CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then frame._layoutDirty = true end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(compactCb)
-
-    local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout)
-
-    -- (?) tooltip for compact layout
-    local compactInfo = CreateFrame("Button", nil, compactCb.frame)
-    compactInfo:SetSize(16, 16)
-    if group.compactLayout then
-        compactInfo:SetPoint("LEFT", compactAdvBtn, "RIGHT", 4, 0)
-    else
-        compactInfo:SetPoint("LEFT", compactCb.checkbg, "RIGHT", compactCb.text:GetStringWidth() + 6, 0)
-    end
-    local compactInfoIcon = compactInfo:CreateTexture(nil, "OVERLAY")
-    compactInfoIcon:SetSize(12, 12)
-    compactInfoIcon:SetPoint("CENTER")
-    compactInfoIcon:SetAtlas("QuestRepeatableTurnin")
-    compactInfo:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Compact Layout")
-        GameTooltip:AddLine("When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    compactInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    table.insert(tabInfoButtons, compactInfo)
-
-    if compactAdvExpanded and group.compactLayout then
-        local totalButtons = #group.buttons
-        local maxVisSlider = AceGUI:Create("Slider")
-        maxVisSlider:SetLabel("Max Visible Buttons")
-        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
-        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
-        maxVisSlider:SetFullWidth(true)
-        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            val = math.floor(val + 0.5)
-            if val >= totalButtons then
-                group.maxVisibleButtons = 0
-            else
-                group.maxVisibleButtons = val
-            end
-            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-            if frame then frame._layoutDirty = true end
-        end)
-        container:AddChild(maxVisSlider)
-
-        local maxVisInfo = CreateFrame("Button", nil, maxVisSlider.frame)
-        maxVisInfo:SetSize(16, 16)
-        maxVisInfo:SetPoint("LEFT", maxVisSlider.label, "CENTER", maxVisSlider.label:GetStringWidth() / 2 + 4, 0)
-        local maxVisInfoIcon = maxVisInfo:CreateTexture(nil, "OVERLAY")
-        maxVisInfoIcon:SetSize(12, 12)
-        maxVisInfoIcon:SetPoint("CENTER")
-        maxVisInfoIcon:SetAtlas("QuestRepeatableTurnin")
-        maxVisInfo:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Max Visible Buttons")
-            GameTooltip:AddLine("Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        table.insert(tabInfoButtons, maxVisInfo)
-    end
-
-    -- ================================================================
     -- ADVANCED: Alpha (from Extras)
     -- ================================================================
     local alphaHeading = AceGUI:Create("Heading")
@@ -4479,26 +4404,10 @@ local function BuildEffectsTab(container)
 
     local procAdvExpanded = AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, style.procGlowStyle ~= "none")
 
-    if procAdvExpanded then
-    -- Proc Glow section (full customization)
-    local procGlowHeading = AceGUI:Create("Heading")
-    procGlowHeading:SetText("Proc Glow")
-    ColorHeading(procGlowHeading)
-    procGlowHeading:SetFullWidth(true)
-    container:AddChild(procGlowHeading)
-
-    local procGlowCollapsed = CS.collapsedSections["effects_procglow"]
-    AttachCollapseButton(procGlowHeading, procGlowCollapsed, function()
-        CS.collapsedSections["effects_procglow"] = not CS.collapsedSections["effects_procglow"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(procGlowHeading, "procGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not procGlowCollapsed then
+    if procAdvExpanded and style.procGlowStyle ~= "none" then
     BuildProcGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
-    end
     end -- procAdvExpanded
 
     -- ================================================================
@@ -4517,26 +4426,10 @@ local function BuildEffectsTab(container)
 
     local auraAdvExpanded = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, style.auraGlowStyle ~= "none")
 
-    if auraAdvExpanded then
-    -- Active Aura Glow (full customization)
-    local auraIndicatorHeading = AceGUI:Create("Heading")
-    auraIndicatorHeading:SetText("Active Aura Glow")
-    ColorHeading(auraIndicatorHeading)
-    auraIndicatorHeading:SetFullWidth(true)
-    container:AddChild(auraIndicatorHeading)
-
-    local auraGlowCollapsed = CS.collapsedSections["effects_auraglow"]
-    AttachCollapseButton(auraIndicatorHeading, auraGlowCollapsed, function()
-        CS.collapsedSections["effects_auraglow"] = not CS.collapsedSections["effects_auraglow"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(auraIndicatorHeading, "auraIndicator", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not auraGlowCollapsed then
+    if auraAdvExpanded and style.auraGlowStyle ~= "none" then
     BuildAuraIndicatorControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
-    end
     end -- auraAdvExpanded
 
     -- ================================================================
@@ -4607,26 +4500,10 @@ local function BuildEffectsTab(container)
 
     local pandemicAdvExpanded = AddAdvancedToggle(pandemicGlowCb, "pandemicGlow", tabInfoButtons, style.showPandemicGlow ~= false)
 
-    if pandemicAdvExpanded then
-    -- Pandemic Glow customization
-    local pandemicGlowHeading = AceGUI:Create("Heading")
-    pandemicGlowHeading:SetText("Pandemic Glow")
-    ColorHeading(pandemicGlowHeading)
-    pandemicGlowHeading:SetFullWidth(true)
-    container:AddChild(pandemicGlowHeading)
-
-    local pandemicGlowCollapsed = CS.collapsedSections["effects_pandemic"]
-    AttachCollapseButton(pandemicGlowHeading, pandemicGlowCollapsed, function()
-        CS.collapsedSections["effects_pandemic"] = not CS.collapsedSections["effects_pandemic"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(pandemicGlowHeading, "pandemicGlow", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not pandemicGlowCollapsed then
+    if pandemicAdvExpanded and style.showPandemicGlow ~= false then
     BuildPandemicGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
-    end
     end -- pandemicAdvExpanded
 
     -- ================================================================
@@ -4782,225 +4659,7 @@ local function BuildAppearanceTab(container)
 
     local cdTextAdvExpanded = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText)
 
-    -- Show Charge Text toggle
-    local chargeTextCb = AceGUI:Create("CheckBox")
-    chargeTextCb:SetLabel("Show Charge Text")
-    chargeTextCb:SetValue(style.showChargeText ~= false)
-    chargeTextCb:SetFullWidth(true)
-    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showChargeText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(chargeTextCb)
-
-    local chargeAdvExpanded = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false)
-
-    -- Show Aura Text toggle
-    local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Text")
-    auraTextCb:SetValue(style.showAuraText ~= false)
-    auraTextCb:SetFullWidth(true)
-    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAuraText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(auraTextCb)
-
-    local auraTextAdvExpanded, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false)
-
-    local auraPosInfo = CreateFrame("Button", nil, auraTextCb.frame)
-    auraPosInfo:SetSize(16, 16)
-    auraPosInfo:SetPoint("LEFT", auraTextAdvBtn, "RIGHT", 4, 0)
-    local auraPosInfoIcon = auraPosInfo:CreateTexture(nil, "OVERLAY")
-    auraPosInfoIcon:SetSize(12, 12)
-    auraPosInfoIcon:SetPoint("CENTER")
-    auraPosInfoIcon:SetAtlas("QuestRepeatableTurnin")
-    auraPosInfo:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Shared Position")
-        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Text share the same text element.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    auraPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    if style.showAuraText == false then
-        auraPosInfo:Hide()
-    end
-    auraTextCb:SetCallback("OnRelease", function()
-        auraPosInfo:ClearAllPoints()
-        auraPosInfo:Hide()
-        auraPosInfo:SetParent(nil)
-    end)
-
-    -- Show Keybind Text toggle
-    local kbCb = AceGUI:Create("CheckBox")
-    kbCb:SetLabel("Show Keybind Text")
-    kbCb:SetValue(style.showKeybindText or false)
-    kbCb:SetFullWidth(true)
-    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showKeybindText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(kbCb)
-
-    local kbAdvExpanded = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText)
-
-    if style.showKeybindText and kbAdvExpanded then
-        local kbAnchorDrop = AceGUI:Create("Dropdown")
-        kbAnchorDrop:SetLabel("Anchor")
-        kbAnchorDrop:SetList({
-            TOPRIGHT = "Top Right",
-            TOPLEFT = "Top Left",
-            BOTTOMRIGHT = "Bottom Right",
-            BOTTOMLEFT = "Bottom Left",
-        })
-        kbAnchorDrop:SetValue(style.keybindAnchor or "TOPRIGHT")
-        kbAnchorDrop:SetFullWidth(true)
-        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbAnchorDrop)
-
-        local kbXSlider = AceGUI:Create("Slider")
-        kbXSlider:SetLabel("X Offset")
-        kbXSlider:SetSliderValues(-20, 20, 1)
-        kbXSlider:SetValue(style.keybindXOffset or -2)
-        kbXSlider:SetFullWidth(true)
-        kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbXSlider)
-
-        local kbYSlider = AceGUI:Create("Slider")
-        kbYSlider:SetLabel("Y Offset")
-        kbYSlider:SetSliderValues(-20, 20, 1)
-        kbYSlider:SetValue(style.keybindYOffset or -2)
-        kbYSlider:SetFullWidth(true)
-        kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbYSlider)
-
-        local kbFontSizeSlider = AceGUI:Create("Slider")
-        kbFontSizeSlider:SetLabel("Font Size")
-        kbFontSizeSlider:SetSliderValues(6, 24, 1)
-        kbFontSizeSlider:SetValue(style.keybindFontSize or 10)
-        kbFontSizeSlider:SetFullWidth(true)
-        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbFontSizeSlider)
-
-        local kbFontDrop = AceGUI:Create("Dropdown")
-        kbFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(kbFontDrop)
-        kbFontDrop:SetValue(style.keybindFont or "Friz Quadrata TT")
-        kbFontDrop:SetFullWidth(true)
-        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbFontDrop)
-
-        local kbOutlineDrop = AceGUI:Create("Dropdown")
-        kbOutlineDrop:SetLabel("Font Outline")
-        kbOutlineDrop:SetList(CS.outlineOptions)
-        kbOutlineDrop:SetValue(style.keybindFontOutline or "OUTLINE")
-        kbOutlineDrop:SetFullWidth(true)
-        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbOutlineDrop)
-
-        local kbFontColor = AceGUI:Create("ColorPicker")
-        kbFontColor:SetLabel("Font Color")
-        kbFontColor:SetHasAlpha(true)
-        local kbc = style.keybindFontColor or {1, 1, 1, 1}
-        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
-        kbFontColor:SetFullWidth(true)
-        kbFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            style.keybindFontColor = {r, g, b, a}
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        kbFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            style.keybindFontColor = {r, g, b, a}
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbFontColor)
-    end -- showKeybindText + kbAdvExpanded
-
-    -- Border heading
-    local borderHeading = AceGUI:Create("Heading")
-    borderHeading:SetText("Border")
-    ColorHeading(borderHeading)
-    borderHeading:SetFullWidth(true)
-    container:AddChild(borderHeading)
-
-    local borderCollapsed = CS.collapsedSections["appearance_border"]
-    AttachCollapseButton(borderHeading, borderCollapsed, function()
-        CS.collapsedSections["appearance_border"] = not CS.collapsedSections["appearance_border"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not borderCollapsed then
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    if group.masqueEnabled then
-        borderSlider:SetDisabled(true)
-    end
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.borderSize = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(borderSlider)
-
-    local borderColor = AceGUI:Create("ColorPicker")
-    borderColor:SetLabel("Border Color")
-    borderColor:SetHasAlpha(true)
-    local bc = style.borderColor or {0, 0, 0, 1}
-    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColor:SetFullWidth(true)
-    if group.masqueEnabled then
-        borderColor:SetDisabled(true)
-    end
-    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.borderColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.borderColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(borderColor)
-    end -- not borderCollapsed
-
-    -- Text Settings header (full font customization)
     if cdTextAdvExpanded and style.showCooldownText then
-    local textHeading = AceGUI:Create("Heading")
-    textHeading:SetText("Cooldown Text")
-    ColorHeading(textHeading)
-    textHeading:SetFullWidth(true)
-    container:AddChild(textHeading)
-
-    local textCollapsed = CS.collapsedSections["appearance_text"]
-    AttachCollapseButton(textHeading, textCollapsed, function()
-        CS.collapsedSections["appearance_text"] = not CS.collapsedSections["appearance_text"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(textHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not textCollapsed then
         local fontSizeSlider = AceGUI:Create("Slider")
         fontSizeSlider:SetLabel("Font Size")
         fontSizeSlider:SetSliderValues(8, 32, 1)
@@ -5107,25 +4766,23 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(cdYSlider)
-    end -- not textCollapsed
     end -- cdTextAdvExpanded + showCooldownText
 
-    -- Charge Text section (full customization)
-    if chargeAdvExpanded and style.showChargeText ~= false then
-    local chargeHeading = AceGUI:Create("Heading")
-    chargeHeading:SetText("Charge Text")
-    ColorHeading(chargeHeading)
-    chargeHeading:SetFullWidth(true)
-    container:AddChild(chargeHeading)
-
-    local chargeCollapsed = CS.collapsedSections["appearance_charge"]
-    AttachCollapseButton(chargeHeading, chargeCollapsed, function()
-        CS.collapsedSections["appearance_charge"] = not CS.collapsedSections["appearance_charge"]
+    -- Show Charge Text toggle
+    local chargeTextCb = AceGUI:Create("CheckBox")
+    chargeTextCb:SetLabel("Show Charge Text")
+    chargeTextCb:SetValue(style.showChargeText ~= false)
+    chargeTextCb:SetFullWidth(true)
+    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showChargeText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CreatePromoteButton(chargeHeading, "chargeText", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    container:AddChild(chargeTextCb)
 
-    if not chargeCollapsed then
+    local chargeAdvExpanded = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false)
+
+    if chargeAdvExpanded and style.showChargeText ~= false then
         local chargeFontSizeSlider = AceGUI:Create("Slider")
         chargeFontSizeSlider:SetLabel("Font Size")
         chargeFontSizeSlider:SetSliderValues(8, 32, 1)
@@ -5243,26 +4900,46 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(chargeYSlider)
-    end -- not chargeCollapsed
     end -- chargeAdvExpanded + showChargeText
 
-    if auraTextAdvExpanded then
-    -- Aura Text customization
-    local auraTextHeading = AceGUI:Create("Heading")
-    auraTextHeading:SetText("Aura Text")
-    ColorHeading(auraTextHeading)
-    auraTextHeading:SetFullWidth(true)
-    container:AddChild(auraTextHeading)
-
-    local iconAuraTextCollapsed = CS.collapsedSections["appearance_auratext"]
-    AttachCollapseButton(auraTextHeading, iconAuraTextCollapsed, function()
-        CS.collapsedSections["appearance_auratext"] = not CS.collapsedSections["appearance_auratext"]
+    -- Show Aura Text toggle
+    local auraTextCb = AceGUI:Create("CheckBox")
+    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetValue(style.showAuraText ~= false)
+    auraTextCb:SetFullWidth(true)
+    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    container:AddChild(auraTextCb)
 
-    if not iconAuraTextCollapsed then
-    if style.showAuraText ~= false then
+    local auraTextAdvExpanded, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false)
+
+    local auraPosInfo = CreateFrame("Button", nil, auraTextCb.frame)
+    auraPosInfo:SetSize(16, 16)
+    auraPosInfo:SetPoint("LEFT", auraTextAdvBtn, "RIGHT", 4, 0)
+    local auraPosInfoIcon = auraPosInfo:CreateTexture(nil, "OVERLAY")
+    auraPosInfoIcon:SetSize(12, 12)
+    auraPosInfoIcon:SetPoint("CENTER")
+    auraPosInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    auraPosInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Shared Position")
+        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Text share the same text element.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    auraPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    if style.showAuraText == false then
+        auraPosInfo:Hide()
+    end
+    auraTextCb:SetCallback("OnRelease", function()
+        auraPosInfo:ClearAllPoints()
+        auraPosInfo:Hide()
+        auraPosInfo:SetParent(nil)
+    end)
+
+    if style.showAuraText ~= false and auraTextAdvExpanded then
         local auraFontSizeSlider = AceGUI:Create("Slider")
         auraFontSizeSlider:SetLabel("Font Size")
         auraFontSizeSlider:SetSliderValues(8, 32, 1)
@@ -5311,9 +4988,238 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(auraFontColor)
+    end -- auraTextAdvExpanded + showAuraText
+
+    -- Show Keybind Text toggle
+    local kbCb = AceGUI:Create("CheckBox")
+    kbCb:SetLabel("Show Keybind Text")
+    kbCb:SetValue(style.showKeybindText or false)
+    kbCb:SetFullWidth(true)
+    kbCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showKeybindText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(kbCb)
+
+    local kbAdvExpanded = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText)
+
+    if style.showKeybindText and kbAdvExpanded then
+        local kbAnchorDrop = AceGUI:Create("Dropdown")
+        kbAnchorDrop:SetLabel("Anchor")
+        kbAnchorDrop:SetList({
+            TOPRIGHT = "Top Right",
+            TOPLEFT = "Top Left",
+            BOTTOMRIGHT = "Bottom Right",
+            BOTTOMLEFT = "Bottom Left",
+        })
+        kbAnchorDrop:SetValue(style.keybindAnchor or "TOPRIGHT")
+        kbAnchorDrop:SetFullWidth(true)
+        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbAnchorDrop)
+
+        local kbXSlider = AceGUI:Create("Slider")
+        kbXSlider:SetLabel("X Offset")
+        kbXSlider:SetSliderValues(-20, 20, 1)
+        kbXSlider:SetValue(style.keybindXOffset or -2)
+        kbXSlider:SetFullWidth(true)
+        kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbXSlider)
+
+        local kbYSlider = AceGUI:Create("Slider")
+        kbYSlider:SetLabel("Y Offset")
+        kbYSlider:SetSliderValues(-20, 20, 1)
+        kbYSlider:SetValue(style.keybindYOffset or -2)
+        kbYSlider:SetFullWidth(true)
+        kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbYSlider)
+
+        local kbFontSizeSlider = AceGUI:Create("Slider")
+        kbFontSizeSlider:SetLabel("Font Size")
+        kbFontSizeSlider:SetSliderValues(6, 24, 1)
+        kbFontSizeSlider:SetValue(style.keybindFontSize or 10)
+        kbFontSizeSlider:SetFullWidth(true)
+        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontSizeSlider)
+
+        local kbFontDrop = AceGUI:Create("Dropdown")
+        kbFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(kbFontDrop)
+        kbFontDrop:SetValue(style.keybindFont or "Friz Quadrata TT")
+        kbFontDrop:SetFullWidth(true)
+        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontDrop)
+
+        local kbOutlineDrop = AceGUI:Create("Dropdown")
+        kbOutlineDrop:SetLabel("Font Outline")
+        kbOutlineDrop:SetList(CS.outlineOptions)
+        kbOutlineDrop:SetValue(style.keybindFontOutline or "OUTLINE")
+        kbOutlineDrop:SetFullWidth(true)
+        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.keybindFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbOutlineDrop)
+
+        local kbFontColor = AceGUI:Create("ColorPicker")
+        kbFontColor:SetLabel("Font Color")
+        kbFontColor:SetHasAlpha(true)
+        local kbc = style.keybindFontColor or {1, 1, 1, 1}
+        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
+        kbFontColor:SetFullWidth(true)
+        kbFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.keybindFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        kbFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.keybindFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(kbFontColor)
+    end -- showKeybindText + kbAdvExpanded
+
+    -- Compact Mode toggle
+    local compactCb = AceGUI:Create("CheckBox")
+    compactCb:SetLabel("Compact Mode")
+    compactCb:SetValue(group.compactLayout or false)
+    compactCb:SetFullWidth(true)
+    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.compactLayout = val or false
+        CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
+        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+        if frame then frame._layoutDirty = true end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(compactCb)
+
+    local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout)
+
+    -- (?) tooltip for compact mode
+    local compactInfo = CreateFrame("Button", nil, compactCb.frame)
+    compactInfo:SetSize(16, 16)
+    if group.compactLayout then
+        compactInfo:SetPoint("LEFT", compactAdvBtn, "RIGHT", 4, 0)
+    else
+        compactInfo:SetPoint("LEFT", compactCb.checkbg, "RIGHT", compactCb.text:GetStringWidth() + 6, 0)
     end
-    end -- not iconAuraTextCollapsed
-    end -- auraTextAdvExpanded
+    local compactInfoIcon = compactInfo:CreateTexture(nil, "OVERLAY")
+    compactInfoIcon:SetSize(12, 12)
+    compactInfoIcon:SetPoint("CENTER")
+    compactInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    compactInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Compact Mode")
+        GameTooltip:AddLine("When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    compactInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(tabInfoButtons, compactInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        compactInfo:Hide()
+    end
+
+    if compactAdvExpanded and group.compactLayout then
+        local totalButtons = #group.buttons
+        local maxVisSlider = AceGUI:Create("Slider")
+        maxVisSlider:SetLabel("Max Visible Buttons")
+        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
+        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
+        maxVisSlider:SetFullWidth(true)
+        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            val = math.floor(val + 0.5)
+            if val >= totalButtons then
+                group.maxVisibleButtons = 0
+            else
+                group.maxVisibleButtons = val
+            end
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame then frame._layoutDirty = true end
+        end)
+        container:AddChild(maxVisSlider)
+
+        local maxVisInfo = CreateFrame("Button", nil, maxVisSlider.frame)
+        maxVisInfo:SetSize(16, 16)
+        maxVisInfo:SetPoint("LEFT", maxVisSlider.label, "CENTER", maxVisSlider.label:GetStringWidth() / 2 + 4, 0)
+        local maxVisInfoIcon = maxVisInfo:CreateTexture(nil, "OVERLAY")
+        maxVisInfoIcon:SetSize(12, 12)
+        maxVisInfoIcon:SetPoint("CENTER")
+        maxVisInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        maxVisInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Max Visible Buttons")
+            GameTooltip:AddLine("Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(tabInfoButtons, maxVisInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            maxVisInfo:Hide()
+        end
+    end
+
+    -- Border heading
+    local borderHeading = AceGUI:Create("Heading")
+    borderHeading:SetText("Border")
+    ColorHeading(borderHeading)
+    borderHeading:SetFullWidth(true)
+    container:AddChild(borderHeading)
+
+    local borderCollapsed = CS.collapsedSections["appearance_border"]
+    AttachCollapseButton(borderHeading, borderCollapsed, function()
+        CS.collapsedSections["appearance_border"] = not CS.collapsedSections["appearance_border"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    if not borderCollapsed then
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    if group.masqueEnabled then
+        borderSlider:SetDisabled(true)
+    end
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.borderSize = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(borderSlider)
+
+    local borderColor = AceGUI:Create("ColorPicker")
+    borderColor:SetLabel("Border Color")
+    borderColor:SetHasAlpha(true)
+    local bc = style.borderColor or {0, 0, 0, 1}
+    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
+    borderColor:SetFullWidth(true)
+    if group.masqueEnabled then
+        borderColor:SetDisabled(true)
+    end
+    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(borderColor)
+    end -- not borderCollapsed
 
     -- Masque skinning (icon-only)
     if CooldownCompanion.Masque then
