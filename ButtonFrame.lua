@@ -2924,9 +2924,16 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
         local chColor = style.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = style.chargeAnchor or defAnchor
-        local chargeXOffset = style.chargeXOffset or defXOff
-        local chargeYOffset = style.chargeYOffset or defYOff
+        local chargeAnchor, chargeXOffset, chargeYOffset
+        if showIcon then
+            chargeAnchor = style.chargeAnchor or defAnchor
+            chargeXOffset = style.chargeXOffset or defXOff
+            chargeYOffset = style.chargeYOffset or defYOff
+        else
+            chargeAnchor = "CENTER"
+            chargeXOffset = 0
+            chargeYOffset = 0
+        end
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
         local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
@@ -3278,9 +3285,16 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
         local chColor = newStyle.chargeFontColor or {1, 1, 1, 1}
         button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
-        local chargeAnchor = newStyle.chargeAnchor or defAnchor
-        local chargeXOffset = newStyle.chargeXOffset or defXOff
-        local chargeYOffset = newStyle.chargeYOffset or defYOff
+        local chargeAnchor, chargeXOffset, chargeYOffset
+        if showIcon then
+            chargeAnchor = newStyle.chargeAnchor or defAnchor
+            chargeXOffset = newStyle.chargeXOffset or defXOff
+            chargeYOffset = newStyle.chargeYOffset or defYOff
+        else
+            chargeAnchor = "CENTER"
+            chargeXOffset = 0
+            chargeYOffset = 0
+        end
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then

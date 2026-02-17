@@ -4443,6 +4443,153 @@ local function BuildBarAppearanceTab(container, group, style)
     end
     end -- not timeTextCollapsed
 
+    -- Charge Text section
+    local chargeHeading = AceGUI:Create("Heading")
+    chargeHeading:SetText("Charge Text")
+    ColorHeading(chargeHeading)
+    chargeHeading:SetFullWidth(true)
+    container:AddChild(chargeHeading)
+
+    local chargeCollapsed = CS.collapsedSections["barappearance_chargetext"]
+    AttachCollapseButton(chargeHeading, chargeCollapsed, function()
+        CS.collapsedSections["barappearance_chargetext"] = not CS.collapsedSections["barappearance_chargetext"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    CreatePromoteButton(chargeHeading, "chargeText", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
+    if not chargeCollapsed then
+    local chargeTextCb = AceGUI:Create("CheckBox")
+    chargeTextCb:SetLabel("Show Charge Text")
+    chargeTextCb:SetValue(style.showChargeText ~= false)
+    chargeTextCb:SetFullWidth(true)
+    chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showChargeText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(chargeTextCb)
+
+    if style.showChargeText ~= false then
+        local chargeFontSizeSlider = AceGUI:Create("Slider")
+        chargeFontSizeSlider:SetLabel("Font Size")
+        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
+        chargeFontSizeSlider:SetValue(style.chargeFontSize or 12)
+        chargeFontSizeSlider:SetFullWidth(true)
+        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontSizeSlider)
+
+        local chargeFontDrop = AceGUI:Create("Dropdown")
+        chargeFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(chargeFontDrop)
+        chargeFontDrop:SetValue(style.chargeFont or "Friz Quadrata TT")
+        chargeFontDrop:SetFullWidth(true)
+        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontDrop)
+
+        local chargeOutlineDrop = AceGUI:Create("Dropdown")
+        chargeOutlineDrop:SetLabel("Font Outline")
+        chargeOutlineDrop:SetList(CS.outlineOptions)
+        chargeOutlineDrop:SetValue(style.chargeFontOutline or "OUTLINE")
+        chargeOutlineDrop:SetFullWidth(true)
+        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeOutlineDrop)
+
+        local chargeFontColor = AceGUI:Create("ColorPicker")
+        chargeFontColor:SetLabel("Font Color (Max Charges)")
+        chargeFontColor:SetHasAlpha(true)
+        local cfc = style.chargeFontColor or {1, 1, 1, 1}
+        chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
+        chargeFontColor:SetFullWidth(true)
+        chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.chargeFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.chargeFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontColor)
+
+        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
+        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
+        chargeFontColorMissing:SetHasAlpha(true)
+        local cfcm = style.chargeFontColorMissing or {1, 1, 1, 1}
+        chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
+        chargeFontColorMissing:SetFullWidth(true)
+        chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.chargeFontColorMissing = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.chargeFontColorMissing = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontColorMissing)
+
+        local chargeFontColorZero = AceGUI:Create("ColorPicker")
+        chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
+        chargeFontColorZero:SetHasAlpha(true)
+        local cfcz = style.chargeFontColorZero or {1, 1, 1, 1}
+        chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
+        chargeFontColorZero:SetFullWidth(true)
+        chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.chargeFontColorZero = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.chargeFontColorZero = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeFontColorZero)
+
+        local chargeAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local chargeAnchorDrop = AceGUI:Create("Dropdown")
+        chargeAnchorDrop:SetLabel("Anchor")
+        chargeAnchorDrop:SetList(chargeAnchorValues, CS.anchorPoints)
+        chargeAnchorDrop:SetValue(style.chargeAnchor or "BOTTOMRIGHT")
+        chargeAnchorDrop:SetFullWidth(true)
+        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeAnchorDrop)
+
+        local chargeXSlider = AceGUI:Create("Slider")
+        chargeXSlider:SetLabel("X Offset")
+        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetValue(style.chargeXOffset or -2)
+        chargeXSlider:SetFullWidth(true)
+        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeXSlider)
+
+        local chargeYSlider = AceGUI:Create("Slider")
+        chargeYSlider:SetLabel("Y Offset")
+        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetValue(style.chargeYOffset or 2)
+        chargeYSlider:SetFullWidth(true)
+        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.chargeYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(chargeYSlider)
+    end
+    end -- not chargeCollapsed
+
 end
 
 ------------------------------------------------------------------------
