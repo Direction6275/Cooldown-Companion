@@ -554,6 +554,15 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
                 selectedGroup = nil
                 selectedButton = nil
                 wipe(selectedButtons)
+                wipe(selectedGroups)
+                if db.profile.groups then
+                    local charKey = db.keys.char
+                    for _, group in pairs(db.profile.groups) do
+                        if not group.isGlobal then
+                            group.createdBy = charKey
+                        end
+                    end
+                end
                 CooldownCompanion:RefreshConfigPanel()
                 CooldownCompanion:RefreshAllGroups()
             else
@@ -1148,6 +1157,18 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
             local db = CooldownCompanion.db
             for k, v in pairs(decodedDiagnostic.profile) do
                 db.profile[k] = v
+            end
+            selectedGroup = nil
+            selectedButton = nil
+            wipe(selectedButtons)
+            wipe(selectedGroups)
+            if db.profile.groups then
+                local charKey = db.keys.char
+                for _, group in pairs(db.profile.groups) do
+                    if not group.isGlobal then
+                        group.createdBy = charKey
+                    end
+                end
             end
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
