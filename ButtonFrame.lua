@@ -1019,12 +1019,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
 
-    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
-    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
-       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
-        button.cooldown:SetDrawBling(false)
-    end
-
     -- Loss of control cooldown frame (red swipe showing lockout duration)
     button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
     button.locCooldown:SetAllPoints(button.icon)
@@ -1035,11 +1029,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
-    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
-    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
-       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
-        button.locCooldown:SetDrawBling(false)
-    end
+    -- Suppress bling (cooldown-end flash) on all icon buttons
+    button.cooldown:SetDrawBling(false)
+    button.locCooldown:SetDrawBling(false)
 
     -- Proc glow elements (solid border + animated glow + pixel glow)
     button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
@@ -2900,12 +2892,6 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
-    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
-    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
-       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
-        button.locCooldown:SetDrawBling(false)
-    end
-
     -- Hidden cooldown frame for GetCooldownTimes() reads
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetSize(1, 1)
@@ -2915,11 +2901,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.cooldown:Hide()
     SetFrameClickThroughRecursive(button.cooldown, true, true)
 
-    -- Suppress bling for buttons with visibility toggles (prevents flash on hide transition)
-    if buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown
-       or buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive then
-        button.cooldown:SetDrawBling(false)
-    end
+    -- Suppress bling (cooldown-end flash) on all bar buttons
+    button.cooldown:SetDrawBling(false)
+    button.locCooldown:SetDrawBling(false)
 
     -- Charge/item count text (overlay)
     button.overlayFrame = CreateFrame("Frame", nil, button)

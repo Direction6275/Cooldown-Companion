@@ -2857,6 +2857,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         frame:SetAlpha(alpha)
         state.lastAlpha = alpha
     end
+
 end
 
 function CooldownCompanion:InitAlphaUpdateFrame()
