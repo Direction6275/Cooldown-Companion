@@ -499,6 +499,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- Initial cooldown update
     frame:UpdateCooldowns()
 
+    -- Ensure compact layout reflow runs on next tick to enforce maxVisibleButtons cap
+    if group.compactLayout then
+        frame._layoutDirty = true
+    end
+
     -- Update event-driven range check registrations
     self:UpdateRangeCheckRegistrations()
 end
