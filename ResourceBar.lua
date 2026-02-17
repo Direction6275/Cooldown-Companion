@@ -1743,6 +1743,22 @@ local function InstallHooks()
         end
         CooldownCompanion:ApplyResourceBars()
     end)
+
+    -- When icon size / spacing / buttons-per-row changes — re-apply if width changed
+    hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
+        local s = GetResourceBarSettings()
+        if not s or not s.enabled then return end
+        local anchorGroupId = GetEffectiveAnchorGroupId(s)
+        if anchorGroupId ~= groupId then return end
+        local groupFrame = CooldownCompanion.groupFrames[groupId]
+        if not groupFrame or not containerFrame then return end
+        local newWidth = groupFrame:GetWidth()
+        if containerFrame._lastAppliedWidth
+            and math_abs(newWidth - containerFrame._lastAppliedWidth) < 0.1 then
+            return
+        end
+        CooldownCompanion:ApplyResourceBars()
+    end)
 end
 
 ------------------------------------------------------------------------

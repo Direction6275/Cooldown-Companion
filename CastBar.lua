@@ -1204,6 +1204,25 @@ local function InstallHooks()
             end
             ApplyFXScaling(cb, barWidth, effectiveHeight)
         end)
+
+        -- When icon size / spacing / buttons-per-row changes — re-apply FX scaling
+        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
+            local s = GetCastBarSettings()
+            if not s or not s.enabled then return end
+            local anchorGroupId = GetEffectiveAnchorGroupId(s)
+            if anchorGroupId ~= groupId then return end
+            if not isApplied then return end
+            local cb = PlayerCastingBarFrame
+            if not cb then return end
+            local groupFrame = CooldownCompanion.groupFrames[groupId]
+            if not groupFrame then return end
+            local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
+            local barWidth = groupFrame:GetWidth()
+            if s.showIcon and not s.iconOffset and s.stylingEnabled then
+                barWidth = barWidth - effectiveHeight
+            end
+            ApplyFXScaling(cb, barWidth, effectiveHeight)
+        end)
     end
 end
 
