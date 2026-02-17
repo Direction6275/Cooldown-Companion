@@ -1526,7 +1526,7 @@ local function UpdateIconModeGlows(button, buttonData, style)
         elseif button._auraGlowPreview then
             showAuraGlow = true
         elseif button._auraActive then
-            if button._inPandemic then
+            if button._inPandemic and style.showPandemicGlow ~= false then
                 showAuraGlow = true
                 pandemicOverride = true
             elseif buttonData.auraIndicatorEnabled then
@@ -2601,7 +2601,7 @@ UpdateBarDisplay = function(button, fetchOk)
     if button._pandemicPreview then
         wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
     elseif button._auraActive then
-        if button._inPandemic then
+        if button._inPandemic and style.showPandemicGlow ~= false then
             wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
         elseif button.buttonData.auraIndicatorEnabled then
             wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
@@ -2629,7 +2629,7 @@ UpdateBarDisplay = function(button, fetchOk)
     end
 
     -- Bar aura effect (pandemic overrides effect color)
-    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow)
+    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow and style.showPandemicGlow ~= false)
     local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
         or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)

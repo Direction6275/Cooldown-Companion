@@ -85,6 +85,7 @@ local defaults = {
         },
         hideInfoButtons = false,
         escClosesConfig = true,
+        showAdvanced = {},
         groups = {
             --[[
                 [groupId] = {
@@ -2843,14 +2844,16 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         local isHovering = frame:IsMouseOver()
         if isHovering then
             forceFull = true
-            state.hoverExpire = now + (group.fadeDelay or 1)
+            state.hoverExpire = now + (group.customFade and group.fadeDelay or 1)
         elseif state.hoverExpire and now < state.hoverExpire then
             forceFull = true
         end
     end
 
     local desired = forceFull and 1 or (forceHidden and 0 or group.baselineAlpha)
-    local alpha = UpdateFadedAlpha(state, desired, now, group.fadeInDuration, group.fadeOutDuration)
+    local fadeIn = group.customFade and group.fadeInDuration or 0.2
+    local fadeOut = group.customFade and group.fadeOutDuration or 0.2
+    local alpha = UpdateFadedAlpha(state, desired, now, fadeIn, fadeOut)
 
     -- Only call SetAlpha when value actually changes
     if state.lastAlpha ~= alpha then

@@ -5509,10 +5509,8 @@ function RefreshColumn3(container)
             SyncConfigState()
             if tab == "appearance" then
                 ST._BuildAppearanceTab(scroll)
-            elseif tab == "positioning" then
-                ST._BuildPositioningTab(scroll)
-            elseif tab == "extras" then
-                ST._BuildExtrasTab(scroll)
+            elseif tab == "layout" then
+                ST._BuildLayoutTab(scroll)
             elseif tab == "effects" then
                 ST._BuildEffectsTab(scroll)
             elseif tab == "loadconditions" then
@@ -5537,9 +5535,8 @@ function RefreshColumn3(container)
     end
     container.tabGroup:SetTabs({
         { value = "appearance",      text = "Appearance" },
-        { value = "positioning",     text = "Positioning" },
-        { value = "extras",          text = "Extras" },
         { value = "effects",         text = effectsLabel },
+        { value = "layout",          text = "Layout" },
         { value = "loadconditions",  text = "Load Conditions" },
     })
 
@@ -5552,6 +5549,10 @@ function RefreshColumn3(container)
             savedScrollvalue = s.scrollvalue
         end
     end
+
+    -- Migrate stale tab keys from previous layout
+    if selectedTab == "extras" then selectedTab = "effects" end
+    if selectedTab == "positioning" then selectedTab = "layout" end
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col3Scroll and creates a new one)
