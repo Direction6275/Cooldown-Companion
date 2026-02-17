@@ -1744,10 +1744,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 else
                     -- Secret values: can't call IsZero() to check if spell is ready.
                     -- GetSpellCooldownDuration returns non-nil even for ready spells
-                    -- during combat.  Use the hidden cooldown widget as a C++ level
-                    -- signal: SetCooldown() auto-shows it only when duration > 0
-                    -- (handles secrets internally).
-                    useIt = button.cooldown:IsShown()
+                    -- during combat.  Use scratchCooldown as a C++ level signal:
+                    -- SetCooldown() auto-shows it only when duration > 0 (handles
+                    -- secrets internally).  button.cooldown:IsShown() is unreliable
+                    -- — force-shown by UpdateIconModeVisuals, not auto-hidden by
+                    -- SetCooldown(0,0).
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                    useIt = scratchCooldown:IsShown()
+                    scratchCooldown:Hide()
                 end
                 if useIt then
                     button._durationObj = spellCooldownDuration
@@ -1808,9 +1813,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
                 scratchCooldown:Hide()
             elseif mainCDDuration then
-                -- Secret values (combat): scratchCooldown fails, fall back to IsShown()
-                button._mainCDShown = button.cooldown:IsShown()
-                    and not (isOnGCD and CooldownCompanion._gcdActive)
+                -- Secret values (combat): SetCooldownFromDurationObject fails with
+                -- secrets, but SetCooldown accepts them.  Use scratchCooldown
+                -- (button.cooldown:IsShown() is unreliable — force-shown by
+                -- UpdateIconModeVisuals, not auto-hidden by SetCooldown(0,0)).
+                local ci = C_Spell.GetSpellCooldown(cooldownSpellId)
+                if ci then
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldown(ci.startTime, ci.duration)
+                    button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                    scratchCooldown:Hide()
+                else
+                    button._mainCDShown = false
+                end
             else
                 button._mainCDShown = false
             end
