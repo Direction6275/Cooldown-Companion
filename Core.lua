@@ -2894,8 +2894,18 @@ function CooldownCompanion:InitAlphaUpdateFrame()
 
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
-            if frame and frame:IsShown() and GroupNeedsAlphaUpdate(group) then
-                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
+            if frame and frame:IsShown() then
+                local needsUpdate = GroupNeedsAlphaUpdate(group)
+                -- Also process if the group has stale alpha state that needs cleanup
+                if not needsUpdate then
+                    local state = self.alphaState[groupId]
+                    if state and state.currentAlpha and state.currentAlpha ~= 1 then
+                        needsUpdate = true
+                    end
+                end
+                if needsUpdate then
+                    self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
+                end
             end
         end
     end)
