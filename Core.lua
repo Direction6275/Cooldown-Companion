@@ -464,7 +464,7 @@ ST.OVERRIDE_SECTIONS = {
     showOutOfRange = {
         label = "Show Out of Range",
         keys = {"showOutOfRange"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true},
     },
     showTooltips = {
         label = "Show Tooltips",
@@ -474,12 +474,12 @@ ST.OVERRIDE_SECTIONS = {
     lossOfControl = {
         label = "Loss of Control",
         keys = {"showLossOfControl"},
-        modes = {icons = true},
+        modes = {icons = true, bars = true},
     },
     unusableDimming = {
         label = "Unusable Dimming",
         keys = {"showUnusable"},
-        modes = {icons = true},
+        modes = {icons = true, bars = true},
     },
     assistedHighlight = {
         label = "Assisted Highlight",

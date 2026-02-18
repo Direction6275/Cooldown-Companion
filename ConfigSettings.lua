@@ -4019,79 +4019,9 @@ local function BuildBarAppearanceTab(container, group, style)
     end
     end -- not chargeCollapsed
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
-        end
-    end
-end
-
-------------------------------------------------------------------------
--- EFFECTS TAB (Glows / Indicators)
-------------------------------------------------------------------------
-local function BuildBarEffectsTab(container, group, style)
     -- ================================================================
-    -- Desaturate on Cooldown
+    -- Aura Text
     -- ================================================================
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown / Active Aura")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(desatCb)
-
-    -- Active Aura Indicator enable
-    local barAuraEnableCb = AceGUI:Create("CheckBox")
-    barAuraEnableCb:SetLabel("Active Aura Indicator")
-    barAuraEnableCb:SetValue(style.barAuraEffect ~= "none")
-    barAuraEnableCb:SetFullWidth(true)
-    barAuraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barAuraEffect = val and "color" or "none"
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(barAuraEnableCb)
-
-    local barAuraAdvExpanded = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, style.barAuraEffect ~= "none")
-
-    if barAuraAdvExpanded then
-    -- Active Aura Indicator (full customization)
-    local barAuraHeading = AceGUI:Create("Heading")
-    barAuraHeading:SetText("Active Aura Indicator")
-    ColorHeading(barAuraHeading)
-    barAuraHeading:SetFullWidth(true)
-    container:AddChild(barAuraHeading)
-
-    local barActiveAuraCollapsed = CS.collapsedSections["bareffects_activeaura"]
-    AttachCollapseButton(barAuraHeading, barActiveAuraCollapsed, function()
-        CS.collapsedSections["bareffects_activeaura"] = not CS.collapsedSections["bareffects_activeaura"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(barAuraHeading, "barActiveAura", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not barActiveAuraCollapsed then
-    BuildBarActiveAuraControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    end
-    end -- barAuraAdvExpanded
-
-    -- GCD toggle
-    local gcdCb = AceGUI:Create("CheckBox")
-    gcdCb:SetLabel("Show GCD")
-    gcdCb:SetValue(style.showGCDSwipe == true)
-    gcdCb:SetFullWidth(true)
-    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showGCDSwipe = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(gcdCb)
-
-    -- Show Aura Text toggle
     local auraTextCb = AceGUI:Create("CheckBox")
     auraTextCb:SetLabel("Show Aura Text")
     auraTextCb:SetValue(style.showAuraText ~= false)
@@ -4103,25 +4033,10 @@ local function BuildBarEffectsTab(container, group, style)
     end)
     container:AddChild(auraTextCb)
 
-    local barAuraTextAdvExpanded = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false)
+    local barAuraTextAdvExpanded, barAuraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false)
+    CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
 
-    if barAuraTextAdvExpanded then
-    -- Aura Text customization
-    local auraTextHeading = AceGUI:Create("Heading")
-    auraTextHeading:SetText("Aura Text")
-    ColorHeading(auraTextHeading)
-    auraTextHeading:SetFullWidth(true)
-    container:AddChild(auraTextHeading)
-
-    local barAuraTextCollapsed = CS.collapsedSections["bareffects_auratext"]
-    AttachCollapseButton(auraTextHeading, barAuraTextCollapsed, function()
-        CS.collapsedSections["bareffects_auratext"] = not CS.collapsedSections["bareffects_auratext"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(auraTextHeading, "auraText", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not barAuraTextCollapsed then
-    if style.showAuraText ~= false then
+    if barAuraTextAdvExpanded and style.showAuraText ~= false then
         local auraFontSizeSlider = AceGUI:Create("Slider")
         auraFontSizeSlider:SetLabel("Font Size")
         auraFontSizeSlider:SetSliderValues(6, 24, 1)
@@ -4170,47 +4085,11 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(auraFontColor)
-    end
-    end -- not barAuraTextCollapsed
     end -- barAuraTextAdvExpanded
 
-    -- Show Pandemic Indicator toggle
-    local pandemicIndicatorCb = AceGUI:Create("CheckBox")
-    pandemicIndicatorCb:SetLabel("Pandemic Indicator")
-    pandemicIndicatorCb:SetValue(style.showPandemicGlow ~= false)
-    pandemicIndicatorCb:SetFullWidth(true)
-    pandemicIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showPandemicGlow = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(pandemicIndicatorCb)
-
-    local barPandemicAdvExpanded = AddAdvancedToggle(pandemicIndicatorCb, "barPandemicIndicator", tabInfoButtons, style.showPandemicGlow ~= false)
-
-    if barPandemicAdvExpanded then
-    -- Pandemic Indicator customization
-    local pandemicBarHeading = AceGUI:Create("Heading")
-    pandemicBarHeading:SetText("Pandemic Indicator")
-    ColorHeading(pandemicBarHeading)
-    pandemicBarHeading:SetFullWidth(true)
-    container:AddChild(pandemicBarHeading)
-
-    local barPandemicCollapsed = CS.collapsedSections["bareffects_pandemic"]
-    AttachCollapseButton(pandemicBarHeading, barPandemicCollapsed, function()
-        CS.collapsedSections["bareffects_pandemic"] = not CS.collapsedSections["bareffects_pandemic"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(pandemicBarHeading, "pandemicBar", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not barPandemicCollapsed then
-    BuildPandemicBarControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    end
-    end -- barPandemicAdvExpanded
-
-    -- Ready Text heading
+    -- ================================================================
+    -- Ready Text
+    -- ================================================================
     local readyHeading = AceGUI:Create("Heading")
     readyHeading:SetText("Ready Text")
     ColorHeading(readyHeading)
@@ -4299,15 +4178,107 @@ local function BuildBarEffectsTab(container, group, style)
     end
     end -- not barReadyTextCollapsed
 
-    -- Loss of Control (from Extras)
-    BuildLossOfControlControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        for _, btn in ipairs(tabInfoButtons) do
+            if not btn._isAdvancedToggle then btn:Hide() end
+        end
+    end
+end
 
-    -- Unusable Dimming (from Extras)
-    BuildUnusableDimmingControls(container, style, function()
+------------------------------------------------------------------------
+-- EFFECTS TAB (Glows / Indicators)
+------------------------------------------------------------------------
+local function BuildBarEffectsTab(container, group, style)
+    -- ================================================================
+    -- Show Active Aura Glow
+    -- ================================================================
+    local barAuraEnableCb = AceGUI:Create("CheckBox")
+    barAuraEnableCb:SetLabel("Show Active Aura Glow")
+    barAuraEnableCb:SetValue(style.barAuraEffect ~= "none")
+    barAuraEnableCb:SetFullWidth(true)
+    barAuraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barAuraEffect = val and "color" or "none"
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(barAuraEnableCb)
+
+    local barAuraAdvExpanded, barAuraAdvBtn = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, style.barAuraEffect ~= "none")
+    CreateCheckboxPromoteButton(barAuraEnableCb, barAuraAdvBtn, "barActiveAura", group, style)
+
+    if barAuraAdvExpanded and style.barAuraEffect ~= "none" then
+    BuildBarActiveAuraControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    end -- barAuraAdvExpanded
+
+    -- ================================================================
+    -- Show Pandemic Glow
+    -- ================================================================
+    local pandemicIndicatorCb = AceGUI:Create("CheckBox")
+    pandemicIndicatorCb:SetLabel("Show Pandemic Glow")
+    pandemicIndicatorCb:SetValue(style.showPandemicGlow ~= false)
+    pandemicIndicatorCb:SetFullWidth(true)
+    pandemicIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showPandemicGlow = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(pandemicIndicatorCb)
+
+    local barPandemicAdvExpanded, barPandemicAdvBtn = AddAdvancedToggle(pandemicIndicatorCb, "barPandemicIndicator", tabInfoButtons, style.showPandemicGlow ~= false)
+    CreateCheckboxPromoteButton(pandemicIndicatorCb, barPandemicAdvBtn, "pandemicBar", group, style)
+
+    if barPandemicAdvExpanded and style.showPandemicGlow ~= false then
+    BuildPandemicBarControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    end -- barPandemicAdvExpanded
+
+    -- ================================================================
+    -- Desaturate on Cooldown
+    -- ================================================================
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Show Desaturate On Cooldown / Active Aura")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(desatCb)
+    CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+
+    -- ================================================================
+    -- GCD Swipe
+    -- ================================================================
+    local gcdCb = AceGUI:Create("CheckBox")
+    gcdCb:SetLabel("Show GCD Swipe")
+    gcdCb:SetValue(style.showGCDSwipe == true)
+    gcdCb:SetFullWidth(true)
+    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showGCDSwipe = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(gcdCb)
+    CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
+
+    -- ================================================================
+    -- Loss of Control
+    -- ================================================================
+    local locCb = BuildLossOfControlControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
+
+    -- ================================================================
+    -- Unusable Dimming
+    -- ================================================================
+    local unusableCb = BuildUnusableDimmingControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then
