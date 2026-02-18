@@ -1441,9 +1441,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown then
+    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
         local wantDesat = false
-        if fetchOk and not isOnGCD and not gcdJustEnded then
+        if style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
                 if buttonData.type == "item" then
                     wantDesat = button._itemCdDuration and button._itemCdDuration > 0
@@ -1456,16 +1456,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    elseif buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
-        local wantDesat = false
-        if buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._mainCDShown then
             wantDesat = true
         end
-        if buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+        if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
@@ -2563,9 +2557,9 @@ UpdateBarDisplay = function(button, fetchOk)
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown then
+    elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
         local wantDesat = false
-        if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
+        if style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then
                 if button.buttonData.type == "item" then
                     wantDesat = button._itemCdDuration and button._itemCdDuration > 0
@@ -2578,16 +2572,10 @@ UpdateBarDisplay = function(button, fetchOk)
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    elseif button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
-        local wantDesat = false
-        if button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+        if not wantDesat and button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
             wantDesat = true
         end
-        if button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+        if not wantDesat and button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
