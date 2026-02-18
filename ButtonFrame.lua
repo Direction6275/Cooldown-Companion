@@ -1024,8 +1024,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetAllPoints(button.icon)
     button.locCooldown:SetDrawEdge(true)
     button.locCooldown:SetDrawSwipe(true)
-    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
-    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
@@ -1369,14 +1368,12 @@ local function UpdateIconTint(button, buttonData, style)
         if buttonData.type == "spell" then
             local isUsable = C_Spell.IsSpellUsable(buttonData.id)
             if not isUsable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
+                r, g, b = 0.4, 0.4, 0.4
             end
         elseif buttonData.type == "item" then
             local usable, noMana = IsUsableItem(buttonData.id)
             if not usable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
+                r, g, b = 0.4, 0.4, 0.4
             end
         end
     end
@@ -2142,8 +2139,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update loss of control cooldown frame
     if button.locCooldown then
-        local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
-        button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+        button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
         button.locCooldown:Clear()
     end
 
@@ -2887,8 +2883,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.locCooldown:SetAllPoints(button.icon)
     button.locCooldown:SetDrawEdge(true)
     button.locCooldown:SetDrawSwipe(true)
-    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
-    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 

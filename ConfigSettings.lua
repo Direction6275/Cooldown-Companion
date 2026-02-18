@@ -120,9 +120,9 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     if not btn then
         btn = CreateFrame("Button", nil, frame)
-        btn:SetSize(16, 16)
+        btn:SetSize(18, 18)
         btn._icon = btn:CreateTexture(nil, "ARTWORK")
-        btn._icon:SetSize(14, 14)
+        btn._icon:SetSize(16, 16)
         btn._icon:SetPoint("CENTER")
         btn._icon:SetAtlas(ADVANCED_TOGGLE_ATLAS, false)
         frame._cdcAdvancedBtn = btn
