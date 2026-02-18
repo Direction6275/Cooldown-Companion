@@ -1452,7 +1452,12 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- Desaturation: aura-tracked buttons desaturate when aura absent;
     -- cooldown buttons desaturate based on DurationObject / item CD state.
     if buttonData.auraTracking then
-        local wantDesat = not button._auraActive
+        local wantDesat
+        if buttonData.isPassive then
+            wantDesat = not button._auraActive
+        else
+            wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -2589,7 +2594,12 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Icon desaturation: aura-tracked buttons desaturate when aura absent;
     -- cooldown buttons desaturate based on DurationObject / item CD state.
     if button.buttonData.auraTracking then
-        local wantDesat = not button._auraActive
+        local wantDesat
+        if button.buttonData.isPassive then
+            wantDesat = not button._auraActive
+        else
+            wantDesat = button.buttonData.desaturateWhileAuraNotActive and not button._auraActive
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)

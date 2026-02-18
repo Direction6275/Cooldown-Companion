@@ -5665,6 +5665,41 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         hideNoAuraInfo:Hide()
     end
 
+    -- Desaturate While Aura Not Active (spell+aura only; passive buttons always desaturate)
+    if not buttonData.isPassive then
+        local desatNoAuraCb = AceGUI:Create("CheckBox")
+        desatNoAuraCb:SetLabel("Desaturate While Aura Not Active")
+        desatNoAuraCb:SetValue(buttonData.desaturateWhileAuraNotActive or false)
+        desatNoAuraCb:SetFullWidth(true)
+        if auraDisabled then
+            desatNoAuraCb:SetDisabled(true)
+        end
+        desatNoAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            ApplyToSelected("desaturateWhileAuraNotActive", val or nil)
+        end)
+        scroll:AddChild(desatNoAuraCb)
+
+        -- (?) tooltip
+        local desatNoAuraInfo = CreateFrame("Button", nil, desatNoAuraCb.frame)
+        desatNoAuraInfo:SetSize(16, 16)
+        desatNoAuraInfo:SetPoint("LEFT", desatNoAuraCb.checkbg, "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0)
+        local desatNoAuraInfoIcon = desatNoAuraInfo:CreateTexture(nil, "OVERLAY")
+        desatNoAuraInfoIcon:SetSize(12, 12)
+        desatNoAuraInfoIcon:SetPoint("CENTER")
+        desatNoAuraInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        desatNoAuraInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Desaturate While Aura Not Active")
+            GameTooltip:AddLine("Requires Aura Tracking to be enabled above.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        desatNoAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(infoButtons, desatNoAuraInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            desatNoAuraInfo:Hide()
+        end
+    end
+
     -- Baseline Alpha Fallback (only shown when hideWhileAuraNotActive is checked)
     if buttonData.hideWhileAuraNotActive then
         local fallbackCb = AceGUI:Create("CheckBox")
