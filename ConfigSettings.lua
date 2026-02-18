@@ -1609,6 +1609,38 @@ local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
     container:AddChild(cb)
 end
 
+local function BuildCooldownSwipeControls(container, styleTable, refreshCallback)
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Show Cooldown/Duration Swipe")
+    cb:SetValue(styleTable.showCooldownSwipe ~= false)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showCooldownSwipe = val
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+
+    local reverseCb = AceGUI:Create("CheckBox")
+    reverseCb:SetLabel("Reverse Swipe")
+    reverseCb:SetValue(styleTable.cooldownSwipeReverse or false)
+    reverseCb:SetFullWidth(true)
+    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.cooldownSwipeReverse = val
+        refreshCallback()
+    end)
+    container:AddChild(reverseCb)
+
+    local edgeCb = AceGUI:Create("CheckBox")
+    edgeCb:SetLabel("Show Swipe Edge")
+    edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)
+    edgeCb:SetFullWidth(true)
+    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showCooldownSwipeEdge = val
+        refreshCallback()
+    end)
+    container:AddChild(edgeCb)
+end
+
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
@@ -2479,7 +2511,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     -- Ordered list of sections to display (maintain consistent ordering)
     local sectionOrder = {
         "borderSettings", "backgroundColor", "cooldownText", "auraText",
-        "keybindText", "chargeText", "desaturation", "showGCDSwipe", "showOutOfRange", "showTooltips",
+        "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
     }
@@ -2493,6 +2525,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         keybindText = BuildKeybindTextControls,
         chargeText = BuildChargeTextControls,
         desaturation = BuildDesaturationControls,
+        cooldownSwipe = BuildCooldownSwipeControls,
         showGCDSwipe = BuildShowGCDSwipeControls,
         showOutOfRange = BuildShowOutOfRangeControls,
         showTooltips = BuildShowTooltipsControls,
@@ -2594,7 +2627,7 @@ local function BuildLayoutTab(container)
                 CooldownCompanion:SetGroupAnchor(grp, name)
             end
             CooldownCompanion:RefreshConfigPanel()
-        end)
+        end, grp)
     end)
     anchorRow:AddChild(pickBtn)
 
@@ -4151,6 +4184,47 @@ local function BuildEffectsTab(container)
     end)
     container:AddChild(desatCb)
     CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+
+    -- ================================================================
+    -- Cooldown Swipe
+    -- ================================================================
+    local swipeCb = AceGUI:Create("CheckBox")
+    swipeCb:SetLabel("Show Cooldown/Duration Swipe")
+    swipeCb:SetValue(style.showCooldownSwipe ~= false)
+    swipeCb:SetFullWidth(true)
+    swipeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showCooldownSwipe = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(swipeCb)
+
+    local swipeAdvExpanded, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false)
+    CreateCheckboxPromoteButton(swipeCb, swipeAdvBtn, "cooldownSwipe", group, style)
+
+    if swipeAdvExpanded and style.showCooldownSwipe ~= false then
+        -- Reverse Swipe
+        local reverseCb = AceGUI:Create("CheckBox")
+        reverseCb:SetLabel("Reverse Swipe")
+        reverseCb:SetValue(style.cooldownSwipeReverse or false)
+        reverseCb:SetFullWidth(true)
+        reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.cooldownSwipeReverse = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(reverseCb)
+
+        -- Show Swipe Edge
+        local edgeCb = AceGUI:Create("CheckBox")
+        edgeCb:SetLabel("Show Swipe Edge")
+        edgeCb:SetValue(style.showCooldownSwipeEdge ~= false)
+        edgeCb:SetFullWidth(true)
+        edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showCooldownSwipeEdge = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(edgeCb)
+    end -- swipeAdvExpanded
 
     -- ================================================================
     -- GCD Swipe

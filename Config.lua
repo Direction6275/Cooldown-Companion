@@ -66,6 +66,7 @@ local folderAccentBars = {}    -- pool of accent bar textures for expanded folde
 -- Pick-frame overlay state
 local pickFrameOverlay = nil
 local pickFrameCallback = nil
+local pickFrameSourceGroupId = nil
 
 -- Pick-CDM overlay state
 local pickCDMOverlay = nil
@@ -1484,7 +1485,17 @@ end
 ------------------------------------------------------------------------
 local function IsAddonFrame(name)
     if not name or type(name) ~= "string" then return true end
-    if name:find("^CooldownCompanion") then return true end
+    -- Allow group frames through selectively (exclude self and circular chains)
+    if name:find("^CooldownCompanionGroup%d+$") then
+        local groupId = tonumber(name:match("^CooldownCompanionGroup(%d+)$"))
+        if groupId and pickFrameSourceGroupId then
+            if groupId == pickFrameSourceGroupId then return true end
+            if CooldownCompanion:WouldCreateCircularAnchor(pickFrameSourceGroupId, groupId) then return true end
+        end
+        return false
+    elseif name:find("^CooldownCompanion") then
+        return true
+    end
     if name == "WorldFrame" then return true end
     -- Exclude the config panel itself (AceGUI frames)
     if configFrame and configFrame.frame and configFrame.frame:GetName() == name then return true end
@@ -1501,6 +1512,10 @@ local function HasVisibleContent(frame)
     if frame:IsMouseEnabled() then return true end
     for _, region in pairs({ frame:GetRegions() }) do
         if region:IsShown() then return true end
+    end
+    -- Container frames with shown children also count as having visible content
+    for _, child in pairs({ frame:GetChildren() }) do
+        if child:IsShown() then return true end
     end
     return false
 end
@@ -1543,15 +1558,18 @@ end
 local function FinishPickFrame(name)
     if not pickFrameOverlay then return end
     pickFrameOverlay:Hide()
+    CooldownCompanion:ClearPickModeIndicators()
     local cb = pickFrameCallback
     pickFrameCallback = nil
+    pickFrameSourceGroupId = nil
     if cb then
         cb(name)
     end
 end
 
-local function StartPickFrame(callback)
+local function StartPickFrame(callback, sourceGroupId)
     pickFrameCallback = callback
+    pickFrameSourceGroupId = sourceGroupId
 
     -- Create overlay lazily
     if not pickFrameOverlay then
@@ -1608,6 +1626,19 @@ local function StartPickFrame(callback)
                 resolvedFrame, name = ResolveNamedFrame(focus)
             end
 
+            -- If resolved to a blocked addon child, walk up for an allowed group frame
+            if name and IsAddonFrame(name) then
+                local parent = resolvedFrame:GetParent()
+                while parent do
+                    local pname = parent:GetName()
+                    if pname and pname ~= "" and not IsAddonFrame(pname) then
+                        resolvedFrame, name = parent, pname
+                        break
+                    end
+                    parent = parent:GetParent()
+                end
+            end
+
             -- If GetMouseFoci didn't find a useful frame, scan from UIParent
             -- Throttle the full scan to avoid per-frame cost
             if not name or IsAddonFrame(name) then
@@ -1647,9 +1678,19 @@ local function StartPickFrame(callback)
             self.currentName = name
             self.lastResolvedFrame = resolvedFrame
 
+            local displayName = name
+            local gidStr = name:match("^CooldownCompanionGroup(%d+)$")
+            if gidStr then
+                local gid = tonumber(gidStr)
+                local grps = CooldownCompanion.db.profile.groups
+                if gid and grps and grps[gid] then
+                    displayName = grps[gid].name
+                end
+            end
+
             self.label:ClearAllPoints()
             self.label:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", cx + 20, cy + 10)
-            self.label:SetText(name)
+            self.label:SetText(displayName)
 
             -- Position highlight around the resolved frame
             local left, bottom, width, height = resolvedFrame:GetRect()
@@ -1703,6 +1744,9 @@ local function StartPickFrame(callback)
     pickFrameOverlay.label:SetText("")
     pickFrameOverlay.highlight:Hide()
     pickFrameOverlay:Show()
+    if pickFrameSourceGroupId then
+        CooldownCompanion:ShowPickModeIndicators(pickFrameSourceGroupId)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -5944,11 +5988,58 @@ local function CreateConfigPanel()
     end)
     castBarBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Gear button — left of Collapse
+    -- Cooldown Manager button — left of Collapse
+    local cdmBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    cdmBtn:SetSize(16, 16)
+    local cdmIcon = cdmBtn:CreateTexture(nil, "ARTWORK")
+    cdmIcon:SetAtlas("icon_cooldownmanager", false)
+    cdmIcon:SetAllPoints()
+    cdmBtn:SetHighlightAtlas("icon_cooldownmanager")
+    cdmBtn:GetHighlightTexture():SetAlpha(0.3)
+
+    local cdmBtnBorder = nil
+    local function UpdateCdmBtnHighlight()
+        if CooldownViewerSettings and CooldownViewerSettings:IsShown() then
+            if not cdmBtnBorder then
+                cdmBtnBorder = cdmBtn:CreateTexture(nil, "OVERLAY")
+                cdmBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                cdmBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                cdmBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            cdmBtnBorder:Show()
+        else
+            if cdmBtnBorder then
+                cdmBtnBorder:Hide()
+            end
+        end
+    end
+
+    cdmBtn:SetScript("OnClick", function()
+        if CooldownViewerSettings then
+            CooldownViewerSettings:TogglePanel()
+            UpdateCdmBtnHighlight()
+        end
+    end)
+    cdmBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Cooldown Manager")
+        GameTooltip:AddLine("Open the Blizzard Cooldown Manager settings panel", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    cdmBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    if CooldownViewerSettings then
+        hooksecurefunc(CooldownViewerSettings, "Hide", function()
+            UpdateCdmBtnHighlight()
+        end)
+    end
+
+    -- Gear button — left of CDM
     local gearBtn = CreateFrame("Button", nil, content)
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
-    resourceBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
+    cdmBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
+    resourceBarBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     castBarBtn:SetPoint("RIGHT", resourceBarBtn, "LEFT", -4, 0)
     frameAnchoringBtn:SetPoint("RIGHT", castBarBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")

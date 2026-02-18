@@ -129,6 +129,9 @@ local defaults = {
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = true,
                         desaturateOnCooldown = false, -- Desaturate icon while on cooldown
+                        showCooldownSwipe = true,
+                        cooldownSwipeReverse = false,
+                        showCooldownSwipeEdge = true,
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
                         showOutOfRange = false, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
@@ -236,6 +239,9 @@ local defaults = {
             maintainAspectRatio = true,
             showTooltips = false,
             desaturateOnCooldown = false,
+            showCooldownSwipe = true,
+            cooldownSwipeReverse = false,
+            showCooldownSwipeEdge = true,
             showGCDSwipe = false,
             showOutOfRange = false,
             showAssistedHighlight = false,
@@ -457,6 +463,11 @@ ST.OVERRIDE_SECTIONS = {
         label = "Desaturation",
         keys = {"desaturateOnCooldown"},
         modes = {icons = true, bars = true},
+    },
+    cooldownSwipe = {
+        label = "Cooldown Swipe",
+        keys = {"showCooldownSwipe", "cooldownSwipeReverse", "showCooldownSwipeEdge"},
+        modes = {icons = true},
     },
     showGCDSwipe = {
         label = "Show GCD Swipe",
