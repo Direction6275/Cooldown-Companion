@@ -1445,7 +1445,11 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         local wantDesat = false
         if fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
-                wantDesat = button._mainCDShown
+                if buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
             elseif button._durationObj then
                 wantDesat = true
             elseif buttonData.type == "item" then
@@ -2563,7 +2567,11 @@ UpdateBarDisplay = function(button, fetchOk)
         local wantDesat = false
         if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then
-                wantDesat = button._mainCDShown
+                if button.buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
             elseif button._durationObj then
                 wantDesat = true
             elseif button.buttonData.type == "item" then
