@@ -109,7 +109,7 @@ end
 
 -- Helper: add an inline advanced-toggle button on a parent widget (CheckBox or Heading).
 -- Returns isExpanded (boolean) and the button frame reference.
-local ADVANCED_TOGGLE_ATLAS = "Warfronts-BaseMapIcons-Empty-Workshop-Minimap-small"
+local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
 
 local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnabled)
     local db = CooldownCompanion.db.profile.showAdvanced
@@ -120,9 +120,9 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
 
     if not btn then
         btn = CreateFrame("Button", nil, frame)
-        btn:SetSize(18, 18)
+        btn:SetSize(14, 14)
         btn._icon = btn:CreateTexture(nil, "ARTWORK")
-        btn._icon:SetSize(16, 16)
+        btn._icon:SetSize(13, 13)
         btn._icon:SetPoint("CENTER")
         btn._icon:SetAtlas(ADVANCED_TOGGLE_ATLAS, false)
         frame._cdcAdvancedBtn = btn
