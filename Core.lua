@@ -302,6 +302,8 @@ local defaults = {
             barChargeColor = {1.0, 0.82, 0.0, 1.0},
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
+            barIconSizeOverride = false,
+            barIconSize = 20,
             showBarNameText = true,
             barNameFont = "Friz Quadrata TT",
             barNameFontSize = 10,
@@ -510,6 +512,11 @@ ST.OVERRIDE_SECTIONS = {
     barActiveAura = {
         label = "Active Aura Indicator",
         keys = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed"},
+        modes = {bars = true},
+    },
+    barIcon = {
+        label = "Bar Icon",
+        keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
         modes = {bars = true},
     },
     barColors = {

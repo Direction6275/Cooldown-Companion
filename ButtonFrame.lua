@@ -41,21 +41,19 @@ local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFra
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.
 local function SetIconAreaPoints(region, button, isVertical, iconReverse, iconSize, inset)
     region:ClearAllPoints()
+    local s = iconSize - 2 * inset
+    region:SetSize(s, s)
     if isVertical then
         if iconReverse then
-            region:SetPoint("TOPLEFT", button, "BOTTOMLEFT", inset, iconSize - inset)
-            region:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+            region:SetPoint("BOTTOM", button, "BOTTOM", 0, inset)
         else
-            region:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-            region:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", -inset, -(iconSize - inset))
+            region:SetPoint("TOP", button, "TOP", 0, -inset)
         end
     else
         if iconReverse then
-            region:SetPoint("TOPLEFT", button, "TOPRIGHT", -(iconSize - inset), -inset)
-            region:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+            region:SetPoint("RIGHT", button, "RIGHT", -inset, 0)
         else
-            region:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-            region:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - inset, inset)
+            region:SetPoint("LEFT", button, "LEFT", inset, 0)
         end
     end
 end
@@ -2719,7 +2717,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local isVertical = style.barFillVertical or false
     local iconReverse = showIcon and (style.barIconReverse or false)
 
-    local iconSize = barHeight
+    local iconSize = (style.barIconSizeOverride and style.barIconSize) or barHeight
     local iconOffset = showIcon and (style.barIconOffset or 0) or 0
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
@@ -3052,7 +3050,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local showIcon = newStyle.showBarIcon ~= false
     local isVertical = newStyle.barFillVertical or false
     local iconReverse = showIcon and (newStyle.barIconReverse or false)
-    local iconSize = barHeight
+    local iconSize = (newStyle.barIconSizeOverride and newStyle.barIconSize) or barHeight
     local iconOffset = showIcon and (newStyle.barIconOffset or 0) or 0
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0

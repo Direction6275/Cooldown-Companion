@@ -879,7 +879,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Item count X offset
     local itemXSlider = AceGUI:Create("Slider")
     itemXSlider:SetLabel("X Offset")
-    itemXSlider:SetSliderValues(-20, 20, 1)
+    itemXSlider:SetSliderValues(-20, 20, 0.1)
     itemXSlider:SetValue(buttonData.itemCountXOffset or defItemX)
     itemXSlider:SetFullWidth(true)
     itemXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -891,7 +891,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Item count Y offset
     local itemYSlider = AceGUI:Create("Slider")
     itemYSlider:SetLabel("Y Offset")
-    itemYSlider:SetSliderValues(-20, 20, 1)
+    itemYSlider:SetSliderValues(-20, 20, 0.1)
     itemYSlider:SetValue(buttonData.itemCountYOffset or defItemY)
     itemYSlider:SetFullWidth(true)
     itemYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1395,7 +1395,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
 
         local cdXSlider = AceGUI:Create("Slider")
         cdXSlider:SetLabel("X Offset")
-        cdXSlider:SetSliderValues(-20, 20, 1)
+        cdXSlider:SetSliderValues(-20, 20, 0.1)
         cdXSlider:SetValue(styleTable.cooldownTextXOffset or 0)
         cdXSlider:SetFullWidth(true)
         cdXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1406,7 +1406,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
 
         local cdYSlider = AceGUI:Create("Slider")
         cdYSlider:SetLabel("Y Offset")
-        cdYSlider:SetSliderValues(-20, 20, 1)
+        cdYSlider:SetSliderValues(-20, 20, 0.1)
         cdYSlider:SetValue(styleTable.cooldownTextYOffset or 0)
         cdYSlider:SetFullWidth(true)
         cdYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1532,7 +1532,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
 
         local kbXSlider = AceGUI:Create("Slider")
         kbXSlider:SetLabel("X Offset")
-        kbXSlider:SetSliderValues(-20, 20, 1)
+        kbXSlider:SetSliderValues(-20, 20, 0.1)
         kbXSlider:SetValue(styleTable.keybindXOffset or -2)
         kbXSlider:SetFullWidth(true)
         kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1543,7 +1543,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
 
         local kbYSlider = AceGUI:Create("Slider")
         kbYSlider:SetLabel("Y Offset")
-        kbYSlider:SetSliderValues(-20, 20, 1)
+        kbYSlider:SetSliderValues(-20, 20, 0.1)
         kbYSlider:SetValue(styleTable.keybindYOffset or -2)
         kbYSlider:SetFullWidth(true)
         kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1714,7 +1714,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
 
         local chargeXSlider = AceGUI:Create("Slider")
         chargeXSlider:SetLabel("X Offset")
-        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetSliderValues(-20, 20, 0.1)
         chargeXSlider:SetValue(styleTable.chargeXOffset or -2)
         chargeXSlider:SetFullWidth(true)
         chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1725,7 +1725,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
 
         local chargeYSlider = AceGUI:Create("Slider")
         chargeYSlider:SetLabel("Y Offset")
-        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetSliderValues(-20, 20, 0.1)
         chargeYSlider:SetValue(styleTable.chargeYOffset or 2)
         chargeYSlider:SetFullWidth(true)
         chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1897,7 +1897,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
 
         local hlSizeSlider = AceGUI:Create("Slider")
         hlSizeSlider:SetLabel("Border Size")
-        hlSizeSlider:SetSliderValues(1, 6, 0.5)
+        hlSizeSlider:SetSliderValues(1, 6, 0.1)
         hlSizeSlider:SetValue(styleTable.assistedHighlightBorderSize or 2)
         hlSizeSlider:SetFullWidth(true)
         hlSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1908,7 +1908,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
     elseif styleTable.assistedHighlightStyle == "blizzard" then
         local blizzSlider = AceGUI:Create("Slider")
         blizzSlider:SetLabel("Glow Size")
-        blizzSlider:SetSliderValues(0, 60, 1)
+        blizzSlider:SetSliderValues(0, 60, 0.1)
         blizzSlider:SetValue(styleTable.assistedHighlightBlizzardOverhang or 32)
         blizzSlider:SetFullWidth(true)
         blizzSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1935,7 +1935,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
 
         local procSlider = AceGUI:Create("Slider")
         procSlider:SetLabel("Glow Size")
-        procSlider:SetSliderValues(0, 60, 1)
+        procSlider:SetSliderValues(0, 60, 0.1)
         procSlider:SetValue(styleTable.assistedHighlightProcOverhang or 32)
         procSlider:SetFullWidth(true)
         procSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1986,7 +1986,7 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
     if currentStyle == "solid" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 1)
+        sizeSlider:SetSliderValues(1, 8, 0.1)
         sizeSlider:SetValue(styleTable.procGlowSize or 2)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1997,7 +1997,7 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
     elseif currentStyle == "pixel" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Line Length")
-        sizeSlider:SetSliderValues(1, 12, 1)
+        sizeSlider:SetSliderValues(1, 12, 0.1)
         sizeSlider:SetValue(styleTable.procGlowSize or 4)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2008,7 +2008,7 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
 
         local thicknessSlider = AceGUI:Create("Slider")
         thicknessSlider:SetLabel("Line Thickness")
-        thicknessSlider:SetSliderValues(1, 6, 1)
+        thicknessSlider:SetSliderValues(1, 6, 0.1)
         thicknessSlider:SetValue(styleTable.procGlowThickness or 2)
         thicknessSlider:SetFullWidth(true)
         thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2019,7 +2019,7 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
 
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Speed")
-        speedSlider:SetSliderValues(10, 200, 5)
+        speedSlider:SetSliderValues(10, 200, 0.1)
         speedSlider:SetValue(styleTable.procGlowSpeed or 60)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2030,7 +2030,7 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
     elseif currentStyle == "glow" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
-        sizeSlider:SetSliderValues(0, 60, 1)
+        sizeSlider:SetSliderValues(0, 60, 0.1)
         sizeSlider:SetValue(styleTable.procGlowSize or 32)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2081,7 +2081,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
     if currentStyle == "solid" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 1)
+        sizeSlider:SetSliderValues(1, 8, 0.1)
         sizeSlider:SetValue(styleTable.pandemicGlowSize or 2)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2092,7 +2092,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
     elseif currentStyle == "pixel" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Line Length")
-        sizeSlider:SetSliderValues(1, 12, 1)
+        sizeSlider:SetSliderValues(1, 12, 0.1)
         sizeSlider:SetValue(styleTable.pandemicGlowSize or 4)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2103,7 +2103,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
 
         local thicknessSlider = AceGUI:Create("Slider")
         thicknessSlider:SetLabel("Line Thickness")
-        thicknessSlider:SetSliderValues(1, 6, 1)
+        thicknessSlider:SetSliderValues(1, 6, 0.1)
         thicknessSlider:SetValue(styleTable.pandemicGlowThickness or 2)
         thicknessSlider:SetFullWidth(true)
         thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2114,7 +2114,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
 
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Speed")
-        speedSlider:SetSliderValues(10, 200, 5)
+        speedSlider:SetSliderValues(10, 200, 0.1)
         speedSlider:SetValue(styleTable.pandemicGlowSpeed or 60)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2125,7 +2125,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
     elseif currentStyle == "glow" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
-        sizeSlider:SetSliderValues(0, 60, 1)
+        sizeSlider:SetSliderValues(0, 60, 0.1)
         sizeSlider:SetValue(styleTable.pandemicGlowSize or 32)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2195,7 +2195,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback)
         if currentEffect == "solid" then
             local sizeSlider = AceGUI:Create("Slider")
             sizeSlider:SetLabel("Border Size")
-            sizeSlider:SetSliderValues(1, 8, 1)
+            sizeSlider:SetSliderValues(1, 8, 0.1)
             sizeSlider:SetValue(styleTable.pandemicBarEffectSize or 2)
             sizeSlider:SetFullWidth(true)
             sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2206,7 +2206,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback)
         elseif currentEffect == "pixel" then
             local sizeSlider = AceGUI:Create("Slider")
             sizeSlider:SetLabel("Line Length")
-            sizeSlider:SetSliderValues(2, 12, 1)
+            sizeSlider:SetSliderValues(2, 12, 0.1)
             sizeSlider:SetValue(styleTable.pandemicBarEffectSize or 4)
             sizeSlider:SetFullWidth(true)
             sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2217,7 +2217,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback)
 
             local thicknessSlider = AceGUI:Create("Slider")
             thicknessSlider:SetLabel("Line Thickness")
-            thicknessSlider:SetSliderValues(1, 6, 1)
+            thicknessSlider:SetSliderValues(1, 6, 0.1)
             thicknessSlider:SetValue(styleTable.pandemicBarEffectThickness or 2)
             thicknessSlider:SetFullWidth(true)
             thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2228,7 +2228,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback)
 
             local speedSlider = AceGUI:Create("Slider")
             speedSlider:SetLabel("Speed")
-            speedSlider:SetSliderValues(10, 200, 5)
+            speedSlider:SetSliderValues(10, 200, 0.1)
             speedSlider:SetValue(styleTable.pandemicBarEffectSpeed or 60)
             speedSlider:SetFullWidth(true)
             speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2239,7 +2239,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback)
         elseif currentEffect == "glow" then
             local sizeSlider = AceGUI:Create("Slider")
             sizeSlider:SetLabel("Glow Size")
-            sizeSlider:SetSliderValues(0, 60, 1)
+            sizeSlider:SetSliderValues(0, 60, 0.1)
             sizeSlider:SetValue(styleTable.pandemicBarEffectSize or 32)
             sizeSlider:SetFullWidth(true)
             sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2291,7 +2291,7 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
     if currentStyle == "solid" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Border Size")
-        sizeSlider:SetSliderValues(1, 8, 1)
+        sizeSlider:SetSliderValues(1, 8, 0.1)
         sizeSlider:SetValue(styleTable.auraGlowSize or 2)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2302,7 +2302,7 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
     elseif currentStyle == "pixel" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Line Length")
-        sizeSlider:SetSliderValues(1, 12, 1)
+        sizeSlider:SetSliderValues(1, 12, 0.1)
         sizeSlider:SetValue(styleTable.auraGlowSize or 4)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2313,7 +2313,7 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
 
         local thicknessSlider = AceGUI:Create("Slider")
         thicknessSlider:SetLabel("Line Thickness")
-        thicknessSlider:SetSliderValues(1, 6, 1)
+        thicknessSlider:SetSliderValues(1, 6, 0.1)
         thicknessSlider:SetValue(styleTable.auraGlowThickness or 2)
         thicknessSlider:SetFullWidth(true)
         thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2324,7 +2324,7 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
 
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Speed")
-        speedSlider:SetSliderValues(10, 200, 5)
+        speedSlider:SetSliderValues(10, 200, 0.1)
         speedSlider:SetValue(styleTable.auraGlowSpeed or 60)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2335,7 +2335,7 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
     elseif currentStyle == "glow" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
-        sizeSlider:SetSliderValues(0, 60, 1)
+        sizeSlider:SetSliderValues(0, 60, 0.1)
         sizeSlider:SetValue(styleTable.auraGlowSize or 32)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2405,7 +2405,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         if currentEffect == "solid" then
             local sizeSlider = AceGUI:Create("Slider")
             sizeSlider:SetLabel("Border Size")
-            sizeSlider:SetSliderValues(1, 8, 1)
+            sizeSlider:SetSliderValues(1, 8, 0.1)
             sizeSlider:SetValue(styleTable.barAuraEffectSize or 2)
             sizeSlider:SetFullWidth(true)
             sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2416,7 +2416,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         elseif currentEffect == "pixel" then
             local sizeSlider = AceGUI:Create("Slider")
             sizeSlider:SetLabel("Line Length")
-            sizeSlider:SetSliderValues(2, 12, 1)
+            sizeSlider:SetSliderValues(2, 12, 0.1)
             sizeSlider:SetValue(styleTable.barAuraEffectSize or 4)
             sizeSlider:SetFullWidth(true)
             sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2427,7 +2427,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 
             local thicknessSlider = AceGUI:Create("Slider")
             thicknessSlider:SetLabel("Line Thickness")
-            thicknessSlider:SetSliderValues(1, 6, 1)
+            thicknessSlider:SetSliderValues(1, 6, 0.1)
             thicknessSlider:SetValue(styleTable.barAuraEffectThickness or 2)
             thicknessSlider:SetFullWidth(true)
             thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2438,7 +2438,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 
             local speedSlider = AceGUI:Create("Slider")
             speedSlider:SetLabel("Speed")
-            speedSlider:SetSliderValues(10, 200, 5)
+            speedSlider:SetSliderValues(10, 200, 0.1)
             speedSlider:SetValue(styleTable.barAuraEffectSpeed or 60)
             speedSlider:SetFullWidth(true)
             speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2449,7 +2449,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         elseif currentEffect == "glow" then
             local sizeSlider = AceGUI:Create("Slider")
             sizeSlider:SetLabel("Glow Size")
-            sizeSlider:SetSliderValues(0, 60, 1)
+            sizeSlider:SetSliderValues(0, 60, 0.1)
             sizeSlider:SetValue(styleTable.barAuraEffectSize or 32)
             sizeSlider:SetFullWidth(true)
             sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3023,7 +3023,7 @@ local function BuildLayoutTab(container)
     -- X Offset
     local xSlider = AceGUI:Create("Slider")
     xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-2000, 2000, 1)
+    xSlider:SetSliderValues(-2000, 2000, 0.1)
     xSlider:SetValue(group.anchor.x or 0)
     xSlider:SetFullWidth(true)
     xSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3039,7 +3039,7 @@ local function BuildLayoutTab(container)
     -- Y Offset
     local ySlider = AceGUI:Create("Slider")
     ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-2000, 2000, 1)
+    ySlider:SetSliderValues(-2000, 2000, 0.1)
     ySlider:SetValue(group.anchor.y or 0)
     ySlider:SetFullWidth(true)
     ySlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3070,7 +3070,7 @@ local function BuildLayoutTab(container)
     if not alphaCollapsed then
     local baseAlphaSlider = AceGUI:Create("Slider")
     baseAlphaSlider:SetLabel("Baseline Alpha")
-    baseAlphaSlider:SetSliderValues(0, 1, 0.05)
+    baseAlphaSlider:SetSliderValues(0, 1, 0.1)
     baseAlphaSlider:SetValue(group.baselineAlpha or 1)
     baseAlphaSlider:SetFullWidth(true)
     baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3384,7 +3384,7 @@ end
 
 local function BuildBarAppearanceTab(container, group, style)
     -- ================================================================
-    -- Bar Settings (length, height, icon, spacing, bar color)
+    -- Bar Settings (length, height, spacing, bar color)
     -- ================================================================
     local barHeading = AceGUI:Create("Heading")
     barHeading:SetText("Bar Settings")
@@ -3407,7 +3407,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if not barSettingsCollapsed then
     local lengthSlider = AceGUI:Create("Slider")
     lengthSlider:SetLabel("Bar Length")
-    lengthSlider:SetSliderValues(50, 500, 1)
+    lengthSlider:SetSliderValues(50, 500, 0.1)
     lengthSlider:SetValue(style.barLength or 180)
     lengthSlider:SetFullWidth(true)
     lengthSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3427,53 +3427,10 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(heightSlider)
 
-    -- Show Icon (basic), Flip Icon Side (advanced)
-    local iconRow = AceGUI:Create("SimpleGroup")
-    iconRow:SetFullWidth(true)
-    iconRow:SetLayout("Flow")
-    container:AddChild(iconRow)
-
-    local showIconCb = AceGUI:Create("CheckBox")
-    showIconCb:SetLabel("Show Icon")
-    showIconCb:SetValue(style.showBarIcon ~= false)
-    showIconCb:SetRelativeWidth(barAdvExpanded and 0.5 or 1)
-    showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showBarIcon = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    iconRow:AddChild(showIconCb)
-
-    if barAdvExpanded and style.showBarIcon ~= false then
-        local flipIconCheck = AceGUI:Create("CheckBox")
-        flipIconCheck:SetLabel("Flip Icon Side")
-        flipIconCheck:SetValue(style.barIconReverse or false)
-        flipIconCheck:SetRelativeWidth(0.5)
-        flipIconCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconReverse = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        iconRow:AddChild(flipIconCheck)
-    end
-
-    if barAdvExpanded and style.showBarIcon ~= false then
-        local iconOffsetSlider = AceGUI:Create("Slider")
-        iconOffsetSlider:SetLabel("Icon Offset")
-        iconOffsetSlider:SetSliderValues(-5, 20, 1)
-        iconOffsetSlider:SetValue(style.barIconOffset or 0)
-        iconOffsetSlider:SetFullWidth(true)
-        iconOffsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barIconOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(iconOffsetSlider)
-    end
-
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Bar Spacing")
-        spacingSlider:SetSliderValues(-10, 10, 0.1)
+        spacingSlider:SetSliderValues(-10, 100, 0.1)
         spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
         spacingSlider:SetFullWidth(true)
         spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3503,7 +3460,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if barAdvExpanded then
     local updateFreqSlider = AceGUI:Create("Slider")
     updateFreqSlider:SetLabel("Update Frequency (Hz)")
-    updateFreqSlider:SetSliderValues(10, 60, 1)
+    updateFreqSlider:SetSliderValues(10, 60, 0.1)
     local curInterval = style.barUpdateInterval or 0.025
     updateFreqSlider:SetValue(math.floor(1 / curInterval + 0.5))
     updateFreqSlider:SetFullWidth(true)
@@ -3542,49 +3499,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end -- barAdvExpanded (update freq, border)
     end -- not barSettingsCollapsed
 
-    -- Show Name Text toggle
-    local showNameCbBasic = AceGUI:Create("CheckBox")
-    showNameCbBasic:SetLabel("Show Name Text")
-    showNameCbBasic:SetValue(style.showBarNameText ~= false)
-    showNameCbBasic:SetFullWidth(true)
-    showNameCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showBarNameText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(showNameCbBasic)
-
-    local nameAdvExpanded = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false)
-
-    -- Show Cooldown Text toggle
-    local showTimeCbBasic = AceGUI:Create("CheckBox")
-    showTimeCbBasic:SetLabel("Show Cooldown Text")
-    showTimeCbBasic:SetValue(style.showCooldownText or false)
-    showTimeCbBasic:SetFullWidth(true)
-    showTimeCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showCooldownText = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(showTimeCbBasic)
-
-    local timeAdvExpanded = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText)
-
-    -- Bar Colors heading (texture, cooldown/recharging/background colors)
-    local barColorsHeading = AceGUI:Create("Heading")
-    barColorsHeading:SetText("Bar Colors")
-    ColorHeading(barColorsHeading)
-    barColorsHeading:SetFullWidth(true)
-    container:AddChild(barColorsHeading)
-
-    local barColorsCollapsed = CS.collapsedSections["barappearance_colors"]
-    AttachCollapseButton(barColorsHeading, barColorsCollapsed, function()
-        CS.collapsedSections["barappearance_colors"] = not CS.collapsedSections["barappearance_colors"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(barColorsHeading, "barColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not barColorsCollapsed then
+    -- Bar Texture (no heading)
     local barTexDrop = AceGUI:Create("Dropdown")
     barTexDrop:SetLabel("Bar Texture")
     barTexDrop:SetList(GetBarTextureOptions())
@@ -3596,6 +3511,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(barTexDrop)
 
+    -- Contextual color pickers (no heading/collapse/promote)
     local barCdColorPicker = AceGUI:Create("ColorPicker")
     barCdColorPicker:SetLabel("Bar Cooldown Color")
     barCdColorPicker:SetHasAlpha(true)
@@ -3643,25 +3559,88 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(barBgColorPicker)
-    end -- not barColorsCollapsed
 
-    if nameAdvExpanded then
-    -- Name Text heading
-    local nameHeading = AceGUI:Create("Heading")
-    nameHeading:SetText("Name Text")
-    ColorHeading(nameHeading)
-    nameHeading:SetFullWidth(true)
-    container:AddChild(nameHeading)
-
-    local nameTextCollapsed = CS.collapsedSections["barappearance_nametext"]
-    AttachCollapseButton(nameHeading, nameTextCollapsed, function()
-        CS.collapsedSections["barappearance_nametext"] = not CS.collapsedSections["barappearance_nametext"]
+    -- ================================================================
+    -- Show Icon (standalone checkbox with advanced toggle + promote)
+    -- ================================================================
+    local showIconCb = AceGUI:Create("CheckBox")
+    showIconCb:SetLabel("Show Icon")
+    showIconCb:SetValue(style.showBarIcon ~= false)
+    showIconCb:SetFullWidth(true)
+    showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showBarIcon = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CreatePromoteButton(nameHeading, "barNameText", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    container:AddChild(showIconCb)
 
-    if not nameTextCollapsed then
-    if style.showBarNameText ~= false then
+    local iconAdvExpanded, iconAdvBtn = AddAdvancedToggle(showIconCb, "barIcon", tabInfoButtons, style.showBarIcon ~= false)
+    CreateCheckboxPromoteButton(showIconCb, iconAdvBtn, "barIcon", group, style)
+
+    if iconAdvExpanded and style.showBarIcon ~= false then
+        local flipIconCheck = AceGUI:Create("CheckBox")
+        flipIconCheck:SetLabel("Flip Icon Side")
+        flipIconCheck:SetValue(style.barIconReverse or false)
+        flipIconCheck:SetFullWidth(true)
+        flipIconCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barIconReverse = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(flipIconCheck)
+
+        local iconOffsetSlider = AceGUI:Create("Slider")
+        iconOffsetSlider:SetLabel("Icon Offset")
+        iconOffsetSlider:SetSliderValues(-5, 50, 0.1)
+        iconOffsetSlider:SetValue(style.barIconOffset or 0)
+        iconOffsetSlider:SetFullWidth(true)
+        iconOffsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barIconOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(iconOffsetSlider)
+
+        local customIconSizeCb = AceGUI:Create("CheckBox")
+        customIconSizeCb:SetLabel("Custom Icon Size")
+        customIconSizeCb:SetValue(style.barIconSizeOverride or false)
+        customIconSizeCb:SetFullWidth(true)
+        customIconSizeCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barIconSizeOverride = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(customIconSizeCb)
+
+        if style.barIconSizeOverride then
+            local iconSizeSlider = AceGUI:Create("Slider")
+            iconSizeSlider:SetLabel("Icon Size")
+            iconSizeSlider:SetSliderValues(5, 100, 0.1)
+            iconSizeSlider:SetValue(style.barIconSize or 20)
+            iconSizeSlider:SetFullWidth(true)
+            iconSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.barIconSize = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+            container:AddChild(iconSizeSlider)
+        end
+    end
+
+    -- Show Name Text toggle
+    local showNameCbBasic = AceGUI:Create("CheckBox")
+    showNameCbBasic:SetLabel("Show Name Text")
+    showNameCbBasic:SetValue(style.showBarNameText ~= false)
+    showNameCbBasic:SetFullWidth(true)
+    showNameCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showBarNameText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(showNameCbBasic)
+
+    local nameAdvExpanded, nameAdvBtn = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false)
+    CreateCheckboxPromoteButton(showNameCbBasic, nameAdvBtn, "barNameText", group, style)
+
+    if nameAdvExpanded and style.showBarNameText ~= false then
         local flipNameCheck = AceGUI:Create("CheckBox")
         flipNameCheck:SetLabel("Flip Name Text")
         flipNameCheck:SetValue(style.barNameTextReverse or false)
@@ -3671,9 +3650,7 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(flipNameCheck)
-    end
 
-    if style.showBarNameText ~= false then
         local nameFontSizeSlider = AceGUI:Create("Slider")
         nameFontSizeSlider:SetLabel("Font Size")
         nameFontSizeSlider:SetSliderValues(6, 24, 1)
@@ -3725,7 +3702,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local nameOffXSlider = AceGUI:Create("Slider")
         nameOffXSlider:SetLabel("X Offset")
-        nameOffXSlider:SetSliderValues(-50, 50, 1)
+        nameOffXSlider:SetSliderValues(-50, 50, 0.1)
         nameOffXSlider:SetValue(style.barNameTextOffsetX or 0)
         nameOffXSlider:SetFullWidth(true)
         nameOffXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3736,7 +3713,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local nameOffYSlider = AceGUI:Create("Slider")
         nameOffYSlider:SetLabel("Y Offset")
-        nameOffYSlider:SetSliderValues(-50, 50, 1)
+        nameOffYSlider:SetSliderValues(-50, 50, 0.1)
         nameOffYSlider:SetValue(style.barNameTextOffsetY or 0)
         nameOffYSlider:SetFullWidth(true)
         nameOffYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3745,26 +3722,23 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(nameOffYSlider)
     end
-    end -- not nameTextCollapsed
-    end -- nameAdvExpanded
 
-    if timeAdvExpanded then
-    -- Time Text heading
-    local timeHeading = AceGUI:Create("Heading")
-    timeHeading:SetText("Time Text")
-    ColorHeading(timeHeading)
-    timeHeading:SetFullWidth(true)
-    container:AddChild(timeHeading)
-
-    local timeTextCollapsed = CS.collapsedSections["barappearance_timetext"]
-    AttachCollapseButton(timeHeading, timeTextCollapsed, function()
-        CS.collapsedSections["barappearance_timetext"] = not CS.collapsedSections["barappearance_timetext"]
+    -- Show Cooldown Text toggle
+    local showTimeCbBasic = AceGUI:Create("CheckBox")
+    showTimeCbBasic:SetLabel("Show Cooldown Text")
+    showTimeCbBasic:SetValue(style.showCooldownText or false)
+    showTimeCbBasic:SetFullWidth(true)
+    showTimeCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showCooldownText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CreatePromoteButton(timeHeading, "cooldownText", CS.selectedButton and group.buttons[CS.selectedButton], style)
+    container:AddChild(showTimeCbBasic)
 
-    if not timeTextCollapsed then
-    if style.showCooldownText then
+    local timeAdvExpanded, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText)
+    CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
+
+    if timeAdvExpanded and style.showCooldownText then
         local flipTimeCheck = AceGUI:Create("CheckBox")
         flipTimeCheck:SetLabel("Flip Time Text")
         flipTimeCheck:SetValue(style.barTimeTextReverse or false)
@@ -3795,9 +3769,7 @@ local function BuildBarAppearanceTab(container, group, style)
             flipTimeInfo:Hide()
             flipTimeInfo:SetParent(nil)
         end)
-    end
 
-    if style.showCooldownText then
         local fontSizeSlider = AceGUI:Create("Slider")
         fontSizeSlider:SetLabel("Font Size")
         fontSizeSlider:SetSliderValues(6, 24, 1)
@@ -3849,7 +3821,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local cdOffXSlider = AceGUI:Create("Slider")
         cdOffXSlider:SetLabel("X Offset")
-        cdOffXSlider:SetSliderValues(-50, 50, 1)
+        cdOffXSlider:SetSliderValues(-50, 50, 0.1)
         cdOffXSlider:SetValue(style.barCdTextOffsetX or 0)
         cdOffXSlider:SetFullWidth(true)
         cdOffXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3860,7 +3832,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local cdOffYSlider = AceGUI:Create("Slider")
         cdOffYSlider:SetLabel("Y Offset")
-        cdOffYSlider:SetSliderValues(-50, 50, 1)
+        cdOffYSlider:SetSliderValues(-50, 50, 0.1)
         cdOffYSlider:SetValue(style.barCdTextOffsetY or 0)
         cdOffYSlider:SetFullWidth(true)
         cdOffYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3869,24 +3841,8 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(cdOffYSlider)
     end
-    end -- not timeTextCollapsed
-    end -- timeAdvExpanded
 
-    -- Charge Text section
-    local chargeHeading = AceGUI:Create("Heading")
-    chargeHeading:SetText("Charge Text")
-    ColorHeading(chargeHeading)
-    chargeHeading:SetFullWidth(true)
-    container:AddChild(chargeHeading)
-
-    local chargeCollapsed = CS.collapsedSections["barappearance_chargetext"]
-    AttachCollapseButton(chargeHeading, chargeCollapsed, function()
-        CS.collapsedSections["barappearance_chargetext"] = not CS.collapsedSections["barappearance_chargetext"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(chargeHeading, "chargeText", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not chargeCollapsed then
+    -- Show Charge Text toggle
     local chargeTextCb = AceGUI:Create("CheckBox")
     chargeTextCb:SetLabel("Show Charge Text")
     chargeTextCb:SetValue(style.showChargeText ~= false)
@@ -3898,7 +3854,10 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(chargeTextCb)
 
-    if style.showChargeText ~= false then
+    local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false)
+    CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
+
+    if chargeAdvExpanded and style.showChargeText ~= false then
         local chargeFontSizeSlider = AceGUI:Create("Slider")
         chargeFontSizeSlider:SetLabel("Font Size")
         chargeFontSizeSlider:SetSliderValues(8, 32, 1)
@@ -3997,7 +3956,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local chargeXSlider = AceGUI:Create("Slider")
         chargeXSlider:SetLabel("X Offset")
-        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetSliderValues(-20, 20, 0.1)
         chargeXSlider:SetValue(style.chargeXOffset or -2)
         chargeXSlider:SetFullWidth(true)
         chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4008,7 +3967,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         local chargeYSlider = AceGUI:Create("Slider")
         chargeYSlider:SetLabel("Y Offset")
-        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetSliderValues(-20, 20, 0.1)
         chargeYSlider:SetValue(style.chargeYOffset or 2)
         chargeYSlider:SetFullWidth(true)
         chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4017,7 +3976,6 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(chargeYSlider)
     end
-    end -- not chargeCollapsed
 
     -- ================================================================
     -- Aura Text
@@ -4521,7 +4479,7 @@ local function BuildAppearanceTab(container)
     if style.maintainAspectRatio then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Button Size")
-        sizeSlider:SetSliderValues(10, 100, 1)
+        sizeSlider:SetSliderValues(10, 100, 0.1)
         sizeSlider:SetValue(style.buttonSize or ST.BUTTON_SIZE)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4532,7 +4490,7 @@ local function BuildAppearanceTab(container)
     else
         local wSlider = AceGUI:Create("Slider")
         wSlider:SetLabel("Icon Width")
-        wSlider:SetSliderValues(10, 100, 1)
+        wSlider:SetSliderValues(10, 100, 0.1)
         wSlider:SetValue(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
         wSlider:SetFullWidth(true)
         wSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4543,7 +4501,7 @@ local function BuildAppearanceTab(container)
 
         local hSlider = AceGUI:Create("Slider")
         hSlider:SetLabel("Icon Height")
-        hSlider:SetSliderValues(10, 100, 1)
+        hSlider:SetSliderValues(10, 100, 0.1)
         hSlider:SetValue(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
         hSlider:SetFullWidth(true)
         hSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4670,7 +4628,7 @@ local function BuildAppearanceTab(container)
 
         local cdXSlider = AceGUI:Create("Slider")
         cdXSlider:SetLabel("X Offset")
-        cdXSlider:SetSliderValues(-20, 20, 1)
+        cdXSlider:SetSliderValues(-20, 20, 0.1)
         cdXSlider:SetValue(style.cooldownTextXOffset or 0)
         cdXSlider:SetFullWidth(true)
         cdXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4681,7 +4639,7 @@ local function BuildAppearanceTab(container)
 
         local cdYSlider = AceGUI:Create("Slider")
         cdYSlider:SetLabel("Y Offset")
-        cdYSlider:SetSliderValues(-20, 20, 1)
+        cdYSlider:SetSliderValues(-20, 20, 0.1)
         cdYSlider:SetValue(style.cooldownTextYOffset or 0)
         cdYSlider:SetFullWidth(true)
         cdYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4805,7 +4763,7 @@ local function BuildAppearanceTab(container)
 
         local chargeXSlider = AceGUI:Create("Slider")
         chargeXSlider:SetLabel("X Offset")
-        chargeXSlider:SetSliderValues(-20, 20, 1)
+        chargeXSlider:SetSliderValues(-20, 20, 0.1)
         chargeXSlider:SetValue(style.chargeXOffset or -2)
         chargeXSlider:SetFullWidth(true)
         chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4816,7 +4774,7 @@ local function BuildAppearanceTab(container)
 
         local chargeYSlider = AceGUI:Create("Slider")
         chargeYSlider:SetLabel("Y Offset")
-        chargeYSlider:SetSliderValues(-20, 20, 1)
+        chargeYSlider:SetSliderValues(-20, 20, 0.1)
         chargeYSlider:SetValue(style.chargeYOffset or 2)
         chargeYSlider:SetFullWidth(true)
         chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4949,7 +4907,7 @@ local function BuildAppearanceTab(container)
 
         local kbXSlider = AceGUI:Create("Slider")
         kbXSlider:SetLabel("X Offset")
-        kbXSlider:SetSliderValues(-20, 20, 1)
+        kbXSlider:SetSliderValues(-20, 20, 0.1)
         kbXSlider:SetValue(style.keybindXOffset or -2)
         kbXSlider:SetFullWidth(true)
         kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4960,7 +4918,7 @@ local function BuildAppearanceTab(container)
 
         local kbYSlider = AceGUI:Create("Slider")
         kbYSlider:SetLabel("Y Offset")
-        kbYSlider:SetSliderValues(-20, 20, 1)
+        kbYSlider:SetSliderValues(-20, 20, 0.1)
         kbYSlider:SetValue(style.keybindYOffset or -2)
         kbYSlider:SetFullWidth(true)
         kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -5833,7 +5791,7 @@ BuildCastBarAnchoringPanel = function(container)
         -- Y Offset
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
-        ySlider:SetSliderValues(-50, 50, 1)
+        ySlider:SetSliderValues(-50, 50, 0.1)
         ySlider:SetValue(settings.yOffset or 0)
         ySlider:SetFullWidth(true)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -6566,7 +6524,7 @@ BuildResourceBarAnchoringPanel = function(container)
 
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
-        ySlider:SetSliderValues(-50, 50, 1)
+        ySlider:SetSliderValues(-50, 50, 0.1)
         ySlider:SetValue(settings.yOffset or -3)
         ySlider:SetFullWidth(true)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -6735,7 +6693,7 @@ local function BuildResourceBarStylingPanel(container)
     if settings.barTexture == "blizzard_class" then
         local brightSlider = AceGUI:Create("Slider")
         brightSlider:SetLabel("Class Texture Brightness")
-        brightSlider:SetSliderValues(0.5, 2.0, 0.05)
+        brightSlider:SetSliderValues(0.5, 2.0, 0.1)
         brightSlider:SetValue(settings.classBarBrightness or 1.3)
         brightSlider:SetFullWidth(true)
         brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
