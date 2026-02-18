@@ -1345,13 +1345,6 @@ local function UpdateIconTint(button, buttonData, style)
         end
         return
     end
-    if buttonData.auraTracking then
-        if button._vertexR ~= 1 or button._vertexG ~= 1 or button._vertexB ~= 1 then
-            button._vertexR, button._vertexG, button._vertexB = 1, 1, 1
-            button.icon:SetVertexColor(1, 1, 1)
-        end
-        return
-    end
     local r, g, b = 1, 1, 1
     if style.showOutOfRange then
         if buttonData.type == "spell" then
@@ -1414,8 +1407,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
             wantSize = style.auraTextFontSize or 12
             wantOutline = style.auraTextFontOutline or "OUTLINE"
-        elseif buttonData.auraTracking then
-            -- Inactive aura: no text (cooldown frame hidden)
+        elseif buttonData.isPassive then
+            -- Inactive passive aura: no text (cooldown frame hidden)
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
             showText = style.showCooldownText
@@ -1696,11 +1689,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._inPandemic = inPandemic
     end
 
-    if buttonData.auraTracking and not auraOverrideActive then
+    if buttonData.isPassive and not auraOverrideActive then
         button.cooldown:Hide()
     end
 
-    if not auraOverrideActive and not buttonData.auraTracking then
+    if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
             -- SetCooldown accepts secret startTime/duration values.
@@ -1779,7 +1772,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
             and not buttonData.hasCharges and not buttonData.isPassive
-            and not buttonData.auraTracking
     end
 
     -- Charge count tracking: detect whether the main cooldown (0 charges)
@@ -1835,7 +1827,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     local charges
-    if buttonData.hasCharges and not buttonData.auraTracking then
+    if buttonData.hasCharges then
       if buttonData.type == "spell" then
         charges = UpdateChargeTracking(button, buttonData)
 
@@ -2489,7 +2481,7 @@ UpdateBarFill = function(button)
             end
         end
     else
-        if button.buttonData.auraTracking then
+        if button.buttonData.isPassive then
             button.statusBar:SetValue(0)
             button.timeText:SetText("")
         else
@@ -2543,7 +2535,7 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Bar color: switch between ready, cooldown, and partial charge colors.
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
-    if onCooldown and not button.buttonData.auraTracking then
+    if onCooldown and not button.buttonData.isPassive then
         if button.buttonData.hasCharges and not button._mainCDShown then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
         else

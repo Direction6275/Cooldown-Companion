@@ -1294,7 +1294,7 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and not bd.isPassive and not bd.auraTracking and button.style and button.style.showOutOfRange then
+        if bd.type == "spell" and not bd.isPassive and button.style and button.style.showOutOfRange then
             newSet[bd.id] = true
         end
     end)

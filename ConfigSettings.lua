@@ -345,8 +345,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
     end -- not buttonData.isPassive
 
-    -- Spell ID Override row (hidden for aura-tracked buttons — just add the correct aura directly)
-    if not buttonData.auraTracking then
+    -- Spell ID Override row (hidden for passive aura buttons)
+    if not buttonData.isPassive then
     local overrideRow = AceGUI:Create("SimpleGroup")
     overrideRow:SetFullWidth(true)
     overrideRow:SetLayout("Flow")
@@ -434,7 +434,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     overrideCdmSpacer:SetText(" ")
     overrideCdmSpacer:SetFullWidth(true)
     scroll:AddChild(overrideCdmSpacer)
-    end -- not buttonData.auraTracking (Spell ID Override)
+    end -- not buttonData.isPassive (Spell ID Override)
 
     -- Cooldown Manager controls (always visible for spells)
     local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
@@ -621,8 +621,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end -- canTrackAura
     end -- not auraCollapsed
 
-    -- Indicators section (available for all spells, icon mode only)
-    if group.displayMode ~= "bars" then
+    -- Indicators section (available for all spells, icon mode only; skip for passives)
+    if group.displayMode ~= "bars" and not buttonData.isPassive then
     local indicatorHeading = AceGUI:Create("Heading")
     indicatorHeading:SetText("Indicators")
     ColorHeading(indicatorHeading)
@@ -4135,7 +4135,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- Desaturate on Cooldown
     -- ================================================================
     local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown / Active Aura")
+    desatCb:SetLabel("Show Desaturate On Cooldown")
     desatCb:SetValue(style.desaturateOnCooldown or false)
     desatCb:SetFullWidth(true)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4229,7 +4229,11 @@ local function BuildEffectsTab(container)
     container:AddChild(procEnableCb)
 
     local procAdvExpanded, procAdvBtn = AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, style.procGlowStyle ~= "none")
-    CreateCheckboxPromoteButton(procEnableCb, procAdvBtn, "procGlow", group, style)
+    -- Skip promote for aura-tracked buttons (Show Active Aura Glow covers this)
+    local procBtnData = CS.selectedButton and group.buttons[CS.selectedButton]
+    if not (procBtnData and procBtnData.isPassive) then
+        CreateCheckboxPromoteButton(procEnableCb, procAdvBtn, "procGlow", group, style)
+    end
 
     if procAdvExpanded and style.procGlowStyle ~= "none" then
     BuildProcGlowControls(container, style, function()
@@ -4287,7 +4291,7 @@ local function BuildEffectsTab(container)
     -- Desaturate on Cooldown
     -- ================================================================
     local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown / Active Aura")
+    desatCb:SetLabel("Show Desaturate On Cooldown")
     desatCb:SetValue(style.desaturateOnCooldown or false)
     desatCb:SetFullWidth(true)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -5154,8 +5158,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
 
 
     if not visCollapsed then
-    -- Hide While On Cooldown (skip for passives and aura-tracked — no cooldown)
-    if not buttonData.isPassive and not buttonData.auraTracking then
+    -- Hide While On Cooldown (skip for passives — no cooldown)
+    if not buttonData.isPassive then
     local hideCDCb = AceGUI:Create("CheckBox")
     hideCDCb:SetLabel("Hide While On Cooldown")
     hideCDCb:SetValue(buttonData.hideWhileOnCooldown or false)
