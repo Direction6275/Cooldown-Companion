@@ -1805,6 +1805,7 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback)
         refreshCallback()
     end)
     container:AddChild(cb)
+    return cb
 end
 
 local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback)
@@ -2855,120 +2856,6 @@ local function BuildLayoutTab(container)
         end
     end)
 
-    -- ================================================================
-    -- BASIC: Orientation / Layout controls (mode-dependent)
-    -- ================================================================
-    if group.displayMode == "bars" then
-        local vertFillCheck = AceGUI:Create("CheckBox")
-        vertFillCheck:SetLabel("Vertical Bar Fill")
-        vertFillCheck:SetValue(style.barFillVertical or false)
-        vertFillCheck:SetFullWidth(true)
-        vertFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barFillVertical = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(vertFillCheck)
-
-        local reverseFillCheck = AceGUI:Create("CheckBox")
-        reverseFillCheck:SetLabel("Flip Fill/Drain Direction")
-        reverseFillCheck:SetValue(style.barReverseFill or false)
-        reverseFillCheck:SetFullWidth(true)
-        reverseFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barReverseFill = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        container:AddChild(reverseFillCheck)
-
-        if #group.buttons > 1 then
-            local horzLayoutCheck = AceGUI:Create("CheckBox")
-            horzLayoutCheck:SetLabel("Horizontal Bar Layout")
-            horzLayoutCheck:SetValue((style.orientation or "vertical") == "horizontal")
-            horzLayoutCheck:SetFullWidth(true)
-            horzLayoutCheck:SetCallback("OnValueChanged", function(widget, event, val)
-                style.orientation = val and "horizontal" or "vertical"
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end)
-            container:AddChild(horzLayoutCheck)
-        end
-    else
-        local orientDrop = AceGUI:Create("Dropdown")
-        orientDrop:SetLabel("Orientation")
-        orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
-        orientDrop:SetValue(style.orientation or "horizontal")
-        orientDrop:SetFullWidth(true)
-        orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.orientation = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        container:AddChild(orientDrop)
-    end
-
-    -- BASIC: Buttons Per Row/Column
-    local numButtons = math.max(1, #group.buttons)
-    local bprSlider = AceGUI:Create("Slider")
-    bprSlider:SetLabel("Buttons Per Row/Column")
-    bprSlider:SetSliderValues(1, numButtons, 1)
-    bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numButtons))
-    bprSlider:SetFullWidth(true)
-    bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.buttonsPerRow = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    container:AddChild(bprSlider)
-
-    -- BASIC: Show Tooltips (from Extras)
-    local tooltipCb = AceGUI:Create("CheckBox")
-    tooltipCb:SetLabel("Show Tooltips")
-    tooltipCb:SetValue(style.showTooltips == true)
-    tooltipCb:SetFullWidth(true)
-    tooltipCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showTooltips = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(tooltipCb)
-
-    do
-        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
-        local tooltipPromote = CreateFrame("Button", nil, tooltipCb.frame)
-        tooltipPromote:SetSize(16, 16)
-        tooltipPromote:SetPoint("LEFT", tooltipCb.checkbg, "RIGHT", tooltipCb.text:GetStringWidth() + 6, 0)
-        local tooltipPromoteIcon = tooltipPromote:CreateTexture(nil, "OVERLAY")
-        tooltipPromoteIcon:SetSize(12, 12)
-        tooltipPromoteIcon:SetPoint("CENTER")
-        local multiCount = 0
-        if CS.selectedButtons then
-            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
-        end
-        local canPromote = CS.selectedButton ~= nil and multiCount < 2
-            and btnData ~= nil
-            and not (btnData.overrideSections and btnData.overrideSections.showTooltips)
-        if canPromote then
-            tooltipPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
-            tooltipPromote:Enable()
-        else
-            tooltipPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
-            tooltipPromote:Disable()
-        end
-        tooltipPromote:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            if canPromote then
-                GameTooltip:AddLine("Override Show Tooltips for this button")
-            else
-                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-            end
-            GameTooltip:Show()
-        end)
-        tooltipPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        tooltipPromote:SetScript("OnClick", function()
-            if not canPromote then return end
-            CooldownCompanion:PromoteSection(btnData, style, "showTooltips")
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        table.insert(tabInfoButtons, tooltipPromote)
-    end
-
     -- Anchor Point dropdown
     local pointValues = {}
     for _, pt in ipairs(CS.anchorPoints) do
@@ -3051,6 +2938,68 @@ local function BuildLayoutTab(container)
     end)
     HookSliderEditBox(ySlider)
     container:AddChild(ySlider)
+
+    -- ================================================================
+    -- Orientation / Layout controls (mode-dependent)
+    -- ================================================================
+    if group.displayMode == "bars" then
+        local vertFillCheck = AceGUI:Create("CheckBox")
+        vertFillCheck:SetLabel("Vertical Bar Fill")
+        vertFillCheck:SetValue(style.barFillVertical or false)
+        vertFillCheck:SetFullWidth(true)
+        vertFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barFillVertical = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(vertFillCheck)
+
+        local reverseFillCheck = AceGUI:Create("CheckBox")
+        reverseFillCheck:SetLabel("Flip Fill/Drain Direction")
+        reverseFillCheck:SetValue(style.barReverseFill or false)
+        reverseFillCheck:SetFullWidth(true)
+        reverseFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barReverseFill = val or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        container:AddChild(reverseFillCheck)
+
+        if #group.buttons > 1 then
+            local horzLayoutCheck = AceGUI:Create("CheckBox")
+            horzLayoutCheck:SetLabel("Horizontal Bar Layout")
+            horzLayoutCheck:SetValue((style.orientation or "vertical") == "horizontal")
+            horzLayoutCheck:SetFullWidth(true)
+            horzLayoutCheck:SetCallback("OnValueChanged", function(widget, event, val)
+                style.orientation = val and "horizontal" or "vertical"
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end)
+            container:AddChild(horzLayoutCheck)
+        end
+    else
+        local orientDrop = AceGUI:Create("Dropdown")
+        orientDrop:SetLabel("Orientation")
+        orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
+        orientDrop:SetValue(style.orientation or "horizontal")
+        orientDrop:SetFullWidth(true)
+        orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.orientation = val
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        container:AddChild(orientDrop)
+    end
+
+    -- Buttons Per Row/Column
+    local numButtons = math.max(1, #group.buttons)
+    local bprSlider = AceGUI:Create("Slider")
+    bprSlider:SetLabel("Buttons Per Row/Column")
+    bprSlider:SetSliderValues(1, numButtons, 1)
+    bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numButtons))
+    bprSlider:SetFullWidth(true)
+    bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.buttonsPerRow = val
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+    end)
+    container:AddChild(bprSlider)
 
     -- ================================================================
     -- ADVANCED: Alpha (from Extras)
@@ -3427,6 +3376,17 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(heightSlider)
 
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.borderSize = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(borderSlider)
+
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Bar Spacing")
@@ -3481,34 +3441,7 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(updateFreqSlider)
-
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.borderSize = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(borderSlider)
-
-    local borderColor = AceGUI:Create("ColorPicker")
-    borderColor:SetLabel("Border Color")
-    borderColor:SetHasAlpha(true)
-    local bc = style.borderColor or {0, 0, 0, 1}
-    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColor:SetFullWidth(true)
-    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.borderColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.borderColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(borderColor)
-    end -- barAdvExpanded (update freq, border)
+    end -- barAdvExpanded (update freq)
     end -- not barSettingsCollapsed
 
     -- Contextual color pickers (no heading/collapse/promote)
@@ -3559,6 +3492,22 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(barBgColorPicker)
+
+    local borderColor = AceGUI:Create("ColorPicker")
+    borderColor:SetLabel("Border Color")
+    borderColor:SetHasAlpha(true)
+    local bc = style.borderColor or {0, 0, 0, 1}
+    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
+    borderColor:SetFullWidth(true)
+    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        style.borderColor = {r, g, b, a}
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(borderColor)
 
     -- ================================================================
     -- Show Icon (standalone checkbox with advanced toggle + promote)
@@ -4122,6 +4071,85 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(readyOutlineDrop)
     end
 
+    -- Compact Mode toggle
+    local compactCb = AceGUI:Create("CheckBox")
+    compactCb:SetLabel("Compact Mode")
+    compactCb:SetValue(group.compactLayout or false)
+    compactCb:SetFullWidth(true)
+    compactCb:SetCallback("OnValueChanged", function(widget, event, val)
+        group.compactLayout = val or false
+        CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
+        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+        if frame then frame._layoutDirty = true end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(compactCb)
+
+    local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout)
+
+    -- (?) tooltip for compact mode
+    local compactInfo = CreateFrame("Button", nil, compactCb.frame)
+    compactInfo:SetSize(16, 16)
+    if group.compactLayout then
+        compactInfo:SetPoint("LEFT", compactAdvBtn, "RIGHT", 4, 0)
+    else
+        compactInfo:SetPoint("LEFT", compactCb.checkbg, "RIGHT", compactCb.text:GetStringWidth() + 6, 0)
+    end
+    local compactInfoIcon = compactInfo:CreateTexture(nil, "OVERLAY")
+    compactInfoIcon:SetSize(12, 12)
+    compactInfoIcon:SetPoint("CENTER")
+    compactInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    compactInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Compact Mode")
+        GameTooltip:AddLine("When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    compactInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(tabInfoButtons, compactInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        compactInfo:Hide()
+    end
+
+    if compactAdvExpanded and group.compactLayout then
+        local totalButtons = #group.buttons
+        local maxVisSlider = AceGUI:Create("Slider")
+        maxVisSlider:SetLabel("Max Visible Buttons")
+        maxVisSlider:SetSliderValues(1, math.max(totalButtons, 1), 1)
+        maxVisSlider:SetValue(group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons)
+        maxVisSlider:SetFullWidth(true)
+        maxVisSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            val = math.floor(val + 0.5)
+            if val >= totalButtons then
+                group.maxVisibleButtons = 0
+            else
+                group.maxVisibleButtons = val
+            end
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame then frame._layoutDirty = true end
+        end)
+        container:AddChild(maxVisSlider)
+
+        local maxVisInfo = CreateFrame("Button", nil, maxVisSlider.frame)
+        maxVisInfo:SetSize(16, 16)
+        maxVisInfo:SetPoint("LEFT", maxVisSlider.label, "CENTER", maxVisSlider.label:GetStringWidth() / 2 + 4, 0)
+        local maxVisInfoIcon = maxVisInfo:CreateTexture(nil, "OVERLAY")
+        maxVisInfoIcon:SetSize(12, 12)
+        maxVisInfoIcon:SetPoint("CENTER")
+        maxVisInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        maxVisInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Max Visible Buttons")
+            GameTooltip:AddLine("Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        maxVisInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(tabInfoButtons, maxVisInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            maxVisInfo:Hide()
+        end
+    end
+
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
@@ -4223,6 +4251,12 @@ local function BuildBarEffectsTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+
+    -- Show Tooltips
+    local tooltipCb = BuildShowTooltipsControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then
@@ -4372,6 +4406,12 @@ local function BuildEffectsTab(container)
     end)
     CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
 
+    -- Show Tooltips
+    local tooltipCb = BuildShowTooltipsControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
+
     -- ================================================================
     -- Assisted Highlight (icon-only)
     -- ================================================================
@@ -4496,6 +4536,20 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(hSlider)
     end
+
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    if group.masqueEnabled then
+        borderSlider:SetDisabled(true)
+    end
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        style.borderSize = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(borderSlider)
 
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
@@ -5057,20 +5111,6 @@ local function BuildAppearanceTab(container)
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not borderCollapsed then
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    if group.masqueEnabled then
-        borderSlider:SetDisabled(true)
-    end
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.borderSize = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(borderSlider)
-
     local borderColor = AceGUI:Create("ColorPicker")
     borderColor:SetLabel("Border Color")
     borderColor:SetHasAlpha(true)
