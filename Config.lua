@@ -5826,7 +5826,16 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Frame Anchoring button — leftmost in cluster
+    -- Cooldown Manager settings button — leftmost in cluster
+    local cdmBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    cdmBtn:SetSize(16, 16)
+    local cdmIcon = cdmBtn:CreateTexture(nil, "ARTWORK")
+    cdmIcon:SetAtlas("icon_trackedbuffs", false)
+    cdmIcon:SetAllPoints()
+    cdmBtn:SetHighlightAtlas("icon_trackedbuffs")
+    cdmBtn:GetHighlightTexture():SetAlpha(0.3)
+
+    -- Frame Anchoring button
     local frameAnchoringBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
     frameAnchoringBtn:SetSize(16, 16)
     local frameAnchoringIcon = frameAnchoringBtn:CreateTexture(nil, "ARTWORK")
@@ -5854,9 +5863,26 @@ local function CreateConfigPanel()
     castBarBtn:GetHighlightTexture():SetAlpha(0.3)
 
     -- Highlight functions (defined after all buttons exist so closures can capture all)
+    local cdmBtnBorder = nil
     local frameAnchoringBtnBorder = nil
     local resourceBarBtnBorder = nil
     local castBarBtnBorder = nil
+
+    local function UpdateCdmBtnHighlight()
+        if CooldownViewerSettings and CooldownViewerSettings:IsShown() then
+            if not cdmBtnBorder then
+                cdmBtnBorder = cdmBtn:CreateTexture(nil, "OVERLAY")
+                cdmBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                cdmBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                cdmBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            cdmBtnBorder:Show()
+        else
+            if cdmBtnBorder then
+                cdmBtnBorder:Hide()
+            end
+        end
+    end
 
     local function UpdateFrameAnchoringBtnHighlight()
         if CS.frameAnchoringPanelActive then
@@ -5907,6 +5933,27 @@ local function CreateConfigPanel()
     end
 
     -- OnClick handlers (all highlight functions in scope)
+    cdmBtn:SetScript("OnClick", function()
+        if CooldownViewerSettings then
+            CooldownViewerSettings:TogglePanel()
+            UpdateCdmBtnHighlight()
+        end
+    end)
+    cdmBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Cooldown Manager")
+        GameTooltip:AddLine("Open the Blizzard Cooldown Manager settings panel", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    cdmBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Sync highlight when CDM panel is closed externally
+    if CooldownViewerSettings then
+        hooksecurefunc(CooldownViewerSettings, "Hide", function()
+            UpdateCdmBtnHighlight()
+        end)
+    end
+
     frameAnchoringBtn:SetScript("OnClick", function()
         if CS.frameAnchoringPanelActive then
             CS.frameAnchoringPanelActive = false
@@ -5995,6 +6042,7 @@ local function CreateConfigPanel()
     resourceBarBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
     castBarBtn:SetPoint("RIGHT", resourceBarBtn, "LEFT", -4, 0)
     frameAnchoringBtn:SetPoint("RIGHT", castBarBtn, "LEFT", -4, 0)
+    cdmBtn:SetPoint("RIGHT", frameAnchoringBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
