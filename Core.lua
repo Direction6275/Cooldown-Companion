@@ -708,6 +708,9 @@ function CooldownCompanion:OnEnable()
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
 
+    -- Pet summon/dismiss — show/hide pet spell buttons dynamically
+    self:RegisterEvent("UNIT_PET", "OnPetChanged")
+
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
 
@@ -1346,6 +1349,15 @@ end
 function CooldownCompanion:OnTalentsChanged()
     self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
+    self:RefreshConfigPanel()
+end
+
+function CooldownCompanion:OnPetChanged()
+    for groupId, _ in pairs(self.db.profile.groups) do
+        if self:GroupHasPetSpells(groupId) then
+            self:RefreshGroupFrame(groupId)
+        end
+    end
     self:RefreshConfigPanel()
 end
 
@@ -3022,6 +3034,15 @@ function CooldownCompanion:ToggleGroupGlobal(groupId)
     -- Clear folder assignment — the folder belongs to the old section
     group.folderId = nil
     self:RefreshAllGroups()
+end
+
+function CooldownCompanion:GroupHasPetSpells(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return false end
+    for _, buttonData in ipairs(group.buttons) do
+        if buttonData.isPetSpell then return true end
+    end
+    return false
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
