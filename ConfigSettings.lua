@@ -1233,6 +1233,62 @@ local function CreateRevertButton(headingWidget, buttonData, sectionId)
     return revertBtn
 end
 
+local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId, group, groupStyle)
+    local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+    local promoteBtn = CreateFrame("Button", nil, cbWidget.frame)
+    promoteBtn:SetSize(16, 16)
+
+    -- Anchor: right of anchorAfterFrame if visible, else right of checkbox text
+    if anchorAfterFrame and anchorAfterFrame:IsShown() then
+        promoteBtn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
+    else
+        promoteBtn:SetPoint("LEFT", cbWidget.checkbg, "RIGHT", cbWidget.text:GetStringWidth() + 6, 0)
+    end
+
+    local icon = promoteBtn:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(12, 12)
+    icon:SetPoint("CENTER")
+
+    local multiCount = 0
+    if CS.selectedButtons then
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+    end
+    local canPromote = CS.selectedButton ~= nil and multiCount < 2
+        and btnData ~= nil
+        and not (btnData.overrideSections and btnData.overrideSections[sectionId])
+
+    if canPromote then
+        icon:SetAtlas("Crosshair_VehichleCursor_32")
+        promoteBtn:Enable()
+    else
+        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
+        promoteBtn:Disable()
+    end
+
+    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+    local sectionLabel = sectionDef and sectionDef.label or sectionId
+
+    promoteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if canPromote then
+            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        else
+            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+        end
+        GameTooltip:Show()
+    end)
+    promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    promoteBtn:SetScript("OnClick", function()
+        if not canPromote then return end
+        CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    table.insert(tabInfoButtons, promoteBtn)
+    return promoteBtn
+end
+
 ------------------------------------------------------------------------
 -- REUSABLE SECTION BUILDER FUNCTIONS
 ------------------------------------------------------------------------
@@ -1729,7 +1785,7 @@ end
 
 local function BuildDesaturationControls(container, styleTable, refreshCallback)
     local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown")
+    desatCb:SetLabel("Show Desaturate On Cooldown")
     desatCb:SetValue(styleTable.desaturateOnCooldown or false)
     desatCb:SetFullWidth(true)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1761,6 +1817,7 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
         refreshCallback()
     end)
     container:AddChild(cb)
+    return cb
 end
 
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
@@ -1787,6 +1844,7 @@ local function BuildLossOfControlControls(container, styleTable, refreshCallback
         refreshCallback()
     end)
     container:AddChild(locCb)
+    return locCb
 end
 
 local function BuildUnusableDimmingControls(container, styleTable, refreshCallback)
@@ -1799,6 +1857,7 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
         refreshCallback()
     end)
     container:AddChild(unusableCb)
+    return unusableCb
 end
 
 local function BuildAssistedHighlightControls(container, styleTable, refreshCallback)
@@ -3976,7 +4035,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- Desaturate on Cooldown
     -- ================================================================
     local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown / Active Aura")
+    desatCb:SetLabel("Show Desaturate On Cooldown / Active Aura")
     desatCb:SetValue(style.desaturateOnCooldown or false)
     desatCb:SetFullWidth(true)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4284,64 +4343,10 @@ local function BuildEffectsTab(container)
     end
 
     -- ================================================================
-    -- Desaturate on Cooldown
-    -- ================================================================
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Desaturate On Cooldown / Active Aura")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(desatCb)
-
-    do
-        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
-        local desatPromote = CreateFrame("Button", nil, desatCb.frame)
-        desatPromote:SetSize(16, 16)
-        desatPromote:SetPoint("LEFT", desatCb.checkbg, "RIGHT", desatCb.text:GetStringWidth() + 6, 0)
-        local desatPromoteIcon = desatPromote:CreateTexture(nil, "OVERLAY")
-        desatPromoteIcon:SetSize(12, 12)
-        desatPromoteIcon:SetPoint("CENTER")
-        local multiCount = 0
-        if CS.selectedButtons then
-            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
-        end
-        local canPromote = CS.selectedButton ~= nil and multiCount < 2
-            and btnData ~= nil
-            and not (btnData.overrideSections and btnData.overrideSections.desaturation)
-        if canPromote then
-            desatPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
-            desatPromote:Enable()
-        else
-            desatPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
-            desatPromote:Disable()
-        end
-        desatPromote:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            if canPromote then
-                GameTooltip:AddLine("Override Desaturation for this button")
-            else
-                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-            end
-            GameTooltip:Show()
-        end)
-        desatPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        desatPromote:SetScript("OnClick", function()
-            if not canPromote then return end
-            CooldownCompanion:PromoteSection(btnData, style, "desaturation")
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        table.insert(tabInfoButtons, desatPromote)
-    end
-
-    -- ================================================================
     -- Proc Glow enable toggle
     -- ================================================================
     local procEnableCb = AceGUI:Create("CheckBox")
-    procEnableCb:SetLabel("Proc Glow")
+    procEnableCb:SetLabel("Show Proc Glow")
     procEnableCb:SetValue(style.procGlowStyle ~= "none")
     procEnableCb:SetFullWidth(true)
     procEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4351,7 +4356,8 @@ local function BuildEffectsTab(container)
     end)
     container:AddChild(procEnableCb)
 
-    local procAdvExpanded = AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, style.procGlowStyle ~= "none")
+    local procAdvExpanded, procAdvBtn = AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, style.procGlowStyle ~= "none")
+    CreateCheckboxPromoteButton(procEnableCb, procAdvBtn, "procGlow", group, style)
 
     if procAdvExpanded and style.procGlowStyle ~= "none" then
     BuildProcGlowControls(container, style, function()
@@ -4363,7 +4369,7 @@ local function BuildEffectsTab(container)
     -- Active Aura Glow enable toggle
     -- ================================================================
     local auraEnableCb = AceGUI:Create("CheckBox")
-    auraEnableCb:SetLabel("Active Aura Glow")
+    auraEnableCb:SetLabel("Show Active Aura Glow")
     auraEnableCb:SetValue(style.auraGlowStyle ~= "none")
     auraEnableCb:SetFullWidth(true)
     auraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4373,13 +4379,51 @@ local function BuildEffectsTab(container)
     end)
     container:AddChild(auraEnableCb)
 
-    local auraAdvExpanded = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, style.auraGlowStyle ~= "none")
+    local auraAdvExpanded, auraAdvBtn = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, style.auraGlowStyle ~= "none")
+    CreateCheckboxPromoteButton(auraEnableCb, auraAdvBtn, "auraIndicator", group, style)
 
     if auraAdvExpanded and style.auraGlowStyle ~= "none" then
     BuildAuraIndicatorControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     end -- auraAdvExpanded
+
+    -- ================================================================
+    -- Pandemic Glow
+    -- ================================================================
+    local pandemicGlowCb = AceGUI:Create("CheckBox")
+    pandemicGlowCb:SetLabel("Show Pandemic Glow")
+    pandemicGlowCb:SetValue(style.showPandemicGlow ~= false)
+    pandemicGlowCb:SetFullWidth(true)
+    pandemicGlowCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showPandemicGlow = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(pandemicGlowCb)
+
+    local pandemicAdvExpanded, pandemicAdvBtn = AddAdvancedToggle(pandemicGlowCb, "pandemicGlow", tabInfoButtons, style.showPandemicGlow ~= false)
+    CreateCheckboxPromoteButton(pandemicGlowCb, pandemicAdvBtn, "pandemicGlow", group, style)
+
+    if pandemicAdvExpanded and style.showPandemicGlow ~= false then
+    BuildPandemicGlowControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    end -- pandemicAdvExpanded
+
+    -- ================================================================
+    -- Desaturate on Cooldown
+    -- ================================================================
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Show Desaturate On Cooldown / Active Aura")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(desatCb)
+    CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
 
     -- ================================================================
     -- GCD Swipe
@@ -4393,82 +4437,25 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(gcdCb)
-
-    do
-        local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
-        local gcdPromote = CreateFrame("Button", nil, gcdCb.frame)
-        gcdPromote:SetSize(16, 16)
-        gcdPromote:SetPoint("LEFT", gcdCb.checkbg, "RIGHT", gcdCb.text:GetStringWidth() + 6, 0)
-        local gcdPromoteIcon = gcdPromote:CreateTexture(nil, "OVERLAY")
-        gcdPromoteIcon:SetSize(12, 12)
-        gcdPromoteIcon:SetPoint("CENTER")
-        local multiCount = 0
-        if CS.selectedButtons then
-            for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
-        end
-        local canPromote = CS.selectedButton ~= nil and multiCount < 2
-            and btnData ~= nil
-            and not (btnData.overrideSections and btnData.overrideSections.showGCDSwipe)
-        if canPromote then
-            gcdPromoteIcon:SetAtlas("Crosshair_VehichleCursor_32")
-            gcdPromote:Enable()
-        else
-            gcdPromoteIcon:SetAtlas("Crosshair_unableVehichleCursor_32")
-            gcdPromote:Disable()
-        end
-        gcdPromote:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            if canPromote then
-                GameTooltip:AddLine("Override Show GCD Swipe for this button")
-            else
-                GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-            end
-            GameTooltip:Show()
-        end)
-        gcdPromote:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        gcdPromote:SetScript("OnClick", function()
-            if not canPromote then return end
-            CooldownCompanion:PromoteSection(btnData, style, "showGCDSwipe")
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        table.insert(tabInfoButtons, gcdPromote)
-    end
-
-    -- Show Pandemic Glow toggle
-    local pandemicGlowCb = AceGUI:Create("CheckBox")
-    pandemicGlowCb:SetLabel("Pandemic Glow")
-    pandemicGlowCb:SetValue(style.showPandemicGlow ~= false)
-    pandemicGlowCb:SetFullWidth(true)
-    pandemicGlowCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showPandemicGlow = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(pandemicGlowCb)
-
-    local pandemicAdvExpanded = AddAdvancedToggle(pandemicGlowCb, "pandemicGlow", tabInfoButtons, style.showPandemicGlow ~= false)
-
-    if pandemicAdvExpanded and style.showPandemicGlow ~= false then
-    BuildPandemicGlowControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    end -- pandemicAdvExpanded
+    CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
 
     -- Out of Range
-    BuildShowOutOfRangeControls(container, style, function()
+    local oorCb = BuildShowOutOfRangeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
 
     -- Loss of Control
-    BuildLossOfControlControls(container, style, function()
+    local locCb = BuildLossOfControlControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
     -- Unusable Dimming
-    BuildUnusableDimmingControls(container, style, function()
+    local unusableCb = BuildUnusableDimmingControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
 
     -- ================================================================
     -- Assisted Highlight (icon-only)
@@ -4621,7 +4608,8 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(cdTextCb)
 
-    local cdTextAdvExpanded = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText)
+    local cdTextAdvExpanded, cdTextAdvBtn = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText)
+    CreateCheckboxPromoteButton(cdTextCb, cdTextAdvBtn, "cooldownText", group, style)
 
     if cdTextAdvExpanded and style.showCooldownText then
         local fontSizeSlider = AceGUI:Create("Slider")
@@ -4744,7 +4732,8 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(chargeTextCb)
 
-    local chargeAdvExpanded = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false)
+    local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false)
+    CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
 
     if chargeAdvExpanded and style.showChargeText ~= false then
         local chargeFontSizeSlider = AceGUI:Create("Slider")
@@ -4879,10 +4868,11 @@ local function BuildAppearanceTab(container)
     container:AddChild(auraTextCb)
 
     local auraTextAdvExpanded, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false)
+    local auraTextPromoteBtn = CreateCheckboxPromoteButton(auraTextCb, auraTextAdvBtn, "auraText", group, style)
 
     local auraPosInfo = CreateFrame("Button", nil, auraTextCb.frame)
     auraPosInfo:SetSize(16, 16)
-    auraPosInfo:SetPoint("LEFT", auraTextAdvBtn, "RIGHT", 4, 0)
+    auraPosInfo:SetPoint("LEFT", auraTextPromoteBtn, "RIGHT", 4, 0)
     local auraPosInfoIcon = auraPosInfo:CreateTexture(nil, "OVERLAY")
     auraPosInfoIcon:SetSize(12, 12)
     auraPosInfoIcon:SetPoint("CENTER")
@@ -4966,7 +4956,8 @@ local function BuildAppearanceTab(container)
     end)
     container:AddChild(kbCb)
 
-    local kbAdvExpanded = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText)
+    local kbAdvExpanded, kbAdvBtn = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText)
+    CreateCheckboxPromoteButton(kbCb, kbAdvBtn, "keybindText", group, style)
 
     if style.showKeybindText and kbAdvExpanded then
         local kbAnchorDrop = AceGUI:Create("Dropdown")
@@ -5237,6 +5228,12 @@ local function BuildAppearanceTab(container)
         end -- not masqueCollapsed
     end
 
+    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        for _, btn in ipairs(tabInfoButtons) do
+            if not btn._isAdvancedToggle then btn:Hide() end
+        end
+    end
 end
 
 ------------------------------------------------------------------------
