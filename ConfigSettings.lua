@@ -2627,7 +2627,7 @@ local function BuildLayoutTab(container)
                 CooldownCompanion:SetGroupAnchor(grp, name)
             end
             CooldownCompanion:RefreshConfigPanel()
-        end)
+        end, grp)
     end)
     anchorRow:AddChild(pickBtn)
 

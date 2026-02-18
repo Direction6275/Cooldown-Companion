@@ -651,11 +651,45 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
 end
 
+function CooldownCompanion:WouldCreateCircularAnchor(sourceGroupId, targetGroupId)
+    local groups = self.db.profile.groups
+    if not groups then return false end
+    local visited = {}
+    local currentId = targetGroupId
+    while currentId do
+        if currentId == sourceGroupId then return true end
+        if visited[currentId] then return false end
+        visited[currentId] = true
+        local g = groups[currentId]
+        if not g or not g.anchor or not g.anchor.relativeTo then break end
+        local nextId = g.anchor.relativeTo:match("^CooldownCompanionGroup(%d+)$")
+        currentId = nextId and tonumber(nextId) or nil
+    end
+    return false
+end
+
 function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     local group = self.db.profile.groups[groupId]
     local frame = self.groupFrames[groupId]
 
     if not group or not frame then return false end
+
+    -- Block self-anchoring
+    local selfFrameName = "CooldownCompanionGroup" .. groupId
+    if targetFrameName == selfFrameName then
+        self:Print("Cannot anchor a group to itself.")
+        return false
+    end
+
+    -- Block circular anchor chains
+    local tgId = targetFrameName and targetFrameName:match("^CooldownCompanionGroup(%d+)$")
+    if tgId then
+        tgId = tonumber(tgId)
+        if tgId and self:WouldCreateCircularAnchor(groupId, tgId) then
+            self:Print("Cannot anchor: would create a circular reference.")
+            return false
+        end
+    end
 
     -- Handle UIParent (free positioning)
     if targetFrameName == "UIParent" then
@@ -753,5 +787,63 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame.nudger, false, false)
             frame.nudger:EnableMouse(true)
         end
+    end
+end
+
+------------------------------------------------------------------------
+-- Pick-mode indicators: pulsing green border + name label on eligible groups
+------------------------------------------------------------------------
+function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
+    if not self._pickIndicators then self._pickIndicators = {} end
+    local groups = self.db.profile.groups
+    if not groups then return end
+
+    for groupId, group in pairs(groups) do
+        local frame = self.groupFrames[groupId]
+        if frame and frame:IsShown() and groupId ~= sourceGroupId
+           and not self:WouldCreateCircularAnchor(sourceGroupId, groupId) then
+            local indicator = self._pickIndicators[groupId]
+            if not indicator then
+                indicator = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+                indicator:SetBackdrop({
+                    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                    edgeSize = 14,
+                })
+                indicator:SetBackdropBorderColor(0, 1, 0, 0.8)
+                indicator:EnableMouse(false)
+
+                local label = indicator:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                label:SetPoint("BOTTOM", indicator, "TOP", 0, 2)
+                label:SetTextColor(0.2, 1, 0.2, 1)
+                indicator.label = label
+
+                local ag = indicator:CreateAnimationGroup()
+                local pulse = ag:CreateAnimation("Alpha")
+                pulse:SetFromAlpha(0.4)
+                pulse:SetToAlpha(1.0)
+                pulse:SetDuration(0.6)
+                ag:SetLooping("BOUNCE")
+                indicator.pulseAnim = ag
+
+                self._pickIndicators[groupId] = indicator
+            end
+
+            indicator:SetFrameStrata("FULLSCREEN_DIALOG")
+            indicator:SetFrameLevel(101)
+            indicator.label:SetText(group.name or ("Group " .. groupId))
+            indicator:SetAllPoints(frame)
+            indicator:Show()
+            indicator.pulseAnim:Play()
+        end
+    end
+end
+
+function CooldownCompanion:ClearPickModeIndicators()
+    if not self._pickIndicators then return end
+    for _, indicator in pairs(self._pickIndicators) do
+        if indicator.pulseAnim then
+            indicator.pulseAnim:Stop()
+        end
+        indicator:Hide()
     end
 end
