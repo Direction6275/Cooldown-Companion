@@ -1294,7 +1294,7 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and not bd.isPassive and button.style and button.style.showOutOfRange then
+        if bd.type == "spell" and not bd.isPassive and not bd.auraTracking and button.style and button.style.showOutOfRange then
             newSet[bd.id] = true
         end
     end)
@@ -1811,10 +1811,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
     if forceAura == true then
         group.buttons[buttonIndex].auraTracking = true
+        group.buttons[buttonIndex].auraIndicatorEnabled = true
     elseif forceAura == nil then
         -- Force aura tracking for passive/proc spells
         if isPassive then
             group.buttons[buttonIndex].auraTracking = true
+            group.buttons[buttonIndex].auraIndicatorEnabled = true
         end
 
         -- Auto-detect aura tracking for spells with viewer aura frames
@@ -1849,6 +1851,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             end
             if hasViewerFrame then
                 newButton.auraTracking = true
+                newButton.auraIndicatorEnabled = true
                 local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
                 if overrideBuffs then
                     newButton.auraSpellID = overrideBuffs

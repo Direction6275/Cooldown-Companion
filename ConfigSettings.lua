@@ -345,20 +345,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
     end -- not buttonData.isPassive
 
-    -- Desaturate While Inactive toggle (passive/proc only — default on)
-    if buttonData.isPassive then
-        local desatInactiveCb = AceGUI:Create("CheckBox")
-        desatInactiveCb:SetLabel("Desaturate While Inactive")
-        desatInactiveCb:SetValue(buttonData.desaturateWhileInactive ~= false)
-        desatInactiveCb:SetFullWidth(true)
-        desatInactiveCb:SetCallback("OnValueChanged", function(widget, event, val)
-            buttonData.desaturateWhileInactive = val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        scroll:AddChild(desatInactiveCb)
-    end
-
-    -- Spell ID Override row (always visible for spells, even without auto-detected aura)
+    -- Spell ID Override row (hidden for aura-tracked buttons — just add the correct aura directly)
+    if not buttonData.auraTracking then
     local overrideRow = AceGUI:Create("SimpleGroup")
     overrideRow:SetFullWidth(true)
     overrideRow:SetLayout("Flow")
@@ -446,6 +434,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     overrideCdmSpacer:SetText(" ")
     overrideCdmSpacer:SetFullWidth(true)
     scroll:AddChild(overrideCdmSpacer)
+    end -- not buttonData.auraTracking (Spell ID Override)
 
     -- Cooldown Manager controls (always visible for spells)
     local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
@@ -555,72 +544,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 -- Non-harmful spell: always tracks on player
                 buttonData.auraUnit = nil
             end
-
-            -- Enable Active Aura Indicator toggle
-            local auraIndicatorCb = AceGUI:Create("CheckBox")
-            auraIndicatorCb:SetLabel("Enable Active Aura Indicator")
-            auraIndicatorCb:SetValue(buttonData.auraIndicatorEnabled == true)
-            auraIndicatorCb:SetFullWidth(true)
-            auraIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraIndicatorEnabled = val or nil
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(auraIndicatorCb)
-
-            if buttonData.auraIndicatorEnabled then
-                if group.displayMode ~= "bars" then
-                    -- Icon mode: preview toggle
-                    local auraGlowPreviewCb = AceGUI:Create("CheckBox")
-                    auraGlowPreviewCb:SetLabel("Preview")
-                    local auraGlowPreviewActive = false
-                    local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                    if gFrame then
-                        for _, btn in ipairs(gFrame.buttons) do
-                            if btn.index == CS.selectedButton and btn._auraGlowPreview then
-                                auraGlowPreviewActive = true
-                                break
-                            end
-                        end
-                    end
-                    auraGlowPreviewCb:SetValue(auraGlowPreviewActive)
-                    auraGlowPreviewCb:SetFullWidth(true)
-                    auraGlowPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        CooldownCompanion:SetAuraGlowPreview(CS.selectedGroup, CS.selectedButton, val)
-                    end)
-                    scroll:AddChild(auraGlowPreviewCb)
-                else
-                    -- Bar mode: preview toggle
-                    local barAuraPreviewCb = AceGUI:Create("CheckBox")
-                    barAuraPreviewCb:SetLabel("Preview")
-                    local barAuraPreviewActive = false
-                    local gFrame = CooldownCompanion.groupFrames[CS.selectedGroup]
-                    if gFrame then
-                        for _, btn in ipairs(gFrame.buttons) do
-                            if btn.index == CS.selectedButton and btn._barAuraEffectPreview then
-                                barAuraPreviewActive = true
-                                break
-                            end
-                        end
-                    end
-                    barAuraPreviewCb:SetValue(barAuraPreviewActive)
-                    barAuraPreviewCb:SetFullWidth(true)
-                    barAuraPreviewCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        CooldownCompanion:SetBarAuraEffectPreview(CS.selectedGroup, CS.selectedButton, val)
-                    end)
-                    scroll:AddChild(barAuraPreviewCb)
-                end
-            end
-
-            -- Don't Desaturate While Active (aura tracking related)
-            local auraNoDesatCb = AceGUI:Create("CheckBox")
-            auraNoDesatCb:SetLabel("Don't Desaturate While Active")
-            auraNoDesatCb:SetValue(buttonData.auraNoDesaturate == true)
-            auraNoDesatCb:SetFullWidth(true)
-            auraNoDesatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                buttonData.auraNoDesaturate = val or nil
-            end)
-            scroll:AddChild(auraNoDesatCb)
 
             -- Pandemic glow/indicator toggles (aura tracking related)
             local pandemicCapable = viewerFrame
@@ -5231,8 +5154,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
 
 
     if not visCollapsed then
-    -- Hide While On Cooldown (skip for passives — no cooldown)
-    if not buttonData.isPassive then
+    -- Hide While On Cooldown (skip for passives and aura-tracked — no cooldown)
+    if not buttonData.isPassive and not buttonData.auraTracking then
     local hideCDCb = AceGUI:Create("CheckBox")
     hideCDCb:SetLabel("Hide While On Cooldown")
     hideCDCb:SetValue(buttonData.hideWhileOnCooldown or false)

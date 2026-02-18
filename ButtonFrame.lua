@@ -1345,6 +1345,13 @@ local function UpdateIconTint(button, buttonData, style)
         end
         return
     end
+    if buttonData.auraTracking then
+        if button._vertexR ~= 1 or button._vertexG ~= 1 or button._vertexB ~= 1 then
+            button._vertexR, button._vertexG, button._vertexB = 1, 1, 1
+            button.icon:SetVertexColor(1, 1, 1)
+        end
+        return
+    end
     local r, g, b = 1, 1, 1
     if style.showOutOfRange then
         if buttonData.type == "spell" then
@@ -1407,6 +1414,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
             wantSize = style.auraTextFontSize or 12
             wantOutline = style.auraTextFontOutline or "OUTLINE"
+        elseif buttonData.auraTracking then
+            -- Inactive aura: no text (cooldown frame hidden)
+            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
             showText = style.showCooldownText
             fontColor = style.cooldownFontColor or {1, 1, 1, 1}
@@ -1428,11 +1438,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
-    -- spells/auras; items use stored _itemCdDuration.
-    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
-    if buttonData.isPassive then
-        local wantDesat = (buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+    -- Desaturation: aura-tracked buttons desaturate when aura absent;
+    -- cooldown buttons desaturate based on DurationObject / item CD state.
+    if buttonData.auraTracking then
+        local wantDesat = not button._auraActive
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -1447,9 +1456,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             elseif buttonData.type == "item" then
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
-        end
-        if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
-            wantDesat = false
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
@@ -1524,7 +1530,7 @@ local function UpdateIconModeGlows(button, buttonData, style)
             if button._inPandemic and style.showPandemicGlow ~= false then
                 showAuraGlow = true
                 pandemicOverride = true
-            elseif buttonData.auraIndicatorEnabled then
+            elseif buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
                 showAuraGlow = true
             end
         end
@@ -1690,7 +1696,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._inPandemic = inPandemic
     end
 
-    if not auraOverrideActive then
+    if buttonData.auraTracking and not auraOverrideActive then
+        button.cooldown:Hide()
+    end
+
+    if not auraOverrideActive and not buttonData.auraTracking then
         if buttonData.type == "spell" and not buttonData.isPassive then
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
             -- SetCooldown accepts secret startTime/duration values.
@@ -1769,6 +1779,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button._isBar then
         button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
             and not buttonData.hasCharges and not buttonData.isPassive
+            and not buttonData.auraTracking
     end
 
     -- Charge count tracking: detect whether the main cooldown (0 charges)
@@ -1824,7 +1835,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     local charges
-    if buttonData.hasCharges then
+    if buttonData.hasCharges and not buttonData.auraTracking then
       if buttonData.type == "spell" then
         charges = UpdateChargeTracking(button, buttonData)
 
@@ -2478,6 +2489,10 @@ UpdateBarFill = function(button)
             end
         end
     else
+        if button.buttonData.auraTracking then
+            button.statusBar:SetValue(0)
+            button.timeText:SetText("")
+        else
         button.statusBar:SetValue(1)
         if button.style.showBarReadyText then
             if button._barTextMode ~= "ready" then
@@ -2490,6 +2505,7 @@ UpdateBarFill = function(button)
             button.timeText:SetText(button.style.barReadyText or "Ready")
         else
             button.timeText:SetText("")
+        end
         end
     end
 end
@@ -2524,9 +2540,10 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Bar color: switch between ready, cooldown, and partial charge colors
+    -- Bar color: switch between ready, cooldown, and partial charge colors.
+    -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
-    if onCooldown then
+    if onCooldown and not button.buttonData.auraTracking then
         if button.buttonData.hasCharges and not button._mainCDShown then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
         else
@@ -2539,10 +2556,10 @@ UpdateBarDisplay = function(button, fetchOk)
         button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
-    -- Icon desaturation (skip during GCD, matching icon-mode behavior)
-    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
-    if button.buttonData.isPassive then
-        local wantDesat = (button.buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+    -- Icon desaturation: aura-tracked buttons desaturate when aura absent;
+    -- cooldown buttons desaturate based on DurationObject / item CD state.
+    if button.buttonData.auraTracking then
+        local wantDesat = not button._auraActive
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -2557,9 +2574,6 @@ UpdateBarDisplay = function(button, fetchOk)
             elseif button.buttonData.type == "item" then
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
-        end
-        if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
-            wantDesat = false
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
@@ -2597,7 +2611,7 @@ UpdateBarDisplay = function(button, fetchOk)
     elseif button._auraActive then
         if button._inPandemic and style.showPandemicGlow ~= false then
             wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
-        elseif button.buttonData.auraIndicatorEnabled then
+        elseif button.buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
             wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
         end
     end
@@ -2625,7 +2639,7 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Bar aura effect (pandemic overrides effect color)
     local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow and style.showPandemicGlow ~= false)
     local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
-        or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled))
+        or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none"))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
