@@ -3440,6 +3440,18 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(spacingSlider)
     end
 
+    -- Bar Texture
+    local barTexDrop = AceGUI:Create("Dropdown")
+    barTexDrop:SetLabel("Bar Texture")
+    barTexDrop:SetList(GetBarTextureOptions())
+    barTexDrop:SetValue(style.barTexture or "Solid")
+    barTexDrop:SetFullWidth(true)
+    barTexDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barTexture = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(barTexDrop)
+
     -- Bar Color (basic)
     local barColorPicker = AceGUI:Create("ColorPicker")
     barColorPicker:SetLabel("Bar Color")
@@ -3498,18 +3510,6 @@ local function BuildBarAppearanceTab(container, group, style)
     container:AddChild(borderColor)
     end -- barAdvExpanded (update freq, border)
     end -- not barSettingsCollapsed
-
-    -- Bar Texture (no heading)
-    local barTexDrop = AceGUI:Create("Dropdown")
-    barTexDrop:SetLabel("Bar Texture")
-    barTexDrop:SetList(GetBarTextureOptions())
-    barTexDrop:SetValue(style.barTexture or "Solid")
-    barTexDrop:SetFullWidth(true)
-    barTexDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barTexture = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(barTexDrop)
 
     -- Contextual color pickers (no heading/collapse/promote)
     local barCdColorPicker = AceGUI:Create("ColorPicker")
@@ -4045,23 +4045,7 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(auraFontColor)
     end -- barAuraTextAdvExpanded
 
-    -- ================================================================
-    -- Ready Text
-    -- ================================================================
-    local readyHeading = AceGUI:Create("Heading")
-    readyHeading:SetText("Ready Text")
-    ColorHeading(readyHeading)
-    readyHeading:SetFullWidth(true)
-    container:AddChild(readyHeading)
-
-    local barReadyTextCollapsed = CS.collapsedSections["bareffects_readytext"]
-    AttachCollapseButton(readyHeading, barReadyTextCollapsed, function()
-        CS.collapsedSections["bareffects_readytext"] = not CS.collapsedSections["bareffects_readytext"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    CreatePromoteButton(readyHeading, "barReadyText", CS.selectedButton and group.buttons[CS.selectedButton], style)
-
-    if not barReadyTextCollapsed then
+    -- Show Ready Text toggle
     local showReadyCb = AceGUI:Create("CheckBox")
     showReadyCb:SetLabel("Show Ready Text")
     showReadyCb:SetValue(style.showBarReadyText or false)
@@ -4073,7 +4057,10 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showReadyCb)
 
-    if style.showBarReadyText then
+    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(showReadyCb, "barReadyText", tabInfoButtons, style.showBarReadyText)
+    CreateCheckboxPromoteButton(showReadyCb, readyAdvBtn, "barReadyText", group, style)
+
+    if readyAdvExpanded and style.showBarReadyText then
         local readyTextBox = AceGUI:Create("EditBox")
         if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
         readyTextBox:SetLabel("Ready Text")
@@ -4134,7 +4121,6 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(readyOutlineDrop)
     end
-    end -- not barReadyTextCollapsed
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then
