@@ -5528,11 +5528,7 @@ function RefreshColumn3(container)
     end
 
     -- Update tabs every refresh so the effects tab label reflects current group mode
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local effectsLabel = "Effects"
-    if group then
-        effectsLabel = (group.displayMode == "bars") and "Indicators" or "Glows"
-    end
+    local effectsLabel = "Indicators"
     container.tabGroup:SetTabs({
         { value = "appearance",      text = "Appearance" },
         { value = "effects",         text = effectsLabel },

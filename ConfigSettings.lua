@@ -1785,27 +1785,8 @@ local function BuildLossOfControlControls(container, styleTable, refreshCallback
     locCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showLossOfControl = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(locCb)
-
-    if styleTable.showLossOfControl then
-        local locColor = AceGUI:Create("ColorPicker")
-        locColor:SetLabel("LoC Overlay Color")
-        locColor:SetHasAlpha(true)
-        local lc = styleTable.lossOfControlColor or {1, 0, 0, 0.5}
-        locColor:SetColor(lc[1], lc[2], lc[3], lc[4])
-        locColor:SetFullWidth(true)
-        locColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.lossOfControlColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        locColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.lossOfControlColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        container:AddChild(locColor)
-    end
 end
 
 local function BuildUnusableDimmingControls(container, styleTable, refreshCallback)
@@ -1816,125 +1797,93 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
     unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showUnusable = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(unusableCb)
-
-    if styleTable.showUnusable then
-        local unusableColor = AceGUI:Create("ColorPicker")
-        unusableColor:SetLabel("Unusable Tint Color")
-        unusableColor:SetHasAlpha(false)
-        local uc = styleTable.unusableColor or {0.3, 0.3, 0.6}
-        unusableColor:SetColor(uc[1], uc[2], uc[3])
-        unusableColor:SetFullWidth(true)
-        unusableColor:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-            styleTable.unusableColor = {r, g, b}
-            refreshCallback()
-        end)
-        unusableColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-            styleTable.unusableColor = {r, g, b}
-            refreshCallback()
-        end)
-        container:AddChild(unusableColor)
-    end
 end
 
 local function BuildAssistedHighlightControls(container, styleTable, refreshCallback)
-    local assistedCb = AceGUI:Create("CheckBox")
-    assistedCb:SetLabel("Show Assisted Highlight")
-    assistedCb:SetValue(styleTable.showAssistedHighlight or false)
-    assistedCb:SetFullWidth(true)
-    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showAssistedHighlight = val
+    local highlightStyles = {
+        blizzard = "Blizzard (Marching Ants)",
+        proc = "Proc Glow",
+        solid = "Solid Border",
+    }
+    local styleDrop = AceGUI:Create("Dropdown")
+    styleDrop:SetLabel("Highlight Style")
+    styleDrop:SetList(highlightStyles)
+    styleDrop:SetValue(styleTable.assistedHighlightStyle or "blizzard")
+    styleDrop:SetFullWidth(true)
+    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.assistedHighlightStyle = val
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(assistedCb)
+    container:AddChild(styleDrop)
 
-    if styleTable.showAssistedHighlight then
-        local highlightStyles = {
-            blizzard = "Blizzard (Marching Ants)",
-            proc = "Proc Glow",
-            solid = "Solid Border",
-        }
-        local styleDrop = AceGUI:Create("Dropdown")
-        styleDrop:SetLabel("Highlight Style")
-        styleDrop:SetList(highlightStyles)
-        styleDrop:SetValue(styleTable.assistedHighlightStyle or "blizzard")
-        styleDrop:SetFullWidth(true)
-        styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.assistedHighlightStyle = val
+    if styleTable.assistedHighlightStyle == "solid" then
+        local hlColor = AceGUI:Create("ColorPicker")
+        hlColor:SetLabel("Highlight Color")
+        hlColor:SetHasAlpha(true)
+        local c = styleTable.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        hlColor:SetColor(c[1], c[2], c[3], c[4])
+        hlColor:SetFullWidth(true)
+        hlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.assistedHighlightColor = {r, g, b, a}
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(styleDrop)
+        hlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.assistedHighlightColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(hlColor)
 
-        if styleTable.assistedHighlightStyle == "solid" then
-            local hlColor = AceGUI:Create("ColorPicker")
-            hlColor:SetLabel("Highlight Color")
-            hlColor:SetHasAlpha(true)
-            local c = styleTable.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
-            hlColor:SetColor(c[1], c[2], c[3], c[4])
-            hlColor:SetFullWidth(true)
-            hlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                styleTable.assistedHighlightColor = {r, g, b, a}
-                refreshCallback()
-            end)
-            hlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                styleTable.assistedHighlightColor = {r, g, b, a}
-                refreshCallback()
-            end)
-            container:AddChild(hlColor)
+        local hlSizeSlider = AceGUI:Create("Slider")
+        hlSizeSlider:SetLabel("Border Size")
+        hlSizeSlider:SetSliderValues(1, 6, 0.5)
+        hlSizeSlider:SetValue(styleTable.assistedHighlightBorderSize or 2)
+        hlSizeSlider:SetFullWidth(true)
+        hlSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.assistedHighlightBorderSize = val
+            refreshCallback()
+        end)
+        container:AddChild(hlSizeSlider)
+    elseif styleTable.assistedHighlightStyle == "blizzard" then
+        local blizzSlider = AceGUI:Create("Slider")
+        blizzSlider:SetLabel("Glow Size")
+        blizzSlider:SetSliderValues(0, 60, 1)
+        blizzSlider:SetValue(styleTable.assistedHighlightBlizzardOverhang or 32)
+        blizzSlider:SetFullWidth(true)
+        blizzSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.assistedHighlightBlizzardOverhang = val
+            refreshCallback()
+        end)
+        container:AddChild(blizzSlider)
+    elseif styleTable.assistedHighlightStyle == "proc" then
+        local procHlColor = AceGUI:Create("ColorPicker")
+        procHlColor:SetLabel("Glow Color")
+        procHlColor:SetHasAlpha(true)
+        local phc = styleTable.assistedHighlightProcColor or {1, 1, 1, 1}
+        procHlColor:SetColor(phc[1], phc[2], phc[3], phc[4])
+        procHlColor:SetFullWidth(true)
+        procHlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.assistedHighlightProcColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        procHlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.assistedHighlightProcColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(procHlColor)
 
-            local hlSizeSlider = AceGUI:Create("Slider")
-            hlSizeSlider:SetLabel("Border Size")
-            hlSizeSlider:SetSliderValues(1, 6, 0.5)
-            hlSizeSlider:SetValue(styleTable.assistedHighlightBorderSize or 2)
-            hlSizeSlider:SetFullWidth(true)
-            hlSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.assistedHighlightBorderSize = val
-                refreshCallback()
-            end)
-            container:AddChild(hlSizeSlider)
-        elseif styleTable.assistedHighlightStyle == "blizzard" then
-            local blizzSlider = AceGUI:Create("Slider")
-            blizzSlider:SetLabel("Glow Size")
-            blizzSlider:SetSliderValues(0, 60, 1)
-            blizzSlider:SetValue(styleTable.assistedHighlightBlizzardOverhang or 32)
-            blizzSlider:SetFullWidth(true)
-            blizzSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.assistedHighlightBlizzardOverhang = val
-                refreshCallback()
-            end)
-            container:AddChild(blizzSlider)
-        elseif styleTable.assistedHighlightStyle == "proc" then
-            local procHlColor = AceGUI:Create("ColorPicker")
-            procHlColor:SetLabel("Glow Color")
-            procHlColor:SetHasAlpha(true)
-            local phc = styleTable.assistedHighlightProcColor or {1, 1, 1, 1}
-            procHlColor:SetColor(phc[1], phc[2], phc[3], phc[4])
-            procHlColor:SetFullWidth(true)
-            procHlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                styleTable.assistedHighlightProcColor = {r, g, b, a}
-                refreshCallback()
-            end)
-            procHlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                styleTable.assistedHighlightProcColor = {r, g, b, a}
-                refreshCallback()
-            end)
-            container:AddChild(procHlColor)
-
-            local procSlider = AceGUI:Create("Slider")
-            procSlider:SetLabel("Glow Size")
-            procSlider:SetSliderValues(0, 60, 1)
-            procSlider:SetValue(styleTable.assistedHighlightProcOverhang or 32)
-            procSlider:SetFullWidth(true)
-            procSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.assistedHighlightProcOverhang = val
-                refreshCallback()
-            end)
-            container:AddChild(procSlider)
-        end
+        local procSlider = AceGUI:Create("Slider")
+        procSlider:SetLabel("Glow Size")
+        procSlider:SetSliderValues(0, 60, 1)
+        procSlider:SetValue(styleTable.assistedHighlightProcOverhang or 32)
+        procSlider:SetFullWidth(true)
+        procSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.assistedHighlightProcOverhang = val
+            refreshCallback()
+        end)
+        container:AddChild(procSlider)
     end
 end
 
@@ -4506,13 +4455,6 @@ local function BuildEffectsTab(container)
     end)
     end -- pandemicAdvExpanded
 
-    -- ================================================================
-    -- Assisted Highlight (icon-only)
-    -- ================================================================
-    BuildAssistedHighlightControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
     -- Out of Range
     BuildShowOutOfRangeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -4527,6 +4469,28 @@ local function BuildEffectsTab(container)
     BuildUnusableDimmingControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    -- ================================================================
+    -- Assisted Highlight (icon-only)
+    -- ================================================================
+    local assistedCb = AceGUI:Create("CheckBox")
+    assistedCb:SetLabel("Show Assisted Highlight")
+    assistedCb:SetValue(style.showAssistedHighlight or false)
+    assistedCb:SetFullWidth(true)
+    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAssistedHighlight = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(assistedCb)
+
+    local assistedAdvExpanded = AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false)
+
+    if assistedAdvExpanded and style.showAssistedHighlight then
+    BuildAssistedHighlightControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    end -- assistedAdvExpanded
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then

@@ -477,12 +477,12 @@ ST.OVERRIDE_SECTIONS = {
     },
     lossOfControl = {
         label = "Loss of Control",
-        keys = {"showLossOfControl", "lossOfControlColor"},
+        keys = {"showLossOfControl"},
         modes = {icons = true},
     },
     unusableDimming = {
         label = "Unusable Dimming",
-        keys = {"showUnusable", "unusableColor"},
+        keys = {"showUnusable"},
         modes = {icons = true},
     },
     assistedHighlight = {
