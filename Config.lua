@@ -1711,6 +1711,7 @@ end
 local function FinishPickCDM(spellID)
     if not pickCDMOverlay then return end
     pickCDMOverlay:Hide()
+    CooldownCompanion._cdmPickMode = false
     CooldownCompanion:ApplyCdmAlpha()
     local cb = pickCDMCallback
     pickCDMCallback = nil
@@ -1903,12 +1904,8 @@ local function StartPickCDM(callback)
     end
     -- Temporarily show CDM if hidden
     if CooldownCompanion.db.profile.cdmHidden then
-        for _, name in ipairs(CDM_VIEWER_NAMES) do
-            local viewer = _G[name]
-            if viewer then
-                viewer:SetAlpha(1)
-            end
-        end
+        CooldownCompanion._cdmPickMode = true
+        CooldownCompanion:ApplyCdmAlpha()
     end
     pickCDMOverlay.currentSpellID = nil
     pickCDMOverlay.label:SetText("")

@@ -627,6 +627,21 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
 
+-- Viewer frame list used by BuildViewerAuraMap, FindViewerChildForSpell, and OnEnable hooks.
+local VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+    "BuffBarCooldownViewer",
+}
+-- Subset: cooldown-only viewers (Essential/Utility), used by FindCooldownViewerChild.
+local COOLDOWN_VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+}
+
+local cdmAlphaGuard = {}
+
 function CooldownCompanion:OnEnable()
     -- Register cooldown events — set dirty flag, let ticker do the actual update.
     -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
@@ -702,6 +717,35 @@ function CooldownCompanion:OnEnable()
 
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
+
+    -- Hook SetAlpha on CDM viewers to re-enforce hidden state against
+    -- Blizzard overrides (AnimInManagedFrames, EditMode opacity, etc.)
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            hooksecurefunc(viewer, "SetAlpha", function(frame, a)
+                if cdmAlphaGuard[frame] then return end
+                if not CooldownCompanion._cdmPickMode
+                   and CooldownCompanion.db
+                   and CooldownCompanion.db.profile.cdmHidden then
+                    cdmAlphaGuard[frame] = true
+                    frame:SetAlpha(0)
+                    cdmAlphaGuard[frame] = nil
+                end
+            end)
+            -- Hook RefreshLayout to re-disable mouse on newly pool-acquired children.
+            -- Blizzard's OnAcquireItemFrame calls SetTooltipsShown(true) on new children.
+            hooksecurefunc(viewer, "RefreshLayout", function(frame)
+                if CooldownCompanion._cdmPickMode then return end
+                if CooldownCompanion.db
+                   and CooldownCompanion.db.profile.cdmHidden then
+                    for _, child in pairs({frame:GetChildren()}) do
+                        child:SetMouseMotionEnabled(false)
+                    end
+                end
+            end)
+        end
+    end
 
     -- Keybind text events
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
@@ -1009,19 +1053,6 @@ CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
     [1233272] = "48517,48518",  -- Lunar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
 }
 
--- Viewer frame list used by BuildViewerAuraMap and FindViewerChildForSpell.
-local VIEWER_NAMES = {
-    "EssentialCooldownViewer",
-    "UtilityCooldownViewer",
-    "BuffIconCooldownViewer",
-    "BuffBarCooldownViewer",
-}
--- Subset: cooldown-only viewers (Essential/Utility), used by FindCooldownViewerChild.
-local COOLDOWN_VIEWER_NAMES = {
-    "EssentialCooldownViewer",
-    "UtilityCooldownViewer",
-}
-
 -- Shared helper: scan a list of viewer frames for a child matching spellID.
 -- Checks cooldownInfo.spellID, overrideSpellID, and overrideTooltipSpellID.
 local function FindChildInViewers(viewerNames, spellID)
@@ -1043,11 +1074,25 @@ local function FindChildInViewers(viewerNames, spellID)
 end
 
 function CooldownCompanion:ApplyCdmAlpha()
-    local alpha = self.db.profile.cdmHidden and 0 or 1
+    local hidden = self.db.profile.cdmHidden and not self._cdmPickMode
+    local alpha = hidden and 0 or 1
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
+            cdmAlphaGuard[viewer] = true
             viewer:SetAlpha(alpha)
+            cdmAlphaGuard[viewer] = nil
+            viewer:EnableMouse(not hidden)
+            if hidden then
+                for _, child in pairs({viewer:GetChildren()}) do
+                    child:SetMouseMotionEnabled(false)
+                end
+            else
+                -- Restore tooltip state using Blizzard's own pattern
+                for itemFrame in viewer.itemFramePool:EnumerateActive() do
+                    itemFrame:SetTooltipsShown(viewer.tooltipsShown)
+                end
+            end
         end
     end
 end
@@ -1131,6 +1176,18 @@ function CooldownCompanion:BuildViewerAuraMap()
                 local numID = tonumber(id)
                 if not self.viewerAuraFrames[numID] then
                     self.viewerAuraFrames[numID] = child
+                end
+            end
+        end
+    end
+
+    -- Re-enforce mouse state for hidden CDM after map rebuild
+    if self.db.profile.cdmHidden and not self._cdmPickMode then
+        for _, name2 in ipairs(VIEWER_NAMES) do
+            local v = _G[name2]
+            if v then
+                for _, child in pairs({v:GetChildren()}) do
+                    child:SetMouseMotionEnabled(false)
                 end
             end
         end
