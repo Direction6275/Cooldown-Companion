@@ -88,23 +88,23 @@ local function ShowPixelBorders(cb, color, size, iconFrame, iconOnRight)
 
     borders.TOP:SetHeight(size)
     borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", 0, size)
-    borders.TOP:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", 0, size)
+    borders.TOP:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", 0, 0)
+    borders.TOP:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", 0, 0)
 
     borders.BOTTOM:SetHeight(size)
     borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", 0, -size)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", 0, -size)
+    borders.BOTTOM:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", 0, 0)
+    borders.BOTTOM:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", 0, 0)
 
     borders.LEFT:SetWidth(size)
     borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", -size, size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", -size, -size)
+    borders.LEFT:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", 0, -size)
+    borders.LEFT:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", 0, size)
 
     borders.RIGHT:SetWidth(size)
     borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", size, size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", size, -size)
+    borders.RIGHT:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", 0, -size)
+    borders.RIGHT:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", 0, size)
 end
 
 local function HidePixelBorders()
@@ -142,23 +142,23 @@ local function ShowIconPixelBorders(cb, color, size)
 
     borders.TOP:SetHeight(size)
     borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", 0, size)
-    borders.TOP:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", 0, size)
+    borders.TOP:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", 0, 0)
+    borders.TOP:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", 0, 0)
 
     borders.BOTTOM:SetHeight(size)
     borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", 0, -size)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", 0, -size)
+    borders.BOTTOM:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", 0, 0)
+    borders.BOTTOM:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", 0, 0)
 
     borders.LEFT:SetWidth(size)
     borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", -size, size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", -size, -size)
+    borders.LEFT:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", 0, -size)
+    borders.LEFT:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", 0, size)
 
     borders.RIGHT:SetWidth(size)
     borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", size, size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", size, -size)
+    borders.RIGHT:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", 0, -size)
+    borders.RIGHT:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", 0, size)
 end
 
 local function HideIconPixelBorders()
