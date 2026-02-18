@@ -41,21 +41,19 @@ local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFra
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.
 local function SetIconAreaPoints(region, button, isVertical, iconReverse, iconSize, inset)
     region:ClearAllPoints()
+    local s = iconSize - 2 * inset
+    region:SetSize(s, s)
     if isVertical then
         if iconReverse then
-            region:SetPoint("TOPLEFT", button, "BOTTOMLEFT", inset, iconSize - inset)
-            region:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+            region:SetPoint("BOTTOM", button, "BOTTOM", 0, inset)
         else
-            region:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-            region:SetPoint("BOTTOMRIGHT", button, "TOPRIGHT", -inset, -(iconSize - inset))
+            region:SetPoint("TOP", button, "TOP", 0, -inset)
         end
     else
         if iconReverse then
-            region:SetPoint("TOPLEFT", button, "TOPRIGHT", -(iconSize - inset), -inset)
-            region:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+            region:SetPoint("RIGHT", button, "RIGHT", -inset, 0)
         else
-            region:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-            region:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", iconSize - inset, inset)
+            region:SetPoint("LEFT", button, "LEFT", inset, 0)
         end
     end
 end
@@ -1024,8 +1022,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.locCooldown:SetAllPoints(button.icon)
     button.locCooldown:SetDrawEdge(true)
     button.locCooldown:SetDrawSwipe(true)
-    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
-    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
@@ -1369,14 +1366,12 @@ local function UpdateIconTint(button, buttonData, style)
         if buttonData.type == "spell" then
             local isUsable = C_Spell.IsSpellUsable(buttonData.id)
             if not isUsable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
+                r, g, b = 0.4, 0.4, 0.4
             end
         elseif buttonData.type == "item" then
             local usable, noMana = IsUsableItem(buttonData.id)
             if not usable then
-                local uc = style.unusableColor or {0.3, 0.3, 0.6}
-                r, g, b = uc[1], uc[2], uc[3]
+                r, g, b = 0.4, 0.4, 0.4
             end
         end
     end
@@ -1412,6 +1407,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
             wantSize = style.auraTextFontSize or 12
             wantOutline = style.auraTextFontOutline or "OUTLINE"
+        elseif buttonData.isPassive then
+            -- Inactive passive aura: no text (cooldown frame hidden)
+            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
             showText = style.showCooldownText
             fontColor = style.cooldownFontColor or {1, 1, 1, 1}
@@ -1433,11 +1431,10 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Desaturation: use DurationObject methods (non-secret in 12.0.1) for
-    -- spells/auras; items use stored _itemCdDuration.
-    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
-    if buttonData.isPassive then
-        local wantDesat = (buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+    -- Desaturation: aura-tracked buttons desaturate when aura absent;
+    -- cooldown buttons desaturate based on DurationObject / item CD state.
+    if buttonData.auraTracking then
+        local wantDesat = not button._auraActive
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -1452,9 +1449,6 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             elseif buttonData.type == "item" then
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
-        end
-        if wantDesat and button._auraActive and buttonData.auraNoDesaturate then
-            wantDesat = false
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
@@ -1506,12 +1500,9 @@ local function UpdateIconModeGlows(button, buttonData, style)
         local showProc = false
         if button._procGlowPreview then
             showProc = true
-        elseif buttonData.procGlow == true and buttonData.type == "spell" then
-            if buttonData.isPassive then
-                showProc = button._auraActive or false
-            else
-                showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
-            end
+        elseif style.procGlowStyle ~= "none" and buttonData.type == "spell"
+               and not buttonData.isPassive and not buttonData.auraTracking then
+            showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
         end
         SetProcGlow(button, showProc)
     end
@@ -1526,10 +1517,10 @@ local function UpdateIconModeGlows(button, buttonData, style)
         elseif button._auraGlowPreview then
             showAuraGlow = true
         elseif button._auraActive then
-            if button._inPandemic then
+            if button._inPandemic and style.showPandemicGlow ~= false then
                 showAuraGlow = true
                 pandemicOverride = true
-            elseif buttonData.auraIndicatorEnabled then
+            elseif buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
                 showAuraGlow = true
             end
         end
@@ -1693,6 +1684,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
         button._inPandemic = inPandemic
+    end
+
+    if buttonData.isPassive and not auraOverrideActive then
+        button.cooldown:Hide()
     end
 
     if not auraOverrideActive then
@@ -2142,8 +2137,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update loss of control cooldown frame
     if button.locCooldown then
-        local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
-        button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+        button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
         button.locCooldown:Clear()
     end
 
@@ -2484,6 +2478,10 @@ UpdateBarFill = function(button)
             end
         end
     else
+        if button.buttonData.isPassive then
+            button.statusBar:SetValue(0)
+            button.timeText:SetText("")
+        else
         button.statusBar:SetValue(1)
         if button.style.showBarReadyText then
             if button._barTextMode ~= "ready" then
@@ -2496,6 +2494,7 @@ UpdateBarFill = function(button)
             button.timeText:SetText(button.style.barReadyText or "Ready")
         else
             button.timeText:SetText("")
+        end
         end
     end
 end
@@ -2530,9 +2529,10 @@ UpdateBarDisplay = function(button, fetchOk)
         end
     end
 
-    -- Bar color: switch between ready, cooldown, and partial charge colors
+    -- Bar color: switch between ready, cooldown, and partial charge colors.
+    -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
-    if onCooldown then
+    if onCooldown and not button.buttonData.isPassive then
         if button.buttonData.hasCharges and not button._mainCDShown then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
         else
@@ -2545,10 +2545,10 @@ UpdateBarDisplay = function(button, fetchOk)
         button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
-    -- Icon desaturation (skip during GCD, matching icon-mode behavior)
-    -- Passives desaturate when their aura is inactive (opt-out via desaturateWhileInactive).
-    if button.buttonData.isPassive then
-        local wantDesat = (button.buttonData.desaturateWhileInactive ~= false) and not button._auraActive
+    -- Icon desaturation: aura-tracked buttons desaturate when aura absent;
+    -- cooldown buttons desaturate based on DurationObject / item CD state.
+    if button.buttonData.auraTracking then
+        local wantDesat = not button._auraActive
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -2563,9 +2563,6 @@ UpdateBarDisplay = function(button, fetchOk)
             elseif button.buttonData.type == "item" then
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
-        end
-        if wantDesat and button._auraActive and button.buttonData.auraNoDesaturate then
-            wantDesat = false
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
@@ -2601,9 +2598,9 @@ UpdateBarDisplay = function(button, fetchOk)
     if button._pandemicPreview then
         wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
     elseif button._auraActive then
-        if button._inPandemic then
+        if button._inPandemic and style.showPandemicGlow ~= false then
             wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
-        elseif button.buttonData.auraIndicatorEnabled then
+        elseif button.buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
             wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
         end
     end
@@ -2629,9 +2626,9 @@ UpdateBarDisplay = function(button, fetchOk)
     end
 
     -- Bar aura effect (pandemic overrides effect color)
-    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow)
+    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow and style.showPandemicGlow ~= false)
     local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
-        or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled))
+        or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none"))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
@@ -2723,7 +2720,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local isVertical = style.barFillVertical or false
     local iconReverse = showIcon and (style.barIconReverse or false)
 
-    local iconSize = barHeight
+    local iconSize = (style.barIconSizeOverride and style.barIconSize) or barHeight
     local iconOffset = showIcon and (style.barIconOffset or 0) or 0
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
@@ -2887,8 +2884,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.locCooldown:SetAllPoints(button.icon)
     button.locCooldown:SetDrawEdge(true)
     button.locCooldown:SetDrawSwipe(true)
-    local locColor = style.lossOfControlColor or {1, 0, 0, 0.5}
-    button.locCooldown:SetSwipeColor(locColor[1], locColor[2], locColor[3], locColor[4])
+    button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
@@ -3057,7 +3053,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local showIcon = newStyle.showBarIcon ~= false
     local isVertical = newStyle.barFillVertical or false
     local iconReverse = showIcon and (newStyle.barIconReverse or false)
-    local iconSize = barHeight
+    local iconSize = (newStyle.barIconSizeOverride and newStyle.barIconSize) or barHeight
     local iconOffset = showIcon and (newStyle.barIconOffset or 0) or 0
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0

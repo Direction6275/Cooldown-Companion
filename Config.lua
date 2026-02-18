@@ -1711,6 +1711,7 @@ end
 local function FinishPickCDM(spellID)
     if not pickCDMOverlay then return end
     pickCDMOverlay:Hide()
+    CooldownCompanion._cdmPickMode = false
     CooldownCompanion:ApplyCdmAlpha()
     local cb = pickCDMCallback
     pickCDMCallback = nil
@@ -1903,12 +1904,8 @@ local function StartPickCDM(callback)
     end
     -- Temporarily show CDM if hidden
     if CooldownCompanion.db.profile.cdmHidden then
-        for _, name in ipairs(CDM_VIEWER_NAMES) do
-            local viewer = _G[name]
-            if viewer then
-                viewer:SetAlpha(1)
-            end
-        end
+        CooldownCompanion._cdmPickMode = true
+        CooldownCompanion:ApplyCdmAlpha()
     end
     pickCDMOverlay.currentSpellID = nil
     pickCDMOverlay.label:SetText("")
@@ -5509,10 +5506,8 @@ function RefreshColumn3(container)
             SyncConfigState()
             if tab == "appearance" then
                 ST._BuildAppearanceTab(scroll)
-            elseif tab == "positioning" then
-                ST._BuildPositioningTab(scroll)
-            elseif tab == "extras" then
-                ST._BuildExtrasTab(scroll)
+            elseif tab == "layout" then
+                ST._BuildLayoutTab(scroll)
             elseif tab == "effects" then
                 ST._BuildEffectsTab(scroll)
             elseif tab == "loadconditions" then
@@ -5530,16 +5525,11 @@ function RefreshColumn3(container)
     end
 
     -- Update tabs every refresh so the effects tab label reflects current group mode
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local effectsLabel = "Effects"
-    if group then
-        effectsLabel = (group.displayMode == "bars") and "Indicators" or "Glows"
-    end
+    local effectsLabel = "Indicators"
     container.tabGroup:SetTabs({
         { value = "appearance",      text = "Appearance" },
-        { value = "positioning",     text = "Positioning" },
-        { value = "extras",          text = "Extras" },
         { value = "effects",         text = effectsLabel },
+        { value = "layout",          text = "Layout" },
         { value = "loadconditions",  text = "Load Conditions" },
     })
 
@@ -5552,6 +5542,10 @@ function RefreshColumn3(container)
             savedScrollvalue = s.scrollvalue
         end
     end
+
+    -- Migrate stale tab keys from previous layout
+    if selectedTab == "extras" then selectedTab = "effects" end
+    if selectedTab == "positioning" then selectedTab = "layout" end
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col3Scroll and creates a new one)
@@ -6708,6 +6702,8 @@ function CooldownCompanion:SetupConfig()
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
+        CooldownCompanion:MigrateOrphanedGroups()
+
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -6724,6 +6720,16 @@ function CooldownCompanion:SetupConfig()
         CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
+
+        -- Re-stamp character-scoped groups after profile copy (matches import flow)
+        if CooldownCompanion.db.profile.groups then
+            local charKey = CooldownCompanion.db.keys.char
+            for _, group in pairs(CooldownCompanion.db.profile.groups) do
+                if not group.isGlobal then
+                    group.createdBy = charKey
+                end
+            end
+        end
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()

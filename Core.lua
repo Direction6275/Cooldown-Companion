@@ -85,6 +85,7 @@ local defaults = {
         },
         hideInfoButtons = false,
         escClosesConfig = true,
+        showAdvanced = {},
         groups = {
             --[[
                 [groupId] = {
@@ -138,9 +139,7 @@ local defaults = {
                         assistedHighlightProcOverhang = 32, -- % overhang for proc style
                         assistedHighlightProcColor = {1, 1, 1, 1},
                         showUnusable = true,
-                        unusableColor = {0.3, 0.3, 0.6},
                         showLossOfControl = true,
-                        lossOfControlColor = {1, 0, 0, 0.5},
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
                         procGlowStyle = "glow",
@@ -246,9 +245,7 @@ local defaults = {
             assistedHighlightBlizzardOverhang = 32,
             assistedHighlightProcOverhang = 32,
             showUnusable = false,
-            unusableColor = {0.3, 0.3, 0.6},
             showLossOfControl = false,
-            lossOfControlColor = {1, 0, 0, 0.5},
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
             procGlowStyle = "glow",
@@ -305,6 +302,8 @@ local defaults = {
             barChargeColor = {1.0, 0.82, 0.0, 1.0},
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
+            barIconSizeOverride = false,
+            barIconSize = 20,
             showBarNameText = true,
             barNameFont = "Friz Quadrata TT",
             barNameFontSize = 10,
@@ -467,7 +466,7 @@ ST.OVERRIDE_SECTIONS = {
     showOutOfRange = {
         label = "Show Out of Range",
         keys = {"showOutOfRange"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true},
     },
     showTooltips = {
         label = "Show Tooltips",
@@ -476,13 +475,13 @@ ST.OVERRIDE_SECTIONS = {
     },
     lossOfControl = {
         label = "Loss of Control",
-        keys = {"showLossOfControl", "lossOfControlColor"},
-        modes = {icons = true},
+        keys = {"showLossOfControl"},
+        modes = {icons = true, bars = true},
     },
     unusableDimming = {
         label = "Unusable Dimming",
-        keys = {"showUnusable", "unusableColor"},
-        modes = {icons = true},
+        keys = {"showUnusable"},
+        modes = {icons = true, bars = true},
     },
     assistedHighlight = {
         label = "Assisted Highlight",
@@ -513,6 +512,11 @@ ST.OVERRIDE_SECTIONS = {
     barActiveAura = {
         label = "Active Aura Indicator",
         keys = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed"},
+        modes = {bars = true},
+    },
+    barIcon = {
+        label = "Bar Icon",
+        keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
         modes = {bars = true},
     },
     barColors = {
@@ -630,6 +634,21 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
 
+-- Viewer frame list used by BuildViewerAuraMap, FindViewerChildForSpell, and OnEnable hooks.
+local VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+    "BuffBarCooldownViewer",
+}
+-- Subset: cooldown-only viewers (Essential/Utility), used by FindCooldownViewerChild.
+local COOLDOWN_VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+}
+
+local cdmAlphaGuard = {}
+
 function CooldownCompanion:OnEnable()
     -- Register cooldown events — set dirty flag, let ticker do the actual update.
     -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
@@ -706,6 +725,35 @@ function CooldownCompanion:OnEnable()
     -- Track spell overrides (transforming spells like Eclipse) to keep viewer map current
     self:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "OnViewerSpellOverrideUpdated")
 
+    -- Hook SetAlpha on CDM viewers to re-enforce hidden state against
+    -- Blizzard overrides (AnimInManagedFrames, EditMode opacity, etc.)
+    for _, name in ipairs(VIEWER_NAMES) do
+        local viewer = _G[name]
+        if viewer then
+            hooksecurefunc(viewer, "SetAlpha", function(frame, a)
+                if cdmAlphaGuard[frame] then return end
+                if not CooldownCompanion._cdmPickMode
+                   and CooldownCompanion.db
+                   and CooldownCompanion.db.profile.cdmHidden then
+                    cdmAlphaGuard[frame] = true
+                    frame:SetAlpha(0)
+                    cdmAlphaGuard[frame] = nil
+                end
+            end)
+            -- Hook RefreshLayout to re-disable mouse on newly pool-acquired children.
+            -- Blizzard's OnAcquireItemFrame calls SetTooltipsShown(true) on new children.
+            hooksecurefunc(viewer, "RefreshLayout", function(frame)
+                if CooldownCompanion._cdmPickMode then return end
+                if CooldownCompanion.db
+                   and CooldownCompanion.db.profile.cdmHidden then
+                    for _, child in pairs({frame:GetChildren()}) do
+                        child:SetMouseMotionEnabled(false)
+                    end
+                end
+            end)
+        end
+    end
+
     -- Keybind text events
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
     self:RegisterEvent("ACTIONBAR_SLOT_CHANGED", "OnActionBarSlotChanged")
@@ -718,6 +766,9 @@ function CooldownCompanion:OnEnable()
 
     -- Migrate legacy groups to have ownership fields
     self:MigrateGroupOwnership()
+
+    -- Reclaim orphaned groups from realm renames
+    self:MigrateOrphanedGroups()
 
     -- Migrate old hide-when fields to alpha system
     self:MigrateAlphaSystem()
@@ -916,9 +967,8 @@ function CooldownCompanion:SlashCommand(input)
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "reset" then
-        self.db:ResetProfile()
-        self:RefreshAllGroups()
-        self:Print("Profile reset.")
+        StaticPopup_Show("CDC_RESET_PROFILE", self.db:GetCurrentProfile(),
+            nil, { profileName = self.db:GetCurrentProfile() })
     elseif input == "debugimport" then
         self:OpenDiagnosticDecodePanel()
     else
@@ -1010,19 +1060,6 @@ CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
     [1233272] = "48517,48518",  -- Lunar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
 }
 
--- Viewer frame list used by BuildViewerAuraMap and FindViewerChildForSpell.
-local VIEWER_NAMES = {
-    "EssentialCooldownViewer",
-    "UtilityCooldownViewer",
-    "BuffIconCooldownViewer",
-    "BuffBarCooldownViewer",
-}
--- Subset: cooldown-only viewers (Essential/Utility), used by FindCooldownViewerChild.
-local COOLDOWN_VIEWER_NAMES = {
-    "EssentialCooldownViewer",
-    "UtilityCooldownViewer",
-}
-
 -- Shared helper: scan a list of viewer frames for a child matching spellID.
 -- Checks cooldownInfo.spellID, overrideSpellID, and overrideTooltipSpellID.
 local function FindChildInViewers(viewerNames, spellID)
@@ -1044,11 +1081,25 @@ local function FindChildInViewers(viewerNames, spellID)
 end
 
 function CooldownCompanion:ApplyCdmAlpha()
-    local alpha = self.db.profile.cdmHidden and 0 or 1
+    local hidden = self.db.profile.cdmHidden and not self._cdmPickMode
+    local alpha = hidden and 0 or 1
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
+            cdmAlphaGuard[viewer] = true
             viewer:SetAlpha(alpha)
+            cdmAlphaGuard[viewer] = nil
+            viewer:EnableMouse(not hidden)
+            if hidden then
+                for _, child in pairs({viewer:GetChildren()}) do
+                    child:SetMouseMotionEnabled(false)
+                end
+            else
+                -- Restore tooltip state using Blizzard's own pattern
+                for itemFrame in viewer.itemFramePool:EnumerateActive() do
+                    itemFrame:SetTooltipsShown(viewer.tooltipsShown)
+                end
+            end
         end
     end
 end
@@ -1132,6 +1183,18 @@ function CooldownCompanion:BuildViewerAuraMap()
                 local numID = tonumber(id)
                 if not self.viewerAuraFrames[numID] then
                     self.viewerAuraFrames[numID] = child
+                end
+            end
+        end
+    end
+
+    -- Re-enforce mouse state for hidden CDM after map rebuild
+    if self.db.profile.cdmHidden and not self._cdmPickMode then
+        for _, name2 in ipairs(VIEWER_NAMES) do
+            local v = _G[name2]
+            if v then
+                for _, child in pairs({v:GetChildren()}) do
+                    child:SetMouseMotionEnabled(false)
                 end
             end
         end
@@ -1748,10 +1811,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
     if forceAura == true then
         group.buttons[buttonIndex].auraTracking = true
+        group.buttons[buttonIndex].auraIndicatorEnabled = true
     elseif forceAura == nil then
         -- Force aura tracking for passive/proc spells
         if isPassive then
             group.buttons[buttonIndex].auraTracking = true
+            group.buttons[buttonIndex].auraIndicatorEnabled = true
         end
 
         -- Auto-detect aura tracking for spells with viewer aura frames
@@ -1786,6 +1851,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             end
             if hasViewerFrame then
                 newButton.auraTracking = true
+                newButton.auraIndicatorEnabled = true
                 local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
                 if overrideBuffs then
                     newButton.auraSpellID = overrideBuffs
@@ -1915,6 +1981,22 @@ function CooldownCompanion:MigrateGroupOwnership()
         if group.createdBy == nil and group.isGlobal == nil then
             group.isGlobal = true
             group.createdBy = "migrated"
+        end
+    end
+end
+
+function CooldownCompanion:MigrateOrphanedGroups()
+    local currentChar = self.db.keys.char
+    local currentName = currentChar:match("^(.+) %- ")
+    if not currentName then return end
+    for groupId, group in pairs(self.db.profile.groups) do
+        if not group.isGlobal and group.createdBy
+           and group.createdBy ~= currentChar
+           and group.createdBy ~= "migrated" then
+            local ownerName = group.createdBy:match("^(.+) %- ")
+            if ownerName == currentName then
+                group.createdBy = currentChar
+            end
         end
     end
 end
@@ -2843,14 +2925,16 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         local isHovering = frame:IsMouseOver()
         if isHovering then
             forceFull = true
-            state.hoverExpire = now + (group.fadeDelay or 1)
+            state.hoverExpire = now + (group.customFade and group.fadeDelay or 1)
         elseif state.hoverExpire and now < state.hoverExpire then
             forceFull = true
         end
     end
 
     local desired = forceFull and 1 or (forceHidden and 0 or group.baselineAlpha)
-    local alpha = UpdateFadedAlpha(state, desired, now, group.fadeInDuration, group.fadeOutDuration)
+    local fadeIn = group.customFade and group.fadeInDuration or 0.2
+    local fadeOut = group.customFade and group.fadeOutDuration or 0.2
+    local alpha = UpdateFadedAlpha(state, desired, now, fadeIn, fadeOut)
 
     -- Only call SetAlpha when value actually changes
     if state.lastAlpha ~= alpha then
