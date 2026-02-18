@@ -3201,13 +3201,44 @@ function CooldownCompanion:RebuildSlotMapping()
     end
 end
 
+-- Map verbose localized keybind names to short abbreviations.
+-- Built from KEY_ GlobalStrings so it works on any WoW locale.
+local keybindMap = {}
+do
+    -- Middle mouse button
+    keybindMap[KEY_BUTTON3] = "M3"
+    -- Mouse buttons 4-31
+    for i = 4, 31 do
+        local text = _G["KEY_BUTTON" .. i]
+        if text then keybindMap[text] = "M" .. i end
+    end
+    -- Mouse wheel
+    keybindMap[KEY_MOUSEWHEELUP] = "MWU"
+    keybindMap[KEY_MOUSEWHEELDOWN] = "MWD"
+    -- Numpad digits
+    for i = 0, 9 do
+        local text = _G["KEY_NUMPAD" .. i]
+        if text then keybindMap[text] = "N" .. i end
+    end
+    -- Numpad operators
+    keybindMap[KEY_NUMPADDECIMAL] = "N."
+    keybindMap[KEY_NUMPADDIVIDE] = "N/"
+    keybindMap[KEY_NUMPADMINUS] = "N-"
+    keybindMap[KEY_NUMPADMULTIPLY] = "N*"
+    keybindMap[KEY_NUMPADPLUS] = "N+"
+end
+
 -- Shorten verbose keybind display text to fit inside icon corners.
 local function AbbreviateKeybind(text)
-    text = text:gsub("Mouse Button ", "M")
-    text = text:gsub("Num Pad ", "N")
-    text = text:gsub("Middle Mouse", "M3")
-    text = text:gsub("Mouse Wheel Up", "MWU")
-    text = text:gsub("Mouse Wheel Down", "MWD")
+    -- Exact match (key with no modifiers — common case)
+    if keybindMap[text] then return keybindMap[text] end
+    -- Substring match (key with modifier prefixes like "c-", "s-", "a-")
+    for long, short in pairs(keybindMap) do
+        local s, e = text:find(long, 1, true)
+        if s then
+            return text:sub(1, s - 1) .. short .. text:sub(e + 1)
+        end
+    end
     return text
 end
 
