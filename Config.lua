@@ -6705,6 +6705,8 @@ function CooldownCompanion:SetupConfig()
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
+        CooldownCompanion:MigrateOrphanedGroups()
+
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
@@ -6721,6 +6723,16 @@ function CooldownCompanion:SetupConfig()
         CS.frameAnchoringPanelActive = false
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
+
+        -- Re-stamp character-scoped groups after profile copy (matches import flow)
+        if CooldownCompanion.db.profile.groups then
+            local charKey = CooldownCompanion.db.keys.char
+            for _, group in pairs(CooldownCompanion.db.profile.groups) do
+                if not group.isGlobal then
+                    group.createdBy = charKey
+                end
+            end
+        end
 
         if configFrame and configFrame.frame:IsShown() then
             self:RefreshConfigPanel()

@@ -720,6 +720,9 @@ function CooldownCompanion:OnEnable()
     -- Migrate legacy groups to have ownership fields
     self:MigrateGroupOwnership()
 
+    -- Reclaim orphaned groups from realm renames
+    self:MigrateOrphanedGroups()
+
     -- Migrate old hide-when fields to alpha system
     self:MigrateAlphaSystem()
 
@@ -917,9 +920,8 @@ function CooldownCompanion:SlashCommand(input)
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "reset" then
-        self.db:ResetProfile()
-        self:RefreshAllGroups()
-        self:Print("Profile reset.")
+        StaticPopup_Show("CDC_RESET_PROFILE", self.db:GetCurrentProfile(),
+            nil, { profileName = self.db:GetCurrentProfile() })
     elseif input == "debugimport" then
         self:OpenDiagnosticDecodePanel()
     else
@@ -1916,6 +1918,22 @@ function CooldownCompanion:MigrateGroupOwnership()
         if group.createdBy == nil and group.isGlobal == nil then
             group.isGlobal = true
             group.createdBy = "migrated"
+        end
+    end
+end
+
+function CooldownCompanion:MigrateOrphanedGroups()
+    local currentChar = self.db.keys.char
+    local currentName = currentChar:match("^(.+) %- ")
+    if not currentName then return end
+    for groupId, group in pairs(self.db.profile.groups) do
+        if not group.isGlobal and group.createdBy
+           and group.createdBy ~= currentChar
+           and group.createdBy ~= "migrated" then
+            local ownerName = group.createdBy:match("^(.+) %- ")
+            if ownerName == currentName then
+                group.createdBy = currentChar
+            end
         end
     end
 end
