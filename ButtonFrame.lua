@@ -1500,12 +1500,9 @@ local function UpdateIconModeGlows(button, buttonData, style)
         local showProc = false
         if button._procGlowPreview then
             showProc = true
-        elseif buttonData.procGlow == true and buttonData.type == "spell" then
-            if buttonData.isPassive then
-                showProc = button._auraActive or false
-            else
-                showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
-            end
+        elseif style.procGlowStyle ~= "none" and buttonData.type == "spell"
+               and not buttonData.isPassive and not buttonData.auraTracking then
+            showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
         end
         SetProcGlow(button, showProc)
     end
