@@ -1097,6 +1097,22 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
 
+    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
+    if buttonData.auraTracking or buttonData.isPassive then
+        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        button.auraStackCount:SetText("")
+        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = style.auraStackFontSize or 12
+        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = style.auraStackXOffset or 2
+        local asYOff = style.auraStackYOffset or 2
+        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
+    end
+
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
     do
@@ -1661,7 +1677,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._auraActive = auraOverrideActive
 
         -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
-        if buttonData.isPassive then
+        if buttonData.auraTracking or buttonData.isPassive then
             if auraOverrideActive and viewerFrame then
                 button._auraStackText = GetViewerAuraStackText(viewerFrame)
             else
@@ -1912,11 +1928,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Aura stack count display (passive/proc spells with stackable auras)
+    -- Aura stack count display (aura-tracking spells with stackable auras)
     -- Text is a secret value in combat — pass through directly to SetText.
     -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
-    if buttonData.isPassive then
-        button.count:SetText(button._auraStackText or "")
+    if button.auraStackCount and (buttonData.auraTracking or buttonData.isPassive)
+       and (style.showAuraStackText ~= false) then
+        if button._auraActive then
+            button.auraStackCount:SetText(button._auraStackText or "")
+        else
+            button.auraStackCount:SetText("")
+        end
     end
 
     -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
@@ -2025,6 +2046,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
+    if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -2105,6 +2127,21 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+
+    -- Update aura stack count font/anchor settings
+    if button.auraStackCount then
+        button.auraStackCount:ClearAllPoints()
+        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = style.auraStackFontSize or 12
+        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = style.auraStackXOffset or 2
+        local asYOff = style.auraStackYOffset or 2
+        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
     end
 
     -- Update keybind text overlay
@@ -2947,6 +2984,26 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
     end
 
+    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
+    if buttonData.auraTracking or buttonData.isPassive then
+        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        button.auraStackCount:SetText("")
+        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = style.auraStackFontSize or 12
+        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = style.auraStackXOffset or 2
+        local asYOff = style.auraStackYOffset or 2
+        if showIcon then
+            button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
+        else
+            button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
+        end
+    end
+
     -- Store button data
     button.buttonData = buttonData
     button.index = index
@@ -3105,6 +3162,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
+    if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -3307,6 +3365,25 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
     else
         AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
+    end
+
+    -- Update aura stack count font/anchor settings
+    if button.auraStackCount then
+        button.auraStackCount:ClearAllPoints()
+        local asFont = CooldownCompanion:FetchFont(newStyle.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = newStyle.auraStackFontSize or 12
+        local asFontOutline = newStyle.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = newStyle.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = newStyle.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = newStyle.auraStackXOffset or 2
+        local asYOff = newStyle.auraStackYOffset or 2
+        if showIcon then
+            button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
+        else
+            button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
+        end
     end
 
     -- Update spell name text

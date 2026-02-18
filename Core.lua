@@ -444,8 +444,13 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true, bars = true},
     },
     auraText = {
-        label = "Aura Text",
+        label = "Aura Duration Text",
         keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor"},
+        modes = {icons = true, bars = true},
+    },
+    auraStackText = {
+        label = "Aura Stack Text",
+        keys = {"showAuraStackText", "auraStackFont", "auraStackFontSize", "auraStackFontOutline", "auraStackFontColor", "auraStackAnchor", "auraStackXOffset", "auraStackYOffset"},
         modes = {icons = true, bars = true},
     },
     keybindText = {
