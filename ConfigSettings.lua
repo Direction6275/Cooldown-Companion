@@ -1193,7 +1193,7 @@ end
 
 local function BuildAuraTextControls(container, styleTable, refreshCallback)
     local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetLabel("Show Aura Duration Text")
     auraTextCb:SetValue(styleTable.showAuraText ~= false)
     auraTextCb:SetFullWidth(true)
     auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1214,7 +1214,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
     auraPosInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Shared Position")
-        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Text share the same text element.", 1, 1, 1, true)
+        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Duration Text share the same text element.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     auraPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1273,6 +1273,107 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
             refreshCallback()
         end)
         container:AddChild(auraFontColor)
+    end
+end
+
+local function BuildAuraStackTextControls(container, styleTable, refreshCallback)
+    local auraStackCb = AceGUI:Create("CheckBox")
+    auraStackCb:SetLabel("Show Aura Stack Text")
+    auraStackCb:SetValue(styleTable.showAuraStackText ~= false)
+    auraStackCb:SetFullWidth(true)
+    auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showAuraStackText = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraStackCb)
+
+    if styleTable.showAuraStackText ~= false then
+        local asFontSizeSlider = AceGUI:Create("Slider")
+        asFontSizeSlider:SetLabel("Font Size")
+        asFontSizeSlider:SetSliderValues(8, 32, 1)
+        asFontSizeSlider:SetValue(styleTable.auraStackFontSize or 12)
+        asFontSizeSlider:SetFullWidth(true)
+        asFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraStackFontSize = val
+            refreshCallback()
+        end)
+        container:AddChild(asFontSizeSlider)
+
+        local asFontDrop = AceGUI:Create("Dropdown")
+        asFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(asFontDrop)
+        asFontDrop:SetValue(styleTable.auraStackFont or "Friz Quadrata TT")
+        asFontDrop:SetFullWidth(true)
+        asFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraStackFont = val
+            refreshCallback()
+        end)
+        container:AddChild(asFontDrop)
+
+        local asOutlineDrop = AceGUI:Create("Dropdown")
+        asOutlineDrop:SetLabel("Font Outline")
+        asOutlineDrop:SetList(CS.outlineOptions)
+        asOutlineDrop:SetValue(styleTable.auraStackFontOutline or "OUTLINE")
+        asOutlineDrop:SetFullWidth(true)
+        asOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraStackFontOutline = val
+            refreshCallback()
+        end)
+        container:AddChild(asOutlineDrop)
+
+        local asFontColor = AceGUI:Create("ColorPicker")
+        asFontColor:SetLabel("Font Color")
+        asFontColor:SetHasAlpha(true)
+        local asc = styleTable.auraStackFontColor or {1, 1, 1, 1}
+        asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
+        asFontColor:SetFullWidth(true)
+        asFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            styleTable.auraStackFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        asFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            styleTable.auraStackFontColor = {r, g, b, a}
+            refreshCallback()
+        end)
+        container:AddChild(asFontColor)
+
+        local asAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            asAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local asAnchorDrop = AceGUI:Create("Dropdown")
+        asAnchorDrop:SetLabel("Anchor")
+        asAnchorDrop:SetList(asAnchorValues, CS.anchorPoints)
+        asAnchorDrop:SetValue(styleTable.auraStackAnchor or "BOTTOMLEFT")
+        asAnchorDrop:SetFullWidth(true)
+        asAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraStackAnchor = val
+            refreshCallback()
+        end)
+        container:AddChild(asAnchorDrop)
+
+        local asXSlider = AceGUI:Create("Slider")
+        asXSlider:SetLabel("X Offset")
+        asXSlider:SetSliderValues(-20, 20, 0.1)
+        asXSlider:SetValue(styleTable.auraStackXOffset or 2)
+        asXSlider:SetFullWidth(true)
+        asXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraStackXOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(asXSlider)
+
+        local asYSlider = AceGUI:Create("Slider")
+        asYSlider:SetLabel("Y Offset")
+        asYSlider:SetSliderValues(-20, 20, 0.1)
+        asYSlider:SetValue(styleTable.auraStackYOffset or 2)
+        asYSlider:SetFullWidth(true)
+        asYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraStackYOffset = val
+            refreshCallback()
+        end)
+        container:AddChild(asYSlider)
     end
 end
 
@@ -2495,7 +2596,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     -- Check if any overrides exist
     if not buttonData.overrideSections or not next(buttonData.overrideSections) then
         local noOverridesLabel = AceGUI:Create("Label")
-        noOverridesLabel:SetText("|cff888888No appearance overrides.\n\nTo customize this button's appearance, select it and click the export icon next to a group settings section heading.|r")
+        noOverridesLabel:SetText("|cff888888No appearance overrides.\n\nTo customize this button's appearance, select it and click the |A:Crosshair_VehichleCursor_32:0:0|a icon next to a group settings section heading.|r")
         noOverridesLabel:SetFullWidth(true)
         scroll:AddChild(noOverridesLabel)
         return
@@ -2510,7 +2611,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
 
     -- Ordered list of sections to display (maintain consistent ordering)
     local sectionOrder = {
-        "borderSettings", "backgroundColor", "cooldownText", "auraText",
+        "borderSettings", "backgroundColor", "cooldownText", "auraText", "auraStackText",
         "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
@@ -2522,6 +2623,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         backgroundColor = BuildBackgroundColorControls,
         cooldownText = BuildCooldownTextControls,
         auraText = BuildAuraTextControls,
+        auraStackText = BuildAuraStackTextControls,
         keybindText = BuildKeybindTextControls,
         chargeText = BuildChargeTextControls,
         desaturation = BuildDesaturationControls,
@@ -3734,10 +3836,10 @@ local function BuildBarAppearanceTab(container, group, style)
     end
 
     -- ================================================================
-    -- Aura Text
+    -- Aura Duration Text
     -- ================================================================
     local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetLabel("Show Aura Duration Text")
     auraTextCb:SetValue(style.showAuraText ~= false)
     auraTextCb:SetFullWidth(true)
     auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3800,6 +3902,111 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(auraFontColor)
     end -- barAuraTextAdvExpanded
+
+    -- ================================================================
+    -- Aura Stack Text
+    -- ================================================================
+    local barAuraStackCb = AceGUI:Create("CheckBox")
+    barAuraStackCb:SetLabel("Show Aura Stack Text")
+    barAuraStackCb:SetValue(style.showAuraStackText ~= false)
+    barAuraStackCb:SetFullWidth(true)
+    barAuraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraStackText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(barAuraStackCb)
+
+    local barAuraStackAdvExpanded, barAuraStackAdvBtn = AddAdvancedToggle(barAuraStackCb, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false)
+    CreateCheckboxPromoteButton(barAuraStackCb, barAuraStackAdvBtn, "auraStackText", group, style)
+
+    if barAuraStackAdvExpanded and style.showAuraStackText ~= false then
+        local asFontSizeSlider = AceGUI:Create("Slider")
+        asFontSizeSlider:SetLabel("Font Size")
+        asFontSizeSlider:SetSliderValues(8, 32, 1)
+        asFontSizeSlider:SetValue(style.auraStackFontSize or 12)
+        asFontSizeSlider:SetFullWidth(true)
+        asFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asFontSizeSlider)
+
+        local asFontDrop = AceGUI:Create("Dropdown")
+        asFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(asFontDrop)
+        asFontDrop:SetValue(style.auraStackFont or "Friz Quadrata TT")
+        asFontDrop:SetFullWidth(true)
+        asFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asFontDrop)
+
+        local asOutlineDrop = AceGUI:Create("Dropdown")
+        asOutlineDrop:SetLabel("Font Outline")
+        asOutlineDrop:SetList(CS.outlineOptions)
+        asOutlineDrop:SetValue(style.auraStackFontOutline or "OUTLINE")
+        asOutlineDrop:SetFullWidth(true)
+        asOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asOutlineDrop)
+
+        local asFontColor = AceGUI:Create("ColorPicker")
+        asFontColor:SetLabel("Font Color")
+        asFontColor:SetHasAlpha(true)
+        local asc = style.auraStackFontColor or {1, 1, 1, 1}
+        asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
+        asFontColor:SetFullWidth(true)
+        asFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.auraStackFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        asFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.auraStackFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asFontColor)
+
+        local asAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            asAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local asAnchorDrop = AceGUI:Create("Dropdown")
+        asAnchorDrop:SetLabel("Anchor")
+        asAnchorDrop:SetList(asAnchorValues, CS.anchorPoints)
+        asAnchorDrop:SetValue(style.auraStackAnchor or "BOTTOMLEFT")
+        asAnchorDrop:SetFullWidth(true)
+        asAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asAnchorDrop)
+
+        local asXSlider = AceGUI:Create("Slider")
+        asXSlider:SetLabel("X Offset")
+        asXSlider:SetSliderValues(-20, 20, 0.1)
+        asXSlider:SetValue(style.auraStackXOffset or 2)
+        asXSlider:SetFullWidth(true)
+        asXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asXSlider)
+
+        local asYSlider = AceGUI:Create("Slider")
+        asYSlider:SetLabel("Y Offset")
+        asYSlider:SetSliderValues(-20, 20, 0.1)
+        asYSlider:SetValue(style.auraStackYOffset or 2)
+        asYSlider:SetFullWidth(true)
+        asYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asYSlider)
+    end -- barAuraStackAdvExpanded
 
     -- Show Ready Text toggle
     local showReadyCb = AceGUI:Create("CheckBox")
@@ -4676,9 +4883,9 @@ local function BuildAppearanceTab(container)
         container:AddChild(chargeYSlider)
     end -- chargeAdvExpanded + showChargeText
 
-    -- Show Aura Text toggle
+    -- Show Aura Duration Text toggle
     local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Text")
+    auraTextCb:SetLabel("Show Aura Duration Text")
     auraTextCb:SetValue(style.showAuraText ~= false)
     auraTextCb:SetFullWidth(true)
     auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -4701,7 +4908,7 @@ local function BuildAppearanceTab(container)
     auraPosInfo:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Shared Position")
-        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Text share the same text element.", 1, 1, 1, true)
+        GameTooltip:AddLine("Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Duration Text share the same text element.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     auraPosInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -4764,6 +4971,109 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(auraFontColor)
     end -- auraTextAdvExpanded + showAuraText
+
+    -- Show Aura Stack Text toggle
+    local auraStackCb = AceGUI:Create("CheckBox")
+    auraStackCb:SetLabel("Show Aura Stack Text")
+    auraStackCb:SetValue(style.showAuraStackText ~= false)
+    auraStackCb:SetFullWidth(true)
+    auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAuraStackText = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(auraStackCb)
+
+    local auraStackAdvExpanded, auraStackAdvBtn = AddAdvancedToggle(auraStackCb, "auraStackText", tabInfoButtons, style.showAuraStackText ~= false)
+    CreateCheckboxPromoteButton(auraStackCb, auraStackAdvBtn, "auraStackText", group, style)
+
+    if style.showAuraStackText ~= false and auraStackAdvExpanded then
+        local asFontSizeSlider = AceGUI:Create("Slider")
+        asFontSizeSlider:SetLabel("Font Size")
+        asFontSizeSlider:SetSliderValues(8, 32, 1)
+        asFontSizeSlider:SetValue(style.auraStackFontSize or 12)
+        asFontSizeSlider:SetFullWidth(true)
+        asFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackFontSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asFontSizeSlider)
+
+        local asFontDrop = AceGUI:Create("Dropdown")
+        asFontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(asFontDrop)
+        asFontDrop:SetValue(style.auraStackFont or "Friz Quadrata TT")
+        asFontDrop:SetFullWidth(true)
+        asFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackFont = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asFontDrop)
+
+        local asOutlineDrop = AceGUI:Create("Dropdown")
+        asOutlineDrop:SetLabel("Font Outline")
+        asOutlineDrop:SetList(CS.outlineOptions)
+        asOutlineDrop:SetValue(style.auraStackFontOutline or "OUTLINE")
+        asOutlineDrop:SetFullWidth(true)
+        asOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackFontOutline = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asOutlineDrop)
+
+        local asFontColor = AceGUI:Create("ColorPicker")
+        asFontColor:SetLabel("Font Color")
+        asFontColor:SetHasAlpha(true)
+        local asc = style.auraStackFontColor or {1, 1, 1, 1}
+        asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
+        asFontColor:SetFullWidth(true)
+        asFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.auraStackFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        asFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.auraStackFontColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asFontColor)
+
+        local asAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            asAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local asAnchorDrop = AceGUI:Create("Dropdown")
+        asAnchorDrop:SetLabel("Anchor")
+        asAnchorDrop:SetList(asAnchorValues, CS.anchorPoints)
+        asAnchorDrop:SetValue(style.auraStackAnchor or "BOTTOMLEFT")
+        asAnchorDrop:SetFullWidth(true)
+        asAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asAnchorDrop)
+
+        local asXSlider = AceGUI:Create("Slider")
+        asXSlider:SetLabel("X Offset")
+        asXSlider:SetSliderValues(-20, 20, 0.1)
+        asXSlider:SetValue(style.auraStackXOffset or 2)
+        asXSlider:SetFullWidth(true)
+        asXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackXOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asXSlider)
+
+        local asYSlider = AceGUI:Create("Slider")
+        asYSlider:SetLabel("Y Offset")
+        asYSlider:SetSliderValues(-20, 20, 0.1)
+        asYSlider:SetValue(style.auraStackYOffset or 2)
+        asYSlider:SetFullWidth(true)
+        asYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraStackYOffset = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(asYSlider)
+    end -- auraStackAdvExpanded + showAuraStackText
 
     -- Show Keybind Text toggle
     local kbCb = AceGUI:Create("CheckBox")
@@ -5353,6 +5663,41 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
     table.insert(infoButtons, hideNoAuraInfo)
     if CooldownCompanion.db.profile.hideInfoButtons then
         hideNoAuraInfo:Hide()
+    end
+
+    -- Desaturate While Aura Not Active (spell+aura only; passive buttons always desaturate)
+    if not buttonData.isPassive then
+        local desatNoAuraCb = AceGUI:Create("CheckBox")
+        desatNoAuraCb:SetLabel("Desaturate While Aura Not Active")
+        desatNoAuraCb:SetValue(buttonData.desaturateWhileAuraNotActive or false)
+        desatNoAuraCb:SetFullWidth(true)
+        if auraDisabled then
+            desatNoAuraCb:SetDisabled(true)
+        end
+        desatNoAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
+            ApplyToSelected("desaturateWhileAuraNotActive", val or nil)
+        end)
+        scroll:AddChild(desatNoAuraCb)
+
+        -- (?) tooltip
+        local desatNoAuraInfo = CreateFrame("Button", nil, desatNoAuraCb.frame)
+        desatNoAuraInfo:SetSize(16, 16)
+        desatNoAuraInfo:SetPoint("LEFT", desatNoAuraCb.checkbg, "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0)
+        local desatNoAuraInfoIcon = desatNoAuraInfo:CreateTexture(nil, "OVERLAY")
+        desatNoAuraInfoIcon:SetSize(12, 12)
+        desatNoAuraInfoIcon:SetPoint("CENTER")
+        desatNoAuraInfoIcon:SetAtlas("QuestRepeatableTurnin")
+        desatNoAuraInfo:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Desaturate While Aura Not Active")
+            GameTooltip:AddLine("Requires Aura Tracking to be enabled above.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        desatNoAuraInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        table.insert(infoButtons, desatNoAuraInfo)
+        if CooldownCompanion.db.profile.hideInfoButtons then
+            desatNoAuraInfo:Hide()
+        end
     end
 
     -- Baseline Alpha Fallback (only shown when hideWhileAuraNotActive is checked)

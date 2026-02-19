@@ -1097,6 +1097,22 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     end
 
+    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
+    if buttonData.auraTracking or buttonData.isPassive then
+        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        button.auraStackCount:SetText("")
+        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = style.auraStackFontSize or 12
+        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = style.auraStackXOffset or 2
+        local asYOff = style.auraStackYOffset or 2
+        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
+    end
+
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
     do
@@ -1436,32 +1452,35 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- Desaturation: aura-tracked buttons desaturate when aura absent;
     -- cooldown buttons desaturate based on DurationObject / item CD state.
     if buttonData.auraTracking then
-        local wantDesat = not button._auraActive
+        local wantDesat
+        if buttonData.isPassive then
+            wantDesat = not button._auraActive
+        else
+            wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown then
+    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
         local wantDesat = false
-        if fetchOk and not isOnGCD and not gcdJustEnded then
+        if style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
-                wantDesat = button._mainCDShown
+                if buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
             elseif button._durationObj then
                 wantDesat = true
             elseif buttonData.type == "item" then
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    elseif buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
-        local wantDesat = false
-        if buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._mainCDShown then
             wantDesat = true
         end
-        if buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+        if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
@@ -1663,7 +1682,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._auraActive = auraOverrideActive
 
         -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
-        if buttonData.isPassive then
+        if buttonData.auraTracking or buttonData.isPassive then
             if auraOverrideActive and viewerFrame then
                 button._auraStackText = GetViewerAuraStackText(viewerFrame)
             else
@@ -1914,11 +1933,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Aura stack count display (passive/proc spells with stackable auras)
+    -- Aura stack count display (aura-tracking spells with stackable auras)
     -- Text is a secret value in combat — pass through directly to SetText.
     -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
-    if buttonData.isPassive then
-        button.count:SetText(button._auraStackText or "")
+    if button.auraStackCount and (buttonData.auraTracking or buttonData.isPassive)
+       and (style.showAuraStackText ~= false) then
+        if button._auraActive then
+            button.auraStackCount:SetText(button._auraStackText or "")
+        else
+            button.auraStackCount:SetText("")
+        end
     end
 
     -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
@@ -1936,6 +1960,25 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Per-button visibility evaluation (after charge tracking)
     EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
+
+    -- Config preview: override per-button hide conditions for selected groups
+    local preview = CooldownCompanion._configPreview
+    if preview and preview.groups[button._groupId] then
+        if preview.hasEntryFilter then
+            if preview.entries[button.index] then
+                -- Selected entry: force visible
+                button._visibilityHidden = false
+                button._visibilityAlphaOverride = nil
+            else
+                -- Non-selected entry: force hidden
+                button._visibilityHidden = true
+            end
+        else
+            -- Group selected, no entry filter: force all buttons visible
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = nil
+        end
+    end
 
     -- Track if hidden state changed (for compact layout dirty flag)
     if button._visibilityHidden ~= button._prevVisibilityHidden then
@@ -2027,6 +2070,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
+    if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -2107,6 +2151,21 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
     else
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+
+    -- Update aura stack count font/anchor settings
+    if button.auraStackCount then
+        button.auraStackCount:ClearAllPoints()
+        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = style.auraStackFontSize or 12
+        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = style.auraStackXOffset or 2
+        local asYOff = style.auraStackYOffset or 2
+        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
     end
 
     -- Update keybind text overlay
@@ -2554,32 +2613,35 @@ UpdateBarDisplay = function(button, fetchOk)
     -- Icon desaturation: aura-tracked buttons desaturate when aura absent;
     -- cooldown buttons desaturate based on DurationObject / item CD state.
     if button.buttonData.auraTracking then
-        local wantDesat = not button._auraActive
+        local wantDesat
+        if button.buttonData.isPassive then
+            wantDesat = not button._auraActive
+        else
+            wantDesat = button.buttonData.desaturateWhileAuraNotActive and not button._auraActive
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown then
+    elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
         local wantDesat = false
-        if fetchOk and not button._isOnGCD and not button._gcdJustEnded then
+        if style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then
-                wantDesat = button._mainCDShown
+                if button.buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
             elseif button._durationObj then
                 wantDesat = true
             elseif button.buttonData.type == "item" then
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    elseif button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
-        local wantDesat = false
-        if button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+        if not wantDesat and button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
             wantDesat = true
         end
-        if button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+        if not wantDesat and button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
@@ -2951,6 +3013,26 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
     end
 
+    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
+    if buttonData.auraTracking or buttonData.isPassive then
+        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        button.auraStackCount:SetText("")
+        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = style.auraStackFontSize or 12
+        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = style.auraStackXOffset or 2
+        local asYOff = style.auraStackYOffset or 2
+        if showIcon then
+            button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
+        else
+            button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
+        end
+    end
+
     -- Store button data
     button.buttonData = buttonData
     button.index = index
@@ -3109,6 +3191,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
+    if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
@@ -3311,6 +3394,25 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
     else
         AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
+    end
+
+    -- Update aura stack count font/anchor settings
+    if button.auraStackCount then
+        button.auraStackCount:ClearAllPoints()
+        local asFont = CooldownCompanion:FetchFont(newStyle.auraStackFont or "Friz Quadrata TT")
+        local asFontSize = newStyle.auraStackFontSize or 12
+        local asFontOutline = newStyle.auraStackFontOutline or "OUTLINE"
+        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
+        local asColor = newStyle.auraStackFontColor or {1, 1, 1, 1}
+        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        local asAnchor = newStyle.auraStackAnchor or "BOTTOMLEFT"
+        local asXOff = newStyle.auraStackXOffset or 2
+        local asYOff = newStyle.auraStackYOffset or 2
+        if showIcon then
+            button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
+        else
+            button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
+        end
     end
 
     -- Update spell name text

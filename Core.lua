@@ -444,8 +444,13 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true, bars = true},
     },
     auraText = {
-        label = "Aura Text",
+        label = "Aura Duration Text",
         keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor"},
+        modes = {icons = true, bars = true},
+    },
+    auraStackText = {
+        label = "Aura Stack Text",
+        keys = {"showAuraStackText", "auraStackFont", "auraStackFontSize", "auraStackFontOutline", "auraStackFontColor", "auraStackAnchor", "auraStackXOffset", "auraStackYOffset"},
         modes = {icons = true, bars = true},
     },
     keybindText = {
@@ -702,6 +707,9 @@ function CooldownCompanion:OnEnable()
 
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
+
+    -- Pet summon/dismiss — show/hide pet spell buttons dynamically
+    self:RegisterEvent("UNIT_PET", "OnPetChanged")
 
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
@@ -1341,6 +1349,15 @@ end
 function CooldownCompanion:OnTalentsChanged()
     self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
+    self:RefreshConfigPanel()
+end
+
+function CooldownCompanion:OnPetChanged()
+    for groupId, _ in pairs(self.db.profile.groups) do
+        if self:GroupHasPetSpells(groupId) then
+            self:RefreshGroupFrame(groupId)
+        end
+    end
     self:RefreshConfigPanel()
 end
 
@@ -2880,6 +2897,18 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         self.alphaState[groupId] = state
     end
 
+    -- Config preview takes full control of alpha
+    local preview = self._configPreview
+    if preview then
+        local desired = preview.groups[groupId] and 1 or 0.5
+        if state.lastAlpha ~= desired then
+            frame:SetAlpha(desired)
+            state.lastAlpha = desired
+            state.currentAlpha = desired
+        end
+        return
+    end
+
     -- Force 100% alpha while group is unlocked for easier positioning
     if not group.locked then
         if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 then
@@ -2991,16 +3020,21 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() then
-                local needsUpdate = GroupNeedsAlphaUpdate(group)
-                -- Also process if the group has stale alpha state that needs cleanup
-                if not needsUpdate then
-                    local state = self.alphaState[groupId]
-                    if state and state.currentAlpha and state.currentAlpha ~= 1 then
-                        needsUpdate = true
-                    end
-                end
-                if needsUpdate then
+                if self._configPreview then
+                    -- During preview, all shown groups need alpha control
                     self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
+                else
+                    local needsUpdate = GroupNeedsAlphaUpdate(group)
+                    -- Also process if the group has stale alpha state that needs cleanup
+                    if not needsUpdate then
+                        local state = self.alphaState[groupId]
+                        if state and state.currentAlpha and state.currentAlpha ~= 1 then
+                            needsUpdate = true
+                        end
+                    end
+                    if needsUpdate then
+                        self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
+                    end
                 end
             end
         end
@@ -3017,6 +3051,15 @@ function CooldownCompanion:ToggleGroupGlobal(groupId)
     -- Clear folder assignment — the folder belongs to the old section
     group.folderId = nil
     self:RefreshAllGroups()
+end
+
+function CooldownCompanion:GroupHasPetSpells(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return false end
+    for _, buttonData in ipairs(group.buttons) do
+        if buttonData.isPetSpell then return true end
+    end
+    return false
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
@@ -3052,6 +3095,31 @@ function CooldownCompanion:CreateAllGroupFrames()
         if self:IsGroupVisibleToCurrentChar(groupId) then
             self:CreateGroupFrame(groupId)
         end
+    end
+end
+
+function CooldownCompanion:ApplyConfigPreview()
+    local preview = self._configPreview
+    if not preview then return end
+
+    for groupId, group in pairs(self.db.profile.groups) do
+        local frame = self.groupFrames[groupId]
+        if not frame then -- skip groups with no frame
+        elseif preview.groups[groupId] then
+            -- Selected group: force show at full alpha
+            frame:Show()
+            frame:SetAlpha(1)
+        elseif frame:IsShown() then
+            -- Visible but unselected: dim to 50%
+            frame:SetAlpha(0.5)
+        end
+        -- Hidden unselected groups: leave hidden (no action)
+    end
+end
+
+function CooldownCompanion:RestoreAllGroupVisibility()
+    for groupId in pairs(self.db.profile.groups) do
+        self:RefreshGroupFrame(groupId)
     end
 end
 
@@ -3196,13 +3264,44 @@ function CooldownCompanion:RebuildSlotMapping()
     end
 end
 
+-- Map verbose localized keybind names to short abbreviations.
+-- Built from KEY_ GlobalStrings so it works on any WoW locale.
+local keybindMap = {}
+do
+    -- Middle mouse button
+    keybindMap[KEY_BUTTON3] = "M3"
+    -- Mouse buttons 4-31
+    for i = 4, 31 do
+        local text = _G["KEY_BUTTON" .. i]
+        if text then keybindMap[text] = "M" .. i end
+    end
+    -- Mouse wheel
+    keybindMap[KEY_MOUSEWHEELUP] = "MWU"
+    keybindMap[KEY_MOUSEWHEELDOWN] = "MWD"
+    -- Numpad digits
+    for i = 0, 9 do
+        local text = _G["KEY_NUMPAD" .. i]
+        if text then keybindMap[text] = "N" .. i end
+    end
+    -- Numpad operators
+    keybindMap[KEY_NUMPADDECIMAL] = "N."
+    keybindMap[KEY_NUMPADDIVIDE] = "N/"
+    keybindMap[KEY_NUMPADMINUS] = "N-"
+    keybindMap[KEY_NUMPADMULTIPLY] = "N*"
+    keybindMap[KEY_NUMPADPLUS] = "N+"
+end
+
 -- Shorten verbose keybind display text to fit inside icon corners.
 local function AbbreviateKeybind(text)
-    text = text:gsub("Mouse Button ", "M")
-    text = text:gsub("Num Pad ", "N")
-    text = text:gsub("Middle Mouse", "M3")
-    text = text:gsub("Mouse Wheel Up", "MWU")
-    text = text:gsub("Mouse Wheel Down", "MWD")
+    -- Exact match (key with no modifiers — common case)
+    if keybindMap[text] then return keybindMap[text] end
+    -- Substring match (key with modifier prefixes like "c-", "s-", "a-")
+    for long, short in pairs(keybindMap) do
+        local s, e = text:find(long, 1, true)
+        if s then
+            return text:sub(1, s - 1) .. short .. text:sub(e + 1)
+        end
+    end
     return text
 end
 

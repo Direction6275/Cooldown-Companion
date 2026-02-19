@@ -476,23 +476,23 @@ local function ApplyPixelBorders(borders, parent, color, size)
     end
 
     borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", parent, "TOPLEFT", -size, size)
-    borders.TOP:SetPoint("TOPRIGHT", parent, "TOPRIGHT", size, size)
+    borders.TOP:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    borders.TOP:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
     borders.TOP:SetHeight(size)
 
     borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -size, -size)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", size, -size)
+    borders.BOTTOM:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
+    borders.BOTTOM:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
     borders.BOTTOM:SetHeight(size)
 
     borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", parent, "TOPLEFT", -size, size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -size, -size)
+    borders.LEFT:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -size)
+    borders.LEFT:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, size)
     borders.LEFT:SetWidth(size)
 
     borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", parent, "TOPRIGHT", size, size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", size, -size)
+    borders.RIGHT:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -size)
+    borders.RIGHT:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, size)
     borders.RIGHT:SetWidth(size)
 end
 
