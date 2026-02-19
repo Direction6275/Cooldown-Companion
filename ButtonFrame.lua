@@ -1961,25 +1961,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Per-button visibility evaluation (after charge tracking)
     EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
 
-    -- Config preview: override per-button hide conditions for selected groups
-    local preview = CooldownCompanion._configPreview
-    if preview and preview.groups[button._groupId] then
-        if preview.hasEntryFilter then
-            if preview.entries[button.index] then
-                -- Selected entry: force visible
-                button._visibilityHidden = false
-                button._visibilityAlphaOverride = nil
-            else
-                -- Non-selected entry: force hidden
-                button._visibilityHidden = true
-            end
-        else
-            -- Group selected, no entry filter: force all buttons visible
-            button._visibilityHidden = false
-            button._visibilityAlphaOverride = nil
-        end
-    end
-
     -- Track if hidden state changed (for compact layout dirty flag)
     if button._visibilityHidden ~= button._prevVisibilityHidden then
         button._prevVisibilityHidden = button._visibilityHidden

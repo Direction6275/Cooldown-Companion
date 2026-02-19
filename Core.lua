@@ -2897,18 +2897,6 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         self.alphaState[groupId] = state
     end
 
-    -- Config preview takes full control of alpha
-    local preview = self._configPreview
-    if preview then
-        local desired = preview.groups[groupId] and 1 or 0.5
-        if state.lastAlpha ~= desired then
-            frame:SetAlpha(desired)
-            state.lastAlpha = desired
-            state.currentAlpha = desired
-        end
-        return
-    end
-
     -- Force 100% alpha while group is unlocked for easier positioning
     if not group.locked then
         if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 then
@@ -3020,21 +3008,16 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() then
-                if self._configPreview then
-                    -- During preview, all shown groups need alpha control
+                local needsUpdate = GroupNeedsAlphaUpdate(group)
+                -- Also process if the group has stale alpha state that needs cleanup
+                if not needsUpdate then
+                    local state = self.alphaState[groupId]
+                    if state and state.currentAlpha and state.currentAlpha ~= 1 then
+                        needsUpdate = true
+                    end
+                end
+                if needsUpdate then
                     self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
-                else
-                    local needsUpdate = GroupNeedsAlphaUpdate(group)
-                    -- Also process if the group has stale alpha state that needs cleanup
-                    if not needsUpdate then
-                        local state = self.alphaState[groupId]
-                        if state and state.currentAlpha and state.currentAlpha ~= 1 then
-                            needsUpdate = true
-                        end
-                    end
-                    if needsUpdate then
-                        self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
-                    end
                 end
             end
         end
@@ -3095,31 +3078,6 @@ function CooldownCompanion:CreateAllGroupFrames()
         if self:IsGroupVisibleToCurrentChar(groupId) then
             self:CreateGroupFrame(groupId)
         end
-    end
-end
-
-function CooldownCompanion:ApplyConfigPreview()
-    local preview = self._configPreview
-    if not preview then return end
-
-    for groupId, group in pairs(self.db.profile.groups) do
-        local frame = self.groupFrames[groupId]
-        if not frame then -- skip groups with no frame
-        elseif preview.groups[groupId] then
-            -- Selected group: force show at full alpha
-            frame:Show()
-            frame:SetAlpha(1)
-        elseif frame:IsShown() then
-            -- Visible but unselected: dim to 50%
-            frame:SetAlpha(0.5)
-        end
-        -- Hidden unselected groups: leave hidden (no action)
-    end
-end
-
-function CooldownCompanion:RestoreAllGroupVisibility()
-    for groupId in pairs(self.db.profile.groups) do
-        self:RefreshGroupFrame(groupId)
     end
 end
 

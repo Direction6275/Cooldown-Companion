@@ -325,7 +325,6 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     local accumulator = 0
     local SYNC_INTERVAL = 1 / 30
     frame.alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
-        if CooldownCompanion._configPreview then return end  -- preview controls alpha
         accumulator = accumulator + dt
         if accumulator < SYNC_INTERVAL then return end
         accumulator = 0
@@ -649,17 +648,6 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         end
     else
         frame:Hide()
-    end
-
-    -- Config preview overrides: force-show selected groups, dim unselected
-    local preview = CooldownCompanion._configPreview
-    if preview and preview.active then
-        if preview.groups[groupId] then
-            frame:Show()
-            frame:SetAlpha(1)
-        elseif frame:IsShown() then
-            frame:SetAlpha(0.5)
-        end
     end
 end
 
