@@ -564,6 +564,14 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
                         end
                     end
                 end
+                if db.profile.folders then
+                    local charKey = db.keys.char
+                    for _, folder in pairs(db.profile.folders) do
+                        if folder.section == "char" then
+                            folder.createdBy = charKey
+                        end
+                    end
+                end
                 CooldownCompanion:RefreshConfigPanel()
                 CooldownCompanion:RefreshAllGroups()
             else
@@ -3396,6 +3404,9 @@ ApplyCol1Drop = function(state)
         -- Cross-section move: toggle folder section and update all child groups
         if section ~= state.sourceSection then
             folder.section = section
+            if section == "char" then
+                folder.createdBy = CooldownCompanion.db.keys.char
+            end
             for groupId, group in pairs(db.groups) do
                 if group.folderId == sourceFolderId then
                     if section == "global" then
@@ -3810,7 +3821,12 @@ function RefreshColumn1(preserveDrag)
         local sectionFolderIds = {}
         for fid, folder in pairs(db.folders) do
             if folder.section == section then
-                table.insert(sectionFolderIds, fid)
+                -- Character folders: only show if owned by current character
+                if section == "char" and folder.createdBy and folder.createdBy ~= charKey then
+                    -- skip: belongs to another character
+                else
+                    table.insert(sectionFolderIds, fid)
+                end
             end
         end
 
@@ -4561,7 +4577,7 @@ function RefreshColumn1(preserveDrag)
     local hasCharContent = #charIds > 0
     if not hasCharContent then
         for _, folder in pairs(db.folders) do
-            if folder.section == "char" then
+            if folder.section == "char" and (not folder.createdBy or folder.createdBy == charKey) then
                 hasCharContent = true
                 break
             end
@@ -6812,12 +6828,19 @@ function CooldownCompanion:SetupConfig()
         CooldownCompanion:StopCastBarPreview()
         CooldownCompanion:StopResourceBarPreview()
 
-        -- Re-stamp character-scoped groups after profile copy (matches import flow)
+        -- Re-stamp character-scoped groups and folders after profile copy (matches import flow)
+        local charKey = CooldownCompanion.db.keys.char
         if CooldownCompanion.db.profile.groups then
-            local charKey = CooldownCompanion.db.keys.char
             for _, group in pairs(CooldownCompanion.db.profile.groups) do
                 if not group.isGlobal then
                     group.createdBy = charKey
+                end
+            end
+        end
+        if CooldownCompanion.db.profile.folders then
+            for _, folder in pairs(CooldownCompanion.db.profile.folders) do
+                if folder.section == "char" then
+                    folder.createdBy = charKey
                 end
             end
         end

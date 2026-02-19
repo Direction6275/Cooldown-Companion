@@ -786,7 +786,10 @@ function CooldownCompanion:OnEnable()
     -- Migrate legacy groups to have ownership fields
     self:MigrateGroupOwnership()
 
-    -- Reclaim orphaned groups from realm renames
+    -- Migrate legacy folders to have ownership fields
+    self:MigrateFolderOwnership()
+
+    -- Reclaim orphaned groups/folders from realm renames
     self:MigrateOrphanedGroups()
 
     -- Migrate old hide-when fields to alpha system
@@ -1744,6 +1747,7 @@ function CooldownCompanion:CreateFolder(name, section)
         name = name,
         order = folderId,
         section = section or "char",
+        createdBy = self.db.keys.char,
     }
     return folderId
 end
@@ -1779,6 +1783,9 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     if not folder then return end
     local newSection = (folder.section == "global") and "char" or "global"
     folder.section = newSection
+    if newSection == "char" then
+        folder.createdBy = self.db.keys.char
+    end
     -- Move all child groups to the new section
     for groupId, group in pairs(db.groups) do
         if group.folderId == folderId then
@@ -2013,6 +2020,24 @@ function CooldownCompanion:MigrateGroupOwnership()
     end
 end
 
+function CooldownCompanion:MigrateFolderOwnership()
+    local db = self.db.profile
+    if not db.folders then return end
+    for folderId, folder in pairs(db.folders) do
+        if folder.section == "char" and not folder.createdBy then
+            -- Infer owner from child groups
+            local owner
+            for _, group in pairs(db.groups) do
+                if group.folderId == folderId and group.createdBy then
+                    owner = group.createdBy
+                    break
+                end
+            end
+            folder.createdBy = owner or self.db.keys.char
+        end
+    end
+end
+
 function CooldownCompanion:MigrateOrphanedGroups()
     local currentChar = self.db.keys.char
     local currentName = currentChar:match("^(.+) %- ")
@@ -2024,6 +2049,18 @@ function CooldownCompanion:MigrateOrphanedGroups()
             local ownerName = group.createdBy:match("^(.+) %- ")
             if ownerName == currentName then
                 group.createdBy = currentChar
+            end
+        end
+    end
+    -- Reclaim orphaned folders from realm renames
+    if self.db.profile.folders then
+        for _, folder in pairs(self.db.profile.folders) do
+            if folder.section == "char" and folder.createdBy
+               and folder.createdBy ~= currentChar then
+                local ownerName = folder.createdBy:match("^(.+) %- ")
+                if ownerName == currentName then
+                    folder.createdBy = currentChar
+                end
             end
         end
     end
