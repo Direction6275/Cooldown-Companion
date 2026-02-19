@@ -1291,7 +1291,7 @@ function CooldownCompanion:ApplyResourceBars()
     containerFrame:Show()
 
     -- Create or recycle bar frames
-    local barHeight = settings.barHeight or 12
+    local globalBarHeight = settings.barHeight or 12
     local barSpacing = settings.barSpacing or 3.6
     local segmentGap = settings.segmentGap or 4
     local totalWidth = groupFrame:GetWidth()
@@ -1310,6 +1310,19 @@ function CooldownCompanion:ApplyResourceBars()
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
 
+        -- Resolve per-bar height override
+        local effectiveHeight = globalBarHeight
+        if settings.customBarHeights then
+            if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
+                local cabIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
+                local cab = customBars[cabIdx]
+                effectiveHeight = cab and cab.barHeight or globalBarHeight
+            else
+                local res = settings.resources[powerType]
+                effectiveHeight = res and res.barHeight or globalBarHeight
+            end
+        end
+
         if powerType == RESOURCE_MAELSTROM_WEAPON then
             -- Maelstrom Weapon: overlay bar with dedicated update
             local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
@@ -1324,8 +1337,8 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.powerType = powerType
             end
 
-            barInfo.frame:SetSize(totalWidth, barHeight)
-            LayoutOverlaySegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings, halfSegments)
+            barInfo.frame:SetSize(totalWidth, effectiveHeight)
+            LayoutOverlaySegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings, halfSegments)
 
             -- Apply initial colors
             local baseColor, overlayColor = GetMWColors(settings)
@@ -1375,11 +1388,11 @@ function CooldownCompanion:ApplyResourceBars()
             end
 
             barInfo.cabConfig = cabConfig
-            barInfo.frame:SetSize(totalWidth, barHeight)
+            barInfo.frame:SetSize(totalWidth, effectiveHeight)
             if mode == "segmented" then
-                LayoutSegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings)
+                LayoutSegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings)
             elseif mode == "overlay" then
-                LayoutOverlaySegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings, barInfo.halfSegments)
+                LayoutOverlaySegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings, barInfo.halfSegments)
             end
             -- Continuous bar styling (text font, background, borders)
             if mode == "continuous" then
@@ -1423,8 +1436,8 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.powerType = powerType
             end
 
-            barInfo.frame:SetSize(totalWidth, barHeight)
-            LayoutSegments(barInfo.frame, totalWidth, barHeight, segmentGap, settings)
+            barInfo.frame:SetSize(totalWidth, effectiveHeight)
+            LayoutSegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings)
             StyleSegmentedBar(barInfo.frame, powerType, settings)
         else
             -- Continuous bar
@@ -1439,10 +1452,11 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.powerType = powerType
             end
 
-            barInfo.frame:SetSize(totalWidth, barHeight)
+            barInfo.frame:SetSize(totalWidth, effectiveHeight)
             StyleContinuousBar(barInfo.frame, powerType, settings)
         end
 
+        barInfo._effectiveHeight = effectiveHeight
         barInfo.frame:Show()
     end
 
@@ -1477,8 +1491,9 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.frame:SetPoint("TOPLEFT", containerFrame, "TOPLEFT", 0, -currentY)
                 barInfo.frame:SetPoint("TOPRIGHT", containerFrame, "TOPRIGHT", 0, -currentY)
             end
-            barInfo.frame:SetHeight(barHeight)
-            currentY = currentY + barHeight + barSpacing
+            local h = barInfo._effectiveHeight or globalBarHeight
+            barInfo.frame:SetHeight(h)
+            currentY = currentY + h + barSpacing
         end
     end
 
@@ -1613,17 +1628,19 @@ function CooldownCompanion:GetResourceBarsTotalHeight()
     local settings = GetResourceBarSettings()
     if not settings then return 0 end
 
+    local globalHeight = settings.barHeight or 12
+    local barSpacing = settings.barSpacing or 3.6
+    local totalBarHeight = 0
     local count = 0
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame and barInfo.frame:IsShown() then
+            totalBarHeight = totalBarHeight + (barInfo._effectiveHeight or globalHeight)
             count = count + 1
         end
     end
     if count == 0 then return 0 end
 
-    local barHeight = settings.barHeight or 12
-    local barSpacing = settings.barSpacing or 3.6
-    return count * barHeight + (count - 1) * barSpacing + math_abs(settings.yOffset or -3)
+    return totalBarHeight + (count - 1) * barSpacing + math_abs(settings.yOffset or -3)
 end
 
 ------------------------------------------------------------------------
