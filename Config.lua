@@ -178,6 +178,53 @@ local function SyncConfigState()
     CS.col3Container = col3Container
 end
 
+local function UpdateConfigPreview()
+    local groups = {}
+    local hasGroup = false
+
+    -- Collect selected groups (single or multi)
+    if selectedGroup then
+        groups[selectedGroup] = true
+        hasGroup = true
+    end
+    for gid in pairs(selectedGroups) do
+        groups[gid] = true
+        hasGroup = true
+    end
+
+    if not hasGroup then
+        -- No selection → clear preview, restore normal
+        if CooldownCompanion._configPreview then
+            CooldownCompanion._configPreview = nil
+            CooldownCompanion:RestoreAllGroupVisibility()
+        end
+        return
+    end
+
+    -- Build entry filter (only when single group selected)
+    local entries = {}
+    local hasEntryFilter = false
+    if selectedGroup then
+        if selectedButton then
+            entries[selectedButton] = true
+            hasEntryFilter = true
+        end
+        for idx in pairs(selectedButtons) do
+            entries[idx] = true
+            hasEntryFilter = true
+        end
+    end
+
+    CooldownCompanion._configPreview = {
+        active = true,
+        groups = groups,
+        entries = entries,
+        hasEntryFilter = hasEntryFilter,
+    }
+
+    CooldownCompanion:ApplyConfigPreview()
+end
+
 -- Expose functions that ConfigSettings.lua needs to call back
 CS.IsStrataOrderComplete = nil   -- set after definition below
 CS.InitPendingStrataOrder = nil  -- set after definition below
@@ -3958,6 +4005,7 @@ function RefreshColumn1(preserveDrag)
                     selectedGroup = nil
                     selectedButton = nil
                     wipe(selectedButtons)
+                    UpdateConfigPreview()
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
@@ -3973,6 +4021,7 @@ function RefreshColumn1(preserveDrag)
                 CS.castBarPanelActive = false
                 CS.frameAnchoringPanelActive = false
                 CooldownCompanion:StopCastBarPreview()
+                UpdateConfigPreview()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 if not groupContextMenu then
@@ -5271,6 +5320,7 @@ function RefreshColumn2()
                         selectedButton = i
                     end
                 end
+                UpdateConfigPreview()
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 if not buttonContextMenu then
@@ -5770,6 +5820,10 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
         CooldownCompanion:StopCastBarPreview()
+        if CooldownCompanion._configPreview then
+            CooldownCompanion._configPreview = nil
+            CooldownCompanion:RestoreAllGroupVisibility()
+        end
         CloseDropDownMenus()
         HideAutocomplete()
     end)
