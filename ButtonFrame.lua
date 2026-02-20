@@ -1458,6 +1458,20 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         else
             wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
         end
+        if not wantDesat and not button._auraActive
+            and style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
+            if buttonData.hasCharges then
+                if buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
+            elseif button._durationObj then
+                wantDesat = true
+            elseif buttonData.type == "item" then
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+            end
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
@@ -2599,6 +2613,20 @@ UpdateBarDisplay = function(button, fetchOk)
             wantDesat = not button._auraActive
         else
             wantDesat = button.buttonData.desaturateWhileAuraNotActive and not button._auraActive
+        end
+        if not wantDesat and not button._auraActive
+            and style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
+            if button.buttonData.hasCharges then
+                if button.buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
+            elseif button._durationObj then
+                wantDesat = true
+            elseif button.buttonData.type == "item" then
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+            end
         end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
