@@ -442,7 +442,7 @@ local function IsResourceEnabled(powerType, settings)
     end
     -- Hide mana for non-healer toggle
     if powerType == 0 and settings and settings.hideManaForNonHealer then
-        if not IsHealerSpec() then
+        if not IsHealerSpec() and GetCurrentSpecID() ~= 62 then
             return false
         end
     end

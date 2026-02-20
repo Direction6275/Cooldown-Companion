@@ -664,6 +664,11 @@ local COOLDOWN_VIEWER_NAMES = {
     "EssentialCooldownViewer",
     "UtilityCooldownViewer",
 }
+-- Subset: buff-only viewers, used to scope multi-CDM-child duplicate detection.
+local BUFF_VIEWER_SET = {
+    ["BuffIconCooldownViewer"] = true,
+    ["BuffBarCooldownViewer"] = true,
+}
 
 local cdmAlphaGuard = {}
 
@@ -1143,11 +1148,16 @@ function CooldownCompanion:BuildViewerAuraMap()
                     local spellID = child.cooldownInfo.spellID
                     if spellID then
                         self.viewerAuraFrames[spellID] = child
-                        -- Track all children per base spellID for multi-entry spells
-                        if not self.viewerAuraAllChildren[spellID] then
-                            self.viewerAuraAllChildren[spellID] = {}
+                        -- Track all children per base spellID for buff viewers only.
+                        -- Duplicate detection is for same-section duplicates (e.g.
+                        -- Diabolic Ritual twice in Tracked Buffs), not cross-section
+                        -- matches (e.g. Agony in Essential + Buffs).
+                        if BUFF_VIEWER_SET[name] then
+                            if not self.viewerAuraAllChildren[spellID] then
+                                self.viewerAuraAllChildren[spellID] = {}
+                            end
+                            table.insert(self.viewerAuraAllChildren[spellID], child)
                         end
-                        table.insert(self.viewerAuraAllChildren[spellID], child)
                     end
                     local override = child.cooldownInfo.overrideSpellID
                     if override then
@@ -1921,6 +1931,11 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- forceAura == false: skip all aura auto-detection (track as cooldown)
     if forceAura == false then
         group.buttons[buttonIndex].auraTracking = false
+    end
+
+    -- Record original classification (immutable label for config display)
+    if buttonType == "spell" then
+        group.buttons[buttonIndex].addedAs = group.buttons[buttonIndex].auraTracking and "aura" or "spell"
     end
 
     self:RefreshGroupFrame(groupId)

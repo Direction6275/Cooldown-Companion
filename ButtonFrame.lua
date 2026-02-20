@@ -1771,11 +1771,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local totemSlot = viewerFrame.preferredTotemUpdateSlot
                     if totemSlot and viewerFrame:IsVisible() then
                         local _, _, startTime, duration = GetTotemInfo(totemSlot)
-                        button.cooldown:SetCooldown(startTime, duration)
-                        auraOverrideActive = true
-                        fetchOk = true
-                        if button._auraInstanceID then
-                            button._auraInstanceID = nil
+                        -- All GetTotemInfo returns are secret. Probe
+                        -- scratchCooldown to detect if the totem/guardian
+                        -- is still alive (same pattern as spell CD probes).
+                        scratchCooldown:Hide()
+                        scratchCooldown:SetCooldown(startTime, duration)
+                        local totemActive = scratchCooldown:IsShown()
+                        scratchCooldown:Hide()
+                        if totemActive then
+                            button.cooldown:SetCooldown(startTime, duration)
+                            auraOverrideActive = true
+                            fetchOk = true
+                            if button._auraInstanceID then
+                                button._auraInstanceID = nil
+                            end
                         end
                     end
                 end
@@ -2025,7 +2034,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- set _durationObj from the recharge, then restore the main CD for GCD
         -- display only when showGCDSwipe is on and no recharge is active.
         local mainDurationObj
-        if button._isBar and not auraOverrideActive then
+        if button._isBar and not auraOverrideActive and button._chargeDurationObj then
             mainDurationObj = button._durationObj
             button._durationObj = nil
         end

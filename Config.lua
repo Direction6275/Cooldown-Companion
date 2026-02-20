@@ -5204,6 +5204,25 @@ function RefreshColumn2()
             if buttonData.cdmChildSlot then
                 entryName = entryName .. " #" .. buttonData.cdmChildSlot
             end
+            -- Append tracking type label (based on how entry was originally added)
+            if not buttonData.addedAs then
+                -- Backfill for entries created before addedAs was introduced
+                buttonData.addedAs = buttonData.auraTracking and "aura" or "spell"
+            end
+            local addedAs = buttonData.addedAs
+            if addedAs == "aura" then
+                entryName = entryName .. " (Aura)"
+            else
+                entryName = entryName .. " (Spell)"
+            end
+        elseif buttonData.type == "item" then
+            if C_Item.IsEquippableItem(buttonData.id) then
+                entryName = entryName .. " (Equipment)"
+            elseif C_Item.IsConsumableItem(buttonData.id) then
+                entryName = entryName .. " (Consumable)"
+            else
+                entryName = entryName .. " (Item)"
+            end
         end
         entry:SetText(entryName or ("Unknown " .. buttonData.type))
         entry:SetImage(GetButtonIcon(buttonData))
