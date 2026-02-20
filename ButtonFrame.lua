@@ -2025,7 +2025,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- set _durationObj from the recharge, then restore the main CD for GCD
         -- display only when showGCDSwipe is on and no recharge is active.
         local mainDurationObj
-        if button._isBar and not auraOverrideActive then
+        if button._isBar and not auraOverrideActive and button._chargeDurationObj then
             mainDurationObj = button._durationObj
             button._durationObj = nil
         end
