@@ -32,6 +32,8 @@ CooldownCompanion._rangeCheckSpells = {}
 
 -- Viewer-based aura tracking: spellID → cooldown viewer child frame
 CooldownCompanion.viewerAuraFrames = {}
+-- Multi-child tracking: spellID → {child1, child2, ...} for duplicate CDM entries
+CooldownCompanion.viewerAuraAllChildren = {}
 
 -- Event-driven proc glow tracking: spellID → true when overlay active
 -- Replaces per-tick C_SpellActivationOverlay.IsSpellOverlayed polling
@@ -675,7 +677,7 @@ function CooldownCompanion:OnEnable()
     for _, evt in ipairs({
         "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_COOLDOWN",
         "UNIT_POWER_FREQUENT", "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE",
-        "ITEM_COUNT_CHANGED",
+        "ITEM_COUNT_CHANGED", "PLAYER_EQUIPMENT_CHANGED",
     }) do
         self:RegisterEvent(evt, "MarkCooldownsDirty")
     end
@@ -786,7 +788,10 @@ function CooldownCompanion:OnEnable()
     -- Migrate legacy groups to have ownership fields
     self:MigrateGroupOwnership()
 
-    -- Reclaim orphaned groups from realm renames
+    -- Migrate legacy folders to have ownership fields
+    self:MigrateFolderOwnership()
+
+    -- Reclaim orphaned groups/folders from realm renames
     self:MigrateOrphanedGroups()
 
     -- Migrate old hide-when fields to alpha system
@@ -1129,6 +1134,7 @@ end
 -- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
 function CooldownCompanion:BuildViewerAuraMap()
     wipe(self.viewerAuraFrames)
+    wipe(self.viewerAuraAllChildren)
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
@@ -1137,6 +1143,11 @@ function CooldownCompanion:BuildViewerAuraMap()
                     local spellID = child.cooldownInfo.spellID
                     if spellID then
                         self.viewerAuraFrames[spellID] = child
+                        -- Track all children per base spellID for multi-entry spells
+                        if not self.viewerAuraAllChildren[spellID] then
+                            self.viewerAuraAllChildren[spellID] = {}
+                        end
+                        table.insert(self.viewerAuraAllChildren[spellID], child)
                     end
                     local override = child.cooldownInfo.overrideSpellID
                     if override then
@@ -1294,9 +1305,21 @@ end
 -- override spell ID to the same viewer child frame so lookups work for both forms.
 function CooldownCompanion:OnViewerSpellOverrideUpdated(event, baseSpellID, overrideSpellID)
     if not baseSpellID then return end
-    local child = self.viewerAuraFrames[baseSpellID]
-    if child and overrideSpellID then
-        self.viewerAuraFrames[overrideSpellID] = child
+    -- Multi-child: find the specific child whose overrideSpellID matches
+    local allChildren = self.viewerAuraAllChildren[baseSpellID]
+    if allChildren and overrideSpellID then
+        for _, c in ipairs(allChildren) do
+            if c.cooldownInfo and c.cooldownInfo.overrideSpellID == overrideSpellID then
+                self.viewerAuraFrames[overrideSpellID] = c
+                break
+            end
+        end
+    elseif overrideSpellID then
+        -- Single-child fallback (original behavior)
+        local child = self.viewerAuraFrames[baseSpellID]
+        if child then
+            self.viewerAuraFrames[overrideSpellID] = child
+        end
     end
     -- Refresh icons/names now that the viewer child's overrideSpellID is current
     self:OnSpellUpdateIcon()
@@ -1744,6 +1767,7 @@ function CooldownCompanion:CreateFolder(name, section)
         name = name,
         order = folderId,
         section = section or "char",
+        createdBy = self.db.keys.char,
     }
     return folderId
 end
@@ -1779,6 +1803,9 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     if not folder then return end
     local newSection = (folder.section == "global") and "char" or "global"
     folder.section = newSection
+    if newSection == "char" then
+        folder.createdBy = self.db.keys.char
+    end
     -- Move all child groups to the new section
     for groupId, group in pairs(db.groups) do
         if group.folderId == folderId then
@@ -1793,7 +1820,7 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1804,6 +1831,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         name = name,
         isPetSpell = isPetSpell or nil,
         isPassive = isPassive or nil,
+        cdmChildSlot = cdmChildSlot or nil,
     }
 
     -- Auto-detect charges for spells (skip for passives — no cooldown)
@@ -2013,6 +2041,24 @@ function CooldownCompanion:MigrateGroupOwnership()
     end
 end
 
+function CooldownCompanion:MigrateFolderOwnership()
+    local db = self.db.profile
+    if not db.folders then return end
+    for folderId, folder in pairs(db.folders) do
+        if folder.section == "char" and not folder.createdBy then
+            -- Infer owner from child groups
+            local owner
+            for _, group in pairs(db.groups) do
+                if group.folderId == folderId and group.createdBy then
+                    owner = group.createdBy
+                    break
+                end
+            end
+            folder.createdBy = owner or self.db.keys.char
+        end
+    end
+end
+
 function CooldownCompanion:MigrateOrphanedGroups()
     local currentChar = self.db.keys.char
     local currentName = currentChar:match("^(.+) %- ")
@@ -2024,6 +2070,18 @@ function CooldownCompanion:MigrateOrphanedGroups()
             local ownerName = group.createdBy:match("^(.+) %- ")
             if ownerName == currentName then
                 group.createdBy = currentChar
+            end
+        end
+    end
+    -- Reclaim orphaned folders from realm renames
+    if self.db.profile.folders then
+        for _, folder in pairs(self.db.profile.folders) do
+            if folder.section == "char" and folder.createdBy
+               and folder.createdBy ~= currentChar then
+                local ownerName = folder.createdBy:match("^(.+) %- ")
+                if ownerName == currentName then
+                    folder.createdBy = currentChar
+                end
             end
         end
     end
@@ -3046,8 +3104,18 @@ function CooldownCompanion:GroupHasPetSpells(groupId)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
-    -- Passive/proc spells are tracked via aura, not spellbook presence
-    if buttonData.isPassive then return true end
+    -- Passive/proc spells are tracked via aura, not spellbook presence.
+    -- Multi-CDM-child buttons: verify their specific slot still exists in the CDM
+    -- (spell may not be available on the current spec/talent loadout).
+    if buttonData.isPassive then
+        if buttonData.cdmChildSlot then
+            local allChildren = self.viewerAuraAllChildren[buttonData.id]
+            if not allChildren or not allChildren[buttonData.cdmChildSlot] then
+                return false
+            end
+        end
+        return true
+    end
 
     if buttonData.type == "spell" then
         local bank = buttonData.isPetSpell

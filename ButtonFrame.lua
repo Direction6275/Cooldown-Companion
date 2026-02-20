@@ -591,7 +591,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
        and not buttonData.hideWhileAuraNotActive
        and not buttonData.hideWhileAuraActive
        and not buttonData.hideWhileZeroCharges
-       and not buttonData.hideWhileZeroStacks then
+       and not buttonData.hideWhileZeroStacks
+       and not buttonData.hideWhileNotEquipped then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
         return
@@ -674,6 +675,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
     end
 
+    -- Check hideWhileNotEquipped (equippable items)
+    local hidReasonNotEquipped = false
+    if buttonData.hideWhileNotEquipped then
+        if button._isEquippableNotEquipped then
+            shouldHide = true
+            hidReasonNotEquipped = true
+        end
+    end
+
     -- Baseline alpha fallback: if the ONLY reason we're hiding is aura-not-active
     -- and useBaselineAlphaFallback is enabled, dim instead of hiding
     if shouldHide and hidReasonAuraNotActive and buttonData.useBaselineAlphaFallback then
@@ -704,6 +714,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -742,6 +753,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -772,6 +784,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -802,6 +815,34 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is not-equipped
+    -- and useBaselineAlphaFallbackNotEquipped is enabled, dim instead of hiding
+    if shouldHide and hidReasonNotEquipped and buttonData.useBaselineAlphaFallbackNotEquipped then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown then
+            if buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -1233,24 +1274,58 @@ function CooldownCompanion:UpdateButtonIcon(button)
         -- For override spells (ability→buff mapping), viewerAuraFrames may point
         -- to a BuffIcon/BuffBar child whose spellID is the buff, not the ability.
         -- Scan for an Essential/Utility child that tracks the transforming spell.
-        local child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        local child
+        if buttonData.cdmChildSlot then
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+            child = allChildren and allChildren[buttonData.cdmChildSlot]
+        else
+            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        end
         if child and child.cooldownInfo then
-            local parentName = child:GetParent() and child:GetParent():GetName()
-            if parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer" then
-                -- This is a buff viewer — look for a cooldown viewer instead for icon/name
-                local cdChild = CooldownCompanion:FindCooldownViewerChild(buttonData.id)
-                if cdChild then child = cdChild end
+            -- For multi-slot buttons, keep the slot-specific buff viewer child —
+            -- FindCooldownViewerChild is not slot-aware and would lose differentiation.
+            if not buttonData.cdmChildSlot then
+                local parentName = child:GetParent() and child:GetParent():GetName()
+                if parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer" then
+                    -- This is a buff viewer — look for a cooldown viewer instead for icon/name
+                    local cdChild = CooldownCompanion:FindCooldownViewerChild(buttonData.id)
+                    if cdChild then child = cdChild end
+                end
             end
             -- Track the current override for display name and aura lookups
             if child.cooldownInfo.overrideSpellID then
                 displayId = child.cooldownInfo.overrideSpellID
             end
-            -- Use the base spellID for texture — GetSpellTexture on a base spell
-            -- dynamically returns the current override's icon, unlike override IDs
-            -- which always return their own static icon.
-            local baseSpellId = child.cooldownInfo.spellID
-            if baseSpellId then
-                icon = C_Spell.GetSpellTexture(baseSpellId)
+            -- For multi-slot buttons, read the CDM's already-rendered icon texture
+            -- directly from the viewer child's Icon widget. This avoids secret
+            -- values (child.auraSpellID is secret in combat) and guarantees the
+            -- icon matches what the CDM viewer displays.
+            -- BuffIcon children: child.Icon is a Texture.
+            -- BuffBar children: child.Icon is a Frame containing child.Icon.Icon.
+            -- For single-child buttons, use the base spellID — GetSpellTexture on
+            -- a base spell dynamically returns the current override's icon.
+            if buttonData.cdmChildSlot then
+                local iconTexture = child.Icon
+                if iconTexture and not iconTexture.GetTextureFileID then
+                    iconTexture = iconTexture.Icon
+                end
+                if iconTexture and iconTexture.GetTextureFileID then
+                    -- GetTextureFileID may return a secret value in combat;
+                    -- pass it straight through — do not test or branch on it.
+                    icon = iconTexture:GetTextureFileID()
+                else
+                    -- No icon widget found — use spell API fallback
+                    local fallbackId = child.cooldownInfo.overrideSpellID
+                        or child.cooldownInfo.spellID
+                    if fallbackId then
+                        icon = C_Spell.GetSpellTexture(fallbackId)
+                    end
+                end
+            else
+                local baseSpellId = child.cooldownInfo.spellID
+                if baseSpellId then
+                    icon = C_Spell.GetSpellTexture(baseSpellId)
+                end
             end
         end
         -- Fallback: if no viewer child provided an override, ask the Spell API directly
@@ -1447,6 +1522,13 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         else
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         end
+        -- Properly hide/show countdown numbers via API (alpha=0 alone is unreliable
+        -- because WoW's CooldownFrame animation resets text color each tick)
+        local wantHide = not showText
+        if button._cdTextHidden ~= wantHide then
+            button._cdTextHidden = wantHide
+            button.cooldown:SetHideCountdownNumbers(wantHide)
+        end
     end
 
     -- Desaturation: aura-tracked buttons desaturate when aura absent;
@@ -1458,11 +1540,29 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         else
             wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
         end
+        if not wantDesat and not button._auraActive
+            and style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
+            if buttonData.hasCharges then
+                if buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
+            elseif button._durationObj then
+                wantDesat = true
+            elseif buttonData.type == "item" then
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+            end
+        end
+        if not wantDesat and button._isEquippableNotEquipped then
+            wantDesat = true
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
+    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
+        or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         local wantDesat = false
         if style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
@@ -1481,6 +1581,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
+        end
+        if not wantDesat and button._isEquippableNotEquipped then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
@@ -1581,9 +1684,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- stores auraInstanceID + auraDataUnit as plain readable properties.
         -- Requires the Blizzard Cooldown Manager to be visible with this spell.
         local viewerFrame
+        -- CDM child slot: use specific child for multi-entry spells (e.g., Diabolic Ritual)
+        if buttonData.cdmChildSlot then
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+            if allChildren then
+                viewerFrame = allChildren[buttonData.cdmChildSlot]
+            end
+        end
         -- Try each override ID (comma-separated), prefer one with active aura.
         -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
-        if buttonData.auraSpellID then
+        if not viewerFrame and buttonData.auraSpellID then
             local ids = button._parsedAuraIDs
             if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
                 ids = {}
@@ -1649,6 +1759,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         button._auraInstanceID = nil
                     end
                 end
+                -- Fallback 2: GetTotemInfo pass-through for totem/summoning
+                -- spells (TrackedBar category). These appear in BuffBar
+                -- viewer but have no auraInstanceID, auraDataUnit, or
+                -- Cooldown widget. GetTotemInfo returns secret start/duration
+                -- values that SetCooldown accepts directly — no arithmetic.
+                -- Read preferredTotemUpdateSlot directly from the viewer
+                -- frame (plain number set by CDM) rather than caching it,
+                -- since the slot may not be populated at BuildViewerAuraMap time.
+                if not auraOverrideActive then
+                    local totemSlot = viewerFrame.preferredTotemUpdateSlot
+                    if totemSlot and viewerFrame:IsVisible() then
+                        local _, _, startTime, duration = GetTotemInfo(totemSlot)
+                        button.cooldown:SetCooldown(startTime, duration)
+                        auraOverrideActive = true
+                        fetchOk = true
+                        if button._auraInstanceID then
+                            button._auraInstanceID = nil
+                        end
+                    end
+                end
             end
         end
         -- Grace period: if aura data is momentarily unavailable (target switch,
@@ -1705,6 +1835,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
         button._inPandemic = inPandemic
+
+        -- Dynamic icon for multi-CDM-child buttons: pass through the viewer
+        -- child's rendered icon texture each tick. SetTexture accepts secret
+        -- values (GetTextureFileID returns secret in combat). Only needed for
+        -- cdmChildSlot buttons where multiple children share the same base
+        -- spellID — single-child buttons get correct icons from UpdateButtonIcon.
+        if buttonData.cdmChildSlot then
+            if auraOverrideActive and viewerFrame then
+                local iconTexture = viewerFrame.Icon
+                -- BuffBar: viewerFrame.Icon is a Frame; the Texture is .Icon.Icon
+                if iconTexture and not iconTexture.GetTextureFileID then
+                    iconTexture = iconTexture.Icon
+                end
+                if iconTexture then
+                    button.icon:SetTexture(iconTexture:GetTextureFileID())
+                end
+                button._hadViewerIcon = true
+            elseif not auraOverrideActive and button._hadViewerIcon then
+                button._hadViewerIcon = nil
+                local baseIcon = C_Spell.GetSpellTexture(buttonData.id)
+                if baseIcon then
+                    button.icon:SetTexture(baseIcon)
+                    button._displaySpellId = buttonData.id
+                    if button.nameText then
+                        local baseName = C_Spell.GetSpellName(buttonData.id)
+                        if baseName then button.nameText:SetText(baseName) end
+                    end
+                end
+            end
+        end
     end
 
     if buttonData.isPassive and not auraOverrideActive then
@@ -1771,10 +1931,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         elseif buttonData.type == "item" then
-            local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-            button.cooldown:SetCooldown(cdStart, cdDuration)
-            button._itemCdStart = cdStart
-            button._itemCdDuration = cdDuration
+            button._isEquippableNotEquipped = false
+            local isEquippable = IsItemEquippable(buttonData)
+            if isEquippable and not C_Item.IsEquippedItem(buttonData.id) then
+                button._isEquippableNotEquipped = true
+                -- Suppress cooldown display: static desaturated icon
+                button.cooldown:SetCooldown(0, 0)
+                button._itemCdStart = 0
+                button._itemCdDuration = 0
+            else
+                button._isEquippableNotEquipped = false
+                local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+                button.cooldown:SetCooldown(cdStart, cdDuration)
+                button._itemCdStart = cdStart
+                button._itemCdDuration = cdDuration
+            end
             fetchOk = true
         end
     end
@@ -2078,7 +2249,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
 
-    -- Always allow countdown numbers; visibility controlled via text alpha per-tick
+    -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
     local swipeEnabled = style.showCooldownSwipe ~= false
     button.cooldown:SetDrawSwipe(swipeEnabled)
@@ -2102,6 +2273,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._cdTextMode = nil
+    button._cdTextHidden = nil
 
     -- Update count text font/anchor settings from effective style
     button.count:ClearAllPoints()
@@ -2600,11 +2772,29 @@ UpdateBarDisplay = function(button, fetchOk)
         else
             wantDesat = button.buttonData.desaturateWhileAuraNotActive and not button._auraActive
         end
+        if not wantDesat and not button._auraActive
+            and style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
+            if button.buttonData.hasCharges then
+                if button.buttonData.type == "item" then
+                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+                else
+                    wantDesat = button._mainCDShown
+                end
+            elseif button._durationObj then
+                wantDesat = true
+            elseif button.buttonData.type == "item" then
+                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
+            end
+        end
+        if not wantDesat and button._isEquippableNotEquipped then
+            wantDesat = true
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
+    elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges
+        or button.buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         local wantDesat = false
         if style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then
@@ -2623,6 +2813,9 @@ UpdateBarDisplay = function(button, fetchOk)
             wantDesat = true
         end
         if not wantDesat and button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
+        end
+        if not wantDesat and button._isEquippableNotEquipped then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
