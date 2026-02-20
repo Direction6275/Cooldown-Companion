@@ -1447,6 +1447,13 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         else
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         end
+        -- Properly hide/show countdown numbers via API (alpha=0 alone is unreliable
+        -- because WoW's CooldownFrame animation resets text color each tick)
+        local wantHide = not showText
+        if button._cdTextHidden ~= wantHide then
+            button._cdTextHidden = wantHide
+            button.cooldown:SetHideCountdownNumbers(wantHide)
+        end
     end
 
     -- Desaturation: aura-tracked buttons desaturate when aura absent;
@@ -2092,7 +2099,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
     button.bg:SetColorTexture(unpack(bgColor))
 
-    -- Always allow countdown numbers; visibility controlled via text alpha per-tick
+    -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
     local swipeEnabled = style.showCooldownSwipe ~= false
     button.cooldown:SetDrawSwipe(swipeEnabled)
@@ -2116,6 +2123,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._cdTextMode = nil
+    button._cdTextHidden = nil
 
     -- Update count text font/anchor settings from effective style
     button.count:ClearAllPoints()
