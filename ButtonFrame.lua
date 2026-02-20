@@ -1718,6 +1718,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         button._auraInstanceID = nil
                     end
                 end
+                -- Fallback 2: GetTotemInfo pass-through for totem/summoning
+                -- spells (TrackedBar category). These appear in BuffBar
+                -- viewer but have no auraInstanceID, auraDataUnit, or
+                -- Cooldown widget. GetTotemInfo returns secret start/duration
+                -- values that SetCooldown accepts directly — no arithmetic.
+                -- Read preferredTotemUpdateSlot directly from the viewer
+                -- frame (plain number set by CDM) rather than caching it,
+                -- since the slot may not be populated at BuildViewerAuraMap time.
+                if not auraOverrideActive then
+                    local totemSlot = viewerFrame.preferredTotemUpdateSlot
+                    if totemSlot and viewerFrame:IsVisible() then
+                        local _, _, startTime, duration = GetTotemInfo(totemSlot)
+                        button.cooldown:SetCooldown(startTime, duration)
+                        auraOverrideActive = true
+                        fetchOk = true
+                        if button._auraInstanceID then
+                            button._auraInstanceID = nil
+                        end
+                    end
+                end
             end
         end
         -- Grace period: if aura data is momentarily unavailable (target switch,
