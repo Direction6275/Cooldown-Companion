@@ -1310,9 +1310,11 @@ function CooldownCompanion:UpdateButtonIcon(button)
                     iconTexture = iconTexture.Icon
                 end
                 if iconTexture and iconTexture.GetTextureFileID then
+                    -- GetTextureFileID may return a secret value in combat;
+                    -- pass it straight through — do not test or branch on it.
                     icon = iconTexture:GetTextureFileID()
-                end
-                if not icon then
+                else
+                    -- No icon widget found — use spell API fallback
                     local fallbackId = child.cooldownInfo.overrideSpellID
                         or child.cooldownInfo.spellID
                     if fallbackId then
@@ -1929,6 +1931,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         elseif buttonData.type == "item" then
+            button._isEquippableNotEquipped = false
             local isEquippable = IsItemEquippable(buttonData)
             if isEquippable and not C_Item.IsEquippedItem(buttonData.id) then
                 button._isEquippableNotEquipped = true
