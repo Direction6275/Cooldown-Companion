@@ -675,7 +675,7 @@ function CooldownCompanion:OnEnable()
     for _, evt in ipairs({
         "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_COOLDOWN",
         "UNIT_POWER_FREQUENT", "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE",
-        "ITEM_COUNT_CHANGED",
+        "ITEM_COUNT_CHANGED", "PLAYER_EQUIPMENT_CHANGED",
     }) do
         self:RegisterEvent(evt, "MarkCooldownsDirty")
     end

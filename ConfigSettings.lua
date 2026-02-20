@@ -5570,6 +5570,54 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         end
     end
 
+    -- Hide While Not Equipped (equippable items only)
+    if isItem and CooldownCompanion.IsItemEquippable(buttonData) then
+        local hideNotEquippedCb = AceGUI:Create("CheckBox")
+        hideNotEquippedCb:SetLabel("Hide While Not Equipped")
+        hideNotEquippedCb:SetValue(buttonData.hideWhileNotEquipped or false)
+        hideNotEquippedCb:SetFullWidth(true)
+        hideNotEquippedCb:SetCallback("OnValueChanged", function(widget, event, val)
+            ApplyToSelected("hideWhileNotEquipped", val or nil)
+            if not val then
+                ApplyToSelected("useBaselineAlphaFallbackNotEquipped", nil)
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(hideNotEquippedCb)
+
+        -- Baseline Alpha Fallback (nested under hideWhileNotEquipped)
+        if buttonData.hideWhileNotEquipped then
+            local fallbackNotEquippedCb = AceGUI:Create("CheckBox")
+            fallbackNotEquippedCb:SetLabel("Use Baseline Alpha Fallback")
+            fallbackNotEquippedCb:SetValue(buttonData.useBaselineAlphaFallbackNotEquipped or false)
+            fallbackNotEquippedCb:SetFullWidth(true)
+            fallbackNotEquippedCb:SetCallback("OnValueChanged", function(widget, event, val)
+                ApplyToSelected("useBaselineAlphaFallbackNotEquipped", val or nil)
+            end)
+            scroll:AddChild(fallbackNotEquippedCb)
+
+            -- (?) tooltip
+            local fallbackNEInfo = CreateFrame("Button", nil, fallbackNotEquippedCb.frame)
+            fallbackNEInfo:SetSize(16, 16)
+            fallbackNEInfo:SetPoint("LEFT", fallbackNotEquippedCb.checkbg, "RIGHT", fallbackNotEquippedCb.text:GetStringWidth() + 4, 0)
+            local fallbackNEInfoIcon = fallbackNEInfo:CreateTexture(nil, "OVERLAY")
+            fallbackNEInfoIcon:SetSize(12, 12)
+            fallbackNEInfoIcon:SetPoint("CENTER")
+            fallbackNEInfoIcon:SetAtlas("QuestRepeatableTurnin")
+            fallbackNEInfo:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Use Baseline Alpha Fallback")
+                GameTooltip:AddLine("Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            fallbackNEInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            table.insert(infoButtons, fallbackNEInfo)
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                fallbackNEInfo:Hide()
+            end
+        end
+    end
+
     -- Hide While Aura Active (not applicable for items)
     if not isItem then
     local auraDisabled = not buttonData.auraTracking

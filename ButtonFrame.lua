@@ -591,7 +591,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
        and not buttonData.hideWhileAuraNotActive
        and not buttonData.hideWhileAuraActive
        and not buttonData.hideWhileZeroCharges
-       and not buttonData.hideWhileZeroStacks then
+       and not buttonData.hideWhileZeroStacks
+       and not buttonData.hideWhileNotEquipped then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
         return
@@ -674,6 +675,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
     end
 
+    -- Check hideWhileNotEquipped (equippable items)
+    local hidReasonNotEquipped = false
+    if buttonData.hideWhileNotEquipped then
+        if button._isEquippableNotEquipped then
+            shouldHide = true
+            hidReasonNotEquipped = true
+        end
+    end
+
     -- Baseline alpha fallback: if the ONLY reason we're hiding is aura-not-active
     -- and useBaselineAlphaFallback is enabled, dim instead of hiding
     if shouldHide and hidReasonAuraNotActive and buttonData.useBaselineAlphaFallback then
@@ -704,6 +714,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -742,6 +753,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -772,6 +784,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -802,6 +815,34 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is not-equipped
+    -- and useBaselineAlphaFallbackNotEquipped is enabled, dim instead of hiding
+    if shouldHide and hidReasonNotEquipped and buttonData.useBaselineAlphaFallbackNotEquipped then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown then
+            if buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown then
+            if buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -1479,11 +1520,15 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
+        if not wantDesat and button._isEquippableNotEquipped then
+            wantDesat = true
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges or buttonData.desaturateWhileZeroStacks then
+    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
+        or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         local wantDesat = false
         if style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
             if buttonData.hasCharges then
@@ -1502,6 +1547,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
+        end
+        if not wantDesat and button._isEquippableNotEquipped then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
@@ -1792,10 +1840,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         elseif buttonData.type == "item" then
-            local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-            button.cooldown:SetCooldown(cdStart, cdDuration)
-            button._itemCdStart = cdStart
-            button._itemCdDuration = cdDuration
+            local isEquippable = IsItemEquippable(buttonData)
+            if isEquippable and not C_Item.IsEquippedItem(buttonData.id) then
+                button._isEquippableNotEquipped = true
+                -- Suppress cooldown display: static desaturated icon
+                button.cooldown:SetCooldown(0, 0)
+                button._itemCdStart = 0
+                button._itemCdDuration = 0
+            else
+                button._isEquippableNotEquipped = false
+                local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+                button.cooldown:SetCooldown(cdStart, cdDuration)
+                button._itemCdStart = cdStart
+                button._itemCdDuration = cdDuration
+            end
             fetchOk = true
         end
     end
@@ -2636,11 +2694,15 @@ UpdateBarDisplay = function(button, fetchOk)
                 wantDesat = button._itemCdDuration and button._itemCdDuration > 0
             end
         end
+        if not wantDesat and button._isEquippableNotEquipped then
+            wantDesat = true
+        end
         if button._desaturated ~= wantDesat then
             button._desaturated = wantDesat
             button.icon:SetDesaturated(wantDesat)
         end
-    elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges or button.buttonData.desaturateWhileZeroStacks then
+    elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges
+        or button.buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         local wantDesat = false
         if style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
             if button.buttonData.hasCharges then
@@ -2659,6 +2721,9 @@ UpdateBarDisplay = function(button, fetchOk)
             wantDesat = true
         end
         if not wantDesat and button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
+        end
+        if not wantDesat and button._isEquippableNotEquipped then
             wantDesat = true
         end
         if button._desaturated ~= wantDesat then
