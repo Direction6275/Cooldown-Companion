@@ -195,9 +195,13 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if not group then return end
 
     local isHarmful = buttonData.type == "spell" and C_Spell.IsSpellHarmful(buttonData.id)
-    -- Look up viewer frame: try override IDs first, then resolved aura ID, then ability ID
+    -- Look up viewer frame: for multi-slot buttons, use the slot-specific CDM child
     local viewerFrame
-    if buttonData.auraSpellID then
+    if buttonData.cdmChildSlot then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        viewerFrame = allChildren and allChildren[buttonData.cdmChildSlot]
+    end
+    if not viewerFrame and buttonData.auraSpellID then
         for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
             viewerFrame = CooldownCompanion.viewerAuraFrames[tonumber(id)]
             if viewerFrame then break end
@@ -303,6 +307,24 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
 
     if not auraCollapsed then
+
+    -- CDM slot label for multi-entry spells (read-only info)
+    if buttonData.cdmChildSlot then
+        local slotLabel = AceGUI:Create("Label")
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
+        local oid = slotChild and slotChild.cooldownInfo and slotChild.cooldownInfo.overrideSpellID
+        local slotText = "|cff88bbddCDM Slot: " .. buttonData.cdmChildSlot .. "|r"
+        if oid and oid ~= buttonData.id then
+            local info = C_Spell.GetSpellInfo(oid)
+            if info and info.name then
+                slotText = slotText .. " (" .. info.name .. ")"
+            end
+        end
+        slotLabel:SetText(slotText)
+        slotLabel:SetFullWidth(true)
+        scroll:AddChild(slotLabel)
+    end
 
     -- Track buff/debuff duration toggle (hidden for passives — forced on)
     if not buttonData.isPassive then

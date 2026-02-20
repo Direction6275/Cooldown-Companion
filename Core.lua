@@ -32,6 +32,8 @@ CooldownCompanion._rangeCheckSpells = {}
 
 -- Viewer-based aura tracking: spellID → cooldown viewer child frame
 CooldownCompanion.viewerAuraFrames = {}
+-- Multi-child tracking: spellID → {child1, child2, ...} for duplicate CDM entries
+CooldownCompanion.viewerAuraAllChildren = {}
 
 -- Event-driven proc glow tracking: spellID → true when overlay active
 -- Replaces per-tick C_SpellActivationOverlay.IsSpellOverlayed polling
@@ -1132,6 +1134,7 @@ end
 -- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
 function CooldownCompanion:BuildViewerAuraMap()
     wipe(self.viewerAuraFrames)
+    wipe(self.viewerAuraAllChildren)
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
@@ -1140,6 +1143,11 @@ function CooldownCompanion:BuildViewerAuraMap()
                     local spellID = child.cooldownInfo.spellID
                     if spellID then
                         self.viewerAuraFrames[spellID] = child
+                        -- Track all children per base spellID for multi-entry spells
+                        if not self.viewerAuraAllChildren[spellID] then
+                            self.viewerAuraAllChildren[spellID] = {}
+                        end
+                        table.insert(self.viewerAuraAllChildren[spellID], child)
                     end
                     local override = child.cooldownInfo.overrideSpellID
                     if override then
@@ -1297,9 +1305,21 @@ end
 -- override spell ID to the same viewer child frame so lookups work for both forms.
 function CooldownCompanion:OnViewerSpellOverrideUpdated(event, baseSpellID, overrideSpellID)
     if not baseSpellID then return end
-    local child = self.viewerAuraFrames[baseSpellID]
-    if child and overrideSpellID then
-        self.viewerAuraFrames[overrideSpellID] = child
+    -- Multi-child: find the specific child whose overrideSpellID matches
+    local allChildren = self.viewerAuraAllChildren[baseSpellID]
+    if allChildren and overrideSpellID then
+        for _, c in ipairs(allChildren) do
+            if c.cooldownInfo and c.cooldownInfo.overrideSpellID == overrideSpellID then
+                self.viewerAuraFrames[overrideSpellID] = c
+                break
+            end
+        end
+    elseif overrideSpellID then
+        -- Single-child fallback (original behavior)
+        local child = self.viewerAuraFrames[baseSpellID]
+        if child then
+            self.viewerAuraFrames[overrideSpellID] = child
+        end
     end
     -- Refresh icons/names now that the viewer child's overrideSpellID is current
     self:OnSpellUpdateIcon()
@@ -1800,7 +1820,7 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1811,6 +1831,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         name = name,
         isPetSpell = isPetSpell or nil,
         isPassive = isPassive or nil,
+        cdmChildSlot = cdmChildSlot or nil,
     }
 
     -- Auto-detect charges for spells (skip for passives — no cooldown)
@@ -3083,8 +3104,18 @@ function CooldownCompanion:GroupHasPetSpells(groupId)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
-    -- Passive/proc spells are tracked via aura, not spellbook presence
-    if buttonData.isPassive then return true end
+    -- Passive/proc spells are tracked via aura, not spellbook presence.
+    -- Multi-CDM-child buttons: verify their specific slot still exists in the CDM
+    -- (spell may not be available on the current spec/talent loadout).
+    if buttonData.isPassive then
+        if buttonData.cdmChildSlot then
+            local allChildren = self.viewerAuraAllChildren[buttonData.id]
+            if not allChildren or not allChildren[buttonData.cdmChildSlot] then
+                return false
+            end
+        end
+        return true
+    end
 
     if buttonData.type == "spell" then
         local bank = buttonData.isPetSpell

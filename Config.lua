@@ -2062,6 +2062,22 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
             return false
         end
+        -- Multi-CDM-child: if passive/proc spell has multiple CDM entries, auto-add one button per child
+        if passiveOrProc then
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[spellId]
+            if allChildren and #allChildren > 1 then
+                local count = #allChildren
+                for i = 1, count do
+                    CooldownCompanion:AddButtonToGroup(
+                        selectedGroup, "spell", spellId, spellName,
+                        isPetSpell, true, forceAura, i)
+                end
+                CooldownCompanion:Print("Added " .. count .. " buttons for "
+                    .. spellName .. " (one per CDM entry). Their icons will "
+                    .. "update during combat to show the active variant.")
+                return true
+            end
+        end
         CooldownCompanion:AddButtonToGroup(selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
         CooldownCompanion:Print("Added spell: " .. spellName)
         return true
@@ -5169,13 +5185,24 @@ function RefreshColumn2()
         -- Show current spell name via viewer child's overrideSpellID (tracks current form)
         local entryName = buttonData.name
         if buttonData.type == "spell" then
-            local child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+            -- For multi-slot buttons, use the slot-specific CDM child
+            local child
+            if buttonData.cdmChildSlot then
+                local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+                child = allChildren and allChildren[buttonData.cdmChildSlot]
+            else
+                child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+            end
             if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
                 local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
                 if spellName then entryName = spellName end
             else
                 local spellName = C_Spell.GetSpellName(buttonData.id)
                 if spellName then entryName = spellName end
+            end
+            -- Append slot number for multi-entry spells
+            if buttonData.cdmChildSlot then
+                entryName = entryName .. " #" .. buttonData.cdmChildSlot
             end
         end
         entry:SetText(entryName or ("Unknown " .. buttonData.type))

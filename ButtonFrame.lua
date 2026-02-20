@@ -1274,24 +1274,56 @@ function CooldownCompanion:UpdateButtonIcon(button)
         -- For override spells (ability→buff mapping), viewerAuraFrames may point
         -- to a BuffIcon/BuffBar child whose spellID is the buff, not the ability.
         -- Scan for an Essential/Utility child that tracks the transforming spell.
-        local child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        local child
+        if buttonData.cdmChildSlot then
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+            child = allChildren and allChildren[buttonData.cdmChildSlot]
+        else
+            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        end
         if child and child.cooldownInfo then
-            local parentName = child:GetParent() and child:GetParent():GetName()
-            if parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer" then
-                -- This is a buff viewer — look for a cooldown viewer instead for icon/name
-                local cdChild = CooldownCompanion:FindCooldownViewerChild(buttonData.id)
-                if cdChild then child = cdChild end
+            -- For multi-slot buttons, keep the slot-specific buff viewer child —
+            -- FindCooldownViewerChild is not slot-aware and would lose differentiation.
+            if not buttonData.cdmChildSlot then
+                local parentName = child:GetParent() and child:GetParent():GetName()
+                if parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer" then
+                    -- This is a buff viewer — look for a cooldown viewer instead for icon/name
+                    local cdChild = CooldownCompanion:FindCooldownViewerChild(buttonData.id)
+                    if cdChild then child = cdChild end
+                end
             end
             -- Track the current override for display name and aura lookups
             if child.cooldownInfo.overrideSpellID then
                 displayId = child.cooldownInfo.overrideSpellID
             end
-            -- Use the base spellID for texture — GetSpellTexture on a base spell
-            -- dynamically returns the current override's icon, unlike override IDs
-            -- which always return their own static icon.
-            local baseSpellId = child.cooldownInfo.spellID
-            if baseSpellId then
-                icon = C_Spell.GetSpellTexture(baseSpellId)
+            -- For multi-slot buttons, read the CDM's already-rendered icon texture
+            -- directly from the viewer child's Icon widget. This avoids secret
+            -- values (child.auraSpellID is secret in combat) and guarantees the
+            -- icon matches what the CDM viewer displays.
+            -- BuffIcon children: child.Icon is a Texture.
+            -- BuffBar children: child.Icon is a Frame containing child.Icon.Icon.
+            -- For single-child buttons, use the base spellID — GetSpellTexture on
+            -- a base spell dynamically returns the current override's icon.
+            if buttonData.cdmChildSlot then
+                local iconTexture = child.Icon
+                if iconTexture and not iconTexture.GetTextureFileID then
+                    iconTexture = iconTexture.Icon
+                end
+                if iconTexture and iconTexture.GetTextureFileID then
+                    icon = iconTexture:GetTextureFileID()
+                end
+                if not icon then
+                    local fallbackId = child.cooldownInfo.overrideSpellID
+                        or child.cooldownInfo.spellID
+                    if fallbackId then
+                        icon = C_Spell.GetSpellTexture(fallbackId)
+                    end
+                end
+            else
+                local baseSpellId = child.cooldownInfo.spellID
+                if baseSpellId then
+                    icon = C_Spell.GetSpellTexture(baseSpellId)
+                end
             end
         end
         -- Fallback: if no viewer child provided an override, ask the Spell API directly
@@ -1650,9 +1682,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- stores auraInstanceID + auraDataUnit as plain readable properties.
         -- Requires the Blizzard Cooldown Manager to be visible with this spell.
         local viewerFrame
+        -- CDM child slot: use specific child for multi-entry spells (e.g., Diabolic Ritual)
+        if buttonData.cdmChildSlot then
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+            if allChildren then
+                viewerFrame = allChildren[buttonData.cdmChildSlot]
+            end
+        end
         -- Try each override ID (comma-separated), prefer one with active aura.
         -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
-        if buttonData.auraSpellID then
+        if not viewerFrame and buttonData.auraSpellID then
             local ids = button._parsedAuraIDs
             if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
                 ids = {}
@@ -1794,6 +1833,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
         button._inPandemic = inPandemic
+
+        -- Dynamic icon for multi-CDM-child buttons: pass through the viewer
+        -- child's rendered icon texture each tick. SetTexture accepts secret
+        -- values (GetTextureFileID returns secret in combat). Only needed for
+        -- cdmChildSlot buttons where multiple children share the same base
+        -- spellID — single-child buttons get correct icons from UpdateButtonIcon.
+        if buttonData.cdmChildSlot then
+            if auraOverrideActive and viewerFrame then
+                local iconTexture = viewerFrame.Icon
+                -- BuffBar: viewerFrame.Icon is a Frame; the Texture is .Icon.Icon
+                if iconTexture and not iconTexture.GetTextureFileID then
+                    iconTexture = iconTexture.Icon
+                end
+                if iconTexture then
+                    button.icon:SetTexture(iconTexture:GetTextureFileID())
+                end
+                button._hadViewerIcon = true
+            elseif not auraOverrideActive and button._hadViewerIcon then
+                button._hadViewerIcon = nil
+                local baseIcon = C_Spell.GetSpellTexture(buttonData.id)
+                if baseIcon then
+                    button.icon:SetTexture(baseIcon)
+                    button._displaySpellId = buttonData.id
+                    if button.nameText then
+                        local baseName = C_Spell.GetSpellName(buttonData.id)
+                        if baseName then button.nameText:SetText(baseName) end
+                    end
+                end
+            end
+        end
     end
 
     if buttonData.isPassive and not auraOverrideActive then
