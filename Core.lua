@@ -1933,6 +1933,11 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         group.buttons[buttonIndex].auraTracking = false
     end
 
+    -- Record original classification (immutable label for config display)
+    if buttonType == "spell" then
+        group.buttons[buttonIndex].addedAs = group.buttons[buttonIndex].auraTracking and "aura" or "spell"
+    end
+
     self:RefreshGroupFrame(groupId)
     return buttonIndex
 end
