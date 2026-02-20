@@ -44,4 +44,10 @@ CastBar.lua
 ResourceBar.lua
 FrameAnchoring.lua
 Config.lua
-ConfigSettings.lua
+ConfigSettings\Helpers.lua
+ConfigSettings\SectionBuilders.lua
+ConfigSettings\CastBarPanels.lua
+ConfigSettings\ResourceBarPanels.lua
+ConfigSettings\FrameAnchoringPanels.lua
+ConfigSettings\ButtonSettings.lua
+ConfigSettings\GroupTabs.lua
