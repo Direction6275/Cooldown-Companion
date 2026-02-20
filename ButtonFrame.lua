@@ -1771,11 +1771,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local totemSlot = viewerFrame.preferredTotemUpdateSlot
                     if totemSlot and viewerFrame:IsVisible() then
                         local _, _, startTime, duration = GetTotemInfo(totemSlot)
-                        button.cooldown:SetCooldown(startTime, duration)
-                        auraOverrideActive = true
-                        fetchOk = true
-                        if button._auraInstanceID then
-                            button._auraInstanceID = nil
+                        -- All GetTotemInfo returns are secret. Probe
+                        -- scratchCooldown to detect if the totem/guardian
+                        -- is still alive (same pattern as spell CD probes).
+                        scratchCooldown:Hide()
+                        scratchCooldown:SetCooldown(startTime, duration)
+                        local totemActive = scratchCooldown:IsShown()
+                        scratchCooldown:Hide()
+                        if totemActive then
+                            button.cooldown:SetCooldown(startTime, duration)
+                            auraOverrideActive = true
+                            fetchOk = true
+                            if button._auraInstanceID then
+                                button._auraInstanceID = nil
+                            end
                         end
                     end
                 end
