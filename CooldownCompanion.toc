@@ -37,7 +37,17 @@ Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 # Core Addon Files
 Utils.lua
-Core.lua
+Core\Init.lua
+Core\Defaults.lua
+Core\StyleOverrides.lua
+Core\Lifecycle.lua
+Core\Aura.lua
+Core\ViewerAura.lua
+Core\EventHandlers.lua
+Core\Masque.lua
+Core\GroupManagement.lua
+Core\Migrations.lua
+Core\GroupUtilities.lua
 ButtonFrame\Helpers.lua
 ButtonFrame\Glows.lua
 ButtonFrame\Visibility.lua
@@ -47,8 +57,8 @@ ButtonFrame\BarMode.lua
 ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
 GroupFrame.lua
-CastBar.lua
-ResourceBar.lua
+OtherBars\CastBar.lua
+OtherBars\ResourceBar.lua
 FrameAnchoring.lua
 Config\State.lua
 Config\Popups.lua
