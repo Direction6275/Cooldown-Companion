@@ -19,6 +19,7 @@ local BuildAutocompleteCache = ST._BuildAutocompleteCache
 local RefreshColumn1 = ST._RefreshColumn1
 local RefreshColumn2 = ST._RefreshColumn2
 local RefreshColumn3 = ST._RefreshColumn3
+local RefreshColumn4 = ST._RefreshColumn4
 local RefreshProfileBar = ST._RefreshProfileBar
 
 -- File-local aliases for buttonSettingsScroll (only needed within this file)
@@ -655,17 +656,17 @@ local function CreateConfigPanel()
     end)
     col2._infoBtn = infoBtn
 
-    -- Button Settings column (between Spells/Items and Group Settings)
-    local buttonSettingsCol = AceGUI:Create("InlineGroup")
-    buttonSettingsCol:SetTitle("Button Settings")
-    buttonSettingsCol:SetLayout("None")
-    buttonSettingsCol.frame:SetParent(colParent)
-    buttonSettingsCol.frame:Show()
+    -- Column 3: Button Settings
+    local col3 = AceGUI:Create("InlineGroup")
+    col3:SetTitle("Button Settings")
+    col3:SetLayout("None")
+    col3.frame:SetParent(colParent)
+    col3.frame:Show()
 
     -- Info button next to Button Settings title
-    local bsInfoBtn = CreateFrame("Button", nil, buttonSettingsCol.frame)
+    local bsInfoBtn = CreateFrame("Button", nil, col3.frame)
     bsInfoBtn:SetSize(16, 16)
-    bsInfoBtn:SetPoint("LEFT", buttonSettingsCol.titletext, "RIGHT", -2, 0)
+    bsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
     local bsInfoIcon = bsInfoBtn:CreateTexture(nil, "OVERLAY")
     bsInfoIcon:SetSize(12, 12)
     bsInfoIcon:SetPoint("CENTER")
@@ -688,17 +689,17 @@ local function CreateConfigPanel()
         GameTooltip:Hide()
     end)
 
-    -- Column 3: Settings (AceGUI InlineGroup)
-    local col3 = AceGUI:Create("InlineGroup")
-    col3:SetTitle("Group Settings")
-    col3:SetLayout("None")
-    col3.frame:SetParent(colParent)
-    col3.frame:Show()
+    -- Column 4: Group Settings (AceGUI InlineGroup)
+    local col4 = AceGUI:Create("InlineGroup")
+    col4:SetTitle("Group Settings")
+    col4:SetLayout("None")
+    col4.frame:SetParent(colParent)
+    col4.frame:Show()
 
     -- Info button next to Group Settings title
-    local settingsInfoBtn = CreateFrame("Button", nil, col3.frame)
+    local settingsInfoBtn = CreateFrame("Button", nil, col4.frame)
     settingsInfoBtn:SetSize(16, 16)
-    settingsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
+    settingsInfoBtn:SetPoint("LEFT", col4.titletext, "RIGHT", -2, 0)
     local settingsInfoIcon = settingsInfoBtn:CreateTexture(nil, "OVERLAY")
     settingsInfoIcon:SetSize(12, 12)
     settingsInfoIcon:SetPoint("CENTER")
@@ -821,19 +822,19 @@ local function CreateConfigPanel()
         end
     end)
 
-    bsTabGroup.frame:SetParent(buttonSettingsCol.content)
+    bsTabGroup.frame:SetParent(col3.content)
     bsTabGroup.frame:ClearAllPoints()
-    bsTabGroup.frame:SetPoint("TOPLEFT", buttonSettingsCol.content, "TOPLEFT", 0, 0)
-    bsTabGroup.frame:SetPoint("BOTTOMRIGHT", buttonSettingsCol.content, "BOTTOMRIGHT", 0, 0)
+    bsTabGroup.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+    bsTabGroup.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     bsTabGroup.frame:Hide()
-    buttonSettingsCol.bsTabGroup = bsTabGroup
+    col3.bsTabGroup = bsTabGroup
 
     -- Placeholder label shown when no button is selected
-    local bsPlaceholderLabel = buttonSettingsCol.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bsPlaceholderLabel:SetPoint("TOPLEFT", buttonSettingsCol.content, "TOPLEFT", -1, 0)
+    local bsPlaceholderLabel = col3.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bsPlaceholderLabel:SetPoint("TOPLEFT", col3.content, "TOPLEFT", -1, 0)
     bsPlaceholderLabel:SetText("Select a spell or item to configure")
     bsPlaceholderLabel:Show()
-    buttonSettingsCol.bsPlaceholder = bsPlaceholderLabel
+    col3.bsPlaceholder = bsPlaceholderLabel
 
     -- Initialize with a placeholder scroll (will be replaced on tab select)
     local bsScroll = AceGUI:Create("ScrollFrame")
@@ -886,8 +887,8 @@ local function CreateConfigPanel()
         end
     end)
 
-    -- Column 3 content area (use InlineGroup's content directly)
-    CS.col3Container = col3.content
+    -- Column 4 content area (use InlineGroup's content directly)
+    CS.col4Container = col4.content
 
     -- Layout columns on size change
     local function LayoutColumns()
@@ -900,8 +901,8 @@ local function CreateConfigPanel()
         local col1Width = smallCol
         local col2Width = smallCol
         local remaining = baseW - (smallCol * 2)
-        local bsWidth   = math.floor(remaining / 2)
-        local col3Width  = remaining - bsWidth
+        local col3Width = math.floor(remaining / 2)
+        local col4Width  = remaining - col3Width
 
         col1.frame:ClearAllPoints()
         col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
@@ -911,13 +912,13 @@ local function CreateConfigPanel()
         col2.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
         col2.frame:SetSize(col2Width, h)
 
-        buttonSettingsCol.frame:ClearAllPoints()
-        buttonSettingsCol.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
-        buttonSettingsCol.frame:SetSize(bsWidth, h)
-
         col3.frame:ClearAllPoints()
-        col3.frame:SetPoint("TOPLEFT", buttonSettingsCol.frame, "TOPRIGHT", pad, 0)
+        col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
         col3.frame:SetSize(col3Width, h)
+
+        col4.frame:ClearAllPoints()
+        col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
+        col4.frame:SetSize(col4Width, h)
     end
 
     colParent:SetScript("OnSizeChanged", function()
@@ -944,8 +945,8 @@ local function CreateConfigPanel()
     frame.versionText = versionText
     frame.col1 = col1
     frame.col2 = col2
-    frame.buttonSettingsCol = buttonSettingsCol
     frame.col3 = col3
+    frame.col4 = col4
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCastBarBtnHighlight = UpdateCastBarBtnHighlight
@@ -982,7 +983,7 @@ function CooldownCompanion:RefreshConfigPanel()
 
     local saved1   = saveScroll(CS.col1Scroll)
     local saved2   = saveScroll(CS.col2Scroll)
-    local savedCab = CS.col3Container and CS.col3Container.customAuraScroll and saveScroll(CS.col3Container.customAuraScroll)
+    local savedCab = CS.col4Container and CS.col4Container.customAuraScroll and saveScroll(CS.col4Container.customAuraScroll)
     local savedBtn = saveScroll(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
@@ -1000,31 +1001,31 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     if CS.castBarPanelActive then
         CS.configFrame.col2:SetTitle("Spells / Items")
-        CS.configFrame.buttonSettingsCol:SetTitle("Cast Bar Anchoring / FX")
-        CS.configFrame.col3:SetTitle("Cast Bar Styling")
+        CS.configFrame.col3:SetTitle("Cast Bar Anchoring / FX")
+        CS.configFrame.col4:SetTitle("Cast Bar Styling")
     elseif CS.resourceBarPanelActive then
         CS.configFrame.col2:SetTitle("Resource Anchoring")
-        CS.configFrame.buttonSettingsCol:SetTitle("Resource Styling")
-        CS.configFrame.col3:SetTitle("Custom Aura Bars")
+        CS.configFrame.col3:SetTitle("Resource Styling")
+        CS.configFrame.col4:SetTitle("Custom Aura Bars")
     elseif CS.frameAnchoringPanelActive then
         CS.configFrame.col2:SetTitle("Spells / Items")
-        CS.configFrame.buttonSettingsCol:SetTitle("Player Frame")
-        CS.configFrame.col3:SetTitle("Target Frame")
+        CS.configFrame.col3:SetTitle("Player Frame")
+        CS.configFrame.col4:SetTitle("Target Frame")
     else
         CS.configFrame.col2:SetTitle("Spells / Items")
-        CS.configFrame.buttonSettingsCol:SetTitle("Button Settings")
-        CS.configFrame.col3:SetTitle("Group Settings")
+        CS.configFrame.col3:SetTitle("Button Settings")
+        CS.configFrame.col4:SetTitle("Group Settings")
     end
     RefreshColumn1()
     RefreshColumn2()
-    ST._RefreshButtonSettingsColumn()
-    RefreshColumn3(CS.col3Container)
+    RefreshColumn3()
+    RefreshColumn4(CS.col4Container)
 
     -- Restore AceGUI scroll state.
     restoreScroll(CS.col1Scroll, saved1)
     restoreScroll(CS.col2Scroll, saved2)
-    if CS.col3Container and CS.col3Container.customAuraScroll then
-        restoreScroll(CS.col3Container.customAuraScroll, savedCab)
+    if CS.col4Container and CS.col4Container.customAuraScroll then
+        restoreScroll(CS.col4Container.customAuraScroll, savedCab)
     end
     restoreScroll(buttonSettingsScroll, savedBtn)
 

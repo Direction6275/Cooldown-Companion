@@ -70,6 +70,7 @@ Config\DragReorder.lua
 Config\Column1.lua
 Config\Column2.lua
 Config\Column3.lua
+Config\Column4.lua
 Config\Panel.lua
 ConfigSettings\Helpers.lua
 ConfigSettings\SectionBuilders.lua

@@ -651,7 +651,7 @@ end
 local function RefreshButtonSettingsColumn()
     local cf = CS.configFrame
     if not cf then return end
-    local bsCol = cf.buttonSettingsCol
+    local bsCol = cf.col3
     if not bsCol or not bsCol.bsTabGroup then return end
 
     -- Cast bar overlay: replace button settings with anchoring/FX panel
