@@ -555,9 +555,9 @@ local function RefreshColumn2()
             if C_Item.IsEquippableItem(buttonData.id) then
                 entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
             elseif C_Item.IsConsumableItem(buttonData.id) then
-                entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:15:15|a"
+                entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
             else
-                entryName = entryName .. " (Item)"
+                entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
             end
         end
         entry:SetText(entryName or ("Unknown " .. buttonData.type))
