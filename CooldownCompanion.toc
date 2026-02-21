@@ -43,7 +43,15 @@ GroupFrame.lua
 CastBar.lua
 ResourceBar.lua
 FrameAnchoring.lua
-Config.lua
+Config\State.lua
+Config\Popups.lua
+Config\Diagnostics.lua
+Config\Pickers.lua
+Config\SpellItemAdd.lua
+Config\DragReorder.lua
+Config\Column1.lua
+Config\Column2.lua
+Config\Panel.lua
 ConfigSettings\Helpers.lua
 ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
