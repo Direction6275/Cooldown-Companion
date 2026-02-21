@@ -83,6 +83,38 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideNotCDCb)
+
+    -- Hide While Unusable
+    local hideUnusableCb = AceGUI:Create("CheckBox")
+    hideUnusableCb:SetLabel("Hide While Unusable")
+    hideUnusableCb:SetValue(buttonData.hideWhileUnusable or false)
+    hideUnusableCb:SetFullWidth(true)
+    hideUnusableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ApplyToSelected("hideWhileUnusable", val or nil)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(hideUnusableCb)
+
+    -- (?) tooltip
+    local hideUnusableInfo = CreateFrame("Button", nil, hideUnusableCb.frame)
+    hideUnusableInfo:SetSize(16, 16)
+    hideUnusableInfo:SetPoint("LEFT", hideUnusableCb.checkbg, "RIGHT", hideUnusableCb.text:GetStringWidth() + 4, 0)
+    local hideUnusableInfoIcon = hideUnusableInfo:CreateTexture(nil, "OVERLAY")
+    hideUnusableInfoIcon:SetSize(12, 12)
+    hideUnusableInfoIcon:SetPoint("CENTER")
+    hideUnusableInfoIcon:SetAtlas("QuestRepeatableTurnin")
+    hideUnusableInfo:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Hide While Unusable")
+        GameTooltip:AddLine("Uses the same logic as unusable dimming, but completely hides the button instead of dimming it.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    hideUnusableInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    table.insert(infoButtons, hideUnusableInfo)
+    if CooldownCompanion.db.profile.hideInfoButtons then
+        hideUnusableInfo:Hide()
+    end
+
     end -- not buttonData.isPassive
 
     -- Item-specific zero charges/stacks visibility toggles

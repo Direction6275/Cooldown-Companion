@@ -6,6 +6,10 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+
+local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
+local IsUsableItem = C_Item.IsUsableItem
+
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
@@ -17,7 +21,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
        and not buttonData.hideWhileAuraActive
        and not buttonData.hideWhileZeroCharges
        and not buttonData.hideWhileZeroStacks
-       and not buttonData.hideWhileNotEquipped then
+       and not buttonData.hideWhileNotEquipped
+       and not buttonData.hideWhileUnusable then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
         return
@@ -106,6 +111,21 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if button._isEquippableNotEquipped then
             shouldHide = true
             hidReasonNotEquipped = true
+        end
+    end
+
+    -- Check hideWhileUnusable
+    if buttonData.hideWhileUnusable and not buttonData.isPassive then
+        if buttonData.type == "spell" then
+            local isUsable = C_Spell_IsSpellUsable(buttonData.id)
+            if not isUsable then
+                shouldHide = true
+            end
+        elseif buttonData.type == "item" then
+            local usable = IsUsableItem(buttonData.id)
+            if not usable then
+                shouldHide = true
+            end
         end
     end
 
