@@ -38,7 +38,14 @@ Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 # Core Addon Files
 Utils.lua
 Core.lua
-ButtonFrame.lua
+ButtonFrame\Helpers.lua
+ButtonFrame\Glows.lua
+ButtonFrame\Visibility.lua
+ButtonFrame\Tracking.lua
+ButtonFrame\IconMode.lua
+ButtonFrame\BarMode.lua
+ButtonFrame\Preview.lua
+ButtonFrame\CooldownUpdate.lua
 GroupFrame.lua
 CastBar.lua
 ResourceBar.lua
