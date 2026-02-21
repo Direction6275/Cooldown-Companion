@@ -288,6 +288,16 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
     return promoteBtn
 end
 
+-- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
+local LSM = LibStub("LibSharedMedia-3.0")
+local function GetBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    return t
+end
+
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
@@ -295,3 +305,4 @@ ST._AddAdvancedToggle = AddAdvancedToggle
 ST._CreatePromoteButton = CreatePromoteButton
 ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
+ST._GetBarTextureOptions = GetBarTextureOptions

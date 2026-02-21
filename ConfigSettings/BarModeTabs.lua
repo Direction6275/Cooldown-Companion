@@ -6,13 +6,13 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
-local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
+local GetBarTextureOptions = ST._GetBarTextureOptions
 
 -- Imports from SectionBuilders.lua
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
@@ -24,14 +24,6 @@ local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
--- For cast bars and bar-mode buttons: LSM textures only
-local function GetBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    return t
-end
 
 local function BuildBarAppearanceTab(container, group, style)
     -- ================================================================

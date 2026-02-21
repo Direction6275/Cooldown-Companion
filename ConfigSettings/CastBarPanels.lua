@@ -7,16 +7,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local LSM = LibStub("LibSharedMedia-3.0")
-
--- For cast bars and bar-mode buttons: LSM textures only
-local function GetBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    return t
-end
+local GetBarTextureOptions = ST._GetBarTextureOptions
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
