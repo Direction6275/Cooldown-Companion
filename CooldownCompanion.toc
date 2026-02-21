@@ -42,12 +42,13 @@ Core\Defaults.lua
 Core\StyleOverrides.lua
 Core\Lifecycle.lua
 Core\Aura.lua
-Core\ViewerAura.lua
 Core\EventHandlers.lua
 Core\Masque.lua
 Core\GroupManagement.lua
 Core\Migrations.lua
-Core\GroupUtilities.lua
+Core\AlphaFade.lua
+Core\Keybinds.lua
+Core\GroupOperations.lua
 ButtonFrame\Helpers.lua
 ButtonFrame\Glows.lua
 ButtonFrame\Visibility.lua
@@ -75,4 +76,6 @@ ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\ButtonSettings.lua
+ConfigSettings\ButtonConditions.lua
+ConfigSettings\BarModeTabs.lua
 ConfigSettings\GroupTabs.lua
