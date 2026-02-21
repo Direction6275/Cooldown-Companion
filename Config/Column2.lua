@@ -537,22 +537,25 @@ local function RefreshColumn2()
             if buttonData.cdmChildSlot then
                 entryName = entryName .. " #" .. buttonData.cdmChildSlot
             end
-            -- Append tracking type label (based on how entry was originally added)
+            -- Append tracking type icon(s): sword = spell cooldown, health = aura tracking
             if not buttonData.addedAs then
-                -- Backfill for entries created before addedAs was introduced
                 buttonData.addedAs = buttonData.auraTracking and "aura" or "spell"
             end
-            local addedAs = buttonData.addedAs
-            if addedAs == "aura" then
-                entryName = entryName .. " (Aura)"
-            else
-                entryName = entryName .. " (Spell)"
+            local icons = ""
+            if buttonData.addedAs ~= "aura" then
+                icons = icons .. "|A:ui_adv_atk:15:15|a"
+            end
+            if buttonData.auraTracking then
+                icons = icons .. "|A:ui_adv_health:15:15|a"
+            end
+            if icons ~= "" then
+                entryName = entryName .. "  " .. icons
             end
         elseif buttonData.type == "item" then
             if C_Item.IsEquippableItem(buttonData.id) then
-                entryName = entryName .. " (Equipment)"
+                entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
             elseif C_Item.IsConsumableItem(buttonData.id) then
-                entryName = entryName .. " (Consumable)"
+                entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:15:15|a"
             else
                 entryName = entryName .. " (Item)"
             end
