@@ -36,7 +36,7 @@ Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 # Core Addon Files
-Utils.lua
+Core\Utils.lua
 Core\Init.lua
 Core\Defaults.lua
 Core\StyleOverrides.lua
@@ -57,10 +57,10 @@ ButtonFrame\IconMode.lua
 ButtonFrame\BarMode.lua
 ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
-GroupFrame.lua
+Core\GroupFrame.lua
 OtherBars\CastBar.lua
 OtherBars\ResourceBar.lua
-FrameAnchoring.lua
+Core\FrameAnchoring.lua
 Config\State.lua
 Config\Popups.lua
 Config\Diagnostics.lua
