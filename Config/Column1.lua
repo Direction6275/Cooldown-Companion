@@ -19,6 +19,8 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
+local BuildGroupExportData = ST._BuildGroupExportData
+local EncodeExportData = ST._EncodeExportData
 
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
@@ -312,6 +314,36 @@ local function RefreshColumn1(preserveDrag)
                             if newGroupId then
                                 CS.selectedGroup = newGroupId
                                 CooldownCompanion:RefreshConfigPanel()
+                            end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+
+                        -- Export
+                        info = UIDropDownMenu_CreateInfo()
+                        if next(CS.selectedGroups) then
+                            info.text = "Export Selected"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                local exportGroups = {}
+                                for gid in pairs(CS.selectedGroups) do
+                                    local g = db.groups[gid]
+                                    if g then
+                                        table.insert(exportGroups, BuildGroupExportData(g))
+                                    end
+                                end
+                                local payload = { type = "groups", version = 1, groups = exportGroups }
+                                local exportString = EncodeExportData(payload)
+                                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
+                            end
+                        else
+                            info.text = "Export"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                local payload = { type = "group", version = 1, group = BuildGroupExportData(group) }
+                                local exportString = EncodeExportData(payload)
+                                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
                             end
                         end
                         UIDropDownMenu_AddButton(info, level)
@@ -667,6 +699,25 @@ local function RefreshColumn1(preserveDrag)
                     end
                     UIDropDownMenu_AddButton(info, level)
 
+                    -- Export Folder
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Export Folder"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local folderData = { name = folder.name }
+                        local childGroups = {}
+                        for gid, g in pairs(db.groups) do
+                            if g.folderId == folderId then
+                                table.insert(childGroups, BuildGroupExportData(g))
+                            end
+                        end
+                        local payload = { type = "folder", version = 1, folder = folderData, groups = childGroups }
+                        local exportString = EncodeExportData(payload)
+                        ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
                     -- Delete
                     info = UIDropDownMenu_CreateInfo()
                     info.text = "|cffff4444Delete Folder|r"
@@ -891,7 +942,7 @@ local function RefreshColumn1(preserveDrag)
         newBarBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newBarBtn)
 
-        -- Bottom row: "New Folder" (full width)
+        -- Middle row: "New Folder" (full width)
         local newFolderBtn = AceGUI:Create("Button")
         newFolderBtn:SetText("New Folder")
         newFolderBtn:SetCallback("OnClick", function()
@@ -900,11 +951,26 @@ local function RefreshColumn1(preserveDrag)
         end)
         newFolderBtn.frame:SetParent(CS.col1ButtonBar)
         newFolderBtn.frame:ClearAllPoints()
-        newFolderBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOMLEFT", 0, 0)
-        newFolderBtn.frame:SetPoint("BOTTOMRIGHT", CS.col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        newFolderBtn.frame:SetPoint("LEFT", CS.col1ButtonBar, "LEFT", 0, 0)
+        newFolderBtn.frame:SetPoint("RIGHT", CS.col1ButtonBar, "RIGHT", 0, 0)
+        newFolderBtn.frame:SetPoint("TOP", newIconBtn.frame, "BOTTOM", 0, -1)
         newFolderBtn.frame:SetHeight(28)
         newFolderBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newFolderBtn)
+
+        -- Bottom row: "Import Group" (full width)
+        local importBtn = AceGUI:Create("Button")
+        importBtn:SetText("Import Group")
+        importBtn:SetCallback("OnClick", function()
+            ShowPopupAboveConfig("CDC_IMPORT_GROUP")
+        end)
+        importBtn.frame:SetParent(CS.col1ButtonBar)
+        importBtn.frame:ClearAllPoints()
+        importBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOMLEFT", 0, 0)
+        importBtn.frame:SetPoint("BOTTOMRIGHT", CS.col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        importBtn.frame:SetHeight(28)
+        importBtn.frame:Show()
+        table.insert(CS.col1BarWidgets, importBtn)
     end
 end
 

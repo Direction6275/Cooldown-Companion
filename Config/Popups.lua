@@ -520,3 +520,163 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+------------------------------------------------------------------------
+-- Group/Folder Export/Import
+------------------------------------------------------------------------
+
+local function BuildGroupExportData(group)
+    local data = CopyTable(group)
+    data.createdBy = nil
+    data.order = nil
+    data.folderId = nil
+    data.isGlobal = nil
+    return data
+end
+
+local function EncodeExportData(payload)
+    local serialized = AceSerializer:Serialize(payload)
+    local compressed = LibDeflate:CompressDeflate(serialized)
+    return LibDeflate:EncodeForPrint(compressed)
+end
+
+ST._BuildGroupExportData = BuildGroupExportData
+ST._EncodeExportData = EncodeExportData
+
+local function ImportGroupData(text)
+    if text:sub(1, 8) == "CDCdiag:" then
+        CooldownCompanion:Print("This is a bug report string, not a group export.")
+        return false
+    end
+
+    local success, data
+    if text:sub(1, 2) == "^1" then
+        success, data = AceSerializer:Deserialize(text)
+    else
+        local decoded = LibDeflate:DecodeForPrint(text)
+        if decoded then
+            local decompressed = LibDeflate:DecompressDeflate(decoded)
+            if decompressed then
+                success, data = AceSerializer:Deserialize(decompressed)
+            end
+        end
+    end
+
+    if not success or type(data) ~= "table" then
+        return false
+    end
+
+    -- Reject profile exports (no type field)
+    if not data.type then
+        CooldownCompanion:Print("This is a profile export. Use the profile Import button.")
+        return false
+    end
+
+    local db = CooldownCompanion.db.profile
+    local charKey = CooldownCompanion.db.keys.char
+
+    if data.type == "group" and data.group then
+        local groupId = db.nextGroupId
+        db.nextGroupId = groupId + 1
+        local group = CopyTable(data.group)
+        group.createdBy = charKey
+        group.isGlobal = false
+        group.order = groupId
+        group.folderId = nil
+        db.groups[groupId] = group
+        CooldownCompanion:CreateGroupFrame(groupId)
+        CooldownCompanion:Print("Imported group: " .. (group.name or "Unnamed"))
+
+    elseif data.type == "groups" and data.groups then
+        local count = 0
+        for _, srcGroup in ipairs(data.groups) do
+            local groupId = db.nextGroupId
+            db.nextGroupId = groupId + 1
+            local group = CopyTable(srcGroup)
+            group.createdBy = charKey
+            group.isGlobal = false
+            group.order = groupId
+            group.folderId = nil
+            db.groups[groupId] = group
+            CooldownCompanion:CreateGroupFrame(groupId)
+            count = count + 1
+        end
+        CooldownCompanion:Print("Imported " .. count .. " groups.")
+
+    elseif data.type == "folder" and data.folder and data.groups then
+        local folderId = db.nextFolderId
+        db.nextFolderId = folderId + 1
+        db.folders[folderId] = {
+            name = data.folder.name or "Imported Folder",
+            order = folderId,
+            section = "char",
+            createdBy = charKey,
+        }
+        local count = 0
+        for _, srcGroup in ipairs(data.groups) do
+            local groupId = db.nextGroupId
+            db.nextGroupId = groupId + 1
+            local group = CopyTable(srcGroup)
+            group.createdBy = charKey
+            group.isGlobal = false
+            group.order = groupId
+            group.folderId = folderId
+            db.groups[groupId] = group
+            CooldownCompanion:CreateGroupFrame(groupId)
+            count = count + 1
+        end
+        CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
+
+    else
+        CooldownCompanion:Print("Import failed: unrecognized export type.")
+        return false
+    end
+
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:RefreshAllGroups()
+    return true
+end
+
+StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
+    text = "Export string (Ctrl+C to copy):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        if self.data and self.data.exportString then
+            self.EditBox:SetText(self.data.exportString)
+            self.EditBox:HighlightText()
+            self.EditBox:SetFocus()
+        end
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
+    text = "Paste group import string:",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        self.EditBox:SetFocus()
+    end,
+    EditBoxOnTextChanged = function(self)
+        local text = self:GetText()
+        if text == "" then return end
+        local ok = ImportGroupData(text)
+        if ok then
+            self:GetParent():Hide()
+        end
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
