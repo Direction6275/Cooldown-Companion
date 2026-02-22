@@ -506,12 +506,25 @@ StaticPopupDialogs["CDC_RENAME_FOLDER"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
-    text = "Delete folder '%s'? Groups inside will be kept (moved to top level).",
+    text = "Delete folder '%s' and all groups inside it?",
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.folderId then
             CooldownCompanion:DeleteFolder(data.folderId)
+            if CS.selectedGroup then
+                local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+                if not group then
+                    CS.selectedGroup = nil
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
+                end
+            end
+            for gid in pairs(CS.selectedGroups) do
+                if not CooldownCompanion.db.profile.groups[gid] then
+                    CS.selectedGroups[gid] = nil
+                end
+            end
             CooldownCompanion:RefreshConfigPanel()
         end
     end,

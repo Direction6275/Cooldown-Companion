@@ -123,10 +123,10 @@ end
 function CooldownCompanion:DeleteFolder(folderId)
     local db = self.db.profile
     if not db.folders[folderId] then return end
-    -- Clear folderId on all child groups (they become loose)
-    for _, group in pairs(db.groups) do
+    -- Delete all child groups
+    for groupId, group in pairs(db.groups) do
         if group.folderId == folderId then
-            group.folderId = nil
+            self:DeleteGroup(groupId)
         end
     end
     db.folders[folderId] = nil
