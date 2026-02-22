@@ -743,7 +743,7 @@ local function CreateConfigPanel()
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(90)
+    btnBar:SetHeight(60)
     CS.col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -752,7 +752,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 90)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 60)
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 
