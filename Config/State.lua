@@ -211,13 +211,10 @@ CS.InitPendingStrataOrder = InitPendingStrataOrder
 -- Helper: Show a StaticPopup above the config panel
 ------------------------------------------------------------------------
 local function ShowPopupAboveConfig(which, text_arg1, data)
-    local dialog = StaticPopup_Show(which, text_arg1)
+    local dialog = StaticPopup_Show(which, text_arg1, nil, data)
     if dialog then
         dialog:SetFrameStrata("FULLSCREEN_DIALOG")
         dialog:SetFrameLevel(200)
-        if data then
-            dialog.data = data
-        end
     end
     return dialog
 end
