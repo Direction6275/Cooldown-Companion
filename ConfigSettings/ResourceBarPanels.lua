@@ -1331,7 +1331,7 @@ local function BuildCustomAuraBarPanel(container)
                 container:AddChild(cpBar)
 
                 -- Overlay Color (overlay mode only)
-                if cab.displayMode == "overlay" then
+                if cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
                     local overlayColor = cab.overlayColor or {1, 0.84, 0}
                     local cpOverlay = AceGUI:Create("ColorPicker")
                     cpOverlay:SetLabel("Overlay Color")
@@ -1347,20 +1347,62 @@ local function BuildCustomAuraBarPanel(container)
                         CooldownCompanion:ApplyResourceBars()
                     end)
                     container:AddChild(cpOverlay)
+
+                    -- Overlay Color tooltip (?) — use SetDescription for AceGUI-safe approach
+                    cpOverlay:SetCallback("OnEnter", function(widget)
+                        GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+                        GameTooltip:AddLine("Overlay Color")
+                        GameTooltip:AddLine("Number of bar segments equals half the max stacks. Overlay color activates once base segments are full.", 1, 1, 1, true)
+                        GameTooltip:Show()
+                    end)
+                    cpOverlay:SetCallback("OnLeave", function()
+                        GameTooltip:Hide()
+                    end)
                 end
 
-                -- Show Text checkbox (continuous mode only)
-                if cab.displayMode == "continuous" then
-                    local textCb = AceGUI:Create("CheckBox")
-                    textCb:SetLabel("Show Text")
-                    textCb:SetValue(cab.showText == true)
-                    textCb:SetFullWidth(true)
-                    textCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        customBars[cabIdx].showText = val
+                -- ---- Text / Duration controls ----
+                local isActive = (cab.trackingMode or "stacks") == "active"
+                local isContinuous = isActive or (cab.displayMode == "continuous")
+
+                if isContinuous then
+                    -- Show Duration Text
+                    local durationTextCb = AceGUI:Create("CheckBox")
+                    durationTextCb:SetLabel("Show Duration Text")
+                    durationTextCb:SetValue(cab.showDurationText == true)
+                    durationTextCb:SetFullWidth(true)
+                    durationTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].showDurationText = val or nil
                         CooldownCompanion:ApplyResourceBars()
                     end)
-                    container:AddChild(textCb)
+                    container:AddChild(durationTextCb)
+
+                    -- Show Stack Text
+                    local stackVal = cab.showStackText
+                    if stackVal == nil and not isActive then
+                        stackVal = cab.showText  -- backwards compat
+                    end
+
+                    local stackTextCb = AceGUI:Create("CheckBox")
+                    stackTextCb:SetLabel("Show Stack Text")
+                    stackTextCb:SetValue(stackVal == true)
+                    stackTextCb:SetFullWidth(true)
+                    stackTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].showStackText = val or nil
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(stackTextCb)
                 end
+
+                -- Hide When Inactive
+                local hideCb = AceGUI:Create("CheckBox")
+                hideCb:SetLabel("Hide When Inactive")
+                hideCb:SetValue(cab.hideWhenInactive == true)
+                hideCb:SetFullWidth(true)
+                hideCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    customBars[cabIdx].hideWhenInactive = val or nil
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(hideCb)
             end
             end -- if cab.enabled
         end

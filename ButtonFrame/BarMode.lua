@@ -1002,3 +1002,4 @@ end
 
 -- Exports
 ST._UpdateBarDisplay = UpdateBarDisplay
+ST._FormatBarTime = FormatBarTime

@@ -133,6 +133,7 @@ ST.POWER_ATLAS_TYPES = { [8] = true, [11] = true, [13] = true, [17] = true, [18]
 -- Expose custom aura bar constants for ConfigSettings
 ST.CUSTOM_AURA_BAR_BASE = CUSTOM_AURA_BAR_BASE
 ST.MAX_CUSTOM_AURA_BARS = MAX_CUSTOM_AURA_BARS
+local FormatBarTime = ST._FormatBarTime
 
 -- Class-to-resource mapping (classID -> ordered list of power types)
 -- Order = stacking order (first = closest to anchor)
@@ -904,30 +905,85 @@ local function UpdateCustomAuraBar(barInfo)
     local cabConfig = barInfo.cabConfig
     if not cabConfig or not cabConfig.spellID then return end
 
-    -- Read aura stacks from viewer frame (applications may be secret in combat)
+    -- Read aura data from viewer frame (applications may be secret in combat)
     local stacks = 0
+    local applications = 0
+    local auraPresent = false
+    local durationObj
+    local isActive = cabConfig.trackingMode == "active"
+    local useDrain = isActive
+    local needsDuration = useDrain or cabConfig.showDurationText
     local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[cabConfig.spellID]
     local instId = viewerFrame and viewerFrame.auraInstanceID
     if instId then
         local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
         if auraData then
-            if cabConfig.trackingMode == "active" then
+            auraPresent = true
+            applications = auraData.applications or 0
+            if isActive then
                 stacks = 1
             else
-                stacks = auraData.applications or 0
+                stacks = applications
+            end
+            if needsDuration then
+                durationObj = C_UnitAuras.GetAuraDuration("player", instId)
             end
         end
     end
 
+
+    -- Hide When Inactive: hide the bar frame when aura is absent
+    if cabConfig.hideWhenInactive then
+        barInfo.frame:SetShown(auraPresent)
+        if not auraPresent then return end
+    end
+
     local maxStacks = cabConfig.maxStacks or 1
-    local barColor = cabConfig.barColor or {0.5, 0.5, 1}
 
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
-        bar:SetMinMaxValues(0, maxStacks)
-        bar:SetValue(stacks)  -- SetValue accepts secrets
+        if useDrain then
+            bar:SetMinMaxValues(0, 1)
+            if durationObj then
+                bar:SetValue(durationObj:GetRemainingPercent())  -- secret-safe, 1->0 drain
+            else
+                -- No DurationObject (indefinite aura or aura absent)
+                bar:SetValue(stacks)  -- 1 if active (full), 0 if absent (empty)
+            end
+        else
+            bar:SetMinMaxValues(0, maxStacks)
+            bar:SetValue(stacks)  -- SetValue accepts secrets
+        end
+
+        -- Duration text (bar.text): driven by showDurationText, independent of drain
         if bar.text and bar.text:IsShown() then
-            bar.text:SetFormattedText("%d / %d", stacks, maxStacks)  -- SetFormattedText accepts secrets
+            if durationObj then
+                local remaining = durationObj:GetRemainingDuration()
+                if not durationObj:HasSecretValues() then
+                    if remaining > 0 then
+                        bar.text:SetText(FormatBarTime(remaining))
+                    else
+                        bar.text:SetText("")
+                    end
+                else
+                    bar.text:SetFormattedText("%.1f", remaining)
+                end
+            else
+                bar.text:SetText("")
+            end
+        end
+
+        -- Stack text (bar.stackText): driven by showStackText
+        if bar.stackText and bar.stackText:IsShown() then
+            if auraPresent then
+                if isActive then
+                    bar.stackText:SetFormattedText("%d", applications)
+                else
+                    bar.stackText:SetFormattedText("%d / %d", stacks, maxStacks)
+                end
+            else
+                bar.stackText:SetText("")
+            end
         end
 
     elseif barInfo.barType == "custom_segmented" then
@@ -962,8 +1018,44 @@ local function StyleCustomAuraBar(barInfo, cabConfig, settings)
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
         bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
+
+        -- Determine visibility for both text elements
+        local isActive = cabConfig.trackingMode == "active"
+        local showDuration = cabConfig.showDurationText == true
+        local showStack = cabConfig.showStackText
+        if showStack == nil then
+            -- Backwards compat: fall back to showText for stacks mode
+            if not isActive then
+                showStack = cabConfig.showText == true
+            else
+                showStack = false
+            end
+        end
+
+        -- Duration text (bar.text)
         if bar.text then
-            bar.text:SetShown(cabConfig.showText == true)
+            bar.text:SetShown(showDuration)
+            if showDuration then
+                bar.text:ClearAllPoints()
+                if showStack then
+                    bar.text:SetPoint("LEFT", bar, "LEFT", 4, 0)
+                else
+                    bar.text:SetPoint("CENTER")
+                end
+            end
+        end
+
+        -- Stack text (bar.stackText)
+        if bar.stackText then
+            bar.stackText:SetShown(showStack)
+            if showStack then
+                bar.stackText:ClearAllPoints()
+                if showDuration then
+                    bar.stackText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+                else
+                    bar.stackText:SetPoint("CENTER")
+                end
+            end
         end
 
     elseif barInfo.barType == "custom_segmented" then
@@ -1027,6 +1119,9 @@ local function OnUpdate(self, elapsed)
                 or barInfo.barType == "custom_overlay" then
                 UpdateCustomAuraBar(barInfo)
             end
+        elseif barInfo.frame and barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
+            -- Frame hidden by hideWhenInactive; still update so it can re-show when aura returns
+            UpdateCustomAuraBar(barInfo)
         end
     end
 end
@@ -1388,6 +1483,7 @@ function CooldownCompanion:ApplyResourceBars()
             end
 
             barInfo.cabConfig = cabConfig
+            barInfo.frame:Show()  -- ensure reused frames visible for layout; OnUpdate re-hides if hideWhenInactive
             barInfo.frame:SetSize(totalWidth, effectiveHeight)
             if mode == "segmented" then
                 LayoutSegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings)
@@ -1414,6 +1510,13 @@ function CooldownCompanion:ApplyResourceBars()
                 local textColor = settings.textFontColor or { 1, 1, 1, 1 }
                 barInfo.frame.text:SetFont(textFont, textSize, textOutline)
                 barInfo.frame.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
+                -- Lazily create stackText FontString for custom aura bars
+                if not barInfo.frame.stackText then
+                    barInfo.frame.stackText = barInfo.frame:CreateFontString(nil, "OVERLAY")
+                    barInfo.frame.stackText:SetTextColor(1, 1, 1, 1)
+                end
+                barInfo.frame.stackText:SetFont(textFont, textSize, textOutline)
+                barInfo.frame.stackText:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
                 barInfo.frame.brightnessOverlay:Hide()
             end
             -- Apply bar color AFTER texture setup (SetStatusBarTexture resets vertex color)
@@ -1676,12 +1779,26 @@ local function ApplyPreviewData()
                 end
             elseif barInfo.barType == "custom_continuous" then
                 local cabConfig = barInfo.cabConfig
+                local isActive = cabConfig and cabConfig.trackingMode == "active"
                 local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-                barInfo.frame:SetMinMaxValues(0, maxStacks)
-                local val = math.ceil(maxStacks * 0.65)
-                barInfo.frame:SetValue(val)
+                if isActive then
+                    barInfo.frame:SetMinMaxValues(0, 1)
+                    barInfo.frame:SetValue(0.65)
+                else
+                    barInfo.frame:SetMinMaxValues(0, maxStacks)
+                    local val = math.ceil(maxStacks * 0.65)
+                    barInfo.frame:SetValue(val)
+                end
                 if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    barInfo.frame.text:SetFormattedText("%d / %d", val, maxStacks)
+                    barInfo.frame.text:SetText(FormatBarTime(12.3))
+                end
+                if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
+                    if isActive then
+                        barInfo.frame.stackText:SetFormattedText("%d", 3)
+                    else
+                        local val = math.ceil(maxStacks * 0.65)
+                        barInfo.frame.stackText:SetFormattedText("%d / %d", val, maxStacks)
+                    end
                 end
             elseif barInfo.barType == "custom_segmented" then
                 local n = #barInfo.frame.segments
