@@ -54,6 +54,7 @@ function CooldownCompanion:OnBagChanged()
 end
 
 function CooldownCompanion:OnTalentsChanged()
+    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
     self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
@@ -109,6 +110,7 @@ function CooldownCompanion:CacheCurrentSpec()
         local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
         self._currentSpecId = specId
     end
+    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
 end
 
 function CooldownCompanion:OnSpecChanged()
@@ -142,6 +144,12 @@ end
 function CooldownCompanion:OnRestingChanged()
     self._isResting = IsResting()
     self:RefreshAllGroups()
+end
+
+function CooldownCompanion:OnHeroTalentChanged()
+    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
+    self:RefreshAllGroups()
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnPlayerEnteringWorld()

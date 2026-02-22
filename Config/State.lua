@@ -385,6 +385,24 @@ local function SetupGroupRowIndicators(entry, group)
         end
     end
 
+    -- Hero talent filter badges
+    local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
+    if group.heroTalents and next(group.heroTalents) then
+        local configID = C_ClassTalents.GetActiveConfigID()
+        if configID then
+            for subTreeID in pairs(group.heroTalents) do
+                local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
+                if subTreeInfo and subTreeInfo.iconElementID then
+                    badgeIndex = badgeIndex + 1
+                    local badge = AcquireBadge(frame, badgeIndex)
+                    badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
+                    badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
+                    badge:Show()
+                end
+            end
+        end
+    end
+
     -- Position badges right-to-left
     local offsetX = -BADGE_RIGHT_PAD
     if frame._cdcBadges then

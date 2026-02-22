@@ -365,6 +365,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
             local group = CooldownCompanion.db.profile.groups[data.groupId]
             if group then
                 group.specs = nil
+                group.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -386,6 +387,7 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
             local group = db.groups[data.dragState.sourceGroupId]
             if group then
                 group.specs = nil
+                group.heroTalents = nil
                 ST._ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -407,8 +409,9 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
             local folderId = data.dragState.sourceFolderId
             -- Clear foreign specs from all child groups
             for groupId, group in pairs(db.groups) do
-                if group.folderId == folderId and group.specs then
+                if group.folderId == folderId and (group.specs or group.heroTalents) then
                     group.specs = nil
+                    group.heroTalents = nil
                 end
             end
             ST._ApplyCol1Drop(data.dragState)
@@ -464,6 +467,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
                         for specId in pairs(group.specs) do
                             if not playerSpecIds[specId] then
                                 group.specs = nil
+                                group.heroTalents = nil
                                 break
                             end
                         end

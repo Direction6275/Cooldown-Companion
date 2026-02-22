@@ -582,6 +582,7 @@ local function BuildLoadConditionsTab(container)
     if not specCollapsed then
     -- Current class spec checkboxes
     local numSpecs = GetNumSpecializations()
+    local configID = C_ClassTalents.GetActiveConfigID()
     for i = 1, numSpecs do
         local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
         if specId then
@@ -601,11 +602,53 @@ local function BuildLoadConditionsTab(container)
                             group.specs = nil
                         end
                     end
+                    CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
                 end
                 CooldownCompanion:RefreshGroupFrame(groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end)
             container:AddChild(cb)
+            cb.checkbg:SetPoint("TOPLEFT")
+
+            -- Hero talent sub-tree checkboxes (indented, only when spec is checked)
+            if group.specs and group.specs[specId] and configID then
+                local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+                if subTreeIDs then
+                    for _, subTreeID in ipairs(subTreeIDs) do
+                        local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
+                        if subTreeInfo then
+                            local htCb = AceGUI:Create("CheckBox")
+                            htCb:SetLabel(subTreeInfo.name or ("Hero " .. subTreeID))
+                            htCb:SetFullWidth(true)
+                            htCb:SetValue(group.heroTalents and group.heroTalents[subTreeID] or false)
+                            -- Indent the checkbox
+                            htCb:SetCallback("OnValueChanged", function(widget, event, value)
+                                if value then
+                                    if not group.heroTalents then group.heroTalents = {} end
+                                    group.heroTalents[subTreeID] = true
+                                else
+                                    if group.heroTalents then
+                                        group.heroTalents[subTreeID] = nil
+                                        if not next(group.heroTalents) then
+                                            group.heroTalents = nil
+                                        end
+                                    end
+                                end
+                                CooldownCompanion:RefreshGroupFrame(groupId)
+                                CooldownCompanion:RefreshConfigPanel()
+                            end)
+                            container:AddChild(htCb)
+                            htCb.checkbg:SetPoint("TOPLEFT", 20, 0)
+                            -- Set hero talent atlas icon
+                            if subTreeInfo.iconElementID then
+                                htCb:SetImage(136235)  -- placeholder fileID for layout
+                                htCb.image:SetAtlas(subTreeInfo.iconElementID, false)
+                                htCb.image:SetTexCoord(0, 1, 0, 1)
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -651,6 +694,7 @@ local function BuildLoadConditionsTab(container)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
                 container:AddChild(fcb)
+                fcb.checkbg:SetPoint("TOPLEFT")
             end
         end
     end

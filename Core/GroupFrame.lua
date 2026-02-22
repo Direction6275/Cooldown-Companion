@@ -231,16 +231,17 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on enabled state, spec filter, character visibility, and load conditions
+    -- Show/hide based on enabled state, spec filter, hero talent filter, character visibility, and load conditions
     local specAllowed = true
     local effectiveSpecs = self:GetEffectiveSpecs(group)
     if effectiveSpecs and next(effectiveSpecs) then
         specAllowed = self._currentSpecId and effectiveSpecs[self._currentSpecId]
     end
+    local heroAllowed = self:IsHeroTalentAllowed(group)
     local charVisible = self:IsGroupVisibleToCurrentChar(groupId)
     local loadAllowed = self:CheckLoadConditions(group)
 
-    if group.enabled and specAllowed and charVisible and loadAllowed then
+    if group.enabled and specAllowed and heroAllowed and charVisible and loadAllowed then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         local alphaState = self.alphaState and self.alphaState[groupId]
@@ -624,17 +625,18 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — hide if disabled, no buttons, wrong spec, wrong character, or load conditions
+    -- Update visibility — hide if disabled, no buttons, wrong spec, wrong hero talent, wrong character, or load conditions
     local specAllowed = true
     local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
     if effectiveSpecs and next(effectiveSpecs) then
         specAllowed = CooldownCompanion._currentSpecId
             and effectiveSpecs[CooldownCompanion._currentSpecId]
     end
+    local heroAllowed = CooldownCompanion:IsHeroTalentAllowed(group)
     local charVisible = CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     local loadAllowed = CooldownCompanion:CheckLoadConditions(group)
 
-    if group.enabled and #group.buttons > 0 and specAllowed and charVisible and loadAllowed then
+    if group.enabled and #group.buttons > 0 and specAllowed and heroAllowed and charVisible and loadAllowed then
         frame:Show()
         -- Force 100% alpha while unlocked for easier positioning
         if not group.locked then

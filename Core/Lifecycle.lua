@@ -128,6 +128,7 @@ function CooldownCompanion:OnEnable()
 
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
+    self:RegisterEvent("TRAIT_SUB_TREE_CHANGED", "OnHeroTalentChanged")
 
     -- Zone/instance change events — load condition evaluation
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnZoneChanged")

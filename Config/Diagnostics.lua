@@ -96,6 +96,7 @@ local function BuildDiagnosticSnapshot()
     snapshot.runtime = {
         currentInstanceType = CooldownCompanion._currentInstanceType,
         currentSpecId = CooldownCompanion._currentSpecId,
+        currentHeroSpecId = CooldownCompanion._currentHeroSpecId,
         isResting = CooldownCompanion._isResting,
         cdmHidden = db.profile.cdmHidden,
         assistedSpellID = CooldownCompanion.assistedSpellID,

@@ -468,6 +468,8 @@ local function RefreshColumn1(preserveDrag)
         -- Inline spec filter panel (expanded via Shift+Left-click)
         if CS.specExpandedGroupId == groupId then
             local numSpecs = GetNumSpecializations()
+            local configID = C_ClassTalents.GetActiveConfigID()
+            local htIndent = inFolder and 32 or 20
             for i = 1, numSpecs do
                 local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
                 local cb = AceGUI:Create("CheckBox")
@@ -486,13 +488,51 @@ local function RefreshColumn1(preserveDrag)
                                 group.specs = nil
                             end
                         end
+                        CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
                     end
                     CooldownCompanion:RefreshGroupFrame(groupId)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
                 CS.col1Scroll:AddChild(cb)
-                if inFolder then
-                    cb.checkbg:SetPoint("TOPLEFT", 12, 0)
+                cb.checkbg:SetPoint("TOPLEFT", inFolder and 12 or 0, 0)
+
+                -- Hero talent sub-tree checkboxes (indented, only when spec is checked)
+                if group.specs and group.specs[specId] and configID then
+                    local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+                    if subTreeIDs then
+                        for _, subTreeID in ipairs(subTreeIDs) do
+                            local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
+                            if subTreeInfo then
+                                local htCb = AceGUI:Create("CheckBox")
+                                htCb:SetLabel(subTreeInfo.name or ("Hero " .. subTreeID))
+                                htCb:SetFullWidth(true)
+                                htCb:SetValue(group.heroTalents and group.heroTalents[subTreeID] or false)
+                                htCb:SetCallback("OnValueChanged", function(widget, event, value)
+                                    if value then
+                                        if not group.heroTalents then group.heroTalents = {} end
+                                        group.heroTalents[subTreeID] = true
+                                    else
+                                        if group.heroTalents then
+                                            group.heroTalents[subTreeID] = nil
+                                            if not next(group.heroTalents) then
+                                                group.heroTalents = nil
+                                            end
+                                        end
+                                    end
+                                    CooldownCompanion:RefreshGroupFrame(groupId)
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end)
+                                CS.col1Scroll:AddChild(htCb)
+                                htCb.checkbg:SetPoint("TOPLEFT", htIndent, 0)
+                                -- Set hero talent atlas icon
+                                if subTreeInfo.iconElementID then
+                                    htCb:SetImage(136235)  -- placeholder fileID for layout
+                                    htCb.image:SetAtlas(subTreeInfo.iconElementID, false)
+                                    htCb.image:SetTexCoord(0, 1, 0, 1)
+                                end
+                            end
+                        end
+                    end
                 end
             end
 
@@ -537,9 +577,7 @@ local function RefreshColumn1(preserveDrag)
                             CooldownCompanion:RefreshConfigPanel()
                         end)
                         CS.col1Scroll:AddChild(fcb)
-                        if inFolder then
-                            fcb.checkbg:SetPoint("TOPLEFT", 12, 0)
-                        end
+                        fcb.checkbg:SetPoint("TOPLEFT", inFolder and 12 or 0, 0)
                     end
                 end
             end
@@ -549,6 +587,7 @@ local function RefreshColumn1(preserveDrag)
             clearBtn:SetFullWidth(true)
             clearBtn:SetCallback("OnClick", function()
                 group.specs = nil
+                group.heroTalents = nil
                 CooldownCompanion:RefreshGroupFrame(groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end)

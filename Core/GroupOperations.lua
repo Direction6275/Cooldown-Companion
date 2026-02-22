@@ -41,6 +41,25 @@ function CooldownCompanion:GetEffectiveSpecs(group)
     return group.specs, false
 end
 
+function CooldownCompanion:IsHeroTalentAllowed(group)
+    if not group.heroTalents or not next(group.heroTalents) then return true end
+    local heroSpecId = self._currentHeroSpecId
+    if not heroSpecId then return true end  -- low level, no hero talent selected
+    return group.heroTalents[heroSpecId] == true
+end
+
+function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
+    if not group.heroTalents or not next(group.heroTalents) then return end
+    local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+    if not subTreeIDs then return end
+    for _, subTreeID in ipairs(subTreeIDs) do
+        group.heroTalents[subTreeID] = nil
+    end
+    if not next(group.heroTalents) then
+        group.heroTalents = nil
+    end
+end
+
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
@@ -55,6 +74,8 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
             return false
         end
     end
+
+    if not self:IsHeroTalentAllowed(group) then return false end
 
     if not self:CheckLoadConditions(group) then return false end
 
