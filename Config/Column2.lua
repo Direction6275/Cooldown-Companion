@@ -21,6 +21,8 @@ local TryAdd = ST._TryAdd
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 local OnAutocompleteSelect = ST._OnAutocompleteSelect
 local SearchAutocomplete = ST._SearchAutocomplete
+local BuildGroupExportData = ST._BuildGroupExportData
+local EncodeExportData = ST._EncodeExportData
 
 ------------------------------------------------------------------------
 -- COLUMN 2: Spells / Items
@@ -408,6 +410,31 @@ local function RefreshColumn2()
             CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col2Scroll:AddChild(lockBtn)
+
+        local spacer5 = AceGUI:Create("Label")
+        spacer5:SetText(" ")
+        spacer5:SetFullWidth(true)
+        local f5, _, fl5 = spacer5.label:GetFont()
+        spacer5:SetFont(f5, 3, fl5 or "")
+        CS.col2Scroll:AddChild(spacer5)
+
+        -- Export Selected
+        local exportBtn = AceGUI:Create("Button")
+        exportBtn:SetText("Export Selected")
+        exportBtn:SetFullWidth(true)
+        exportBtn:SetCallback("OnClick", function()
+            local exportGroups = {}
+            for _, gid in ipairs(multiGroupIds) do
+                local g = db.groups[gid]
+                if g then
+                    table.insert(exportGroups, BuildGroupExportData(g))
+                end
+            end
+            local payload = { type = "groups", version = 1, groups = exportGroups }
+            local exportString = EncodeExportData(payload)
+            ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
+        end)
+        CS.col2Scroll:AddChild(exportBtn)
 
         return
     end
