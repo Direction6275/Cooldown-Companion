@@ -244,6 +244,7 @@ function CooldownCompanion:OnEnable()
     -- Migrate glow appearance settings from per-button to group style
     self:MigrateGlowSettingsToGroupStyle()
     self:MigrateAuraIndicatorToGroupStyle()
+    self:MigrateBarOrdering()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}

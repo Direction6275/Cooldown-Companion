@@ -561,16 +561,8 @@ local function CreateConfigPanel()
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.resourceBarPanelActive then
-            if CS.barPanelCol2Tab == "frame_anchoring" then
-                GameTooltip:AddLine("Styling")
-                GameTooltip:AddLine("Select 'Resources' or 'Cast Bar' in the left column to configure appearance settings.", 1, 1, 1, true)
-            elseif CS.barPanelCol2Tab == "castbar_anchoring" then
-                GameTooltip:AddLine("Cast Bar Styling")
-                GameTooltip:AddLine("Appearance settings for the cast bar overlay.", 1, 1, 1, true)
-            else
-                GameTooltip:AddLine("Resource Styling")
-                GameTooltip:AddLine("Appearance settings for class resource bars.", 1, 1, 1, true)
-            end
+            GameTooltip:AddLine("Custom Aura Bars")
+            GameTooltip:AddLine("Configure per-spec custom aura bar tracking slots.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Button Settings")
             GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
@@ -872,7 +864,8 @@ function CooldownCompanion:RefreshConfigPanel()
 
     local saved1   = saveScroll(CS.col1Scroll)
     local saved2   = saveScroll(CS.col2Scroll)
-    local savedCab = CS.col4Container and CS.col4Container.customAuraScroll and saveScroll(CS.col4Container.customAuraScroll)
+    local col3ForScroll = CS.configFrame and CS.configFrame.col3
+    local savedCab = col3ForScroll and col3ForScroll._customAuraScroll and saveScroll(col3ForScroll._customAuraScroll)
     local savedBtn = saveScroll(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
@@ -883,10 +876,12 @@ function CooldownCompanion:RefreshConfigPanel()
         CS.configFrame.UpdateResourceBarBtnHighlight()
     end
     if CS.resourceBarPanelActive then
-        CS.configFrame.col2:SetTitle("Bars & Frames")
-        CS.configFrame.col3:SetTitle("Styling")
-        CS.configFrame.col4:SetTitle("Custom Aura Bars")
+        CS.configFrame.col1:SetTitle("Bars & Frames")
+        CS.configFrame.col2:SetTitle("Styling")
+        CS.configFrame.col3:SetTitle("Custom Aura Bars")
+        CS.configFrame.col4:SetTitle("Layout & Order")
     else
+        CS.configFrame.col1:SetTitle("Groups")
         CS.configFrame.col2:SetTitle("Spells / Items")
         CS.configFrame.col3:SetTitle("Button Settings")
         CS.configFrame.col4:SetTitle("Group Settings")
@@ -899,8 +894,8 @@ function CooldownCompanion:RefreshConfigPanel()
     -- Restore AceGUI scroll state.
     restoreScroll(CS.col1Scroll, saved1)
     restoreScroll(CS.col2Scroll, saved2)
-    if CS.col4Container and CS.col4Container.customAuraScroll then
-        restoreScroll(CS.col4Container.customAuraScroll, savedCab)
+    if col3ForScroll and col3ForScroll._customAuraScroll then
+        restoreScroll(col3ForScroll._customAuraScroll, savedCab)
     end
     restoreScroll(buttonSettingsScroll, savedBtn)
 

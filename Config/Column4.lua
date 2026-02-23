@@ -16,7 +16,7 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 -- COLUMN 4: Group Settings / Tab Column
 ------------------------------------------------------------------------
 local function RefreshColumn4(container)
-    -- Resource Bar panel mode: show custom aura bar panel instead of group settings
+    -- Resource Bar panel mode: show Layout & Order panel instead of group settings
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
             container.placeholderLabel:Hide()
@@ -24,21 +24,28 @@ local function RefreshColumn4(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
-        if not container.customAuraScroll then
+        if container.customAuraScroll then
+            container.customAuraScroll.frame:Hide()
+        end
+        if not container.layoutOrderScroll then
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             scroll.frame:SetParent(container)
             scroll.frame:ClearAllPoints()
             scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
             scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-            container.customAuraScroll = scroll
+            container.layoutOrderScroll = scroll
         end
-        container.customAuraScroll:ReleaseChildren()
-        container.customAuraScroll.frame:Show()
-        ST._BuildCustomAuraBarPanel(container.customAuraScroll)
+        container.layoutOrderScroll:ReleaseChildren()
+        container.layoutOrderScroll.frame:Show()
+        ST._BuildLayoutOrderPanel(container.layoutOrderScroll)
         return
     end
-    -- Hide custom aura scroll if it exists
+    -- Hide layout order scroll if it exists
+    if container.layoutOrderScroll then
+        container.layoutOrderScroll.frame:Hide()
+    end
+    -- Hide custom aura scroll if it exists (now lives in col3)
     if container.customAuraScroll then
         container.customAuraScroll.frame:Hide()
     end

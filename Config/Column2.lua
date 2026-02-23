@@ -31,59 +31,44 @@ local function RefreshColumn2()
     if not CS.col2Scroll then return end
     local col2 = CS.configFrame and CS.configFrame.col2
 
-    -- Bars & Frames panel mode: take over col2 with a 3-tab TabGroup
+    -- Bars & Frames panel mode: show Styling in col2
     if CS.resourceBarPanelActive then
         CancelDrag()
         CS.HideAutocomplete()
         CS.col2Scroll.frame:Hide()
         if col2 and col2._infoBtn then col2._infoBtn:Hide() end
+        if not col2 then return end
 
-        -- Create the tab group once
-        if not col2._barsPanelTabGroup then
-            local tabGroup = AceGUI:Create("TabGroup")
-            tabGroup:SetTabs({
-                { value = "resource_anchoring", text = "Resources" },
-                { value = "castbar_anchoring",  text = "Cast Bar" },
-                { value = "frame_anchoring",    text = "Unit Frames" },
-            })
-            tabGroup:SetLayout("Fill")
-
-            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                CS.barPanelCol2Tab = tab
-                widget:ReleaseChildren()
-
-                local scroll = AceGUI:Create("ScrollFrame")
-                scroll:SetLayout("List")
-                widget:AddChild(scroll)
-
-                if tab == "resource_anchoring" then
-                    ST._BuildResourceBarAnchoringPanel(scroll)
-                elseif tab == "castbar_anchoring" then
-                    ST._BuildCastBarAnchoringPanel(scroll)
-                elseif tab == "frame_anchoring" then
-                    ST._BuildFrameAnchoringPlayerPanel(scroll)
-                    ST._BuildFrameAnchoringTargetPanel(scroll)
-                end
-
-                -- Sync col3 to the selected col2 tab
-                ST._RefreshColumn3()
-            end)
-
-            tabGroup.frame:SetParent(col2.content)
-            tabGroup.frame:ClearAllPoints()
-            tabGroup.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
-            tabGroup.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
-            col2._barsPanelTabGroup = tabGroup
+        -- Create/show styling scroll
+        if not col2._barsStylingScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(col2.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+            col2._barsStylingScroll = scroll
         end
 
-        col2._barsPanelTabGroup.frame:Show()
-        col2._barsPanelTabGroup:SelectTab(CS.barPanelCol2Tab)
+        col2._barsStylingScroll:ReleaseChildren()
+        col2._barsStylingScroll.frame:Show()
+
+        if CS.barPanelTab == "frame_anchoring" then
+            local label = AceGUI:Create("Label")
+            label:SetText("Unit Frame anchoring has no separate appearance settings.")
+            label:SetFullWidth(true)
+            col2._barsStylingScroll:AddChild(label)
+        elseif CS.barPanelTab == "castbar_anchoring" then
+            ST._BuildCastBarStylingPanel(col2._barsStylingScroll)
+        else
+            ST._BuildResourceBarStylingPanel(col2._barsStylingScroll)
+        end
         return
     end
 
-    -- Hide bars panel tab group when not in bars panel mode
-    if col2 and col2._barsPanelTabGroup then
-        col2._barsPanelTabGroup.frame:Hide()
+    -- Normal mode: hide bars styling scroll
+    if col2 and col2._barsStylingScroll then
+        col2._barsStylingScroll.frame:Hide()
     end
     if col2 and col2._infoBtn then col2._infoBtn:Show() end
 

@@ -650,59 +650,6 @@ local function RefreshButtonSettingsColumn()
     local bsCol = cf.col3
     if not bsCol or not bsCol.bsTabGroup then return end
 
-    -- Bars & Frames panel mode: show styling panel matching the active col2 tab
-    if CS.resourceBarPanelActive then
-        bsCol.bsTabGroup.frame:Hide()
-        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
-        if bsCol.multiSelectScroll then bsCol.multiSelectScroll.frame:Hide() end
-
-        -- Unit Frames tab: col3 shows a placeholder (anchoring is all in col2)
-        if CS.barPanelCol2Tab == "frame_anchoring" then
-            if bsCol._barsStylingScroll then
-                bsCol._barsStylingScroll.frame:Hide()
-            end
-            if not bsCol._barsStylingPlaceholder then
-                bsCol._barsStylingPlaceholder = bsCol.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                bsCol._barsStylingPlaceholder:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", -1, 0)
-            end
-            bsCol._barsStylingPlaceholder:SetText("Frame anchoring settings are in the 'Unit Frames' tab.")
-            bsCol._barsStylingPlaceholder:Show()
-            return
-        end
-
-        -- Resources or Cast Bar tab: show the matching styling panel
-        if bsCol._barsStylingPlaceholder then
-            bsCol._barsStylingPlaceholder:Hide()
-        end
-
-        if not bsCol._barsStylingScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(bsCol.content)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
-            bsCol._barsStylingScroll = scroll
-        end
-        bsCol._barsStylingScroll:ReleaseChildren()
-        bsCol._barsStylingScroll.frame:Show()
-
-        if CS.barPanelCol2Tab == "castbar_anchoring" then
-            ST._BuildCastBarStylingPanel(bsCol._barsStylingScroll)
-        else
-            ST._BuildResourceBarStylingPanel(bsCol._barsStylingScroll)
-        end
-        return
-    end
-
-    -- Hide bars styling scroll and placeholder when not in bars panel mode
-    if bsCol._barsStylingScroll then
-        bsCol._barsStylingScroll.frame:Hide()
-    end
-    if bsCol._barsStylingPlaceholder then
-        bsCol._barsStylingPlaceholder:Hide()
-    end
-
     -- Check for multiselect
     local multiCount = 0
     local multiIndices = {}

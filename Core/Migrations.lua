@@ -768,3 +768,85 @@ function CooldownCompanion:MigrateAuraIndicatorToGroupStyle()
 
     profile.auraIndicatorMigrated = true
 end
+
+function CooldownCompanion:MigrateBarOrdering()
+    local profile = self.db.profile
+    local rb = profile.resourceBars
+    local cb = profile.castBar
+    if not rb then return end
+
+    -- Skip if already migrated (old fields are gone) or never configured
+    if rb.position == nil and rb.stackOrder == nil then return end
+
+    local oldPosition = rb.position or "below"
+    local oldStackOrder = rb.stackOrder or "resource_first"
+
+    -- Assign unique sequential orders to class resources per power type.
+    -- Order matches the CLASS_RESOURCES/SPEC_RESOURCES tables in ResourceBar.lua.
+    -- We use a fixed broad list covering all classes; non-enabled resources are ignored.
+    -- Each power type gets a unique value so the sort is deterministic.
+    local defaultResourceOrder = {
+        [0]  = 1,    -- Mana
+        [1]  = 2,    -- Rage
+        [2]  = 3,    -- Focus
+        [3]  = 4,    -- Energy
+        [4]  = 5,    -- ComboPoints
+        [5]  = 6,    -- Runes
+        [6]  = 7,    -- RunicPower
+        [7]  = 8,    -- SoulShards
+        [8]  = 9,    -- LunarPower
+        [9]  = 10,   -- HolyPower
+        [11] = 11,   -- Maelstrom
+        [12] = 12,   -- Chi
+        [13] = 13,   -- Insanity
+        [16] = 14,   -- ArcaneCharges
+        [17] = 15,   -- Fury
+        [18] = 16,   -- Pain
+        [19] = 17,   -- Essence
+        [100] = 18,  -- Maelstrom Weapon
+    }
+
+    -- Set position/order on any resources already in the db
+    if rb.resources then
+        for pt, res in pairs(rb.resources) do
+            res.position = oldPosition
+            res.order = defaultResourceOrder[pt] or 1
+        end
+    end
+
+    -- Set position/order on custom aura bar slots
+    if not rb.customAuraBarSlots then
+        rb.customAuraBarSlots = {}
+    end
+    for i = 1, 3 do
+        if not rb.customAuraBarSlots[i] then
+            rb.customAuraBarSlots[i] = {}
+        end
+        rb.customAuraBarSlots[i].position = oldPosition
+        rb.customAuraBarSlots[i].order = 1000 + i
+    end
+
+    -- Migrate cast bar order based on old stackOrder
+    if cb then
+        if oldStackOrder == "cast_first" then
+            cb.order = 0
+        else
+            cb.order = 2000
+        end
+        -- Migrate cast bar position to match old resource bar position
+        if cb.position == nil then
+            cb.position = oldPosition
+        end
+    end
+
+    -- Remove old fields
+    rb.position = nil
+    rb.stackOrder = nil
+    rb.reverseResourceOrder = nil
+
+    -- castBar.yOffset is no longer used for gap (shared gap comes from resourceBars.yOffset).
+    -- Clear any non-default value so it doesn't mislead future code.
+    if cb and (cb.yOffset or 0) ~= 0 then
+        cb.yOffset = 0
+    end
+end

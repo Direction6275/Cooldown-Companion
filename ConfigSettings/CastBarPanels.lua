@@ -74,30 +74,6 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(previewCb)
 
-    -- Position
-    local posDrop = AceGUI:Create("Dropdown")
-    posDrop:SetLabel("Position")
-    posDrop:SetList({ below = "Below Group", above = "Above Group" }, { "below", "above" })
-    posDrop:SetValue(settings.position or "below")
-    posDrop:SetFullWidth(true)
-    posDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.position = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(posDrop)
-
-    -- Y Offset
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-50, 50, 0.1)
-    ySlider:SetValue(settings.yOffset or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.yOffset = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(ySlider)
-
     -- Cast Effects
     local sparkTrailCb = AceGUI:Create("CheckBox")
     sparkTrailCb:SetLabel("Show Spark Trail")

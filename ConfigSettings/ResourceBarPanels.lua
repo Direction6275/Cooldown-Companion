@@ -268,18 +268,6 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
 
     if not posCollapsed then
-        local posDrop = AceGUI:Create("Dropdown")
-        posDrop:SetLabel("Position")
-        posDrop:SetList({ below = "Below Group", above = "Above Group" }, { "below", "above" })
-        posDrop:SetValue(settings.position or "below")
-        posDrop:SetFullWidth(true)
-        posDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.position = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-        end)
-        container:AddChild(posDrop)
-
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
         ySlider:SetSliderValues(-50, 50, 0.1)
@@ -330,21 +318,6 @@ local function BuildResourceBarAnchoringPanel(container)
         container:AddChild(spacingSlider)
     end
 
-    -- Stack Order
-    local stackDrop = AceGUI:Create("Dropdown")
-    stackDrop:SetLabel("Stack Order")
-    stackDrop:SetList({
-        cast_first = "Cast Bar First",
-        resource_first = "Resource Bars First",
-    }, { "cast_first", "resource_first" })
-    stackDrop:SetValue(settings.stackOrder or "resource_first")
-    stackDrop:SetFullWidth(true)
-    stackDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.stackOrder = val
-        CooldownCompanion:UpdateAnchorStacking()
-    end)
-    container:AddChild(stackDrop)
-
     -- ============ Resource Toggles Section ============
     local toggleHeading = AceGUI:Create("Heading")
     toggleHeading:SetText("Resource Toggles")
@@ -376,17 +349,6 @@ local function BuildResourceBarAnchoringPanel(container)
             end)
             container:AddChild(manaCb)
         end
-
-        local flipCb = AceGUI:Create("CheckBox")
-        flipCb:SetLabel("Flip primary and secondary bars")
-        flipCb:SetValue(settings.reverseResourceOrder)
-        flipCb:SetFullWidth(true)
-        flipCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.reverseResourceOrder = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-        end)
-        container:AddChild(flipCb)
 
         -- Per-resource enable/disable
         local rbHeightAdvBtns = {}
@@ -1461,7 +1423,245 @@ local function BuildCustomAuraBarPanel(container)
     end
 end
 
+------------------------------------------------------------------------
+-- Layout & Order panel: per-element position/order control
+------------------------------------------------------------------------
+
+local function BuildLayoutOrderPanel(container)
+    local db = CooldownCompanion.db.profile
+    local rbSettings = db.resourceBars
+    local cbSettings = db.castBar
+
+    if not rbSettings or not rbSettings.enabled then
+        local label = AceGUI:Create("Label")
+        label:SetText("Enable Resource Bars to configure layout.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    -- Build the ordered list of all active bar slots
+    local activeResources = GetConfigActiveResources()
+    local MAX_SLOTS = ST.MAX_CUSTOM_AURA_BARS or 3
+    local customBars = CooldownCompanion:GetSpecCustomAuraBars()
+
+    local allSlots = {}
+
+    -- Class resource slots
+    for _, pt in ipairs(activeResources) do
+        if not rbSettings.resources then rbSettings.resources = {} end
+        if not rbSettings.resources[pt] then rbSettings.resources[pt] = {} end
+        local res = rbSettings.resources[pt]
+        local showResource = res.enabled ~= false
+        -- Apply hideManaForNonHealer, matching ApplyResourceBars filtering
+        if showResource and pt == 0 and rbSettings.hideManaForNonHealer then
+            local specIdx = C_SpecializationInfo.GetSpecialization()
+            if specIdx then
+                local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+                if specID ~= 62 and role ~= "HEALER" then
+                    showResource = false
+                end
+            end
+        end
+        if showResource then
+            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            table.insert(allSlots, {
+                label = name,
+                getPos = function() return rbSettings.resources[pt].position or "below" end,
+                getOrder = function() return rbSettings.resources[pt].order or 1 end,
+                setPos = function(v) rbSettings.resources[pt].position = v end,
+                setOrder = function(v) rbSettings.resources[pt].order = v end,
+            })
+        end
+    end
+
+    -- Custom aura bar slots
+    for slotIdx = 1, MAX_SLOTS do
+        local cab = customBars and customBars[slotIdx]
+        if cab and cab.enabled and cab.spellID then
+            if not rbSettings.customAuraBarSlots then rbSettings.customAuraBarSlots = {} end
+            if not rbSettings.customAuraBarSlots[slotIdx] then
+                rbSettings.customAuraBarSlots[slotIdx] = { position = "below", order = 1000 + slotIdx }
+            end
+            local spellInfo = C_Spell.GetSpellInfo(cab.spellID)
+            local slotName = "Custom Aura " .. slotIdx
+            if spellInfo and spellInfo.name then
+                slotName = slotName .. ": " .. spellInfo.name
+            end
+            local captured = slotIdx
+            table.insert(allSlots, {
+                label = slotName,
+                getPos = function() return rbSettings.customAuraBarSlots[captured].position or "below" end,
+                getOrder = function() return rbSettings.customAuraBarSlots[captured].order or (1000 + captured) end,
+                setPos = function(v) rbSettings.customAuraBarSlots[captured].position = v end,
+                setOrder = function(v) rbSettings.customAuraBarSlots[captured].order = v end,
+            })
+        end
+    end
+
+    -- Cast bar slot (if enabled and anchored to same group)
+    if cbSettings and cbSettings.enabled then
+        local defaultAnchor = CooldownCompanion:GetFirstAvailableAnchorGroup()
+        local cbAnchor = cbSettings.anchorGroupId or defaultAnchor
+        local rbAnchor = rbSettings.anchorGroupId or defaultAnchor
+        if cbAnchor and cbAnchor == rbAnchor then
+            table.insert(allSlots, {
+                label = "Cast Bar",
+                getPos = function() return db.castBar.position or "below" end,
+                getOrder = function() return db.castBar.order or 2000 end,
+                setPos = function(v) db.castBar.position = v end,
+                setOrder = function(v) db.castBar.order = v end,
+            })
+        end
+    end
+
+    if #allSlots == 0 then
+        local label = AceGUI:Create("Label")
+        label:SetText("No active bars to order. Enable resources or custom aura bars first.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    -- Helper: refresh after any order/position change
+    local function ApplyAndRefresh()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    -- Sort all slots by (side, order): above slots first (in reverse order = top down), then below
+    -- For display we show: above bars (furthest first = highest order), divider, below bars (closest first = lowest order)
+    local aboveSlots = {}
+    local belowSlots = {}
+    for _, slot in ipairs(allSlots) do
+        if slot.getPos() == "above" then
+            table.insert(aboveSlots, slot)
+        else
+            table.insert(belowSlots, slot)
+        end
+    end
+    table.sort(aboveSlots, function(a, b) return a.getOrder() > b.getOrder() end)  -- furthest first (top of screen)
+    table.sort(belowSlots, function(a, b) return a.getOrder() < b.getOrder() end)  -- closest first
+
+    -- Build ordered display list: above (top-screen order) then below (top-to-bottom)
+    local displayList = {}
+    for _, s in ipairs(aboveSlots) do table.insert(displayList, s) end
+    local dividerIdx = #displayList + 1  -- where the group frame divider goes
+    for _, s in ipairs(belowSlots) do table.insert(displayList, s) end
+
+    -- Section label for above bars
+    if #aboveSlots > 0 then
+        local aboveLabel = AceGUI:Create("Heading")
+        aboveLabel:SetText("Above Group Frame")
+        aboveLabel:SetFullWidth(true)
+        container:AddChild(aboveLabel)
+    end
+
+    -- Render rows
+    for rowIdx, slot in ipairs(displayList) do
+        -- Insert group frame divider between above and below sections
+        if rowIdx == dividerIdx then
+            local divLabel = AceGUI:Create("Heading")
+            divLabel:SetText("Below Group Frame")
+            divLabel:SetFullWidth(true)
+            container:AddChild(divLabel)
+        end
+
+        local isAbove = slot.getPos() == "above"
+
+        -- Row: [↑][↓]  Name  [Above ▼]
+        local rowGroup = AceGUI:Create("SimpleGroup")
+        rowGroup:SetLayout("Flow")
+        rowGroup:SetFullWidth(true)
+        container:AddChild(rowGroup)
+
+        -- Up button
+        local upBtn = AceGUI:Create("Button")
+        upBtn:SetText("↑")
+        upBtn:SetWidth(32)
+        upBtn:SetDisabled(rowIdx == 1)
+        upBtn:SetCallback("OnClick", function()
+            -- Swap order with the slot above in display order
+            local prev = displayList[rowIdx - 1]
+            if prev and prev.getPos() == slot.getPos() then
+                -- Same side: swap orders
+                local myOrder = slot.getOrder()
+                local prevOrder = prev.getOrder()
+                slot.setOrder(prevOrder)
+                prev.setOrder(myOrder)
+            else
+                -- Crossing the group-frame boundary (below ↑ to above):
+                -- slot should become the closest-to-group above bar (displayed last, just above divider)
+                local minAbove
+                for _, s in ipairs(aboveSlots) do
+                    local o = s.getOrder()
+                    if not minAbove or o < minAbove then minAbove = o end
+                end
+                slot.setPos("above")
+                slot.setOrder(minAbove and (minAbove - 1) or 1)
+            end
+            ApplyAndRefresh()
+        end)
+        rowGroup:AddChild(upBtn)
+
+        -- Down button
+        local downBtn = AceGUI:Create("Button")
+        downBtn:SetText("↓")
+        downBtn:SetWidth(32)
+        downBtn:SetDisabled(rowIdx == #displayList)
+        downBtn:SetCallback("OnClick", function()
+            local nextSlot = displayList[rowIdx + 1]
+            if nextSlot and nextSlot.getPos() == slot.getPos() then
+                -- Same side: swap orders
+                local myOrder = slot.getOrder()
+                local nextOrder = nextSlot.getOrder()
+                slot.setOrder(nextOrder)
+                nextSlot.setOrder(myOrder)
+            else
+                -- Crossing boundary (only above → below is reachable via ↓)
+                local minBelow
+                for _, s in ipairs(belowSlots) do
+                    local o = s.getOrder()
+                    if not minBelow or o < minBelow then minBelow = o end
+                end
+                slot.setPos("below")
+                slot.setOrder(minBelow and (minBelow - 1) or 1)
+            end
+            ApplyAndRefresh()
+        end)
+        rowGroup:AddChild(downBtn)
+
+        -- Slot name label
+        local nameLabel = AceGUI:Create("Label")
+        nameLabel:SetText(slot.label)
+        nameLabel:SetWidth(160)
+        rowGroup:AddChild(nameLabel)
+
+        -- Position dropdown
+        local posDrop = AceGUI:Create("Dropdown")
+        posDrop:SetList({ below = "Below ▼", above = "Above ▲" }, { "below", "above" })
+        posDrop:SetValue(slot.getPos())
+        posDrop:SetWidth(110)
+        posDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            local oldSide = slot.getPos()
+            if val == oldSide then return end
+            slot.setPos(val)
+            -- Append to end of the new side (furthest from group)
+            local maxOrder = 0
+            for _, s in ipairs(allSlots) do
+                if s ~= slot and s.getPos() == val and s.getOrder() > maxOrder then
+                    maxOrder = s.getOrder()
+                end
+            end
+            slot.setOrder(maxOrder + 1)
+            ApplyAndRefresh()
+        end)
+        rowGroup:AddChild(posDrop)
+    end
+end
+
 -- Expose for ButtonSettings.lua and Config.lua
 ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
+ST._BuildLayoutOrderPanel = BuildLayoutOrderPanel

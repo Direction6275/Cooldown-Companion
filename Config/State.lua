@@ -148,7 +148,7 @@ ST._configState = {
     tabInfoButtons = {},
     appearanceTabElements = {},
     resourceBarPanelActive = false,
-    barPanelCol2Tab = "resource_anchoring",
+    barPanelTab = "resource_anchoring",
 
     -- Static lookup tables
     fontOptions = GetFontOptions,

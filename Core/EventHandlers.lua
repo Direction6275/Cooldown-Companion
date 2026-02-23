@@ -184,57 +184,12 @@ end
 ------------------------------------------------------------------------
 local pendingStackUpdate = false
 
-function CooldownCompanion:GetCastBarHeight()
-    local s = self.db and self.db.profile and self.db.profile.castBar
-    if not s or not s.enabled then return 0 end
-    local groupId = s.anchorGroupId or self:GetFirstAvailableAnchorGroup()
-    if not groupId then return 0 end
-    local gf = self.groupFrames[groupId]
-    if not gf or not gf:IsShown() then return 0 end
-    local group = self.db.profile.groups[groupId]
-    if not group or group.displayMode ~= "icons" then return 0 end
-    return s.stylingEnabled and (s.height or 14) or 11
-end
-
-function CooldownCompanion:GetAnchorStackOffset(moduleId)
-    local cb = self.db and self.db.profile and self.db.profile.castBar
-    local rb = self.db and self.db.profile and self.db.profile.resourceBars
-    if not cb or not rb then return 0 end
-    if not cb.enabled or not rb.enabled then return 0 end
-    local cbAnchor = cb.anchorGroupId or self:GetFirstAvailableAnchorGroup()
-    local rbAnchor = rb.anchorGroupId or self:GetFirstAvailableAnchorGroup()
-    if not cbAnchor or not rbAnchor then return 0 end
-    if cbAnchor ~= rbAnchor then return 0 end
-
-    local cbPos = cb.position or "below"
-    local rbPos = rb.position or "below"
-    if cbPos ~= rbPos then return 0 end
-
-    local order = rb.stackOrder or "resource_first"
-
-    if moduleId == "castBar" then
-        if order == "resource_first" then
-            return self:GetResourceBarsTotalHeight()
-        end
-        return 0
-    elseif moduleId == "resourceBars" then
-        if order == "cast_first" then
-            local cbHeight = self:GetCastBarHeight()
-            if cbHeight > 0 then
-                return cbHeight + math.abs(cb.yOffset or 0)
-            end
-        end
-        return 0
-    end
-    return 0
-end
-
 function CooldownCompanion:UpdateAnchorStacking()
     if pendingStackUpdate then return end
     pendingStackUpdate = true
     C_Timer.After(0, function()
         pendingStackUpdate = false
-        CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:EvaluateCastBar()
     end)
 end

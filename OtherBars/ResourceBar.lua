@@ -182,7 +182,9 @@ local isApplied = false
 local hooksInstalled = false
 local eventFrame = nil
 local onUpdateFrame = nil
-local containerFrame = nil
+local containerFrameAbove = nil
+local containerFrameBelow = nil
+local lastAppliedWidth = nil
 local resourceBarFrames = {}   -- array of bar frame objects (ordered by stacking)
 local activeResources = {}     -- array of power type ints currently displayed
 local isPreviewActive = false
@@ -1357,13 +1359,6 @@ function CooldownCompanion:ApplyResourceBars()
         end
     end
 
-    if settings.reverseResourceOrder and #filtered > 1 then
-        local n = #filtered
-        for i = 1, math.floor(n / 2) do
-            filtered[i], filtered[n - i + 1] = filtered[n - i + 1], filtered[i]
-        end
-    end
-
     -- Append enabled custom aura bars
     local customBars = GetSpecCustomAuraBars(settings)
     for i = 1, MAX_CUSTOM_AURA_BARS do
@@ -1378,18 +1373,41 @@ function CooldownCompanion:ApplyResourceBars()
         return
     end
 
-    -- Create container frame if needed
-    if not containerFrame then
-        containerFrame = CreateFrame("Frame", "CooldownCompanionResourceBars", UIParent)
-        containerFrame:SetFrameStrata("MEDIUM")
+    -- Create containers if needed
+    if not containerFrameAbove then
+        containerFrameAbove = CreateFrame("Frame", "CooldownCompanionResourceBarsAbove", UIParent)
+        containerFrameAbove:SetFrameStrata("MEDIUM")
     end
-    containerFrame:Show()
+    if not containerFrameBelow then
+        containerFrameBelow = CreateFrame("Frame", "CooldownCompanionResourceBarsBelow", UIParent)
+        containerFrameBelow:SetFrameStrata("MEDIUM")
+    end
 
     -- Create or recycle bar frames
     local globalBarHeight = settings.barHeight or 12
     local barSpacing = settings.barSpacing or 3.6
     local segmentGap = settings.segmentGap or 4
     local totalWidth = groupFrame:GetWidth()
+
+    -- Determine side/order for each bar (for per-element positioning)
+    local sideList = {}
+    local orderList = {}
+    local fallbackOrder = 900
+    for idx, powerType in ipairs(filtered) do
+        local side, order
+        if powerType >= CUSTOM_AURA_BAR_BASE then
+            local slotIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
+            local slotCfg = settings.customAuraBarSlots and settings.customAuraBarSlots[slotIdx]
+            side = (slotCfg and slotCfg.position) or "below"
+            order = (slotCfg and slotCfg.order) or (fallbackOrder + idx)
+        else
+            local res = settings.resources and settings.resources[powerType]
+            side = (res and res.position) or "below"
+            order = (res and res.order) or (fallbackOrder + idx)
+        end
+        sideList[idx] = side
+        orderList[idx] = order
+    end
 
     -- Hide existing bars that we don't need
     for i = #filtered + 1, #resourceBarFrames do
@@ -1404,6 +1422,7 @@ function CooldownCompanion:ApplyResourceBars()
     for idx, powerType in ipairs(filtered) do
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
+        local targetContainer = sideList[idx] == "above" and containerFrameAbove or containerFrameBelow
 
         -- Resolve per-bar height override
         local effectiveHeight = globalBarHeight
@@ -1425,7 +1444,7 @@ function CooldownCompanion:ApplyResourceBars()
             if not barInfo or barInfo.barType ~= "mw_segmented"
                 or #barInfo.frame.segments ~= halfSegments then
                 if barInfo and barInfo.frame then barInfo.frame:Hide() end
-                local holder = CreateOverlayBar(containerFrame, halfSegments)
+                local holder = CreateOverlayBar(targetContainer, halfSegments)
                 barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
                 resourceBarFrames[idx] = barInfo
             else
@@ -1464,11 +1483,11 @@ function CooldownCompanion:ApplyResourceBars()
             if needsRecreate then
                 if barInfo and barInfo.frame then barInfo.frame:Hide() end
                 if mode == "continuous" then
-                    local bar = CreateContinuousBar(containerFrame)
+                    local bar = CreateContinuousBar(targetContainer)
                     bar:SetMinMaxValues(0, maxStacks)
                     barInfo = { frame = bar, barType = "custom_continuous", powerType = powerType }
                 elseif mode == "segmented" then
-                    local holder = CreateSegmentedBar(containerFrame, maxStacks)
+                    local holder = CreateSegmentedBar(targetContainer, maxStacks)
                     -- Set per-segment MinMax for secret-safe SetValue(stacks) clamping
                     for si = 1, maxStacks do
                         holder.segments[si]:SetMinMaxValues(si - 1, si)
@@ -1476,7 +1495,7 @@ function CooldownCompanion:ApplyResourceBars()
                     barInfo = { frame = holder, barType = "custom_segmented", powerType = powerType }
                 elseif mode == "overlay" then
                     local half = math.ceil(maxStacks / 2)
-                    local holder = CreateOverlayBar(containerFrame, half)
+                    local holder = CreateOverlayBar(targetContainer, half)
                     barInfo = { frame = holder, barType = "custom_overlay", powerType = powerType, halfSegments = half }
                 end
                 resourceBarFrames[idx] = barInfo
@@ -1532,7 +1551,7 @@ function CooldownCompanion:ApplyResourceBars()
                 if barInfo and barInfo.frame then
                     barInfo.frame:Hide()
                 end
-                local holder = CreateSegmentedBar(containerFrame, max)
+                local holder = CreateSegmentedBar(targetContainer, max)
                 barInfo = { frame = holder, barType = "segmented", powerType = powerType }
                 resourceBarFrames[idx] = barInfo
             else
@@ -1548,7 +1567,7 @@ function CooldownCompanion:ApplyResourceBars()
                 if barInfo and barInfo.frame then
                     barInfo.frame:Hide()
                 end
-                local bar = CreateContinuousBar(containerFrame)
+                local bar = CreateContinuousBar(targetContainer)
                 barInfo = { frame = bar, barType = "continuous", powerType = powerType }
                 resourceBarFrames[idx] = barInfo
             else
@@ -1559,51 +1578,78 @@ function CooldownCompanion:ApplyResourceBars()
             StyleContinuousBar(barInfo.frame, powerType, settings)
         end
 
+        if barInfo.frame:GetParent() ~= targetContainer then
+            barInfo.frame:SetParent(targetContainer)
+        end
+        barInfo._side = sideList[idx]
+        barInfo._order = orderList[idx]
         barInfo._effectiveHeight = effectiveHeight
         barInfo.frame:Show()
     end
 
     activeResources = filtered
 
-    -- Layout: stack bars vertically inside container
-    local stackOffset = self:GetAnchorStackOffset("resourceBars")
-    local yOfs = settings.yOffset or -3
-    local position = settings.position or "below"
+    -- Layout: per-element positioning using above/below containers
+    local gap = math_abs(settings.yOffset or -3)
+    lastAppliedWidth = totalWidth
 
-    containerFrame:ClearAllPoints()
-    containerFrame:SetSize(totalWidth, 1) -- height set by content
-    containerFrame._lastAppliedWidth = totalWidth
-
-    if position == "above" then
-        containerFrame:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, -yOfs + stackOffset)
-    else
-        containerFrame:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, yOfs - stackOffset)
-    end
-
-    -- Position individual bars within container
-    local currentY = 0
-    for idx, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame:IsShown() then
-            barInfo.frame:ClearAllPoints()
-            if position == "above" then
-                -- Stack upward: first bar at bottom of container, subsequent above
-                barInfo.frame:SetPoint("BOTTOMLEFT", containerFrame, "BOTTOMLEFT", 0, currentY)
-                barInfo.frame:SetPoint("BOTTOMRIGHT", containerFrame, "BOTTOMRIGHT", 0, currentY)
+    -- Sort bars into above/below groups by order
+    local aboveBars = {}
+    local belowBars = {}
+    for i = 1, #filtered do
+        local barInfo = resourceBarFrames[i]
+        if barInfo and barInfo.frame and barInfo.frame:IsShown() then
+            if barInfo._side == "above" then
+                table.insert(aboveBars, barInfo)
             else
-                -- Stack downward: first bar at top of container, subsequent below
-                barInfo.frame:SetPoint("TOPLEFT", containerFrame, "TOPLEFT", 0, -currentY)
-                barInfo.frame:SetPoint("TOPRIGHT", containerFrame, "TOPRIGHT", 0, -currentY)
+                table.insert(belowBars, barInfo)
             end
-            local h = barInfo._effectiveHeight or globalBarHeight
-            barInfo.frame:SetHeight(h)
-            currentY = currentY + h + barSpacing
         end
     end
+    table.sort(aboveBars, function(a, b)
+        if a._order ~= b._order then return a._order < b._order end
+        return (a.powerType or 0) < (b.powerType or 0)
+    end)
+    table.sort(belowBars, function(a, b)
+        if a._order ~= b._order then return a._order < b._order end
+        return (a.powerType or 0) < (b.powerType or 0)
+    end)
 
-    -- Set container total height
-    local totalHeight = currentY - barSpacing  -- subtract trailing spacing
-    if totalHeight < 1 then totalHeight = 1 end
-    containerFrame:SetHeight(totalHeight)
+    -- Anchor containers to group frame
+    containerFrameAbove:ClearAllPoints()
+    containerFrameBelow:ClearAllPoints()
+    containerFrameAbove:SetWidth(totalWidth)
+    containerFrameBelow:SetWidth(totalWidth)
+    containerFrameAbove:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, gap)
+    containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, -gap)
+
+    -- Stack above bars (order ascending = bottom to top; order=1 closest to group)
+    local currentY = 0
+    for _, barInfo in ipairs(aboveBars) do
+        barInfo.frame:ClearAllPoints()
+        barInfo.frame:SetPoint("BOTTOMLEFT", containerFrameAbove, "BOTTOMLEFT", 0, currentY)
+        barInfo.frame:SetPoint("BOTTOMRIGHT", containerFrameAbove, "BOTTOMRIGHT", 0, currentY)
+        local h = barInfo._effectiveHeight or globalBarHeight
+        barInfo.frame:SetHeight(h)
+        currentY = currentY + h + barSpacing
+    end
+    local aboveHeight = currentY > 0 and (currentY - barSpacing) or 1
+    containerFrameAbove:SetHeight(aboveHeight)
+    if #aboveBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+
+    -- Stack below bars (order ascending = top to bottom; order=1 closest to group)
+    currentY = 0
+    for _, barInfo in ipairs(belowBars) do
+        barInfo.frame:ClearAllPoints()
+        barInfo.frame:SetPoint("TOPLEFT", containerFrameBelow, "TOPLEFT", 0, -currentY)
+        barInfo.frame:SetPoint("TOPRIGHT", containerFrameBelow, "TOPRIGHT", 0, -currentY)
+        local h = barInfo._effectiveHeight or globalBarHeight
+        barInfo.frame:SetHeight(h)
+        currentY = currentY + h + barSpacing
+    end
+    local belowHeight = currentY > 0 and (currentY - barSpacing) or 1
+    containerFrameBelow:SetHeight(belowHeight)
+    if #belowBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
 
     -- Enable OnUpdate
     if not onUpdateFrame then
@@ -1620,12 +1666,13 @@ function CooldownCompanion:ApplyResourceBars()
     if settings.inheritAlpha then
         -- Save original alpha (only if not already saved)
         if not savedContainerAlpha then
-            savedContainerAlpha = containerFrame:GetAlpha()
+            savedContainerAlpha = containerFrameAbove:GetAlpha()
         end
 
         -- Apply alpha immediately
         local groupAlpha = groupFrame:GetEffectiveAlpha()
-        containerFrame:SetAlpha(groupAlpha)
+        containerFrameAbove:SetAlpha(groupAlpha)
+        containerFrameBelow:SetAlpha(groupAlpha)
 
         -- Start alpha sync OnUpdate (~30Hz polling)
         if not alphaSyncFrame then
@@ -1642,7 +1689,8 @@ function CooldownCompanion:ApplyResourceBars()
             local alpha = groupFrame:GetEffectiveAlpha()
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
-                if containerFrame then containerFrame:SetAlpha(alpha) end
+                if containerFrameAbove then containerFrameAbove:SetAlpha(alpha) end
+                if containerFrameBelow then containerFrameBelow:SetAlpha(alpha) end
             end
         end)
     else
@@ -1650,8 +1698,9 @@ function CooldownCompanion:ApplyResourceBars()
         if alphaSyncFrame then
             alphaSyncFrame:SetScript("OnUpdate", nil)
         end
-        if savedContainerAlpha and containerFrame then
-            containerFrame:SetAlpha(savedContainerAlpha)
+        if savedContainerAlpha then
+            if containerFrameAbove then containerFrameAbove:SetAlpha(savedContainerAlpha) end
+            if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
             savedContainerAlpha = nil
         end
     end
@@ -1664,13 +1713,15 @@ end
 function CooldownCompanion:RevertResourceBars()
     if not isApplied then return end
     isApplied = false
+    lastAppliedWidth = nil
 
     -- Stop alpha sync and restore alpha
     if alphaSyncFrame then
         alphaSyncFrame:SetScript("OnUpdate", nil)
     end
-    if savedContainerAlpha and containerFrame then
-        containerFrame:SetAlpha(savedContainerAlpha)
+    if savedContainerAlpha then
+        if containerFrameAbove then containerFrameAbove:SetAlpha(savedContainerAlpha) end
+        if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
     end
     savedContainerAlpha = nil
 
@@ -1692,10 +1743,9 @@ function CooldownCompanion:RevertResourceBars()
         end
     end
 
-    -- Hide container
-    if containerFrame then
-        containerFrame:Hide()
-    end
+    -- Hide containers
+    if containerFrameAbove then containerFrameAbove:Hide() end
+    if containerFrameBelow then containerFrameBelow:Hide() end
 
     isPreviewActive = false
     activeResources = {}
@@ -1722,28 +1772,26 @@ function CooldownCompanion:EvaluateResourceBars()
     self:ApplyResourceBars()
 end
 
-------------------------------------------------------------------------
--- Total height for stacking coordination
-------------------------------------------------------------------------
-
-function CooldownCompanion:GetResourceBarsTotalHeight()
+-- Returns the total stacked height of bars on `side` with order < upToOrder.
+-- Used by CastBar to compute its offset below/above the group frame.
+function CooldownCompanion:GetResourceBarStackHeight(side, upToOrder)
     if not isApplied then return 0 end
     local settings = GetResourceBarSettings()
     if not settings then return 0 end
-
     local globalHeight = settings.barHeight or 12
     local barSpacing = settings.barSpacing or 3.6
-    local totalBarHeight = 0
+    local totalHeight = 0
     local count = 0
     for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame and barInfo.frame:IsShown() then
-            totalBarHeight = totalBarHeight + (barInfo._effectiveHeight or globalHeight)
+        if barInfo.frame and barInfo.frame:IsShown()
+            and barInfo._side == side
+            and barInfo._order < upToOrder then
+            totalHeight = totalHeight + (barInfo._effectiveHeight or globalHeight)
             count = count + 1
         end
     end
     if count == 0 then return 0 end
-
-    return totalBarHeight + (count - 1) * barSpacing + math_abs(settings.yOffset or -3)
+    return totalHeight + (count - 1) * barSpacing
 end
 
 ------------------------------------------------------------------------
@@ -1869,10 +1917,9 @@ local function InstallHooks()
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
-        if not groupFrame or not containerFrame then return end
+        if not groupFrame or not lastAppliedWidth then return end
         local newWidth = groupFrame:GetWidth()
-        if containerFrame._lastAppliedWidth
-            and math_abs(newWidth - containerFrame._lastAppliedWidth) < 0.1 then
+        if math_abs(newWidth - lastAppliedWidth) < 0.1 then
             return
         end
         CooldownCompanion:ApplyResourceBars()
@@ -1885,10 +1932,9 @@ local function InstallHooks()
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
-        if not groupFrame or not containerFrame then return end
+        if not groupFrame or not lastAppliedWidth then return end
         local newWidth = groupFrame:GetWidth()
-        if containerFrame._lastAppliedWidth
-            and math_abs(newWidth - containerFrame._lastAppliedWidth) < 0.1 then
+        if math_abs(newWidth - lastAppliedWidth) < 0.1 then
             return
         end
         CooldownCompanion:ApplyResourceBars()

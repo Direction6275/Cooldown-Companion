@@ -258,7 +258,6 @@ local defaults = {
             enabled = true,
             anchorGroupId = nil,
             inheritAlpha = false,
-            position = "below",
             yOffset = -3,
             barHeight = 12,
             barSpacing = 3.6,
@@ -269,8 +268,6 @@ local defaults = {
             borderSize = 1,
             segmentGap = 4,
             hideManaForNonHealer = true,
-            reverseResourceOrder = false,
-            stackOrder = "resource_first",
             resources = {
                 [100] = {
                     enabled = true,
@@ -278,6 +275,11 @@ local defaults = {
                     mwOverlayColor = nil,
                     mwMaxColor = nil,
                 },
+            },
+            customAuraBarSlots = {
+                [1] = { position = "below", order = 1001 },
+                [2] = { position = "below", order = 1002 },
+                [3] = { position = "below", order = 1003 },
             },
             customAuraBars = {},
             textFont = "Friz Quadrata TT",
@@ -291,6 +293,7 @@ local defaults = {
             stylingEnabled = true,
             anchorGroupId = nil,
             position = "below",
+            order = 2000,
             yOffset = 0,
             height = 15,
             barColor = { 1.0, 0.7, 0.0, 1.0 },
