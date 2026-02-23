@@ -372,8 +372,9 @@ local function InstallFXHooks(cb)
     -- Each type-specific hook also suppresses FlashAnim + Flash (the shared border
     -- glow).  PlayFadeAnim (FlashAnim) fires BEFORE PlayFinishAnim in the same frame,
     -- so stopping FlashAnim from the type hook is still same-frame — no visible flash.
-    if cb.StandardFinish then
-        local anim = cb.StandardFinish
+    local function HookFinishAnim(animGroup)
+        if not animGroup then return end
+        local anim = animGroup  -- capture in insecure context (self in hook is secret)
         hooksecurefunc(anim, "Play", function()
             local s = GetCastBarSettings()
             if s and s.showCastFinishFX == false then
@@ -383,28 +384,9 @@ local function InstallFXHooks(cb)
             end
         end)
     end
-    if cb.ChannelFinish then
-        local anim = cb.ChannelFinish
-        hooksecurefunc(anim, "Play", function()
-            local s = GetCastBarSettings()
-            if s and s.showCastFinishFX == false then
-                anim:Stop()
-                if cb.FlashAnim then cb.FlashAnim:Stop() end
-                if cb.Flash then cb.Flash:SetAlpha(0) end
-            end
-        end)
-    end
-    if cb.CraftingFinish then
-        local anim = cb.CraftingFinish
-        hooksecurefunc(anim, "Play", function()
-            local s = GetCastBarSettings()
-            if s and s.showCastFinishFX == false then
-                anim:Stop()
-                if cb.FlashAnim then cb.FlashAnim:Stop() end
-                if cb.Flash then cb.Flash:SetAlpha(0) end
-            end
-        end)
-    end
+    HookFinishAnim(cb.StandardFinish)
+    HookFinishAnim(cb.ChannelFinish)
+    HookFinishAnim(cb.CraftingFinish)
     if cb.InterruptGlowAnim then
         local anim = cb.InterruptGlowAnim
         hooksecurefunc(anim, "Play", function()
@@ -1190,8 +1172,8 @@ local function InstallHooks()
             end)
         end)
 
-        -- When compact layout changes visible buttons — re-apply FX scaling
-        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+        -- Shared handler: re-apply FX scaling when anchor group width changes
+        local function ReapplyFXFromHook(groupId)
             local s = GetCastBarSettings()
             if not s or not s.enabled then return end
             local anchorGroupId = GetEffectiveAnchorGroupId(s)
@@ -1207,25 +1189,16 @@ local function InstallHooks()
                 barWidth = barWidth - effectiveHeight
             end
             ApplyFXScaling(cb, barWidth, effectiveHeight)
+        end
+
+        -- When compact layout changes visible buttons — re-apply FX scaling
+        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+            ReapplyFXFromHook(groupId)
         end)
 
         -- When icon size / spacing / buttons-per-row changes — re-apply FX scaling
         hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
-            local s = GetCastBarSettings()
-            if not s or not s.enabled then return end
-            local anchorGroupId = GetEffectiveAnchorGroupId(s)
-            if anchorGroupId ~= groupId then return end
-            if not isApplied then return end
-            local cb = PlayerCastingBarFrame
-            if not cb then return end
-            local groupFrame = CooldownCompanion.groupFrames[groupId]
-            if not groupFrame then return end
-            local effectiveHeight = s.stylingEnabled and (s.height or 15) or 11
-            local barWidth = groupFrame:GetWidth()
-            if s.showIcon and not s.iconOffset and s.stylingEnabled then
-                barWidth = barWidth - effectiveHeight
-            end
-            ApplyFXScaling(cb, barWidth, effectiveHeight)
+            ReapplyFXFromHook(groupId)
         end)
     end
 end

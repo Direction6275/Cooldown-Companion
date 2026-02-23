@@ -292,147 +292,72 @@ local function DetermineActiveResources()
     return CLASS_RESOURCES[classID] or {}
 end
 
---- Get color for a power type, respecting per-resource overrides.
-local function GetPowerColor(powerType, settings)
-    if settings and settings.resources then
-        local override = settings.resources[powerType]
-        if override and override.color then
-            return override.color
-        end
-    end
-    return DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }
-end
+------------------------------------------------------------------------
+-- Color resolution: data-driven lookup for all resource types
+-- Each entry: { keys = { settingKey, ... }, defaults = { defaultValue, ... } }
+-- GetResourceColors(powerType, settings) returns one value per key.
+------------------------------------------------------------------------
 
---- Get combo point colors (normal, max, charged).
-local function GetComboColors(settings)
-    local normalColor = DEFAULT_COMBO_COLOR
-    local maxColor = DEFAULT_COMBO_MAX_COLOR
-    local chargedColor = DEFAULT_COMBO_CHARGED_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[4]
-        if override then
-            if override.comboColor then normalColor = override.comboColor end
-            if override.comboMaxColor then maxColor = override.comboMaxColor end
-            if override.comboChargedColor then chargedColor = override.comboChargedColor end
-        end
-    end
-    return normalColor, maxColor, chargedColor
-end
+local RESOURCE_COLOR_DEFS = {
+    [4]   = { keys = { "comboColor", "comboMaxColor", "comboChargedColor" },
+              defaults = { DEFAULT_COMBO_COLOR, DEFAULT_COMBO_MAX_COLOR, DEFAULT_COMBO_CHARGED_COLOR } },
+    [5]   = { keys = { "runeReadyColor", "runeRechargingColor", "runeMaxColor" },
+              defaults = { DEFAULT_RUNE_READY_COLOR, DEFAULT_RUNE_RECHARGING_COLOR, DEFAULT_RUNE_MAX_COLOR } },
+    [7]   = { keys = { "shardReadyColor", "shardRechargingColor", "shardMaxColor" },
+              defaults = { DEFAULT_SHARD_READY_COLOR, DEFAULT_SHARD_RECHARGING_COLOR, DEFAULT_SHARD_MAX_COLOR } },
+    [9]   = { keys = { "holyColor", "holyMaxColor" },
+              defaults = { DEFAULT_HOLY_COLOR, DEFAULT_HOLY_MAX_COLOR } },
+    [12]  = { keys = { "chiColor", "chiMaxColor" },
+              defaults = { DEFAULT_CHI_COLOR, DEFAULT_CHI_MAX_COLOR } },
+    [16]  = { keys = { "arcaneColor", "arcaneMaxColor" },
+              defaults = { DEFAULT_ARCANE_COLOR, DEFAULT_ARCANE_MAX_COLOR } },
+    [19]  = { keys = { "essenceReadyColor", "essenceRechargingColor", "essenceMaxColor" },
+              defaults = { DEFAULT_ESSENCE_READY_COLOR, DEFAULT_ESSENCE_RECHARGING_COLOR, DEFAULT_ESSENCE_MAX_COLOR } },
+    [100] = { keys = { "mwBaseColor", "mwOverlayColor", "mwMaxColor" },
+              defaults = { DEFAULT_MW_BASE_COLOR, DEFAULT_MW_OVERLAY_COLOR, DEFAULT_MW_MAX_COLOR } },
+}
 
---- Get rune-specific colors (ready, recharging, max).
-local function GetRuneColors(settings)
-    local readyColor = DEFAULT_RUNE_READY_COLOR
-    local rechargingColor = DEFAULT_RUNE_RECHARGING_COLOR
-    local maxColor = DEFAULT_RUNE_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[5]
-        if override then
-            if override.runeReadyColor then readyColor = override.runeReadyColor end
-            if override.runeRechargingColor then rechargingColor = override.runeRechargingColor end
-            if override.runeMaxColor then maxColor = override.runeMaxColor end
+--- Generic color resolver. Returns one color per key defined in RESOURCE_COLOR_DEFS.
+--- For power types without an entry (generic continuous), returns the single power color.
+local function GetResourceColors(powerType, settings)
+    local def = RESOURCE_COLOR_DEFS[powerType]
+    if not def then
+        -- Generic single-color fallback (continuous resources)
+        if settings and settings.resources then
+            local override = settings.resources[powerType]
+            if override and override.color then
+                return override.color
+            end
         end
+        return DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }
     end
-    return readyColor, rechargingColor, maxColor
-end
 
---- Get soul shard-specific colors (ready, recharging, max).
-local function GetShardColors(settings)
-    local readyColor = DEFAULT_SHARD_READY_COLOR
-    local rechargingColor = DEFAULT_SHARD_RECHARGING_COLOR
-    local maxColor = DEFAULT_SHARD_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[7]
-        if override then
-            if override.shardReadyColor then readyColor = override.shardReadyColor end
-            if override.shardRechargingColor then rechargingColor = override.shardRechargingColor end
-            if override.shardMaxColor then maxColor = override.shardMaxColor end
-        end
+    local override = settings and settings.resources and settings.resources[powerType]
+    local keys, defaults = def.keys, def.defaults
+    local n = #keys
+    if n == 2 then
+        return (override and override[keys[1]]) or defaults[1],
+               (override and override[keys[2]]) or defaults[2]
+    elseif n == 3 then
+        return (override and override[keys[1]]) or defaults[1],
+               (override and override[keys[2]]) or defaults[2],
+               (override and override[keys[3]]) or defaults[3]
     end
-    return readyColor, rechargingColor, maxColor
-end
-
---- Get holy power colors (normal vs at max).
-local function GetHolyColors(settings)
-    local normalColor = DEFAULT_HOLY_COLOR
-    local maxColor = DEFAULT_HOLY_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[9]
-        if override then
-            if override.holyColor then normalColor = override.holyColor end
-            if override.holyMaxColor then maxColor = override.holyMaxColor end
-        end
-    end
-    return normalColor, maxColor
-end
-
---- Get chi colors (normal vs at max).
-local function GetChiColors(settings)
-    local normalColor = DEFAULT_CHI_COLOR
-    local maxColor = DEFAULT_CHI_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[12]
-        if override then
-            if override.chiColor then normalColor = override.chiColor end
-            if override.chiMaxColor then maxColor = override.chiMaxColor end
-        end
-    end
-    return normalColor, maxColor
-end
-
---- Get arcane charges colors (normal vs at max).
-local function GetArcaneColors(settings)
-    local normalColor = DEFAULT_ARCANE_COLOR
-    local maxColor = DEFAULT_ARCANE_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[16]
-        if override then
-            if override.arcaneColor then normalColor = override.arcaneColor end
-            if override.arcaneMaxColor then maxColor = override.arcaneMaxColor end
-        end
-    end
-    return normalColor, maxColor
-end
-
---- Get essence-specific colors (ready, recharging, max).
-local function GetEssenceColors(settings)
-    local readyColor = DEFAULT_ESSENCE_READY_COLOR
-    local rechargingColor = DEFAULT_ESSENCE_RECHARGING_COLOR
-    local maxColor = DEFAULT_ESSENCE_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[19]
-        if override then
-            if override.essenceReadyColor then readyColor = override.essenceReadyColor end
-            if override.essenceRechargingColor then rechargingColor = override.essenceRechargingColor end
-            if override.essenceMaxColor then maxColor = override.essenceMaxColor end
-        end
-    end
-    return readyColor, rechargingColor, maxColor
-end
-
---- Get MW colors (base, overlay, max).
-local function GetMWColors(settings)
-    local baseColor = DEFAULT_MW_BASE_COLOR
-    local overlayColor = DEFAULT_MW_OVERLAY_COLOR
-    local maxColor = DEFAULT_MW_MAX_COLOR
-    if settings and settings.resources then
-        local override = settings.resources[100]
-        if override then
-            if override.mwBaseColor then baseColor = override.mwBaseColor end
-            if override.mwOverlayColor then overlayColor = override.mwOverlayColor end
-            if override.mwMaxColor then maxColor = override.mwMaxColor end
-        end
-    end
-    return baseColor, overlayColor, maxColor
+    -- Shouldn't happen, but safe fallback
+    return defaults[1]
 end
 
 --- Update cached MW max stacks based on Raging Maelstrom talent (OOC only — talents can't change in combat).
+--- Returns true if the max changed (and bars were rebuilt), false otherwise.
 local function UpdateMWMaxStacks()
     local hasRagingMaelstrom = C_SpellBook.IsSpellKnown(RAGING_MAELSTROM_SPELL_ID, Enum.SpellBookSpellBank.Player)
     local newMax = hasRagingMaelstrom and 10 or 5
     if mwMaxStacks ~= newMax then
         mwMaxStacks = newMax
         CooldownCompanion:ApplyResourceBars()  -- segment count changed, rebuild
+        return true
     end
+    return false
 end
 
 --- Check if a specific resource is enabled in settings.
@@ -725,7 +650,7 @@ local function UpdateSegmentedBar(holder, powerType)
             if a.ready ~= b.ready then return a.ready end
             return a.remaining < b.remaining
         end)
-        local readyColor, rechargingColor, maxColor = GetRuneColors(GetResourceBarSettings())
+        local readyColor, rechargingColor, maxColor = GetResourceColors(5, GetResourceBarSettings())
         local allReady = true
         for i = 1, numSegs do
             if not runeData[i].ready then allReady = false; break end
@@ -757,7 +682,7 @@ local function UpdateSegmentedBar(holder, powerType)
             local perShard = rawMax / max
             local filled = math_floor(raw / perShard)
             local partial = (raw % perShard) / perShard
-            local readyColor, rechargingColor, maxColor = GetShardColors(GetResourceBarSettings())
+            local readyColor, rechargingColor, maxColor = GetResourceColors(7, GetResourceBarSettings())
             local isMax = (filled == max)
             local activeReadyColor = isMax and maxColor or readyColor
             for i = 1, math_min(#holder.segments, max) do
@@ -782,7 +707,7 @@ local function UpdateSegmentedBar(holder, powerType)
         local filled = UnitPower("player", 19)
         local max = UnitPowerMax("player", 19)
         local partial = UnitPartialPower("player", 19) / 1000
-        local readyColor, rechargingColor, maxColor = GetEssenceColors(GetResourceBarSettings())
+        local readyColor, rechargingColor, maxColor = GetResourceColors(19, GetResourceBarSettings())
         local isMax = (filled == max)
         local activeReadyColor = isMax and maxColor or readyColor
         for i = 1, math_min(#holder.segments, max) do
@@ -805,7 +730,7 @@ local function UpdateSegmentedBar(holder, powerType)
     if powerType == 4 then
         local current = UnitPower("player", 4)
         local max = UnitPowerMax("player", 4)
-        local normalColor, maxColor, chargedColor = GetComboColors(GetResourceBarSettings())
+        local normalColor, maxColor, chargedColor = GetResourceColors(4, GetResourceBarSettings())
         local isMax = (current == max and max > 0)
         local baseColor = isMax and maxColor or normalColor
 
@@ -835,14 +760,10 @@ local function UpdateSegmentedBar(holder, powerType)
     local current = UnitPower("player", powerType)
     local max = UnitPowerMax("player", powerType)
     local normalColor, maxColor
-    if powerType == 9 then
-        normalColor, maxColor = GetHolyColors(GetResourceBarSettings())
-    elseif powerType == 12 then
-        normalColor, maxColor = GetChiColors(GetResourceBarSettings())
-    elseif powerType == 16 then
-        normalColor, maxColor = GetArcaneColors(GetResourceBarSettings())
+    if RESOURCE_COLOR_DEFS[powerType] then
+        normalColor, maxColor = GetResourceColors(powerType, GetResourceBarSettings())
     else
-        local color = GetPowerColor(powerType, GetResourceBarSettings())
+        local color = GetResourceColors(powerType, GetResourceBarSettings())
         normalColor, maxColor = color, color
     end
     local isMax = (current == max and max > 0)
@@ -884,7 +805,7 @@ local function UpdateMaelstromWeaponBar(holder)
     end
 
     -- Color: direct comparison is safe since MW applications are plain
-    local baseColor, overlayColor, maxColor = GetMWColors(GetResourceBarSettings())
+    local baseColor, overlayColor, maxColor = GetResourceColors(100, GetResourceBarSettings())
     local isMax = stacks > 0 and stacks == mwMaxStacks
     if isMax then
         for i = 1, half do
@@ -1014,7 +935,7 @@ end
 -- Styling: Custom aura bars
 ------------------------------------------------------------------------
 
-local function StyleCustomAuraBar(barInfo, cabConfig, settings)
+local function StyleCustomAuraBar(barInfo, cabConfig)
     local barColor = cabConfig.barColor or {0.5, 0.5, 1}
 
     if barInfo.barType == "custom_continuous" then
@@ -1089,7 +1010,7 @@ end
 function CooldownCompanion:RecolorCustomAuraBar(cabConfig)
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.cabConfig == cabConfig then
-            StyleCustomAuraBar(barInfo, cabConfig, self.db.profile.settings)
+            StyleCustomAuraBar(barInfo, cabConfig)
             break
         end
     end
@@ -1150,8 +1071,10 @@ local function EnableLifecycleEvents()
                     pendingSpecChange = true
                     C_Timer.After(0.5, function()
                         pendingSpecChange = false
-                        UpdateMWMaxStacks()
-                        CooldownCompanion:EvaluateResourceBars()
+                        local rebuilt = UpdateMWMaxStacks()
+                        if not rebuilt then
+                            CooldownCompanion:EvaluateResourceBars()
+                        end
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
                 end
@@ -1228,13 +1151,13 @@ local function StyleContinuousBar(bar, powerType, settings)
         else
             -- Fallback for power types without class-specific atlas
             bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Blizzard"))
-            local color = GetPowerColor(powerType, settings)
+            local color = GetResourceColors(powerType, settings)
             bar:SetStatusBarColor(color[1], color[2], color[3], 1)
             bar.brightnessOverlay:Hide()
         end
     else
         bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texName))
-        local color = GetPowerColor(powerType, settings)
+        local color = GetResourceColors(powerType, settings)
         bar:SetStatusBarColor(color[1], color[2], color[3], 1)
         bar.brightnessOverlay:Hide()
     end
@@ -1273,55 +1196,12 @@ local function StyleContinuousBar(bar, powerType, settings)
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)
-    if powerType == 4 then
-        -- Combo Points: colored dynamically per-segment in UpdateSegmentedBar
-        local normalColor = GetComboColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(normalColor[1], normalColor[2], normalColor[3], 1)
-        end
-    elseif powerType == 5 then
-        -- Runes: colored dynamically per-segment in UpdateSegmentedBar
-        local readyColor = GetRuneColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
-        end
-    elseif powerType == 7 then
-        -- Soul Shards: colored dynamically per-segment in UpdateSegmentedBar
-        local readyColor = GetShardColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
-        end
-    elseif powerType == 9 then
-        -- Holy Power: colored dynamically per-segment in UpdateSegmentedBar
-        local normalColor = GetHolyColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(normalColor[1], normalColor[2], normalColor[3], 1)
-        end
-    elseif powerType == 12 then
-        -- Chi: colored dynamically per-segment in UpdateSegmentedBar
-        local normalColor = GetChiColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(normalColor[1], normalColor[2], normalColor[3], 1)
-        end
-    elseif powerType == 16 then
-        -- Arcane Charges: colored dynamically per-segment in UpdateSegmentedBar
-        local normalColor = GetArcaneColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(normalColor[1], normalColor[2], normalColor[3], 1)
-        end
-    elseif powerType == 19 then
-        -- Essence: colored dynamically per-segment in UpdateSegmentedBar
-        local readyColor = GetEssenceColors(settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], 1)
-        end
-    else
-        local color = GetPowerColor(powerType, settings)
-        for _, seg in ipairs(holder.segments) do
-            seg:SetStatusBarColor(color[1], color[2], color[3], 1)
-        end
+    -- All segmented types use their first color return as the initial segment color.
+    -- UpdateSegmentedBar dynamically recolors per-segment each tick.
+    local color = GetResourceColors(powerType, settings)
+    for _, seg in ipairs(holder.segments) do
+        seg:SetStatusBarColor(color[1], color[2], color[3], 1)
     end
-
     -- Segmented bars hide text by default (no text FontString on segmented)
 end
 
@@ -1455,7 +1335,7 @@ function CooldownCompanion:ApplyResourceBars()
             LayoutOverlaySegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings, halfSegments)
 
             -- Apply initial colors
-            local baseColor, overlayColor = GetMWColors(settings)
+            local baseColor, overlayColor = GetResourceColors(100, settings)
             for i = 1, halfSegments do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
                 barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
@@ -1539,7 +1419,7 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.frame.brightnessOverlay:Hide()
             end
             -- Apply bar color AFTER texture setup (SetStatusBarTexture resets vertex color)
-            StyleCustomAuraBar(barInfo, cabConfig, settings)
+            StyleCustomAuraBar(barInfo, cabConfig)
         elseif isSegmented then
             local max = UnitPowerMax("player", powerType)
             if powerType == 5 then max = 6 end  -- Runes always 6
