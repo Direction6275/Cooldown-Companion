@@ -71,6 +71,18 @@ local function UpdateBarFill(button)
         else
             button.statusBar:SetValue(button._durationObj:GetElapsedPercent())     -- fill: 0→1
         end
+    elseif button._viewerBar and button._auraActive and not button._barGCDSuppressed then
+        -- Totem/guardian: mirror viewer's BuffBar StatusBar (secret pass-through).
+        -- Blizzard fills viewerFrame.Bar with SetMinMaxValues(0, duration) and
+        -- SetValue(remaining) each frame.  Both GetValue and GetMinMaxValues
+        -- return secret values when set with secrets — no arithmetic needed.
+        local viewerBar = button._viewerBar
+        if viewerBar:IsVisible() then
+            onCooldown = true
+            local _, maxVal = viewerBar:GetMinMaxValues()
+            button.statusBar:SetMinMaxValues(0, maxVal)
+            button.statusBar:SetValue(viewerBar:GetValue())
+        end
     elseif button.buttonData.type == "item" then
         -- Items: use stored C_Item.GetItemCooldown values (avoids hidden-widget staleness)
         local startMs = (button._itemCdStart or 0) * 1000
@@ -132,6 +144,13 @@ local function UpdateBarFill(button)
                 else
                     button.timeText:SetFormattedText("%.1f", remaining)
                 end
+            elseif button._viewerBar then
+                -- Totem: viewer bar values are always secret (GetTotemInfo origin).
+                -- HasSecretValues() on the viewer StatusBar is unreliable (Blizzard's
+                -- secure code sets it, so the widget reports plain — but the actual
+                -- number returned by GetValue() is a secret wrapper).
+                -- Always use SetFormattedText for secret-safe pass-through.
+                button.timeText:SetFormattedText("%.0f", button._viewerBar:GetValue())
             else
                 if itemRemaining > 0 then
                     button.timeText:SetText(FormatBarTime(itemRemaining))
@@ -141,6 +160,11 @@ local function UpdateBarFill(button)
             end
         end
     else
+        -- Restore 0-1 range if exiting viewer bar pass-through
+        if button._viewerBar then
+            button.statusBar:SetMinMaxValues(0, 1)
+            button._viewerBar = nil
+        end
         if button.buttonData.isPassive then
             button.statusBar:SetValue(0)
             button.timeText:SetText("")
@@ -169,8 +193,11 @@ local function UpdateBarDisplay(button, fetchOk)
 
     -- Determine onCooldown via nil-checks (secret-safe).
     -- _durationObj is non-nil only when UpdateButtonCooldown found an active CD/aura.
+    -- _viewerBar is non-nil when a totem/guardian viewer bar is active.
     local onCooldown
     if button._durationObj then
+        onCooldown = not button._barGCDSuppressed
+    elseif button._viewerBar and button._auraActive then
         onCooldown = not button._barGCDSuppressed
     elseif button.buttonData.type == "item" then
         onCooldown = button._itemCdDuration and button._itemCdDuration > 0
@@ -611,6 +638,20 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
                 end
             end
         end
+        -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
+        if self._auraActive and self._viewerBar
+           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
+            if not self._viewerBar:IsVisible() then
+                self._viewerBar = nil
+                self._auraActive = false
+                self._inPandemic = false
+                self._barAuraColor = nil
+                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                self.statusBar:SetMinMaxValues(0, 1)
+                SetBarAuraEffect(self, false)
+            end
+        end
         self._barFillElapsed = self._barFillElapsed + elapsed
         if self._barFillElapsed >= barInterval then
             self._barFillElapsed = 0
@@ -624,6 +665,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraActive = false
 
     button._auraInstanceID = nil
+    button._viewerBar = nil
 
     -- Per-button visibility runtime state
     button._visibilityHidden = false
@@ -712,6 +754,20 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
                 end
             end
         end
+        -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
+        if self._auraActive and self._viewerBar
+           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
+            if not self._viewerBar:IsVisible() then
+                self._viewerBar = nil
+                self._auraActive = false
+                self._inPandemic = false
+                self._barAuraColor = nil
+                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                self.statusBar:SetMinMaxValues(0, 1)
+                SetBarAuraEffect(self, false)
+            end
+        end
         self._barFillElapsed = self._barFillElapsed + elapsed
         if self._barFillElapsed >= barInterval then
             self._barFillElapsed = 0
@@ -731,6 +787,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._auraActive = nil
 
     button._auraInstanceID = nil
+    button._viewerBar = nil
     button._inPandemic = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"

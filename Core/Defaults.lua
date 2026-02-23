@@ -143,6 +143,7 @@ local defaults = {
                         arena = false,
                         openWorld = false,
                         rested = false,
+                        petBattle = true,
                     },
                 }
             ]]

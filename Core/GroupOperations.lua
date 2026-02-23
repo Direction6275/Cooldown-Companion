@@ -130,6 +130,11 @@ function CooldownCompanion:CheckLoadConditions(group)
     -- If rested condition is enabled and player is resting, unload
     if lc.rested and self._isResting then return false end
 
+    -- If pet battle condition is enabled and player is in a pet battle, unload
+    -- Default is true (hide during pet battles); nil treated as true since
+    -- AceDB has no per-group metatable defaults for loadConditions sub-keys.
+    if lc.petBattle ~= false and self._inPetBattle then return false end
+
     return true
 end
 

@@ -543,10 +543,41 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
 end
 
 ------------------------------------------------------------------------
+-- TYPE CLASSIFICATION (for batch visibility)
+------------------------------------------------------------------------
+local function GetButtonEntryType(buttonData)
+    if buttonData.type == "item" then return "item" end
+    return buttonData.addedAs == "aura" and "aura" or "spell"
+end
+
+local function GetMultiSelectUniformType(group, multiIndices)
+    local firstType
+    for _, idx in ipairs(multiIndices) do
+        local bd = group.buttons[idx]
+        if not bd then return nil end
+        local t = GetButtonEntryType(bd)
+        if not firstType then
+            firstType = t
+        elseif t ~= firstType then
+            return nil
+        end
+    end
+    return firstType
+end
+
+------------------------------------------------------------------------
 -- BUTTON SETTINGS COLUMN: Refresh
 ------------------------------------------------------------------------
--- Multi-select content for button settings (delete/move selected)
-local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices)
+-- Multi-select content for button settings (delete/move selected, optional batch visibility)
+local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, uniformType)
+    -- Clean up info buttons from previous render
+    for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(CS.buttonSettingsInfoButtons)
+
     local heading = AceGUI:Create("Heading")
     heading:SetText(multiCount .. " Selected")
     ColorHeading(heading)
@@ -615,6 +646,29 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
         ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
     end)
     scroll:AddChild(moveBtn)
+
+    -- Batch visibility settings when all selected share the same type
+    if uniformType then
+        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if group then
+            local visSpacer = AceGUI:Create("Label")
+            visSpacer:SetText(" ")
+            visSpacer:SetFullWidth(true)
+            scroll:AddChild(visSpacer)
+
+            -- Use the first selected button as a representative for non-batch reads
+            local repData = group.buttons[multiIndices[1]]
+            if repData then
+                ST._BuildVisibilitySettings(scroll, repData, CS.buttonSettingsInfoButtons, {
+                    group = group,
+                    uniformType = uniformType,
+                })
+                if CooldownCompanion.db.profile.hideInfoButtons then
+                    for _, btn in ipairs(CS.buttonSettingsInfoButtons) do btn:Hide() end
+                end
+            end
+        end
+    end
 end
 
 local function RefreshButtonSettingsColumn()
@@ -649,7 +703,9 @@ local function RefreshButtonSettingsColumn()
         end
         bsCol.multiSelectScroll:ReleaseChildren()
         bsCol.multiSelectScroll.frame:Show()
-        RefreshButtonSettingsMultiSelect(bsCol.multiSelectScroll, multiCount, multiIndices)
+        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        local uniformType = group and GetMultiSelectUniformType(group, multiIndices) or nil
+        RefreshButtonSettingsMultiSelect(bsCol.multiSelectScroll, multiCount, multiIndices, uniformType)
         return
     end
 

@@ -134,6 +134,10 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnZoneChanged")
     self:RegisterEvent("PLAYER_UPDATE_RESTING", "OnRestingChanged")
 
+    -- Pet battle events — hide groups during pet battles
+    self:RegisterEvent("PET_BATTLE_OPENING_START", "OnPetBattleStart")
+    self:RegisterEvent("PET_BATTLE_OVER", "OnPetBattleEnd")
+
     -- Aura (buff/debuff) changes — drives aura tracking overlay
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
@@ -190,6 +194,11 @@ function CooldownCompanion:OnEnable()
             end)
         end
     end
+
+    -- Enforce CDM hidden state immediately after hooks are installed.
+    -- Without this, viewers flash visible for ~1s after /reload until
+    -- the delayed ApplyCdmAlpha() in OnPlayerEnteringWorld fires.
+    self:ApplyCdmAlpha()
 
     -- Keybind text events
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")

@@ -596,10 +596,15 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
             HidePixelBorders(seg.borders)
         end
 
-        -- Position overlay segment exactly on top of base
+        -- Position overlay segment inset by border to stay inside borders
         local ov = holder.overlaySegments[i]
         ov:ClearAllPoints()
-        ov:SetAllPoints(seg)
+        if borderStyle == "pixel" then
+            ov:SetPoint("TOPLEFT", seg, "TOPLEFT", borderSize, -borderSize)
+            ov:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -borderSize, borderSize)
+        else
+            ov:SetAllPoints(seg)
+        end
         ov:SetStatusBarTexture(barTexture)
     end
 end
