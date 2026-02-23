@@ -7,8 +7,9 @@
 ## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: Ace3, LibSharedMedia-3.0, Masque
+## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDeflate, LibDataBroker-1.1, LibDBIcon-1.0, Masque
 
+#@no-lib-strip@
 # Libraries - LibStub must be first
 Libs\Ace3\LibStub\LibStub.lua
 Libs\Ace3\CallbackHandler-1.0\CallbackHandler-1.0.xml
@@ -34,14 +35,51 @@ Libs\LibDeflate\lib.xml
 # Minimap Icon Libraries
 Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+#@end-no-lib-strip@
 
 # Core Addon Files
-Utils.lua
-Core.lua
-ButtonFrame.lua
-GroupFrame.lua
-CastBar.lua
-ResourceBar.lua
-FrameAnchoring.lua
-Config.lua
-ConfigSettings.lua
+Core\Utils.lua
+Core\Init.lua
+Core\Defaults.lua
+Core\StyleOverrides.lua
+Core\Lifecycle.lua
+Core\Aura.lua
+Core\EventHandlers.lua
+Core\Masque.lua
+Core\GroupManagement.lua
+Core\Migrations.lua
+Core\AlphaFade.lua
+Core\Keybinds.lua
+Core\GroupOperations.lua
+ButtonFrame\Helpers.lua
+ButtonFrame\Glows.lua
+ButtonFrame\Visibility.lua
+ButtonFrame\Tracking.lua
+ButtonFrame\IconMode.lua
+ButtonFrame\BarMode.lua
+ButtonFrame\Preview.lua
+ButtonFrame\CooldownUpdate.lua
+Core\GroupFrame.lua
+OtherBars\CastBar.lua
+OtherBars\ResourceBar.lua
+Core\FrameAnchoring.lua
+Config\State.lua
+Config\Popups.lua
+Config\Diagnostics.lua
+Config\Pickers.lua
+Config\SpellItemAdd.lua
+Config\DragReorder.lua
+Config\Column1.lua
+Config\Column2.lua
+Config\Column3.lua
+Config\Column4.lua
+Config\Panel.lua
+ConfigSettings\Helpers.lua
+ConfigSettings\SectionBuilders.lua
+ConfigSettings\CastBarPanels.lua
+ConfigSettings\ResourceBarPanels.lua
+ConfigSettings\FrameAnchoringPanels.lua
+ConfigSettings\ButtonSettings.lua
+ConfigSettings\ButtonConditions.lua
+ConfigSettings\BarModeTabs.lua
+ConfigSettings\GroupTabs.lua

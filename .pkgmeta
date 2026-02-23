@@ -4,12 +4,47 @@ curse-project-id: 1451886
 wago-project-id: 4N2kWd6L
 
 externals:
-
+  Libs/Ace3:
+    url: https://repos.wowace.com/wow/ace3/trunk
+    tag: latest
   Libs/LibSharedMedia-3.0:
     url: https://repos.wowace.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0
     tag: latest
+  Libs/LibDataBroker-1.1:
+    url: https://github.com/tekkub/libdatabroker-1-1
+  Libs/LibDBIcon-1.0:
+    url: https://repos.wowace.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
+    tag: latest
+  Libs/LibDeflate:
+    url: https://github.com/SafeteeWoW/LibDeflate
+    tag: 1.0.2-release
 
 ignore:
   - README.md
   - LICENSE.txt
+  - LICENSE.md
   - .github
+  - CLAUDE.md
+  - .claude
+  - .mcp.json
+  - .vscode
+  # Ace3 non-runtime files
+  - Libs/Ace3/Ace3.lua
+  - Libs/Ace3/Ace3.toc
+  - Libs/Ace3/Bindings.xml
+  - Libs/Ace3/changelog.txt
+  - Libs/Ace3/CHANGES.txt
+  - Libs/Ace3/README.md
+  - Libs/Ace3/LICENSE.txt
+  # LibDeflate non-runtime files
+  - Libs/LibDeflate/docs
+  - Libs/LibDeflate/examples
+  - Libs/LibDeflate/LibStub
+  - Libs/LibDeflate/LibDeflate.toc
+  - Libs/LibDeflate/README.md
+  - Libs/LibDeflate/LICENSE.txt
+  - Libs/LibDeflate/changelog.md
+  - "Libs/LibDeflate/libdeflate-*.rockspec"
+  # LibSharedMedia non-runtime files
+  - Libs/LibSharedMedia-3.0/CHANGES.txt
+  - Libs/LibSharedMedia-3.0/LibSharedMedia-3.0.toc
