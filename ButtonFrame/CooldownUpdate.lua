@@ -114,6 +114,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
                 if durationObj then
                     button._durationObj = durationObj
+                    button._viewerBar = nil  -- primary path: DurationObject available
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
                     button._auraInstanceID = viewerInstId
                     auraOverrideActive = true
@@ -166,8 +167,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             button.cooldown:SetCooldown(startTime, duration)
                             auraOverrideActive = true
                             fetchOk = true
+                            -- Bar mode: cache viewer's StatusBar for bar fill pass-through
+                            if button._isBar and viewerFrame.Bar then
+                                button._viewerBar = viewerFrame.Bar
+                            end
                             if button._auraInstanceID then
                                 button._auraInstanceID = nil
+                            end
+                        else
+                            if button._isBar then
+                                button._viewerBar = nil
                             end
                         end
                     end
