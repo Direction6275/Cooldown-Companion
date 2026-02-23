@@ -7,8 +7,9 @@
 ## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: Ace3, LibSharedMedia-3.0, Masque
+## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDeflate, LibDataBroker-1.1, LibDBIcon-1.0, Masque
 
+#@no-lib-strip@
 # Libraries - LibStub must be first
 Libs\Ace3\LibStub\LibStub.lua
 Libs\Ace3\CallbackHandler-1.0\CallbackHandler-1.0.xml
@@ -34,6 +35,7 @@ Libs\LibDeflate\lib.xml
 # Minimap Icon Libraries
 Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+#@end-no-lib-strip@
 
 # Core Addon Files
 Core\Utils.lua
