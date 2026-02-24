@@ -18,10 +18,39 @@ local table_insert = table.insert
 -- Shared click-through and border helpers from Utils.lua
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+local HideGlowStyles = ST._HideGlowStyles
 
 local function UpdateCoordLabel(frame, x, y)
     if frame.coordLabel then
         frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+    end
+end
+
+-- Reset per-button glow state when compact layout toggles visibility.
+-- Hidden buttons skip visual updates, so caches must be invalidated on transitions.
+local function ResetButtonGlowTransitionState(button)
+    if not button then return end
+
+    if HideGlowStyles then
+        if button.procGlow then
+            HideGlowStyles(button.procGlow)
+        end
+        if button.auraGlow then
+            HideGlowStyles(button.auraGlow)
+        end
+        if button.assistedHighlight then
+            HideGlowStyles(button.assistedHighlight)
+        end
+        if button.barAuraEffect then
+            HideGlowStyles(button.barAuraEffect)
+        end
+    end
+
+    button._procGlowActive = nil
+    button._auraGlowActive = nil
+    button._barAuraEffectActive = nil
+    if button.assistedHighlight then
+        button.assistedHighlight.currentState = nil
     end
 end
 
@@ -564,7 +593,12 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 
     local visibleIndex = 0
     for _, button in ipairs(frame.buttons) do
-        if button._visibilityHidden or visibleIndex >= maxVis then
+        local shouldHide = button._visibilityHidden or visibleIndex >= maxVis
+        local wasShown = button:IsShown()
+        if shouldHide then
+            if wasShown then
+                ResetButtonGlowTransitionState(button)
+            end
             button:Hide()
         else
             visibleIndex = visibleIndex + 1
