@@ -210,52 +210,8 @@ function CooldownCompanion:OnEnable()
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
-    -- Migrate legacy groups to have ownership fields
-    self:MigrateGroupOwnership()
-
-    -- Migrate legacy folders to have ownership fields
-    self:MigrateFolderOwnership()
-
-    -- Reclaim orphaned groups/folders from realm renames
-    self:MigrateOrphanedGroups()
-
-    -- Migrate old hide-when fields to alpha system
-    self:MigrateAlphaSystem()
-
-    -- Migrate groups to have displayMode field
-    self:MigrateDisplayMode()
-
-    -- Migrate groups to have masqueEnabled field
-    self:MigrateMasqueField()
-
-    -- Remove orphaned barChargeMissingColor/barChargeSwipe fields (replaced by charge sub-bars)
-    self:MigrateRemoveBarChargeOldFields()
-
-    -- Migrate groups to have compactLayout field
-    self:MigrateVisibility()
-
-    -- Ensure folders table exists in profile
-    self:MigrateFolders()
-
-    -- Reverse-migrate: if MW was migrated to custom aura bar slot 1, restore it
-    self:ReverseMigrateMW()
-
-    -- Migrate flat custom aura bars to spec-keyed format
-    self:MigrateCustomAuraBarsToSpecKeyed()
-
-    -- Migrate font/texture paths to LibSharedMedia names
-    self:MigrateLSMNames()
-
-    -- Migrate per-button charge text to group style defaults + per-button overrides
-    self:MigrateChargeTextToGroupStyle()
-
-    -- Migrate per-button proc glow to style overrides
-    self:MigrateProcGlowToStyleOverrides()
-
-    -- Migrate glow appearance settings from per-button to group style
-    self:MigrateGlowSettingsToGroupStyle()
-    self:MigrateAuraIndicatorToGroupStyle()
-    self:MigrateBarOrdering()
+    -- Run all data migrations (ownership, alpha, display mode, style, etc.)
+    self:RunAllMigrations()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}

@@ -253,7 +253,6 @@ local defaults = {
             barTexture = "Solid",
         },
         locked = false,
-        auraDurationCache = {},
         cdmHidden = false,
         resourceBars = {
             enabled = true,

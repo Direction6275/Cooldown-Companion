@@ -13,6 +13,15 @@ local LibDeflate = LibStub("LibDeflate")
 
 local ResetConfigSelection = ST._ResetConfigSelection
 
+-- Check whether a profile name already exists (case-exact match).
+local function ProfileNameExists(name)
+    local profiles = CooldownCompanion.db:GetProfiles()
+    for _, existing in ipairs(profiles) do
+        if existing == name then return true end
+    end
+    return false
+end
+
 StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     text = "Are you sure you want to delete group '%s'?",
     button1 = "Delete",
@@ -166,6 +175,10 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
     OnAccept = function(self)
         local text = self.EditBox:GetText()
         if text and text ~= "" then
+            if ProfileNameExists(text) then
+                CooldownCompanion:Print("A profile named '" .. text .. "' already exists.")
+                return
+            end
             local db = CooldownCompanion.db
             db:SetProfile(text)
             ResetConfigSelection(true)
@@ -195,9 +208,16 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
     OnAccept = function(self, data)
         local newName = self.EditBox:GetText()
         if newName and newName ~= "" and data and data.oldName then
+            if newName ~= data.oldName and ProfileNameExists(newName) then
+                CooldownCompanion:Print("A profile named '" .. newName .. "' already exists.")
+                return
+            end
+            if newName == data.oldName then return end
             local db = CooldownCompanion.db
+            CooldownCompanion._suppressOwnershipRestamp = true
             db:SetProfile(newName)
             db:CopyProfile(data.oldName)
+            CooldownCompanion._suppressOwnershipRestamp = nil
             db:DeleteProfile(data.oldName, true)
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
@@ -226,6 +246,10 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
     OnAccept = function(self, data)
         local newName = self.EditBox:GetText()
         if newName and newName ~= "" and data and data.source then
+            if ProfileNameExists(newName) then
+                CooldownCompanion:Print("A profile named '" .. newName .. "' already exists.")
+                return
+            end
             local db = CooldownCompanion.db
             db:SetProfile(newName)
             db:CopyProfile(data.source)
@@ -296,7 +320,26 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
                 end
             end
             if success and type(data) == "table" then
+                -- Reject group/folder exports pasted into the profile import dialog
+                if data.type then
+                    CooldownCompanion:Print("This is a group/folder export. Use the group Import button.")
+                    return
+                end
+                -- Structural validation: a CDC profile must have groups or globalStyle,
+                -- and critical fields must be the correct type if present
+                if not data.groups and not data.globalStyle then
+                    CooldownCompanion:Print("Import failed: data does not appear to be a Cooldown Companion profile.")
+                    return
+                end
+                if (data.groups and type(data.groups) ~= "table")
+                   or (data.globalStyle and type(data.globalStyle) ~= "table") then
+                    CooldownCompanion:Print("Import failed: profile data is malformed.")
+                    return
+                end
                 local db = CooldownCompanion.db
+                -- True replace: wipe existing profile before applying import.
+                -- AceDB metatable survives wipe, supplying defaults for missing keys.
+                wipe(db.profile)
                 for k, v in pairs(data) do
                     db.profile[k] = v
                 end
@@ -317,6 +360,8 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
                         end
                     end
                 end
+                CooldownCompanion:ClearMigrationSentinels()
+                CooldownCompanion:RunAllMigrations()
                 CooldownCompanion:RefreshConfigPanel()
                 CooldownCompanion:RefreshAllGroups()
             else
@@ -628,6 +673,8 @@ local function ImportGroupData(text)
         return false
     end
 
+    CooldownCompanion:ClearMigrationSentinels()
+    CooldownCompanion:RunAllMigrations()
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
     return true

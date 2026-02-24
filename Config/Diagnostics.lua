@@ -528,21 +528,7 @@ local function FormatDiagnosticAsText(diag)
     local otherParts = {}
     for k, v in pairs(p) do
         if not skipTopLevel[k] then
-            if k == "auraDurationCache" and type(v) == "table" then
-                -- Show full cache contents for aura debugging
-                local entries = {}
-                for spellId, dur in pairs(v) do
-                    entries[#entries + 1] = tostring(spellId) .. "=" .. tostring(dur)
-                end
-                table.sort(entries)
-                if #entries == 0 then
-                    otherParts[#otherParts + 1] = "auraDurationCache={}"
-                else
-                    otherParts[#otherParts + 1] = "auraDurationCache={" .. table.concat(entries, ", ") .. "}"
-                end
-            else
-                otherParts[#otherParts + 1] = tostring(k) .. "=" .. formatValue(v)
-            end
+            otherParts[#otherParts + 1] = tostring(k) .. "=" .. formatValue(v)
         end
     end
     table.sort(otherParts)
@@ -582,6 +568,7 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
     OnAccept = function()
         if decodedDiagnostic and decodedDiagnostic.profile then
             local db = CooldownCompanion.db
+            wipe(db.profile)
             for k, v in pairs(decodedDiagnostic.profile) do
                 db.profile[k] = v
             end
@@ -589,14 +576,23 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
             wipe(CS.selectedGroups)
+            local charKey = db.keys.char
             if db.profile.groups then
-                local charKey = db.keys.char
                 for _, group in pairs(db.profile.groups) do
                     if not group.isGlobal then
                         group.createdBy = charKey
                     end
                 end
             end
+            if db.profile.folders then
+                for _, folder in pairs(db.profile.folders) do
+                    if folder.section == "char" then
+                        folder.createdBy = charKey
+                    end
+                end
+            end
+            CooldownCompanion:ClearMigrationSentinels()
+            CooldownCompanion:RunAllMigrations()
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
             CooldownCompanion:Print("Diagnostic profile imported.")

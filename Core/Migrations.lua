@@ -11,6 +11,43 @@ local pairs = pairs
 local ipairs = ipairs
 local type = type
 
+-- Consolidated entry point: runs all migrations in the correct order.
+-- Called from OnEnable, OnProfileChanged, OnProfileCopied, OnProfileReset,
+-- and after profile import to ensure every profile is fully migrated.
+function CooldownCompanion:RunAllMigrations()
+    self:MigrateGroupOwnership()
+    self:MigrateFolderOwnership()
+    self:MigrateOrphanedGroups()
+    self:MigrateAlphaSystem()
+    self:MigrateDisplayMode()
+    self:MigrateMasqueField()
+    self:MigrateRemoveBarChargeOldFields()
+    self:MigrateVisibility()
+    self:MigrateFolders()
+    self:ReverseMigrateMW()
+    self:MigrateCustomAuraBarsToSpecKeyed()
+    self:MigrateLSMNames()
+    self:MigrateChargeTextToGroupStyle()
+    self:MigrateProcGlowToStyleOverrides()
+    self:MigrateGlowSettingsToGroupStyle()
+    self:MigrateAuraIndicatorToGroupStyle()
+    self:MigrateBarOrdering()
+    self:MigrateRemoveAuraDurationCache()
+end
+
+-- Clear all migration sentinel flags so migrations re-evaluate the actual data.
+-- Called before RunAllMigrations() after profile/group/diagnostic import to ensure
+-- sentinel flags (from the imported data or prior profile state) don't suppress
+-- migrations that need to run on the freshly imported data.
+function CooldownCompanion:ClearMigrationSentinels()
+    local profile = self.db.profile
+    profile.lsmMigrated = nil
+    profile.chargeTextMigrated = nil
+    profile.procGlowOverrideMigrated = nil
+    profile.glowSettingsMigrated = nil
+    profile.auraIndicatorMigrated = nil
+end
+
 function CooldownCompanion:MigrateGroupOwnership()
     for groupId, group in pairs(self.db.profile.groups) do
         if group.createdBy == nil and group.isGlobal == nil then
@@ -849,4 +886,10 @@ function CooldownCompanion:MigrateBarOrdering()
     if cb and (cb.yOffset or 0) ~= 0 then
         cb.yOffset = 0
     end
+end
+
+-- Remove vestigial auraDurationCache from profile (no longer in defaults).
+-- It was never written to at runtime; this just cleans up stale SavedVariables.
+function CooldownCompanion:MigrateRemoveAuraDurationCache()
+    self.db.profile.auraDurationCache = nil
 end

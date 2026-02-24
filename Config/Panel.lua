@@ -980,7 +980,7 @@ function CooldownCompanion:SetupConfig()
     -- Profile callbacks to refresh on profile change
     self.db.RegisterCallback(self, "OnProfileChanged", function()
         ResetConfigForProfileChange()
-        CooldownCompanion:MigrateOrphanedGroups()
+        CooldownCompanion:RunAllMigrations()
 
         if CS.configFrame and CS.configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -990,22 +990,29 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         ResetConfigForProfileChange()
 
-        -- Re-stamp character-scoped groups and folders after profile copy (matches import flow)
-        local charKey = CooldownCompanion.db.keys.char
-        if CooldownCompanion.db.profile.groups then
-            for _, group in pairs(CooldownCompanion.db.profile.groups) do
-                if not group.isGlobal then
-                    group.createdBy = charKey
+        -- Re-stamp character-scoped groups and folders for copies (Duplicate).
+        -- Suppressed during Rename (preserve ownership, not claiming groups).
+        local suppress = CooldownCompanion._suppressOwnershipRestamp
+        CooldownCompanion._suppressOwnershipRestamp = nil
+        if not suppress then
+            local charKey = CooldownCompanion.db.keys.char
+            if CooldownCompanion.db.profile.groups then
+                for _, group in pairs(CooldownCompanion.db.profile.groups) do
+                    if not group.isGlobal then
+                        group.createdBy = charKey
+                    end
+                end
+            end
+            if CooldownCompanion.db.profile.folders then
+                for _, folder in pairs(CooldownCompanion.db.profile.folders) do
+                    if folder.section == "char" then
+                        folder.createdBy = charKey
+                    end
                 end
             end
         end
-        if CooldownCompanion.db.profile.folders then
-            for _, folder in pairs(CooldownCompanion.db.profile.folders) do
-                if folder.section == "char" then
-                    folder.createdBy = charKey
-                end
-            end
-        end
+
+        CooldownCompanion:RunAllMigrations()
 
         if CS.configFrame and CS.configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -1014,10 +1021,16 @@ function CooldownCompanion:SetupConfig()
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetConfigForProfileChange()
+        CooldownCompanion:RunAllMigrations()
 
         if CS.configFrame and CS.configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
         end
         self:RefreshAllGroups()
+    end)
+    self.db.RegisterCallback(self, "OnProfileDeleted", function()
+        if CS.configFrame and CS.configFrame.frame:IsShown() then
+            self:RefreshConfigPanel()
+        end
     end)
 end
