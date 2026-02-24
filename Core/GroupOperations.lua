@@ -178,18 +178,34 @@ function CooldownCompanion:IsButtonUsable(buttonData)
         local bank = buttonData.isPetSpell
             and Enum.SpellBookSpellBank.Pet
             or Enum.SpellBookSpellBank.Player
-        if C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id, bank) then
-            return true
+
+        -- Pet spells: retain direct known/spellbook check.
+        if buttonData.isPetSpell then
+            return C_SpellBook.IsSpellKnownOrInSpellBook(buttonData.id, bank, false)
         end
-        -- Fallback: spell may be stored as an override form; check the base spell.
-        -- Only relevant for player spells (pet spells don't have override forms).
-        if not buttonData.isPetSpell then
-            local baseID = C_Spell.GetBaseSpell(buttonData.id)
-            if baseID and baseID ~= buttonData.id then
-                return C_SpellBook.IsSpellKnownOrInSpellBook(baseID)
-            end
+
+        -- Player spells: require exact active-spec spellbook presence for this
+        -- tracked spell ID (not an override/sibling form). This keeps loadability
+        -- aligned with current-spec spellbook addability semantics.
+        local slot, slotBank = C_SpellBook.FindSpellBookSlotForSpell(
+            buttonData.id, false, true, false, false
+        )
+        if not slot or slotBank ~= Enum.SpellBookSpellBank.Player then
+            return false
         end
-        return false
+
+        local itemType, _, spellID = C_SpellBook.GetSpellBookItemType(slot, slotBank)
+        if not spellID then
+            return false
+        end
+        if C_SpellBook.IsSpellBookItemOffSpec(slot, slotBank) then
+            return false
+        end
+        if itemType == Enum.SpellBookItemType.FutureSpell then
+            return false
+        end
+
+        return spellID == buttonData.id
     elseif buttonData.type == "item" then
         if buttonData.hasCharges then return true end
         if not CooldownCompanion.IsItemEquippable(buttonData) then return true end

@@ -583,6 +583,9 @@ local function RefreshColumn2()
         entry:SetText(entryName or ("Unknown " .. buttonData.type))
         entry:SetImage(GetButtonIcon(buttonData))
         entry:SetImageSize(32, 32)
+        if entry.image and entry.image.SetDesaturated then
+            entry.image:SetDesaturated(not usable)
+        end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")

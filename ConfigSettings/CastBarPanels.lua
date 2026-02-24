@@ -55,7 +55,7 @@ local function BuildCastBarAnchoringPanel(container)
 
     if #groupDropOrder <= 1 then
         local noGroupsLabel = AceGUI:Create("Label")
-        noGroupsLabel:SetText("No icon groups are currently enabled for this spec. Enable an icon group to anchor here.")
+        noGroupsLabel:SetText("No eligible character icon groups are enabled for this spec. Global groups are excluded from anchoring to avoid counterintuitive targets.")
         noGroupsLabel:SetFullWidth(true)
         container:AddChild(noGroupsLabel)
     end
