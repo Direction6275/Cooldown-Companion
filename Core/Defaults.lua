@@ -13,6 +13,13 @@ local defaults = {
         hideInfoButtons = false,
         escClosesConfig = true,
         showAdvanced = {},
+        autoAddPrefs = {
+            lastSource = "actionbars",
+            selectedBars = { true, true, true, true, true, true },
+            showSkipped = false,
+            showSources = true,
+            sortMode = "source_then_name",
+        },
         groups = {
             --[[
                 [groupId] = {

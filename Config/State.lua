@@ -144,6 +144,10 @@ ST._configState = {
     -- Spec filter inline expansion
     specExpandedGroupId = nil,
 
+    -- Auto Add flow state (Column 3 wizard mode)
+    autoAddFlowActive = false,
+    autoAddFlowState = nil,
+
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
     tabInfoButtons = {},
     appearanceTabElements = {},
@@ -537,6 +541,9 @@ end
 ------------------------------------------------------------------------
 
 local function ResetConfigSelection(full)
+    if full and ST._CancelAutoAddFlow then
+        ST._CancelAutoAddFlow()
+    end
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     if full then

@@ -28,6 +28,9 @@ local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
     CS.resourceBarPanelActive = false
+    if ST._CancelAutoAddFlow then
+        ST._CancelAutoAddFlow()
+    end
     CooldownCompanion:StopCastBarPreview()
     CooldownCompanion:StopResourceBarPreview()
 end
@@ -111,6 +114,9 @@ local function CreateConfigPanel()
         CooldownCompanion:StopCastBarPreview()
         CloseDropDownMenus()
         CS.HideAutocomplete()
+        if ST._CancelAutoAddFlow then
+            ST._CancelAutoAddFlow()
+        end
     end)
 
     -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
@@ -570,6 +576,9 @@ local function CreateConfigPanel()
         if CS.resourceBarPanelActive then
             GameTooltip:AddLine("Custom Aura Bars")
             GameTooltip:AddLine("Configure per-spec custom aura bar tracking slots.", 1, 1, 1, true)
+        elseif CS.autoAddFlowActive then
+            GameTooltip:AddLine("Auto Add")
+            GameTooltip:AddLine("Guided import flow for Action Bars, Spellbook, and CDM Auras.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("Button Settings")
             GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
@@ -873,6 +882,7 @@ function CooldownCompanion:RefreshConfigPanel()
     local saved2   = saveScroll(CS.col2Scroll)
     local col3ForScroll = CS.configFrame and CS.configFrame.col3
     local savedCab = col3ForScroll and col3ForScroll._customAuraScroll and saveScroll(col3ForScroll._customAuraScroll)
+    local savedAaf = col3ForScroll and col3ForScroll._autoAddScroll and saveScroll(col3ForScroll._autoAddScroll)
     local savedBtn = saveScroll(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
@@ -890,7 +900,11 @@ function CooldownCompanion:RefreshConfigPanel()
     else
         CS.configFrame.col1:SetTitle("Groups")
         CS.configFrame.col2:SetTitle("Spells / Items")
-        CS.configFrame.col3:SetTitle("Button Settings")
+        if CS.autoAddFlowActive then
+            CS.configFrame.col3:SetTitle("Auto Add")
+        else
+            CS.configFrame.col3:SetTitle("Button Settings")
+        end
         CS.configFrame.col4:SetTitle("Group Settings")
     end
     RefreshColumn1()
@@ -903,6 +917,9 @@ function CooldownCompanion:RefreshConfigPanel()
     restoreScroll(CS.col2Scroll, saved2)
     if col3ForScroll and col3ForScroll._customAuraScroll then
         restoreScroll(col3ForScroll._customAuraScroll, savedCab)
+    end
+    if col3ForScroll and col3ForScroll._autoAddScroll then
+        restoreScroll(col3ForScroll._autoAddScroll, savedAaf)
     end
     restoreScroll(buttonSettingsScroll, savedBtn)
 
