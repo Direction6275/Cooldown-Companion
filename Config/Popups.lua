@@ -251,8 +251,10 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
                 return
             end
             local db = CooldownCompanion.db
+            CooldownCompanion._suppressOwnershipRestamp = true
             db:SetProfile(newName)
             db:CopyProfile(data.source)
+            CooldownCompanion._suppressOwnershipRestamp = nil
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
