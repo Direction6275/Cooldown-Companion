@@ -15,6 +15,7 @@ local CleanRecycledEntry = ST._CleanRecycledEntry
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local GetGroupIcon = ST._GetGroupIcon
 local GetFolderIcon = ST._GetFolderIcon
+local OpenFolderIconPicker = ST._OpenFolderIconPicker
 local GenerateFolderName = ST._GenerateFolderName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
@@ -708,6 +709,31 @@ local function RefreshColumn1(preserveDrag)
                     end
                     UIDropDownMenu_AddButton(info, level)
 
+                    -- Manual icon override
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Set Folder Icon..."
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        OpenFolderIconPicker(folderId)
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "Clear Custom Icon"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            local currentFolder = db.folders[folderId]
+                            if currentFolder then
+                                currentFolder.manualIcon = nil
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+
                     -- Toggle Global/Character
                     info = UIDropDownMenu_CreateInfo()
                     info.text = folder.section == "global" and "Make Character Folder" or "Make Global Folder"
@@ -750,6 +776,9 @@ local function RefreshColumn1(preserveDrag)
                     info.func = function()
                         CloseDropDownMenus()
                         local folderData = { name = folder.name }
+                        if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
+                            folderData.manualIcon = folder.manualIcon
+                        end
                         local childGroups = {}
                         for gid, g in pairs(db.groups) do
                             if g.folderId == folderId then

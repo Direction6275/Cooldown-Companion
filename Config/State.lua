@@ -133,6 +133,7 @@ ST._configState = {
     buttonContextMenu = nil,
     gearDropdownFrame = nil,
     folderContextMenu = nil,
+    folderIconPickerFrame = nil,
 
     -- Drag-reorder state
     dragState = nil,
@@ -259,9 +260,17 @@ local function GetGroupIcon(group)
 end
 
 ------------------------------------------------------------------------
--- Helper: Get icon for a folder (from its first child group's first button)
+-- Helper: Get icon for a folder (manual override, else first child group's first button)
 ------------------------------------------------------------------------
-local function GetFolderIcon(folderId, db)
+local function IsValidIconTexture(iconTexture)
+    local iconType = type(iconTexture)
+    return iconType == "number" or iconType == "string"
+end
+
+local function GetAutoFolderIcon(folderId, db)
+    if not db or not db.groups then
+        return 134400
+    end
     local children = {}
     for gid, group in pairs(db.groups) do
         if group.folderId == folderId then
@@ -276,6 +285,17 @@ local function GetFolderIcon(folderId, db)
         end
     end
     return 134400
+end
+
+local function GetFolderIcon(folderId, db)
+    if not db then
+        return 134400
+    end
+    local folder = db.folders and db.folders[folderId]
+    if folder and IsValidIconTexture(folder.manualIcon) then
+        return folder.manualIcon
+    end
+    return GetAutoFolderIcon(folderId, db)
 end
 
 ------------------------------------------------------------------------
@@ -296,6 +316,117 @@ local function GenerateFolderName(base)
         name = name .. " " .. n
     end
     return name
+end
+
+------------------------------------------------------------------------
+-- Folder icon picker
+------------------------------------------------------------------------
+local function EnsureFolderIconPickerFrame()
+    if CS.folderIconPickerFrame then
+        return CS.folderIconPickerFrame
+    end
+
+    if not CreateAndInitFromMixin
+        or not IconDataProviderMixin
+        or not IconDataProviderExtraType
+        or not IconSelectorPopupFrameTemplateMixin
+        or not IconSelectorPopupFrameIconFilterTypes then
+        return nil
+    end
+
+    local frame = CreateFrame("Frame", "CDCFolderIconPickerFrame", UIParent, "IconSelectorPopupFrameTemplate")
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(200)
+    frame:SetToplevel(true)
+    frame:SetClampedToScreen(true)
+    frame.BorderBox.EditBoxHeaderText:Hide()
+    frame.BorderBox.IconSelectorEditBox:Hide()
+
+    function frame:OnHide()
+        IconSelectorPopupFrameTemplateMixin.OnHide(self)
+        if self.iconDataProvider then
+            self.iconDataProvider:Release()
+            self.iconDataProvider = nil
+        end
+        self._cdcFolderId = nil
+        self.IconSelector:SetSelectedCallback(nil)
+    end
+
+    function frame:OkayButton_OnClick()
+        local folderId = self._cdcFolderId
+        local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
+        local db = CooldownCompanion.db and CooldownCompanion.db.profile
+        local folder = db and db.folders and db.folders[folderId]
+        if folder and IsValidIconTexture(iconTexture) then
+            folder.manualIcon = iconTexture
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
+    end
+
+    function frame:CancelButton_OnClick()
+        IconSelectorPopupFrameTemplateMixin.CancelButton_OnClick(self)
+    end
+
+    CS.folderIconPickerFrame = frame
+    return frame
+end
+
+local function OpenFolderIconPicker(folderId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local folder = db and db.folders and db.folders[folderId]
+    if not folder then
+        return false
+    end
+
+    local pickerFrame = EnsureFolderIconPickerFrame()
+    if not pickerFrame then
+        CooldownCompanion:Print("Folder icon picker is unavailable on this client build.")
+        return false
+    end
+
+    if pickerFrame:IsShown() then
+        pickerFrame:Hide()
+    end
+
+    pickerFrame._cdcFolderId = folderId
+    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
+    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
+
+    local currentIcon = folder.manualIcon
+    if not IsValidIconTexture(currentIcon) then
+        currentIcon = GetAutoFolderIcon(folderId, db)
+    end
+
+    local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
+    if not selectedIndex then
+        selectedIndex = 1
+        currentIcon = pickerFrame:GetIconByIndex(selectedIndex)
+    end
+
+    pickerFrame.IconSelector:SetSelectionsDataProvider(
+        function(selectionIndex)
+            return pickerFrame:GetIconByIndex(selectionIndex)
+        end,
+        function()
+            return pickerFrame:GetNumIcons()
+        end
+    )
+    pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
+    pickerFrame.IconSelector:ScrollToSelectedIndex()
+    pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
+    pickerFrame:SetSelectedIconText()
+    pickerFrame.BorderBox.OkayButton:Enable()
+
+    pickerFrame.IconSelector:SetSelectedCallback(function(_, icon)
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(icon)
+        pickerFrame:SetSelectedIconText()
+    end)
+
+    pickerFrame:Show()
+    return true
 end
 
 ------------------------------------------------------------------------
@@ -607,6 +738,7 @@ ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
 ST._GetGroupIcon = GetGroupIcon
 ST._GetFolderIcon = GetFolderIcon
+ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
 ST._COLUMN_PADDING = COLUMN_PADDING

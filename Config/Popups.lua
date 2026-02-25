@@ -647,11 +647,16 @@ local function ImportGroupData(text)
     elseif data.type == "folder" and data.folder and data.groups then
         local folderId = db.nextFolderId
         db.nextFolderId = folderId + 1
+        local importedManualIcon = data.folder.manualIcon
+        if type(importedManualIcon) ~= "number" and type(importedManualIcon) ~= "string" then
+            importedManualIcon = nil
+        end
         db.folders[folderId] = {
             name = data.folder.name or "Imported Folder",
             order = folderId,
             section = "char",
             createdBy = charKey,
+            manualIcon = importedManualIcon,
         }
         local count = 0
         for _, srcGroup in ipairs(data.groups) do
