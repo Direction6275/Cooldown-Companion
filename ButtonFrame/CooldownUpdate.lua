@@ -356,6 +356,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Update spell charge data before zero-charge state classification.
+    -- When readable, charge count is authoritative for "zero charges" (unusable),
+    -- even if the spell also has a per-cast cooldown lockout.
+    local charges
+    if buttonData.hasCharges and buttonData.type == "spell" then
+        charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
+    end
+
     -- Store raw GCD state for bar desaturation guard
     local gcdJustEnded = (button._wasOnGCD == true) and not isOnGCD
     button._wasOnGCD = isOnGCD or false
@@ -377,16 +385,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Items: 0 charges = on cooldown. No GCD to filter.
             local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
             button._mainCDShown = (chargeCount == 0)
+        elseif buttonData.type == "spell" and button._currentReadableCharges ~= nil then
+            -- Readable charge count is the source of truth for zero-charge state.
+            -- Prevents short lockout cooldowns (e.g., dragonriding flyout abilities)
+            -- from being misclassified as "zero charges".
+            button._mainCDShown = (button._currentReadableCharges == 0)
         elseif button._isBar then
             -- Bar mode: button.cooldown is not reused for recharge animation.
-            -- For secret spells, require both GCD signals to agree before filtering,
-            -- preventing false negatives at GCD boundaries.
-            if buttonData._cooldownSecrecy == 0 then
-                button._mainCDShown = button.cooldown:IsShown() and not isOnGCD
-            else
-                button._mainCDShown = button.cooldown:IsShown()
-                    and not (isOnGCD and CooldownCompanion._gcdActive)
-            end
+            -- Use isGCDOnly (timing match + secret-safe fallback), not raw isOnGCD,
+            -- so flyout/override charge spells are not misclassified as zero-charge
+            -- during a GCD-only lockout.
+            button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
         else
             -- Icon mode: prefer scratchCooldown when DurationObject values are plain.
             -- button.cooldown:IsShown() is unreliable because UpdateIconModeVisuals
@@ -395,7 +404,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if mainCDDuration and not mainCDDuration:HasSecretValues() then
                 scratchCooldown:Hide()
                 scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
-                button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
                 scratchCooldown:Hide()
             elseif mainCDDuration then
                 -- Secret values (combat): SetCooldownFromDurationObject fails with
@@ -406,7 +415,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if ci then
                     scratchCooldown:Hide()
                     scratchCooldown:SetCooldown(ci.startTime, ci.duration)
-                    button._mainCDShown = scratchCooldown:IsShown() and not isOnGCD
+                    button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
                     scratchCooldown:Hide()
                 else
                     button._mainCDShown = false
@@ -421,11 +430,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
     end
 
-    local charges
     if buttonData.hasCharges then
       if buttonData.type == "spell" then
-        charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-
         -- Bar mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD. Save and clear the main CD, let the charge block
         -- set _durationObj from the recharge, then restore the main CD for GCD
