@@ -26,6 +26,168 @@ local BuildGroupExportData = ST._BuildGroupExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 
+local tonumber = tonumber
+local ipairs = ipairs
+
+local ROW_BADGE_SIZE = 16
+local ROW_BADGE_SPACING = 2
+local ROW_BADGE_RIGHT_PAD = 4
+
+local function EnsureRowBadge(frame, key, atlas)
+    local badge = frame[key]
+    if not badge then
+        badge = CreateFrame("Button", nil, frame)
+        badge:SetSize(ROW_BADGE_SIZE, ROW_BADGE_SIZE)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            if not self._cdcTooltipText then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(
+                self._cdcTooltipText,
+                self._cdcTooltipR or 1,
+                self._cdcTooltipG or 1,
+                self._cdcTooltipB or 1,
+                true
+            )
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        frame[key] = badge
+    end
+
+    badge:SetSize(ROW_BADGE_SIZE, ROW_BADGE_SIZE)
+    badge.icon:SetAllPoints()
+    badge.icon:SetAtlas(atlas, false)
+    badge.icon:SetVertexColor(1, 1, 1, 1)
+    badge._cdcTooltipText = nil
+    badge._cdcTooltipR, badge._cdcTooltipG, badge._cdcTooltipB = nil, nil, nil
+    badge:Hide()
+    return badge
+end
+
+local function SetRowBadgeTooltip(badge, text, r, g, b)
+    badge._cdcTooltipText = text
+    badge._cdcTooltipR = r or 1
+    badge._cdcTooltipG = g or 1
+    badge._cdcTooltipB = b or 1
+end
+
+local function PlaceRowBadge(frame, badge, offsetX)
+    if not (badge and badge:IsShown()) then
+        return offsetX
+    end
+    badge:ClearAllPoints()
+    badge:SetPoint("RIGHT", frame, "RIGHT", offsetX, 0)
+    return offsetX - ROW_BADGE_SIZE - ROW_BADGE_SPACING
+end
+
+local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4)
+    local offsetX = -ROW_BADGE_RIGHT_PAD
+    offsetX = PlaceRowBadge(frame, badge1, offsetX)
+    offsetX = PlaceRowBadge(frame, badge2, offsetX)
+    offsetX = PlaceRowBadge(frame, badge3, offsetX)
+    PlaceRowBadge(frame, badge4, offsetX)
+end
+
+local function IsBuffViewerChild(frame)
+    if not frame then return false end
+    local parent = frame:GetParent()
+    local parentName = parent and parent:GetName()
+    return parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
+end
+
+local function ResolveButtonAuraViewerFrame(buttonData)
+    if not buttonData or buttonData.type ~= "spell" then return nil end
+
+    local viewerFrame
+    if buttonData.cdmChildSlot then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
+        if IsBuffViewerChild(slotChild) then
+            viewerFrame = slotChild
+        end
+    end
+
+    if not viewerFrame and buttonData.auraSpellID then
+        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+            local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+            if IsBuffViewerChild(candidate) then
+                viewerFrame = candidate
+            end
+            if viewerFrame then break end
+        end
+    end
+
+    if not viewerFrame then
+        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+        if resolvedAuraId and resolvedAuraId ~= 0 then
+            local resolvedChild = CooldownCompanion.viewerAuraFrames[resolvedAuraId]
+            if IsBuffViewerChild(resolvedChild) then
+                viewerFrame = resolvedChild
+            end
+        end
+        if not viewerFrame then
+            local idChild = CooldownCompanion.viewerAuraFrames[buttonData.id]
+            if IsBuffViewerChild(idChild) then
+                viewerFrame = idChild
+            end
+        end
+    end
+
+    if not viewerFrame then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        if allChildren and allChildren[1] and IsBuffViewerChild(allChildren[1]) then
+            viewerFrame = allChildren[1]
+        end
+    end
+
+    if not viewerFrame then
+        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+        if overrideBuffs then
+            for id in overrideBuffs:gmatch("%d+") do
+                local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+                if IsBuffViewerChild(candidate) then
+                    viewerFrame = candidate
+                end
+                if viewerFrame then break end
+            end
+        end
+    end
+
+    if not viewerFrame then
+        local fallback = CooldownCompanion:FindViewerChildForSpell(buttonData.id)
+        if IsBuffViewerChild(fallback) then
+            CooldownCompanion.viewerAuraFrames[buttonData.id] = fallback
+            viewerFrame = fallback
+        end
+    end
+
+    return viewerFrame
+end
+
+local function IsAuraTrackingReady(buttonData, cdmEnabled)
+    if not (buttonData and buttonData.type == "spell" and buttonData.auraTracking) then
+        return false
+    end
+
+    if cdmEnabled == nil then
+        cdmEnabled = GetCVarBool("cooldownViewerEnabled")
+    end
+    if not cdmEnabled then
+        return false
+    end
+
+    local viewerFrame = ResolveButtonAuraViewerFrame(buttonData)
+    if not viewerFrame then
+        return false
+    end
+
+    return true
+end
+
 ------------------------------------------------------------------------
 -- COLUMN 2: Spells / Items
 ------------------------------------------------------------------------
@@ -533,6 +695,7 @@ local function RefreshColumn2()
     -- Spell/Item list
     -- childOffset = 4 (inputBox, spacer, addRow, sep are the first 4 children before draggable entries)
     local numButtons = #group.buttons
+    local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
     for i, buttonData in ipairs(group.buttons) do
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
@@ -597,65 +760,51 @@ local function RefreshColumn2()
             entry:SetColor(0.5, 0.5, 0.5)
         end
 
-        -- Clean up any recycled warning icon, then create if needed
-        if entry.frame._cdcWarnBtn then
-            entry.frame._cdcWarnBtn:Hide()
-        end
+        -- Right-side row badges (all normalized to warning icon size).
+        local rowFrame = entry.frame
+        local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
+        local warnBadge, overrideBadge, soundBadge, auraBadge
+
         if not usable then
-            local warnBtn = entry.frame._cdcWarnBtn
-            if not warnBtn then
-                warnBtn = CreateFrame("Button", nil, entry.frame)
-                warnBtn:SetSize(16, 16)
-                warnBtn:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
-                local warnIcon = warnBtn:CreateTexture(nil, "OVERLAY")
-                warnIcon:SetAtlas("Ping_Marker_Icon_Warning")
-                warnIcon:SetAllPoints()
-                warnBtn:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:AddLine("Spell/item unavailable", 1, 0.3, 0.3)
-                    GameTooltip:Show()
-                end)
-                warnBtn:SetScript("OnLeave", function()
-                    GameTooltip:Hide()
-                end)
-                entry.frame._cdcWarnBtn = warnBtn
-            end
-            warnBtn:SetFrameLevel(entry.frame:GetFrameLevel() + 5)
-            warnBtn:Show()
+            warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
+            warnBadge:SetFrameLevel(rowBadgeLevel)
+            SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
+            warnBadge:Show()
         end
 
-        -- Override badge: show a small icon if button has style overrides
-        if entry.frame._cdcOverrideBadge then
-            entry.frame._cdcOverrideBadge:Hide()
-        end
         if CooldownCompanion:HasStyleOverrides(buttonData) then
-            local badge = entry.frame._cdcOverrideBadge
-            if not badge then
-                badge = CreateFrame("Frame", nil, entry.frame)
-                badge:SetSize(16, 16)
-                local badgeIcon = badge:CreateTexture(nil, "OVERLAY")
-                badgeIcon:SetSize(12, 12)
-                badgeIcon:SetPoint("CENTER")
-                badgeIcon:SetAtlas("Professions-Icon-Export")
-                badge:EnableMouse(true)
-                badge:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:AddLine("Has appearance overrides")
-                    GameTooltip:Show()
-                end)
-                badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                entry.frame._cdcOverrideBadge = badge
-            end
-            -- Position to the left of the warning icon (or right side if no warning)
-            badge:ClearAllPoints()
-            if not usable and entry.frame._cdcWarnBtn then
-                badge:SetPoint("RIGHT", entry.frame._cdcWarnBtn, "LEFT", -2, 0)
-            else
-                badge:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
-            end
-            badge:SetFrameLevel(entry.frame:GetFrameLevel() + 5)
-            badge:Show()
+            overrideBadge = EnsureRowBadge(rowFrame, "_cdcOverrideBadge", "Professions-Icon-Export")
+            overrideBadge:SetFrameLevel(rowBadgeLevel)
+            SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
+            overrideBadge:Show()
         end
+
+        if buttonData.type == "spell" then
+            local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
+            if enabledSoundEvents then
+                soundBadge = EnsureRowBadge(rowFrame, "_cdcSoundBadge", "common-icon-sound")
+                soundBadge:SetFrameLevel(rowBadgeLevel)
+                SetRowBadgeTooltip(soundBadge, "Sound alerts enabled")
+                soundBadge:Show()
+            end
+
+            if buttonData.auraTracking then
+                auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
+                auraBadge:SetFrameLevel(rowBadgeLevel)
+                local auraReady = IsAuraTrackingReady(buttonData, cdmEnabled)
+                if auraReady then
+                    auraBadge.icon:SetVertexColor(1, 1, 1, 1)
+                    SetRowBadgeTooltip(auraBadge, "Aura tracking: Active", 0.2, 1, 0.2)
+                else
+                    auraBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
+                    SetRowBadgeTooltip(auraBadge, "Aura tracking: Inactive", 1, 0.2, 0.2)
+                end
+                auraBadge:Show()
+            end
+        end
+
+        -- Right-to-left: warning stays rightmost, then override/sound/aura.
+        LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge)
 
         -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
         -- so that mousedown doesn't trigger selection; we handle clicks on mouseup instead

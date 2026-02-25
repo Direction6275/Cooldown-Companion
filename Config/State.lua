@@ -443,6 +443,8 @@ local function CleanRecycledEntry(entry)
     end
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
     if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
+    if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
+    if entry.frame._cdcAuraBadge then entry.frame._cdcAuraBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     entry.image:SetAlpha(1)
     if entry.image and entry.image.SetDesaturated then

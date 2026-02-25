@@ -134,6 +134,9 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 
             soundDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, val)
+                if ST._RefreshColumn2 then
+                    ST._RefreshColumn2()
+                end
             end)
 
             row:AddChild(soundDrop)
