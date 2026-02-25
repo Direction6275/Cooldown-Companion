@@ -261,6 +261,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraHeading:SetFullWidth(true)
     scroll:AddChild(auraHeading)
 
+    local auraHeadingInfoBtn = CreateInfoButton(auraHeading.frame, auraHeading.label, "LEFT", "RIGHT", 4, 0, {
+        "Aura Tracking",
+        {"Using other CDM addons in conjunction with CDC may break aura tracking.", 1, 1, 1, true},
+    }, infoButtons)
+
     local auraKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_aura"
     local auraCollapsed = CS.collapsedSections[auraKey]
 
@@ -268,6 +273,11 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CS.collapsedSections[auraKey] = not CS.collapsedSections[auraKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
+    auraCollapseBtn:ClearAllPoints()
+    auraCollapseBtn:SetPoint("LEFT", auraHeadingInfoBtn, "RIGHT", 4, 0)
+    auraHeading.right:ClearAllPoints()
+    auraHeading.right:SetPoint("RIGHT", auraHeading.frame, "RIGHT", -3, 0)
+    auraHeading.right:SetPoint("LEFT", auraCollapseBtn, "RIGHT", 4, 0)
 
 
     if not auraCollapsed then
