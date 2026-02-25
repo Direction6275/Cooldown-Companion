@@ -8,6 +8,8 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 local CDM_VIEWER_NAMES = ST._CDM_VIEWER_NAMES
+local issecretvalue = issecretvalue
+local canaccessvalue = canaccessvalue
 
 -- File-local state
 local pickFrameOverlay = nil
@@ -15,6 +17,54 @@ local pickFrameCallback = nil
 local pickFrameSourceGroupId = nil
 local pickCDMOverlay = nil
 local pickCDMCallback = nil
+
+------------------------------------------------------------------------
+-- Secret-safe value helpers
+------------------------------------------------------------------------
+local function IsAccessibleBoolean(value)
+    if type(value) ~= "boolean" then return false end
+    if issecretvalue and issecretvalue(value) then return false end
+    if canaccessvalue and not canaccessvalue(value) then return false end
+    return value
+end
+
+local function IsAccessibleNumber(value)
+    if type(value) ~= "number" then return false end
+    if issecretvalue and issecretvalue(value) then return false end
+    if canaccessvalue and not canaccessvalue(value) then return false end
+    return true
+end
+
+local function IsShownSafe(region)
+    if not region or not region.IsShown then return false end
+    if region.IsForbidden and region:IsForbidden() then return false end
+    local shown = region:IsShown()
+    return IsAccessibleBoolean(shown)
+end
+
+local function IsVisibleSafe(region)
+    if not region or not region.IsVisible then return false end
+    if region.IsForbidden and region:IsForbidden() then return false end
+    local visible = region:IsVisible()
+    return IsAccessibleBoolean(visible)
+end
+
+local function GetAccessibleRect(region)
+    if not region or not region.GetRect then
+        return nil, nil, nil, nil
+    end
+    if region.IsForbidden and region:IsForbidden() then
+        return nil, nil, nil, nil
+    end
+    local left, bottom, width, height = region:GetRect()
+    if not IsAccessibleNumber(left)
+       or not IsAccessibleNumber(bottom)
+       or not IsAccessibleNumber(width)
+       or not IsAccessibleNumber(height) then
+        return nil, nil, nil, nil
+    end
+    return left, bottom, width, height
+end
 
 ------------------------------------------------------------------------
 -- Helper: Resolve named frame from mouse focus
@@ -62,11 +112,11 @@ local function HasVisibleContent(frame)
     if frame:GetObjectType() ~= "Frame" then return true end
     if frame:IsMouseEnabled() then return true end
     for _, region in pairs({ frame:GetRegions() }) do
-        if region:IsShown() then return true end
+        if IsShownSafe(region) then return true end
     end
     -- Container frames with shown children also count as having visible content
     for _, child in pairs({ frame:GetChildren() }) do
-        if child:IsShown() then return true end
+        if IsShownSafe(child) then return true end
     end
     return false
 end
@@ -78,11 +128,11 @@ local function FindDeepestNamedChild(frame, cx, cy)
     local bestFrame, bestName, bestArea = nil, nil, math.huge
     local children = { frame:GetChildren() }
     for _, child in ipairs(children) do
-        local visible = not (child.IsForbidden and child:IsForbidden()) and child:IsVisible()
+        local visible = IsVisibleSafe(child)
         if visible then
             local name = child:GetName()
             if name and name ~= "" and not IsAddonFrame(name) then
-                local left, bottom, width, height = child:GetRect()
+                local left, bottom, width, height = GetAccessibleRect(child)
                 local inside, area = false, 0
                 if left and width and width > 0 and height > 0 then
                     if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
@@ -244,7 +294,7 @@ local function StartPickFrame(callback, sourceGroupId)
             self.label:SetText(displayName)
 
             -- Position highlight around the resolved frame
-            local left, bottom, width, height = resolvedFrame:GetRect()
+            local left, bottom, width, height = GetAccessibleRect(resolvedFrame)
             if left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
@@ -288,7 +338,7 @@ local function StartPickFrame(callback, sourceGroupId)
     end
 
     -- Hide config panel, show overlay
-    if CS.configFrame and CS.configFrame.frame:IsShown() then
+    if CS.configFrame and IsShownSafe(CS.configFrame.frame) then
         CS.configFrame.frame:Hide()
     end
     pickFrameOverlay.currentName = nil
@@ -368,8 +418,8 @@ local function StartPickCDM(callback)
                 if viewer then
                     local isAuraViewer = viewerName == "BuffIconCooldownViewer" or viewerName == "BuffBarCooldownViewer"
                     for _, child in pairs({viewer:GetChildren()}) do
-                        if child.cooldownInfo and child:IsVisible() then
-                            local left, bottom, width, height = child:GetRect()
+                        if child.cooldownInfo and IsVisibleSafe(child) then
+                            local left, bottom, width, height = GetAccessibleRect(child)
                             if left and width and width > 0 and height > 0 then
                                 if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
                                     local area = width * height
@@ -394,14 +444,14 @@ local function StartPickCDM(callback)
 
             -- Also scan the CDM Settings panel (CooldownViewerSettings) if open
             local settingsPanel = CooldownViewerSettings
-            if settingsPanel and settingsPanel:IsVisible() and settingsPanel.categoryPool then
+            if settingsPanel and IsVisibleSafe(settingsPanel) and settingsPanel.categoryPool then
                 for categoryDisplay in settingsPanel.categoryPool:EnumerateActive() do
                     if categoryDisplay.itemPool then
                         local catObj = categoryDisplay:GetCategoryObject()
                         local isAuraCat = catObj and (catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBuff or catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBar)
                         for item in categoryDisplay.itemPool:EnumerateActive() do
-                            if item:IsVisible() and not item:IsEmptyCategory() then
-                                local left, bottom, width, height = item:GetRect()
+                            if IsVisibleSafe(item) and not item:IsEmptyCategory() then
+                                local left, bottom, width, height = GetAccessibleRect(item)
                                 if left and width and width > 0 and height > 0 then
                                     if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
                                         local area = width * height
@@ -445,7 +495,7 @@ local function StartPickCDM(callback)
             local suffix = bestIsAuraViewer and "TRACKABLE AURA" or "NOT AN AURA"
             self.label:SetText(bestName .. "  |  " .. bestSpellID .. "  |  " .. suffix)
 
-            local left, bottom, width, height = bestChild:GetRect()
+            local left, bottom, width, height = GetAccessibleRect(bestChild)
             if left and width and width > 0 and height > 0 then
                 self.highlight:ClearAllPoints()
                 self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
@@ -494,7 +544,7 @@ local function StartPickCDM(callback)
     end
 
     -- Hide config panel, show overlay
-    if CS.configFrame and CS.configFrame.frame:IsShown() then
+    if CS.configFrame and IsShownSafe(CS.configFrame.frame) then
         CS.configFrame.frame:Hide()
     end
     -- Temporarily show CDM if hidden
