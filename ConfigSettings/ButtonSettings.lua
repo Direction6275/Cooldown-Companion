@@ -932,6 +932,37 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                 local builder = sectionBuilders[sectionId]
                 if builder then
                     builder(scroll, overrides, refreshCallback)
+                    if sectionId == "procGlow" then
+                        local procPreviewBtn = AceGUI:Create("Button")
+                        procPreviewBtn:SetText("Preview Proc Glow (3s)")
+                        procPreviewBtn:SetFullWidth(true)
+                        procPreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayProcGlowPreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(procPreviewBtn)
+                    elseif sectionId == "auraIndicator" then
+                        local auraPreviewBtn = AceGUI:Create("Button")
+                        auraPreviewBtn:SetText("Preview Active Aura Glow (3s)")
+                        auraPreviewBtn:SetFullWidth(true)
+                        auraPreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayAuraGlowPreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(auraPreviewBtn)
+                    elseif sectionId == "pandemicGlow" then
+                        local pandemicPreviewBtn = AceGUI:Create("Button")
+                        pandemicPreviewBtn:SetText("Preview Pandemic Glow (3s)")
+                        pandemicPreviewBtn:SetFullWidth(true)
+                        pandemicPreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayPandemicPreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(pandemicPreviewBtn)
+                    end
                 end
                 end
             end

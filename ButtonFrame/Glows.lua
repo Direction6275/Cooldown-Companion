@@ -9,8 +9,12 @@ local CooldownCompanion = ST.Addon
 
 -- Localize frequently-used globals
 local ipairs = ipairs
+local next = next
+local pairs = pairs
 local unpack = unpack
 local string_format = string.format
+local math_max = math.max
+local math_min = math.min
 
 -- Imports from Helpers
 local ApplyEdgePositions = ST._ApplyEdgePositions
@@ -21,6 +25,145 @@ local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+
+-- Optional external glow library used for extra proc glow styles.
+local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
+local PROC_STYLE_LCG_BUTTON = "lcgButton"
+local PROC_STYLE_LCG_AUTOCAST = "lcgAutoCast"
+local PROC_GLOW_LCG_KEY = "CooldownCompanionProc"
+local AURA_GLOW_LCG_KEY = "CooldownCompanionAura"
+local PANDEMIC_GLOW_LCG_KEY = "CooldownCompanionPandemic"
+
+local function IsLibCustomGlowStyle(style)
+    return style == PROC_STYLE_LCG_BUTTON or style == PROC_STYLE_LCG_AUTOCAST
+end
+
+-- Legacy profile compatibility: lcgProc was removed because it duplicated Blizzard glow.
+local function NormalizeGlowStyle(style)
+    if style == "lcgProc" then
+        return "glow"
+    end
+    return style
+end
+
+local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
+    local size = styleTable and styleTable[sizeKey]
+    if glowStyle == "solid" then
+        return size or defaults.solid
+    elseif glowStyle == "pixel" then
+        return size or defaults.pixel
+    elseif glowStyle == PROC_STYLE_LCG_AUTOCAST then
+        -- AutoCast scale looks best in 0.2..3. Keep old/invalid values from
+        -- inflating particles by falling back to a safe default.
+        if size and size >= 0.2 and size <= 3 then
+            return size
+        end
+        return defaults.autocast or 1
+    end
+    return size or defaults.glow
+end
+
+local function SpeedToGlowFrequency(speed)
+    return math_max(speed or 60, 1) / 480
+end
+
+local function UsesGlowSpeed(glowStyle)
+    return glowStyle == "pixel" or IsLibCustomGlowStyle(glowStyle)
+end
+
+-- ButtonGlow_Stop is frame-scoped (no key), so keep per-target ownership to
+-- avoid one channel stopping another channel's active lcgButton glow.
+local lcgButtonOwnersByTarget = setmetatable({}, {__mode = "k"})
+local lcgButtonOwnerSequence = 0
+
+local function AcquireLCGButtonOwner(target, container, color, frequency, frameLevel)
+    if not (target and container) then return end
+    local owners = lcgButtonOwnersByTarget[target]
+    if not owners then
+        owners = setmetatable({}, {__mode = "k"})
+        lcgButtonOwnersByTarget[target] = owners
+    end
+    lcgButtonOwnerSequence = lcgButtonOwnerSequence + 1
+    owners[container] = {
+        order = lcgButtonOwnerSequence,
+        color = {color[1], color[2], color[3], color[4]},
+        frequency = frequency,
+        frameLevel = frameLevel,
+    }
+end
+
+local function ReleaseLCGButtonOwner(target, container)
+    local owners = target and lcgButtonOwnersByTarget[target]
+    if not owners then return nil end
+    owners[container] = nil
+    local fallbackOwner
+    local fallbackOrder = -1
+    for _, owner in pairs(owners) do
+        if owner and owner.order and owner.order > fallbackOrder then
+            fallbackOrder = owner.order
+            fallbackOwner = owner
+        end
+    end
+    if fallbackOwner then
+        return fallbackOwner
+    end
+    lcgButtonOwnersByTarget[target] = nil
+    return nil
+end
+
+local function StopLibCustomGlow(container)
+    if not container then return end
+
+    local lcgStyle = container._lcgStyle
+    local lcgTarget = container._lcgTarget
+    local lcgKey = container._lcgKey
+
+    container._lcgStyle = nil
+    container._lcgTarget = nil
+    container._lcgKey = nil
+
+    if not (LCG and lcgStyle and lcgTarget) then return end
+
+    if lcgStyle == PROC_STYLE_LCG_BUTTON and LCG.ButtonGlow_Stop then
+        local fallbackOwner = ReleaseLCGButtonOwner(lcgTarget, container)
+        if fallbackOwner and LCG.ButtonGlow_Start then
+            LCG.ButtonGlow_Start(
+                lcgTarget,
+                fallbackOwner.color,
+                fallbackOwner.frequency or 0.125,
+                fallbackOwner.frameLevel or 8
+            )
+        else
+            LCG.ButtonGlow_Stop(lcgTarget)
+        end
+    elseif lcgStyle == PROC_STYLE_LCG_AUTOCAST and LCG.AutoCastGlow_Stop then
+        LCG.AutoCastGlow_Stop(lcgTarget, lcgKey)
+    end
+end
+
+local function StartLibCustomGlow(container, style, button, color, params)
+    if not (LCG and container and button and IsLibCustomGlowStyle(style)) then
+        return false
+    end
+
+    local key = params.key or PROC_GLOW_LCG_KEY
+    local frameLevel = params.frameLevel or 8
+
+    if style == PROC_STYLE_LCG_BUTTON and LCG.ButtonGlow_Start then
+        local frequency = params.frequency or 0.125
+        LCG.ButtonGlow_Start(button, color, frequency, frameLevel)
+        AcquireLCGButtonOwner(button, container, color, frequency, frameLevel)
+    elseif style == PROC_STYLE_LCG_AUTOCAST and LCG.AutoCastGlow_Start then
+        LCG.AutoCastGlow_Start(button, color, 4, params.frequency or 0.125, params.scale or 1, 0, 0, key, frameLevel)
+    else
+        return false
+    end
+
+    container._lcgStyle = style
+    container._lcgTarget = button
+    container._lcgKey = key
+    return true
+end
 
 -- Apply a vertex color tint to a proc glow frame (ActionButtonSpellAlertTemplate).
 -- The tint is multiplicative with the base golden texture, so warm colors work
@@ -41,6 +184,7 @@ local PixelGlowOnUpdate
 -- Hide all glow sub-styles in a container table (solidTextures, procFrame, pixelFrame).
 -- Works for procGlow, auraGlow, barAuraEffect, and assistedHighlight containers.
 local function HideGlowStyles(container)
+    StopLibCustomGlow(container)
     if container.solidTextures then
         for _, tex in ipairs(container.solidTextures) do tex:Hide() end
     end
@@ -63,13 +207,21 @@ local function HideGlowStyles(container)
 end
 
 -- Show the selected glow style on a container.
--- style: "solid", "pixel", "glow", or "blizzard"
+-- style: "solid", "pixel", "glow", "blizzard", or one of the LibCustomGlow proc styles
 -- button: the parent button frame (for positioning)
 -- color: {r, g, b, a} color table
--- params: {size, thickness, speed} — style-specific parameters
+-- params: {size, thickness, speed, frequency, scale, duration, key} — style-specific parameters
 local function ShowGlowStyle(container, style, button, color, params)
     local size = params.size
     local defaultAlpha = params.defaultAlpha or 1
+    StopLibCustomGlow(container)
+    if IsLibCustomGlowStyle(style) then
+        if StartLibCustomGlow(container, style, button, color, params) then
+            return
+        end
+        -- Library unavailable (or failed start): fall back to built-in proc glow.
+        style = "glow"
+    end
     if style == "solid" then
         ApplyEdgePositions(container.solidTextures, button, size or 2)
         for _, tex in ipairs(container.solidTextures) do
@@ -261,7 +413,7 @@ PixelGlowOnUpdate = function(self, elapsed)
 end
 
 -- Show or hide proc glow on a button.
--- Supports "solid" (colored border), "pixel" (animated pixel glow), and "glow" (animated proc-style) styles.
+-- Supports built-in styles and LibCustomGlow styles.
 -- Tracks state (style + color + size) to avoid restarting animations every tick.
 local function SetProcGlow(button, show)
     local pg = button.procGlow
@@ -271,19 +423,16 @@ local function SetProcGlow(button, show)
     local desiredState
     if show then
         local style = button.style
-        local glowStyle = (style and style.procGlowStyle) or "glow"
+        local glowStyle = NormalizeGlowStyle((style and style.procGlowStyle) or "glow")
         local c = (style and style.procGlowColor) or {1, 1, 1, 1}
-        local sz, th
-        if glowStyle == "solid" then
-            sz = (style and style.procGlowSize) or 2
-        elseif glowStyle == "pixel" then
-            sz = (style and style.procGlowSize) or 4
-        else
-            sz = (style and style.procGlowSize) or 32
-        end
+        local sz = GetGlowSize(style, "procGlowSize", glowStyle, {
+            solid = 2, pixel = 4, glow = 32, autocast = 1,
+        })
+        local th
+        local usesSpeed = UsesGlowSpeed(glowStyle)
         th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
-        local spd = (glowStyle == "pixel") and ((style and style.procGlowSpeed) or 60) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
+        local spd = usesSpeed and ((style and style.procGlowSpeed) or 60) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
     end
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
@@ -293,25 +442,26 @@ local function SetProcGlow(button, show)
     if not desiredState then return end
 
     local style = button.style
-    local glowStyle = (style and style.procGlowStyle) or "glow"
+    local glowStyle = NormalizeGlowStyle((style and style.procGlowStyle) or "glow")
     local color = (style and style.procGlowColor) or {1, 1, 1, 1}
-    local sz
-    if glowStyle == "solid" then
-        sz = (style and style.procGlowSize) or 2
-    elseif glowStyle == "pixel" then
-        sz = (style and style.procGlowSize) or 4
-    else
-        sz = (style and style.procGlowSize) or 32
-    end
+    local sz = GetGlowSize(style, "procGlowSize", glowStyle, {
+        solid = 2, pixel = 4, glow = 32, autocast = 1,
+    })
+    local usesSpeed = UsesGlowSpeed(glowStyle)
+    local procThickness = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
+    local procSpeed = usesSpeed and ((style and style.procGlowSpeed) or 60) or 0
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
-        thickness = (style and style.procGlowThickness) or 2,
-        speed = (style and style.procGlowSpeed) or 60,
+        thickness = procThickness,
+        speed = procSpeed,
+        frequency = usesSpeed and SpeedToGlowFrequency(procSpeed) or nil,
+        scale = math_min(math_max(sz, 0.2), 3),
+        key = PROC_GLOW_LCG_KEY,
     })
 end
 
 -- Show or hide aura active glow on a button.
--- Supports "solid" (colored border) and "glow" (animated proc-style) styles.
+-- Supports built-in styles and LibCustomGlow styles.
 -- Tracks state (style + color + size) to avoid restarting animations every tick.
 local function SetAuraGlow(button, show, pandemicOverride)
     local ag = button.auraGlow
@@ -325,24 +475,29 @@ local function SetAuraGlow(button, show, pandemicOverride)
         local glowStyle
         local c
         if pandemicOverride then
-            glowStyle = (btnStyle and btnStyle.pandemicGlowStyle) or "solid"
+            glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.pandemicGlowStyle) or "solid")
             c = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
         else
-            glowStyle = (btnStyle and btnStyle.auraGlowStyle) or "pixel"
+            glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.auraGlowStyle) or "pixel")
             c = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
         end
         if glowStyle ~= "none" then
-            local sz, th, spd
+            local sizeKey, thicknessKey, speedKey
             if pandemicOverride then
-                sz = (btnStyle and btnStyle.pandemicGlowSize) or (glowStyle == "solid" and 2 or glowStyle == "pixel" and 4 or 32)
-                th = (glowStyle == "pixel") and ((btnStyle and btnStyle.pandemicGlowThickness) or 2) or 0
-                spd = (glowStyle == "pixel") and ((btnStyle and btnStyle.pandemicGlowSpeed) or 60) or 0
+                sizeKey = "pandemicGlowSize"
+                thicknessKey = "pandemicGlowThickness"
+                speedKey = "pandemicGlowSpeed"
             else
-                sz = (btnStyle and btnStyle.auraGlowSize) or (glowStyle == "solid" and 2 or glowStyle == "pixel" and 4 or 32)
-                th = (glowStyle == "pixel") and ((btnStyle and btnStyle.auraGlowThickness) or 2) or 0
-                spd = (glowStyle == "pixel") and ((btnStyle and btnStyle.auraGlowSpeed) or 60) or 0
+                sizeKey = "auraGlowSize"
+                thicknessKey = "auraGlowThickness"
+                speedKey = "auraGlowSpeed"
             end
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
+            local sz = GetGlowSize(btnStyle, sizeKey, glowStyle, {
+                solid = 2, pixel = 4, glow = 32, autocast = 1,
+            })
+            local th = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 2) or 0
+            local spd = UsesGlowSpeed(glowStyle) and ((btnStyle and btnStyle[speedKey]) or 60) or 0
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
         end
     end
 
@@ -357,34 +512,37 @@ local function SetAuraGlow(button, show, pandemicOverride)
     local btnStyle = button.style
     local glowStyle, color
     if pandemicOverride then
-        glowStyle = (btnStyle and btnStyle.pandemicGlowStyle) or "solid"
+        glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.pandemicGlowStyle) or "solid")
         color = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
     else
-        glowStyle = (btnStyle and btnStyle.auraGlowStyle) or "pixel"
+        glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.auraGlowStyle) or "pixel")
         color = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
     end
-    local size
+    local sizeKey, thicknessKey, speedKey, glowKey
     if pandemicOverride then
-        size = (btnStyle and btnStyle.pandemicGlowSize)
+        sizeKey = "pandemicGlowSize"
+        thicknessKey = "pandemicGlowThickness"
+        speedKey = "pandemicGlowSpeed"
+        glowKey = PANDEMIC_GLOW_LCG_KEY
     else
-        size = btnStyle and btnStyle.auraGlowSize
+        sizeKey = "auraGlowSize"
+        thicknessKey = "auraGlowThickness"
+        speedKey = "auraGlowSpeed"
+        glowKey = AURA_GLOW_LCG_KEY
     end
-    local thickness, speed
-    if pandemicOverride then
-        thickness = (btnStyle and btnStyle.pandemicGlowThickness) or 2
-        speed = (btnStyle and btnStyle.pandemicGlowSpeed) or 60
-    else
-        thickness = (btnStyle and btnStyle.auraGlowThickness) or 2
-        speed = (btnStyle and btnStyle.auraGlowSpeed) or 60
-    end
-    -- Default size depends on style
-    if not size then
-        size = (glowStyle == "solid" and 2) or (glowStyle == "pixel" and 4) or 32
-    end
+    local size = GetGlowSize(btnStyle, sizeKey, glowStyle, {
+        solid = 2, pixel = 4, glow = 32, autocast = 1,
+    })
+    local thickness = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 2) or 0
+    local usesSpeed = UsesGlowSpeed(glowStyle)
+    local speed = usesSpeed and ((btnStyle and btnStyle[speedKey]) or 60) or 0
     ShowGlowStyle(ag, glowStyle, button, color, {
         size = size,
         thickness = thickness,
         speed = speed,
+        frequency = usesSpeed and SpeedToGlowFrequency(speed) or nil,
+        scale = math_min(math_max(size, 0.2), 3),
+        key = glowKey,
         defaultAlpha = 0.9,
     })
 end

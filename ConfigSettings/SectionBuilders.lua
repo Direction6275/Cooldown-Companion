@@ -782,7 +782,7 @@ end
 ------------------------------------------------------------------------
 -- Shared slider block used by both glow style controls and bar effect
 -- controls. Builds conditional size/thickness/speed sliders based on
--- the current glow style (solid/pixel/glow).
+-- the current glow style.
 --
 -- keys = { size = "...", thickness = "...", speed = "..." }
 -- pixelSizeMin: minimum for the pixel "Line Length" slider (1 for glow
@@ -843,8 +843,62 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
             refreshCallback()
         end)
         container:AddChild(sizeSlider)
+    elseif currentStyle == "lcgButton" then
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Frequency")
+        speedSlider:SetSliderValues(10, 200, 0.1)
+        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.speed] = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
+    elseif currentStyle == "lcgAutoCast" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Particle Scale")
+        sizeSlider:SetSliderValues(0.2, 3, 0.05)
+        local currentScale = styleTable[keys.size]
+        if not currentScale or currentScale < 0.2 or currentScale > 3 then
+            currentScale = 1
+        end
+        sizeSlider:SetValue(currentScale)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.size] = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Frequency")
+        speedSlider:SetSliderValues(10, 200, 0.1)
+        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.speed] = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
     end
 end
+
+-- Legacy profile compatibility: lcgProc was removed because it duplicated Blizzard glow.
+local function NormalizeLegacyGlowStyle(style)
+    if style == "lcgProc" then
+        return "glow"
+    end
+    return style
+end
+
+local LCG_GLOW_STYLE_OPTIONS = {
+    ["solid"] = "Solid Border",
+    ["pixel"] = "Pixel Glow",
+    ["glow"] = "Glow (Blizzard)",
+    ["lcgButton"] = "Action Button Glow",
+    ["lcgAutoCast"] = "Autocast Shine",
+}
+local LCG_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "lcgButton", "lcgAutoCast"}
 
 -- Generic glow style builder (Group A): style dropdown + color picker +
 -- conditional sliders. Replaces BuildProcGlowControls,
@@ -853,14 +907,21 @@ end
 -- cfg = { styleKey, colorKey, colorLabel, sizeKey, thicknessKey,
 --         speedKey, defaultStyle, defaultColor }
 local function BuildGlowStyleControls(container, styleTable, refreshCallback, cfg)
+    if styleTable[cfg.styleKey] == "lcgProc" then
+        styleTable[cfg.styleKey] = "glow"
+    end
+    local currentStyle = NormalizeLegacyGlowStyle(styleTable[cfg.styleKey] or cfg.defaultStyle)
+
     local styleDrop = AceGUI:Create("Dropdown")
     styleDrop:SetLabel("Glow Style")
-    styleDrop:SetList({
+    local styleOptions = cfg.styleOptions or {
         ["solid"] = "Solid Border",
         ["pixel"] = "Pixel Glow",
         ["glow"] = "Glow",
-    }, {"solid", "pixel", "glow"})
-    styleDrop:SetValue(styleTable[cfg.styleKey] or cfg.defaultStyle)
+    }
+    local styleOrder = cfg.styleOrder or {"solid", "pixel", "glow"}
+    styleDrop:SetList(styleOptions, styleOrder)
+    styleDrop:SetValue(currentStyle)
     styleDrop:SetFullWidth(true)
     styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.styleKey] = val
@@ -885,7 +946,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     end)
     container:AddChild(colorPicker)
 
-    BuildGlowSliders(container, styleTable, styleTable[cfg.styleKey] or cfg.defaultStyle, {
+    BuildGlowSliders(container, styleTable, currentStyle, {
         size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey,
     }, refreshCallback, 1)
 end
@@ -964,6 +1025,8 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback)
         styleKey = "procGlowStyle", colorKey = "procGlowColor", colorLabel = "Glow Color",
         sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
+        styleOptions = LCG_GLOW_STYLE_OPTIONS,
+        styleOrder = LCG_GLOW_STYLE_ORDER,
     })
 end
 
@@ -972,6 +1035,8 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback)
         styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Glow Color",
         sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed",
         defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
+        styleOptions = LCG_GLOW_STYLE_OPTIONS,
+        styleOrder = LCG_GLOW_STYLE_ORDER,
     })
 end
 
@@ -980,6 +1045,8 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
         styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
         sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed",
         defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
+        styleOptions = LCG_GLOW_STYLE_OPTIONS,
+        styleOrder = LCG_GLOW_STYLE_ORDER,
     })
 end
 

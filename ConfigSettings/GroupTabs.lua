@@ -557,6 +557,9 @@ local function BuildEffectsTab(container)
 
     -- Branch for bar mode
     if group.displayMode == "bars" then
+        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
         BuildBarEffectsTab(container, group, style)
         return
     end
@@ -586,6 +589,16 @@ local function BuildEffectsTab(container)
     BuildProcGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    local procPreviewBtn = AceGUI:Create("Button")
+    procPreviewBtn:SetText("Preview Proc Glow (3s)")
+    procPreviewBtn:SetFullWidth(true)
+    procPreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupProcGlowPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(procPreviewBtn)
+    else
+    CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
     end -- procAdvExpanded
 
     -- ================================================================
@@ -609,6 +622,16 @@ local function BuildEffectsTab(container)
     BuildAuraIndicatorControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    local auraPreviewBtn = AceGUI:Create("Button")
+    auraPreviewBtn:SetText("Preview Active Aura Glow (3s)")
+    auraPreviewBtn:SetFullWidth(true)
+    auraPreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupAuraGlowPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(auraPreviewBtn)
+    else
+    CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
     end -- auraAdvExpanded
 
     -- ================================================================
@@ -632,6 +655,16 @@ local function BuildEffectsTab(container)
     BuildPandemicGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    local pandemicPreviewBtn = AceGUI:Create("Button")
+    pandemicPreviewBtn:SetText("Preview Pandemic Glow (3s)")
+    pandemicPreviewBtn:SetFullWidth(true)
+    pandemicPreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(pandemicPreviewBtn)
+    else
+    CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
     end -- pandemicAdvExpanded
 
     -- ================================================================

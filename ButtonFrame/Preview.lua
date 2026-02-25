@@ -11,15 +11,44 @@ local SetBarAuraEffect = ST._SetBarAuraEffect
 
 local pairs = pairs
 local ipairs = ipairs
+local tonumber = tonumber
+local C_Timer_After = C_Timer.After
+
+-- Group-scoped token map used to invalidate older 3-second proc preview callbacks.
+local procPreviewTokens = {}
+-- Button-scoped token map used to invalidate older per-button proc preview callbacks.
+local procButtonPreviewTokens = {}
+local auraPreviewTokens = {}
+local auraButtonPreviewTokens = {}
+local pandemicPreviewTokens = {}
+local pandemicButtonPreviewTokens = {}
+
+local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
+    local groupTokens = tokenStore[groupId]
+    if not groupTokens then
+        groupTokens = {}
+        tokenStore[groupId] = groupTokens
+    end
+    local token = (groupTokens[buttonIndex] or 0) + 1
+    groupTokens[buttonIndex] = token
+    return token
+end
 
 -- Set or clear proc glow preview on a specific button.
 -- Used by the config panel to show what the glow looks like.
 function CooldownCompanion:SetProcGlowPreview(groupId, buttonIndex, show)
+    if not show then
+        BumpButtonPreviewToken(procButtonPreviewTokens, groupId, buttonIndex)
+    end
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
         if button.index == buttonIndex then
             button._procGlowPreview = show or nil
+            button._procGlowActive = false -- force SetProcGlow cache miss (including off->off path)
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
             return
         end
     end
@@ -27,30 +56,153 @@ end
 
 -- Clear all proc glow previews across every group.
 function CooldownCompanion:ClearAllProcGlowPreviews()
+    procPreviewTokens = {}
+    procButtonPreviewTokens = {}
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
             button._procGlowPreview = nil
+            button._procGlowActive = false -- ensure HideGlowStyles runs on next update
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
         end
     end
 end
 
+-- Set or clear proc glow preview for every button in a group.
+function CooldownCompanion:SetGroupProcGlowPreview(groupId, show)
+    procButtonPreviewTokens[groupId] = nil
+    if not show then
+        procPreviewTokens[groupId] = (procPreviewTokens[groupId] or 0) + 1
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._procGlowPreview = show or nil
+        button._procGlowActive = false -- force SetProcGlow cache miss (including off->off path)
+        if button.UpdateCooldown then
+            button:UpdateCooldown()
+        end
+    end
+end
+
+-- Trigger a timed proc glow preview for a specific button (default: 3 seconds).
+function CooldownCompanion:PlayProcGlowPreview(groupId, buttonIndex, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = BumpButtonPreviewToken(procButtonPreviewTokens, groupId, buttonIndex)
+    self:SetProcGlowPreview(groupId, buttonIndex, true)
+
+    C_Timer_After(duration, function()
+        local groupTokens = procButtonPreviewTokens[groupId]
+        if not groupTokens or groupTokens[buttonIndex] ~= token then return end
+        self:SetProcGlowPreview(groupId, buttonIndex, false)
+    end)
+end
+
+-- Trigger a timed proc glow preview for a whole group (default: 3 seconds).
+function CooldownCompanion:PlayGroupProcGlowPreview(groupId, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = (procPreviewTokens[groupId] or 0) + 1
+    procPreviewTokens[groupId] = token
+
+    self:SetGroupProcGlowPreview(groupId, true)
+
+    C_Timer_After(duration, function()
+        if procPreviewTokens[groupId] ~= token then return end
+        self:SetGroupProcGlowPreview(groupId, false)
+    end)
+end
+
 -- Set or clear aura glow preview on a specific button.
 function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
+    if not show then
+        BumpButtonPreviewToken(auraButtonPreviewTokens, groupId, buttonIndex)
+    end
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
         if button.index == buttonIndex then
             button._auraGlowPreview = show or nil
+            button._auraGlowActive = false
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
             return
         end
     end
 end
 
+-- Set or clear aura glow preview for every button in a group.
+function CooldownCompanion:SetGroupAuraGlowPreview(groupId, show)
+    auraButtonPreviewTokens[groupId] = nil
+    if not show then
+        auraPreviewTokens[groupId] = (auraPreviewTokens[groupId] or 0) + 1
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._auraGlowPreview = show or nil
+        button._auraGlowActive = false
+        if button.UpdateCooldown then
+            button:UpdateCooldown()
+        end
+    end
+end
+
+-- Trigger a timed aura glow preview for a specific button (default: 3 seconds).
+function CooldownCompanion:PlayAuraGlowPreview(groupId, buttonIndex, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = BumpButtonPreviewToken(auraButtonPreviewTokens, groupId, buttonIndex)
+    self:SetAuraGlowPreview(groupId, buttonIndex, true)
+
+    C_Timer_After(duration, function()
+        local groupTokens = auraButtonPreviewTokens[groupId]
+        if not groupTokens or groupTokens[buttonIndex] ~= token then return end
+        self:SetAuraGlowPreview(groupId, buttonIndex, false)
+    end)
+end
+
+-- Trigger a timed aura glow preview for a whole group (default: 3 seconds).
+function CooldownCompanion:PlayGroupAuraGlowPreview(groupId, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = (auraPreviewTokens[groupId] or 0) + 1
+    auraPreviewTokens[groupId] = token
+
+    self:SetGroupAuraGlowPreview(groupId, true)
+
+    C_Timer_After(duration, function()
+        if auraPreviewTokens[groupId] ~= token then return end
+        self:SetGroupAuraGlowPreview(groupId, false)
+    end)
+end
+
 -- Clear all aura glow previews across every group.
 function CooldownCompanion:ClearAllAuraGlowPreviews()
+    auraPreviewTokens = {}
+    auraButtonPreviewTokens = {}
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
             button._auraGlowPreview = nil
+            button._auraGlowActive = false
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
         end
     end
 end
@@ -76,11 +228,15 @@ end
 
 -- Set or clear pandemic preview on a specific button.
 function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)
+    if not show then
+        BumpButtonPreviewToken(pandemicButtonPreviewTokens, groupId, buttonIndex)
+    end
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
         if button.index == buttonIndex then
             button._pandemicPreview = show or nil
+            button._auraGlowActive = false
             if not show then
                 -- Call directly — cache still holds old state so the
                 -- mismatch will trigger the hide path inside SetBarAuraEffect
@@ -88,16 +244,83 @@ function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)
             else
                 button._barAuraEffectActive = nil -- force re-evaluate on next tick
             end
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
             return
         end
     end
 end
 
+-- Set or clear pandemic preview for every button in a group.
+function CooldownCompanion:SetGroupPandemicPreview(groupId, show)
+    pandemicButtonPreviewTokens[groupId] = nil
+    if not show then
+        pandemicPreviewTokens[groupId] = (pandemicPreviewTokens[groupId] or 0) + 1
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._pandemicPreview = show or nil
+        button._auraGlowActive = false
+        if not show then
+            SetBarAuraEffect(button, button._auraActive)
+        else
+            button._barAuraEffectActive = nil
+        end
+        if button.UpdateCooldown then
+            button:UpdateCooldown()
+        end
+    end
+end
+
+-- Trigger a timed pandemic preview for a specific button (default: 3 seconds).
+function CooldownCompanion:PlayPandemicPreview(groupId, buttonIndex, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = BumpButtonPreviewToken(pandemicButtonPreviewTokens, groupId, buttonIndex)
+    self:SetPandemicPreview(groupId, buttonIndex, true)
+
+    C_Timer_After(duration, function()
+        local groupTokens = pandemicButtonPreviewTokens[groupId]
+        if not groupTokens or groupTokens[buttonIndex] ~= token then return end
+        self:SetPandemicPreview(groupId, buttonIndex, false)
+    end)
+end
+
+-- Trigger a timed pandemic preview for a whole group (default: 3 seconds).
+function CooldownCompanion:PlayGroupPandemicPreview(groupId, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = (pandemicPreviewTokens[groupId] or 0) + 1
+    pandemicPreviewTokens[groupId] = token
+
+    self:SetGroupPandemicPreview(groupId, true)
+
+    C_Timer_After(duration, function()
+        if pandemicPreviewTokens[groupId] ~= token then return end
+        self:SetGroupPandemicPreview(groupId, false)
+    end)
+end
+
 -- Clear all pandemic previews across every group.
 function CooldownCompanion:ClearAllPandemicPreviews()
+    pandemicPreviewTokens = {}
+    pandemicButtonPreviewTokens = {}
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
             button._pandemicPreview = nil
+            button._auraGlowActive = false
+            SetBarAuraEffect(button, button._auraActive)
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
         end
     end
 end
