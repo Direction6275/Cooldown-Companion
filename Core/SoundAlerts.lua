@@ -427,7 +427,10 @@ function CooldownCompanion:GetSoundAlertOptions()
     end
 
     for _, soundName in ipairs(LSM:List("sound")) do
-        options[soundName] = soundName
+        local soundSource = LSM:Fetch("sound", soundName, true)
+        if (type(soundSource) == "string" and soundSource ~= "") or type(soundSource) == "number" then
+            options[soundName] = soundName
+        end
     end
     return options
 end
@@ -489,13 +492,21 @@ local function PlaySharedMediaSound(soundName, channel, speechText)
         return false
     end
 
-    local soundPath = LSM:Fetch("sound", soundName)
-    if not soundPath or soundPath == 1 then
+    local soundSource = LSM:Fetch("sound", soundName)
+    if not soundSource or soundSource == 1 then
         return false
     end
 
-    local willPlay = PlaySoundFile(soundPath, channel or DEFAULT_SOUND_CHANNEL)
-    return willPlay and true or false
+    if type(soundSource) == "number" then
+        -- Numeric LSM registrations can represent SoundKit IDs.
+        local willPlayKit = PlaySound(soundSource, channel or DEFAULT_SOUND_CHANNEL)
+        if willPlayKit then
+            return true
+        end
+    end
+
+    local willPlayFile = PlaySoundFile(soundSource, channel or DEFAULT_SOUND_CHANNEL)
+    return willPlayFile and true or false
 end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)

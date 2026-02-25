@@ -39,6 +39,28 @@ local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
+local SOUND_ALERT_NONE_OPTION_KEY = "None" -- Keep in sync with Core/SoundAlerts.lua SOUND_NONE_KEY.
+
+local function BuildSortedSoundOptionOrder(soundOptions)
+    local order = {}
+    for optionKey in pairs(soundOptions) do
+        order[#order + 1] = optionKey
+    end
+
+    table.sort(order, function(a, b)
+        if a == SOUND_ALERT_NONE_OPTION_KEY then return true end
+        if b == SOUND_ALERT_NONE_OPTION_KEY then return false end
+
+        local aLabel = soundOptions[a] or tostring(a)
+        local bLabel = soundOptions[b] or tostring(b)
+        if aLabel == bLabel then
+            return tostring(a) < tostring(b)
+        end
+        return aLabel < bLabel
+    end)
+
+    return order
+end
 
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local soundHeading = AceGUI:Create("Heading")
@@ -74,6 +96,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
+    local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
     local eventOrder = CooldownCompanion:GetSoundAlertEventOrder()
 
     for _, eventKey in ipairs(eventOrder) do
@@ -84,7 +107,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 
             local soundDrop = AceGUI:Create("Dropdown")
             soundDrop:SetLabel(CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey))
-            soundDrop:SetList(soundOptions)
+            soundDrop:SetList(soundOptions, soundOptionOrder)
             soundDrop:SetValue(CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey))
             soundDrop:SetFullWidth(true)
             soundDrop:SetCallback("OnOpened", function(widget)
