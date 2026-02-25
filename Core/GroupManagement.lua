@@ -189,21 +189,30 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         cdmChildSlot = cdmChildSlot or nil,
     }
 
-    -- Auto-detect charges for spells (skip for passives — no cooldown)
-    -- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells
+    -- Auto-detect charges for spells (skip for passives — no cooldown).
+    -- Treat as charge-based only when max charges is greater than 1.
     if buttonType == "spell" and not isPassive then
         local chargeInfo = C_Spell.GetSpellCharges(id)
         if chargeInfo then
-            group.buttons[buttonIndex].hasCharges = true
-            group.buttons[buttonIndex].showChargeText = true
             local mc = chargeInfo.maxCharges
-            if mc and mc > 1 then
+            if mc and not issecretvalue(mc) and mc > 1 then
+                group.buttons[buttonIndex].hasCharges = true
+                group.buttons[buttonIndex].showChargeText = true
                 group.buttons[buttonIndex].maxCharges = mc
-            end
-            -- Secondary: display count
-            local displayCount = tonumber(C_Spell.GetSpellDisplayCount(id))
-            if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
-                group.buttons[buttonIndex].maxCharges = displayCount
+
+                -- Secondary: display count
+                local rawDisplayCount = C_Spell.GetSpellDisplayCount(id)
+                if not issecretvalue(rawDisplayCount) then
+                    local displayCount = tonumber(rawDisplayCount)
+                    if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
+                        group.buttons[buttonIndex].maxCharges = displayCount
+                    end
+                end
+            elseif mc == nil or issecretvalue(mc) then
+                -- If maxCharges is unreadable in this context, keep a provisional
+                -- charge classification until RefreshChargeFlags can resolve it.
+                group.buttons[buttonIndex].hasCharges = true
+                group.buttons[buttonIndex].showChargeText = true
             end
         end
     end

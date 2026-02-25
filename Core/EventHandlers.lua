@@ -70,27 +70,38 @@ function CooldownCompanion:OnPetChanged()
 end
 
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
--- GetSpellCharges returns nil for non-charge spells, a table only for multi-charge spells.
+-- Treat a spell as charge-based only when max charges is greater than 1.
 function CooldownCompanion:RefreshChargeFlags(typeFilter)
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
                 local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
-                buttonData.hasCharges = chargeInfo and true or nil
+                local hasRealCharges = buttonData.hasCharges and true or nil
                 if chargeInfo then
                     local mc = chargeInfo.maxCharges
-                    if mc and not issecretvalue(mc) and mc > (buttonData.maxCharges or 0) then
-                        buttonData.maxCharges = mc
-                    end
-                    -- Secondary source: display count
-                    local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
-                    if not issecretvalue(rawDisplayCount) then
-                        local displayCount = tonumber(rawDisplayCount)
-                        if displayCount and displayCount > (buttonData.maxCharges or 0) then
-                            buttonData.maxCharges = displayCount
+                    if mc and not issecretvalue(mc) then
+                        if mc > 1 then
+                            hasRealCharges = true
+                            if mc > (buttonData.maxCharges or 0) then
+                                buttonData.maxCharges = mc
+                            end
+
+                            -- Secondary source: display count
+                            local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
+                            if not issecretvalue(rawDisplayCount) then
+                                local displayCount = tonumber(rawDisplayCount)
+                                if displayCount and displayCount > (buttonData.maxCharges or 0) then
+                                    buttonData.maxCharges = displayCount
+                                end
+                            end
+                        else
+                            hasRealCharges = nil
                         end
                     end
+                else
+                    hasRealCharges = nil
                 end
+                buttonData.hasCharges = hasRealCharges
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items: at 0 charges both count APIs
                 -- return 0, indistinguishable from "item not owned".
