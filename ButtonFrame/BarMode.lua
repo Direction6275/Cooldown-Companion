@@ -340,7 +340,7 @@ local function UpdateBarDisplay(button, fetchOk)
     end
 
     -- Bar aura effect (pandemic overrides effect color)
-    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and button.buttonData.pandemicGlow and style.showPandemicGlow ~= false)
+    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and style.showPandemicGlow ~= false)
     local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
         or (button._auraActive and (barAuraEffectPandemic or button.buttonData.auraIndicatorEnabled or style.auraGlowStyle ~= "none"))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
