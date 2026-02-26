@@ -425,8 +425,13 @@ end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
     for groupId, frame in pairs(self.groupFrames) do
-        if frame and frame:IsShown() and frame._layoutDirty then
-            self:UpdateGroupLayout(groupId)
+        if frame and frame:IsShown() then
+            if frame._sizeDirty then
+                self:ResizeGroupFrame(groupId)
+            end
+            if frame._layoutDirty then
+                self:UpdateGroupLayout(groupId)
+            end
         end
     end
 end

@@ -48,6 +48,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- by UpdateButtonIcon on SPELL_UPDATE_ICON and creation.
     local cooldownSpellId = button._displaySpellId or buttonData.id
 
+    -- Proc state: event-driven table lookup (base spell + current displayed override).
+    -- Keeps visibility and glow checks aligned without polling overlay APIs.
+    local procOverlayActive = false
+    if buttonData.type == "spell" and not buttonData.isPassive then
+        local displaySpellId = button._displaySpellId
+        procOverlayActive = CooldownCompanion.procOverlaySpells[buttonData.id] and true or false
+        if not procOverlayActive and displaySpellId and displaySpellId ~= buttonData.id then
+            procOverlayActive = CooldownCompanion.procOverlaySpells[displaySpellId] and true or false
+        end
+    end
+
     -- Clear per-tick DurationObject; set below if cooldown/aura active.
     -- Used by bar fill, desaturation, visibility checks instead of
     -- GetCooldownTimes() which returns secret values after
@@ -654,7 +665,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Per-button visibility evaluation (after charge tracking)
-    EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
+    EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive, procOverlayActive)
 
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
     local forceVisibleByConfig = IsConfigButtonForceVisible(button)
@@ -719,6 +730,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if not button._isBar then
-        UpdateIconModeGlows(button, buttonData, style)
+        UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     end
 end

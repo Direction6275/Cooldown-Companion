@@ -14,6 +14,7 @@ local math_min = math.min
 local math_max = math.max
 local math_ceil = math.ceil
 local table_insert = table.insert
+local InCombatLockdown = InCombatLockdown
 
 -- Shared click-through and border helpers from Utils.lua
 local SetFrameClickThrough = ST.SetFrameClickThrough
@@ -547,24 +548,36 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount or #group.buttons
 
+    local targetWidth, targetHeight
+
     if numButtons == 0 then
-        frame:SetSize(buttonWidth, buttonHeight)
-        return
-    end
-
-    local rows, cols
-    if orientation == "horizontal" then
-        cols = math_min(numButtons, buttonsPerRow)
-        rows = math_ceil(numButtons / buttonsPerRow)
+        targetWidth, targetHeight = buttonWidth, buttonHeight
     else
-        rows = math_min(numButtons, buttonsPerRow)
-        cols = math_ceil(numButtons / buttonsPerRow)
+        local rows, cols
+        if orientation == "horizontal" then
+            cols = math_min(numButtons, buttonsPerRow)
+            rows = math_ceil(numButtons / buttonsPerRow)
+        else
+            rows = math_min(numButtons, buttonsPerRow)
+            cols = math_ceil(numButtons / buttonsPerRow)
+        end
+
+        local width = cols * buttonWidth + (cols - 1) * spacing
+        local height = rows * buttonHeight + (rows - 1) * spacing
+        targetWidth = math_max(width, buttonWidth)
+        targetHeight = math_max(height, buttonHeight)
     end
 
-    local width = cols * buttonWidth + (cols - 1) * spacing
-    local height = rows * buttonHeight + (rows - 1) * spacing
+    -- Group frames become protected when they contain secure action buttons.
+    -- Defer resizing during combat and retry from the layout ticker.
+    if InCombatLockdown() and frame:IsProtected() then
+        frame._sizeDirty = true
+        return false
+    end
 
-    frame:SetSize(math_max(width, buttonWidth), math_max(height, buttonHeight))
+    frame:SetSize(targetWidth, targetHeight)
+    frame._sizeDirty = nil
+    return true
 end
 
 -- Compact layout reflow: reposition visible buttons to fill gaps left by hidden ones.

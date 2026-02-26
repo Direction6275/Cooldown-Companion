@@ -13,12 +13,13 @@ local IsUsableItem = C_Item.IsUsableItem
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive)
+local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive, procOverlayActive)
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
        and not buttonData.hideWhileAuraNotActive
        and not buttonData.hideWhileAuraActive
+       and not buttonData.hideWhileNoProc
        and not buttonData.hideWhileZeroCharges
        and not buttonData.hideWhileZeroStacks
        and not buttonData.hideWhileNotEquipped
@@ -31,6 +32,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     local shouldHide = false
     local hidReasonAuraNotActive = false
     local hidReasonAuraActive = false
+    local hidReasonNoProc = false
 
     -- Check hideWhileOnCooldown
     if buttonData.hideWhileOnCooldown then
@@ -84,6 +86,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if auraOverrideActive then
             shouldHide = true
             hidReasonAuraActive = true
+        end
+    end
+
+    -- Check hideWhileNoProc (spell entries added as spells only)
+    if buttonData.hideWhileNoProc then
+        local isSpellEntry = buttonData.type == "spell" and buttonData.addedAs ~= "aura" and not buttonData.isPassive
+        if isSpellEntry and not procOverlayActive then
+            shouldHide = true
+            hidReasonNoProc = true
         end
     end
 
@@ -157,6 +168,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraActive and auraOverrideActive then
             otherHide = true
         end
+        if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
@@ -196,6 +208,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then
             otherHide = true
         end
+        if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
@@ -228,6 +241,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
@@ -259,6 +273,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
@@ -286,6 +301,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if not otherHide then

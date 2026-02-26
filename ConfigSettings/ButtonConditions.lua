@@ -312,6 +312,24 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         {"Uses the same logic as unusable dimming, but completely hides the button instead of dimming it.", 1, 1, 1, true},
     }, infoButtons)
 
+    -- Hide While No Proc (spell entries only, not aura entries)
+    local showNoProcToggle
+    if isBatch then
+        showNoProcToggle = batchContext and batchContext.uniformType == "spell"
+    else
+        showNoProcToggle = buttonData.type == "spell" and buttonData.addedAs ~= "aura"
+    end
+    if showNoProcToggle then
+        local hideNoProcCb = AceGUI:Create("CheckBox")
+        hideNoProcCb:SetLabel("Hide While No Proc")
+        SetCheckboxValue(hideNoProcCb, "hideWhileNoProc")
+        hideNoProcCb:SetFullWidth(true)
+        WrapBatchCallback(hideNoProcCb, function(widget, event, val)
+            ApplyToSelected("hideWhileNoProc", val or nil)
+        end)
+        scroll:AddChild(hideNoProcCb)
+    end
+
     end -- not allPassive
 
     -- Item-specific zero charges/stacks visibility toggles

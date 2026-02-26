@@ -530,7 +530,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 end
 
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
-local function UpdateIconModeGlows(button, buttonData, style)
+local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     -- Loss of control overlay
     UpdateLossOfControl(button)
 
@@ -555,7 +555,7 @@ local function UpdateIconModeGlows(button, buttonData, style)
             showProc = true
         elseif style.procGlowStyle ~= "none" and buttonData.type == "spell"
                and not buttonData.isPassive and not buttonData.auraTracking then
-            showProc = CooldownCompanion.procOverlaySpells[buttonData.id] or false
+            showProc = procOverlayActive and true or false
         end
         SetProcGlow(button, showProc)
     end
