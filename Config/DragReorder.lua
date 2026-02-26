@@ -9,6 +9,7 @@ local CS = ST._configState
 
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 
 -- File-local constants
 local DRAG_THRESHOLD = 8
@@ -584,13 +585,7 @@ local function FinishDrag()
             local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
             if targetSection and targetSection ~= state.sourceSection
                and state.sourceSection == "global" then
-                local folderGroups = {}
-                for _, group in pairs(CooldownCompanion.db.profile.groups) do
-                    if group.folderId == state.sourceFolderId then
-                        folderGroups[#folderGroups + 1] = group
-                    end
-                end
-                if GroupsHaveForeignSpecs(folderGroups, false) then
+                if FolderHasForeignSpecs and FolderHasForeignSpecs(state.sourceFolderId) then
                     ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_FOLDER", nil, {
                         dragState = state,
                     })

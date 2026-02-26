@@ -25,6 +25,7 @@ local GetScaledCursorPosition = ST._GetScaledCursorPosition
 local BuildGroupExportData = ST._BuildGroupExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 ------------------------------------------------------------------------
@@ -789,6 +790,12 @@ local function RefreshColumn1(preserveDrag)
                     info.notCheckable = true
                     info.func = function()
                         CloseDropDownMenus()
+                        if folder.section == "global"
+                           and FolderHasForeignSpecs
+                           and FolderHasForeignSpecs(folderId) then
+                            ShowPopupAboveConfig("CDC_UNGLOBAL_FOLDER", folder.name, { folderId = folderId })
+                            return
+                        end
                         CooldownCompanion:ToggleFolderGlobal(folderId)
                         CooldownCompanion:RefreshConfigPanel()
                     end

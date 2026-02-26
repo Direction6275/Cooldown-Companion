@@ -771,22 +771,74 @@ local function ResetConfigSelection(full)
     end
 end
 
-local function GroupsHaveForeignSpecs(groups, requireGlobal)
-    local numSpecs = GetNumSpecializations()
+local function BuildPlayerSpecSet()
     local playerSpecIds = {}
+    local numSpecs = GetNumSpecializations()
     for i = 1, numSpecs do
         local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-        if specId then playerSpecIds[specId] = true end
+        if specId then
+            playerSpecIds[specId] = true
+        end
     end
+    return playerSpecIds
+end
+
+local function SpecSetHasForeignSpecs(specs, playerSpecIds)
+    if not specs then return false end
+    for specId in pairs(specs) do
+        if not playerSpecIds[specId] then
+            return true
+        end
+    end
+    return false
+end
+
+local function GetEffectiveGroupSpecFilter(group, db)
+    if not group then return nil end
+    if group.folderId and db and db.folders then
+        local folder = db.folders[group.folderId]
+        if folder and folder.specs and next(folder.specs) then
+            return folder.specs
+        end
+    end
+    return group.specs
+end
+
+local function GroupsHaveForeignSpecs(groups, requireGlobal)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local playerSpecIds = BuildPlayerSpecSet()
     for _, g in ipairs(groups) do
-        if g.specs and (not requireGlobal or g.isGlobal) then
-            for specId in pairs(g.specs) do
-                if not playerSpecIds[specId] then
-                    return true
-                end
+        if not requireGlobal or g.isGlobal then
+            local effectiveSpecs = GetEffectiveGroupSpecFilter(g, db)
+            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+                return true
             end
         end
     end
+    return false
+end
+
+local function FolderHasForeignSpecs(folderId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not (db and db.folders and db.groups) then return false end
+
+    local folder = db.folders[folderId]
+    if not folder then return false end
+
+    local playerSpecIds = BuildPlayerSpecSet()
+    if SpecSetHasForeignSpecs(folder.specs, playerSpecIds) then
+        return true
+    end
+
+    for _, group in pairs(db.groups) do
+        if group.folderId == folderId then
+            local effectiveSpecs = GetEffectiveGroupSpecFilter(group, db)
+            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+                return true
+            end
+        end
+    end
+
     return false
 end
 
@@ -815,3 +867,4 @@ ST._BuildHeroTalentSubTreeCheckboxes = BuildHeroTalentSubTreeCheckboxes
 ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ResetConfigSelection = ResetConfigSelection
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
+ST._FolderHasForeignSpecs = FolderHasForeignSpecs

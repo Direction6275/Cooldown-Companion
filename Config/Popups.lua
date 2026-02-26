@@ -22,6 +22,30 @@ local function ProfileNameExists(name)
     return false
 end
 
+local function ClearFolderFiltersForUnglobal(folderId)
+    if not folderId then return end
+
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not db then return end
+
+    local folder = db.folders and db.folders[folderId]
+    if folder then
+        folder.specs = nil
+        folder.heroTalents = nil
+        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
+        return
+    end
+
+    if db.groups then
+        for _, group in pairs(db.groups) do
+            if group.folderId == folderId and (group.specs or group.heroTalents) then
+                group.specs = nil
+                group.heroTalents = nil
+            end
+        end
+    end
+end
+
 StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     text = "Are you sure you want to delete group '%s'?",
     button1 = "Delete",
@@ -432,16 +456,27 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.dragState then
-            local db = CooldownCompanion.db.profile
             local folderId = data.dragState.sourceFolderId
-            -- Clear foreign specs from all child groups
-            for groupId, group in pairs(db.groups) do
-                if group.folderId == folderId and (group.specs or group.heroTalents) then
-                    group.specs = nil
-                    group.heroTalents = nil
-                end
-            end
+            ClearFolderFiltersForUnglobal(folderId)
             ST._ApplyCol1Drop(data.dragState)
+            CooldownCompanion:RefreshAllGroups()
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
+    text = "This folder contains groups with foreign spec filters. Moving '%s' to character will remove those filters. Continue?",
+    button1 = "Continue",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.folderId then
+            ClearFolderFiltersForUnglobal(data.folderId)
+            CooldownCompanion:ToggleFolderGlobal(data.folderId)
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
