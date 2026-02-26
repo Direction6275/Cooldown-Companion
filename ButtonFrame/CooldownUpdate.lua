@@ -372,11 +372,41 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._isOnGCD = isOnGCD or false
     button._gcdJustEnded = gcdJustEnded
 
-    -- Bar mode: GCD suppression flag (checked by UpdateBarFill OnUpdate).
+    -- Bar mode: suppress GCD-only display in bars (checked by UpdateBarFill OnUpdate).
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
-        button._barGCDSuppressed = fetchOk and not style.showGCDSwipe and isOnGCD
+        button._barGCDSuppressed = fetchOk and isGCDOnly
             and not buttonData.hasCharges and not buttonData.isPassive
+    end
+
+    -- Bar mode icon-only GCD swipe.
+    if button._isBar and button.iconGCDCooldown then
+        local showBarGCDSwipe = (style.showBarIcon ~= false)
+            and style.showGCDSwipe == true
+            and buttonData.type == "spell"
+            and isOnGCD == true
+        if showBarGCDSwipe then
+            local startTime, duration
+            local gcdInfo = CooldownCompanion._gcdInfo
+            if gcdInfo and gcdInfo.startTime and gcdInfo.duration then
+                startTime, duration = gcdInfo.startTime, gcdInfo.duration
+            elseif spellCooldownInfo and spellCooldownInfo.startTime and spellCooldownInfo.duration
+            then
+                startTime, duration = spellCooldownInfo.startTime, spellCooldownInfo.duration
+            end
+            if startTime and duration then
+                local iconGCDCooldown = button.iconGCDCooldown
+                iconGCDCooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+                iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
+                -- Secret-safe pass-through: let CooldownFrame handle duration validity.
+                iconGCDCooldown:Hide()
+                iconGCDCooldown:SetCooldown(startTime, duration)
+            else
+                button.iconGCDCooldown:Hide()
+            end
+        else
+            button.iconGCDCooldown:Hide()
+        end
     end
 
     -- Charge count tracking: detect whether the main cooldown (0 charges)
@@ -435,12 +465,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.hasCharges then
       if buttonData.type == "spell" then
         -- Bar mode: charge bars are driven by the recharge DurationObject, not
-        -- the main spell CD. Save and clear the main CD, let the charge block
-        -- set _durationObj from the recharge, then restore the main CD for GCD
-        -- display only when showGCDSwipe is on and no recharge is active.
-        local mainDurationObj
+        -- the main spell CD or GCD. Save and clear the main CD so recharge
+        -- timing fully controls bar fill for charge spells.
         if button._isBar and not auraOverrideActive and button._chargeDurationObj then
-            mainDurationObj = button._durationObj
             button._durationObj = nil
         end
 
@@ -489,12 +516,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         elseif not button._isBar and not auraOverrideActive and charges then
             -- Icon mode fallback
             button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
-        end
-
-        -- Bar mode: if no recharge active, restore main CD for GCD display
-        if button._isBar and not button._durationObj
-           and mainDurationObj and isOnGCD and style.showGCDSwipe then
-            button._durationObj = mainDurationObj
         end
 
       elseif buttonData.type == "item" then

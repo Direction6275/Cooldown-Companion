@@ -26,7 +26,6 @@ local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
-local SetupTooltipScripts = ST._SetupTooltipScripts
 local SetBarAuraEffect = ST._SetBarAuraEffect
 
 -- Imports from Visibility
@@ -51,6 +50,32 @@ local function FormatBarTime(seconds)
         return string_format("%.1f", seconds)
     end
     return ""
+end
+
+-- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
+local function SetBarIconTooltipScripts(button, enable)
+    local iconBounds = button and button._iconBounds
+    if not iconBounds then return end
+
+    if enable then
+        iconBounds:SetScript("OnEnter", function()
+            local bd = button.buttonData
+            if not bd then return end
+            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+            if bd.type == "spell" then
+                GameTooltip:SetSpellByID(button._displaySpellId or bd.id)
+            elseif bd.type == "item" then
+                GameTooltip:SetItemByID(bd.id)
+            end
+            GameTooltip:Show()
+        end)
+        iconBounds:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    else
+        iconBounds:SetScript("OnEnter", nil)
+        iconBounds:SetScript("OnLeave", nil)
+    end
 end
 
 -- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
@@ -527,6 +552,16 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.locCooldown:SetHideCountdownNumbers(true)
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
 
+    -- Icon-only GCD swipe frame for bar mode.
+    button.iconGCDCooldown = CreateFrame("Cooldown", button:GetName() .. "IconGCDCooldown", button, "CooldownFrameTemplate")
+    button.iconGCDCooldown:SetAllPoints(button.icon)
+    button.iconGCDCooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+    button.iconGCDCooldown:SetDrawSwipe(true)
+    button.iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
+    button.iconGCDCooldown:SetHideCountdownNumbers(true)
+    button.iconGCDCooldown:Hide()
+    SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+
     -- Hidden cooldown frame for GetCooldownTimes() reads
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetSize(1, 1)
@@ -539,6 +574,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Suppress bling (cooldown-end flash) on all bar buttons
     button.cooldown:SetDrawBling(false)
     button.locCooldown:SetDrawBling(false)
+    button.iconGCDCooldown:SetDrawBling(false)
 
     -- Charge/item count text (overlay)
     button.overlayFrame = CreateFrame("Frame", nil, button)
@@ -706,16 +742,34 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Click-through
     local showTooltips = style.showTooltips == true
-    SetFrameClickThroughRecursive(button, true, not showTooltips)
+    local iconTooltips = showTooltips and showIcon
+
+    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
+    SetFrameClickThroughRecursive(button, true, true)
+    -- Prevent child frames from stealing hover.
+    if button.statusBar then
+        SetFrameClickThroughRecursive(button.statusBar, true, true)
+    end
+    if button._barBounds then
+        SetFrameClickThroughRecursive(button._barBounds, true, true)
+    end
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconGCDCooldown then
+        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+    end
+    if button.locCooldown then
+        SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
     end
 
-    -- Tooltip scripts
-    if showTooltips then
-        SetupTooltipScripts(button)
+    if button._iconBounds then
+        SetFrameClickThroughRecursive(button._iconBounds, true, not iconTooltips)
     end
+    SetBarIconTooltipScripts(button, iconTooltips)
+    button:SetScript("OnEnter", nil)
+    button:SetScript("OnLeave", nil)
 
     return button
 end
@@ -819,6 +873,14 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.icon:SetPoint("TOPLEFT", 0, 0)
         button.icon:SetSize(1, 1)
         button.icon:SetAlpha(0)
+    end
+    if button.iconGCDCooldown then
+        button.iconGCDCooldown:SetAllPoints(button.icon)
+        button.iconGCDCooldown:SetDrawEdge(newStyle.showCooldownSwipeEdge ~= false)
+        button.iconGCDCooldown:SetReverse(newStyle.cooldownSwipeReverse or false)
+        if not showIcon or newStyle.showGCDSwipe ~= true then
+            button.iconGCDCooldown:Hide()
+        end
     end
 
     button.bg:ClearAllPoints()
@@ -1034,27 +1096,34 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     -- Update click-through
     local showTooltips = newStyle.showTooltips == true
-    SetFrameClickThroughRecursive(button, true, not showTooltips)
+    local iconTooltips = showTooltips and showIcon
+
+    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
+    SetFrameClickThroughRecursive(button, true, true)
+    -- Prevent child frames from stealing hover.
+    if button.statusBar then
+        SetFrameClickThroughRecursive(button.statusBar, true, true)
+    end
+    if button._barBounds then
+        SetFrameClickThroughRecursive(button._barBounds, true, true)
+    end
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconGCDCooldown then
+        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+    end
+    if button.locCooldown then
+        SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
     end
 
-    -- Tooltip scripts
-    if showTooltips then
-        button:SetScript("OnEnter", function(self)
-            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
-            if self.buttonData.type == "spell" then
-                GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
-            elseif self.buttonData.type == "item" then
-                GameTooltip:SetItemByID(self.buttonData.id)
-            end
-            GameTooltip:Show()
-        end)
-        button:SetScript("OnLeave", function(self)
-            GameTooltip:Hide()
-        end)
+    if button._iconBounds then
+        SetFrameClickThroughRecursive(button._iconBounds, true, not iconTooltips)
     end
+    SetBarIconTooltipScripts(button, iconTooltips)
+    button:SetScript("OnEnter", nil)
+    button:SetScript("OnLeave", nil)
 end
 
 -- Exports

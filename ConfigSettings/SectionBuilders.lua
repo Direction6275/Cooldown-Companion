@@ -621,10 +621,8 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
 end
 
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local isBarMode = group and group.displayMode == "bars"
     local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel(isBarMode and "Show GCD" or "Show GCD Swipe")
+    cb:SetLabel("Show GCD Swipe")
     cb:SetValue(styleTable.showGCDSwipe == true)
     cb:SetFullWidth(true)
     cb:SetCallback("OnValueChanged", function(widget, event, val)

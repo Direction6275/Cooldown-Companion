@@ -873,10 +873,10 @@ end
 ------------------------------------------------------------------------
 local function BuildBarEffectsTab(container, group, style)
     -- ================================================================
-    -- Show Active Aura Glow
+    -- Show Active Aura Color/Glow
     -- ================================================================
     local barAuraEnableCb = AceGUI:Create("CheckBox")
-    barAuraEnableCb:SetLabel("Show Active Aura Glow")
+    barAuraEnableCb:SetLabel("Show Active Aura Color/Glow")
     barAuraEnableCb:SetValue(style.barAuraEffect ~= "none")
     barAuraEnableCb:SetFullWidth(true)
     barAuraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -896,10 +896,10 @@ local function BuildBarEffectsTab(container, group, style)
     end -- barAuraAdvExpanded
 
     -- ================================================================
-    -- Show Pandemic Glow
+    -- Show Pandemic Color/Glow
     -- ================================================================
     local pandemicIndicatorCb = AceGUI:Create("CheckBox")
-    pandemicIndicatorCb:SetLabel("Show Pandemic Glow")
+    pandemicIndicatorCb:SetLabel("Show Pandemic Color/Glow")
     pandemicIndicatorCb:SetValue(style.showPandemicGlow ~= false)
     pandemicIndicatorCb:SetFullWidth(true)
     pandemicIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -921,52 +921,51 @@ local function BuildBarEffectsTab(container, group, style)
     -- ================================================================
     -- Desaturate on Cooldown
     -- ================================================================
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(desatCb)
-    CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+    if style.showBarIcon ~= false then
+        local gcdCb = AceGUI:Create("CheckBox")
+        gcdCb:SetLabel("Show GCD Swipe")
+        gcdCb:SetValue(style.showGCDSwipe == true)
+        gcdCb:SetFullWidth(true)
+        gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showGCDSwipe = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(gcdCb)
+        CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
 
-    -- ================================================================
-    -- GCD Swipe
-    -- ================================================================
-    local gcdCb = AceGUI:Create("CheckBox")
-    gcdCb:SetLabel("Show GCD Swipe")
-    gcdCb:SetValue(style.showGCDSwipe == true)
-    gcdCb:SetFullWidth(true)
-    gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showGCDSwipe = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(gcdCb)
-    CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
+        local desatCb = AceGUI:Create("CheckBox")
+        desatCb:SetLabel("Show Desaturate On Cooldown")
+        desatCb:SetValue(style.desaturateOnCooldown or false)
+        desatCb:SetFullWidth(true)
+        desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.desaturateOnCooldown = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(desatCb)
+        CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
 
-    -- ================================================================
-    -- Loss of Control
-    -- ================================================================
-    local locCb = BuildLossOfControlControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
+        -- ================================================================
+        -- Loss of Control
+        -- ================================================================
+        local locCb = BuildLossOfControlControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
-    -- ================================================================
-    -- Unusable Dimming
-    -- ================================================================
-    local unusableCb = BuildUnusableDimmingControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+        -- ================================================================
+        -- Unusable Dimming
+        -- ================================================================
+        local unusableCb = BuildUnusableDimmingControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
 
-    -- Show Tooltips
-    local tooltipCb = BuildShowTooltipsControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
+        -- Show Tooltips
+        local tooltipCb = BuildShowTooltipsControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
+    end
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then
