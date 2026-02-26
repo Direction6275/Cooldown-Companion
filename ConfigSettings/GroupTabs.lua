@@ -11,6 +11,7 @@ local CreatePromoteButton = ST._CreatePromoteButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
+local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -709,6 +710,7 @@ local function BuildEffectsTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(reverseCb)
+        ApplyCheckboxIndent(reverseCb, 20)
 
         -- Show Swipe Edge
         local edgeCb = AceGUI:Create("CheckBox")
@@ -720,6 +722,7 @@ local function BuildEffectsTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(edgeCb)
+        ApplyCheckboxIndent(edgeCb, 20)
     end -- swipeAdvExpanded
 
     -- ================================================================

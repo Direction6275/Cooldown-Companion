@@ -11,6 +11,7 @@ local CreatePromoteButton = ST._CreatePromoteButton
 local CreateRevertButton = ST._CreateRevertButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
+local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
@@ -653,6 +654,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         refreshCallback()
     end)
     container:AddChild(reverseCb)
+    ApplyCheckboxIndent(reverseCb, 20)
 
     local edgeCb = AceGUI:Create("CheckBox")
     edgeCb:SetLabel("Show Swipe Edge")
@@ -663,6 +665,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         refreshCallback()
     end)
     container:AddChild(edgeCb)
+    ApplyCheckboxIndent(edgeCb, 20)
 end
 
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
