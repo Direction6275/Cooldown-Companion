@@ -11,6 +11,21 @@ local ipairs = ipairs
 local tonumber = tonumber
 local select = select
 
+-- Some talent swaps briefly report pre-final spell charge state. Coalesce a
+-- delayed second pass so charge flags settle without duplicate refresh storms.
+local pendingTalentChargeRefreshToken = 0
+
+local function QueueTalentChargeRefresh(addon)
+    pendingTalentChargeRefreshToken = pendingTalentChargeRefreshToken + 1
+    local token = pendingTalentChargeRefreshToken
+    C_Timer.After(0.2, function()
+        if pendingTalentChargeRefreshToken ~= token then return end
+        addon:RefreshChargeFlags("spell")
+        addon:RefreshAllGroups()
+        addon:RefreshConfigPanel()
+    end)
+end
+
 function CooldownCompanion:OnSpellUpdateIcon()
     self:ForEachButton(function(button)
         self:UpdateButtonIcon(button)
@@ -58,6 +73,7 @@ function CooldownCompanion:OnTalentsChanged()
     self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
+    QueueTalentChargeRefresh(self)
 end
 
 function CooldownCompanion:OnPetChanged()
@@ -175,8 +191,10 @@ end
 
 function CooldownCompanion:OnHeroTalentChanged()
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
+    self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
+    QueueTalentChargeRefresh(self)
 end
 
 function CooldownCompanion:OnPlayerEnteringWorld()
