@@ -40,6 +40,7 @@ local RESOURCE_MAELSTROM_WEAPON = 100
 local DEFAULT_MW_BASE_COLOR = { 0, 0.5, 1 }
 local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
+local DEFAULT_CUSTOM_AURA_MAX_COLOR = { 1, 0.84, 0 }
 
 local DEFAULT_POWER_COLORS = {
     [0]  = { 0, 0, 1 },              -- Mana
@@ -434,6 +435,77 @@ local function HidePixelBorders(borders)
     end
 end
 
+local function IsCustomAuraMaxThresholdEnabled(cabConfig)
+    return cabConfig and cabConfig.thresholdColorEnabled == true and cabConfig.trackingMode ~= "active"
+end
+
+local function GetCustomAuraMaxThresholdColor(cabConfig)
+    if cabConfig and cabConfig.thresholdMaxColor then
+        return cabConfig.thresholdMaxColor
+    end
+    return DEFAULT_CUSTOM_AURA_MAX_COLOR
+end
+
+local function SetCustomAuraMaxThresholdRange(bar, maxStacks)
+    if not bar then return end
+    local safeMax = maxStacks or 1
+    if safeMax < 1 then safeMax = 1 end
+    bar:SetMinMaxValues(safeMax - 1, safeMax)
+end
+
+local function EnsureCustomAuraContinuousThresholdOverlay(bar)
+    if not bar or bar.thresholdOverlay then return end
+    local overlay = CreateFrame("StatusBar", nil, bar)
+    overlay:SetFrameLevel(bar:GetFrameLevel() + 1)
+    overlay:SetMinMaxValues(0, 1)
+    overlay:SetValue(0)
+    overlay:Hide()
+    bar.thresholdOverlay = overlay
+end
+
+local function EnsureCustomAuraSegmentThresholdOverlays(holder)
+    if not holder or not holder.segments or holder.thresholdSegments then return end
+    holder.thresholdSegments = {}
+    for i = 1, #holder.segments do
+        local seg = CreateFrame("StatusBar", nil, holder)
+        seg:SetFrameLevel(holder:GetFrameLevel() + 3)
+        seg:SetMinMaxValues(0, 1)
+        seg:SetValue(0)
+        seg:Hide()
+        holder.thresholdSegments[i] = seg
+    end
+end
+
+local function EnsureCustomAuraOverlayThresholdOverlays(holder, halfSegments)
+    if not holder or holder.thresholdSegments then return end
+    holder.thresholdSegments = {}
+    for i = 1, halfSegments do
+        local seg = CreateFrame("StatusBar", nil, holder)
+        seg:SetFrameLevel(holder:GetFrameLevel() + 4)
+        seg:SetMinMaxValues(0, 1)
+        seg:SetValue(0)
+        seg:Hide()
+        holder.thresholdSegments[i] = seg
+    end
+end
+
+local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borderStyle, borderSize)
+    if not bar or not bar.thresholdOverlay then return end
+    local overlay = bar.thresholdOverlay
+    overlay:SetFrameLevel(bar:GetFrameLevel() + 1)
+    if bar.textLayer then
+        bar.textLayer:SetFrameLevel(overlay:GetFrameLevel() + 1)
+    end
+    overlay:ClearAllPoints()
+    if borderStyle == "pixel" then
+        overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", borderSize, -borderSize)
+        overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, borderSize)
+    else
+        overlay:SetAllPoints(bar)
+    end
+    overlay:SetStatusBarTexture(barTexture)
+end
+
 ------------------------------------------------------------------------
 -- Frame creation: Continuous bar
 ------------------------------------------------------------------------
@@ -452,8 +524,13 @@ local function CreateContinuousBar(parent)
     -- Pixel borders
     bar.borders = CreatePixelBorders(bar)
 
+    -- Text container is kept above custom aura threshold overlays.
+    bar.textLayer = CreateFrame("Frame", nil, bar)
+    bar.textLayer:SetAllPoints(bar)
+    bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + 2)
+
     -- Text
-    bar.text = bar:CreateFontString(nil, "OVERLAY")
+    bar.text = bar.textLayer:CreateFontString(nil, "OVERLAY")
     bar.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
     bar.text:SetPoint("CENTER")
     bar.text:SetTextColor(1, 1, 1, 1)
@@ -526,6 +603,18 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
             ApplyPixelBorders(seg.borders, seg, borderColor, borderSize)
         else
             HidePixelBorders(seg.borders)
+        end
+
+        if holder.thresholdSegments and holder.thresholdSegments[i] then
+            local thresholdSeg = holder.thresholdSegments[i]
+            thresholdSeg:ClearAllPoints()
+            if borderStyle == "pixel" then
+                thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", borderSize, -borderSize)
+                thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -borderSize, borderSize)
+            else
+                thresholdSeg:SetAllPoints(seg)
+            end
+            thresholdSeg:SetStatusBarTexture(barTexture)
         end
     end
 end
@@ -609,6 +698,18 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
             ov:SetAllPoints(seg)
         end
         ov:SetStatusBarTexture(barTexture)
+
+        if holder.thresholdSegments and holder.thresholdSegments[i] then
+            local thresholdSeg = holder.thresholdSegments[i]
+            thresholdSeg:ClearAllPoints()
+            if borderStyle == "pixel" then
+                thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", borderSize, -borderSize)
+                thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -borderSize, borderSize)
+            else
+                thresholdSeg:SetAllPoints(seg)
+            end
+            thresholdSeg:SetStatusBarTexture(barTexture)
+        end
     end
 end
 
@@ -874,6 +975,7 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     local maxStacks = cabConfig.maxStacks or 1
+    local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
 
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
@@ -888,6 +990,17 @@ local function UpdateCustomAuraBar(barInfo)
         else
             bar:SetMinMaxValues(0, maxStacks)
             bar:SetValue(stacks)  -- SetValue accepts secrets
+        end
+
+        if bar.thresholdOverlay then
+            if thresholdEnabled then
+                SetCustomAuraMaxThresholdRange(bar.thresholdOverlay, maxStacks)
+                bar.thresholdOverlay:SetValue(stacks)
+                bar.thresholdOverlay:Show()
+            else
+                bar.thresholdOverlay:SetValue(0)
+                bar.thresholdOverlay:Hide()
+            end
         end
 
         -- Duration text (bar.text): driven by showDurationText, independent of drain
@@ -930,6 +1043,20 @@ local function UpdateCustomAuraBar(barInfo)
             holder.segments[i]:SetValue(stacks)
         end
 
+        if holder.thresholdSegments then
+            for i = 1, #holder.thresholdSegments do
+                local thresholdSeg = holder.thresholdSegments[i]
+                if thresholdEnabled then
+                    SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
+                    thresholdSeg:SetValue(stacks)
+                    thresholdSeg:Show()
+                else
+                    thresholdSeg:SetValue(0)
+                    thresholdSeg:Hide()
+                end
+            end
+        end
+
     elseif barInfo.barType == "custom_overlay" then
         local holder = barInfo.frame
         if not holder.segments then return end
@@ -940,6 +1067,20 @@ local function UpdateCustomAuraBar(barInfo)
             holder.segments[i]:SetValue(stacks)
             holder.overlaySegments[i]:SetValue(stacks)
         end
+
+        if holder.thresholdSegments then
+            for i = 1, half do
+                local thresholdSeg = holder.thresholdSegments[i]
+                if thresholdEnabled then
+                    SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
+                    thresholdSeg:SetValue(stacks)
+                    thresholdSeg:Show()
+                else
+                    thresholdSeg:SetValue(0)
+                    thresholdSeg:Hide()
+                end
+            end
+        end
     end
 end
 
@@ -949,10 +1090,16 @@ end
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
     local barColor = cabConfig.barColor or {0.5, 0.5, 1}
+    local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+    local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
 
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
         bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
+        if bar.thresholdOverlay then
+            bar.thresholdOverlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
+            bar.thresholdOverlay:SetShown(thresholdEnabled)
+        end
 
         -- Determine visibility for both text elements
         local isActive = cabConfig.trackingMode == "active"
@@ -1000,6 +1147,12 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
                 seg:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
             end
         end
+        if holder.thresholdSegments then
+            for _, seg in ipairs(holder.thresholdSegments) do
+                seg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
+                seg:SetShown(thresholdEnabled)
+            end
+        end
 
     elseif barInfo.barType == "custom_overlay" then
         local holder = barInfo.frame
@@ -1010,6 +1163,10 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
                 holder.segments[i]:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
                 holder.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                 holder.overlaySegments[i]:Show()
+                if holder.thresholdSegments and holder.thresholdSegments[i] then
+                    holder.thresholdSegments[i]:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
+                    holder.thresholdSegments[i]:SetShown(thresholdEnabled)
+                end
             end
         end
     end
@@ -1459,6 +1616,14 @@ function CooldownCompanion:ApplyResourceBars()
                 resourceBarFrames[idx] = barInfo
             end
 
+            if mode == "continuous" then
+                EnsureCustomAuraContinuousThresholdOverlay(barInfo.frame)
+            elseif mode == "segmented" then
+                EnsureCustomAuraSegmentThresholdOverlays(barInfo.frame)
+            elseif mode == "overlay" then
+                EnsureCustomAuraOverlayThresholdOverlays(barInfo.frame, barInfo.halfSegments or math.ceil(maxStacks / 2))
+            end
+
             barInfo.cabConfig = cabConfig
             barInfo.frame:Show()  -- ensure reused frames visible for layout; OnUpdate re-hides if hideWhenInactive
             barInfo.frame:SetSize(totalWidth, effectiveHeight)
@@ -1469,7 +1634,8 @@ function CooldownCompanion:ApplyResourceBars()
             end
             -- Continuous bar styling (text font, background, borders)
             if mode == "continuous" then
-                barInfo.frame:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid"))
+                local barTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
+                barInfo.frame:SetStatusBarTexture(barTexture)
                 local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
                 barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
                 local borderStyle = settings.borderStyle or "pixel"
@@ -1480,6 +1646,7 @@ function CooldownCompanion:ApplyResourceBars()
                 else
                     HidePixelBorders(barInfo.frame.borders)
                 end
+                LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize)
                 -- Text setup
                 local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
                 local textSize = settings.textFontSize or 10
@@ -1489,7 +1656,7 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.frame.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
                 -- Lazily create stackText FontString for custom aura bars
                 if not barInfo.frame.stackText then
-                    barInfo.frame.stackText = barInfo.frame:CreateFontString(nil, "OVERLAY")
+                    barInfo.frame.stackText = (barInfo.frame.textLayer or barInfo.frame):CreateFontString(nil, "OVERLAY")
                     barInfo.frame.stackText:SetTextColor(1, 1, 1, 1)
                 end
                 barInfo.frame.stackText:SetFont(textFont, textSize, textOutline)
@@ -1745,13 +1912,26 @@ local function ApplyPreviewData()
                 local cabConfig = barInfo.cabConfig
                 local isActive = cabConfig and cabConfig.trackingMode == "active"
                 local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+                local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+                local previewValue
                 if isActive then
                     barInfo.frame:SetMinMaxValues(0, 1)
-                    barInfo.frame:SetValue(0.65)
+                    previewValue = 0.65
+                    barInfo.frame:SetValue(previewValue)
                 else
                     barInfo.frame:SetMinMaxValues(0, maxStacks)
-                    local val = math.ceil(maxStacks * 0.65)
-                    barInfo.frame:SetValue(val)
+                    previewValue = math.ceil(maxStacks * 0.65)
+                    barInfo.frame:SetValue(previewValue)
+                end
+                if barInfo.frame.thresholdOverlay then
+                    if thresholdEnabled then
+                        SetCustomAuraMaxThresholdRange(barInfo.frame.thresholdOverlay, maxStacks)
+                        barInfo.frame.thresholdOverlay:SetValue(previewValue or 0)
+                        barInfo.frame.thresholdOverlay:Show()
+                    else
+                        barInfo.frame.thresholdOverlay:SetValue(0)
+                        barInfo.frame.thresholdOverlay:Hide()
+                    end
                 end
                 if barInfo.frame.text and barInfo.frame.text:IsShown() then
                     barInfo.frame.text:SetText(FormatBarTime(12.3))
@@ -1760,25 +1940,51 @@ local function ApplyPreviewData()
                     if isActive then
                         barInfo.frame.stackText:SetFormattedText("%d", 3)
                     else
-                        local val = math.ceil(maxStacks * 0.65)
-                        barInfo.frame.stackText:SetFormattedText("%d / %d", val, maxStacks)
+                        barInfo.frame.stackText:SetFormattedText("%d / %d", previewValue, maxStacks)
                     end
                 end
             elseif barInfo.barType == "custom_segmented" then
+                local cabConfig = barInfo.cabConfig
+                local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+                local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
                 local n = #barInfo.frame.segments
                 local fill = math.ceil(n * 0.6)
                 -- Segments have MinMax(i-1, i); C-level clamping handles fill/empty
                 for _, seg in ipairs(barInfo.frame.segments) do
                     seg:SetValue(fill)
                 end
+                if barInfo.frame.thresholdSegments then
+                    for _, seg in ipairs(barInfo.frame.thresholdSegments) do
+                        if thresholdEnabled then
+                            SetCustomAuraMaxThresholdRange(seg, maxStacks)
+                            seg:SetValue(fill)
+                            seg:Show()
+                        else
+                            seg:SetValue(0)
+                            seg:Hide()
+                        end
+                    end
+                end
             elseif barInfo.barType == "custom_overlay" then
                 local cabConfig = barInfo.cabConfig
                 local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
                 local previewStacks = math.ceil(maxStacks * 0.7)
+                local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
                 local half = barInfo.halfSegments or 1
                 for i = 1, half do
                     barInfo.frame.segments[i]:SetValue(previewStacks)
                     barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+                    if barInfo.frame.thresholdSegments and barInfo.frame.thresholdSegments[i] then
+                        local seg = barInfo.frame.thresholdSegments[i]
+                        if thresholdEnabled then
+                            SetCustomAuraMaxThresholdRange(seg, maxStacks)
+                            seg:SetValue(previewStacks)
+                            seg:Show()
+                        else
+                            seg:SetValue(0)
+                            seg:Hide()
+                        end
+                    end
                 end
             end
         end

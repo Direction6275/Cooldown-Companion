@@ -78,6 +78,7 @@ local POWER_NAMES_CONFIG = {
 local DEFAULT_MW_BASE_COLOR_CONFIG = { 0, 0.5, 1 }
 local DEFAULT_MW_OVERLAY_COLOR_CONFIG = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR_CONFIG = { 0.5, 0.8, 1 }
+local DEFAULT_CUSTOM_AURA_MAX_COLOR_CONFIG = { 1, 0.84, 0 }
 
 local SEGMENTED_TYPES_CONFIG = {
     [4]  = true, [5]  = true, [7]  = true, [9]  = true,
@@ -1291,6 +1292,38 @@ local function BuildCustomAuraBarPanel(container)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpBar)
+
+                local isActiveTracking = (cab.trackingMode or "stacks") == "active"
+                if not isActiveTracking then
+                    local thresholdCb = AceGUI:Create("CheckBox")
+                    thresholdCb:SetLabel("Enable Max Stack Color")
+                    thresholdCb:SetValue(cab.thresholdColorEnabled == true)
+                    thresholdCb:SetFullWidth(true)
+                    thresholdCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].thresholdColorEnabled = val or nil
+                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                    container:AddChild(thresholdCb)
+
+                    if cab.thresholdColorEnabled == true then
+                        local maxThresholdColor = cab.thresholdMaxColor or DEFAULT_CUSTOM_AURA_MAX_COLOR_CONFIG
+                        local cpThreshold = AceGUI:Create("ColorPicker")
+                        cpThreshold:SetLabel("Max Stack Color")
+                        cpThreshold:SetColor(maxThresholdColor[1], maxThresholdColor[2], maxThresholdColor[3])
+                        cpThreshold:SetHasAlpha(false)
+                        cpThreshold:SetFullWidth(true)
+                        cpThreshold:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                            customBars[cabIdx].thresholdMaxColor = {r, g, b}
+                            CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx])
+                        end)
+                        cpThreshold:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                            customBars[cabIdx].thresholdMaxColor = {r, g, b}
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(cpThreshold)
+                    end
+                end
 
                 -- Overlay Color (overlay mode only)
                 if cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
