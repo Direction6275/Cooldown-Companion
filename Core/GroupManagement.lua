@@ -9,9 +9,326 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
+local table_sort = table.sort
 local table_remove = table.remove
 
+local GROUP_SETTING_PRESET_MODES = {
+    icons = true,
+    bars = true,
+}
+
+local GROUP_SETTING_PRESET_LOAD_CONDITION_KEYS = {
+    "raid",
+    "dungeon",
+    "delve",
+    "battleground",
+    "arena",
+    "openWorld",
+    "rested",
+    "petBattle",
+}
+
+local GROUP_SETTING_PRESET_GROUP_KEYS = {
+    "baselineAlpha",
+    "forceAlphaInCombat",
+    "forceAlphaOutOfCombat",
+    "forceAlphaMounted",
+    "forceAlphaTargetExists",
+    "forceAlphaMouseover",
+    "forceHideInCombat",
+    "forceHideOutOfCombat",
+    "forceHideMounted",
+    "treatTravelFormAsMounted",
+    "customFade",
+    "fadeDelay",
+    "fadeInDuration",
+    "fadeOutDuration",
+    "compactLayout",
+    "maxVisibleButtons",
+}
+
+local function IsValidGroupSettingPresetMode(mode)
+    return GROUP_SETTING_PRESET_MODES[mode] == true
+end
+
+local function CopyPresetValue(v)
+    if type(v) == "table" then
+        return CopyTable(v)
+    end
+    return v
+end
+
+local function GetGroupDisplayMode(group)
+    if group and group.displayMode == "bars" then
+        return "bars"
+    end
+    return "icons"
+end
+
+local function BuildGroupSettingPresetBaseline(profile, mode)
+    local style = CopyTable(profile.globalStyle or {})
+    if mode == "bars" then
+        style.orientation = "vertical"
+    else
+        style.orientation = "horizontal"
+    end
+    style.buttonsPerRow = 12
+    style.showCooldownText = true
+
+    local groupData = {
+        baselineAlpha = 1,
+        forceAlphaInCombat = false,
+        forceAlphaOutOfCombat = false,
+        forceAlphaMounted = false,
+        forceAlphaTargetExists = false,
+        forceAlphaMouseover = false,
+        forceHideInCombat = false,
+        forceHideOutOfCombat = false,
+        forceHideMounted = false,
+        treatTravelFormAsMounted = false,
+        fadeDelay = 1,
+        fadeInDuration = 0.2,
+        fadeOutDuration = 0.2,
+        compactLayout = false,
+        maxVisibleButtons = 0,
+        loadConditions = {
+            raid = false,
+            dungeon = false,
+            delve = false,
+            battleground = false,
+            arena = false,
+            openWorld = false,
+            rested = false,
+            petBattle = true,
+        },
+    }
+
+    if mode == "icons" then
+        groupData.masqueEnabled = false
+    end
+
+    return {
+        style = style,
+        group = groupData,
+    }
+end
+
+local function CaptureGroupSettingPresetData(profile, mode, group)
+    local baseline = BuildGroupSettingPresetBaseline(profile, mode)
+    local data = {
+        version = 1,
+        style = CopyTable(group.style or baseline.style),
+        group = CopyTable(baseline.group),
+    }
+
+    for _, key in ipairs(GROUP_SETTING_PRESET_GROUP_KEYS) do
+        local value = group[key]
+        if value ~= nil then
+            data.group[key] = CopyPresetValue(value)
+        end
+    end
+
+    if mode == "icons" then
+        data.group.masqueEnabled = group.masqueEnabled and true or false
+    end
+
+    local lc = data.group.loadConditions or {}
+    local sourceLC = group.loadConditions
+    for _, key in ipairs(GROUP_SETTING_PRESET_LOAD_CONDITION_KEYS) do
+        local value = sourceLC and sourceLC[key]
+        if value ~= nil then
+            lc[key] = value and true or false
+        end
+    end
+    data.group.loadConditions = lc
+
+    return data
+end
+
+local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
+    local baseline = BuildGroupSettingPresetBaseline(profile, mode)
+    local groupData = presetData and presetData.group
+    local styleData = presetData and presetData.style
+
+    for _, key in ipairs(GROUP_SETTING_PRESET_GROUP_KEYS) do
+        group[key] = nil
+    end
+    group.loadConditions = nil
+    if mode == "icons" then
+        group.masqueEnabled = nil
+    end
+
+    group.style = CopyTable(baseline.style)
+    for key, value in pairs(baseline.group) do
+        group[key] = CopyPresetValue(value)
+    end
+
+    if type(groupData) == "table" then
+        for _, key in ipairs(GROUP_SETTING_PRESET_GROUP_KEYS) do
+            local value = groupData[key]
+            if value ~= nil then
+                group[key] = CopyPresetValue(value)
+            end
+        end
+
+        if type(groupData.loadConditions) == "table" then
+            for _, key in ipairs(GROUP_SETTING_PRESET_LOAD_CONDITION_KEYS) do
+                local value = groupData.loadConditions[key]
+                if value ~= nil then
+                    group.loadConditions[key] = value and true or false
+                end
+            end
+        end
+
+        if mode == "icons" and groupData.masqueEnabled ~= nil then
+            group.masqueEnabled = groupData.masqueEnabled and true or false
+        end
+    end
+
+    if type(styleData) == "table" then
+        for key, value in pairs(styleData) do
+            group.style[key] = CopyPresetValue(value)
+        end
+    end
+end
+
 -- Group Management Functions
+function CooldownCompanion:NormalizeGroupSettingPresetsStore()
+    local profile = self.db and self.db.profile
+    if not profile then return nil end
+
+    if type(profile.groupSettingPresets) ~= "table" then
+        profile.groupSettingPresets = {}
+    end
+
+    local store = profile.groupSettingPresets
+    if type(store.icons) ~= "table" then
+        store.icons = {}
+    end
+    if type(store.bars) ~= "table" then
+        store.bars = {}
+    end
+
+    return store
+end
+
+function CooldownCompanion:GetGroupSettingPresetList(mode)
+    if not IsValidGroupSettingPresetMode(mode) then
+        return {}, {}
+    end
+
+    local store = self:NormalizeGroupSettingPresetsStore()
+    if not store then
+        return {}, {}
+    end
+
+    local list = {}
+    local order = {}
+    for presetName, presetData in pairs(store[mode]) do
+        if type(presetName) == "string" and presetName ~= "" and type(presetData) == "table" then
+            list[presetName] = presetName
+            order[#order + 1] = presetName
+        end
+    end
+    table_sort(order)
+
+    return list, order
+end
+
+function CooldownCompanion:SaveGroupSettingPreset(mode, presetName, groupId, opts)
+    opts = opts or {}
+    if not IsValidGroupSettingPresetMode(mode) then
+        return false, "invalid_mode"
+    end
+    if type(presetName) ~= "string" or presetName == "" then
+        return false, "invalid_name"
+    end
+
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not group then
+        return false, "missing_group"
+    end
+    if GetGroupDisplayMode(group) ~= mode then
+        return false, "mode_mismatch"
+    end
+
+    local store = self:NormalizeGroupSettingPresetsStore()
+    if not store then
+        return false, "missing_store"
+    end
+
+    if not opts.allowOverwrite and store[mode][presetName] ~= nil then
+        return false, "already_exists"
+    end
+
+    store[mode][presetName] = CaptureGroupSettingPresetData(self.db.profile, mode, group)
+    return true
+end
+
+function CooldownCompanion:DeleteGroupSettingPreset(mode, presetName)
+    if not IsValidGroupSettingPresetMode(mode) then
+        return false, "invalid_mode"
+    end
+    if type(presetName) ~= "string" or presetName == "" then
+        return false, "invalid_name"
+    end
+
+    local store = self:NormalizeGroupSettingPresetsStore()
+    if not store then
+        return false, "missing_store"
+    end
+    if store[mode][presetName] == nil then
+        return false, "missing_preset"
+    end
+
+    store[mode][presetName] = nil
+    return true
+end
+
+function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
+    if not IsValidGroupSettingPresetMode(mode) then
+        return false, "invalid_mode"
+    end
+    if type(presetName) ~= "string" or presetName == "" then
+        return false, "invalid_name"
+    end
+
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not group then
+        return false, "missing_group"
+    end
+    if GetGroupDisplayMode(group) ~= mode then
+        return false, "mode_mismatch"
+    end
+
+    local store = self:NormalizeGroupSettingPresetsStore()
+    local presetData = store and store[mode] and store[mode][presetName]
+    if type(presetData) ~= "table" then
+        return false, "missing_preset"
+    end
+
+    local oldMasqueEnabled = group.masqueEnabled and true or false
+    ApplyGroupSettingPresetData(self.db.profile, group, mode, presetData)
+    local newMasqueEnabled = group.masqueEnabled and true or false
+
+    -- Presets can be imported from clients with Masque enabled.
+    -- If Masque is unavailable on this client, do not leave groups flagged
+    -- as Masque-enabled because that disables icon controls in config.
+    if mode == "icons" and not self.Masque and newMasqueEnabled then
+        group.masqueEnabled = false
+        newMasqueEnabled = false
+    end
+
+    -- Keep Masque's internal group/button lifecycle in sync when preset apply
+    -- flips skinning state for icon groups.
+    if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
+        self:ToggleGroupMasque(groupId, newMasqueEnabled)
+    end
+
+    self:RefreshGroupFrame(groupId)
+    return true
+end
+
 function CooldownCompanion:CreateGroup(name)
     local groupId = self.db.profile.nextGroupId
     self.db.profile.nextGroupId = groupId + 1

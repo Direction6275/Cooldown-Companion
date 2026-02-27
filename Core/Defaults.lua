@@ -20,6 +20,10 @@ local defaults = {
             showSources = true,
             sortMode = "source_then_name",
         },
+        groupSettingPresets = {
+            icons = {},
+            bars = {},
+        },
         groups = {
             --[[
                 [groupId] = {

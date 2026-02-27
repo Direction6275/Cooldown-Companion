@@ -14,6 +14,7 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
+local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
 
 -- Imports from SectionBuilders.lua
@@ -859,6 +860,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Compact Mode toggle + Max Visible Buttons slider
     BuildCompactModeControls(container, group, tabInfoButtons)
+    BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then

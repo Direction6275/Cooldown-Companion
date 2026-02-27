@@ -22,6 +22,19 @@ local function ProfileNameExists(name)
     return false
 end
 
+local function TrimPopupText(text)
+    if type(text) ~= "string" then return "" end
+    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function ShowPopupOverConfig(which, textArg1, data)
+    local showFn = (CS and CS.ShowPopupAboveConfig) or ST._ShowPopupAboveConfig
+    if showFn then
+        return showFn(which, textArg1, data)
+    end
+    return StaticPopup_Show(which, textArg1, nil, data)
+end
+
 local function ClearFolderFiltersForUnglobal(folderId)
     if not folderId then return end
 
@@ -791,6 +804,116 @@ StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
     end,
     EditBoxOnEscapePressed = function(self)
         self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_SAVE_GROUP_SETTINGS_PRESET"] = {
+    text = "Save current group settings as preset:",
+    button1 = "Save",
+    button2 = "Cancel",
+    hasEditBox = true,
+    OnAccept = function(self, data)
+        local presetName = TrimPopupText(self.EditBox:GetText())
+        if presetName == "" then
+            CooldownCompanion:Print("Preset name cannot be empty.")
+            return
+        end
+        if not (data and data.mode and data.groupId) then
+            CooldownCompanion:Print("Preset save failed: missing context.")
+            return
+        end
+
+        local store = CooldownCompanion:NormalizeGroupSettingPresetsStore()
+        if store and store[data.mode] and store[data.mode][presetName] ~= nil then
+            ShowPopupOverConfig("CDC_OVERWRITE_GROUP_SETTINGS_PRESET", presetName, {
+                mode = data.mode,
+                groupId = data.groupId,
+                presetName = presetName,
+            })
+            return
+        end
+
+        local ok = CooldownCompanion:SaveGroupSettingPreset(data.mode, presetName, data.groupId)
+        if not ok then
+            CooldownCompanion:Print("Preset save failed.")
+            return
+        end
+
+        if CS.groupPresetSelection then
+            CS.groupPresetSelection[data.mode] = presetName
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["CDC_SAVE_GROUP_SETTINGS_PRESET"].OnAccept(parent, parent.data)
+        parent:Hide()
+    end,
+    OnShow = function(self)
+        local suggestedName = self.data and self.data.suggestedName
+        self.EditBox:SetText(suggestedName or "")
+        self.EditBox:HighlightText()
+        self.EditBox:SetFocus()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_OVERWRITE_GROUP_SETTINGS_PRESET"] = {
+    text = "Preset '%s' already exists. Overwrite it?",
+    button1 = "Overwrite",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and data.mode and data.groupId and data.presetName) then
+            CooldownCompanion:Print("Preset overwrite failed: missing context.")
+            return
+        end
+
+        local ok = CooldownCompanion:SaveGroupSettingPreset(data.mode, data.presetName, data.groupId, {
+            allowOverwrite = true,
+        })
+        if not ok then
+            CooldownCompanion:Print("Preset overwrite failed.")
+            return
+        end
+
+        if CS.groupPresetSelection then
+            CS.groupPresetSelection[data.mode] = data.presetName
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_GROUP_SETTINGS_PRESET"] = {
+    text = "Delete preset '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and data.mode and data.presetName) then
+            CooldownCompanion:Print("Preset delete failed: missing context.")
+            return
+        end
+
+        local ok = CooldownCompanion:DeleteGroupSettingPreset(data.mode, data.presetName)
+        if not ok then
+            CooldownCompanion:Print("Preset delete failed.")
+            return
+        end
+
+        if CS.groupPresetSelection and CS.groupPresetSelection[data.mode] == data.presetName then
+            CS.groupPresetSelection[data.mode] = nil
+        end
+        CooldownCompanion:RefreshConfigPanel()
     end,
     timeout = 0,
     whileDead = true,

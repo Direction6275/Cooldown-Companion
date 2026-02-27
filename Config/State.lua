@@ -168,6 +168,10 @@ ST._configState = {
     appearanceTabElements = {},
     resourceBarPanelActive = false,
     barPanelTab = "resource_anchoring",
+    groupPresetSelection = {
+        icons = nil,
+        bars = nil,
+    },
 
     -- Static lookup tables
     fontOptions = GetFontOptions,

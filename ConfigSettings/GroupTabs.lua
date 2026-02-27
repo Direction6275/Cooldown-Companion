@@ -11,6 +11,7 @@ local CreatePromoteButton = ST._CreatePromoteButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
+local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 -- Imports from SectionBuilders.lua
@@ -1513,6 +1514,8 @@ local function BuildAppearanceTab(container)
         }, tabInfoButtons)
         end -- not masqueCollapsed
     end
+
+    BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then

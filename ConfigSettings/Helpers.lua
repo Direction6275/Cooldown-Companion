@@ -2,6 +2,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
+local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 
 -- Helper: tint AceGUI Heading labels with player class color
 local function ColorHeading(heading)
@@ -403,6 +404,141 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
     end
 end
 
+local function BuildGroupSettingPresetControls(container, group, mode, tabInfoButtons)
+    if not group then return end
+    if mode ~= "bars" then
+        mode = "icons"
+    end
+
+    local presetList, presetOrder = CooldownCompanion:GetGroupSettingPresetList(mode)
+    if not CS.groupPresetSelection then
+        CS.groupPresetSelection = { icons = nil, bars = nil }
+    end
+
+    local selectedPreset = CS.groupPresetSelection[mode]
+    if selectedPreset and not presetList[selectedPreset] then
+        selectedPreset = nil
+        CS.groupPresetSelection[mode] = nil
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(mode == "bars" and "Bar Group Preset" or "Icon Group Preset")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local presetModeLabel = mode == "bars" and "Bar Group Presets" or "Icon Group Presets"
+    local modeSpecificLine = mode == "bars"
+        and "Bar presets only work on bar groups."
+        or "Icon presets only work on icon groups."
+    local headingInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+        presetModeLabel,
+        {"Click Save to store this group's settings as a preset.", 1, 1, 1},
+        " ",
+        {"Presets only use Group Settings from this column.", 1, 1, 1},
+        {"Presets do not include Columns 1, 2, or 3.", 1, 1, 1},
+        {"Anchors are not saved or changed.", 1, 1, 1},
+        " ",
+        {"Apply resets preset settings first, then applies the preset.", 1, 1, 1},
+        " ",
+        {modeSpecificLine, 1, 1, 1},
+    }, tabInfoButtons)
+
+    -- Keep the info icon inside the heading line by shifting the right segment.
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", headingInfoBtn, "RIGHT", 4, 0)
+
+    local presetDrop = AceGUI:Create("Dropdown")
+    presetDrop:SetLabel("Preset")
+    presetDrop:SetList(presetList, presetOrder)
+    presetDrop:SetValue(selectedPreset)
+    presetDrop:SetFullWidth(true)
+    local applyBtn
+    local deleteBtn
+    presetDrop:SetCallback("OnValueChanged", function(widget, event, value)
+        CS.groupPresetSelection[mode] = value
+        local hasSelection = value ~= nil
+        if applyBtn then
+            applyBtn:SetDisabled(not hasSelection)
+        end
+        if deleteBtn then
+            deleteBtn:SetDisabled(not hasSelection)
+        end
+    end)
+    container:AddChild(presetDrop)
+
+    if #presetOrder == 0 then
+        local hintLabel = AceGUI:Create("Label")
+        hintLabel:SetText("|cff888888No presets saved for this group mode yet.|r")
+        hintLabel:SetFullWidth(true)
+        container:AddChild(hintLabel)
+    end
+
+    local buttonRow = AceGUI:Create("SimpleGroup")
+    buttonRow:SetFullWidth(true)
+    buttonRow:SetLayout("Flow")
+
+    applyBtn = AceGUI:Create("Button")
+    applyBtn:SetText("Apply")
+    applyBtn:SetRelativeWidth(0.32)
+    applyBtn:SetCallback("OnClick", function()
+        local presetName = CS.groupPresetSelection and CS.groupPresetSelection[mode]
+        if not presetName then return end
+
+        local ok, err = CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, CS.selectedGroup)
+        if not ok then
+            if err == "missing_preset" and CS.groupPresetSelection then
+                CS.groupPresetSelection[mode] = nil
+            end
+            CooldownCompanion:Print("Preset apply failed.")
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    buttonRow:AddChild(applyBtn)
+
+    local saveBtn = AceGUI:Create("Button")
+    saveBtn:SetText("Save")
+    saveBtn:SetRelativeWidth(0.32)
+    saveBtn:SetCallback("OnClick", function()
+        if not ShowPopupAboveConfig then
+            CooldownCompanion:Print("Preset save is unavailable.")
+            return
+        end
+        ShowPopupAboveConfig("CDC_SAVE_GROUP_SETTINGS_PRESET", nil, {
+            mode = mode,
+            groupId = CS.selectedGroup,
+            suggestedName = CS.groupPresetSelection and CS.groupPresetSelection[mode] or nil,
+        })
+    end)
+    buttonRow:AddChild(saveBtn)
+
+    deleteBtn = AceGUI:Create("Button")
+    deleteBtn:SetText("Delete")
+    deleteBtn:SetRelativeWidth(0.32)
+    deleteBtn:SetCallback("OnClick", function()
+        local presetName = CS.groupPresetSelection and CS.groupPresetSelection[mode]
+        if not presetName then return end
+        if not ShowPopupAboveConfig then
+            CooldownCompanion:Print("Preset delete is unavailable.")
+            return
+        end
+        ShowPopupAboveConfig("CDC_DELETE_GROUP_SETTINGS_PRESET", presetName, {
+            mode = mode,
+            presetName = presetName,
+        })
+    end)
+    buttonRow:AddChild(deleteBtn)
+
+    local hasSelection = selectedPreset ~= nil
+    applyBtn:SetDisabled(not hasSelection)
+    deleteBtn:SetDisabled(not hasSelection)
+
+    -- Add the row after children are populated so List-layout parent containers
+    -- compute scroll height correctly on first render.
+    container:AddChild(buttonRow)
+end
+
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
 local LSM = LibStub("LibSharedMedia-3.0")
 local function GetBarTextureOptions()
@@ -422,4 +558,5 @@ ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
+ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._GetBarTextureOptions = GetBarTextureOptions
