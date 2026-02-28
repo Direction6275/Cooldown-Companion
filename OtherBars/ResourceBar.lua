@@ -451,13 +451,17 @@ local function LayoutResourceAuraStackSegments(holder, settings)
     for i, auraSeg in ipairs(holder.auraStackSegments) do
         local baseSeg = holder.segments[i]
         if baseSeg then
+            local inset = (borderStyle == "pixel") and borderSize or 0
+            if inset < 0 then inset = 0 end
+            local usableHeight = baseSeg:GetHeight() - (inset * 2)
+            if usableHeight < 1 then usableHeight = 1 end
+            local laneHeight = math_floor((usableHeight * 0.5) + 0.5)
+            laneHeight = math_max(1, math_min(usableHeight, laneHeight))
+
             auraSeg:ClearAllPoints()
-            if borderStyle == "pixel" then
-                auraSeg:SetPoint("TOPLEFT", baseSeg, "TOPLEFT", borderSize, -borderSize)
-                auraSeg:SetPoint("BOTTOMRIGHT", baseSeg, "BOTTOMRIGHT", -borderSize, borderSize)
-            else
-                auraSeg:SetAllPoints(baseSeg)
-            end
+            auraSeg:SetPoint("BOTTOMLEFT", baseSeg, "BOTTOMLEFT", inset, inset)
+            auraSeg:SetPoint("BOTTOMRIGHT", baseSeg, "BOTTOMRIGHT", -inset, inset)
+            auraSeg:SetHeight(laneHeight)
             auraSeg:SetStatusBarTexture(barTexture)
             auraSeg:SetFrameLevel(baseSeg:GetFrameLevel() + 4)
         else
@@ -493,136 +497,6 @@ local function EnsureResourceAuraStackSegments(holder, settings)
     return holder.auraStackSegments
 end
 
-local function CreateResourceAuraStackIndicatorBorders(parent)
-    local borders = {}
-    local sides = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
-    for _, side in ipairs(sides) do
-        local tex = parent:CreateTexture(nil, "OVERLAY", nil, 7)
-        tex:SetColorTexture(1, 1, 1, 1)
-        tex:Hide()
-        borders[side] = tex
-    end
-    return borders
-end
-
-local function HideResourceAuraStackIndicatorBorders(indicator)
-    if not indicator or not indicator.borders then return end
-    for _, tex in pairs(indicator.borders) do
-        tex:Hide()
-    end
-end
-
-local function ApplyResourceAuraStackIndicatorBorders(indicator, color, size)
-    if not indicator or not indicator.borders then return end
-
-    local borderSize = size or 1
-    if borderSize < 1 then borderSize = 1 end
-
-    local r, g, b = color[1], color[2], color[3]
-    local borders = indicator.borders
-    for _, tex in pairs(borders) do
-        tex:SetColorTexture(r, g, b, 1)
-        tex:Show()
-    end
-
-    borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", indicator, "TOPLEFT", 0, 0)
-    borders.TOP:SetPoint("TOPRIGHT", indicator, "TOPRIGHT", 0, 0)
-    borders.TOP:SetHeight(borderSize)
-
-    borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", indicator, "BOTTOMLEFT", 0, 0)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", indicator, "BOTTOMRIGHT", 0, 0)
-    borders.BOTTOM:SetHeight(borderSize)
-
-    borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", indicator, "TOPLEFT", 0, -borderSize)
-    borders.LEFT:SetPoint("BOTTOMLEFT", indicator, "BOTTOMLEFT", 0, borderSize)
-    borders.LEFT:SetWidth(borderSize)
-
-    borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", indicator, "TOPRIGHT", 0, -borderSize)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", indicator, "BOTTOMRIGHT", 0, borderSize)
-    borders.RIGHT:SetWidth(borderSize)
-end
-
-local function EnsureResourceAuraStackIndicators(holder)
-    if not holder or not holder.segments then return nil end
-    local count = #holder.segments
-    if count == 0 then return nil end
-
-    if not holder.auraStackIndicators or #holder.auraStackIndicators ~= count then
-        if holder.auraStackIndicators then
-            for _, oldIndicator in ipairs(holder.auraStackIndicators) do
-                HideResourceAuraStackIndicatorBorders(oldIndicator)
-                oldIndicator:Hide()
-            end
-        end
-        holder.auraStackIndicators = {}
-        for i = 1, count do
-            local indicator = CreateFrame("Frame", nil, holder)
-            indicator:Hide()
-            indicator.borders = CreateResourceAuraStackIndicatorBorders(indicator)
-            holder.auraStackIndicators[i] = indicator
-        end
-    end
-
-    return holder.auraStackIndicators
-end
-
-local function HideResourceAuraStackIndicators(holder)
-    if not holder or not holder.auraStackIndicators then return end
-    for _, indicator in ipairs(holder.auraStackIndicators) do
-        HideResourceAuraStackIndicatorBorders(indicator)
-        indicator:Hide()
-    end
-end
-
-local function ApplyResourceAuraStackCoverage(holder, fullSegments)
-    if not holder or not holder.auraStackSegments then return end
-    for i, auraSeg in ipairs(holder.auraStackSegments) do
-        if fullSegments and fullSegments[i] then
-            auraSeg:SetAlpha(1)
-        else
-            auraSeg:SetAlpha(0)
-        end
-        auraSeg:Show()
-    end
-end
-
-local function ApplyResourceAuraStackIndicators(holder, settings, fullSegments, color)
-    if not holder or not holder.auraStackSegments then return end
-    local indicators = EnsureResourceAuraStackIndicators(holder)
-    if not indicators then return end
-
-    local borderSize = settings and settings.borderSize or 1
-    if borderSize < 1 then borderSize = 1 end
-
-    for i, indicator in ipairs(indicators) do
-        local auraSeg = holder.auraStackSegments[i]
-        local baseSeg = holder.segments and holder.segments[i]
-
-        if not auraSeg or not baseSeg or (fullSegments and fullSegments[i]) then
-            HideResourceAuraStackIndicatorBorders(indicator)
-            indicator:Hide()
-        else
-            local fillTexture = auraSeg:GetStatusBarTexture()
-            if not fillTexture or not fillTexture:IsShown() then
-                HideResourceAuraStackIndicatorBorders(indicator)
-                indicator:Hide()
-            else
-                indicator:SetFrameLevel(baseSeg:GetFrameLevel() + 6)
-                indicator:ClearAllPoints()
-                indicator:SetPoint("TOPLEFT", auraSeg, "TOPLEFT", 0, 0)
-                indicator:SetPoint("BOTTOMLEFT", auraSeg, "BOTTOMLEFT", 0, 0)
-                indicator:SetPoint("RIGHT", fillTexture, "RIGHT", 0, 0)
-                indicator:Show()
-                ApplyResourceAuraStackIndicatorBorders(indicator, color, borderSize)
-            end
-        end
-    end
-end
-
 local function ApplyResourceAuraStackSegments(holder, settings, stackValue, maxStacks, color)
     local auraSegments = EnsureResourceAuraStackSegments(holder, settings)
     if not auraSegments then return end
@@ -643,7 +517,6 @@ end
 local function ClearResourceAuraVisuals(frame)
     if not frame then return end
     HideResourceAuraStackSegments(frame)
-    HideResourceAuraStackIndicators(frame)
 end
 
 local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
@@ -1106,11 +979,8 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
 
         if useAuraStackMode then
             ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
-            ApplyResourceAuraStackCoverage(holder, fullSegments)
-            ApplyResourceAuraStackIndicators(holder, settings, fullSegments, auraOverrideColor)
         else
             HideResourceAuraStackSegments(holder)
-            HideResourceAuraStackIndicators(holder)
         end
     end
 
@@ -1295,7 +1165,6 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
     local isMax = stacks > 0 and stacks == mwMaxStacks
-    local fullSegments = {}
 
     for i = 1, half do
         local baseSeg = holder.segments[i]
@@ -1303,6 +1172,13 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
 
         baseSeg:SetValue(stacks)
         overlaySeg:SetValue(stacks)
+        -- Hide right-half overlay segments when value is at/below their segment minimum.
+        -- This prevents tiny leading-edge ticks on empty overlay segments.
+        if stacks > (half + i - 1) then
+            overlaySeg:SetAlpha(1)
+        else
+            overlaySeg:SetAlpha(0)
+        end
 
         if isMax then
             baseSeg:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
@@ -1310,10 +1186,6 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         else
             baseSeg:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
             overlaySeg:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-        end
-
-        if stacks >= i then
-            fullSegments[i] = true
         end
     end
 
@@ -1334,11 +1206,8 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
 
     if useAuraStackMode then
         ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
-        ApplyResourceAuraStackCoverage(holder, fullSegments)
-        ApplyResourceAuraStackIndicators(holder, settings, fullSegments, auraOverrideColor)
     else
         HideResourceAuraStackSegments(holder)
-        HideResourceAuraStackIndicators(holder)
     end
 end
 
@@ -2286,6 +2155,29 @@ end
 ------------------------------------------------------------------------
 
 local function ApplyPreviewData()
+    local settings = GetResourceBarSettings()
+
+    local function ApplyResourceAuraLanePreview(barInfo, previewRatio)
+        local powerType = barInfo.powerType
+        if not powerType then return end
+
+        local resource = settings and settings.resources and settings.resources[powerType]
+        local auraSpellID = resource and tonumber(resource.auraColorSpellID) or nil
+        local auraMaxStacks = GetResourceAuraConfiguredMaxStacks(powerType, settings)
+        if not auraSpellID or auraSpellID <= 0 or not auraMaxStacks then
+            HideResourceAuraStackSegments(barInfo.frame)
+            return
+        end
+
+        local auraColor = resource and resource.auraActiveColor
+        if type(auraColor) ~= "table" or not auraColor[1] or not auraColor[2] or not auraColor[3] then
+            auraColor = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+        end
+
+        local previewStacks = math_max(1, math_floor((auraMaxStacks * previewRatio) + 0.5))
+        ApplyResourceAuraStackSegments(barInfo.frame, settings, previewStacks, auraMaxStacks, auraColor)
+    end
+
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame and barInfo.frame:IsShown() then
             ClearResourceAuraVisuals(barInfo.frame)
@@ -2306,13 +2198,21 @@ local function ApplyPreviewData()
                         seg:SetValue(0)
                     end
                 end
+                ApplyResourceAuraLanePreview(barInfo, 0.5)
             elseif barInfo.barType == "mw_segmented" then
                 -- Preview at 7 stacks (all 5 base full, 2 overlay full)
                 local half = #barInfo.frame.segments
+                local previewStacks = 7
                 for i = 1, half do
-                    barInfo.frame.segments[i]:SetValue(7)
-                    barInfo.frame.overlaySegments[i]:SetValue(7)
+                    barInfo.frame.segments[i]:SetValue(previewStacks)
+                    barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+                    if previewStacks > (half + i - 1) then
+                        barInfo.frame.overlaySegments[i]:SetAlpha(1)
+                    else
+                        barInfo.frame.overlaySegments[i]:SetAlpha(0)
+                    end
                 end
+                ApplyResourceAuraLanePreview(barInfo, 0.5)
             elseif barInfo.barType == "custom_continuous" then
                 local cabConfig = barInfo.cabConfig
                 local isActive = cabConfig and cabConfig.trackingMode == "active"
