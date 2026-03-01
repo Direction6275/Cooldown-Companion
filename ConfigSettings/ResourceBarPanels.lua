@@ -405,9 +405,30 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
 
 end
 
+local function IsResourceBarVerticalConfig(settings)
+    return settings and settings.orientation == "vertical"
+end
+
+local function GetResourceThicknessFieldConfig(settings)
+    if IsResourceBarVerticalConfig(settings) then
+        return "barWidth", "Bar Width", "Custom Resource Bar Widths"
+    end
+    return "barHeight", "Bar Height", "Custom Resource Bar Heights"
+end
+
+local function GetResourceGapFieldConfig(settings)
+    if IsResourceBarVerticalConfig(settings) then
+        return "verticalXOffset", "X Offset"
+    end
+    return "yOffset", "Y Offset"
+end
+
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = db.resourceBars
+    local isVerticalLayout = IsResourceBarVerticalConfig(settings)
+    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
+    local gapField, gapLabel = GetResourceGapFieldConfig(settings)
 
     -- Enable Resource Bars
     local enableCb = AceGUI:Create("CheckBox")
@@ -423,6 +444,7 @@ local function BuildResourceBarAnchoringPanel(container)
     container:AddChild(enableCb)
 
     if not settings.enabled then return end
+    if not settings.resources then settings.resources = {} end
 
     -- Anchor Group dropdown
     local groupDropValues = { [""] = "Auto (first available)" }
@@ -446,6 +468,38 @@ local function BuildResourceBarAnchoringPanel(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(anchorDrop)
+
+    local orientDrop = AceGUI:Create("Dropdown")
+    orientDrop:SetLabel("Bar Orientation")
+    orientDrop:SetList({
+        horizontal = "Horizontal",
+        vertical = "Vertical",
+    }, { "horizontal", "vertical" })
+    orientDrop:SetValue(settings.orientation or "horizontal")
+    orientDrop:SetFullWidth(true)
+    orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.orientation = val
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(orientDrop)
+
+    local fillDirDrop = AceGUI:Create("Dropdown")
+    fillDirDrop:SetLabel("Vertical Fill Direction")
+    fillDirDrop:SetList({
+        bottom_to_top = "Bottom to Top",
+        top_to_bottom = "Top to Bottom",
+    }, { "bottom_to_top", "top_to_bottom" })
+    fillDirDrop:SetValue(settings.verticalFillDirection or "bottom_to_top")
+    fillDirDrop:SetDisabled(not isVerticalLayout)
+    fillDirDrop:SetFullWidth(true)
+    fillDirDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.verticalFillDirection = val
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+    end)
+    container:AddChild(fillDirDrop)
 
     if #groupDropOrder <= 1 then
         local noGroupsLabel = AceGUI:Create("Label")
@@ -495,25 +549,47 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
 
     if not posCollapsed then
-        local ySlider = AceGUI:Create("Slider")
-        ySlider:SetLabel("Y Offset")
-        ySlider:SetSliderValues(0, 50, 0.1)
-        ySlider:SetValue(settings.yOffset or 3)
-        ySlider:SetFullWidth(true)
-        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.yOffset = val
+        local gapSlider = AceGUI:Create("Slider")
+        gapSlider:SetLabel(gapLabel)
+        gapSlider:SetSliderValues(0, 50, 0.1)
+        if gapField == "verticalXOffset" then
+            gapSlider:SetValue(settings.verticalXOffset or settings.yOffset or 3)
+        else
+            gapSlider:SetValue(settings.yOffset or settings.verticalXOffset or 3)
+        end
+        gapSlider:SetFullWidth(true)
+        gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings[gapField] = val
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:UpdateAnchorStacking()
         end)
-        container:AddChild(ySlider)
+        container:AddChild(gapSlider)
+
+        if isVerticalLayout then
+            local castGapSlider = AceGUI:Create("Slider")
+            castGapSlider:SetLabel("Cast Bar Y Offset")
+            castGapSlider:SetSliderValues(0, 50, 0.1)
+            castGapSlider:SetValue(settings.yOffset or 3)
+            castGapSlider:SetFullWidth(true)
+            castGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.yOffset = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(castGapSlider)
+        end
 
         local hSlider = AceGUI:Create("Slider")
-        hSlider:SetLabel("Bar Height")
+        hSlider:SetLabel(thicknessLabel)
         hSlider:SetSliderValues(4, 40, 0.1)
-        hSlider:SetValue(settings.barHeight or 12)
+        if thicknessField == "barWidth" then
+            hSlider:SetValue(settings.barWidth or settings.barHeight or 12)
+        else
+            hSlider:SetValue(settings.barHeight or settings.barWidth or 12)
+        end
         hSlider:SetFullWidth(true)
         hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.barHeight = val
+            settings[thicknessField] = val
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:UpdateAnchorStacking()
         end)
@@ -521,7 +597,7 @@ local function BuildResourceBarAnchoringPanel(container)
         container:AddChild(hSlider)
 
         local customHeightsCb = AceGUI:Create("CheckBox")
-        customHeightsCb:SetLabel("Custom Resource Bar Heights")
+        customHeightsCb:SetLabel(customThicknessLabel)
         customHeightsCb:SetValue(settings.customBarHeights or false)
         customHeightsCb:SetFullWidth(true)
         customHeightsCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -606,16 +682,26 @@ local function BuildResourceBarAnchoringPanel(container)
                 local advExpanded = AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled)
                 if advExpanded then
                     local resHeightSlider = AceGUI:Create("Slider")
-                    resHeightSlider:SetLabel("Bar Height")
+                    resHeightSlider:SetLabel(thicknessLabel)
                     resHeightSlider:SetSliderValues(4, 40, 0.1)
-                    resHeightSlider:SetValue(settings.resources[pt].barHeight or settings.barHeight or 12)
+                    if thicknessField == "barWidth" then
+                        resHeightSlider:SetValue(
+                            settings.resources[pt].barWidth or settings.resources[pt].barHeight
+                            or settings.barWidth or settings.barHeight or 12
+                        )
+                    else
+                        resHeightSlider:SetValue(
+                            settings.resources[pt].barHeight or settings.resources[pt].barWidth
+                            or settings.barHeight or settings.barWidth or 12
+                        )
+                    end
                     resHeightSlider:SetFullWidth(true)
                     local capturedPt = pt
                     resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
                         if not settings.resources[capturedPt] then
                             settings.resources[capturedPt] = {}
                         end
-                        settings.resources[capturedPt].barHeight = val
+                        settings.resources[capturedPt][thicknessField] = val
                         CooldownCompanion:ApplyResourceBars()
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
@@ -1352,6 +1438,7 @@ local function BuildCustomAuraBarPanel(container)
     auraBarAutocompleteCache = nil
     local db = CooldownCompanion.db.profile
     local settings = db.resourceBars
+    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings)
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
     local maxSlots = ST.MAX_CUSTOM_AURA_BARS or 3
     local rbCabTextAdvBtns = {}
@@ -1545,16 +1632,20 @@ local function BuildCustomAuraBarPanel(container)
             container:AddChild(modeDrop)
             end
 
-            -- Per-slot bar height override
+            -- Per-slot bar thickness override
             if settings.customBarHeights then
                 local cabHeightSlider = AceGUI:Create("Slider")
-                cabHeightSlider:SetLabel("Bar Height")
+                cabHeightSlider:SetLabel(thicknessLabel)
                 cabHeightSlider:SetSliderValues(4, 40, 0.1)
-                cabHeightSlider:SetValue(cab.barHeight or settings.barHeight or 12)
+                if thicknessField == "barWidth" then
+                    cabHeightSlider:SetValue(cab.barWidth or cab.barHeight or settings.barWidth or settings.barHeight or 12)
+                else
+                    cabHeightSlider:SetValue(cab.barHeight or cab.barWidth or settings.barHeight or settings.barWidth or 12)
+                end
                 cabHeightSlider:SetFullWidth(true)
                 local cabIdx = capturedIdx
                 cabHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    customBars[cabIdx].barHeight = val
+                    customBars[cabIdx][thicknessField] = val
                     CooldownCompanion:ApplyResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
                 end)
@@ -1890,6 +1981,7 @@ local function BuildLayoutOrderPanel(container)
     local db = CooldownCompanion.db.profile
     local rbSettings = db.resourceBars
     local cbSettings = db.castBar
+    local isVerticalLayout = IsResourceBarVerticalConfig(rbSettings)
 
     if not rbSettings or not rbSettings.enabled then
         local label = AceGUI:Create("Label")
@@ -1919,15 +2011,129 @@ local function BuildLayoutOrderPanel(container)
         end
     end
 
-    local allSlots = {}
+    -- Helper: refresh after any order/position change
+    local function ApplyAndRefresh()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    local function RenderSlotOrdering(slots, sectionTitle, sideOne, sideTwo, dividerLabel, moveOneLabel, moveTwoLabel)
+        if sectionTitle and sectionTitle ~= "" then
+            local sectionHeading = AceGUI:Create("Heading")
+            sectionHeading:SetText(sectionTitle)
+            sectionHeading:SetFullWidth(true)
+            container:AddChild(sectionHeading)
+        end
+
+        if #slots == 0 then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetText("|cff888888No active entries in this section.|r")
+            emptyLabel:SetFullWidth(true)
+            container:AddChild(emptyLabel)
+            return
+        end
+
+        local sideOneSlots = {}
+        local sideTwoSlots = {}
+        for _, slot in ipairs(slots) do
+            if slot.getPos() == sideOne then
+                table.insert(sideOneSlots, slot)
+            else
+                table.insert(sideTwoSlots, slot)
+            end
+        end
+        table.sort(sideOneSlots, function(a, b) return a.getOrder() > b.getOrder() end)
+        table.sort(sideTwoSlots, function(a, b) return a.getOrder() < b.getOrder() end)
+
+        local displayList = {}
+        for _, s in ipairs(sideOneSlots) do table.insert(displayList, s) end
+        local dividerIdx = #displayList + 1
+        for _, s in ipairs(sideTwoSlots) do table.insert(displayList, s) end
+
+        for rowIdx, slot in ipairs(displayList) do
+            if rowIdx == dividerIdx then
+                local divLabel = AceGUI:Create("Heading")
+                divLabel:SetText(dividerLabel or "Icons")
+                divLabel:SetFullWidth(true)
+                container:AddChild(divLabel)
+            end
+
+            local rowGroup = AceGUI:Create("SimpleGroup")
+            rowGroup:SetLayout("Flow")
+            rowGroup:SetFullWidth(true)
+            container:AddChild(rowGroup)
+
+            local nameLabel = AceGUI:Create("Label")
+            local c = slot.color
+            local coloredText = slot.label
+            if c then
+                local r, g, b = (c[1] or 1) * 255, (c[2] or 1) * 255, (c[3] or 1) * 255
+                coloredText = string.format("|cff%02x%02x%02x%s|r", math.floor(r + 0.5), math.floor(g + 0.5), math.floor(b + 0.5), slot.label)
+            end
+            nameLabel:SetText(coloredText)
+            nameLabel:SetRelativeWidth(0.48)
+            rowGroup:AddChild(nameLabel)
+
+            local moveOneBtn = AceGUI:Create("Button")
+            moveOneBtn:SetText(moveOneLabel)
+            moveOneBtn:SetRelativeWidth(0.20)
+            moveOneBtn:SetDisabled(rowIdx == 1 and slot.getPos() == sideOne)
+            moveOneBtn:SetCallback("OnClick", function()
+                local prev = displayList[rowIdx - 1]
+                if prev and prev.getPos() == slot.getPos() then
+                    local myOrder = slot.getOrder()
+                    local prevOrder = prev.getOrder()
+                    slot.setOrder(prevOrder)
+                    prev.setOrder(myOrder)
+                else
+                    local minSideOne
+                    for _, s in ipairs(sideOneSlots) do
+                        local o = s.getOrder()
+                        if not minSideOne or o < minSideOne then minSideOne = o end
+                    end
+                    local currentOrder = slot.getOrder()
+                    slot.setPos(sideOne)
+                    slot.setOrder(minSideOne and (minSideOne - 1) or currentOrder)
+                end
+                ApplyAndRefresh()
+            end)
+            rowGroup:AddChild(moveOneBtn)
+
+            local moveTwoBtn = AceGUI:Create("Button")
+            moveTwoBtn:SetText(moveTwoLabel)
+            moveTwoBtn:SetRelativeWidth(0.24)
+            moveTwoBtn:SetDisabled(rowIdx == #displayList and slot.getPos() == sideTwo)
+            moveTwoBtn:SetCallback("OnClick", function()
+                local nextSlot = displayList[rowIdx + 1]
+                if nextSlot and nextSlot.getPos() == slot.getPos() then
+                    local myOrder = slot.getOrder()
+                    local nextOrder = nextSlot.getOrder()
+                    slot.setOrder(nextOrder)
+                    nextSlot.setOrder(myOrder)
+                else
+                    local minSideTwo
+                    for _, s in ipairs(sideTwoSlots) do
+                        local o = s.getOrder()
+                        if not minSideTwo or o < minSideTwo then minSideTwo = o end
+                    end
+                    local currentOrder = slot.getOrder()
+                    slot.setPos(sideTwo)
+                    slot.setOrder(minSideTwo and (minSideTwo - 1) or currentOrder)
+                end
+                ApplyAndRefresh()
+            end)
+            rowGroup:AddChild(moveTwoBtn)
+        end
+    end
+
+    local resourceSlots = {}
+    if not rbSettings.resources then rbSettings.resources = {} end
 
     -- Class resource slots
     for _, pt in ipairs(activeResources) do
-        if not rbSettings.resources then rbSettings.resources = {} end
         if not rbSettings.resources[pt] then rbSettings.resources[pt] = {} end
         local res = rbSettings.resources[pt]
         local showResource = res.enabled ~= false
-        -- Apply hideManaForNonHealer, matching ApplyResourceBars filtering
         if showResource and pt == 0 and rbSettings.hideManaForNonHealer then
             local specIdx = C_SpecializationInfo.GetSpecialization()
             if specIdx then
@@ -1939,14 +2145,31 @@ local function BuildLayoutOrderPanel(container)
         end
         if showResource then
             local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
-            table.insert(allSlots, {
-                label = name,
-                color = GetResourceColor(pt),
-                getPos = function() return rbSettings.resources[pt].position or "below" end,
-                getOrder = function() return rbSettings.resources[pt].order or 1 end,
-                setPos = function(v) rbSettings.resources[pt].position = v end,
-                setOrder = function(v) rbSettings.resources[pt].order = v end,
-            })
+            if isVerticalLayout then
+                table.insert(resourceSlots, {
+                    label = name,
+                    color = GetResourceColor(pt),
+                    getPos = function()
+                        local pos = rbSettings.resources[pt].verticalPosition
+                        if pos == "left" or pos == "right" then return pos end
+                        return (rbSettings.resources[pt].position == "above") and "left" or "right"
+                    end,
+                    getOrder = function()
+                        return rbSettings.resources[pt].verticalOrder or rbSettings.resources[pt].order or 1
+                    end,
+                    setPos = function(v) rbSettings.resources[pt].verticalPosition = v end,
+                    setOrder = function(v) rbSettings.resources[pt].verticalOrder = v end,
+                })
+            else
+                table.insert(resourceSlots, {
+                    label = name,
+                    color = GetResourceColor(pt),
+                    getPos = function() return rbSettings.resources[pt].position or "below" end,
+                    getOrder = function() return rbSettings.resources[pt].order or 1 end,
+                    setPos = function(v) rbSettings.resources[pt].position = v end,
+                    setOrder = function(v) rbSettings.resources[pt].order = v end,
+                })
+            end
         end
     end
 
@@ -1964,25 +2187,44 @@ local function BuildLayoutOrderPanel(container)
                 slotName = slotName .. ": " .. spellInfo.name
             end
             local captured = slotIdx
-            table.insert(allSlots, {
-                label = slotName,
-                color = cab.barColor or {0.5, 0.5, 1},
-                getPos = function() return rbSettings.customAuraBarSlots[captured].position or "below" end,
-                getOrder = function() return rbSettings.customAuraBarSlots[captured].order or (1000 + captured) end,
-                setPos = function(v) rbSettings.customAuraBarSlots[captured].position = v end,
-                setOrder = function(v) rbSettings.customAuraBarSlots[captured].order = v end,
-            })
+            if isVerticalLayout then
+                table.insert(resourceSlots, {
+                    label = slotName,
+                    color = cab.barColor or {0.5, 0.5, 1},
+                    getPos = function()
+                        local slot = rbSettings.customAuraBarSlots[captured]
+                        local pos = slot and slot.verticalPosition
+                        if pos == "left" or pos == "right" then return pos end
+                        return (slot and slot.position == "above") and "left" or "right"
+                    end,
+                    getOrder = function()
+                        local slot = rbSettings.customAuraBarSlots[captured]
+                        return (slot and slot.verticalOrder) or (slot and slot.order) or (1000 + captured)
+                    end,
+                    setPos = function(v) rbSettings.customAuraBarSlots[captured].verticalPosition = v end,
+                    setOrder = function(v) rbSettings.customAuraBarSlots[captured].verticalOrder = v end,
+                })
+            else
+                table.insert(resourceSlots, {
+                    label = slotName,
+                    color = cab.barColor or {0.5, 0.5, 1},
+                    getPos = function() return rbSettings.customAuraBarSlots[captured].position or "below" end,
+                    getOrder = function() return rbSettings.customAuraBarSlots[captured].order or (1000 + captured) end,
+                    setPos = function(v) rbSettings.customAuraBarSlots[captured].position = v end,
+                    setOrder = function(v) rbSettings.customAuraBarSlots[captured].order = v end,
+                })
+            end
         end
     end
 
-    -- Cast bar slot (if enabled and anchored to same group)
+    local castSlots = {}
     if cbSettings and cbSettings.enabled then
         local defaultAnchor = CooldownCompanion:GetFirstAvailableAnchorGroup()
         local cbAnchor = cbSettings.anchorGroupId or defaultAnchor
         local rbAnchor = rbSettings.anchorGroupId or defaultAnchor
         if cbAnchor and cbAnchor == rbAnchor then
             local cbColor = cbSettings.barColor or { 1.0, 0.7, 0.0 }
-            table.insert(allSlots, {
+            table.insert(castSlots, {
                 label = "Cast Bar",
                 color = cbColor,
                 getPos = function() return db.castBar.position or "below" end,
@@ -1993,123 +2235,37 @@ local function BuildLayoutOrderPanel(container)
         end
     end
 
-    if #allSlots == 0 then
+    if not isVerticalLayout then
+        for _, slot in ipairs(castSlots) do
+            table.insert(resourceSlots, slot)
+        end
+        if #resourceSlots == 0 then
+            local label = AceGUI:Create("Label")
+            label:SetText("No active bars to order. Enable resources or custom aura bars first.")
+            label:SetFullWidth(true)
+            container:AddChild(label)
+            return
+        end
+        RenderSlotOrdering(resourceSlots, nil, "above", "below", "Icons", "Up", "Down")
+        return
+    end
+
+    if #resourceSlots == 0 and #castSlots == 0 then
         local label = AceGUI:Create("Label")
-        label:SetText("No active bars to order. Enable resources or custom aura bars first.")
+        label:SetText("No active bars to order. Enable resources, custom aura bars, or cast bar first.")
         label:SetFullWidth(true)
         container:AddChild(label)
         return
     end
 
-    -- Helper: refresh after any order/position change
-    local function ApplyAndRefresh()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end
+    RenderSlotOrdering(resourceSlots, "Resources & Custom Aura Bars", "left", "right", "Icons", "Left", "Right")
 
-    -- Sort all slots by (side, order): above slots first (in reverse order = top down), then below
-    -- For display we show: above bars (furthest first = highest order), divider, below bars (closest first = lowest order)
-    local aboveSlots = {}
-    local belowSlots = {}
-    for _, slot in ipairs(allSlots) do
-        if slot.getPos() == "above" then
-            table.insert(aboveSlots, slot)
-        else
-            table.insert(belowSlots, slot)
-        end
-    end
-    table.sort(aboveSlots, function(a, b) return a.getOrder() > b.getOrder() end)  -- furthest first (top of screen)
-    table.sort(belowSlots, function(a, b) return a.getOrder() < b.getOrder() end)  -- closest first
-
-    -- Build ordered display list: above (top-screen order) then below (top-to-bottom)
-    local displayList = {}
-    for _, s in ipairs(aboveSlots) do table.insert(displayList, s) end
-    local dividerIdx = #displayList + 1  -- where the group frame divider goes
-    for _, s in ipairs(belowSlots) do table.insert(displayList, s) end
-
-    -- Render rows
-    for rowIdx, slot in ipairs(displayList) do
-        -- Insert icons divider between above and below sections
-        if rowIdx == dividerIdx then
-            local divLabel = AceGUI:Create("Heading")
-            divLabel:SetText("Icons")
-            divLabel:SetFullWidth(true)
-            container:AddChild(divLabel)
-        end
-
-        -- Row: Name  [Up][Down]
-        local rowGroup = AceGUI:Create("SimpleGroup")
-        rowGroup:SetLayout("Flow")
-        rowGroup:SetFullWidth(true)
-        container:AddChild(rowGroup)
-
-        -- Slot name label (colored to match resource/bar color)
-        local nameLabel = AceGUI:Create("Label")
-        local c = slot.color
-        local coloredText = slot.label
-        if c then
-            local r, g, b = (c[1] or 1) * 255, (c[2] or 1) * 255, (c[3] or 1) * 255
-            coloredText = string.format("|cff%02x%02x%02x%s|r", math.floor(r + 0.5), math.floor(g + 0.5), math.floor(b + 0.5), slot.label)
-        end
-        nameLabel:SetText(coloredText)
-        nameLabel:SetRelativeWidth(0.48)
-        rowGroup:AddChild(nameLabel)
-
-        -- Up button
-        local upBtn = AceGUI:Create("Button")
-        upBtn:SetText("Up")
-        upBtn:SetRelativeWidth(0.20)
-        upBtn:SetDisabled(rowIdx == 1 and slot.getPos() == "above")
-        upBtn:SetCallback("OnClick", function()
-            -- Swap order with the slot above in display order
-            local prev = displayList[rowIdx - 1]
-            if prev and prev.getPos() == slot.getPos() then
-                -- Same side: swap orders
-                local myOrder = slot.getOrder()
-                local prevOrder = prev.getOrder()
-                slot.setOrder(prevOrder)
-                prev.setOrder(myOrder)
-            else
-                -- Crossing the group-frame boundary (below to above):
-                -- slot should become the closest-to-group above bar (displayed last, just above divider)
-                local minAbove
-                for _, s in ipairs(aboveSlots) do
-                    local o = s.getOrder()
-                    if not minAbove or o < minAbove then minAbove = o end
-                end
-                slot.setPos("above")
-                slot.setOrder(minAbove and (minAbove - 1) or 1)
-            end
-            ApplyAndRefresh()
-        end)
-        rowGroup:AddChild(upBtn)
-
-        -- Down button
-        local downBtn = AceGUI:Create("Button")
-        downBtn:SetText("Down")
-        downBtn:SetRelativeWidth(0.24)
-        downBtn:SetDisabled(rowIdx == #displayList and slot.getPos() == "below")
-        downBtn:SetCallback("OnClick", function()
-            local nextSlot = displayList[rowIdx + 1]
-            if nextSlot and nextSlot.getPos() == slot.getPos() then
-                -- Same side: swap orders
-                local myOrder = slot.getOrder()
-                local nextOrder = nextSlot.getOrder()
-                slot.setOrder(nextOrder)
-                nextSlot.setOrder(myOrder)
-            else
-                -- Crossing boundary (only above to below is reachable via Down)
-                local minBelow
-                for _, s in ipairs(belowSlots) do
-                    local o = s.getOrder()
-                    if not minBelow or o < minBelow then minBelow = o end
-                end
-                slot.setPos("below")
-                slot.setOrder(minBelow and (minBelow - 1) or 1)
-            end
-            ApplyAndRefresh()
-        end)
-        rowGroup:AddChild(downBtn)
+    if #castSlots > 0 then
+        local spacer = AceGUI:Create("Label")
+        spacer:SetText(" ")
+        spacer:SetFullWidth(true)
+        container:AddChild(spacer)
+        RenderSlotOrdering(castSlots, "Cast Bar", "above", "below", "Icons", "Up", "Down")
     end
 end
 

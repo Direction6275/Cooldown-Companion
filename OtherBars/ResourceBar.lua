@@ -196,7 +196,8 @@ local eventFrame = nil
 local onUpdateFrame = nil
 local containerFrameAbove = nil
 local containerFrameBelow = nil
-local lastAppliedWidth = nil
+local lastAppliedPrimaryLength = nil
+local lastAppliedOrientation = nil
 local resourceBarFrames = {}   -- array of bar frame objects (ordered by stacking)
 local activeResources = {}     -- array of power type ints currently displayed
 local isPreviewActive = false
@@ -204,7 +205,7 @@ local pendingSpecChange = false
 local savedContainerAlpha = nil
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
-local lastAppliedBarHeight = nil
+local lastAppliedBarThickness = nil
 local layoutDirty = false
 
 ------------------------------------------------------------------------
@@ -214,6 +215,47 @@ local layoutDirty = false
 local function GetResourceBarSettings()
     return CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.resourceBars
+end
+
+local function IsVerticalResourceLayout(settings)
+    return settings and settings.orientation == "vertical"
+end
+
+local function GetResourceLayoutOrientation(settings)
+    return IsVerticalResourceLayout(settings) and "vertical" or "horizontal"
+end
+
+local function IsVerticalFillReversed(settings)
+    if not IsVerticalResourceLayout(settings) then
+        return false
+    end
+    return settings.verticalFillDirection == "top_to_bottom"
+end
+
+local function GetResourcePrimaryLength(groupFrame, settings)
+    if not groupFrame then return 0 end
+    if IsVerticalResourceLayout(settings) then
+        return groupFrame:GetHeight()
+    end
+    return groupFrame:GetWidth()
+end
+
+local function GetResourceGlobalThickness(settings)
+    if IsVerticalResourceLayout(settings) then
+        return settings.barWidth or settings.barHeight or 12
+    end
+    return settings.barHeight or settings.barWidth or 12
+end
+
+local function GetResourceAnchorGap(settings)
+    if IsVerticalResourceLayout(settings) then
+        return settings.verticalXOffset or settings.yOffset or 3
+    end
+    return settings.yOffset or settings.verticalXOffset or 3
+end
+
+local function GetVerticalSideFallback(horizontalSide)
+    return horizontalSide == "above" and "left" or "right"
 end
 
 local function GetEffectiveAnchorGroupId(settings)
@@ -491,22 +533,36 @@ local function LayoutResourceAuraStackSegments(holder, settings)
     local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
     local borderStyle = settings and settings.borderStyle or "pixel"
     local borderSize = settings and settings.borderSize or 1
+    local isVertical = IsVerticalResourceLayout(settings)
+    local reverseFill = IsVerticalFillReversed(settings)
 
     for i, auraSeg in ipairs(holder.auraStackSegments) do
         local baseSeg = holder.segments[i]
         if baseSeg then
             local inset = (borderStyle == "pixel") and borderSize or 0
             if inset < 0 then inset = 0 end
-            local usableHeight = baseSeg:GetHeight() - (inset * 2)
-            if usableHeight < 1 then usableHeight = 1 end
-            local laneHeight = math_floor((usableHeight * 0.5) + 0.5)
-            laneHeight = math_max(1, math_min(usableHeight, laneHeight))
 
             auraSeg:ClearAllPoints()
-            auraSeg:SetPoint("BOTTOMLEFT", baseSeg, "BOTTOMLEFT", inset, inset)
-            auraSeg:SetPoint("BOTTOMRIGHT", baseSeg, "BOTTOMRIGHT", -inset, inset)
-            auraSeg:SetHeight(laneHeight)
+            if isVertical then
+                local usableWidth = baseSeg:GetWidth() - (inset * 2)
+                if usableWidth < 1 then usableWidth = 1 end
+                local laneWidth = math_floor((usableWidth * 0.5) + 0.5)
+                laneWidth = math_max(1, math_min(usableWidth, laneWidth))
+                auraSeg:SetPoint("BOTTOMLEFT", baseSeg, "BOTTOMLEFT", inset, inset)
+                auraSeg:SetPoint("TOPLEFT", baseSeg, "TOPLEFT", inset, -inset)
+                auraSeg:SetWidth(laneWidth)
+            else
+                local usableHeight = baseSeg:GetHeight() - (inset * 2)
+                if usableHeight < 1 then usableHeight = 1 end
+                local laneHeight = math_floor((usableHeight * 0.5) + 0.5)
+                laneHeight = math_max(1, math_min(usableHeight, laneHeight))
+                auraSeg:SetPoint("BOTTOMLEFT", baseSeg, "BOTTOMLEFT", inset, inset)
+                auraSeg:SetPoint("BOTTOMRIGHT", baseSeg, "BOTTOMRIGHT", -inset, inset)
+                auraSeg:SetHeight(laneHeight)
+            end
             auraSeg:SetStatusBarTexture(barTexture)
+            auraSeg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+            auraSeg:SetReverseFill(isVertical and reverseFill or false)
             auraSeg:SetFrameLevel(baseSeg:GetFrameLevel() + 4)
         else
             auraSeg:Hide()
@@ -735,6 +791,8 @@ end
 local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borderStyle, borderSize)
     if not bar or not bar.thresholdOverlay then return end
     local overlay = bar.thresholdOverlay
+    local isVertical = bar._isVertical == true
+    local reverseFill = bar._reverseFill == true
     overlay:SetFrameLevel(bar:GetFrameLevel() + 1)
     if bar.textLayer then
         bar.textLayer:SetFrameLevel(overlay:GetFrameLevel() + 1)
@@ -747,6 +805,8 @@ local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borde
         overlay:SetAllPoints(bar)
     end
     overlay:SetStatusBarTexture(barTexture)
+    overlay:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    overlay:SetReverseFill(isVertical and reverseFill or false)
 end
 
 ------------------------------------------------------------------------
@@ -824,22 +884,42 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
     local n = #holder.segments
     if n == 0 then return end
 
-    local subWidth = (totalWidth - (n - 1) * gap) / n
-    if subWidth < 1 then subWidth = 1 end
-
     local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
     local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = settings and settings.borderStyle or "pixel"
     local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
     local borderSize = settings and settings.borderSize or 1
+    local isVertical = IsVerticalResourceLayout(settings)
+    local reverseFill = IsVerticalFillReversed(settings)
+    local subSize
+    if isVertical then
+        subSize = (totalHeight - (n - 1) * gap) / n
+    else
+        subSize = (totalWidth - (n - 1) * gap) / n
+    end
+    if subSize < 1 then subSize = 1 end
 
     for i, seg in ipairs(holder.segments) do
         seg:ClearAllPoints()
-        seg:SetSize(subWidth, totalHeight)
-        local xOfs = (i - 1) * (subWidth + gap)
-        seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+        if isVertical then
+            seg:SetSize(totalWidth, subSize)
+            local yOfs
+            if reverseFill then
+                yOfs = totalHeight - subSize - ((i - 1) * (subSize + gap))
+                if yOfs < 0 then yOfs = 0 end
+            else
+                yOfs = (i - 1) * (subSize + gap)
+            end
+            seg:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, yOfs)
+        else
+            seg:SetSize(subSize, totalHeight)
+            local xOfs = (i - 1) * (subSize + gap)
+            seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+        end
 
         seg:SetStatusBarTexture(barTexture)
+        seg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+        seg:SetReverseFill(isVertical and reverseFill or false)
         seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
 
         if borderStyle == "pixel" then
@@ -858,6 +938,8 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings)
                 thresholdSeg:SetAllPoints(seg)
             end
             thresholdSeg:SetStatusBarTexture(barTexture)
+            thresholdSeg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+            thresholdSeg:SetReverseFill(isVertical and reverseFill or false)
         end
     end
 
@@ -910,23 +992,43 @@ end
 local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments)
     if not holder or not holder.segments then return end
 
-    local subWidth = (totalWidth - (halfSegments - 1) * gap) / halfSegments
-    if subWidth < 1 then subWidth = 1 end
-
     local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
     local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = settings and settings.borderStyle or "pixel"
     local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
     local borderSize = settings and settings.borderSize or 1
+    local isVertical = IsVerticalResourceLayout(settings)
+    local reverseFill = IsVerticalFillReversed(settings)
+    local subSize
+    if isVertical then
+        subSize = (totalHeight - (halfSegments - 1) * gap) / halfSegments
+    else
+        subSize = (totalWidth - (halfSegments - 1) * gap) / halfSegments
+    end
+    if subSize < 1 then subSize = 1 end
 
     for i = 1, halfSegments do
         local seg = holder.segments[i]
         seg:ClearAllPoints()
-        seg:SetSize(subWidth, totalHeight)
-        local xOfs = (i - 1) * (subWidth + gap)
-        seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+        if isVertical then
+            seg:SetSize(totalWidth, subSize)
+            local yOfs
+            if reverseFill then
+                yOfs = totalHeight - subSize - ((i - 1) * (subSize + gap))
+                if yOfs < 0 then yOfs = 0 end
+            else
+                yOfs = (i - 1) * (subSize + gap)
+            end
+            seg:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, yOfs)
+        else
+            seg:SetSize(subSize, totalHeight)
+            local xOfs = (i - 1) * (subSize + gap)
+            seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+        end
 
         seg:SetStatusBarTexture(barTexture)
+        seg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+        seg:SetReverseFill(isVertical and reverseFill or false)
         seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
 
         if borderStyle == "pixel" then
@@ -945,6 +1047,8 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
             ov:SetAllPoints(seg)
         end
         ov:SetStatusBarTexture(barTexture)
+        ov:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+        ov:SetReverseFill(isVertical and reverseFill or false)
 
         if holder.thresholdSegments and holder.thresholdSegments[i] then
             local thresholdSeg = holder.thresholdSegments[i]
@@ -956,6 +1060,8 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
                 thresholdSeg:SetAllPoints(seg)
             end
             thresholdSeg:SetStatusBarTexture(barTexture)
+            thresholdSeg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+            thresholdSeg:SetReverseFill(isVertical and reverseFill or false)
         end
     end
 
@@ -1431,6 +1537,7 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
 
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
+        local isVertical = bar._isVertical == true
         bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
         if bar.thresholdOverlay then
             bar.thresholdOverlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
@@ -1456,7 +1563,11 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
             if showDuration then
                 bar.text:ClearAllPoints()
                 if showStack then
-                    bar.text:SetPoint("LEFT", bar, "LEFT", 4, 0)
+                    if isVertical then
+                        bar.text:SetPoint("BOTTOM", bar, "BOTTOM", 0, 2)
+                    else
+                        bar.text:SetPoint("LEFT", bar, "LEFT", 4, 0)
+                    end
                 else
                     bar.text:SetPoint("CENTER")
                 end
@@ -1469,7 +1580,11 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
             if showStack then
                 bar.stackText:ClearAllPoints()
                 if showDuration then
-                    bar.stackText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+                    if isVertical then
+                        bar.stackText:SetPoint("TOP", bar, "TOP", 0, -2)
+                    else
+                        bar.stackText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+                    end
                 else
                     bar.stackText:SetPoint("CENTER")
                 end
@@ -1534,49 +1649,101 @@ end
 local function RelayoutBars()
     if not containerFrameAbove or not containerFrameBelow then return end
     local barSpacing = lastAppliedBarSpacing or 3.6
-    local globalBarHeight = lastAppliedBarHeight or 12
+    local globalThickness = lastAppliedBarThickness or 12
+    local primaryLength = lastAppliedPrimaryLength or 1
+    local isVertical = lastAppliedOrientation == "vertical"
 
-    local aboveBars = {}
-    local belowBars = {}
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo and barInfo.frame and barInfo.frame:IsShown() then
-            if barInfo._side == "above" then
-                table.insert(aboveBars, barInfo)
-            else
-                table.insert(belowBars, barInfo)
+    if isVertical then
+        local leftBars = {}
+        local rightBars = {}
+        for _, barInfo in ipairs(resourceBarFrames) do
+            if barInfo and barInfo.frame and barInfo.frame:IsShown() then
+                if barInfo._side == "left" then
+                    table.insert(leftBars, barInfo)
+                else
+                    table.insert(rightBars, barInfo)
+                end
             end
         end
-    end
-    table.sort(aboveBars, CompareBarOrder)
-    table.sort(belowBars, CompareBarOrder)
+        table.sort(leftBars, CompareBarOrder)
+        table.sort(rightBars, CompareBarOrder)
 
-    -- Stack above bars (order ascending = bottom to top; order=1 closest to group)
-    local currentY = 0
-    for _, barInfo in ipairs(aboveBars) do
-        barInfo.frame:ClearAllPoints()
-        barInfo.frame:SetPoint("BOTTOMLEFT", containerFrameAbove, "BOTTOMLEFT", 0, currentY)
-        barInfo.frame:SetPoint("BOTTOMRIGHT", containerFrameAbove, "BOTTOMRIGHT", 0, currentY)
-        local h = barInfo._effectiveHeight or globalBarHeight
-        barInfo.frame:SetHeight(h)
-        currentY = currentY + h + barSpacing
-    end
-    local aboveHeight = currentY > 0 and (currentY - barSpacing) or 1
-    containerFrameAbove:SetHeight(aboveHeight)
-    if #aboveBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+        containerFrameAbove:SetHeight(primaryLength)
+        containerFrameBelow:SetHeight(primaryLength)
 
-    -- Stack below bars (order ascending = top to bottom; order=1 closest to group)
-    currentY = 0
-    for _, barInfo in ipairs(belowBars) do
-        barInfo.frame:ClearAllPoints()
-        barInfo.frame:SetPoint("TOPLEFT", containerFrameBelow, "TOPLEFT", 0, -currentY)
-        barInfo.frame:SetPoint("TOPRIGHT", containerFrameBelow, "TOPRIGHT", 0, -currentY)
-        local h = barInfo._effectiveHeight or globalBarHeight
-        barInfo.frame:SetHeight(h)
-        currentY = currentY + h + barSpacing
+        -- Left side stacks outward from the group (right edge near group).
+        local currentX = 0
+        for _, barInfo in ipairs(leftBars) do
+            barInfo.frame:ClearAllPoints()
+            barInfo.frame:SetPoint("TOPRIGHT", containerFrameAbove, "TOPRIGHT", -currentX, 0)
+            barInfo.frame:SetPoint("BOTTOMRIGHT", containerFrameAbove, "BOTTOMRIGHT", -currentX, 0)
+            local w = barInfo._effectiveThickness or globalThickness
+            barInfo.frame:SetWidth(w)
+            currentX = currentX + w + barSpacing
+        end
+        local leftWidth = currentX > 0 and (currentX - barSpacing) or 1
+        containerFrameAbove:SetWidth(leftWidth)
+        if #leftBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+
+        -- Right side stacks outward from the group (left edge near group).
+        currentX = 0
+        for _, barInfo in ipairs(rightBars) do
+            barInfo.frame:ClearAllPoints()
+            barInfo.frame:SetPoint("TOPLEFT", containerFrameBelow, "TOPLEFT", currentX, 0)
+            barInfo.frame:SetPoint("BOTTOMLEFT", containerFrameBelow, "BOTTOMLEFT", currentX, 0)
+            local w = barInfo._effectiveThickness or globalThickness
+            barInfo.frame:SetWidth(w)
+            currentX = currentX + w + barSpacing
+        end
+        local rightWidth = currentX > 0 and (currentX - barSpacing) or 1
+        containerFrameBelow:SetWidth(rightWidth)
+        if #rightBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
+    else
+        local aboveBars = {}
+        local belowBars = {}
+        for _, barInfo in ipairs(resourceBarFrames) do
+            if barInfo and barInfo.frame and barInfo.frame:IsShown() then
+                if barInfo._side == "above" then
+                    table.insert(aboveBars, barInfo)
+                else
+                    table.insert(belowBars, barInfo)
+                end
+            end
+        end
+        table.sort(aboveBars, CompareBarOrder)
+        table.sort(belowBars, CompareBarOrder)
+
+        containerFrameAbove:SetWidth(primaryLength)
+        containerFrameBelow:SetWidth(primaryLength)
+
+        -- Stack above bars (order ascending = bottom to top; order=1 closest to group)
+        local currentY = 0
+        for _, barInfo in ipairs(aboveBars) do
+            barInfo.frame:ClearAllPoints()
+            barInfo.frame:SetPoint("BOTTOMLEFT", containerFrameAbove, "BOTTOMLEFT", 0, currentY)
+            barInfo.frame:SetPoint("BOTTOMRIGHT", containerFrameAbove, "BOTTOMRIGHT", 0, currentY)
+            local h = barInfo._effectiveThickness or globalThickness
+            barInfo.frame:SetHeight(h)
+            currentY = currentY + h + barSpacing
+        end
+        local aboveHeight = currentY > 0 and (currentY - barSpacing) or 1
+        containerFrameAbove:SetHeight(aboveHeight)
+        if #aboveBars > 0 then containerFrameAbove:Show() else containerFrameAbove:Hide() end
+
+        -- Stack below bars (order ascending = top to bottom; order=1 closest to group)
+        currentY = 0
+        for _, barInfo in ipairs(belowBars) do
+            barInfo.frame:ClearAllPoints()
+            barInfo.frame:SetPoint("TOPLEFT", containerFrameBelow, "TOPLEFT", 0, -currentY)
+            barInfo.frame:SetPoint("TOPRIGHT", containerFrameBelow, "TOPRIGHT", 0, -currentY)
+            local h = barInfo._effectiveThickness or globalThickness
+            barInfo.frame:SetHeight(h)
+            currentY = currentY + h + barSpacing
+        end
+        local belowHeight = currentY > 0 and (currentY - barSpacing) or 1
+        containerFrameBelow:SetHeight(belowHeight)
+        if #belowBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     end
-    local belowHeight = currentY > 0 and (currentY - barSpacing) or 1
-    containerFrameBelow:SetHeight(belowHeight)
-    if #belowBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
 end
 
 ------------------------------------------------------------------------
@@ -1696,6 +1863,8 @@ end
 
 local function StyleContinuousBar(bar, powerType, settings)
     local texName = settings.barTexture or "Solid"
+    local isVertical = IsVerticalResourceLayout(settings)
+    local reverseFill = IsVerticalFillReversed(settings)
 
     if texName == "blizzard_class" then
         local atlasInfo = POWER_ATLAS_INFO[powerType]
@@ -1711,6 +1880,10 @@ local function StyleContinuousBar(bar, powerType, settings)
     else
         bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texName))
     end
+    bar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    bar:SetReverseFill(isVertical and reverseFill or false)
+    bar._isVertical = isVertical
+    bar._reverseFill = reverseFill
 
     ApplyContinuousFillColor(bar, powerType, settings, nil)
 
@@ -1788,6 +1961,8 @@ function CooldownCompanion:ApplyResourceBars()
         self:RevertResourceBars()
         return
     end
+    local isVerticalLayout = IsVerticalResourceLayout(settings)
+    local reverseVerticalFill = IsVerticalFillReversed(settings)
 
     -- Determine which resources to show
     local resources = DetermineActiveResources()
@@ -1823,12 +1998,13 @@ function CooldownCompanion:ApplyResourceBars()
     end
 
     -- Create or recycle bar frames
-    local globalBarHeight = settings.barHeight or 12
+    local globalBarThickness = GetResourceGlobalThickness(settings)
     local barSpacing = settings.barSpacing or 3.6
     lastAppliedBarSpacing = barSpacing
-    lastAppliedBarHeight = globalBarHeight
+    lastAppliedBarThickness = globalBarThickness
+    lastAppliedOrientation = GetResourceLayoutOrientation(settings)
     local segmentGap = settings.segmentGap or 4
-    local totalWidth = groupFrame:GetWidth()
+    local totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
 
     -- Determine side/order for each bar (for per-element positioning)
     local sideList = {}
@@ -1839,12 +2015,33 @@ function CooldownCompanion:ApplyResourceBars()
         if powerType >= CUSTOM_AURA_BAR_BASE then
             local slotIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
             local slotCfg = settings.customAuraBarSlots and settings.customAuraBarSlots[slotIdx]
-            side = (slotCfg and slotCfg.position) or "below"
-            order = (slotCfg and slotCfg.order) or (fallbackOrder + idx)
+            if isVerticalLayout then
+                local storedHorizontalSide = (slotCfg and slotCfg.position) or "below"
+                side = (slotCfg and slotCfg.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
+                order = (slotCfg and slotCfg.verticalOrder) or (slotCfg and slotCfg.order) or (fallbackOrder + idx)
+            else
+                side = (slotCfg and slotCfg.position) or "below"
+                order = (slotCfg and slotCfg.order) or (fallbackOrder + idx)
+            end
         else
             local res = settings.resources and settings.resources[powerType]
-            side = (res and res.position) or "below"
-            order = (res and res.order) or (fallbackOrder + idx)
+            if isVerticalLayout then
+                local storedHorizontalSide = (res and res.position) or "below"
+                side = (res and res.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
+                order = (res and res.verticalOrder) or (res and res.order) or (fallbackOrder + idx)
+            else
+                side = (res and res.position) or "below"
+                order = (res and res.order) or (fallbackOrder + idx)
+            end
+        end
+        if isVerticalLayout then
+            if side ~= "left" and side ~= "right" then
+                side = "right"
+            end
+        else
+            if side ~= "above" and side ~= "below" then
+                side = "below"
+            end
         end
         sideList[idx] = side
         orderList[idx] = order
@@ -1864,20 +2061,32 @@ function CooldownCompanion:ApplyResourceBars()
     for idx, powerType in ipairs(filtered) do
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
-        local targetContainer = sideList[idx] == "above" and containerFrameAbove or containerFrameBelow
+        local firstSide = isVerticalLayout and "left" or "above"
+        local targetContainer = sideList[idx] == firstSide and containerFrameAbove or containerFrameBelow
 
-        -- Resolve per-bar height override
-        local effectiveHeight = globalBarHeight
+        -- Resolve per-bar thickness override
+        local effectiveThickness = globalBarThickness
         if settings.customBarHeights then
+            local thicknessKey = isVerticalLayout and "barWidth" or "barHeight"
             if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
                 local cabIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
                 local cab = customBars[cabIdx]
-                effectiveHeight = cab and cab.barHeight or globalBarHeight
+                if thicknessKey == "barWidth" then
+                    effectiveThickness = (cab and (cab.barWidth or cab.barHeight)) or globalBarThickness
+                else
+                    effectiveThickness = (cab and (cab.barHeight or cab.barWidth)) or globalBarThickness
+                end
             else
-                local res = settings.resources[powerType]
-                effectiveHeight = res and res.barHeight or globalBarHeight
+                local res = settings.resources and settings.resources[powerType]
+                if thicknessKey == "barWidth" then
+                    effectiveThickness = (res and (res.barWidth or res.barHeight)) or globalBarThickness
+                else
+                    effectiveThickness = (res and (res.barHeight or res.barWidth)) or globalBarThickness
+                end
             end
         end
+        local effectiveWidth = isVerticalLayout and effectiveThickness or totalPrimaryLength
+        local effectiveHeight = isVerticalLayout and totalPrimaryLength or effectiveThickness
 
         if powerType == RESOURCE_MAELSTROM_WEAPON then
             -- Maelstrom Weapon: overlay bar with dedicated update
@@ -1896,8 +2105,8 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.powerType = powerType
             end
 
-            barInfo.frame:SetSize(totalWidth, effectiveHeight)
-            LayoutOverlaySegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings, halfSegments)
+            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+            LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
 
             -- Apply initial colors
             local baseColor, overlayColor = GetResourceColors(100, settings)
@@ -1959,16 +2168,20 @@ function CooldownCompanion:ApplyResourceBars()
 
             barInfo.cabConfig = cabConfig
             barInfo.frame:Show()  -- ensure reused frames visible for layout; OnUpdate re-hides if hideWhenInactive
-            barInfo.frame:SetSize(totalWidth, effectiveHeight)
+            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
             if mode == "segmented" then
-                LayoutSegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings)
+                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
             elseif mode == "overlay" then
-                LayoutOverlaySegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings, barInfo.halfSegments)
+                LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, barInfo.halfSegments)
             end
             -- Continuous bar styling (text font, background, borders)
             if mode == "continuous" then
                 local barTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
                 barInfo.frame:SetStatusBarTexture(barTexture)
+                barInfo.frame:SetOrientation(isVerticalLayout and "VERTICAL" or "HORIZONTAL")
+                barInfo.frame:SetReverseFill(isVerticalLayout and reverseVerticalFill or false)
+                barInfo.frame._isVertical = isVerticalLayout
+                barInfo.frame._reverseFill = reverseVerticalFill
                 local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
                 barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
                 local borderStyle = settings.borderStyle or "pixel"
@@ -2030,8 +2243,8 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.powerType = powerType
             end
 
-            barInfo.frame:SetSize(totalWidth, effectiveHeight)
-            LayoutSegments(barInfo.frame, totalWidth, effectiveHeight, segmentGap, settings)
+            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+            LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
             StyleSegmentedBar(barInfo.frame, powerType, settings)
         else
             -- Continuous bar
@@ -2047,7 +2260,7 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.powerType = powerType
             end
 
-            barInfo.frame:SetSize(totalWidth, effectiveHeight)
+            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
             StyleContinuousBar(barInfo.frame, powerType, settings)
         end
 
@@ -2056,23 +2269,30 @@ function CooldownCompanion:ApplyResourceBars()
         end
         barInfo._side = sideList[idx]
         barInfo._order = orderList[idx]
-        barInfo._effectiveHeight = effectiveHeight
+        barInfo._effectiveThickness = effectiveThickness
         barInfo.frame:Show()
     end
 
     activeResources = filtered
 
-    -- Layout: per-element positioning using above/below containers
-    local gap = settings.yOffset or 3
-    lastAppliedWidth = totalWidth
+    -- Layout: per-element positioning using side containers
+    local gap = GetResourceAnchorGap(settings)
+    lastAppliedPrimaryLength = totalPrimaryLength
 
     -- Anchor containers to group frame (static — only changes on full Apply)
     containerFrameAbove:ClearAllPoints()
     containerFrameBelow:ClearAllPoints()
-    containerFrameAbove:SetWidth(totalWidth)
-    containerFrameBelow:SetWidth(totalWidth)
-    containerFrameAbove:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, gap)
-    containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, -gap)
+    if isVerticalLayout then
+        containerFrameAbove:SetHeight(totalPrimaryLength)
+        containerFrameBelow:SetHeight(totalPrimaryLength)
+        containerFrameAbove:SetPoint("TOPRIGHT", groupFrame, "TOPLEFT", -gap, 0)
+        containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "TOPRIGHT", gap, 0)
+    else
+        containerFrameAbove:SetWidth(totalPrimaryLength)
+        containerFrameBelow:SetWidth(totalPrimaryLength)
+        containerFrameAbove:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, gap)
+        containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, -gap)
+    end
 
     -- Position bars within containers (reusable for relayout on visibility change)
     RelayoutBars()
@@ -2139,9 +2359,10 @@ end
 function CooldownCompanion:RevertResourceBars()
     if not isApplied then return end
     isApplied = false
-    lastAppliedWidth = nil
+    lastAppliedPrimaryLength = nil
+    lastAppliedOrientation = nil
     lastAppliedBarSpacing = nil
-    lastAppliedBarHeight = nil
+    lastAppliedBarThickness = nil
     layoutDirty = false
 
     -- Stop alpha sync and restore alpha
@@ -2439,31 +2660,31 @@ local function InstallHooks()
         QueueResourceBarReevaluate()
     end)
 
-    -- When compact layout changes visible buttons — re-apply if width changed
+    -- When compact layout changes visible buttons — re-apply if primary length changed
     hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
         local s = GetResourceBarSettings()
         if not s or not s.enabled then return end
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
-        if not groupFrame or not lastAppliedWidth then return end
-        local newWidth = groupFrame:GetWidth()
-        if math_abs(newWidth - lastAppliedWidth) < 0.1 then
+        if not groupFrame or not lastAppliedPrimaryLength then return end
+        local newLength = GetResourcePrimaryLength(groupFrame, s)
+        if math_abs(newLength - lastAppliedPrimaryLength) < 0.1 then
             return
         end
         CooldownCompanion:ApplyResourceBars()
     end)
 
-    -- When icon size / spacing / buttons-per-row changes — re-apply if width changed
+    -- When icon size / spacing / buttons-per-row changes — re-apply if primary length changed
     hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
         local s = GetResourceBarSettings()
         if not s or not s.enabled then return end
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
-        if not groupFrame or not lastAppliedWidth then return end
-        local newWidth = groupFrame:GetWidth()
-        if math_abs(newWidth - lastAppliedWidth) < 0.1 then
+        if not groupFrame or not lastAppliedPrimaryLength then return end
+        local newLength = GetResourcePrimaryLength(groupFrame, s)
+        if math_abs(newLength - lastAppliedPrimaryLength) < 0.1 then
             return
         end
         CooldownCompanion:ApplyResourceBars()
