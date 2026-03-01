@@ -165,7 +165,7 @@ local SPEC_RESOURCES_CONFIG = {
     [62]  = { 16, 0 },
     [269] = { 12, 3 },
     [268] = { 3 },
-    [581] = { 18 },
+    [581] = { 17 },
 }
 
 local function GetConfigActiveResources()

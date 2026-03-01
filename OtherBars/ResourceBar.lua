@@ -160,11 +160,11 @@ local CLASS_RESOURCES = {
     [9]  = { 7, 0 },        -- Warlock: SoulShards, Mana
     [10] = { 0 },           -- Monk: Mana (Energy, Chi added per spec)
     [11] = nil,             -- Druid: form-dependent (handled separately)
-    [12] = { 17 },          -- DH: Fury (Pain for Vengeance, per spec)
+    [12] = { 17 },          -- DH: Fury
     [13] = { 19, 0 },       -- Evoker: Essence, Mana
 }
 
--- Spec-specific resource overrides (specID -> resources to prepend before class defaults)
+-- Spec-specific resource overrides (specID -> replaces class defaults)
 local SPEC_RESOURCES = {
     [258] = { 13, 0 },      -- Shadow Priest: Insanity, Mana
     [262] = { 11, 0 },      -- Elemental Shaman: Maelstrom, Mana
@@ -172,7 +172,7 @@ local SPEC_RESOURCES = {
     [62]  = { 16, 0 },      -- Arcane Mage: ArcaneCharges, Mana
     [269] = { 12, 3 },      -- Windwalker Monk: Chi, Energy
     [268] = { 3 },          -- Brewmaster Monk: Energy
-    [581] = { 18 },         -- Vengeance DH: Pain
+    [581] = { 17 },         -- Vengeance DH: Fury
 }
 
 -- Druid form mapping (verified in-game: Bear=5, Cat=1, Moonkin=31)
