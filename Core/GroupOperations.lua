@@ -404,6 +404,77 @@ function CooldownCompanion:RefreshAllGroups()
     end
 end
 
+-- Refresh only frame-level visibility/load-state without rebuilding buttons.
+-- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
+-- caused by full button repopulation.
+function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+    -- Fully deactivate frames for groups not in the current profile
+    -- (e.g. after a profile switch). Removes from groupFrames so
+    -- ForEachButton / event handlers skip them entirely.
+    for groupId, frame in pairs(self.groupFrames) do
+        if not self.db.profile.groups[groupId] then
+            self:DeleteMasqueGroup(groupId)
+            frame:Hide()
+            self.groupFrames[groupId] = nil
+            if self.alphaState then
+                self.alphaState[groupId] = nil
+            end
+        end
+    end
+
+    for groupId, group in pairs(self.db.profile.groups) do
+        if not self:IsGroupVisibleToCurrentChar(groupId) then
+            if self.groupFrames[groupId] then
+                self.groupFrames[groupId]:Hide()
+            end
+        else
+            local frame = self.groupFrames[groupId]
+            if not frame then
+                frame = self:CreateGroupFrame(groupId)
+            end
+
+            if frame then
+                local wasShown = frame:IsShown()
+                local active = self:IsGroupActive(groupId, {
+                    group = group,
+                    checkCharVisibility = true,
+                    checkLoadConditions = true,
+                    requireButtons = true,
+                })
+
+                if active then
+                    frame:Show()
+                    -- Force 100% alpha while unlocked for easier positioning
+                    if not group.locked then
+                        frame:SetAlpha(1)
+                    -- Apply current alpha from the alpha fade system so frame
+                    -- doesn't flash at 1.0 when baseline alpha is configured.
+                    elseif group.baselineAlpha < 1 then
+                        local alphaState = self.alphaState and self.alphaState[groupId]
+                        if alphaState and alphaState.currentAlpha then
+                            frame:SetAlpha(alphaState.currentAlpha)
+                        end
+                    end
+
+                    -- When transitioning hidden -> shown, refresh button state
+                    -- immediately so compact groups never show stale slots.
+                    if not wasShown then
+                        if frame.UpdateCooldowns then
+                            frame:UpdateCooldowns()
+                        end
+                        if group.compactLayout then
+                            frame._layoutDirty = true
+                            self:UpdateGroupLayout(groupId)
+                        end
+                    end
+                else
+                    frame:Hide()
+                end
+            end
+        end
+    end
+end
+
 function CooldownCompanion:UpdateAllCooldowns()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- Widget-level GCD activity signal (secret-safe, plain boolean)

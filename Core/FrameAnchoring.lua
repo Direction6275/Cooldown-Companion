@@ -322,11 +322,21 @@ local function InstallHooks()
         end
     end)
 
-    -- When all groups refresh — re-evaluate
-    hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+    local function QueueFrameAnchoringReevaluate()
         C_Timer.After(0.1, function()
             CooldownCompanion:EvaluateFrameAnchoring()
         end)
+    end
+
+    -- When all groups refresh — re-evaluate
+    hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+        QueueFrameAnchoringReevaluate()
+    end)
+
+    -- Visibility-only refresh path (zone/resting/pet-battle transitions)
+    -- still needs unit-frame anchoring re-evaluation.
+    hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+        QueueFrameAnchoringReevaluate()
     end)
 end
 

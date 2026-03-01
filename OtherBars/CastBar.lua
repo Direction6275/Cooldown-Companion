@@ -1190,11 +1190,21 @@ local function InstallHooks()
             end
         end)
 
-        -- When all groups refresh (profile switch, zone change) — re-evaluate
-        hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+        local function QueueCastBarReevaluate()
             C_Timer.After(0.1, function()
                 CooldownCompanion:EvaluateCastBar()
             end)
+        end
+
+        -- When all groups refresh (profile switch, zone change) — re-evaluate
+        hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+            QueueCastBarReevaluate()
+        end)
+
+        -- Visibility-only refresh path (zone/resting/pet-battle transitions)
+        -- still needs cast bar anchoring re-evaluation.
+        hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+            QueueCastBarReevaluate()
         end)
 
         -- Shared handler: re-apply FX scaling when anchor group width changes

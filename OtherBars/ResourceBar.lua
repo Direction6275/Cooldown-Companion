@@ -2404,11 +2404,21 @@ local function InstallHooks()
         end
     end)
 
-    -- When all groups refresh — re-evaluate
-    hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+    local function QueueResourceBarReevaluate()
         C_Timer.After(0.1, function()
             CooldownCompanion:EvaluateResourceBars()
         end)
+    end
+
+    -- When all groups refresh — re-evaluate
+    hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+        QueueResourceBarReevaluate()
+    end)
+
+    -- Visibility-only refresh path (zone/resting/pet-battle transitions)
+    -- still needs resource bar anchoring re-evaluation.
+    hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+        QueueResourceBarReevaluate()
     end)
 
     -- When compact layout changes visible buttons — re-apply if width changed

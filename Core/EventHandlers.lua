@@ -171,12 +171,12 @@ end
 
 function CooldownCompanion:OnZoneChanged()
     self:CachePlayerState()
-    self:RefreshAllGroups()
+    self:RefreshAllGroupsVisibilityOnly()
 end
 
 function CooldownCompanion:OnRestingChanged()
     self._isResting = IsResting()
-    self:RefreshAllGroups()
+    self:RefreshAllGroupsVisibilityOnly()
 end
 
 function CooldownCompanion:OnMountDisplayChanged()
@@ -189,12 +189,12 @@ end
 
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
-    self:RefreshAllGroups()
+    self:RefreshAllGroupsVisibilityOnly()
 end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
-    self:RefreshAllGroups()
+    self:RefreshAllGroupsVisibilityOnly()
 end
 
 function CooldownCompanion:OnHeroTalentChanged()
@@ -205,18 +205,25 @@ function CooldownCompanion:OnHeroTalentChanged()
     QueueTalentChargeRefresh(self)
 end
 
-function CooldownCompanion:OnPlayerEnteringWorld()
+function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReloadingUi)
+    local isFullInit = isInitialLogin or isReloadingUi
     C_Timer.After(1, function()
         self:CachePlayerState()
         self:CacheCurrentSpec()
         self:InvalidateMountAlphaCache()
         self:RefreshChargeFlags()
-        self:RefreshAllGroups()
+        if isFullInit then
+            self:RefreshAllGroups()
+        else
+            self:RefreshAllGroupsVisibilityOnly()
+        end
         self:BuildViewerAuraMap()
         self:ApplyCdmAlpha()
-        self:RebuildSlotMapping()
-        self:RebuildItemSlotCache()
-        self:OnKeybindsChanged()
+        if isFullInit then
+            self:RebuildSlotMapping()
+            self:RebuildItemSlotCache()
+            self:OnKeybindsChanged()
+        end
     end)
 end
 
