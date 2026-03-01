@@ -112,6 +112,29 @@ function CooldownCompanion:MigrateAlphaSystem()
         group.hideInCombat = nil
         group.hideOutOfCombat = nil
         group.hideNoTarget = nil
+
+        -- Legacy mounted tri-state -> split Regular Mount + Dragonriding.
+        -- Preserve behavior by copying legacy mounted settings to both buckets.
+        local hadLegacyMounted = group.forceAlphaMounted ~= nil or group.forceHideMounted ~= nil
+        if hadLegacyMounted then
+            local legacyVisible = group.forceAlphaMounted == true
+            local legacyHidden = group.forceHideMounted == true
+            if rawget(group, "forceAlphaRegularMounted") == nil then
+                group.forceAlphaRegularMounted = legacyVisible
+            end
+            if rawget(group, "forceHideRegularMounted") == nil then
+                group.forceHideRegularMounted = legacyHidden
+            end
+            if rawget(group, "forceAlphaDragonriding") == nil then
+                group.forceAlphaDragonriding = legacyVisible
+            end
+            if rawget(group, "forceHideDragonriding") == nil then
+                group.forceHideDragonriding = legacyHidden
+            end
+        end
+        group.forceAlphaMounted = nil
+        group.forceHideMounted = nil
+
         -- Remove deprecated force-hide fields (replaced by force-visible-only checkboxes)
         group.forceHideTargetExists = nil
         group.forceHideMouseover = nil
@@ -120,6 +143,40 @@ function CooldownCompanion:MigrateAlphaSystem()
         if group.fadeDelay == nil then group.fadeDelay = 1 end
         if group.fadeInDuration == nil then group.fadeInDuration = 0.2 end
         if group.fadeOutDuration == nil then group.fadeOutDuration = 0.2 end
+    end
+
+    -- Migrate legacy mounted keys in saved group setting presets.
+    local presetStore = self.db.profile.groupSettingPresets
+    if type(presetStore) == "table" then
+        for _, mode in ipairs({"icons", "bars"}) do
+            local modeStore = presetStore[mode]
+            if type(modeStore) == "table" then
+                for _, preset in pairs(modeStore) do
+                    local groupData = type(preset) == "table" and preset.group or nil
+                    if type(groupData) == "table" then
+                        local hadLegacyMounted = groupData.forceAlphaMounted ~= nil or groupData.forceHideMounted ~= nil
+                        if hadLegacyMounted then
+                            local legacyVisible = groupData.forceAlphaMounted == true
+                            local legacyHidden = groupData.forceHideMounted == true
+                            if groupData.forceAlphaRegularMounted == nil then
+                                groupData.forceAlphaRegularMounted = legacyVisible
+                            end
+                            if groupData.forceHideRegularMounted == nil then
+                                groupData.forceHideRegularMounted = legacyHidden
+                            end
+                            if groupData.forceAlphaDragonriding == nil then
+                                groupData.forceAlphaDragonriding = legacyVisible
+                            end
+                            if groupData.forceHideDragonriding == nil then
+                                groupData.forceHideDragonriding = legacyHidden
+                            end
+                        end
+                        groupData.forceAlphaMounted = nil
+                        groupData.forceHideMounted = nil
+                    end
+                end
+            end
+        end
     end
 end
 

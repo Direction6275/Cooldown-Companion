@@ -30,10 +30,11 @@ local tonumber = tonumber
 local ipairs = ipairs
 
 local ROW_BADGE_SIZE = 16
+local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 
-local function EnsureRowBadge(frame, key, atlas)
+local function EnsureRowBadge(frame, key, atlas, iconSize)
     local badge = frame[key]
     if not badge then
         badge = CreateFrame("Button", nil, frame)
@@ -59,7 +60,13 @@ local function EnsureRowBadge(frame, key, atlas)
     end
 
     badge:SetSize(ROW_BADGE_SIZE, ROW_BADGE_SIZE)
-    badge.icon:SetAllPoints()
+    badge.icon:ClearAllPoints()
+    if iconSize then
+        badge.icon:SetSize(iconSize, iconSize)
+        badge.icon:SetPoint("CENTER", badge, "CENTER", 0, 0)
+    else
+        badge.icon:SetAllPoints()
+    end
     badge.icon:SetAtlas(atlas, false)
     badge.icon:SetVertexColor(1, 1, 1, 1)
     badge._cdcTooltipText = nil
@@ -772,7 +779,12 @@ local function RefreshColumn2()
         end
 
         if CooldownCompanion:HasStyleOverrides(buttonData) then
-            overrideBadge = EnsureRowBadge(rowFrame, "_cdcOverrideBadge", "Professions-Icon-Export")
+            overrideBadge = EnsureRowBadge(
+                rowFrame,
+                "_cdcOverrideBadge",
+                "Crosshair_VehichleCursor_32",
+                OVERRIDE_BADGE_ICON_SIZE
+            )
             overrideBadge:SetFrameLevel(rowBadgeLevel)
             SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
             overrideBadge:Show()

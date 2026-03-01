@@ -135,6 +135,8 @@ function CooldownCompanion:OnEnable()
     -- Zone/instance change events — load condition evaluation
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnZoneChanged")
     self:RegisterEvent("PLAYER_UPDATE_RESTING", "OnRestingChanged")
+    self:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnMountDisplayChanged")
+    self:RegisterEvent("NEW_MOUNT_ADDED", "OnNewMountAdded")
 
     -- Pet battle events — hide groups during pet battles
     self:RegisterEvent("PET_BATTLE_OPENING_START", "OnPetBattleStart")

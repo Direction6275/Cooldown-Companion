@@ -20,6 +20,10 @@ local defaults = {
             showSources = true,
             sortMode = "source_then_name",
         },
+        groupSettingPresets = {
+            icons = {},
+            bars = {},
+        },
         groups = {
             --[[
                 [groupId] = {
@@ -131,13 +135,15 @@ local defaults = {
                     baselineAlpha = 1,        -- alpha when no force conditions met (0-1)
                     forceAlphaInCombat = false,
                     forceAlphaOutOfCombat = false,
-                    forceAlphaMounted = false,
+                    forceAlphaRegularMounted = false,
+                    forceAlphaDragonriding = false,
                     forceAlphaTargetExists = false,
                     forceAlphaMouseover = false,
                     -- Force-hidden conditions (drive alpha to 0)
                     forceHideInCombat = false,
                     forceHideOutOfCombat = false,
-                    forceHideMounted = false,
+                    forceHideRegularMounted = false,
+                    forceHideDragonriding = false,
                     fadeDelay = 1,            -- seconds before fading after mouseover ends
                     fadeInDuration = 0.2,     -- fade-in animation seconds
                     fadeOutDuration = 0.2,    -- fade-out animation seconds

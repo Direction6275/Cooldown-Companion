@@ -339,7 +339,6 @@ local function TryReceiveCursorDrop()
     return added
 end
 
-------------------------------------------------------------------------
 -- Autocomplete: Build cache of player spells + usable bag items
 ------------------------------------------------------------------------
 local function BuildAutocompleteCache()

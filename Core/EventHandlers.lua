@@ -179,6 +179,14 @@ function CooldownCompanion:OnRestingChanged()
     self:RefreshAllGroups()
 end
 
+function CooldownCompanion:OnMountDisplayChanged()
+    self:InvalidateMountAlphaCache()
+end
+
+function CooldownCompanion:OnNewMountAdded()
+    self:InvalidateMountAlphaCache()
+end
+
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
     self:RefreshAllGroups()
@@ -201,6 +209,7 @@ function CooldownCompanion:OnPlayerEnteringWorld()
     C_Timer.After(1, function()
         self:CachePlayerState()
         self:CacheCurrentSpec()
+        self:InvalidateMountAlphaCache()
         self:RefreshChargeFlags()
         self:RefreshAllGroups()
         self:BuildViewerAuraMap()

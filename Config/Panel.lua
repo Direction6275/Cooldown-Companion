@@ -547,7 +547,8 @@ local function CreateConfigPanel()
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Drag a spell or item from your spellbook or inventory into this column to add it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Drag spells/items from your spellbook or inventory into this column to add it.", 1, 1, 1, true)
+        GameTooltip:AddLine("Use PICK CDM in Button Settings to add CDM auras.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Right-click the Add button to toggle the spellbook.", 1, 1, 1, true)
         GameTooltip:Show()
@@ -746,12 +747,6 @@ local function CreateConfigPanel()
     buttonSettingsScroll = bsScroll
     CS.buttonSettingsScroll = bsScroll
 
-    -- Accept spell/item drops anywhere on the column 2 scroll area
-    scroll2.frame:EnableMouse(true)
-    scroll2.frame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
-    scroll2.content:EnableMouse(true)
-    scroll2.content:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
-
     -- Drop hint overlay for column 2
     local dropOverlay = CreateFrame("Frame", nil, col2.frame, "BackdropTemplate")
     dropOverlay:SetAllPoints(col2.frame)
@@ -759,12 +754,6 @@ local function CreateConfigPanel()
     dropOverlay:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
     dropOverlay:SetBackdropColor(0.15, 0.55, 0.85, 0.25)
     dropOverlay:EnableMouse(true)
-    dropOverlay:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
-    dropOverlay:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and GetCursorInfo() then
-            TryReceiveCursorDrop()
-        end
-    end)
     dropOverlay:Hide()
 
     local dropBorder = dropOverlay:CreateTexture(nil, "BORDER")
@@ -778,16 +767,45 @@ local function CreateConfigPanel()
 
     local dropText = dropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     dropText:SetPoint("CENTER", 0, 0)
-    dropText:SetText("|cffAADDFFDrop here to track|r")
+    dropText:SetText("|cffAADDFFDrop spell or item here to track|r")
+
+    local function IsCursorDropPayload(cursorType)
+        return cursorType == "spell" or cursorType == "item" or cursorType == "petaction"
+    end
+
+    local function UpdateDropOverlayVisibility()
+        local cursorType = GetCursorInfo()
+        if IsCursorDropPayload(cursorType)
+            and CS.selectedGroup
+            and col2.frame:IsShown() then
+            dropOverlay:Show()
+        else
+            dropOverlay:Hide()
+        end
+    end
+
+    local function TryReceiveAnyDrop()
+        local added = TryReceiveCursorDrop()
+        UpdateDropOverlayVisibility()
+        return added
+    end
+
+    -- Accept spell/item drops anywhere on the column 2 scroll area
+    scroll2.frame:EnableMouse(true)
+    scroll2.frame:SetScript("OnReceiveDrag", TryReceiveAnyDrop)
+    scroll2.content:EnableMouse(true)
+    scroll2.content:SetScript("OnReceiveDrag", TryReceiveAnyDrop)
+
+    dropOverlay:SetScript("OnReceiveDrag", TryReceiveAnyDrop)
+    dropOverlay:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and GetCursorInfo() then
+            TryReceiveAnyDrop()
+        end
+    end)
 
     dropOverlay:RegisterEvent("CURSOR_CHANGED")
-    dropOverlay:SetScript("OnEvent", function(self)
-        local cursorType = GetCursorInfo()
-        if (cursorType == "spell" or cursorType == "item" or cursorType == "petaction") and CS.selectedGroup and col2.frame:IsShown() then
-            self:Show()
-        else
-            self:Hide()
-        end
+    dropOverlay:SetScript("OnEvent", function()
+        UpdateDropOverlayVisibility()
     end)
 
     -- Column 4 content area (use InlineGroup's content directly)

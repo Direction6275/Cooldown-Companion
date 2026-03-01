@@ -318,8 +318,10 @@ local function FormatDiagnosticAsText(diag)
             -- Alpha/visibility
             local alphaKeys = {
                 "baselineAlpha", "forceAlphaInCombat", "forceAlphaOutOfCombat",
-                "forceAlphaMounted", "forceAlphaTargetExists", "forceAlphaMouseover",
-                "forceHideInCombat", "forceHideOutOfCombat", "forceHideMounted",
+                "forceAlphaRegularMounted", "forceAlphaDragonriding",
+                "forceAlphaTargetExists", "forceAlphaMouseover",
+                "forceHideInCombat", "forceHideOutOfCombat",
+                "forceHideRegularMounted", "forceHideDragonriding",
                 "fadeDelay", "fadeInDuration", "fadeOutDuration",
             }
             local alphaParts = {}
@@ -342,8 +344,10 @@ local function FormatDiagnosticAsText(diag)
                 name=1, buttons=1, style=1, anchor=1, loadConditions=1,
                 specs=1, displayMode=1, enabled=1,
                 baselineAlpha=1, forceAlphaInCombat=1, forceAlphaOutOfCombat=1,
-                forceAlphaMounted=1, forceAlphaTargetExists=1, forceAlphaMouseover=1,
-                forceHideInCombat=1, forceHideOutOfCombat=1, forceHideMounted=1,
+                forceAlphaRegularMounted=1, forceAlphaDragonriding=1,
+                forceAlphaTargetExists=1, forceAlphaMouseover=1,
+                forceHideInCombat=1, forceHideOutOfCombat=1,
+                forceHideRegularMounted=1, forceHideDragonriding=1,
                 fadeDelay=1, fadeInDuration=1, fadeOutDuration=1,
             }
             local extraParts = {}

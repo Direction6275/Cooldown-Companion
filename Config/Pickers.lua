@@ -9,6 +9,7 @@ local CS = ST._configState
 
 local issecretvalue = issecretvalue
 local canaccessvalue = canaccessvalue
+local bit_band = bit and bit.band
 
 -- File-local state
 local pickFrameOverlay = nil
@@ -24,6 +25,13 @@ local function IsAccessibleBoolean(value)
     if type(value) ~= "boolean" then return false end
     if issecretvalue and issecretvalue(value) then return false end
     if canaccessvalue and not canaccessvalue(value) then return false end
+    return value
+end
+
+local function GetAccessibleBoolean(value)
+    if type(value) ~= "boolean" then return nil end
+    if issecretvalue and issecretvalue(value) then return nil end
+    if canaccessvalue and not canaccessvalue(value) then return nil end
     return value
 end
 
@@ -78,33 +86,6 @@ local function GetAccessibleSpellID(value)
     return value
 end
 
-local function ResolveCDMItemSpellID(item)
-    if not item then return nil end
-
-    if item.GetSpellID then
-        local spellID = GetAccessibleSpellID(item:GetSpellID())
-        if spellID then
-            return spellID
-        end
-    end
-
-    local info = item.GetCooldownInfo and item:GetCooldownInfo() or item.cooldownInfo
-    if not info then
-        return nil
-    end
-
-    local spellID = GetAccessibleSpellID(info.overrideTooltipSpellID)
-    if spellID then return spellID end
-
-    spellID = GetAccessibleSpellID(info.overrideSpellID)
-    if spellID then return spellID end
-
-    spellID = GetAccessibleSpellID(info.spellID)
-    if spellID then return spellID end
-
-    return nil
-end
-
 local function ResolveCDMItemName(item, spellID)
     if item and item.GetNameText then
         local name = item:GetNameText()
@@ -124,22 +105,129 @@ local function ResolveCDMItemName(item, spellID)
     return ""
 end
 
-local function ExpandCDMSettingsAuraCategories(settingsPanel)
-    if not settingsPanel or not settingsPanel.categoryPool then return end
+local function ResolveCDMInfoSpellID(cooldownInfo)
+    if not cooldownInfo then return nil end
+    local spellID = GetAccessibleSpellID(cooldownInfo.overrideTooltipSpellID)
+    if spellID then return spellID end
+    spellID = GetAccessibleSpellID(cooldownInfo.overrideSpellID)
+    if spellID then return spellID end
+    return GetAccessibleSpellID(cooldownInfo.spellID)
+end
 
-    for categoryDisplay in settingsPanel.categoryPool:EnumerateActive() do
-        if categoryDisplay.GetCategoryObject and categoryDisplay.IsCollapsed and categoryDisplay.SetCollapsed then
-            local catObj = categoryDisplay:GetCategoryObject()
-            if catObj and catObj.GetCategory then
-                local category = catObj:GetCategory()
-                local isAuraCat = category == Enum.CooldownViewerCategory.TrackedBuff
-                    or category == Enum.CooldownViewerCategory.TrackedBar
-                if isAuraCat and categoryDisplay:IsCollapsed() then
-                    categoryDisplay:SetCollapsed(false)
+local function HasCooldownFlag(cooldownInfo, flag)
+    if not cooldownInfo or not IsAccessibleNumber(flag) then
+        return false
+    end
+    local flags = cooldownInfo.flags
+    if not IsAccessibleNumber(flags) or not bit_band then
+        return false
+    end
+    return bit_band(flags, flag) ~= 0
+end
+
+local function ShouldIncludeCDMAuraInfo(cooldownInfo)
+    if not cooldownInfo then
+        return false
+    end
+
+    local flagsEnum = Enum and Enum.CooldownSetSpellFlags
+    if flagsEnum then
+        if HasCooldownFlag(cooldownInfo, flagsEnum.HideAura) then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function BuildCDMAuraPickerEntries()
+    local entries = {}
+    local showUnlearned = false
+    if C_CVar and C_CVar.GetCVarBool then
+        showUnlearned = GetAccessibleBoolean(C_CVar.GetCVarBool("cooldownViewerShowUnlearned")) and true or false
+    end
+    local categories = {
+        Enum.CooldownViewerCategory.TrackedBuff,
+        Enum.CooldownViewerCategory.TrackedBar,
+    }
+    local seenCooldownIDs = {}
+
+    local settings = CooldownViewerSettings
+    if not settings and C_AddOns and C_AddOns.LoadAddOn then
+        C_AddOns.LoadAddOn("Blizzard_CooldownViewer")
+        settings = CooldownViewerSettings
+    end
+
+    local dataProvider = settings and settings.GetDataProvider and settings:GetDataProvider()
+    local function ProcessCategory(category, getCooldownIDsForCategory, getCooldownInfoForID)
+        local cooldownIDs = getCooldownIDsForCategory(category)
+        if not cooldownIDs then
+            return
+        end
+
+        for _, cooldownID in ipairs(cooldownIDs) do
+            if IsAccessibleNumber(cooldownID) and cooldownID > 0 and not seenCooldownIDs[cooldownID] then
+                local cooldownInfo = getCooldownInfoForID(cooldownID)
+                if ShouldIncludeCDMAuraInfo(cooldownInfo) then
+                    local spellID = ResolveCDMInfoSpellID(cooldownInfo)
+                    if spellID then
+                        seenCooldownIDs[cooldownID] = true
+                        entries[#entries + 1] = {
+                            spellID = spellID,
+                            cooldownID = cooldownID,
+                            category = category,
+                            name = ResolveCDMItemName(nil, spellID),
+                            iconID = C_Spell.GetSpellTexture(spellID),
+                        }
+                    end
                 end
             end
         end
     end
+
+    local getCooldownIDsForCategory
+    local getCooldownInfoForID
+    if dataProvider and dataProvider.CheckBuildDisplayData
+        and dataProvider.GetOrderedCooldownIDsForCategory
+        and dataProvider.GetCooldownInfoForID then
+        dataProvider:CheckBuildDisplayData()
+        getCooldownIDsForCategory = function(category)
+            return dataProvider:GetOrderedCooldownIDsForCategory(category, showUnlearned)
+        end
+        getCooldownInfoForID = function(cooldownID)
+            return dataProvider:GetCooldownInfoForID(cooldownID)
+        end
+    else
+        -- Fallback when settings data provider is unavailable.
+        getCooldownIDsForCategory = function(category)
+            return C_CooldownViewer.GetCooldownViewerCategorySet(category, showUnlearned)
+        end
+        getCooldownInfoForID = function(cooldownID)
+            return C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+        end
+    end
+
+    for _, category in ipairs(categories) do
+        ProcessCategory(category, getCooldownIDsForCategory, getCooldownInfoForID)
+    end
+
+    -- Keep all duplicate spell IDs and number them for clear per-entry selection.
+    local totalBySpellID = {}
+    for _, entry in ipairs(entries) do
+        totalBySpellID[entry.spellID] = (totalBySpellID[entry.spellID] or 0) + 1
+    end
+    local seenBySpellID = {}
+    for _, entry in ipairs(entries) do
+        local total = totalBySpellID[entry.spellID] or 0
+        if total > 1 then
+            local index = (seenBySpellID[entry.spellID] or 0) + 1
+            seenBySpellID[entry.spellID] = index
+            entry.duplicateIndex = index
+            entry.duplicateTotal = total
+        end
+    end
+
+    return entries
 end
 
 ------------------------------------------------------------------------
@@ -462,126 +550,196 @@ local function StartPickCDM(callback)
         -- Instruction text at top
         local instructions = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         instructions:SetPoint("TOP", overlay, "TOP", 0, -30)
-        overlay.defaultInstructionsText = "Click a Tracked Buff/Bar aura in CDM Settings (Auras tab)  |  Right-click or Escape to cancel"
+        overlay.defaultInstructionsText = "Click a Tracked Buff/Bar aura  |  Right-click or Escape to cancel"
         instructions:SetText(overlay.defaultInstructionsText)
         instructions:SetTextColor(1, 1, 1, 0.9)
         overlay.instructions = instructions
-        overlay.instructionsResetTime = nil
 
-        -- Cursor-following label showing spell name/ID
-        local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        label:SetTextColor(0.2, 1, 0.2, 1)
-        overlay.label = label
+        local panel = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+        panel:SetPoint("CENTER", overlay, "CENTER", 0, -5)
+        panel:SetSize(980, 620)
 
-        -- Highlight frame (colored border that outlines hovered CDM child)
-        local highlight = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
-        highlight:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 12,
-        })
-        highlight:SetBackdropBorderColor(0, 1, 0, 0.9)
-        highlight:Hide()
-        overlay.highlight = highlight
-
-        -- OnUpdate: detect CDM Settings item under cursor
-        overlay:SetScript("OnUpdate", function(self, dt)
-            if self.instructionsResetTime and GetTime() >= self.instructionsResetTime then
-                self.instructionsResetTime = nil
-                self.instructions:SetText(self.defaultInstructionsText)
-                self.instructions:SetTextColor(1, 1, 1, 0.9)
-            end
-
-            local cx, cy = GetCursorPosition()
-            local scale = UIParent:GetEffectiveScale()
-            cx, cy = cx / scale, cy / scale
-
-            local bestChild, bestArea, bestSpellID, bestName, bestIsAuraViewer
-
-            -- Scan the CDM Settings panel (CooldownViewerSettings)
-            local settingsPanel = CooldownViewerSettings
-            if settingsPanel and IsVisibleSafe(settingsPanel) and settingsPanel.categoryPool then
-                for categoryDisplay in settingsPanel.categoryPool:EnumerateActive() do
-                    if categoryDisplay.itemPool then
-                        local catObj = categoryDisplay:GetCategoryObject()
-                        local isAuraCat = catObj and (catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBuff or catObj:GetCategory() == Enum.CooldownViewerCategory.TrackedBar)
-                        for item in categoryDisplay.itemPool:EnumerateActive() do
-                            if IsVisibleSafe(item) and not item:IsEmptyCategory() then
-                                local left, bottom, width, height = GetAccessibleRect(item)
-                                if left and width and width > 0 and height > 0 then
-                                    if cx >= left and cx <= left + width and cy >= bottom and cy <= bottom + height then
-                                        local area = width * height
-                                        if not bestArea or area < bestArea then
-                                            local sid = ResolveCDMItemSpellID(item)
-                                            if sid then
-                                                bestChild = item
-                                                bestArea = area
-                                                bestSpellID = sid
-                                                bestIsAuraViewer = isAuraCat
-                                                bestName = ResolveCDMItemName(item, sid)
-                                            end
-                                        end
-                                    end
-                                end
+        local function ApplyPanelBackdrop()
+            local source = CS.configFrame and CS.configFrame.frame
+            local copied = false
+            if source and source.GetBackdrop and panel.SetBackdrop then
+                local backdrop = source:GetBackdrop()
+                if backdrop then
+                    local copy = {}
+                    for k, v in pairs(backdrop) do
+                        if type(v) == "table" then
+                            copy[k] = {}
+                            for k2, v2 in pairs(v) do
+                                copy[k][k2] = v2
                             end
+                        else
+                            copy[k] = v
                         end
+                    end
+                    panel:SetBackdrop(copy)
+                    copied = true
+                    if source.GetBackdropColor and panel.SetBackdropColor then
+                        panel:SetBackdropColor(source:GetBackdropColor())
+                    end
+                    if source.GetBackdropBorderColor and panel.SetBackdropBorderColor then
+                        panel:SetBackdropBorderColor(source:GetBackdropBorderColor())
                     end
                 end
             end
 
-            self.currentSpellID = bestSpellID
-            self.currentIsAura = bestIsAuraViewer and true or false
-
-            if not bestChild then
-                self.label:SetText("")
-                self.highlight:Hide()
-                return
+            if not copied then
+                panel:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                panel:SetBackdropColor(0.05, 0.08, 0.10, 0.95)
+                panel:SetBackdropBorderColor(0.2, 0.45, 0.55, 0.9)
             end
+        end
+        ApplyPanelBackdrop()
+        overlay.ApplyPanelBackdrop = ApplyPanelBackdrop
 
-            -- Color: green for BuffIcon/BuffBar (aura-capable), red for Essential/Utility (not a buff/debuff)
-            if bestIsAuraViewer then
-                self.label:SetTextColor(0.2, 1, 0.2, 1)
-            else
-                self.label:SetTextColor(1, 0.3, 0.3, 1)
-            end
+        local panelTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        panelTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -12)
+        panelTitle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -40, -12)
+        panelTitle:SetJustifyH("CENTER")
+        panelTitle:SetText("Pick Tracked Buff/Bar Aura")
+        panel.title = panelTitle
 
-            self.label:ClearAllPoints()
-            self.label:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", cx + 20, cy + 10)
-            local suffix = bestIsAuraViewer and "TRACKABLE AURA" or "NOT AN AURA"
-            self.label:SetText(bestName .. "  |  " .. bestSpellID .. "  |  " .. suffix)
-
-            local left, bottom, width, height = GetAccessibleRect(bestChild)
-            if left and width and width > 0 and height > 0 then
-                self.highlight:ClearAllPoints()
-                self.highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
-                self.highlight:SetSize(width, height)
-                if bestIsAuraViewer then
-                    self.highlight:SetBackdropBorderColor(0, 1, 0, 0.9)
-                else
-                    self.highlight:SetBackdropBorderColor(1, 0.3, 0.3, 0.9)
-                end
-                self.highlight:Show()
-            else
-                self.highlight:Hide()
-            end
+        local closeBtn = CreateFrame("Button", nil, panel)
+        closeBtn:SetSize(19, 19)
+        closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
+        local closeIcon = closeBtn:CreateTexture(nil, "ARTWORK")
+        closeIcon:SetAtlas("common-icon-redx", false)
+        closeIcon:SetAllPoints()
+        closeBtn:SetHighlightAtlas("common-icon-redx")
+        closeBtn:GetHighlightTexture():SetAlpha(0.3)
+        closeBtn:SetScript("OnClick", function()
+            FinishPickCDM(nil)
         end)
+        panel.closeBtn = closeBtn
 
-        -- Detect clicks via GLOBAL_MOUSE_DOWN
-        overlay:RegisterEvent("GLOBAL_MOUSE_DOWN")
-        overlay:SetScript("OnEvent", function(self, event, button)
-            if event ~= "GLOBAL_MOUSE_DOWN" then return end
-            if button == "LeftButton" then
-                if self.currentSpellID and self.currentIsAura then
-                    FinishPickCDM(self.currentSpellID)
-                elseif self.currentSpellID then
-                    self.instructions:SetText("Only Tracked Buff/Bar entries can be selected")
-                    self.instructions:SetTextColor(1, 0.3, 0.3, 1)
-                    self.instructionsResetTime = GetTime() + 1.5
-                else
-                    self.instructions:SetText("Hover a Tracked Buff/Bar aura in CDM Settings")
-                    self.instructions:SetTextColor(1, 0.3, 0.3, 1)
-                    self.instructionsResetTime = GetTime() + 1.5
+        local topSeparator = panel:CreateTexture(nil, "BORDER")
+        topSeparator:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -34)
+        topSeparator:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -34)
+        topSeparator:SetHeight(1)
+        topSeparator:SetColorTexture(0.25, 0.55, 0.65, 0.9)
+        panel.topSeparator = topSeparator
+
+        overlay.panel = panel
+
+        local listTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        listTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -52)
+        listTitle:SetJustifyH("LEFT")
+        listTitle:SetText("Tracked Buff/Bar Auras")
+        overlay.listTitle = listTitle
+
+        local listScroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+        listScroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -74)
+        listScroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -32, 14)
+        overlay.listScroll = listScroll
+
+        local listContent = CreateFrame("Frame", nil, listScroll)
+        listContent:SetSize(1, 1)
+        listScroll:SetScrollChild(listContent)
+        overlay.listContent = listContent
+
+        overlay.rows = {}
+        overlay.rowHeight = 34
+        overlay.rowIconSize = 24
+
+        local function AcquireRow(index)
+            local row = overlay.rows[index]
+            if row then
+                return row
+            end
+
+            row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
+            row:SetHeight((overlay.rowHeight or 34) - 2)
+            row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            row:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                edgeSize = 8,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 },
+            })
+            row:SetBackdropColor(0, 0, 0, 0)
+            row:SetBackdropBorderColor(0, 0, 0, 0)
+
+            local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(overlay.rowIconSize or 24, overlay.rowIconSize or 24)
+            icon:SetPoint("LEFT", row, "LEFT", 10, 0)
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            row.icon = icon
+
+            text:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+            text:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+            text:SetJustifyH("LEFT")
+            row.text = text
+
+            row:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(0.16, 0.22, 0.32, 0.6)
+                self:SetBackdropBorderColor(0.4, 0.75, 1, 0.8)
+            end)
+            row:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(0, 0, 0, 0)
+                self:SetBackdropBorderColor(0, 0, 0, 0)
+            end)
+            row:SetScript("OnClick", function(self, button)
+                if button == "LeftButton" and self.spellID then
+                    FinishPickCDM(self.spellID)
+                elseif button == "RightButton" then
+                    FinishPickCDM(nil)
                 end
-            elseif button == "RightButton" then
+            end)
+
+            overlay.rows[index] = row
+            return row
+        end
+
+        local function RefreshRows()
+            local entries = overlay.entries or {}
+            local rowHeight = overlay.rowHeight or 34
+            local listWidth = listScroll:GetWidth()
+            if not listWidth or listWidth <= 0 then
+                local panelWidth = panel:GetWidth()
+                listWidth = (panelWidth and panelWidth > 46) and (panelWidth - 46) or 934
+            end
+            local contentHeight = math.max(1, #entries * rowHeight)
+            listContent:SetSize(listWidth, contentHeight)
+
+            for index, entry in ipairs(entries) do
+                local row = AcquireRow(index)
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", listContent, "TOPLEFT", 0, -((index - 1) * rowHeight))
+                row:SetPoint("TOPRIGHT", listContent, "TOPRIGHT", 0, -((index - 1) * rowHeight))
+                row.spellID = entry.spellID
+                row.cooldownID = entry.cooldownID
+
+                local categoryText = (entry.category == Enum.CooldownViewerCategory.TrackedBar) and "Tracked Bar" or "Tracked Buff"
+                local duplicateSuffix = ""
+                if entry.duplicateTotal and entry.duplicateTotal > 1 and entry.duplicateIndex then
+                    duplicateSuffix = "  #" .. entry.duplicateIndex
+                end
+                local spellName = entry.name or tostring(entry.spellID)
+                local iconID = entry.iconID
+                if row.icon then
+                    row.icon:SetTexture((IsAccessibleNumber(iconID) and iconID > 0) and iconID or 134400)
+                end
+                row.text:SetText(spellName .. duplicateSuffix .. "  |  " .. entry.spellID .. "  |  " .. categoryText)
+                row:Show()
+            end
+
+            for index = #entries + 1, #overlay.rows do
+                overlay.rows[index]:Hide()
+            end
+        end
+        overlay.RefreshRows = RefreshRows
+
+        overlay:SetScript("OnMouseDown", function(self, button)
+            if button == "RightButton" then
                 FinishPickCDM(nil)
             end
         end)
@@ -596,51 +754,56 @@ local function StartPickCDM(callback)
             end
         end)
 
-        overlay:SetScript("OnHide", function(self)
-            self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
-        end)
-
-        overlay:SetScript("OnShow", function(self)
-            self:RegisterEvent("GLOBAL_MOUSE_DOWN")
-        end)
-
         pickCDMOverlay = overlay
     end
 
-    local settingsPanel = CooldownViewerSettings
-    if not settingsPanel and UIParentLoadAddOn then
-        UIParentLoadAddOn("Blizzard_CooldownViewer")
-        settingsPanel = CooldownViewerSettings
-    end
-
-    if settingsPanel and not IsShownSafe(settingsPanel) then
-        if settingsPanel.TogglePanel then
-            settingsPanel:TogglePanel()
-        elseif settingsPanel.Show then
-            settingsPanel:Show()
+    local isAvailable, failureReason = C_CooldownViewer.IsCooldownViewerAvailable()
+    if not isAvailable then
+        local reasonText = IsAccessibleString(failureReason) and failureReason or "Unknown reason"
+        CooldownCompanion:Print("Cooldown Manager unavailable: " .. reasonText)
+        if pickCDMCallback then
+            local cb = pickCDMCallback
+            pickCDMCallback = nil
+            cb(nil)
         end
+        return
     end
 
-    if settingsPanel and settingsPanel.SetDisplayMode then
-        settingsPanel:SetDisplayMode("auras")
-        ExpandCDMSettingsAuraCategories(settingsPanel)
-        C_Timer.After(0, function()
-            ExpandCDMSettingsAuraCategories(settingsPanel)
-        end)
+    pickCDMOverlay.entries = BuildCDMAuraPickerEntries()
+    if #pickCDMOverlay.entries == 0 then
+        CooldownCompanion:Print("No Tracked Buff/Bar auras found in the Cooldown Manager.")
+        if pickCDMCallback then
+            local cb = pickCDMCallback
+            pickCDMCallback = nil
+            cb(nil)
+        end
+        return
     end
 
     -- Hide config panel, show overlay
     if CS.configFrame and IsShownSafe(CS.configFrame.frame) then
         CS.configFrame.frame:Hide()
     end
-    pickCDMOverlay.currentSpellID = nil
-    pickCDMOverlay.currentIsAura = false
-    pickCDMOverlay.instructionsResetTime = nil
+    CooldownCompanion._cdmPickMode = true
+    if pickCDMOverlay.ApplyPanelBackdrop then
+        pickCDMOverlay.ApplyPanelBackdrop()
+    end
     pickCDMOverlay.instructions:SetText(pickCDMOverlay.defaultInstructionsText)
     pickCDMOverlay.instructions:SetTextColor(1, 1, 1, 0.9)
-    pickCDMOverlay.label:SetText("")
-    pickCDMOverlay.highlight:Hide()
-    pickCDMOverlay:Show()
+    if pickCDMOverlay.RefreshRows then
+        pickCDMOverlay:Show()
+        if pickCDMOverlay.listScroll then
+            pickCDMOverlay.listScroll:SetVerticalScroll(0)
+        end
+        pickCDMOverlay.RefreshRows()
+        C_Timer.After(0, function()
+            if pickCDMOverlay and pickCDMOverlay:IsShown() and pickCDMOverlay.RefreshRows then
+                pickCDMOverlay.RefreshRows()
+            end
+        end)
+    else
+        pickCDMOverlay:Show()
+    end
 end
 
 CS.StartPickFrame = StartPickFrame

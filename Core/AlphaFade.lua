@@ -12,6 +12,10 @@ local UnitExists = UnitExists
 local GetShapeshiftForm = GetShapeshiftForm
 local GetShapeshiftFormInfo = GetShapeshiftFormInfo
 local pairs = pairs
+local ipairs = ipairs
+local type = type
+
+local SOAR_SPELL_ID = 430747
 
 -- Alpha fade system: per-group runtime state
 -- self.alphaState[groupId] = {
@@ -73,7 +77,73 @@ local function UpdateFadedAlpha(state, desired, now, fadeInDur, fadeOutDur)
     return state.currentAlpha
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
+function CooldownCompanion:ResolveMountedAlphaStates(mounted)
+    local unitAuras = C_UnitAuras
+    local soarAura
+    if unitAuras then
+        -- GetPlayerAuraBySpellID can miss Soar in some runtime states; unit query is reliable.
+        if unitAuras.GetUnitAuraBySpellID then
+            soarAura = unitAuras.GetUnitAuraBySpellID("player", SOAR_SPELL_ID)
+        elseif unitAuras.GetPlayerAuraBySpellID then
+            soarAura = unitAuras.GetPlayerAuraBySpellID(SOAR_SPELL_ID)
+        end
+    end
+    local soarActive = soarAura ~= nil
+    if not mounted and not soarActive then
+        self._mountAlphaDirty = false
+        self._mountAlphaCacheMounted = false
+        self._mountAlphaCacheSoar = false
+        self._isRegularMounted = false
+        self._isDragonridingMounted = false
+        return false, false
+    end
+
+    if not self._mountAlphaDirty
+       and self._mountAlphaCacheMounted == (mounted == true)
+       and self._mountAlphaCacheSoar == (soarActive == true) then
+        return self._isRegularMounted == true, self._isDragonridingMounted == true
+    end
+
+    local isRegularMounted = mounted == true -- Fallback while mounted if active mount cannot be resolved.
+    local isDragonridingMounted = false
+    if mounted then
+        local mountJournal = C_MountJournal
+        if mountJournal and mountJournal.GetCollectedDragonridingMounts and mountJournal.GetMountInfoByID then
+            local dragonridingMountIDs = mountJournal.GetCollectedDragonridingMounts()
+            if type(dragonridingMountIDs) == "table" then
+                for _, mountID in ipairs(dragonridingMountIDs) do
+                    local _, _, _, isActive, _, _, _, _, _, _, _, _, isSteadyFlight = mountJournal.GetMountInfoByID(mountID)
+                    if isActive then
+                        if not isSteadyFlight then
+                            isRegularMounted = false
+                            isDragonridingMounted = true
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    -- Treat Dracthyr Soar as Skyriding for alpha conditions.
+    if soarActive then
+        isRegularMounted = false
+        isDragonridingMounted = true
+    end
+
+    self._mountAlphaDirty = false
+    self._mountAlphaCacheMounted = mounted == true
+    self._mountAlphaCacheSoar = soarActive == true
+    self._isRegularMounted = isRegularMounted
+    self._isDragonridingMounted = isDragonridingMounted
+    return isRegularMounted, isDragonridingMounted
+end
+
+function CooldownCompanion:InvalidateMountAlphaCache()
+    self._mountAlphaDirty = true
+end
+
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
@@ -94,7 +164,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
 
     -- Skip processing when feature is entirely unused (baseline=1, no forceHide toggles)
     local hasForceHide = group.forceHideInCombat or group.forceHideOutOfCombat
-        or group.forceHideMounted
+        or group.forceHideRegularMounted or group.forceHideDragonriding
     if group.baselineAlpha == 1 and not hasForceHide then
         -- Reset state so it doesn't carry stale values if settings change later
         if state.currentAlpha and state.currentAlpha ~= 1 then
@@ -106,8 +176,13 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         return
     end
 
-    -- Effective mounted state: real mount OR travel form (if opted in)
-    local effectiveMounted = mounted or (group.treatTravelFormAsMounted and inTravelForm)
+    -- Effective mounted states: mounted subtype plus optional druid travel form.
+    local effectiveRegularMounted = regularMounted
+    local effectiveDragonridingMounted = dragonridingMounted
+    if group.treatTravelFormAsMounted and inTravelForm then
+        effectiveRegularMounted = true
+        effectiveDragonridingMounted = true
+    end
 
     -- Check force-hidden conditions
     local forceHidden = false
@@ -115,7 +190,9 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         forceHidden = true
     elseif group.forceHideOutOfCombat and not inCombat then
         forceHidden = true
-    elseif group.forceHideMounted and effectiveMounted then
+    elseif group.forceHideRegularMounted and effectiveRegularMounted then
+        forceHidden = true
+    elseif group.forceHideDragonriding and effectiveDragonridingMounted then
         forceHidden = true
     end
 
@@ -125,7 +202,9 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         forceFull = true
     elseif group.forceAlphaOutOfCombat and not inCombat then
         forceFull = true
-    elseif group.forceAlphaMounted and effectiveMounted then
+    elseif group.forceAlphaRegularMounted and effectiveRegularMounted then
+        forceFull = true
+    elseif group.forceAlphaDragonriding and effectiveDragonridingMounted then
         forceFull = true
     elseif group.forceAlphaTargetExists and hasTarget then
         forceFull = true
@@ -166,7 +245,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
     local function GroupNeedsAlphaUpdate(group)
         if group.baselineAlpha < 1 then return true end
         return group.forceHideInCombat or group.forceHideOutOfCombat
-            or group.forceHideMounted
+            or group.forceHideRegularMounted or group.forceHideDragonriding
     end
 
     alphaFrame:SetScript("OnUpdate", function(_, dt)
@@ -178,6 +257,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         local inCombat = InCombatLockdown()
         local hasTarget = UnitExists("target")
         local mounted = IsMounted()
+        local regularMounted, dragonridingMounted = self:ResolveMountedAlphaStates(mounted)
 
         local inTravelForm = false
         if self._playerClassID == 11 then -- Druid
@@ -200,7 +280,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
                     end
                 end
                 if needsUpdate then
-                    self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, mounted, inTravelForm)
+                    self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
                 end
             end
         end
