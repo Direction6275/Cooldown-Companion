@@ -22,6 +22,9 @@ local cdmAlphaGuard = ST._cdmAlphaGuard
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     self._cooldownsDirty = true
+    if unit == "player" and self._isDracthyr then
+        self:InvalidateMountAlphaCache()
+    end
     if not updateInfo then return end
 
     -- Process removals first so refreshed auras (remove + add in same event) work.

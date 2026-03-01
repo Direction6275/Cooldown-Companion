@@ -208,8 +208,9 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
     self:RegisterEvent("ACTIONBAR_SLOT_CHANGED", "OnActionBarSlotChanged")
 
-    -- Cache player class for class-specific checks (e.g. Druid Travel Form)
+    -- Cache player identity for class/race-specific checks.
     self._playerClassID = select(3, UnitClass("player"))
+    self._isDracthyr = (select(2, UnitRace("player")) == "Dracthyr")
 
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()

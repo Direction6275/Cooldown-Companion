@@ -14,6 +14,7 @@ local GetShapeshiftFormInfo = GetShapeshiftFormInfo
 local pairs = pairs
 local ipairs = ipairs
 local type = type
+local issecretvalue = issecretvalue
 
 local SOAR_SPELL_ID = 430747
 
@@ -81,11 +82,31 @@ function CooldownCompanion:ResolveMountedAlphaStates(mounted)
     local unitAuras = C_UnitAuras
     local soarAura
     if unitAuras then
-        -- GetPlayerAuraBySpellID can miss Soar in some runtime states; unit query is reliable.
-        if unitAuras.GetUnitAuraBySpellID then
-            soarAura = unitAuras.GetUnitAuraBySpellID("player", SOAR_SPELL_ID)
-        elseif unitAuras.GetPlayerAuraBySpellID then
+        -- Fast path for direct lookup.
+        if unitAuras.GetPlayerAuraBySpellID then
             soarAura = unitAuras.GetPlayerAuraBySpellID(SOAR_SPELL_ID)
+        end
+        if not soarAura and unitAuras.GetUnitAuraBySpellID then
+            soarAura = unitAuras.GetUnitAuraBySpellID("player", SOAR_SPELL_ID)
+        end
+        -- Fallback: direct lookups can miss Soar in some runtime states.
+        -- Restrict the full helpful-aura scan to dirty recomputes.
+        if not soarAura and mounted and self._mountAlphaDirty and self._isDracthyr and unitAuras.GetUnitAuras then
+            local helpfulAuras = unitAuras.GetUnitAuras("player", "HELPFUL")
+            if type(helpfulAuras) == "table" then
+                for _, auraData in ipairs(helpfulAuras) do
+                    local auraSpellID = auraData and auraData.spellId
+                    if issecretvalue then
+                        if not issecretvalue(auraSpellID) and auraSpellID == SOAR_SPELL_ID then
+                            soarAura = auraData
+                            break
+                        end
+                    elseif auraSpellID == SOAR_SPELL_ID then
+                        soarAura = auraData
+                        break
+                    end
+                end
+            end
         end
     end
     local soarActive = soarAura ~= nil
