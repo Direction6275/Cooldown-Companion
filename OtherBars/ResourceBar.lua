@@ -31,6 +31,10 @@ local GetTime = GetTime
 ------------------------------------------------------------------------
 
 local UPDATE_INTERVAL = 1 / 30  -- 30 Hz
+local PERCENT_SCALE_CURVE = C_CurveUtil.CreateCurve()
+PERCENT_SCALE_CURVE:SetType(Enum.LuaCurveType.Linear)
+PERCENT_SCALE_CURVE:AddPoint(0.0, 0)
+PERCENT_SCALE_CURVE:AddPoint(1.0, 100)
 
 local CUSTOM_AURA_BAR_BASE = 201  -- 201, 202, 203 for slots 1-3
 local MAX_CUSTOM_AURA_BARS = 3
@@ -42,6 +46,11 @@ local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
 local DEFAULT_CUSTOM_AURA_MAX_COLOR = { 1, 0.84, 0 }
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = { 1, 0.84, 0 }
+local DEFAULT_RESOURCE_TEXT_FORMAT = "current"
+local DEFAULT_RESOURCE_TEXT_FONT = "Friz Quadrata TT"
+local DEFAULT_RESOURCE_TEXT_SIZE = 10
+local DEFAULT_RESOURCE_TEXT_OUTLINE = "OUTLINE"
+local DEFAULT_RESOURCE_TEXT_COLOR = { 1, 1, 1, 1 }
 
 local DEFAULT_POWER_COLORS = {
     [0]  = { 0, 0, 1 },              -- Mana
@@ -956,22 +965,28 @@ local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
         settings = GetResourceBarSettings()
     end
 
+    local currentPower = UnitPower("player", powerType)
     local maxPower = UnitPowerMax("player", powerType)
 
     -- SetMinMaxValues: max is NOT secret
     bar:SetMinMaxValues(0, maxPower)
     -- SetValue: pass UnitPower directly to C-level — accepts secrets
-    bar:SetValue(UnitPower("player", powerType))
+    bar:SetValue(currentPower)
 
     local auraOverrideColor = GetResourceAuraState(powerType, settings, auraActiveCache)
     ApplyContinuousFillColor(bar, powerType, settings, auraOverrideColor)
 
     -- Text: pass directly to C-level SetFormattedText — accepts secrets
     if bar.text and bar.text:IsShown() then
-        if bar._textFormat == "current" then
-            bar.text:SetFormattedText("%d", UnitPower("player", powerType))
+        local textFormat = bar._textFormat
+        if textFormat == "current" then
+            bar.text:SetFormattedText("%d", currentPower)
+        elseif textFormat == "percent" then
+            -- UnitPowerPercent returns a 0..1 value by default; evaluate through a curve
+            -- to get 0..100 without Lua arithmetic (secret-safe in combat).
+            bar.text:SetFormattedText("%.0f", UnitPowerPercent("player", powerType, false, PERCENT_SCALE_CURVE))
         else
-            bar.text:SetFormattedText("%d / %d", UnitPower("player", powerType), maxPower)
+            bar.text:SetFormattedText("%d / %d", currentPower, maxPower)
         end
     end
 
@@ -1700,22 +1715,30 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
 
     -- Text setup
-    local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
-    local textSize = settings.textFontSize or 10
-    local textOutline = settings.textFontOutline or "OUTLINE"
-    local textColor = settings.textFontColor or { 1, 1, 1, 1 }
+    local resourceConfig = settings.resources and settings.resources[powerType]
+    local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
+    if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
+        textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+    end
+    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
+    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+    local textOutline = resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
+        textColor = DEFAULT_RESOURCE_TEXT_COLOR
+    end
 
+    local textFont = CooldownCompanion:FetchFont(textFontName)
     bar.text:SetFont(textFont, textSize, textOutline)
-    bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
+    bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
 
     -- Continuous bars show text by default
     local showText = true
-    if settings.resources and settings.resources[powerType] then
-        local ov = settings.resources[powerType]
-        if ov.showText == false then showText = false end
+    if resourceConfig and resourceConfig.showText == false then
+        showText = false
     end
     bar.text:SetShown(showText)
-    bar._textFormat = settings.textFormat or "current"
+    bar._textFormat = textFormat
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)
@@ -1944,20 +1967,33 @@ function CooldownCompanion:ApplyResourceBars()
                     HidePixelBorders(barInfo.frame.borders)
                 end
                 LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize)
-                -- Text setup
-                local textFont = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
-                local textSize = settings.textFontSize or 10
-                local textOutline = settings.textFontOutline or "OUTLINE"
-                local textColor = settings.textFontColor or { 1, 1, 1, 1 }
-                barInfo.frame.text:SetFont(textFont, textSize, textOutline)
-                barInfo.frame.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
+                -- Duration text style (bar.text)
+                local durationTextFontName = cabConfig.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT
+                local durationTextSize = tonumber(cabConfig.durationTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+                local durationTextOutline = cabConfig.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+                local durationTextColor = cabConfig.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+                if type(durationTextColor) ~= "table" or durationTextColor[1] == nil or durationTextColor[2] == nil or durationTextColor[3] == nil then
+                    durationTextColor = DEFAULT_RESOURCE_TEXT_COLOR
+                end
+                local durationTextFont = CooldownCompanion:FetchFont(durationTextFontName)
+                barInfo.frame.text:SetFont(durationTextFont, durationTextSize, durationTextOutline)
+                barInfo.frame.text:SetTextColor(durationTextColor[1], durationTextColor[2], durationTextColor[3], durationTextColor[4] ~= nil and durationTextColor[4] or 1)
                 -- Lazily create stackText FontString for custom aura bars
                 if not barInfo.frame.stackText then
                     barInfo.frame.stackText = (barInfo.frame.textLayer or barInfo.frame):CreateFontString(nil, "OVERLAY")
                     barInfo.frame.stackText:SetTextColor(1, 1, 1, 1)
                 end
-                barInfo.frame.stackText:SetFont(textFont, textSize, textOutline)
-                barInfo.frame.stackText:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
+                -- Stack text style (bar.stackText)
+                local stackTextFontName = cabConfig.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT
+                local stackTextSize = tonumber(cabConfig.stackTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+                local stackTextOutline = cabConfig.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+                local stackTextColor = cabConfig.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+                if type(stackTextColor) ~= "table" or stackTextColor[1] == nil or stackTextColor[2] == nil or stackTextColor[3] == nil then
+                    stackTextColor = DEFAULT_RESOURCE_TEXT_COLOR
+                end
+                local stackTextFont = CooldownCompanion:FetchFont(stackTextFontName)
+                barInfo.frame.stackText:SetFont(stackTextFont, stackTextSize, stackTextOutline)
+                barInfo.frame.stackText:SetTextColor(stackTextColor[1], stackTextColor[2], stackTextColor[3], stackTextColor[4] ~= nil and stackTextColor[4] or 1)
                 barInfo.frame.brightnessOverlay:Hide()
             end
             -- Apply bar color AFTER texture setup (SetStatusBarTexture resets vertex color)
@@ -2216,7 +2252,14 @@ local function ApplyPreviewData()
                 barInfo.frame:SetMinMaxValues(0, 100)
                 barInfo.frame:SetValue(65)
                 if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    barInfo.frame.text:SetText("65 / 100")
+                    local textFormat = barInfo.frame._textFormat
+                    if textFormat == "current" then
+                        barInfo.frame.text:SetText("65")
+                    elseif textFormat == "percent" then
+                        barInfo.frame.text:SetText("65")
+                    else
+                        barInfo.frame.text:SetText("65 / 100")
+                    end
                 end
             elseif barInfo.barType == "segmented" then
                 local n = #barInfo.frame.segments

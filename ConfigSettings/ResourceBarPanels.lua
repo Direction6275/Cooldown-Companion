@@ -7,6 +7,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
+local CreateInfoButton = ST._CreateInfoButton
 
 ------------------------------------------------------------------------
 -- Aura bar autocomplete cache (TrackedBuff + TrackedBar spells only)
@@ -134,6 +135,11 @@ local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
 local DEFAULT_ESSENCE_MAX_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR_CONFIG = { 1, 0.84, 0 }
+local DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG = "current"
+local DEFAULT_RESOURCE_TEXT_FONT_CONFIG = "Friz Quadrata TT"
+local DEFAULT_RESOURCE_TEXT_SIZE_CONFIG = 10
+local DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG = "OUTLINE"
+local DEFAULT_RESOURCE_TEXT_COLOR_CONFIG = { 1, 1, 1, 1 }
 
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
@@ -746,7 +752,7 @@ local function BuildResourceBarStylingPanel(container)
     container:AddChild(gapSlider)
 
     -- ============ Text Section ============
-    local rbAdvBtns = {}
+    local rbTextAdvBtns = {}
 
     local textHeading = AceGUI:Create("Heading")
     textHeading:SetText("Text")
@@ -762,11 +768,9 @@ local function BuildResourceBarStylingPanel(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
 
-    local rbTextAdvExpanded, rbTextAdvBtn = AddAdvancedToggle(textHeading, "rbText", rbAdvBtns)
-    rbTextAdvBtn:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
     textHeading.right:ClearAllPoints()
     textHeading.right:SetPoint("RIGHT", textHeading.frame, "RIGHT", -3, 0)
-    textHeading.right:SetPoint("LEFT", rbTextAdvBtn, "RIGHT", 4, 0)
+    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
 
     if not textCollapsed then
         -- Per-resource "Show Text" checkboxes (continuous bars only)
@@ -789,59 +793,88 @@ local function BuildResourceBarStylingPanel(container)
                         settings.resources[pt].showText = false
                     end
                     CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RefreshConfigPanel()
                 end)
                 container:AddChild(cb)
+
+                local advExpanded = AddAdvancedToggle(cb, "rbText_" .. pt, rbTextAdvBtns, settings.resources[pt].showText ~= false)
+                if advExpanded and settings.resources[pt].showText ~= false then
+                    local resSettings = settings.resources[pt]
+
+                    local textFormatDrop = AceGUI:Create("Dropdown")
+                    textFormatDrop:SetLabel("Text Format")
+                    local textFormatOptions = {
+                        current = "Current Value",
+                        current_max = "Current / Max",
+                        percent = "Percent",
+                    }
+                    local textFormatOrder = { "current", "current_max", "percent" }
+                    textFormatDrop:SetList(textFormatOptions, textFormatOrder)
+                    local textFormatValue = resSettings.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                    if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
+                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                    end
+                    textFormatDrop:SetValue(textFormatValue)
+                    textFormatDrop:SetFullWidth(true)
+                    textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        if val == "current" or val == "current_max" or val == "percent" then
+                            settings.resources[pt].textFormat = val
+                        else
+                            settings.resources[pt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                        end
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(textFormatDrop)
+
+                    local fontDrop = AceGUI:Create("Dropdown")
+                    fontDrop:SetLabel("Font")
+                    CS.SetupFontDropdown(fontDrop)
+                    fontDrop:SetValue(resSettings.textFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                    fontDrop:SetFullWidth(true)
+                    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        settings.resources[pt].textFont = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(fontDrop)
+
+                    local sizeDrop = AceGUI:Create("Slider")
+                    sizeDrop:SetLabel("Font Size")
+                    sizeDrop:SetSliderValues(6, 24, 1)
+                    sizeDrop:SetValue(resSettings.textFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                    sizeDrop:SetFullWidth(true)
+                    sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        settings.resources[pt].textFontSize = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(sizeDrop)
+
+                    local outlineDrop = AceGUI:Create("Dropdown")
+                    outlineDrop:SetLabel("Outline")
+                    outlineDrop:SetList(CS.outlineOptions)
+                    outlineDrop:SetValue(resSettings.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                    outlineDrop:SetFullWidth(true)
+                    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        settings.resources[pt].textFontOutline = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(outlineDrop)
+
+                    local textColorPicker = AceGUI:Create("ColorPicker")
+                    textColorPicker:SetLabel("Text Color")
+                    local tc = resSettings.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                    textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+                    textColorPicker:SetHasAlpha(true)
+                    textColorPicker:SetFullWidth(true)
+                    textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                        settings.resources[pt].textFontColor = {r, g, b, a}
+                    end)
+                    textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                        settings.resources[pt].textFontColor = {r, g, b, a}
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(textColorPicker)
+                end
             end
-        end
-
-        if rbTextAdvExpanded then
-            local fontDrop = AceGUI:Create("Dropdown")
-            fontDrop:SetLabel("Font")
-            CS.SetupFontDropdown(fontDrop)
-            fontDrop:SetValue(settings.textFont or "Friz Quadrata TT")
-            fontDrop:SetFullWidth(true)
-            fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.textFont = val
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(fontDrop)
-
-            local sizeDrop = AceGUI:Create("Slider")
-            sizeDrop:SetLabel("Font Size")
-            sizeDrop:SetSliderValues(6, 24, 1)
-            sizeDrop:SetValue(settings.textFontSize or 10)
-            sizeDrop:SetFullWidth(true)
-            sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.textFontSize = val
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(sizeDrop)
-
-            local outlineDrop = AceGUI:Create("Dropdown")
-            outlineDrop:SetLabel("Outline")
-            outlineDrop:SetList(CS.outlineOptions)
-            outlineDrop:SetValue(settings.textFontOutline or "OUTLINE")
-            outlineDrop:SetFullWidth(true)
-            outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.textFontOutline = val
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(outlineDrop)
-
-            local textColorPicker = AceGUI:Create("ColorPicker")
-            textColorPicker:SetLabel("Text Color")
-            local tc = settings.textFontColor or { 1, 1, 1, 1 }
-            textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-            textColorPicker:SetHasAlpha(true)
-            textColorPicker:SetFullWidth(true)
-            textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                settings.textFontColor = {r, g, b, a}
-            end)
-            textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                settings.textFontColor = {r, g, b, a}
-                CooldownCompanion:ApplyResourceBars()
-            end)
-            container:AddChild(textColorPicker)
         end
     end
 
@@ -1271,7 +1304,7 @@ local function BuildResourceBarStylingPanel(container)
 
     -- ============ Per-Resource Aura Overlays Section ============
     local auraHeading = AceGUI:Create("Heading")
-    auraHeading:SetText("Per-Resource Aura Overlays")
+    auraHeading:SetText("Resource Aura Overlays")
     ColorHeading(auraHeading)
     auraHeading:SetFullWidth(true)
     container:AddChild(auraHeading)
@@ -1279,10 +1312,21 @@ local function BuildResourceBarStylingPanel(container)
     local auraKey = "rb_resource_aura_overlays"
     local auraCollapsed = resourceBarCollapsedSections[auraKey]
 
-    AttachCollapseButton(auraHeading, auraCollapsed, function()
+    local auraCollapseBtn = AttachCollapseButton(auraHeading, auraCollapsed, function()
         resourceBarCollapsedSections[auraKey] = not resourceBarCollapsedSections[auraKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
+
+    local auraInfoBtn = CreateInfoButton(auraHeading.frame, auraCollapseBtn, "LEFT", "RIGHT", 4, 0, {
+        "Resource Aura Overlays",
+        {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
+        " ",
+        {"You can set the active color, and optional stack lanes for segmented resources.", 1, 1, 1, true},
+    }, auraHeading)
+
+    auraHeading.right:ClearAllPoints()
+    auraHeading.right:SetPoint("RIGHT", auraHeading.frame, "RIGHT", -3, 0)
+    auraHeading.right:SetPoint("LEFT", auraInfoBtn, "RIGHT", 4, 0)
 
     if not auraCollapsed then
         local resources = GetConfigActiveResources()
@@ -1309,6 +1353,7 @@ local function BuildCustomAuraBarPanel(container)
     local settings = db.resourceBars
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
     local maxSlots = ST.MAX_CUSTOM_AURA_BARS or 3
+    local rbCabTextAdvBtns = {}
 
     -- Spec label
     local specIdx = C_SpecializationInfo.GetSpecialization()
@@ -1616,6 +1661,7 @@ local function BuildCustomAuraBarPanel(container)
                     durationTextCb:SetCallback("OnValueChanged", function(widget, event, val)
                         customBars[cabIdx].showDurationText = val or nil
                         CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshConfigPanel()
                     end)
                     container:AddChild(durationTextCb)
 
@@ -1632,8 +1678,113 @@ local function BuildCustomAuraBarPanel(container)
                     stackTextCb:SetCallback("OnValueChanged", function(widget, event, val)
                         customBars[cabIdx].showStackText = val or nil
                         CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshConfigPanel()
                     end)
                     container:AddChild(stackTextCb)
+
+                    local showDuration = cab.showDurationText == true
+                    local showStack = (stackVal == true)
+                    local durationAdvExpanded = AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedIdx, rbCabTextAdvBtns, showDuration)
+                    if durationAdvExpanded and showDuration then
+                        local fontDrop = AceGUI:Create("Dropdown")
+                        fontDrop:SetLabel("Duration Font")
+                        CS.SetupFontDropdown(fontDrop)
+                        fontDrop:SetValue(cab.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                        fontDrop:SetFullWidth(true)
+                        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].durationTextFont = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(fontDrop)
+
+                        local sizeDrop = AceGUI:Create("Slider")
+                        sizeDrop:SetLabel("Duration Font Size")
+                        sizeDrop:SetSliderValues(6, 24, 1)
+                        sizeDrop:SetValue(cab.durationTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                        sizeDrop:SetFullWidth(true)
+                        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].durationTextFontSize = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(sizeDrop)
+
+                        local outlineDrop = AceGUI:Create("Dropdown")
+                        outlineDrop:SetLabel("Duration Outline")
+                        outlineDrop:SetList(CS.outlineOptions)
+                        outlineDrop:SetValue(cab.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                        outlineDrop:SetFullWidth(true)
+                        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].durationTextFontOutline = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(outlineDrop)
+
+                        local textColorPicker = AceGUI:Create("ColorPicker")
+                        textColorPicker:SetLabel("Duration Text Color")
+                        local tc = cab.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                        textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+                        textColorPicker:SetHasAlpha(true)
+                        textColorPicker:SetFullWidth(true)
+                        textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                            customBars[cabIdx].durationTextFontColor = {r, g, b, a}
+                        end)
+                        textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                            customBars[cabIdx].durationTextFontColor = {r, g, b, a}
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(textColorPicker)
+                    end
+
+                    local stackAdvExpanded = AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedIdx, rbCabTextAdvBtns, showStack)
+                    if stackAdvExpanded and showStack then
+                        local fontDrop = AceGUI:Create("Dropdown")
+                        fontDrop:SetLabel("Stack Font")
+                        CS.SetupFontDropdown(fontDrop)
+                        fontDrop:SetValue(cab.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                        fontDrop:SetFullWidth(true)
+                        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].stackTextFont = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(fontDrop)
+
+                        local sizeDrop = AceGUI:Create("Slider")
+                        sizeDrop:SetLabel("Stack Font Size")
+                        sizeDrop:SetSliderValues(6, 24, 1)
+                        sizeDrop:SetValue(cab.stackTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                        sizeDrop:SetFullWidth(true)
+                        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].stackTextFontSize = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(sizeDrop)
+
+                        local outlineDrop = AceGUI:Create("Dropdown")
+                        outlineDrop:SetLabel("Stack Outline")
+                        outlineDrop:SetList(CS.outlineOptions)
+                        outlineDrop:SetValue(cab.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                        outlineDrop:SetFullWidth(true)
+                        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].stackTextFontOutline = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(outlineDrop)
+
+                        local textColorPicker = AceGUI:Create("ColorPicker")
+                        textColorPicker:SetLabel("Stack Text Color")
+                        local tc = cab.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                        textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+                        textColorPicker:SetHasAlpha(true)
+                        textColorPicker:SetFullWidth(true)
+                        textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                            customBars[cabIdx].stackTextFontColor = {r, g, b, a}
+                        end)
+                        textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                            customBars[cabIdx].stackTextFontColor = {r, g, b, a}
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(textColorPicker)
+                    end
                 end
 
                 -- Hide When Inactive

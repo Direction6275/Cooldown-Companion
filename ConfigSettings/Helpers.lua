@@ -323,8 +323,13 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     if cleanup.SetCallback then
-        -- AceGUI widget: wire OnRelease cleanup
+        -- AceGUI widget: chain OnRelease cleanup so existing handlers (e.g.
+        -- collapse/advanced button detach) are preserved.
+        local prevOnRelease = cleanup.events and cleanup.events["OnRelease"]
         cleanup:SetCallback("OnRelease", function()
+            if prevOnRelease then
+                prevOnRelease(cleanup, "OnRelease")
+            end
             btn:ClearAllPoints()
             btn:Hide()
             btn:SetParent(nil)
