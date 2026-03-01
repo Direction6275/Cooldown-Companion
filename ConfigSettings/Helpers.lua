@@ -348,9 +348,37 @@ end
 ------------------------------------------------------------------------
 -- COMPACT MODE CONTROLS
 ------------------------------------------------------------------------
+local function NormalizeCompactGrowthDirection(growthDirection)
+    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
+        return "start"
+    end
+    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
+        return "end"
+    end
+    return "center"
+end
+
+local function GetCompactGrowthDirectionLabels(group)
+    local style = group.style or {}
+    local isBarMode = group.displayMode == "bars"
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    if orientation == "vertical" then
+        return {
+            start = "Top",
+            center = "Center",
+            ["end"] = "Bottom",
+        }
+    end
+    return {
+        start = "Left",
+        center = "Center",
+        ["end"] = "Right",
+    }
+end
+
 -- Builds the compact mode section shared by icon mode (GroupTabs) and
 -- bar mode (BarModeTabs): checkbox → advanced toggle → info button →
--- conditional max-visible-buttons slider + its info button.
+-- conditional growth-direction + max-visible-buttons controls.
 local function BuildCompactModeControls(container, group, tabInfoButtons)
     local compactCb = AceGUI:Create("CheckBox")
     compactCb:SetLabel("Compact Mode")
@@ -384,6 +412,28 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
     }, tabInfoButtons)
 
     if compactAdvExpanded and group.compactLayout then
+        local growthDirectionDrop = AceGUI:Create("Dropdown")
+        growthDirectionDrop:SetLabel("Growth Direction")
+        growthDirectionDrop:SetList(GetCompactGrowthDirectionLabels(group), {"start", "center", "end"})
+        growthDirectionDrop:SetValue(NormalizeCompactGrowthDirection(group.compactGrowthDirection))
+        growthDirectionDrop:SetFullWidth(true)
+        growthDirectionDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame then
+                frame._layoutDirty = true
+                if frame:IsShown() then
+                    CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
+                end
+            end
+        end)
+        container:AddChild(growthDirectionDrop)
+
+        CreateInfoButton(growthDirectionDrop.frame, growthDirectionDrop.label, "LEFT", "CENTER", growthDirectionDrop.label:GetStringWidth() / 2 + 4, 0, {
+            "Growth Direction",
+            {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
+        }, tabInfoButtons)
+
         local totalButtons = #group.buttons
         local maxVisSlider = AceGUI:Create("Slider")
         maxVisSlider:SetLabel("Max Visible Buttons")

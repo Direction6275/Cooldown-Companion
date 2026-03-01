@@ -47,6 +47,7 @@ local GROUP_SETTING_PRESET_GROUP_KEYS = {
     "fadeOutDuration",
     "compactLayout",
     "maxVisibleButtons",
+    "compactGrowthDirection",
 }
 
 local function IsValidGroupSettingPresetMode(mode)
@@ -95,6 +96,7 @@ local function BuildGroupSettingPresetBaseline(profile, mode)
         fadeOutDuration = 0.2,
         compactLayout = false,
         maxVisibleButtons = 0,
+        compactGrowthDirection = "center",
         loadConditions = {
             raid = false,
             dungeon = false,
@@ -400,6 +402,9 @@ function CooldownCompanion:CreateGroup(name)
 
     -- Max visible buttons cap (0 = no cap, use total button count)
     self.db.profile.groups[groupId].maxVisibleButtons = 0
+
+    -- Compact growth direction (start/center/end; default center)
+    self.db.profile.groups[groupId].compactGrowthDirection = "center"
 
     -- Create the frame for this group
     self:CreateGroupFrame(groupId)

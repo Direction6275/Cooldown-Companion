@@ -222,6 +222,16 @@ function CooldownCompanion:MigrateRemoveBarChargeOldFields()
 end
 
 function CooldownCompanion:MigrateVisibility()
+    local function NormalizeCompactGrowthDirection(growthDirection)
+        if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
+            return "start"
+        end
+        if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
+            return "end"
+        end
+        return "center"
+    end
+
     for groupId, group in pairs(self.db.profile.groups) do
         if group.compactLayout == nil then
             group.compactLayout = false
@@ -229,6 +239,7 @@ function CooldownCompanion:MigrateVisibility()
         if group.maxVisibleButtons == nil then
             group.maxVisibleButtons = 0
         end
+        group.compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
     end
 end
 

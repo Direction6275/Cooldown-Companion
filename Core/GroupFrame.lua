@@ -27,6 +27,69 @@ local function UpdateCoordLabel(frame, x, y)
     end
 end
 
+local function GetAnchorOffset(point, width, height)
+    if point == "TOPLEFT" then return -width / 2, height / 2 end
+    if point == "TOP" then return 0, height / 2 end
+    if point == "TOPRIGHT" then return width / 2, height / 2 end
+    if point == "LEFT" then return -width / 2, 0 end
+    if point == "CENTER" then return 0, 0 end
+    if point == "RIGHT" then return width / 2, 0 end
+    if point == "BOTTOMLEFT" then return -width / 2, -height / 2 end
+    if point == "BOTTOM" then return 0, -height / 2 end
+    if point == "BOTTOMRIGHT" then return width / 2, -height / 2 end
+    return 0, 0
+end
+
+local function NormalizeCompactGrowthDirection(growthDirection)
+    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
+        return "start"
+    end
+    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
+        return "end"
+    end
+    return "center"
+end
+
+local function GetCompactAnchorFixedPoint(orientation, compactGrowthDirection)
+    if compactGrowthDirection == "start" then
+        return "TOPLEFT"
+    end
+    if compactGrowthDirection == "end" then
+        if orientation == "horizontal" then
+            return "TOPRIGHT"
+        end
+        return "BOTTOMLEFT"
+    end
+    return nil
+end
+
+local function GetCompactSlotForIndex(visibleIndex, visibleCount, buttonsPerRow, orientation, compactGrowthDirection)
+    local slotIndex = visibleIndex - 1
+    if orientation == "horizontal" then
+        local row = math_floor(slotIndex / buttonsPerRow)
+        local indexInRow = slotIndex % buttonsPerRow
+        local totalCols = math_min(visibleCount, buttonsPerRow)
+        local col = indexInRow
+        if compactGrowthDirection == "end" then
+            -- Mirror against the layout's full horizontal span so trailing
+            -- partial rows stay right-aligned.
+            col = totalCols - 1 - indexInRow
+        end
+        return row, col
+    end
+
+    local col = math_floor(slotIndex / buttonsPerRow)
+    local indexInColumn = slotIndex % buttonsPerRow
+    local totalRows = math_min(visibleCount, buttonsPerRow)
+    local row = indexInColumn
+    if compactGrowthDirection == "end" then
+        -- Mirror against the layout's full vertical span so trailing partial
+        -- columns stay bottom-aligned.
+        row = totalRows - 1 - indexInColumn
+    end
+    return row, col
+end
+
 -- Reset per-button glow state when compact layout toggles visibility.
 -- Hidden buttons skip visual updates, so caches must be invalidated on transitions.
 local function ResetButtonGlowTransitionState(button)
@@ -396,29 +459,13 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     local desiredPoint = group.anchor.point
     local desiredRelPoint = group.anchor.relativePoint
 
-    -- Calculate the reference point on relFrame in screen coords
-    local function AnchorOffset(pt, w, h)
-        -- Returns offset from center for a given anchor point
-        if pt == "TOPLEFT" then return -w/2,  h/2
-        elseif pt == "TOP" then return 0,  h/2
-        elseif pt == "TOPRIGHT" then return  w/2,  h/2
-        elseif pt == "LEFT" then return -w/2, 0
-        elseif pt == "CENTER" then return 0, 0
-        elseif pt == "RIGHT" then return  w/2, 0
-        elseif pt == "BOTTOMLEFT" then return -w/2, -h/2
-        elseif pt == "BOTTOM" then return 0, -h/2
-        elseif pt == "BOTTOMRIGHT" then return  w/2, -h/2
-        else return 0, 0
-        end
-    end
-
     -- Screen position of our frame's desired anchor point
-    local fax, fay = AnchorOffset(desiredPoint, fw, fh)
+    local fax, fay = GetAnchorOffset(desiredPoint, fw, fh)
     local framePtX = cx + fax
     local framePtY = cy + fay
 
     -- Screen position of the reference frame's desired relative point
-    local rax, ray = AnchorOffset(desiredRelPoint, rw, rh)
+    local rax, ray = GetAnchorOffset(desiredRelPoint, rw, rh)
     local refPtX = rcx + rax
     local refPtY = rcy + ray
 
@@ -551,6 +598,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local numButtons = frame.visibleButtonCount or #group.buttons
 
     local targetWidth, targetHeight
+    local oldWidth, oldHeight = frame:GetSize()
 
     if numButtons == 0 then
         targetWidth, targetHeight = buttonWidth, buttonHeight
@@ -578,6 +626,33 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     end
 
     frame:SetSize(targetWidth, targetHeight)
+
+    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
+    local fixedPoint = group.compactLayout and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection) or nil
+    local canCompensateAnchor = frame._hasBeenSized and oldWidth > 0 and oldHeight > 0
+    if fixedPoint and canCompensateAnchor then
+        local anchorPoint = (group.anchor and group.anchor.point) or "CENTER"
+        local oldFixedX, oldFixedY = GetAnchorOffset(fixedPoint, oldWidth, oldHeight)
+        local oldAnchorX, oldAnchorY = GetAnchorOffset(anchorPoint, oldWidth, oldHeight)
+        local newFixedX, newFixedY = GetAnchorOffset(fixedPoint, targetWidth, targetHeight)
+        local newAnchorX, newAnchorY = GetAnchorOffset(anchorPoint, targetWidth, targetHeight)
+
+        local deltaX = (oldFixedX - oldAnchorX) - (newFixedX - newAnchorX)
+        local deltaY = (oldFixedY - oldAnchorY) - (newFixedY - newAnchorY)
+        if deltaX ~= 0 or deltaY ~= 0 then
+            frame:AdjustPointsOffset(deltaX, deltaY)
+            if group.anchor then
+                local _, _, _, x, y = frame:GetPoint(1)
+                if x and y then
+                    group.anchor.x = x
+                    group.anchor.y = y
+                    UpdateCoordLabel(frame, x, y)
+                end
+            end
+        end
+    end
+
+    frame._hasBeenSized = true
     frame._sizeDirty = nil
     return true
 end
@@ -599,13 +674,14 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
+    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
 
     local maxVis = (group.maxVisibleButtons and group.maxVisibleButtons > 0) and group.maxVisibleButtons or #frame.buttons
 
-    local visibleIndex = 0
+    local visibleButtons = {}
     for _, button in ipairs(frame.buttons) do
         local forceVisible = button._forceVisibleByConfig
-        local shouldHide = (not forceVisible) and (button._visibilityHidden or visibleIndex >= maxVis)
+        local shouldHide = (not forceVisible) and (button._visibilityHidden or #visibleButtons >= maxVis)
         local wasShown = button:IsShown()
         if shouldHide then
             if wasShown then
@@ -613,26 +689,26 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
             end
             button:Hide()
         else
-            visibleIndex = visibleIndex + 1
             button:Show()
-
-            -- Reposition to compact layout slot
-            button:ClearAllPoints()
-            local row, col
-            if orientation == "horizontal" then
-                row = math_floor((visibleIndex - 1) / buttonsPerRow)
-                col = (visibleIndex - 1) % buttonsPerRow
-            else
-                col = math_floor((visibleIndex - 1) / buttonsPerRow)
-                row = (visibleIndex - 1) % buttonsPerRow
-            end
-            button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+            table_insert(visibleButtons, button)
         end
     end
 
-    -- Resize group frame if visible count changed
-    if frame.visibleButtonCount ~= visibleIndex then
-        frame.visibleButtonCount = visibleIndex
+    local visibleCount = #visibleButtons
+    for visibleIndex, button in ipairs(visibleButtons) do
+        button:ClearAllPoints()
+        local row, col = GetCompactSlotForIndex(
+            visibleIndex,
+            visibleCount,
+            buttonsPerRow,
+            orientation,
+            compactGrowthDirection
+        )
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+    end
+
+    if frame.visibleButtonCount ~= visibleCount then
+        frame.visibleButtonCount = visibleCount
         self:ResizeGroupFrame(groupId)
     end
 

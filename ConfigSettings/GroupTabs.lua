@@ -236,6 +236,7 @@ local function BuildLayoutTab(container)
             horzLayoutCheck:SetCallback("OnValueChanged", function(widget, event, val)
                 style.orientation = val and "horizontal" or "vertical"
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
             end)
             container:AddChild(horzLayoutCheck)
         end
@@ -248,6 +249,7 @@ local function BuildLayoutTab(container)
         orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.orientation = val
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(orientDrop)
     end
