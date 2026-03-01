@@ -73,6 +73,7 @@ local defaults = {
                         showGCDSwipe = true, -- Show GCD swipe animation on icons
                         showOutOfRange = false, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
+                        assistedHighlightHostileTargetOnly = true, -- Show only for hostile (attackable) targets
                         assistedHighlightStyle = "blizzard", -- "blizzard", "solid", or "proc"
                         assistedHighlightColor = {0.3, 1, 0.3, 0.9},
                         assistedHighlightBorderSize = 2,
@@ -186,6 +187,7 @@ local defaults = {
             showGCDSwipe = false,
             showOutOfRange = false,
             showAssistedHighlight = false,
+            assistedHighlightHostileTargetOnly = true,
             assistedHighlightStyle = "blizzard",
             assistedHighlightColor = {0.3, 1, 0.3, 0.9},
             assistedHighlightBorderSize = 2,
@@ -446,7 +448,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     assistedHighlight = {
         label = "Assisted Highlight",
-        keys = {"showAssistedHighlight", "assistedHighlightStyle", "assistedHighlightColor", "assistedHighlightBorderSize", "assistedHighlightBlizzardOverhang", "assistedHighlightProcOverhang", "assistedHighlightProcColor"},
+        keys = {"showAssistedHighlight", "assistedHighlightHostileTargetOnly", "assistedHighlightStyle", "assistedHighlightColor", "assistedHighlightBorderSize", "assistedHighlightBlizzardOverhang", "assistedHighlightProcOverhang", "assistedHighlightProcColor"},
         modes = {icons = true},
     },
     procGlow = {

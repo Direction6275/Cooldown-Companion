@@ -539,8 +539,10 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     if button.assistedHighlight then
         local assistedSpellID = CooldownCompanion.assistedSpellID
         local displayId = button._displaySpellId or buttonData.id
+        local hostileOnly = style.assistedHighlightHostileTargetOnly ~= false
         local showHighlight = style.showAssistedHighlight
             and buttonData.type == "spell"
+            and (not hostileOnly or CooldownCompanion._assistedHighlightHasHostileTarget)
             and assistedSpellID
             and (displayId == assistedSpellID
                  or buttonData.id == assistedSpellID

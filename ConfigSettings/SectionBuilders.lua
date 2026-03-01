@@ -692,7 +692,20 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
     return unusableCb
 end
 
-local function BuildAssistedHighlightControls(container, styleTable, refreshCallback)
+local function BuildAssistedHighlightControls(container, styleTable, refreshCallback, opts)
+    local hostileOnlyCb = AceGUI:Create("CheckBox")
+    hostileOnlyCb:SetLabel("Hostile Target Only")
+    hostileOnlyCb:SetValue(styleTable.assistedHighlightHostileTargetOnly ~= false)
+    hostileOnlyCb:SetFullWidth(true)
+    hostileOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.assistedHighlightHostileTargetOnly = val
+        refreshCallback()
+    end)
+    container:AddChild(hostileOnlyCb)
+    if not (opts and opts.isOverride) then
+        ApplyCheckboxIndent(hostileOnlyCb, 20)
+    end
+
     local highlightStyles = {
         blizzard = "Blizzard (Marching Ants)",
         proc = "Proc Glow",

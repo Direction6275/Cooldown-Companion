@@ -33,6 +33,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateProcGlowToStyleOverrides()
     self:MigrateGlowSettingsToGroupStyle()
     self:MigrateAuraIndicatorToGroupStyle()
+    self:MigrateAssistedHighlightHostileTargetOnly()
     self:MigrateBarOrdering()
     self:MigrateRemoveAuraDurationCache()
     self:MigrateResourceBarYOffset()
@@ -49,6 +50,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.procGlowOverrideMigrated = nil
     profile.glowSettingsMigrated = nil
     profile.auraIndicatorMigrated = nil
+    profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
 end
 
@@ -944,6 +946,41 @@ function CooldownCompanion:MigrateAuraIndicatorToGroupStyle()
     end
 
     profile.auraIndicatorMigrated = true
+end
+
+-- Backfill assistedHighlightHostileTargetOnly for legacy profiles and freeze
+-- its value into existing assistedHighlight per-button overrides.
+function CooldownCompanion:MigrateAssistedHighlightHostileTargetOnly()
+    local profile = self.db.profile
+    if profile.assistedHighlightHostileTargetOnlyMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        local style = group.style
+        if style and style.assistedHighlightHostileTargetOnly == nil then
+            style.assistedHighlightHostileTargetOnly = true
+        end
+
+        local groupVal = (style and style.assistedHighlightHostileTargetOnly)
+        if groupVal == nil then groupVal = true end
+
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.overrideSections and bd.overrideSections.assistedHighlight then
+                    if not bd.styleOverrides then bd.styleOverrides = {} end
+                    if bd.styleOverrides.assistedHighlightHostileTargetOnly == nil then
+                        bd.styleOverrides.assistedHighlightHostileTargetOnly = groupVal
+                    end
+                end
+            end
+        end
+    end
+
+    local gs = profile.globalStyle
+    if gs and gs.assistedHighlightHostileTargetOnly == nil then
+        gs.assistedHighlightHostileTargetOnly = true
+    end
+
+    profile.assistedHighlightHostileTargetOnlyMigrated = true
 end
 
 function CooldownCompanion:MigrateBarOrdering()

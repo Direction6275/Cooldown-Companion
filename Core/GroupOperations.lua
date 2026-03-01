@@ -11,6 +11,8 @@ local pairs = pairs
 local ipairs = ipairs
 local wipe = wipe
 local select = select
+local UnitExists = UnitExists
+local UnitCanAttack = UnitCanAttack
 
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
@@ -487,6 +489,17 @@ function CooldownCompanion:UpdateAllCooldowns()
     else
         self._gcdActive = false
     end
+
+    -- Assisted highlight target gate:
+    -- hard target has priority; if none exists, allow soft enemy fallback.
+    local hasHostileTarget = false
+    if UnitExists("target") then
+        hasHostileTarget = UnitCanAttack("player", "target") and true or false
+    elseif UnitExists("softenemy") then
+        hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
+    end
+    self._assistedHighlightHasHostileTarget = hasHostileTarget
+
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
