@@ -673,7 +673,9 @@ end
 ------------------------------------------------------------------------
 local function GetButtonEntryType(buttonData)
     if buttonData.type == "item" then return "item" end
-    return buttonData.addedAs == "aura" and "aura" or "spell"
+    if buttonData.addedAs == "aura" then return "aura" end
+    if buttonData.addedAs == "spell" then return "spell" end
+    return buttonData.isPassive and "aura" or "spell"
 end
 
 local function GetMultiSelectUniformType(group, multiIndices)

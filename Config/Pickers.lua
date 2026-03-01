@@ -854,8 +854,42 @@ end
 ------------------------------------------------------------------------
 -- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)
 ------------------------------------------------------------------------
+local function IsActiveSpellBookSpell(spellId)
+    if not spellId then return false end
+
+    local function IsActiveFromSpellIdentifier(spellIdentifier)
+        local slotIdx, spellBank = C_SpellBook.FindSpellBookSlotForSpell(
+            spellIdentifier,
+            false, -- includeHidden
+            true,  -- includeFlyouts
+            false, -- includeFutureSpells
+            true   -- includeOffSpec
+        )
+        if not slotIdx then
+            return false
+        end
+        return not C_SpellBook.IsSpellBookItemPassive(slotIdx, spellBank)
+    end
+
+    if IsActiveFromSpellIdentifier(spellId) then
+        return true
+    end
+
+    local baseSpellID = C_Spell.GetBaseSpell(spellId)
+    if baseSpellID and baseSpellID ~= spellId then
+        if IsActiveFromSpellIdentifier(baseSpellID) then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function IsPassiveOrProc(spellId)
     if C_Spell.IsSpellPassive(spellId) then return true end
+    -- Active spellbook spells (e.g. Death Strike) can have base cooldown 0 and
+    -- still be normal spell entries; don't auto-classify them as aura-only.
+    if IsActiveSpellBookSpell(spellId) then return false end
     if C_Spell.GetSpellCharges(spellId) then return false end
     local baseCooldown = GetSpellBaseCooldown(spellId)
     if (not baseCooldown or baseCooldown == 0) and IsSpellInCDMBuffBar(spellId) then

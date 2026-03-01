@@ -645,9 +645,14 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         group.buttons[buttonIndex].auraTracking = false
     end
 
-    -- Record original classification (immutable label for config display)
+    -- Record original classification (immutable label for config display).
+    -- This represents add intent, not current auraTracking state.
     if buttonType == "spell" then
-        group.buttons[buttonIndex].addedAs = group.buttons[buttonIndex].auraTracking and "aura" or "spell"
+        if forceAura == true or isPassive then
+            group.buttons[buttonIndex].addedAs = "aura"
+        else
+            group.buttons[buttonIndex].addedAs = "spell"
+        end
     end
 
     self:RefreshGroupFrame(groupId)

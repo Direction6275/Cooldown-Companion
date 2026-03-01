@@ -23,6 +23,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateMasqueField()
     self:MigrateRemoveBarChargeOldFields()
     self:MigrateVisibility()
+    self:MigrateAddedAsClassification()
     self:MigrateFolders()
     self:MigrateFolderSpecFilters()
     self:ReverseMigrateMW()
@@ -48,6 +49,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.procGlowOverrideMigrated = nil
     profile.glowSettingsMigrated = nil
     profile.auraIndicatorMigrated = nil
+    profile.addedAsClassificationMigrated = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -226,6 +228,34 @@ function CooldownCompanion:MigrateVisibility()
             group.maxVisibleButtons = 0
         end
     end
+end
+
+function CooldownCompanion:MigrateAddedAsClassification()
+    local profile = self.db.profile
+    if profile.addedAsClassificationMigrated then return end
+
+    for _, group in pairs(self.db.profile.groups) do
+        if group.buttons then
+            for _, buttonData in ipairs(group.buttons) do
+                if buttonData.type == "spell" then
+                    local addedAs = buttonData.addedAs
+                    if addedAs ~= "spell" and addedAs ~= "aura" then
+                        addedAs = buttonData.isPassive and "aura" or "spell"
+                    end
+
+                    -- Non-passive spells should not be permanently classified as aura
+                    -- just because aura tracking was auto-detected.
+                    if addedAs == "aura" and not buttonData.isPassive then
+                        addedAs = "spell"
+                    end
+
+                    buttonData.addedAs = addedAs
+                end
+            end
+        end
+    end
+
+    profile.addedAsClassificationMigrated = true
 end
 
 function CooldownCompanion:MigrateFolders()

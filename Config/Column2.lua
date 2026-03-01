@@ -728,15 +728,17 @@ local function RefreshColumn2()
             if buttonData.cdmChildSlot then
                 entryName = entryName .. " #" .. buttonData.cdmChildSlot
             end
-            -- Append tracking type icon(s): sword = spell cooldown, health = aura tracking
-            if not buttonData.addedAs then
-                buttonData.addedAs = buttonData.auraTracking and "aura" or "spell"
+            -- Append tracking type icon(s): sword = spell classification,
+            -- heart = aura classification and/or active aura attachment.
+            local addedAs = buttonData.addedAs
+            if addedAs ~= "spell" and addedAs ~= "aura" then
+                addedAs = buttonData.isPassive and "aura" or "spell"
             end
             local icons = ""
-            if buttonData.addedAs ~= "aura" then
+            if addedAs ~= "aura" then
                 icons = icons .. "|A:ui_adv_atk:15:15|a"
             end
-            if buttonData.auraTracking then
+            if addedAs == "aura" or buttonData.auraTracking then
                 icons = icons .. "|A:ui_adv_health:15:15|a"
             end
             if icons ~= "" then
