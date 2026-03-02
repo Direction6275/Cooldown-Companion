@@ -207,6 +207,12 @@ function CooldownCompanion:OnEnable()
     -- Keybind text events
     self:RegisterEvent("UPDATE_BINDINGS", "OnBindingsChanged")
     self:RegisterEvent("ACTIONBAR_SLOT_CHANGED", "OnActionBarSlotChanged")
+    self:RegisterEvent("ACTIONBAR_PAGE_CHANGED", "OnActionBarLayoutChanged")
+    self:RegisterEvent("UPDATE_BONUS_ACTIONBAR", "OnActionBarLayoutChanged")
+    self:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR", "OnActionBarLayoutChanged")
+    self:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR", "OnActionBarLayoutChanged")
+    self:RegisterEvent("UPDATE_SHAPESHIFT_FORM", "OnActionBarLayoutChanged")
+    self:RegisterEvent("PET_BAR_UPDATE", "OnActionBarLayoutChanged")
 
     -- Cache player identity for class/race-specific checks.
     self._playerClassID = select(3, UnitClass("player"))
@@ -308,6 +314,20 @@ end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
+        -- Mark the cast spell's buttons so ContextuallySecret cooldown logic can
+        -- treat only this cast-start GCD as a potential false GCD-only window.
+        local holdUntil = GetTime() + 2
+        self:ForEachButton(function(button, buttonData)
+            if buttonData.type == "spell"
+               and not buttonData.isPassive
+               and not buttonData.hasCharges then
+                local displaySpellID = button._displaySpellId or buttonData.id
+                if spellID == buttonData.id or spellID == displaySpellID then
+                    button._postCastGCDHold = true
+                    button._postCastGCDHoldUntil = holdUntil
+                end
+            end
+        end)
         self:UpdateAllCooldowns()
     end
 end

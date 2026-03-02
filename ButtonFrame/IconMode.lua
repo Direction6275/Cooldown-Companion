@@ -405,11 +405,13 @@ function CooldownCompanion:UpdateButtonIcon(button)
 end
 
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
-local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, gcdJustEnded)
+local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
     -- Passives never suppress — always show cooldown widget for aura swipe
     if fetchOk and not buttonData.isPassive then
-        local suppressGCD = not style.showGCDSwipe and isOnGCD
+        -- Suppress only for GCD-only state; keep the cooldown swipe visible
+        -- when a real cooldown is active during an overlapping GCD.
+        local suppressGCD = not style.showGCDSwipe and isGCDOnly
 
         if suppressGCD then
             button.cooldown:Hide()
@@ -471,18 +473,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
         end
         if not wantDesat and not button._auraActive
-            and style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
-            if buttonData.hasCharges then
-                if buttonData.type == "item" then
-                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-                else
-                    wantDesat = button._mainCDShown
-                end
-            elseif button._durationObj then
-                wantDesat = true
-            elseif buttonData.type == "item" then
-                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-            end
+            and style.desaturateOnCooldown and button._desatCooldownActive then
+            wantDesat = true
         end
         if not wantDesat and button._isEquippableNotEquipped then
             wantDesat = true
@@ -494,18 +486,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
         or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         local wantDesat = false
-        if style.desaturateOnCooldown and fetchOk and not isOnGCD and not gcdJustEnded then
-            if buttonData.hasCharges then
-                if buttonData.type == "item" then
-                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-                else
-                    wantDesat = button._mainCDShown
-                end
-            elseif button._durationObj then
-                wantDesat = true
-            elseif buttonData.type == "item" then
-                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-            end
+        if style.desaturateOnCooldown and button._desatCooldownActive then
+            wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroCharges and button._mainCDShown then
             wantDesat = true
@@ -613,6 +595,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
+    button._desatCooldownActive = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
@@ -631,6 +614,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
+    button._postCastGCDHold = nil
+    button._postCastGCDHoldUntil = nil
     if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false

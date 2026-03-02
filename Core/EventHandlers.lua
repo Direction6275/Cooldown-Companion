@@ -236,7 +236,15 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     self:RebuildSlotMapping()
     if slot then
         self:UpdateItemSlotCache(slot)
+    else
+        self:RebuildItemSlotCache()
     end
+    self:OnKeybindsChanged()
+end
+
+function CooldownCompanion:OnActionBarLayoutChanged()
+    self:RebuildSlotMapping()
+    self:RebuildItemSlotCache()
     self:OnKeybindsChanged()
 end
 

@@ -213,7 +213,7 @@ end
 
 -- Update bar-specific display elements (colors, desaturation, aura effects).
 -- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
-local function UpdateBarDisplay(button, fetchOk)
+local function UpdateBarDisplay(button)
     local style = button.style
 
     -- Determine onCooldown via nil-checks (secret-safe).
@@ -270,18 +270,8 @@ local function UpdateBarDisplay(button, fetchOk)
             wantDesat = button.buttonData.desaturateWhileAuraNotActive and not button._auraActive
         end
         if not wantDesat and not button._auraActive
-            and style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
-            if button.buttonData.hasCharges then
-                if button.buttonData.type == "item" then
-                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-                else
-                    wantDesat = button._mainCDShown
-                end
-            elseif button._durationObj then
-                wantDesat = true
-            elseif button.buttonData.type == "item" then
-                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-            end
+            and style.desaturateOnCooldown and button._desatCooldownActive then
+            wantDesat = true
         end
         if not wantDesat and button._isEquippableNotEquipped then
             wantDesat = true
@@ -293,18 +283,8 @@ local function UpdateBarDisplay(button, fetchOk)
     elseif style.desaturateOnCooldown or button.buttonData.desaturateWhileZeroCharges
         or button.buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         local wantDesat = false
-        if style.desaturateOnCooldown and fetchOk and not button._isOnGCD and not button._gcdJustEnded then
-            if button.buttonData.hasCharges then
-                if button.buttonData.type == "item" then
-                    wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-                else
-                    wantDesat = button._mainCDShown
-                end
-            elseif button._durationObj then
-                wantDesat = true
-            elseif button.buttonData.type == "item" then
-                wantDesat = button._itemCdDuration and button._itemCdDuration > 0
-            end
+        if style.desaturateOnCooldown and button._desatCooldownActive then
+            wantDesat = true
         end
         if not wantDesat and button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
             wantDesat = true
@@ -835,6 +815,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     -- Invalidate cached state
     button._desaturated = nil
+    button._desatCooldownActive = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
@@ -851,6 +832,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
+    button._postCastGCDHold = nil
+    button._postCastGCDHoldUntil = nil
     if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
