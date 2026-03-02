@@ -970,7 +970,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                         scroll:AddChild(procPreviewBtn)
                     elseif sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
                         local auraPreviewBtn = AceGUI:Create("Button")
-                        auraPreviewBtn:SetText("Preview Active Aura Glow (3s)")
+                        auraPreviewBtn:SetText("Preview Aura Glow (3s)")
                         auraPreviewBtn:SetFullWidth(true)
                         auraPreviewBtn:SetCallback("OnClick", function()
                             if CS.selectedGroup and CS.selectedButton then

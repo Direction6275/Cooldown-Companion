@@ -1132,10 +1132,23 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
         styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
         sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed",
         defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
-        enableLabel = "Show Active Aura Glow",
+        enableLabel = "Show Aura Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
         styleOrder = LCG_GLOW_STYLE_ORDER,
     }, opts)
+
+    -- "Show When Missing" invert toggle (only when glow is enabled)
+    if styleTable.auraGlowStyle ~= "none" then
+        local invertCb = AceGUI:Create("CheckBox")
+        invertCb:SetLabel("Show When Missing")
+        invertCb:SetValue(styleTable.auraGlowInvert or false)
+        invertCb:SetFullWidth(true)
+        invertCb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.auraGlowInvert = val
+            refreshCallback()
+        end)
+        container:AddChild(invertCb)
+    end
 end
 
 local function BuildPandemicBarControls(container, styleTable, refreshCallback, opts)

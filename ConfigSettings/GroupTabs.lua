@@ -610,10 +610,10 @@ local function BuildEffectsTab(container)
     end -- procAdvExpanded
 
     -- ================================================================
-    -- Active Aura Glow enable toggle
+    -- Show Aura Glow enable toggle
     -- ================================================================
     local auraEnableCb = AceGUI:Create("CheckBox")
-    auraEnableCb:SetLabel("Show Active Aura Glow")
+    auraEnableCb:SetLabel("Show Aura Glow")
     auraEnableCb:SetValue(style.auraGlowStyle ~= "none")
     auraEnableCb:SetFullWidth(true)
     auraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -632,7 +632,7 @@ local function BuildEffectsTab(container)
     end)
 
     local auraPreviewBtn = AceGUI:Create("Button")
-    auraPreviewBtn:SetText("Preview Active Aura Glow (3s)")
+    auraPreviewBtn:SetText("Preview Aura Glow (3s)")
     auraPreviewBtn:SetFullWidth(true)
     auraPreviewBtn:SetCallback("OnClick", function()
         CooldownCompanion:PlayGroupAuraGlowPreview(CS.selectedGroup, 3)

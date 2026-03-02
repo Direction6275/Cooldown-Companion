@@ -10,6 +10,7 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local unpack = unpack
+local UnitExists = UnitExists
 
 -- Imports from Helpers
 local ApplyStrataOrder = ST._ApplyStrataOrder
@@ -562,6 +563,22 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
             pandemicOverride = true
         elseif button._auraGlowPreview then
             showAuraGlow = true
+        elseif style.auraGlowInvert then
+            -- Invert mode: show glow when tracked aura is MISSING
+            if buttonData.auraTracking and button._auraSpellID and not button._auraActive then
+                if (auraIndicatorEnabled or style.auraGlowStyle ~= "none") then
+                    if button._auraUnit == "target" then
+                        if UnitExists("target") then
+                            showAuraGlow = true
+                        end
+                    else
+                        showAuraGlow = true
+                    end
+                end
+            elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false then
+                showAuraGlow = true
+                pandemicOverride = true
+            end
         elseif button._auraActive then
             if button._inPandemic and style.showPandemicGlow ~= false then
                 showAuraGlow = true

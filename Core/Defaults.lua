@@ -104,6 +104,7 @@ local defaults = {
                         auraGlowSize = 4,
                         auraGlowThickness = 2,
                         auraGlowSpeed = 60,
+                        auraGlowInvert = false,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
                         barAuraEffect = "none",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -217,6 +218,7 @@ local defaults = {
             auraGlowSize = 4,
             auraGlowThickness = 2,
             auraGlowSpeed = 60,
+            auraGlowInvert = false,
             barAuraColor = {0.2, 1.0, 0.2, 1.0},
             barAuraEffect = "none",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -466,8 +468,8 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true},
     },
     auraIndicator = {
-        label = "Active Aura Glow",
-        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed"},
+        label = "Show Aura Glow",
+        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed", "auraGlowInvert"},
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab
