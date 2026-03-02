@@ -722,8 +722,19 @@ local function ApplyCheckboxIndent(checkbox, offsetX)
     checkbox.checkbg:SetPoint("TOPLEFT", offsetX or 0, 0)
 end
 
-local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, indentOffset, groupId)
-    if not (group.specs and group.specs[specId] and configID) then return end
+local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, indentOffset, groupId, opts)
+    opts = opts or {}
+    local specsSource = opts.specsSource or group.specs
+    local useHeroTalentsSource = opts.useHeroTalentsSource and true or false
+    local heroTalentsSource
+    if useHeroTalentsSource then
+        heroTalentsSource = opts.heroTalentsSource
+    else
+        heroTalentsSource = opts.heroTalentsSource or group.heroTalents
+    end
+    local disableToggles = opts.disableToggles and true or false
+
+    if not (specsSource and specsSource[specId] and configID) then return end
     local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
     if not subTreeIDs then return end
     for _, subTreeID in ipairs(subTreeIDs) do
@@ -732,22 +743,26 @@ local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, spec
             local htCb = AceGUI:Create("CheckBox")
             htCb:SetLabel(subTreeInfo.name or ("Hero " .. subTreeID))
             htCb:SetFullWidth(true)
-            htCb:SetValue(group.heroTalents and group.heroTalents[subTreeID] or false)
-            htCb:SetCallback("OnValueChanged", function(widget, event, value)
-                if value then
-                    if not group.heroTalents then group.heroTalents = {} end
-                    group.heroTalents[subTreeID] = true
-                else
-                    if group.heroTalents then
-                        group.heroTalents[subTreeID] = nil
-                        if not next(group.heroTalents) then
-                            group.heroTalents = nil
+            htCb:SetValue(heroTalentsSource and heroTalentsSource[subTreeID] or false)
+            if disableToggles then
+                htCb:SetDisabled(true)
+            else
+                htCb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if value then
+                        if not group.heroTalents then group.heroTalents = {} end
+                        group.heroTalents[subTreeID] = true
+                    else
+                        if group.heroTalents then
+                            group.heroTalents[subTreeID] = nil
+                            if not next(group.heroTalents) then
+                                group.heroTalents = nil
+                            end
                         end
                     end
-                end
-                CooldownCompanion:RefreshGroupFrame(groupId)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
+                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+            end
             container:AddChild(htCb)
             ApplyCheckboxIndent(htCb, indentOffset)
             if subTreeInfo.iconElementID then

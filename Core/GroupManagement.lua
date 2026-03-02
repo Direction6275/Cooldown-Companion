@@ -17,39 +17,6 @@ local GROUP_SETTING_PRESET_MODES = {
     bars = true,
 }
 
-local GROUP_SETTING_PRESET_LOAD_CONDITION_KEYS = {
-    "raid",
-    "dungeon",
-    "delve",
-    "battleground",
-    "arena",
-    "openWorld",
-    "rested",
-    "petBattle",
-}
-
-local GROUP_SETTING_PRESET_GROUP_KEYS = {
-    "baselineAlpha",
-    "forceAlphaInCombat",
-    "forceAlphaOutOfCombat",
-    "forceAlphaRegularMounted",
-    "forceAlphaDragonriding",
-    "forceAlphaTargetExists",
-    "forceAlphaMouseover",
-    "forceHideInCombat",
-    "forceHideOutOfCombat",
-    "forceHideRegularMounted",
-    "forceHideDragonriding",
-    "treatTravelFormAsMounted",
-    "customFade",
-    "fadeDelay",
-    "fadeInDuration",
-    "fadeOutDuration",
-    "compactLayout",
-    "maxVisibleButtons",
-    "compactGrowthDirection",
-}
-
 local function IsValidGroupSettingPresetMode(mode)
     return GROUP_SETTING_PRESET_MODES[mode] == true
 end
@@ -78,36 +45,7 @@ local function BuildGroupSettingPresetBaseline(profile, mode)
     style.buttonsPerRow = 12
     style.showCooldownText = true
 
-    local groupData = {
-        baselineAlpha = 1,
-        forceAlphaInCombat = false,
-        forceAlphaOutOfCombat = false,
-        forceAlphaRegularMounted = false,
-        forceAlphaDragonriding = false,
-        forceAlphaTargetExists = false,
-        forceAlphaMouseover = false,
-        forceHideInCombat = false,
-        forceHideOutOfCombat = false,
-        forceHideRegularMounted = false,
-        forceHideDragonriding = false,
-        treatTravelFormAsMounted = false,
-        fadeDelay = 1,
-        fadeInDuration = 0.2,
-        fadeOutDuration = 0.2,
-        compactLayout = false,
-        maxVisibleButtons = 0,
-        compactGrowthDirection = "center",
-        loadConditions = {
-            raid = false,
-            dungeon = false,
-            delve = false,
-            battleground = false,
-            arena = false,
-            openWorld = false,
-            rested = false,
-            petBattle = true,
-        },
-    }
+    local groupData = {}
 
     if mode == "icons" then
         groupData.masqueEnabled = false
@@ -127,26 +65,9 @@ local function CaptureGroupSettingPresetData(profile, mode, group)
         group = CopyTable(baseline.group),
     }
 
-    for _, key in ipairs(GROUP_SETTING_PRESET_GROUP_KEYS) do
-        local value = group[key]
-        if value ~= nil then
-            data.group[key] = CopyPresetValue(value)
-        end
-    end
-
     if mode == "icons" then
         data.group.masqueEnabled = group.masqueEnabled and true or false
     end
-
-    local lc = data.group.loadConditions or {}
-    local sourceLC = group.loadConditions
-    for _, key in ipairs(GROUP_SETTING_PRESET_LOAD_CONDITION_KEYS) do
-        local value = sourceLC and sourceLC[key]
-        if value ~= nil then
-            lc[key] = value and true or false
-        end
-    end
-    data.group.loadConditions = lc
 
     return data
 end
@@ -156,10 +77,6 @@ local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
     local groupData = presetData and presetData.group
     local styleData = presetData and presetData.style
 
-    for _, key in ipairs(GROUP_SETTING_PRESET_GROUP_KEYS) do
-        group[key] = nil
-    end
-    group.loadConditions = nil
     if mode == "icons" then
         group.masqueEnabled = nil
     end
@@ -170,41 +87,6 @@ local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
     end
 
     if type(groupData) == "table" then
-        for _, key in ipairs(GROUP_SETTING_PRESET_GROUP_KEYS) do
-            local value = groupData[key]
-            if value ~= nil then
-                group[key] = CopyPresetValue(value)
-            end
-        end
-
-        -- Backward-compat: legacy mounted tri-state in older preset payloads.
-        local hasLegacyMounted = groupData.forceAlphaMounted ~= nil or groupData.forceHideMounted ~= nil
-        if hasLegacyMounted then
-            local legacyVisible = groupData.forceAlphaMounted == true
-            local legacyHidden = groupData.forceHideMounted == true
-            if groupData.forceAlphaRegularMounted == nil then
-                group.forceAlphaRegularMounted = legacyVisible
-            end
-            if groupData.forceHideRegularMounted == nil then
-                group.forceHideRegularMounted = legacyHidden
-            end
-            if groupData.forceAlphaDragonriding == nil then
-                group.forceAlphaDragonriding = legacyVisible
-            end
-            if groupData.forceHideDragonriding == nil then
-                group.forceHideDragonriding = legacyHidden
-            end
-        end
-
-        if type(groupData.loadConditions) == "table" then
-            for _, key in ipairs(GROUP_SETTING_PRESET_LOAD_CONDITION_KEYS) do
-                local value = groupData.loadConditions[key]
-                if value ~= nil then
-                    group.loadConditions[key] = value and true or false
-                end
-            end
-        end
-
         if mode == "icons" and groupData.masqueEnabled ~= nil then
             group.masqueEnabled = groupData.masqueEnabled and true or false
         end

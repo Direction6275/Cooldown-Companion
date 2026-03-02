@@ -726,6 +726,9 @@ local function BuildLoadConditionsTab(container)
         }
     end
     local lc = group.loadConditions
+    local effectiveSpecs, inheritedSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
+    local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
+    local inheritsFolderSpecOrHeroFilter = inheritedSpecFilter or inheritedHeroFilter
 
     local function CreateLoadConditionToggle(label, key, defaultVal)
         local cb = AceGUI:Create("CheckBox")
@@ -784,6 +787,13 @@ local function BuildLoadConditionsTab(container)
     end)
 
     if not specCollapsed then
+    if inheritsFolderSpecOrHeroFilter then
+        local inheritedLabel = AceGUI:Create("Label")
+        inheritedLabel:SetText("|cff888888Inherited from folder filter. Edit the folder to change Spec/Hero filters.|r")
+        inheritedLabel:SetFullWidth(true)
+        container:AddChild(inheritedLabel)
+    end
+
     -- Current class spec checkboxes
     local numSpecs = GetNumSpecializations()
     local configID = C_ClassTalents.GetActiveConfigID()
@@ -794,28 +804,37 @@ local function BuildLoadConditionsTab(container)
             cb:SetLabel(name)
             if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
             cb:SetFullWidth(true)
-            cb:SetValue(group.specs and group.specs[specId] or false)
-            cb:SetCallback("OnValueChanged", function(widget, event, value)
-                if value then
-                    if not group.specs then group.specs = {} end
-                    group.specs[specId] = true
-                else
-                    if group.specs then
-                        group.specs[specId] = nil
-                        if not next(group.specs) then
-                            group.specs = nil
+            cb:SetValue(effectiveSpecs and effectiveSpecs[specId] or false)
+            if inheritsFolderSpecOrHeroFilter then
+                cb:SetDisabled(true)
+            else
+                cb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if value then
+                        if not group.specs then group.specs = {} end
+                        group.specs[specId] = true
+                    else
+                        if group.specs then
+                            group.specs[specId] = nil
+                            if not next(group.specs) then
+                                group.specs = nil
+                            end
                         end
+                        CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
                     end
-                    CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
-                end
-                CooldownCompanion:RefreshGroupFrame(groupId)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
+                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+            end
             container:AddChild(cb)
             ApplyCheckboxIndent(cb, 0)
 
             -- Hero talent sub-tree checkboxes (indented, only when spec is checked)
-            BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, 20, groupId)
+            BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, 20, groupId, {
+                specsSource = effectiveSpecs,
+                heroTalentsSource = effectiveHeroTalents,
+                useHeroTalentsSource = true,
+                disableToggles = inheritsFolderSpecOrHeroFilter,
+            })
         end
     end
 
@@ -827,8 +846,8 @@ local function BuildLoadConditionsTab(container)
     end
 
     local foreignSpecs = {}
-    if group.specs then
-        for specId in pairs(group.specs) do
+    if effectiveSpecs then
+        for specId in pairs(effectiveSpecs) do
             if not playerSpecIds[specId] then
                 table.insert(foreignSpecs, specId)
             end
@@ -845,21 +864,25 @@ local function BuildLoadConditionsTab(container)
                 if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
                 fcb:SetFullWidth(true)
                 fcb:SetValue(true)
-                fcb:SetCallback("OnValueChanged", function(widget, event, value)
-                    if not value then
-                        if group.specs then
-                            group.specs[specId] = nil
-                            if not next(group.specs) then
-                                group.specs = nil
+                if inheritsFolderSpecOrHeroFilter then
+                    fcb:SetDisabled(true)
+                else
+                    fcb:SetCallback("OnValueChanged", function(widget, event, value)
+                        if not value then
+                            if group.specs then
+                                group.specs[specId] = nil
+                                if not next(group.specs) then
+                                    group.specs = nil
+                                end
                             end
+                        else
+                            if not group.specs then group.specs = {} end
+                            group.specs[specId] = true
                         end
-                    else
-                        if not group.specs then group.specs = {} end
-                        group.specs[specId] = true
-                    end
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                end
                 container:AddChild(fcb)
                 ApplyCheckboxIndent(fcb, 0)
             end
