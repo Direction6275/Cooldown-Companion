@@ -362,6 +362,31 @@ end
 
 
 function CooldownCompanion:SlashCommand(input)
+    input = tostring(input or ""):lower()
+    input = input:match("^%s*(.-)%s*$")
+
+    local function OpenConfigIfNeeded()
+        local configFrame = self:GetConfigFrame()
+        if configFrame and configFrame._miniFrame and configFrame._miniFrame:IsShown() then
+            configFrame._miniFrame:Hide()
+            return
+        end
+        if not configFrame or not configFrame.frame:IsShown() then
+            self:ToggleConfig()
+        end
+    end
+
+    local function SwitchPrimaryConfigMode(mode)
+        if ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode(mode)
+            return
+        end
+        if ST._configState then
+            ST._configState.resourceBarPanelActive = (mode == "bars")
+        end
+        self:RefreshConfigPanel()
+    end
+
     if input == "lock" or input == "unlock" then
         -- Toggle: if any visible group is unlocked, lock all; otherwise unlock all
         local anyUnlocked = false
@@ -402,9 +427,26 @@ function CooldownCompanion:SlashCommand(input)
     elseif input == "help" then
         self:Print("Cooldown Companion commands:")
         self:Print("/cdc - Open settings")
+        self:Print("/cdc buttons - Open settings in Buttons mode")
+        self:Print("/cdc bars - Open settings in Bars & Frames mode")
+        self:Print("/cdc frames - Alias for /cdc bars")
         self:Print("/cdc lock - Toggle lock/unlock all group frames")
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
+    elseif input == "bars" or input == "frames" then
+        if InCombatLockdown() then
+            self:ToggleConfig()
+            return
+        end
+        OpenConfigIfNeeded()
+        SwitchPrimaryConfigMode("bars")
+    elseif input == "buttons" then
+        if InCombatLockdown() then
+            self:ToggleConfig()
+            return
+        end
+        OpenConfigIfNeeded()
+        SwitchPrimaryConfigMode("buttons")
     elseif input == "reset" then
         StaticPopup_Show("CDC_RESET_PROFILE", self.db:GetCurrentProfile(),
             nil, { profileName = self.db:GetCurrentProfile() })

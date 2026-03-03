@@ -22,12 +22,24 @@ local RefreshColumn2 = ST._RefreshColumn2
 local RefreshColumn3 = ST._RefreshColumn3
 local RefreshColumn4 = ST._RefreshColumn4
 local RefreshProfileBar = ST._RefreshProfileBar
+local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
+
+local function SetPrimaryMode(mode, opts)
+    if SetConfigPrimaryMode then
+        return SetConfigPrimaryMode(mode, opts)
+    end
+    CS.resourceBarPanelActive = (mode == "bars")
+    if not (opts and opts.skipRefresh) then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    return true
+end
 
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
-    CS.resourceBarPanelActive = false
+    SetPrimaryMode("buttons", { skipRefresh = true })
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
     end
@@ -48,7 +60,7 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("")
-    frame:SetWidth(1304)
+    frame:SetWidth(1384)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
 
@@ -68,9 +80,9 @@ local function CreateConfigPanel()
         frame.sizer_e:Hide()
     end
 
-    -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 913px)
+    -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 993px)
     content:SetResizable(true)
-    content:SetResizeBounds(913, 400)
+    content:SetResizeBounds(993, 400)
 
     local resizeGrip = CreateFrame("Button", nil, content)
     resizeGrip:SetSize(16, 16)
@@ -171,53 +183,45 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Bars & Frames button — left of CDM
-    local resourceBarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-    resourceBarBtn:SetSize(16, 16)
-    local resourceBarIcon = resourceBarBtn:CreateTexture(nil, "ARTWORK")
-    resourceBarIcon:SetAtlas("UF-Essence-Icon-Active")
-    resourceBarIcon:SetAllPoints()
-    resourceBarBtn:SetHighlightAtlas("UF-Essence-Icon-Active")
-    resourceBarBtn:GetHighlightTexture():SetAlpha(0.3)
+    -- Bottom icon-only mode switch (Buttons <-> Bars & Frames)
+    local modeSwitchTrack
+    local modeSwitchThumb
+    local modeButtonsIconParts = {}
+    local modeBarsIconParts = {}
 
-    -- Highlight function
-    local resourceBarBtnBorder = nil
-
-    local function UpdateResourceBarBtnHighlight()
-        if CS.resourceBarPanelActive then
-            if not resourceBarBtnBorder then
-                resourceBarBtnBorder = resourceBarBtn:CreateTexture(nil, "OVERLAY")
-                resourceBarBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                resourceBarBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                resourceBarBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            end
-            resourceBarBtnBorder:Show()
-        else
-            if resourceBarBtnBorder then
-                resourceBarBtnBorder:Hide()
+    local function SetModeIconGroupAlpha(iconParts, alpha)
+        if not iconParts then return end
+        for i = 1, #iconParts do
+            local tex = iconParts[i]
+            if tex then
+                tex:SetAlpha(alpha)
             end
         end
     end
 
-    resourceBarBtn:SetScript("OnClick", function()
-        if CS.resourceBarPanelActive then
-            CS.resourceBarPanelActive = false
-            CooldownCompanion:StopCastBarPreview()
-            CooldownCompanion:StopResourceBarPreview()
+    local function SetModeSwitchState(isBars)
+        if not modeSwitchTrack or not modeSwitchThumb then return end
+
+        modeSwitchThumb:ClearAllPoints()
+        if isBars then
+            modeSwitchThumb:SetPoint("CENTER", modeSwitchTrack, "CENTER", 28, 0)
+            modeSwitchTrack:SetBackdropColor(0.05, 0.06, 0.07, 0.82)
+            modeSwitchThumb:SetBackdropColor(0.24, 0.38, 0.52, 0.92)
+            SetModeIconGroupAlpha(modeButtonsIconParts, 0.45)
+            SetModeIconGroupAlpha(modeBarsIconParts, 0.85)
         else
-            CS.resourceBarPanelActive = true
-            ResetConfigSelection(true)
+            modeSwitchThumb:SetPoint("CENTER", modeSwitchTrack, "CENTER", -28, 0)
+            modeSwitchTrack:SetBackdropColor(0.05, 0.06, 0.07, 0.82)
+            modeSwitchThumb:SetBackdropColor(0.56, 0.45, 0.18, 0.92)
+            SetModeIconGroupAlpha(modeButtonsIconParts, 0.85)
+            SetModeIconGroupAlpha(modeBarsIconParts, 0.45)
         end
-        UpdateResourceBarBtnHighlight()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    resourceBarBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Bars & Frames")
-        GameTooltip:AddLine("Configure resource bars, cast bar, and unit frame anchoring", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    resourceBarBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+
+    local function UpdateModeNavigationUI()
+        local isBars = CS.resourceBarPanelActive == true
+        SetModeSwitchState(isBars)
+    end
 
     -- Cooldown Manager button — left of Collapse
     local cdmBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
@@ -270,7 +274,6 @@ local function CreateConfigPanel()
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     cdmBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
-    resourceBarBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -477,6 +480,96 @@ local function CreateConfigPanel()
         else
             RefreshProfileBar(profileBar)
             profileBar:Show()
+        end
+    end)
+
+    -- Bottom icon-only mode switch
+    local modeToggle = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    modeToggle:SetPoint("BOTTOM", content, "BOTTOM", 0, 21)
+    modeToggle:SetSize(114, 30)
+    modeToggle:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = nil,
+        edgeSize = 0,
+    })
+    modeToggle:SetBackdropColor(0.05, 0.06, 0.07, 0.82)
+    modeSwitchTrack = modeToggle
+
+    local function AddModeIconPart(iconSet, parent, x, y, width, height)
+        local tex = parent:CreateTexture(nil, "OVERLAY")
+        tex:SetSize(width, height)
+        tex:SetPoint("CENTER", parent, "CENTER", x, y)
+        tex:SetColorTexture(1, 1, 1, 1)
+        iconSet[#iconSet + 1] = tex
+        return tex
+    end
+
+    local buttonsIcon = CreateFrame("Frame", nil, modeToggle)
+    buttonsIcon:SetSize(16, 16)
+    buttonsIcon:SetPoint("CENTER", modeToggle, "CENTER", -28, 0)
+    AddModeIconPart(modeButtonsIconParts, buttonsIcon, -3, 3, 4, 4)
+    AddModeIconPart(modeButtonsIconParts, buttonsIcon, 3, 3, 4, 4)
+    AddModeIconPart(modeButtonsIconParts, buttonsIcon, -3, -3, 4, 4)
+    AddModeIconPart(modeButtonsIconParts, buttonsIcon, 3, -3, 4, 4)
+
+    local barsIcon = CreateFrame("Frame", nil, modeToggle)
+    barsIcon:SetSize(18, 14)
+    barsIcon:SetPoint("CENTER", modeToggle, "CENTER", 28, 0)
+    AddModeIconPart(modeBarsIconParts, barsIcon, 0, 4, 12, 2)
+    AddModeIconPart(modeBarsIconParts, barsIcon, 0, 0, 9, 2)
+    AddModeIconPart(modeBarsIconParts, barsIcon, 0, -4, 6, 2)
+
+    modeSwitchThumb = CreateFrame("Frame", nil, modeToggle, "BackdropTemplate")
+    modeSwitchThumb:SetSize(56, 24)
+    modeSwitchThumb:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = nil,
+        edgeSize = 0,
+    })
+    modeSwitchThumb:SetBackdropColor(0.56, 0.45, 0.18, 0.92)
+    modeSwitchThumb:SetPoint("CENTER", modeToggle, "CENTER", -28, 0)
+
+    local modeButtonsArea = CreateFrame("Button", nil, modeToggle)
+    modeButtonsArea:SetPoint("TOPLEFT")
+    modeButtonsArea:SetPoint("BOTTOM", modeToggle, "BOTTOM", 0, 0)
+    modeButtonsArea:SetPoint("RIGHT", modeToggle, "CENTER", 0, 0)
+    modeButtonsArea:SetScript("OnClick", function()
+        SetPrimaryMode("buttons")
+    end)
+    modeButtonsArea:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Switch to Buttons settings")
+        GameTooltip:Show()
+    end)
+    modeButtonsArea:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        UpdateModeNavigationUI()
+    end)
+
+    local modeBarsArea = CreateFrame("Button", nil, modeToggle)
+    modeBarsArea:SetPoint("TOPRIGHT")
+    modeBarsArea:SetPoint("BOTTOM", modeToggle, "BOTTOM", 0, 0)
+    modeBarsArea:SetPoint("LEFT", modeToggle, "CENTER", 0, 0)
+    modeBarsArea:SetScript("OnClick", function()
+        SetPrimaryMode("bars")
+    end)
+    modeBarsArea:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Switch to Bars & Frames settings")
+        GameTooltip:Show()
+    end)
+    modeBarsArea:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        UpdateModeNavigationUI()
+    end)
+
+    local modeThumbButton = CreateFrame("Button", nil, modeSwitchThumb)
+    modeThumbButton:SetAllPoints(modeSwitchThumb)
+    modeThumbButton:SetScript("OnClick", function()
+        if CS.resourceBarPanelActive then
+            SetPrimaryMode("buttons")
+        else
+            SetPrimaryMode("bars")
         end
     end)
 
@@ -811,6 +904,35 @@ local function CreateConfigPanel()
     -- Column 4 content area (use InlineGroup's content directly)
     CS.col4Container = col4.content
 
+    local function PositionPrimaryAxisUI()
+        local contentCenterX = select(1, content:GetCenter())
+        local col2Right = select(1, col2.frame:GetRight())
+        local col3Left = select(1, col3.frame:GetLeft())
+        local contentBottom = content:GetBottom()
+        local versionBottom = versionText and versionText:GetBottom()
+        local versionTop = versionText and versionText:GetTop()
+
+        local xOffset = 0
+        if contentCenterX and col2Right and col3Left then
+            xOffset = ((col2Right + col3Left) * 0.5) - contentCenterX
+        end
+
+        local yCenterOffset = 0
+        if contentBottom and versionBottom and versionTop then
+            yCenterOffset = math.floor((((versionBottom + versionTop) * 0.5) - contentBottom) + 0.5)
+        else
+            yCenterOffset = 40
+        end
+
+        modeToggle:ClearAllPoints()
+        modeToggle:SetPoint("CENTER", content, "BOTTOM", xOffset, yCenterOffset)
+
+        if frame.titlebg then
+            frame.titlebg:ClearAllPoints()
+            frame.titlebg:SetPoint("TOP", content, "TOP", xOffset, 12)
+        end
+    end
+
     -- Layout columns on size change
     local function LayoutColumns()
         local w = colParent:GetWidth()
@@ -818,15 +940,21 @@ local function CreateConfigPanel()
         local pad = COLUMN_PADDING
 
         local baseW = w - (pad * 3)
-        local smallCol = math.floor(baseW / 4.2)
-        local col1Width = smallCol
-        local col2Width = smallCol
-        local remaining = baseW - (smallCol * 2)
-        local col3Width = math.floor(remaining / 2)
-        local col4Width  = remaining - col3Width
+        local oldSmall = math.floor(baseW / 4.2)
+        local oldRemaining = baseW - (oldSmall * 2)
+        local groupReferenceWidth = oldRemaining - math.floor(oldRemaining / 2)
+        local equalColWidth = math.min(groupReferenceWidth, math.floor(baseW / 4))
+
+        local usedWidth = (equalColWidth * 4) + (pad * 3)
+        local leftInset = math.floor((w - usedWidth) * 0.5)
+
+        local col1Width = equalColWidth
+        local col2Width = equalColWidth
+        local col3Width = equalColWidth
+        local col4Width = equalColWidth
 
         col1.frame:ClearAllPoints()
-        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
+        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
         col1.frame:SetSize(col1Width, h)
 
         col2.frame:ClearAllPoints()
@@ -840,6 +968,8 @@ local function CreateConfigPanel()
         col4.frame:ClearAllPoints()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
         col4.frame:SetSize(col4Width, h)
+
+        PositionPrimaryAxisUI()
     end
 
     colParent:SetScript("OnSizeChanged", function()
@@ -870,7 +1000,8 @@ local function CreateConfigPanel()
     frame.col4 = col4
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
-    frame.UpdateResourceBarBtnHighlight = UpdateResourceBarBtnHighlight
+    frame.UpdateModeNavigationUI = UpdateModeNavigationUI
+    UpdateModeNavigationUI()
 
     CS.configFrame = frame
     return frame
@@ -930,8 +1061,8 @@ function CooldownCompanion:RefreshConfigPanel()
         RefreshProfileBar(CS.configFrame.profileBar)
     end
     CS.configFrame.versionText:SetText("v1.7  |  " .. (self.db:GetCurrentProfile() or "Default"))
-    if CS.configFrame.UpdateResourceBarBtnHighlight then
-        CS.configFrame.UpdateResourceBarBtnHighlight()
+    if CS.configFrame.UpdateModeNavigationUI then
+        CS.configFrame.UpdateModeNavigationUI()
     end
     if CS.resourceBarPanelActive then
         CS.configFrame.col1:SetTitle("Bars & Frames")
@@ -993,6 +1124,7 @@ function CooldownCompanion:ToggleConfig()
 
     if not CS.configFrame then
         CreateConfigPanel()
+        SetPrimaryMode("buttons", { skipRefresh = true })
         -- Defer first refresh until after column layout is computed (next frame)
         C_Timer.After(0, function()
             CooldownCompanion:RefreshConfigPanel()
@@ -1009,6 +1141,7 @@ function CooldownCompanion:ToggleConfig()
     if CS.configFrame.frame:IsShown() then
         CS.configFrame.frame:Hide()
     else
+        SetPrimaryMode("buttons", { skipRefresh = true })
         CS.configFrame.frame:Show()
         self:RefreshConfigPanel()
     end

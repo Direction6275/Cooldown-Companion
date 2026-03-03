@@ -185,6 +185,7 @@ ST._configState = {
     -- CS.* function forward declarations (set by later files)
     IsStrataOrderComplete = nil,
     InitPendingStrataOrder = nil,
+    SetConfigPrimaryMode = nil,
     StartPickFrame = nil,
     StartPickCDM = nil,
     ShowPopupAboveConfig = nil,
@@ -790,6 +791,33 @@ local function ResetConfigSelection(full)
     end
 end
 
+local function SetConfigPrimaryMode(mode, opts)
+    local toBars
+    if mode == "bars" then
+        toBars = true
+    elseif mode == "buttons" then
+        toBars = false
+    else
+        return false
+    end
+
+    local wasBars = CS.resourceBarPanelActive == true
+    if toBars and not wasBars then
+        -- Preserve existing behavior when entering Bars & Frames mode.
+        ResetConfigSelection(true)
+    elseif (not toBars) and wasBars then
+        -- Stop preview loops when returning to button settings mode.
+        CooldownCompanion:StopCastBarPreview()
+        CooldownCompanion:StopResourceBarPreview()
+    end
+
+    CS.resourceBarPanelActive = toBars
+    if not (opts and opts.skipRefresh) and CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:IsShown() then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    return true
+end
+
 local function BuildPlayerSpecSet()
     local playerSpecIds = {}
     local numSpecs = GetNumSpecializations()
@@ -864,6 +892,7 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports (consumed by later Config/ files at load time)
 ------------------------------------------------------------------------
+CS.SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._CDM_VIEWER_NAMES = CDM_VIEWER_NAMES
 ST._CleanRecycledEntry = CleanRecycledEntry
 ST._AcquireBadge = AcquireBadge
@@ -885,5 +914,6 @@ ST._PROFILE_BAR_HEIGHT = PROFILE_BAR_HEIGHT
 ST._BuildHeroTalentSubTreeCheckboxes = BuildHeroTalentSubTreeCheckboxes
 ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ResetConfigSelection = ResetConfigSelection
+ST._SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
 ST._FolderHasForeignSpecs = FolderHasForeignSpecs
