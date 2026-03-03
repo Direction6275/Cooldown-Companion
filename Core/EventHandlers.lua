@@ -121,11 +121,12 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         hasRealCharges = true
                     end
                 else
-                    -- chargeInfo nil: spell may lack charge data because talent hasn't
-                    -- propagated yet (common at login for talent-granted charges like Hover).
-                    -- Preserve existing hasCharges rather than clearing — the mc <= 1 path
-                    -- (line 113-114) handles definitive "no longer has charges" when
-                    -- GetSpellCharges returns a table with maxCharges = 1.
+                    -- chargeInfo nil: API found no charge data for this spell.
+                    -- Clear hasCharges so talent-removed spells don't stay stuck
+                    -- in charge mode. Login recovery for talent-granted charges
+                    -- is handled above via the issecretvalue(mc) branch (line 116)
+                    -- when GetSpellCharges returns a table with secret maxCharges.
+                    hasRealCharges = nil
                 end
                 buttonData.hasCharges = hasRealCharges
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
