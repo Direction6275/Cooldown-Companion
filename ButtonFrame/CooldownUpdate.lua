@@ -152,6 +152,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local style = button.style
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
+    local wasAuraActive = button._auraActive == true
 
     -- For transforming spells (e.g. Command Demon → pet ability), use the
     -- current override spell for cooldown queries. _displaySpellId is set
@@ -569,6 +570,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
        and isOnGCD
        and isGCDOnly
        and desatWasActive
+       and not wasAuraActive
        and button._durationObj
        and actionSlotCooldownShown == true then
         isGCDOnly = false
