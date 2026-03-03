@@ -262,6 +262,18 @@ function CooldownCompanion:CreateGroup(name)
     self.db.profile.groups[groupId].style.buttonsPerRow = 12
     self.db.profile.groups[groupId].style.showCooldownText = true
 
+    -- Indicator defaults for new groups (nil-guard respects user-customized globalStyle)
+    local style = self.db.profile.groups[groupId].style
+    if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
+    if style.showOutOfRange == nil then style.showOutOfRange = true end
+    if style.showGCDSwipe == nil then style.showGCDSwipe = false end
+    if style.showLossOfControl == nil then style.showLossOfControl = false end
+    if style.showTooltips == nil then style.showTooltips = false end
+    if style.showUnusable == nil then style.showUnusable = true end
+    if style.showCooldownSwipe == nil then style.showCooldownSwipe = true end
+    -- Bar mode indicator defaults
+    if style.barAuraEffect == nil then style.barAuraEffect = "color" end
+
     -- Alpha fade defaults
     self.db.profile.groups[groupId].baselineAlpha = 1
     self.db.profile.groups[groupId].forceAlphaRegularMounted = false

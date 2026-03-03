@@ -37,6 +37,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateBarOrdering()
     self:MigrateRemoveAuraDurationCache()
     self:MigrateResourceBarYOffset()
+    self:MigrateNewDefaults()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -52,6 +53,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.auraIndicatorMigrated = nil
     profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
+    profile.newDefaultsMigrated = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1089,4 +1091,53 @@ function CooldownCompanion:MigrateResourceBarYOffset()
     if rb and rb.yOffset and rb.yOffset < 0 then
         rb.yOffset = math.abs(rb.yOffset)
     end
+end
+
+-- Preserve old default values for existing profiles when default schema changes.
+-- New defaults: desaturateOnCooldown=true, showOutOfRange=true, showGCDSwipe=false,
+-- showLossOfControl=false, showTooltips=false, barAuraEffect="color",
+-- resourceBars.enabled=false, castBar.enabled=false, frameAnchoring.inheritAlpha=true.
+-- Uses rawget for metatabled tables so we only write when the user never explicitly set
+-- the field (rawget returns nil), preventing the new metatable default from silently
+-- changing existing behavior.
+function CooldownCompanion:MigrateNewDefaults()
+    if self.db.profile.newDefaultsMigrated then return end
+    local profile = self.db.profile
+
+    -- Module-level (metatabled): use rawget to detect never-set fields
+    local rb = rawget(profile, "resourceBars")
+    if rb then
+        if rawget(rb, "enabled") == nil then rb.enabled = true end
+    end
+    local cb = rawget(profile, "castBar")
+    if cb then
+        if rawget(cb, "enabled") == nil then cb.enabled = true end
+    end
+    local fa = rawget(profile, "frameAnchoring")
+    if fa then
+        if rawget(fa, "inheritAlpha") == nil then fa.inheritAlpha = false end
+    end
+
+    -- GlobalStyle (metatabled): use rawget
+    local gs = rawget(profile, "globalStyle")
+    if gs then
+        if rawget(gs, "desaturateOnCooldown") == nil then gs.desaturateOnCooldown = false end
+        if rawget(gs, "showOutOfRange") == nil then gs.showOutOfRange = false end
+        if rawget(gs, "barAuraEffect") == nil then gs.barAuraEffect = "none" end
+    end
+
+    -- Per-group style (plain tables from CopyTable): nil check is sufficient
+    for _, group in pairs(profile.groups) do
+        local s = group.style
+        if s then
+            if s.desaturateOnCooldown == nil then s.desaturateOnCooldown = false end
+            if s.showOutOfRange == nil then s.showOutOfRange = false end
+            if s.showGCDSwipe == nil then s.showGCDSwipe = true end
+            if s.showLossOfControl == nil then s.showLossOfControl = true end
+            if s.showTooltips == nil then s.showTooltips = true end
+            if s.barAuraEffect == nil then s.barAuraEffect = "none" end
+        end
+    end
+
+    profile.newDefaultsMigrated = true
 end
