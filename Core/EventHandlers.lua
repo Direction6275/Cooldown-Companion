@@ -113,9 +113,19 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         else
                             hasRealCharges = nil
                         end
+                    elseif issecretvalue(mc) then
+                        -- maxCharges is secret (common at login before talent data
+                        -- propagates). GetSpellCharges returning a non-nil table means
+                        -- the game considers this spell charge-based — set true so
+                        -- buttons whose saved hasCharges was cleared can recover.
+                        hasRealCharges = true
                     end
                 else
-                    hasRealCharges = nil
+                    -- chargeInfo nil: spell may lack charge data because talent hasn't
+                    -- propagated yet (common at login for talent-granted charges like Hover).
+                    -- Preserve existing hasCharges rather than clearing — the mc <= 1 path
+                    -- (line 113-114) handles definitive "no longer has charges" when
+                    -- GetSpellCharges returns a table with maxCharges = 1.
                 end
                 buttonData.hasCharges = hasRealCharges
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
