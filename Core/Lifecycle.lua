@@ -353,6 +353,7 @@ end
 
 function CooldownCompanion:OnCombatEnd()
     self:UpdateAllCooldowns()
+    self:ApplyCdmAlpha()
     -- Reopen config panel if it was open before combat
     if self._configWasOpen then
         self._configWasOpen = false

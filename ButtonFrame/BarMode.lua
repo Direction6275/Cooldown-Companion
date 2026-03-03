@@ -651,7 +651,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         -- ticker hasn't processed yet — old DurationObject may be invalidated)
         -- or grace period active (holdover DurationObject from previous target).
         if self._auraActive and self._durationObj
-           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
+           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
             if not self._durationObj:HasSecretValues() then
                 if self._durationObj:GetRemainingDuration() <= 0 then
                     self._durationObj = nil
@@ -666,7 +666,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         end
         -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
         if self._auraActive and self._viewerBar
-           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
+           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
             if not self._viewerBar:IsVisible() then
                 self._viewerBar = nil
                 self._auraActive = false
@@ -785,7 +785,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barFillElapsed = 0
     button:SetScript("OnUpdate", function(self, elapsed)
         if self._auraActive and self._durationObj
-           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
+           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
             if not self._durationObj:HasSecretValues() then
                 if self._durationObj:GetRemainingDuration() <= 0 then
                     self._durationObj = nil
@@ -801,7 +801,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         end
         -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
         if self._auraActive and self._viewerBar
-           and not self._auraGraceTicks and not CooldownCompanion._cooldownsDirty then
+           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
             if not self._viewerBar:IsVisible() then
                 self._viewerBar = nil
                 self._auraActive = false

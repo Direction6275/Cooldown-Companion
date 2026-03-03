@@ -25,6 +25,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     if unit == "player" and self._isDracthyr then
         self:InvalidateMountAlphaCache()
     end
+
     if not updateInfo then return end
 
     -- Process removals first so refreshed auras (remove + add in same event) work.
@@ -58,7 +59,7 @@ end
 function CooldownCompanion:ClearAuraUnit(unitToken)
     local vf = self.viewerAuraFrames
     self:ForEachButton(function(button, bd)
-        if bd.auraTracking then
+        if bd.auraTracking or bd.isPassive then
             local shouldClear = button._auraUnit == unitToken
             -- _auraUnit defaults to "player" even for debuff-tracking buttons
             -- whose viewer frame has auraDataUnit == "target".  Check the viewer
@@ -72,6 +73,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 button._auraInstanceID = nil
                 button._auraActive = false
                 button._inPandemic = false
+                button._targetSwitchAt = nil
             end
         end
     end)
@@ -79,6 +81,31 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
 end
 
 function CooldownCompanion:OnTargetChanged()
+    if not UnitExists("target") then
+        -- Deselected target: clear all target aura state immediately
+        self:ClearAuraUnit("target")
+        return
+    end
+    -- New target: clear stale instance IDs so the viewer path doesn't
+    -- read old auraInstanceIDs.  Keep _auraActive so the grace period
+    -- can provide a brief (~450ms) holdover while CDM refreshes.
+    local now = GetTime()
+    local vf = self.viewerAuraFrames
+    self:ForEachButton(function(button, bd)
+        if bd.auraTracking or bd.isPassive then
+            local isTarget = button._auraUnit == "target"
+            if not isTarget and vf then
+                local f = (button._auraSpellID and vf[button._auraSpellID])
+                    or vf[bd.id]
+                isTarget = f and f.auraDataUnit == "target"
+            end
+            if isTarget then
+                button._auraInstanceID = nil
+                button._inPandemic = false
+                button._targetSwitchAt = now
+            end
+        end
+    end)
     self._cooldownsDirty = true
 end
 
@@ -122,8 +149,7 @@ local function FindChildInViewers(viewerNames, spellID)
                 if info then
                     if info.spellID == spellID
                        or info.overrideSpellID == spellID
-                       or info.overrideTooltipSpellID == spellID
-                       or info.linkedSpellID == spellID then
+                       or info.overrideTooltipSpellID == spellID then
                         return child
                     end
                     if info.linkedSpellIDs then
@@ -149,15 +175,17 @@ function CooldownCompanion:ApplyCdmAlpha()
             cdmAlphaGuard[viewer] = true
             viewer:SetAlpha(alpha)
             cdmAlphaGuard[viewer] = nil
-            viewer:EnableMouse(not hidden)
-            if hidden then
-                for _, child in pairs({viewer:GetChildren()}) do
-                    child:SetMouseMotionEnabled(false)
-                end
-            else
-                -- Restore tooltip state using Blizzard's own pattern
-                for itemFrame in viewer.itemFramePool:EnumerateActive() do
-                    itemFrame:SetTooltipsShown(viewer.tooltipsShown)
+            if not InCombatLockdown() then
+                viewer:EnableMouse(not hidden)
+                if hidden then
+                    for _, child in pairs({viewer:GetChildren()}) do
+                        child:SetMouseMotionEnabled(false)
+                    end
+                else
+                    -- Restore tooltip state using Blizzard's own pattern
+                    for itemFrame in viewer.itemFramePool:EnumerateActive() do
+                        itemFrame:SetTooltipsShown(viewer.tooltipsShown)
+                    end
                 end
             end
         end
@@ -198,10 +226,6 @@ function CooldownCompanion:BuildViewerAuraMap()
                     local tooltipOverride = info.overrideTooltipSpellID
                     if tooltipOverride then
                         self.viewerAuraFrames[tooltipOverride] = child
-                    end
-                    local linkedSpellID = info.linkedSpellID
-                    if linkedSpellID then
-                        self.viewerAuraFrames[linkedSpellID] = child
                     end
                     if info.linkedSpellIDs then
                         for _, linked in ipairs(info.linkedSpellIDs) do
