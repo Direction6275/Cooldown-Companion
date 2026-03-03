@@ -369,10 +369,11 @@ function CooldownCompanion:UpdateButtonIcon(button)
                 end
             end
         end
-        -- Fallback: if no viewer child provided an override, ask the Spell API directly
-        if displayId == buttonData.id and buttonData.type == "spell" then
+        -- Always validate displayId against the Spell API — the viewer child may
+        -- have a stale override that hasn't caught up to the current transform yet.
+        if buttonData.type == "spell" then
             local overrideId = C_Spell.GetOverrideSpell(buttonData.id)
-            if overrideId and overrideId ~= buttonData.id then
+            if overrideId then
                 displayId = overrideId
             end
         end

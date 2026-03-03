@@ -40,15 +40,6 @@ local IsConfigButtonForceVisible = ST.IsConfigButtonForceVisible
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local TARGET_SWITCH_HOLD_SECS = 0.45
 
-local function GetViewerIconTexture(viewerFrame)
-    local iconTexture = viewerFrame and viewerFrame.Icon
-    -- BuffBar uses an icon frame with a nested texture widget.
-    if iconTexture and not iconTexture.GetTextureFileID then
-        iconTexture = iconTexture.Icon
-    end
-    return iconTexture
-end
-
 local function GetViewerNameFontString(viewerFrame)
     -- BuffBar viewer items render name text on Bar.Name. BuffIcon entries have no name text.
     local bar = viewerFrame and viewerFrame.Bar
@@ -395,14 +386,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
         button._inPandemic = inPandemic
 
-        -- Pass through the CDM item's current aura visuals when aura tracking is
-        -- active. This mirrors CDM state-based icons/names (e.g. Light/Moderate/Heavy).
+        -- Pass through the CDM item's current name text when aura tracking is
+        -- active. This mirrors CDM state-based names (e.g. Light/Moderate/Heavy).
+        -- Icon is NOT passed through — UpdateButtonIcon is the sole authoritative source.
         if auraOverrideActive then
             if viewerFrame then
-                local iconTexture = GetViewerIconTexture(viewerFrame)
-                if iconTexture and iconTexture.GetTextureFileID then
-                    button.icon:SetTexture(iconTexture:GetTextureFileID())
-                end
                 local viewerName = GetViewerNameFontString(viewerFrame)
                 if button.nameText and not buttonData.customName and viewerName and viewerName.GetText then
                     -- Pass through the CDM-rendered text directly; avoid calling viewer mixin methods
@@ -413,12 +401,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         elseif button._viewerAuraVisualsActive then
             button._viewerAuraVisualsActive = nil
-            local restoreSpellID = button._displaySpellId or buttonData.id
-            local baseIcon = C_Spell.GetSpellTexture(restoreSpellID)
-            if baseIcon then
-                button.icon:SetTexture(baseIcon)
-            end
             if button.nameText and not buttonData.customName then
+                local restoreSpellID = button._displaySpellId or buttonData.id
                 local baseName = C_Spell.GetSpellName(restoreSpellID)
                 if baseName then
                     button.nameText:SetText(baseName)
