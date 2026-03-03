@@ -957,6 +957,10 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         end
     end
 
+    if opts and opts.afterEnableCallback then
+        opts.afterEnableCallback(container)
+    end
+
     if styleTable[cfg.styleKey] == "lcgProc" then
         styleTable[cfg.styleKey] = "glow"
     end
@@ -1043,6 +1047,10 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         if not isEnabled then
             return
         end
+    end
+
+    if opts and opts.afterEnableCallback then
+        opts.afterEnableCallback(container)
     end
 
     local barColorPicker = AceGUI:Create("ColorPicker")
@@ -1132,7 +1140,7 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
         styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
         sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed",
         defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
-        enableLabel = "Show Active Aura Glow",
+        enableLabel = "Show Aura Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
         styleOrder = LCG_GLOW_STYLE_ORDER,
     }, opts)

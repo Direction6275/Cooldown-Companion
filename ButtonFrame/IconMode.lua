@@ -10,6 +10,8 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local unpack = unpack
+local UnitExists = UnitExists
+local InCombatLockdown = InCombatLockdown
 
 -- Imports from Helpers
 local ApplyStrataOrder = ST._ApplyStrataOrder
@@ -514,6 +516,8 @@ end
 
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
 local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
+    local inCombat = InCombatLockdown()
+
     -- Loss of control overlay
     UpdateLossOfControl(button)
 
@@ -523,6 +527,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         local displayId = button._displaySpellId or buttonData.id
         local hostileOnly = style.assistedHighlightHostileTargetOnly ~= false
         local showHighlight = style.showAssistedHighlight
+            and (not style.assistedHighlightCombatOnly or inCombat)
             and buttonData.type == "spell"
             and (not hostileOnly or CooldownCompanion._assistedHighlightHasHostileTarget)
             and assistedSpellID
@@ -539,7 +544,8 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         if button._procGlowPreview then
             showProc = true
         elseif style.procGlowStyle ~= "none" and buttonData.type == "spell"
-               and not buttonData.isPassive and not buttonData.auraTracking then
+               and not buttonData.isPassive and not buttonData.auraTracking
+               and (not style.procGlowCombatOnly or inCombat) then
             showProc = procOverlayActive and true or false
         end
         SetProcGlow(button, showProc)
@@ -562,11 +568,31 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
             pandemicOverride = true
         elseif button._auraGlowPreview then
             showAuraGlow = true
-        elseif button._auraActive then
-            if button._inPandemic and style.showPandemicGlow ~= false then
+        elseif style.auraGlowInvert then
+            -- Invert mode: show glow when tracked aura is MISSING
+            if buttonData.auraTracking and button._auraSpellID and not button._auraActive then
+                if (auraIndicatorEnabled or style.auraGlowStyle ~= "none")
+                   and (not style.auraGlowCombatOnly or inCombat) then
+                    if button._auraUnit == "target" then
+                        if UnitExists("target") then
+                            showAuraGlow = true
+                        end
+                    else
+                        showAuraGlow = true
+                    end
+                end
+            elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false
+                   and (not style.pandemicGlowCombatOnly or inCombat) then
                 showAuraGlow = true
                 pandemicOverride = true
-            elseif auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
+            end
+        elseif button._auraActive then
+            if button._inPandemic and style.showPandemicGlow ~= false
+               and (not style.pandemicGlowCombatOnly or inCombat) then
+                showAuraGlow = true
+                pandemicOverride = true
+            elseif (auraIndicatorEnabled or style.auraGlowStyle ~= "none")
+                   and (not style.auraGlowCombatOnly or inCombat) then
                 showAuraGlow = true
             end
         end

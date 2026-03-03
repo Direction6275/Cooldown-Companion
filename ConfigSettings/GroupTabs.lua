@@ -594,6 +594,17 @@ local function BuildEffectsTab(container)
     end
 
     if procAdvExpanded and style.procGlowStyle ~= "none" then
+    local procCombatCb = AceGUI:Create("CheckBox")
+    procCombatCb:SetLabel("Show Only In Combat")
+    procCombatCb:SetValue(style.procGlowCombatOnly or false)
+    procCombatCb:SetFullWidth(true)
+    procCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.procGlowCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(procCombatCb)
+    ApplyCheckboxIndent(procCombatCb, 20)
+
     BuildProcGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
@@ -610,10 +621,10 @@ local function BuildEffectsTab(container)
     end -- procAdvExpanded
 
     -- ================================================================
-    -- Active Aura Glow enable toggle
+    -- Show Aura Glow enable toggle
     -- ================================================================
     local auraEnableCb = AceGUI:Create("CheckBox")
-    auraEnableCb:SetLabel("Show Active Aura Glow")
+    auraEnableCb:SetLabel("Show Aura Glow")
     auraEnableCb:SetValue(style.auraGlowStyle ~= "none")
     auraEnableCb:SetFullWidth(true)
     auraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -627,12 +638,34 @@ local function BuildEffectsTab(container)
     CreateCheckboxPromoteButton(auraEnableCb, auraAdvBtn, "auraIndicator", group, style)
 
     if auraAdvExpanded and style.auraGlowStyle ~= "none" then
+    local auraCombatCb = AceGUI:Create("CheckBox")
+    auraCombatCb:SetLabel("Show Only In Combat")
+    auraCombatCb:SetValue(style.auraGlowCombatOnly or false)
+    auraCombatCb:SetFullWidth(true)
+    auraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.auraGlowCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(auraCombatCb)
+    ApplyCheckboxIndent(auraCombatCb, 20)
+
+    local auraInvertCb = AceGUI:Create("CheckBox")
+    auraInvertCb:SetLabel("Show When Missing")
+    auraInvertCb:SetValue(style.auraGlowInvert or false)
+    auraInvertCb:SetFullWidth(true)
+    auraInvertCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.auraGlowInvert = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(auraInvertCb)
+    ApplyCheckboxIndent(auraInvertCb, 20)
+
     BuildAuraIndicatorControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
 
     local auraPreviewBtn = AceGUI:Create("Button")
-    auraPreviewBtn:SetText("Preview Active Aura Glow (3s)")
+    auraPreviewBtn:SetText("Preview Aura Glow (3s)")
     auraPreviewBtn:SetFullWidth(true)
     auraPreviewBtn:SetCallback("OnClick", function()
         CooldownCompanion:PlayGroupAuraGlowPreview(CS.selectedGroup, 3)
@@ -660,6 +693,17 @@ local function BuildEffectsTab(container)
     CreateCheckboxPromoteButton(pandemicGlowCb, pandemicAdvBtn, "pandemicGlow", group, style)
 
     if pandemicAdvExpanded and style.showPandemicGlow ~= false then
+    local pandemicCombatCb = AceGUI:Create("CheckBox")
+    pandemicCombatCb:SetLabel("Show Only In Combat")
+    pandemicCombatCb:SetValue(style.pandemicGlowCombatOnly or false)
+    pandemicCombatCb:SetFullWidth(true)
+    pandemicCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.pandemicGlowCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(pandemicCombatCb)
+    ApplyCheckboxIndent(pandemicCombatCb, 20)
+
     BuildPandemicGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
@@ -787,6 +831,17 @@ local function BuildEffectsTab(container)
     local assistedAdvExpanded = AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false)
 
     if assistedAdvExpanded and style.showAssistedHighlight then
+    local assistedCombatCb = AceGUI:Create("CheckBox")
+    assistedCombatCb:SetLabel("Show Only In Combat")
+    assistedCombatCb:SetValue(style.assistedHighlightCombatOnly or false)
+    assistedCombatCb:SetFullWidth(true)
+    assistedCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.assistedHighlightCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(assistedCombatCb)
+    ApplyCheckboxIndent(assistedCombatCb, 20)
+
     BuildAssistedHighlightControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

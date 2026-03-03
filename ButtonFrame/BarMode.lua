@@ -13,6 +13,7 @@ local ipairs = ipairs
 local unpack = unpack
 local math_floor = math.floor
 local string_format = string.format
+local InCombatLockdown = InCombatLockdown
 
 -- Imports from Helpers
 local SetIconAreaPoints = ST._SetIconAreaPoints
@@ -314,15 +315,18 @@ local function UpdateBarDisplay(button)
 
     -- Bar aura visuals in bar mode are driven by barAuraEffect, not icon-mode aura flags.
     local barAuraVisualsEnabled = style.barAuraEffect ~= "none"
+    local inCombat = InCombatLockdown()
 
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
     if button._pandemicPreview then
         wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
     elseif button._auraActive then
-        if button._inPandemic and style.showPandemicGlow ~= false then
+        if button._inPandemic and style.showPandemicGlow ~= false
+           and (not style.pandemicGlowCombatOnly or inCombat) then
             wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
-        elseif barAuraVisualsEnabled then
+        elseif barAuraVisualsEnabled
+               and (not style.auraGlowCombatOnly or inCombat) then
             wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
         end
     end
@@ -348,9 +352,12 @@ local function UpdateBarDisplay(button)
     end
 
     -- Bar aura effect (pandemic overrides effect color)
-    local barAuraEffectPandemic = button._pandemicPreview or (button._auraActive and button._inPandemic and style.showPandemicGlow ~= false)
+    local barAuraEffectPandemic = button._pandemicPreview
+        or (button._auraActive and button._inPandemic and style.showPandemicGlow ~= false
+            and (not style.pandemicGlowCombatOnly or inCombat))
     local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
-        or (button._auraActive and (barAuraEffectPandemic or barAuraVisualsEnabled))
+        or (button._auraActive and (barAuraEffectPandemic
+            or (barAuraVisualsEnabled and (not style.auraGlowCombatOnly or inCombat))))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it

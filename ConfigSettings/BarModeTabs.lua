@@ -16,6 +16,7 @@ local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
+local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 -- Imports from SectionBuilders.lua
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
@@ -892,6 +893,17 @@ local function BuildBarEffectsTab(container, group, style)
     CreateCheckboxPromoteButton(barAuraEnableCb, barAuraAdvBtn, "barActiveAura", group, style)
 
     if barAuraAdvExpanded and style.barAuraEffect ~= "none" then
+    local barAuraCombatCb = AceGUI:Create("CheckBox")
+    barAuraCombatCb:SetLabel("Show Only In Combat")
+    barAuraCombatCb:SetValue(style.auraGlowCombatOnly or false)
+    barAuraCombatCb:SetFullWidth(true)
+    barAuraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.auraGlowCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(barAuraCombatCb)
+    ApplyCheckboxIndent(barAuraCombatCb, 20)
+
     BuildBarActiveAuraControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
@@ -915,6 +927,17 @@ local function BuildBarEffectsTab(container, group, style)
     CreateCheckboxPromoteButton(pandemicIndicatorCb, barPandemicAdvBtn, "pandemicBar", group, style)
 
     if barPandemicAdvExpanded and style.showPandemicGlow ~= false then
+    local barPandemicCombatCb = AceGUI:Create("CheckBox")
+    barPandemicCombatCb:SetLabel("Show Only In Combat")
+    barPandemicCombatCb:SetValue(style.pandemicGlowCombatOnly or false)
+    barPandemicCombatCb:SetFullWidth(true)
+    barPandemicCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.pandemicGlowCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(barPandemicCombatCb)
+    ApplyCheckboxIndent(barPandemicCombatCb, 20)
+
     BuildPandemicBarControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

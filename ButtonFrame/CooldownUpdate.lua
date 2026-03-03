@@ -246,6 +246,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._auraUnit = unit
                     auraOverrideActive = true
                     fetchOk = true
+                elseif button._auraActive then
+                    -- GetAuraDuration returned nil — viewer's instID is stale
+                    -- (target switch, CDM hasn't refreshed yet, ~250-430ms).
+                    -- Trust the previous animation state for CDM parity.
+                    -- Self-corrects: next tick CDM refreshes with new target
+                    -- data (primary path) or clears auraInstanceID (else branch).
+                    auraOverrideActive = true
+                    fetchOk = true
+                    -- Preserve DurationObject so bar fill + desaturation
+                    -- continue animating during the linger window.
+                    if prevAuraDurationObj then
+                        button._durationObj = prevAuraDurationObj
+                    end
                 end
             else
                 -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
