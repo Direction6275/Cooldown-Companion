@@ -362,7 +362,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
         -- Aura icon swap: trigger icon update on _auraActive transition
-        if buttonData.auraShowAuraIcon and button._auraSpellID then
+        if buttonData.auraShowAuraIcon and buttonData.auraSpellID then
             local shouldShow = auraOverrideActive and true or false
             if shouldShow ~= (button._showingAuraIcon or false) then
                 button._showingAuraIcon = shouldShow
