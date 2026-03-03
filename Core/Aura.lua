@@ -59,7 +59,7 @@ end
 function CooldownCompanion:ClearAuraUnit(unitToken)
     local vf = self.viewerAuraFrames
     self:ForEachButton(function(button, bd)
-        if bd.auraTracking then
+        if bd.auraTracking or bd.isPassive then
             local shouldClear = button._auraUnit == unitToken
             -- _auraUnit defaults to "player" even for debuff-tracking buttons
             -- whose viewer frame has auraDataUnit == "target".  Check the viewer
@@ -92,7 +92,7 @@ function CooldownCompanion:OnTargetChanged()
     local now = GetTime()
     local vf = self.viewerAuraFrames
     self:ForEachButton(function(button, bd)
-        if bd.auraTracking then
+        if bd.auraTracking or bd.isPassive then
             local isTarget = button._auraUnit == "target"
             if not isTarget and vf then
                 local f = (button._auraSpellID and vf[button._auraSpellID])
