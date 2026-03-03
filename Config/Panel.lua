@@ -183,44 +183,81 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Bottom icon-only mode switch (Buttons <-> Bars & Frames)
-    local modeSwitchTrack
-    local modeSwitchThumb
-    local modeButtonsIconParts = {}
-    local modeBarsIconParts = {}
+    -- Bottom text-based mode status row (Currently viewing: <mode button>)
+    local MODE_VIEW_BUTTONS_COLOR = {1.0, 0.82, 0.0}
+    local MODE_VIEW_BARS_COLOR = {0.30, 0.62, 1.0}
+    local MODE_MIN_BUTTON_WIDTH = 90
+    local MODE_BUTTON_TEXT_PADDING = 28
+    local MODE_BUTTON_GROW_STEP = 8
+    local MODE_BUTTON_GROW_MAX = 900
 
-    local function SetModeIconGroupAlpha(iconParts, alpha)
-        if not iconParts then return end
-        for i = 1, #iconParts do
-            local tex = iconParts[i]
-            if tex then
-                tex:SetAlpha(alpha)
-            end
+    local modeStatusRow
+    local modeToggleButton
+    local modeValueText
+    local modeToggleTooltipText = "Switch settings mode"
+
+    local function RGBToHex(r, g, b)
+        local function clamp(v)
+            if v < 0 then return 0 end
+            if v > 1 then return 1 end
+            return v
         end
+        local ri = math.floor((clamp(r or 1) * 255) + 0.5)
+        local gi = math.floor((clamp(g or 1) * 255) + 0.5)
+        local bi = math.floor((clamp(b or 1) * 255) + 0.5)
+        return string.format("%02x%02x%02x", ri, gi, bi)
     end
 
-    local function SetModeSwitchState(isBars)
-        if not modeSwitchTrack or not modeSwitchThumb then return end
+    local function UpdateModeRowLayout()
+        if not modeStatusRow or not modeValueText or not modeToggleButton then return end
 
-        modeSwitchThumb:ClearAllPoints()
-        if isBars then
-            modeSwitchThumb:SetPoint("CENTER", modeSwitchTrack, "CENTER", 28, 0)
-            modeSwitchTrack:SetBackdropColor(0.05, 0.06, 0.07, 0.82)
-            modeSwitchThumb:SetBackdropColor(0.24, 0.38, 0.52, 0.92)
-            SetModeIconGroupAlpha(modeButtonsIconParts, 0.45)
-            SetModeIconGroupAlpha(modeBarsIconParts, 0.85)
-        else
-            modeSwitchThumb:SetPoint("CENTER", modeSwitchTrack, "CENTER", -28, 0)
-            modeSwitchTrack:SetBackdropColor(0.05, 0.06, 0.07, 0.82)
-            modeSwitchThumb:SetBackdropColor(0.56, 0.45, 0.18, 0.92)
-            SetModeIconGroupAlpha(modeButtonsIconParts, 0.85)
-            SetModeIconGroupAlpha(modeBarsIconParts, 0.45)
+        local valueW = math.ceil(modeValueText:GetStringWidth() or 0)
+        local buttonW = math.max(MODE_MIN_BUTTON_WIDTH, valueW + MODE_BUTTON_TEXT_PADDING)
+        local buttonH = (modeToggleButton.frame and modeToggleButton.frame:GetHeight()) or 22
+        local rowH = math.max(16, math.ceil(modeValueText:GetStringHeight() or 0), buttonH)
+
+        modeToggleButton.frame:ClearAllPoints()
+        modeToggleButton.frame:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
+        modeToggleButton:SetWidth(buttonW)
+        if modeValueText.IsTruncated and modeValueText:IsTruncated() then
+            local guard = 0
+            while modeValueText:IsTruncated() and buttonW < MODE_BUTTON_GROW_MAX do
+                buttonW = buttonW + MODE_BUTTON_GROW_STEP
+                modeToggleButton:SetWidth(buttonW)
+                guard = guard + 1
+                if guard > 128 then break end
+            end
         end
+
+        modeStatusRow:SetSize(buttonW, rowH + 2)
     end
 
     local function UpdateModeNavigationUI()
+        if not modeValueText or not modeToggleButton then return end
+
+        local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        local prefixR, prefixG, prefixB = 1, 0.82, 0
+        if classColor then
+            prefixR, prefixG, prefixB = classColor.r, classColor.g, classColor.b
+        end
+
         local isBars = CS.resourceBarPanelActive == true
-        SetModeSwitchState(isBars)
+        local modeLabel, modeR, modeG, modeB
+        if isBars then
+            modeLabel = "Bars & Frames"
+            modeR, modeG, modeB = MODE_VIEW_BARS_COLOR[1], MODE_VIEW_BARS_COLOR[2], MODE_VIEW_BARS_COLOR[3]
+            modeToggleTooltipText = "Switch to Buttons settings"
+        else
+            modeLabel = "Buttons"
+            modeR, modeG, modeB = MODE_VIEW_BUTTONS_COLOR[1], MODE_VIEW_BUTTONS_COLOR[2], MODE_VIEW_BUTTONS_COLOR[3]
+            modeToggleTooltipText = "Switch to Bars & Frames settings"
+        end
+
+        local prefixHex = RGBToHex(prefixR, prefixG, prefixB)
+        local modeHex = RGBToHex(modeR, modeG, modeB)
+        modeToggleButton:SetText("|cff" .. prefixHex .. "Currently Viewing:|r |cff" .. modeHex .. modeLabel .. "|r")
+
+        UpdateModeRowLayout()
     end
 
     -- Cooldown Manager button — left of Collapse
@@ -474,6 +511,11 @@ local function CreateConfigPanel()
     profileBar:SetPoint("RIGHT", content, "RIGHT", -20, 0)
     profileBar:Hide()
 
+    local function SyncModeToggleWithProfileBar()
+        if not modeStatusRow then return end
+        modeStatusRow:SetShown(not profileBar:IsShown())
+    end
+
     profileGear:SetScript("OnClick", function()
         if profileBar:IsShown() then
             profileBar:Hide()
@@ -481,96 +523,48 @@ local function CreateConfigPanel()
             RefreshProfileBar(profileBar)
             profileBar:Show()
         end
+        SyncModeToggleWithProfileBar()
     end)
+    profileBar:HookScript("OnShow", SyncModeToggleWithProfileBar)
+    profileBar:HookScript("OnHide", SyncModeToggleWithProfileBar)
 
-    -- Bottom icon-only mode switch
-    local modeToggle = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    modeToggle:SetPoint("BOTTOM", content, "BOTTOM", 0, 21)
-    modeToggle:SetSize(114, 30)
-    modeToggle:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = nil,
-        edgeSize = 0,
-    })
-    modeToggle:SetBackdropColor(0.05, 0.06, 0.07, 0.82)
-    modeSwitchTrack = modeToggle
+    -- Bottom text-based mode row
+    modeStatusRow = CreateFrame("Frame", nil, content)
+    modeStatusRow:SetPoint("BOTTOM", content, "BOTTOM", 0, 21)
+    modeStatusRow:SetSize(200, 18)
+    SyncModeToggleWithProfileBar()
 
-    local function AddModeIconPart(iconSet, parent, x, y, width, height)
-        local tex = parent:CreateTexture(nil, "OVERLAY")
-        tex:SetSize(width, height)
-        tex:SetPoint("CENTER", parent, "CENTER", x, y)
-        tex:SetColorTexture(1, 1, 1, 1)
-        iconSet[#iconSet + 1] = tex
-        return tex
-    end
-
-    local buttonsIcon = CreateFrame("Frame", nil, modeToggle)
-    buttonsIcon:SetSize(16, 16)
-    buttonsIcon:SetPoint("CENTER", modeToggle, "CENTER", -28, 0)
-    AddModeIconPart(modeButtonsIconParts, buttonsIcon, -3, 3, 4, 4)
-    AddModeIconPart(modeButtonsIconParts, buttonsIcon, 3, 3, 4, 4)
-    AddModeIconPart(modeButtonsIconParts, buttonsIcon, -3, -3, 4, 4)
-    AddModeIconPart(modeButtonsIconParts, buttonsIcon, 3, -3, 4, 4)
-
-    local barsIcon = CreateFrame("Frame", nil, modeToggle)
-    barsIcon:SetSize(18, 14)
-    barsIcon:SetPoint("CENTER", modeToggle, "CENTER", 28, 0)
-    AddModeIconPart(modeBarsIconParts, barsIcon, 0, 4, 12, 2)
-    AddModeIconPart(modeBarsIconParts, barsIcon, 0, 0, 9, 2)
-    AddModeIconPart(modeBarsIconParts, barsIcon, 0, -4, 6, 2)
-
-    modeSwitchThumb = CreateFrame("Frame", nil, modeToggle, "BackdropTemplate")
-    modeSwitchThumb:SetSize(56, 24)
-    modeSwitchThumb:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = nil,
-        edgeSize = 0,
-    })
-    modeSwitchThumb:SetBackdropColor(0.56, 0.45, 0.18, 0.92)
-    modeSwitchThumb:SetPoint("CENTER", modeToggle, "CENTER", -28, 0)
-
-    local modeButtonsArea = CreateFrame("Button", nil, modeToggle)
-    modeButtonsArea:SetPoint("TOPLEFT")
-    modeButtonsArea:SetPoint("BOTTOM", modeToggle, "BOTTOM", 0, 0)
-    modeButtonsArea:SetPoint("RIGHT", modeToggle, "CENTER", 0, 0)
-    modeButtonsArea:SetScript("OnClick", function()
-        SetPrimaryMode("buttons")
-    end)
-    modeButtonsArea:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Switch to Buttons settings")
-        GameTooltip:Show()
-    end)
-    modeButtonsArea:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-        UpdateModeNavigationUI()
-    end)
-
-    local modeBarsArea = CreateFrame("Button", nil, modeToggle)
-    modeBarsArea:SetPoint("TOPRIGHT")
-    modeBarsArea:SetPoint("BOTTOM", modeToggle, "BOTTOM", 0, 0)
-    modeBarsArea:SetPoint("LEFT", modeToggle, "CENTER", 0, 0)
-    modeBarsArea:SetScript("OnClick", function()
-        SetPrimaryMode("bars")
-    end)
-    modeBarsArea:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Switch to Bars & Frames settings")
-        GameTooltip:Show()
-    end)
-    modeBarsArea:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-        UpdateModeNavigationUI()
-    end)
-
-    local modeThumbButton = CreateFrame("Button", nil, modeSwitchThumb)
-    modeThumbButton:SetAllPoints(modeSwitchThumb)
-    modeThumbButton:SetScript("OnClick", function()
+    modeToggleButton = AceGUI:Create("Button")
+    modeToggleButton:SetText("Currently Viewing: Buttons")
+    modeToggleButton:SetWidth(MODE_MIN_BUTTON_WIDTH)
+    modeToggleButton:SetHeight(22)
+    modeToggleButton:SetCallback("OnClick", function()
         if CS.resourceBarPanelActive then
             SetPrimaryMode("buttons")
         else
             SetPrimaryMode("bars")
         end
+    end)
+    modeToggleButton.frame:SetParent(modeStatusRow)
+    modeToggleButton.frame:ClearAllPoints()
+    modeToggleButton.frame:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
+    modeToggleButton.frame:Show()
+
+    modeValueText = modeToggleButton.text
+
+    modeToggleButton.frame:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Switch Settings Mode")
+        GameTooltip:AddLine(modeToggleTooltipText, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    modeToggleButton.frame:HookScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    -- Keep button row vertically centered in the status row.
+    modeToggleButton.frame:HookScript("OnShow", function(self)
+        self:ClearAllPoints()
+        self:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
     end)
 
     -- Column containers fill the content area
@@ -924,8 +918,10 @@ local function CreateConfigPanel()
             yCenterOffset = 40
         end
 
-        modeToggle:ClearAllPoints()
-        modeToggle:SetPoint("CENTER", content, "BOTTOM", xOffset, yCenterOffset)
+        if modeStatusRow then
+            modeStatusRow:ClearAllPoints()
+            modeStatusRow:SetPoint("CENTER", content, "BOTTOM", xOffset, yCenterOffset)
+        end
 
         if frame.titlebg then
             frame.titlebg:ClearAllPoints()
