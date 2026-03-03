@@ -1124,6 +1124,9 @@ function CooldownCompanion:MigrateNewDefaults()
         if rawget(gs, "desaturateOnCooldown") == nil then gs.desaturateOnCooldown = false end
         if rawget(gs, "showOutOfRange") == nil then gs.showOutOfRange = false end
         if rawget(gs, "barAuraEffect") == nil then gs.barAuraEffect = "none" end
+        if rawget(gs, "showGCDSwipe") == nil then gs.showGCDSwipe = true end
+        if rawget(gs, "showLossOfControl") == nil then gs.showLossOfControl = true end
+        if rawget(gs, "showTooltips") == nil then gs.showTooltips = true end
     end
 
     -- Per-group style (plain tables from CopyTable): nil check is sufficient
