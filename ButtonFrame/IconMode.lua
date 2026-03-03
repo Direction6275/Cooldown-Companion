@@ -229,6 +229,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
+    button._showingAuraIcon = false
 
     button._auraInstanceID = nil
     button._viewerAuraVisualsActive = nil
@@ -382,6 +383,13 @@ function CooldownCompanion:UpdateButtonIcon(button)
         end
     elseif buttonData.type == "item" then
         icon = C_Item.GetItemIconByID(buttonData.id)
+    end
+
+    -- Aura icon swap: show the tracked aura spell's icon while aura is active
+    if buttonData.type == "spell" and button._auraActive
+       and buttonData.auraShowAuraIcon and buttonData.auraSpellID and button._auraSpellID then
+        local auraIcon = C_Spell.GetSpellTexture(button._auraSpellID)
+        if auraIcon then icon = auraIcon end
     end
 
     local prevDisplayId = button._displaySpellId
@@ -634,6 +642,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._spellOutOfRange = nil
     button._itemCount = nil
     button._auraActive = nil
+    button._showingAuraIcon = nil
 
     button._auraInstanceID = nil
     button._inPandemic = nil

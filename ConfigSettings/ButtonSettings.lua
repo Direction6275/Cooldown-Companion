@@ -535,6 +535,25 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     end -- hasViewerFrame and auraTracking
     end -- canTrackAura
+
+    -- Show Aura Icon toggle (spells with aura tracking only — passive auras already show their own icon)
+    if buttonData.auraTracking and not buttonData.isPassive and buttonData.auraSpellID then
+        local auraIconCb = AceGUI:Create("CheckBox")
+        auraIconCb:SetLabel("Show Aura Icon")
+        auraIconCb:SetValue(buttonData.auraShowAuraIcon == true)
+        auraIconCb:SetFullWidth(true)
+        auraIconCb:SetCallback("OnValueChanged", function(widget, event, val)
+            buttonData.auraShowAuraIcon = val and true or nil
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        scroll:AddChild(auraIconCb)
+        CreateInfoButton(auraIconCb.frame, auraIconCb.checkbg, "LEFT", "RIGHT",
+            auraIconCb.text:GetStringWidth() + 4, 0, {
+            "Show Aura Icon",
+            {"When enabled, the button icon changes to show the tracked aura's icon while the aura is active. When the aura expires, the normal spell icon is restored.\n\nUseful when the tracked aura has a different icon than the ability itself.", 1, 1, 1, true},
+        }, infoButtons)
+    end
+
     end -- not auraCollapsed
 
     end -- buttonData.type == "spell"

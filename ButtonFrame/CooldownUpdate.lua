@@ -361,6 +361,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._auraInstanceID = nil
         end
 
+        -- Aura icon swap: trigger icon update on _auraActive transition
+        if buttonData.auraShowAuraIcon and buttonData.auraSpellID then
+            local shouldShow = auraOverrideActive and true or false
+            if shouldShow ~= (button._showingAuraIcon or false) then
+                button._showingAuraIcon = shouldShow
+                CooldownCompanion:UpdateButtonIcon(button)
+            end
+        else
+            button._showingAuraIcon = nil
+        end
+
         -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
         if buttonData.auraTracking or buttonData.isPassive then
             if auraOverrideActive and viewerFrame then
