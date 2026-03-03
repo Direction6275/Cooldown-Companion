@@ -122,8 +122,7 @@ local function FindChildInViewers(viewerNames, spellID)
                 if info then
                     if info.spellID == spellID
                        or info.overrideSpellID == spellID
-                       or info.overrideTooltipSpellID == spellID
-                       or info.linkedSpellID == spellID then
+                       or info.overrideTooltipSpellID == spellID then
                         return child
                     end
                     if info.linkedSpellIDs then
@@ -149,15 +148,17 @@ function CooldownCompanion:ApplyCdmAlpha()
             cdmAlphaGuard[viewer] = true
             viewer:SetAlpha(alpha)
             cdmAlphaGuard[viewer] = nil
-            viewer:EnableMouse(not hidden)
-            if hidden then
-                for _, child in pairs({viewer:GetChildren()}) do
-                    child:SetMouseMotionEnabled(false)
-                end
-            else
-                -- Restore tooltip state using Blizzard's own pattern
-                for itemFrame in viewer.itemFramePool:EnumerateActive() do
-                    itemFrame:SetTooltipsShown(viewer.tooltipsShown)
+            if not InCombatLockdown() then
+                viewer:EnableMouse(not hidden)
+                if hidden then
+                    for _, child in pairs({viewer:GetChildren()}) do
+                        child:SetMouseMotionEnabled(false)
+                    end
+                else
+                    -- Restore tooltip state using Blizzard's own pattern
+                    for itemFrame in viewer.itemFramePool:EnumerateActive() do
+                        itemFrame:SetTooltipsShown(viewer.tooltipsShown)
+                    end
                 end
             end
         end
@@ -198,10 +199,6 @@ function CooldownCompanion:BuildViewerAuraMap()
                     local tooltipOverride = info.overrideTooltipSpellID
                     if tooltipOverride then
                         self.viewerAuraFrames[tooltipOverride] = child
-                    end
-                    local linkedSpellID = info.linkedSpellID
-                    if linkedSpellID then
-                        self.viewerAuraFrames[linkedSpellID] = child
                     end
                     if info.linkedSpellIDs then
                         for _, linked in ipairs(info.linkedSpellIDs) do
