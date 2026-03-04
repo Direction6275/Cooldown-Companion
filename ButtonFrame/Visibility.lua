@@ -84,8 +84,10 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     -- Check hideWhileAuraActive
     if buttonData.hideWhileAuraActive then
         if auraOverrideActive then
-            shouldHide = true
-            hidReasonAuraActive = true
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                shouldHide = true
+                hidReasonAuraActive = true
+            end
         end
     end
 
