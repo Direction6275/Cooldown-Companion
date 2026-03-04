@@ -299,6 +299,9 @@ function CooldownCompanion:OnDisable()
 end
 
 function CooldownCompanion:OnChargesChanged()
+    if self._hasDisplayCountCandidates then
+        self:RefreshChargeFlags("spell")
+    end
     self:UpdateAllCooldowns()
 end
 

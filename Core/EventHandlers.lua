@@ -92,6 +92,9 @@ end
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- Treat a spell as charge-based only when max charges is greater than 1.
 function CooldownCompanion:RefreshChargeFlags(typeFilter)
+    if typeFilter ~= "item" then
+        self._hasDisplayCountCandidates = false
+    end
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
@@ -125,12 +128,22 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         hasRealCharges = true
                     end
                 else
-                    -- chargeInfo nil: API found no charge data for this spell.
-                    -- Clear hasCharges so talent-removed spells don't stay stuck
-                    -- in charge mode. Login recovery for talent-granted charges
-                    -- is handled above via the issecretvalue(mc) branch (line 116)
-                    -- when GetSpellCharges returns a table with secret maxCharges.
-                    hasRealCharges = nil
+                    -- chargeInfo nil: check if spell has "use count" (brez shared
+                    -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
+                    -- "N" when the pool is active.
+                    self._hasDisplayCountCandidates = true
+                    local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
+                    if not issecretvalue(rawDisplayCount) then
+                        local displayCount = tonumber(rawDisplayCount)
+                        if displayCount and displayCount > 0 then
+                            hasRealCharges = true
+                            if displayCount > (buttonData.maxCharges or 0) then
+                                buttonData.maxCharges = displayCount
+                            end
+                        else
+                            hasRealCharges = nil
+                        end
+                    end
                 end
                 buttonData.hasCharges = hasRealCharges
             elseif buttonData.type == "item" and typeFilter ~= "spell" then

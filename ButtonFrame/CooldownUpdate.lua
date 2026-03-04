@@ -565,6 +565,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local charges
     if buttonData.hasCharges and buttonData.type == "spell" then
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
+    elseif not buttonData.hasCharges and button._chargeText ~= nil then
+        -- hasCharges cleared (e.g. brez pool deactivated): wipe stale charge text
+        button._chargeText = nil
+        button._currentReadableCharges = nil
+        button.count:SetText("")
     end
 
     -- Store raw GCD state for downstream display logic.
