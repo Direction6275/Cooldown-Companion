@@ -140,7 +140,12 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             if displayCount > (buttonData.maxCharges or 0) then
                                 buttonData.maxCharges = displayCount
                             end
+                        elseif displayCount == 0 then
+                            -- Pool active but all charges spent; keep charge mode
+                            -- so zero-state color/visibility still applies.
+                            hasRealCharges = true
                         else
+                            -- tonumber("") => nil: pool truly inactive.
                             hasRealCharges = nil
                         end
                     end
