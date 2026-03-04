@@ -2696,6 +2696,12 @@ local function ApplyPreviewData()
                         end
                     end
                 end
+                -- Max stacks glow preview (continuous)
+                if cabConfig and cabConfig.maxStacksGlowEnabled then
+                    SetMaxStacksGlowOnFrame(barInfo.frame, true, cabConfig)
+                else
+                    SetMaxStacksGlowOnFrame(barInfo.frame, false, cabConfig or {})
+                end
             elseif barInfo.barType == "custom_segmented" then
                 local cabConfig = barInfo.cabConfig
                 local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
@@ -2718,6 +2724,16 @@ local function ApplyPreviewData()
                         end
                     end
                 end
+                -- Max stacks glow preview (segmented)
+                if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo.frame.segments then
+                    for _, seg in ipairs(barInfo.frame.segments) do
+                        SetMaxStacksGlowOnFrame(seg, true, cabConfig)
+                    end
+                elseif barInfo.frame.segments then
+                    for _, seg in ipairs(barInfo.frame.segments) do
+                        SetMaxStacksGlowOnFrame(seg, false, cabConfig or {})
+                    end
+                end
             elseif barInfo.barType == "custom_overlay" then
                 local cabConfig = barInfo.cabConfig
                 local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
@@ -2737,6 +2753,16 @@ local function ApplyPreviewData()
                             seg:SetValue(0)
                             seg:Hide()
                         end
+                    end
+                end
+                -- Max stacks glow preview (overlay — base segments only)
+                if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo.frame.segments then
+                    for _, seg in ipairs(barInfo.frame.segments) do
+                        SetMaxStacksGlowOnFrame(seg, true, cabConfig)
+                    end
+                elseif barInfo.frame.segments then
+                    for _, seg in ipairs(barInfo.frame.segments) do
+                        SetMaxStacksGlowOnFrame(seg, false, cabConfig or {})
                     end
                 end
             end

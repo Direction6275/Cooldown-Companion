@@ -1710,6 +1710,105 @@ local function BuildCustomAuraBarPanel(container)
                     end
                 end
 
+                -- Max Stacks Glow (independent of threshold color)
+                if not isActiveTracking then
+                    local glowCb = AceGUI:Create("CheckBox")
+                    glowCb:SetLabel("Max Stack Glow")
+                    glowCb:SetValue(cab.maxStacksGlowEnabled == true)
+                    glowCb:SetFullWidth(true)
+                    glowCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].maxStacksGlowEnabled = val or nil
+                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                    container:AddChild(glowCb)
+
+                    if cab.maxStacksGlowEnabled then
+                        -- Style dropdown
+                        local glowStyleDrop = AceGUI:Create("Dropdown")
+                        glowStyleDrop:SetLabel("Glow Style")
+                        glowStyleDrop:SetList({
+                            solid = "Solid Border",
+                            pixel = "Pixel",
+                            glow = "Proc Glow",
+                            lcgButton = "Button Glow (LCG)",
+                            lcgAutocast = "AutoCast (LCG)",
+                        }, { "solid", "pixel", "glow", "lcgButton", "lcgAutocast" })
+                        glowStyleDrop:SetValue(cab.maxStacksGlowStyle or "solid")
+                        glowStyleDrop:SetFullWidth(true)
+                        glowStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].maxStacksGlowStyle = val
+                            CooldownCompanion:ApplyResourceBars()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end)
+                        container:AddChild(glowStyleDrop)
+
+                        -- Color picker
+                        local glowColor = cab.maxStacksGlowColor or {1, 0.84, 0, 0.9}
+                        local cpGlow = AceGUI:Create("ColorPicker")
+                        cpGlow:SetLabel("Glow Color")
+                        cpGlow:SetColor(glowColor[1], glowColor[2], glowColor[3], glowColor[4] or 0.9)
+                        cpGlow:SetHasAlpha(true)
+                        cpGlow:SetFullWidth(true)
+                        cpGlow:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                            customBars[cabIdx].maxStacksGlowColor = {r, g, b, a}
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        cpGlow:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                            customBars[cabIdx].maxStacksGlowColor = {r, g, b, a}
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(cpGlow)
+
+                        -- Size slider (label and range vary by style)
+                        local currentStyle = cab.maxStacksGlowStyle or "solid"
+                        local sizeLabel = (currentStyle == "solid") and "Border Size"
+                            or (currentStyle == "pixel") and "Line Length"
+                            or "Glow Size"
+                        local sizeMin = (currentStyle == "solid") and 1 or (currentStyle == "pixel") and 1 or 8
+                        local sizeMax = (currentStyle == "solid") and 8 or (currentStyle == "pixel") and 20 or 64
+                        local sizeDefault = (currentStyle == "solid") and 2 or (currentStyle == "pixel") and 4 or 32
+                        local glowSizeSlider = AceGUI:Create("Slider")
+                        glowSizeSlider:SetLabel(sizeLabel)
+                        glowSizeSlider:SetSliderValues(sizeMin, sizeMax, 1)
+                        glowSizeSlider:SetValue(cab.maxStacksGlowSize or sizeDefault)
+                        glowSizeSlider:SetFullWidth(true)
+                        glowSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].maxStacksGlowSize = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(glowSizeSlider)
+
+                        -- Thickness slider (pixel style only)
+                        if currentStyle == "pixel" then
+                            local thicknessSlider = AceGUI:Create("Slider")
+                            thicknessSlider:SetLabel("Line Thickness")
+                            thicknessSlider:SetSliderValues(1, 6, 1)
+                            thicknessSlider:SetValue(cab.maxStacksGlowThickness or 2)
+                            thicknessSlider:SetFullWidth(true)
+                            thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                customBars[cabIdx].maxStacksGlowThickness = val
+                                CooldownCompanion:ApplyResourceBars()
+                            end)
+                            container:AddChild(thicknessSlider)
+                        end
+
+                        -- Speed slider (pixel + LCG styles)
+                        if currentStyle == "pixel" or currentStyle == "lcgButton" or currentStyle == "lcgAutocast" then
+                            local speedSlider = AceGUI:Create("Slider")
+                            speedSlider:SetLabel("Animation Speed")
+                            speedSlider:SetSliderValues(10, 200, 1)
+                            speedSlider:SetValue(cab.maxStacksGlowSpeed or 60)
+                            speedSlider:SetFullWidth(true)
+                            speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                customBars[cabIdx].maxStacksGlowSpeed = val
+                                CooldownCompanion:ApplyResourceBars()
+                            end)
+                            container:AddChild(speedSlider)
+                        end
+                    end
+                end
+
                 -- Overlay Color (overlay mode only)
                 if cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
                     local overlayColor = cab.overlayColor or {1, 0.84, 0}
