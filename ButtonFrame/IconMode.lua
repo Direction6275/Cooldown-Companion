@@ -407,7 +407,7 @@ function CooldownCompanion:UpdateButtonIcon(button)
     end
 
     -- Update bar name text when the display spell changes (e.g. transform)
-    if button.nameText and buttonData.type == "spell" and displayId ~= prevDisplayId then
+    if button.nameText and not buttonData.customName and buttonData.type == "spell" and displayId ~= prevDisplayId then
         local spellName = C_Spell.GetSpellName(displayId)
         if spellName then
             button.nameText:SetText(spellName)
