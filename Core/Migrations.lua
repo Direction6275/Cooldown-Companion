@@ -37,6 +37,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateBarOrdering()
     self:MigrateRemoveAuraDurationCache()
     self:MigrateResourceBarYOffset()
+    self:MigrateMaxStacksGlowStyles()
     self:MigrateNewDefaults()
 end
 
@@ -1090,6 +1091,34 @@ function CooldownCompanion:MigrateResourceBarYOffset()
     local rb = self.db.profile.resourceBars
     if rb and rb.yOffset and rb.yOffset < 0 then
         rb.yOffset = math.abs(rb.yOffset)
+    end
+end
+
+-- Migrate old frame-based glow styles to new StatusBar indicator styles.
+local OLD_GLOW_STYLE_MAP = {
+    solid = "solidBorder",
+    pixel = "solidBorder",
+    glow = "pulsingBorder",
+    lcgButton = "pulsingBorder",
+    lcgAutocast = "pulsingBorder",
+}
+function CooldownCompanion:MigrateMaxStacksGlowStyles()
+    local rb = self.db.profile.resourceBars
+    if not rb or not rb.customAuraBars then return end
+    for _, specBars in pairs(rb.customAuraBars) do
+        if type(specBars) == "table" then
+            for _, cab in ipairs(specBars) do
+                if cab and cab.maxStacksGlowStyle then
+                    local mapped = OLD_GLOW_STYLE_MAP[cab.maxStacksGlowStyle]
+                    if mapped then
+                        cab.maxStacksGlowStyle = mapped
+                        -- Clean up removed fields
+                        cab.maxStacksGlowThickness = nil
+                        cab.maxStacksGlowSpeed = nil
+                    end
+                end
+            end
+        end
     end
 end
 
