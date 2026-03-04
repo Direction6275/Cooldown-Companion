@@ -27,8 +27,12 @@ local function QueueTalentChargeRefresh(addon)
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
-    self:ForEachButton(function(button)
-        self:UpdateButtonIcon(button)
+    self:ForEachButton(function(button, bd)
+        if bd.cdmChildSlot then
+            button._iconDirty = true
+        else
+            self:UpdateButtonIcon(button)
+        end
     end)
 end
 

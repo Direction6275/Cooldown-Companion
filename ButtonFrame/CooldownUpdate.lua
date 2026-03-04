@@ -150,6 +150,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- by UpdateButtonIcon on SPELL_UPDATE_ICON and creation.
     local cooldownSpellId = button._displaySpellId or buttonData.id
 
+    -- Deferred icon refresh for cdmChildSlot buttons (set by OnSpellUpdateIcon).
+    -- One-tick delay ensures the CDM viewer's RefreshSpellTexture has already
+    -- run, so child.Icon:GetTextureFileID() returns the current texture.
+    if button._iconDirty then
+        button._iconDirty = nil
+        CooldownCompanion:UpdateButtonIcon(button)
+        cooldownSpellId = button._displaySpellId or buttonData.id
+    end
+
     -- Proc state: event-driven table lookup (base spell + current displayed override).
     -- Keeps visibility and glow checks aligned without polling overlay APIs.
     local procOverlayActive = false
