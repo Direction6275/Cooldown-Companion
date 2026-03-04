@@ -398,7 +398,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local inPandemic = false
         if button._pandemicPreview then
             inPandemic = true
-        -- Pandemic enablement is style-level now (Show Pandemic Glow), not per-button.
+        -- Pandemic detection: style-level (Show Pandemic Glow) OR per-button visibility toggle.
         elseif auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic) and viewerFrame then
             local pi = viewerFrame.PandemicIcon
             if pi and pi:IsVisible() then

@@ -218,6 +218,23 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
     end
 
+    -- Filtered apply: only write to buttons with target aura tracking.
+    -- When clearing, write to ALL selected to clean stale data.
+    local function ApplyToTargetAuraTracking(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then
+                    if not value or FilterTargetAuraTracking(bd) then
+                        bd[field] = value
+                    end
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
+
     -- Helper: set checkbox value (batch-aware tri-state or normal).
     -- Optional filterFn scopes the batch read to match the write filter.
     local function SetCheckboxValue(cb, field, filterFn)
@@ -581,7 +598,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             pandemicCb:SetDisabled(true)
         end
         WrapBatchCallback(pandemicCb, function(widget, event, val)
-            ApplyToAuraTracking("hideAuraActiveExceptPandemic", val or nil)
+            ApplyToTargetAuraTracking("hideAuraActiveExceptPandemic", val or nil)
         end)
         scroll:AddChild(pandemicCb)
 
