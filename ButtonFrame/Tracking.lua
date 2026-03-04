@@ -50,7 +50,8 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         end
     end
 
-    -- Fallback: if maxCharges is unavailable, keep upward-only observed max.
+    -- Fallback: if API maxCharges is unavailable (nil/secret), keep upward-only
+    -- observed max.  The primary path above is bidirectional (tracks decreases too).
     if cur and cur > persistedMax then
         buttonData.maxCharges = cur
     end

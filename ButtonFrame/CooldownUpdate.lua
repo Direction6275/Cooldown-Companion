@@ -655,39 +655,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._mainCDShown = false
                 end
             end
-        elseif button._isBar then
-            -- Bar mode: button.cooldown is not reused for recharge animation.
-            -- Use isGCDOnly (timing match + secret-safe fallback), not raw isOnGCD,
-            -- so flyout/override charge spells are not misclassified as zero-charge
-            -- during a GCD-only lockout.
-            button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
-        else
-            -- Icon mode: prefer scratchCooldown when DurationObject values are plain.
-            -- button.cooldown:IsShown() is unreliable because UpdateIconModeVisuals
-            -- force-shows it and SetCooldown(0,0) does not auto-hide.
-            local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-            if mainCDDuration and not mainCDDuration:HasSecretValues() then
-                scratchCooldown:Hide()
-                scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
-                button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
-                scratchCooldown:Hide()
-            elseif mainCDDuration then
-                -- Secret values (combat): SetCooldownFromDurationObject fails with
-                -- secrets, but SetCooldown accepts them.  Use scratchCooldown
-                -- (button.cooldown:IsShown() is unreliable — force-shown by
-                -- UpdateIconModeVisuals, not auto-hidden by SetCooldown(0,0)).
-                local ci = C_Spell.GetSpellCooldown(cooldownSpellId)
-                if ci then
-                    scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(ci.startTime, ci.duration)
-                    button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
-                    scratchCooldown:Hide()
-                else
-                    button._mainCDShown = false
-                end
-            else
-                button._mainCDShown = false
-            end
         end
     end
 
@@ -831,7 +798,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
-
 
     -- Per-button sound alerts (Blizzard-scoped events, CDM-valid only).
     if buttonData.type == "spell" then
