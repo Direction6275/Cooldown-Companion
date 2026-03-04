@@ -95,6 +95,10 @@ local function UpdateItemChargeTracking(button, buttonData)
         buttonData.maxCharges = chargeCount
     end
 
+    -- Items are always readable — feed the same field spells use so the
+    -- three-state charge color block can use direct comparison.
+    button._currentReadableCharges = chargeCount
+
     -- Display charge text with change detection
     local showChargeText = button.style and button.style.showChargeText
     if not showChargeText then
