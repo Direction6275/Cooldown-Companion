@@ -850,6 +850,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._lastVisAlpha = 1
     button._barCdColor = nil
     button._chargeRecharging = nil
+    button._chargesSpent = nil
     button._barReadyTextColor = nil
     button._barAuraColor = nil
     button._barAuraEffectActive = nil

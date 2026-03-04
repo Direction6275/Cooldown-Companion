@@ -20,10 +20,15 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     local spellID = chargeSpellID or buttonData.id
     local charges = C_Spell.GetSpellCharges(spellID)
 
-    -- Try to read current charges as plain number (works outside restricted)
-    local cur = tonumber(C_Spell.GetSpellDisplayCount(spellID))
-    if cur == nil and charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
+    -- Try to read current charges as plain number (works outside restricted).
+    -- Prefer charges.currentCharges (authoritative charge system value) over
+    -- GetSpellDisplayCount (UI-oriented, may drop to 0 during lockouts).
+    local cur
+    if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
         cur = charges.currentCharges
+    end
+    if cur == nil then
+        cur = tonumber(C_Spell.GetSpellDisplayCount(spellID))
     end
     if cur == nil then
         -- Tertiary fallback: cast count can reflect cast availability semantics
@@ -39,13 +44,14 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     -- display count, which can reflect current charges instead of true max.
     local persistedMax = buttonData.maxCharges or 0
     if charges and charges.maxCharges ~= nil and not issecretvalue(charges.maxCharges) then
-        if charges.maxCharges > persistedMax then
+        if charges.maxCharges ~= persistedMax then
             buttonData.maxCharges = charges.maxCharges
             persistedMax = charges.maxCharges
         end
     end
 
-    -- Fallback: if maxCharges is unavailable, keep upward-only observed max.
+    -- Fallback: if API maxCharges is unavailable (nil/secret), keep upward-only
+    -- observed max.  The primary path above is bidirectional (tracks decreases too).
     if cur and cur > persistedMax then
         buttonData.maxCharges = cur
     end
@@ -89,6 +95,10 @@ local function UpdateItemChargeTracking(button, buttonData)
     if chargeCount > (buttonData.maxCharges or 0) then
         buttonData.maxCharges = chargeCount
     end
+
+    -- Items are always readable — feed the same field spells use so the
+    -- three-state charge color block can use direct comparison.
+    button._currentReadableCharges = chargeCount
 
     -- Display charge text with change detection
     local showChargeText = button.style and button.style.showChargeText

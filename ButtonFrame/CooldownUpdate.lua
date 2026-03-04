@@ -624,38 +624,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Prevents short lockout cooldowns (e.g., dragonriding flyout abilities)
             -- from being misclassified as "zero charges".
             button._mainCDShown = (button._currentReadableCharges == 0)
-        elseif button._isBar then
-            -- Bar mode: button.cooldown is not reused for recharge animation.
-            -- Use isGCDOnly (timing match + secret-safe fallback), not raw isOnGCD,
-            -- so flyout/override charge spells are not misclassified as zero-charge
-            -- during a GCD-only lockout.
-            button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
-        else
-            -- Icon mode: prefer scratchCooldown when DurationObject values are plain.
-            -- button.cooldown:IsShown() is unreliable because UpdateIconModeVisuals
-            -- force-shows it and SetCooldown(0,0) does not auto-hide.
-            local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-            if mainCDDuration and not mainCDDuration:HasSecretValues() then
-                scratchCooldown:Hide()
-                scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
-                button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
-                scratchCooldown:Hide()
-            elseif mainCDDuration then
-                -- Secret values (combat): SetCooldownFromDurationObject fails with
-                -- secrets, but SetCooldown accepts them.  Use scratchCooldown
-                -- (button.cooldown:IsShown() is unreliable — force-shown by
-                -- UpdateIconModeVisuals, not auto-hidden by SetCooldown(0,0)).
-                local ci = C_Spell.GetSpellCooldown(cooldownSpellId)
-                if ci then
+        elseif buttonData.type == "spell" then
+            -- Restricted mode: charges unreadable (secret values).
+            -- Action bar cooldown is charge-aware: Blizzard only shows a cooldown
+            -- sweep at zero charges, not during per-cast lockouts (e.g. Hover).
+            local slotShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+            if slotShown ~= nil then
+                button._mainCDShown = slotShown and not isGCDOnly
+            elseif button._isBar then
+                button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
+            else
+                -- Icon mode: no action bar slot, fall back to scratchCooldown.
+                local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
+                if mainCDDuration and not mainCDDuration:HasSecretValues() then
                     scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(ci.startTime, ci.duration)
+                    scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
                     button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
                     scratchCooldown:Hide()
+                elseif mainCDDuration then
+                    local ci = C_Spell.GetSpellCooldown(cooldownSpellId)
+                    if ci then
+                        scratchCooldown:Hide()
+                        scratchCooldown:SetCooldown(ci.startTime, ci.duration)
+                        button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
+                        scratchCooldown:Hide()
+                    else
+                        button._mainCDShown = false
+                    end
                 else
                     button._mainCDShown = false
                 end
-            else
-                button._mainCDShown = false
             end
         end
     end
@@ -768,15 +766,35 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Charge text color: three-state (zero / partial / max) via flags, combat-safe.
+    -- Charge text color: three-state (zero / partial / max).
+    -- Direct comparison when readable charges available; flag fallback in restricted mode.
     if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
         local cc
-        if button._mainCDShown then
-            cc = style.chargeFontColorZero or {1, 1, 1, 1}
-        elseif button._chargeRecharging then
-            cc = style.chargeFontColorMissing or {1, 1, 1, 1}
+        local cur = button._currentReadableCharges
+        if cur ~= nil and buttonData.maxCharges then
+            if cur == 0 then
+                cc = style.chargeFontColorZero or {1, 1, 1, 1}
+            elseif cur < buttonData.maxCharges then
+                cc = style.chargeFontColorMissing or {1, 1, 1, 1}
+            else
+                cc = style.chargeFontColor or {1, 1, 1, 1}
+            end
         else
-            cc = style.chargeFontColor or {1, 1, 1, 1}
+            -- Restricted mode: charges unreadable via C_Spell.
+            -- Track charge consumption via UNIT_SPELLCAST_SUCCEEDED (_chargesSpent)
+            -- and combine with _mainCDShown (Blizzard shows main sweep only at 0
+            -- charges) for immediate zero-charge detection.
+
+            -- Reset happens in OnSpellCast (when casting from full), not here,
+            -- to avoid race with _chargeRecharging lag.
+            if not button._chargeRecharging then
+                cc = style.chargeFontColor or {1, 1, 1, 1}             -- FULL (max charges)
+            elseif (button._chargesSpent or 0) >= (buttonData.maxCharges or 2)
+                   and button._mainCDShown then
+                cc = style.chargeFontColorZero or {1, 1, 1, 1}         -- ZERO (all spent)
+            else
+                cc = style.chargeFontColorMissing or {1, 1, 1, 1}      -- MISSING (recharging)
+            end
         end
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
     end
