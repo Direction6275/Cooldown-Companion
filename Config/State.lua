@@ -168,6 +168,7 @@ ST._configState = {
     appearanceTabElements = {},
     resourceBarPanelActive = false,
     barPanelTab = "resource_anchoring",
+    resourceStylingTab = "bar_text",
     groupPresetSelection = {
         icons = nil,
         bars = nil,

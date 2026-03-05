@@ -6,15 +6,12 @@
     Unlike CastBar (which manipulates Blizzard's secure frame), resource bars are
     fully addon-owned frames with no taint concerns.
 
-    SECRET VALUES (verified in-game 12.0.1):
-      - UnitPower("player", primaryType) returns <secret> in combat for continuous
-        resources (Mana, Rage, Energy, Focus, etc.)
-      - StatusBar:SetValue(secret) works — C-level method accepts secret values
-      - FontString:SetFormattedText("%d", secret) works — displays real number
-      - UnitPowerMax() is NOT secret
-      - Segmented/secondary resources (Combo Points, Essence, Runes, etc.) are NOT secret
-      - GetRuneCooldown() returns real values in combat
-      - UnitPartialPower() returns real values in combat
+    SECRET VALUES (12.0.x):
+      - UnitPower/UnitPowerMax secrecy is evaluated at runtime through C_Secrets predicates.
+      - Continuous resources are generally contextually secret; segmented resources are
+        currently non-secret in observed builds.
+      - StatusBar:SetValue(secret) and FontString:SetFormattedText("%d", secret)
+        are used as secret-safe pass-through display paths.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -25,6 +22,8 @@ local math_min = math.min
 local math_max = math.max
 local math_abs = math.abs
 local GetTime = GetTime
+local issecretvalue = issecretvalue
+local SecretsAPI = C_Secrets
 
 ------------------------------------------------------------------------
 -- Constants
@@ -46,12 +45,17 @@ local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
 local DEFAULT_CUSTOM_AURA_MAX_COLOR = { 1, 0.84, 0 }
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = { 1, 0.84, 0 }
+local DEFAULT_SEG_THRESHOLD_COLOR = { 1, 0.84, 0 }
 local DEFAULT_RESOURCE_TEXT_FORMAT = "current"
 local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = "current_max"
 local DEFAULT_RESOURCE_TEXT_FONT = "Friz Quadrata TT"
 local DEFAULT_RESOURCE_TEXT_SIZE = 10
 local DEFAULT_RESOURCE_TEXT_OUTLINE = "OUTLINE"
 local DEFAULT_RESOURCE_TEXT_COLOR = { 1, 1, 1, 1 }
+local DEFAULT_CONTINUOUS_TICK_COLOR = { 1, 0.84, 0, 1 }
+local DEFAULT_CONTINUOUS_TICK_MODE = "percent"
+local DEFAULT_CONTINUOUS_TICK_PERCENT = 50
+local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = 50
 
 local DEFAULT_POWER_COLORS = {
     [0]  = { 0, 0, 1 },              -- Mana
@@ -417,6 +421,126 @@ local function GetResourceColors(powerType, settings)
     return defaults[1]
 end
 
+local POWER_SECRECY_CACHE = {}
+local SECRET_LEVEL_NEVER = Enum and Enum.SecrecyLevel and Enum.SecrecyLevel.NeverSecret or 0
+
+local function IsPowerTypePotentiallySecret(powerType)
+    local cached = POWER_SECRECY_CACHE[powerType]
+    if cached ~= nil then
+        return cached
+    end
+
+    local potentiallySecret = true
+    if SecretsAPI and SecretsAPI.GetPowerTypeSecrecy then
+        potentiallySecret = SecretsAPI.GetPowerTypeSecrecy(powerType) ~= SECRET_LEVEL_NEVER
+    end
+
+    POWER_SECRECY_CACHE[powerType] = potentiallySecret
+    return potentiallySecret
+end
+
+local function IsUnitPowerSecret(unit, powerType)
+    if not IsPowerTypePotentiallySecret(powerType) then
+        return false
+    end
+    if SecretsAPI and SecretsAPI.ShouldUnitPowerBeSecret then
+        return SecretsAPI.ShouldUnitPowerBeSecret(unit, powerType) == true
+    end
+    return false
+end
+
+local function IsUnitPowerMaxSecret(unit, powerType)
+    if not IsPowerTypePotentiallySecret(powerType) then
+        return false
+    end
+    if SecretsAPI and SecretsAPI.ShouldUnitPowerMaxBeSecret then
+        return SecretsAPI.ShouldUnitPowerMaxBeSecret(unit, powerType) == true
+    end
+    return false
+end
+
+local function GetSafeRGBColor(color, fallback)
+    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
+        return color
+    end
+    return fallback
+end
+
+local function GetSafeRGBAColor(color, fallback)
+    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
+        return color
+    end
+    return fallback
+end
+
+local function GetSegmentedThresholdConfig(powerType, settings)
+    if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true then
+        return false, nil, nil
+    end
+    if not settings or not settings.resources then
+        return false, nil, nil
+    end
+
+    local resource = settings.resources[powerType]
+    if type(resource) ~= "table" or resource.segThresholdEnabled ~= true then
+        return false, nil, nil
+    end
+
+    local threshold = tonumber(resource.segThresholdValue)
+    if not threshold then
+        threshold = 1
+    end
+    threshold = math_floor(threshold)
+    if threshold < 1 then
+        threshold = 1
+    elseif threshold > 99 then
+        threshold = 99
+    end
+
+    local thresholdColor = GetSafeRGBColor(resource.segThresholdColor, DEFAULT_SEG_THRESHOLD_COLOR)
+    return true, threshold, thresholdColor
+end
+
+local function GetContinuousTickConfig(powerType, settings)
+    if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON then
+        return false, nil, nil, nil, nil
+    end
+    if not settings or not settings.resources then
+        return false, nil, nil, nil, nil
+    end
+
+    local resource = settings.resources[powerType]
+    if type(resource) ~= "table" or resource.continuousTickEnabled ~= true then
+        return false, nil, nil, nil, nil
+    end
+
+    local mode = resource.continuousTickMode
+    if mode ~= "percent" and mode ~= "absolute" then
+        mode = DEFAULT_CONTINUOUS_TICK_MODE
+    end
+
+    local percentValue = tonumber(resource.continuousTickPercent)
+    if not percentValue then
+        percentValue = DEFAULT_CONTINUOUS_TICK_PERCENT
+    end
+    if percentValue < 0 then
+        percentValue = 0
+    elseif percentValue > 100 then
+        percentValue = 100
+    end
+
+    local absoluteValue = tonumber(resource.continuousTickAbsolute)
+    if not absoluteValue then
+        absoluteValue = DEFAULT_CONTINUOUS_TICK_ABSOLUTE
+    end
+    if absoluteValue < 0 then
+        absoluteValue = 0
+    end
+
+    local tickColor = GetSafeRGBAColor(resource.continuousTickColor, DEFAULT_CONTINUOUS_TICK_COLOR)
+    return true, mode, percentValue, absoluteValue, tickColor
+end
+
 local function SupportsResourceAuraStackMode(powerType)
     return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
 end
@@ -623,6 +747,77 @@ end
 local function ClearResourceAuraVisuals(frame)
     if not frame then return end
     HideResourceAuraStackSegments(frame)
+end
+
+local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
+    if not bar or not bar.tickMarker then return end
+
+    local enabled, mode, percentValue, absoluteValue, tickColor = GetContinuousTickConfig(powerType, settings)
+    if not enabled then
+        bar.tickMarker:Hide()
+        return
+    end
+
+    local ratio
+    if mode == "absolute" then
+        if maxPowerIsSecret then
+            bar.tickMarker:Hide()
+            return
+        end
+        if issecretvalue and issecretvalue(maxPower) then
+            bar.tickMarker:Hide()
+            return
+        end
+        if type(maxPower) ~= "number" or maxPower <= 0 then
+            bar.tickMarker:Hide()
+            return
+        end
+        ratio = absoluteValue / maxPower
+    else
+        ratio = percentValue / 100
+    end
+
+    if ratio < 0 then
+        ratio = 0
+    elseif ratio > 1 then
+        ratio = 1
+    end
+
+    local marker = bar.tickMarker
+    marker:SetColorTexture(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
+
+    local borderStyle = settings and settings.borderStyle or "pixel"
+    local borderSize = (borderStyle == "pixel") and (settings.borderSize or 1) or 0
+    local width = bar:GetWidth() or 0
+    local height = bar:GetHeight() or 0
+    if width <= 0 or height <= 0 then
+        marker:Hide()
+        return
+    end
+
+    marker:ClearAllPoints()
+    if bar._isVertical then
+        local usableHeight = math_max(height - (borderSize * 2), 1)
+        local localRatio = bar._reverseFill and (1 - ratio) or ratio
+        local y = borderSize + (usableHeight * localRatio)
+        local yMax = height - borderSize
+        if y > yMax then y = yMax end
+        if y < borderSize then y = borderSize end
+        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", borderSize, y - 1)
+        marker:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, y - 1)
+        marker:SetHeight(2)
+    else
+        local usableWidth = math_max(width - (borderSize * 2), 1)
+        local x = borderSize + (usableWidth * ratio)
+        local xMax = width - borderSize
+        if x > xMax then x = xMax end
+        if x < borderSize then x = borderSize end
+        marker:SetPoint("TOPLEFT", bar, "TOPLEFT", x - 1, -borderSize)
+        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x - 1, borderSize)
+        marker:SetWidth(2)
+    end
+
+    marker:Show()
 end
 
 local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
@@ -945,6 +1140,11 @@ local function CreateContinuousBar(parent)
     bar.brightnessOverlay:SetBlendMode("ADD")
     bar.brightnessOverlay:Hide()
 
+    -- Optional static tick marker for continuous bars.
+    bar.tickMarker = bar:CreateTexture(nil, "OVERLAY", nil, 6)
+    bar.tickMarker:SetColorTexture(1, 0.84, 0, 1)
+    bar.tickMarker:Hide()
+
     bar._barType = "continuous"
     return bar
 end
@@ -1183,14 +1383,18 @@ local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
 
     local currentPower = UnitPower("player", powerType)
     local maxPower = UnitPowerMax("player", powerType)
+    local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
+    if issecretvalue and issecretvalue(maxPower) then
+        maxPowerIsSecret = true
+    end
 
-    -- SetMinMaxValues: max is NOT secret
+    -- Pass through to C-level widget APIs (secret-safe).
     bar:SetMinMaxValues(0, maxPower)
-    -- SetValue: pass UnitPower directly to C-level — accepts secrets
     bar:SetValue(currentPower)
 
     local auraOverrideColor = GetResourceAuraState(powerType, settings, auraActiveCache)
     ApplyContinuousFillColor(bar, powerType, settings, auraOverrideColor)
+    UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 
     -- Text: pass directly to C-level SetFormattedText — accepts secrets
     if bar.text and bar.text:IsShown() then
@@ -1224,6 +1428,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         and auraMaxStacks
         and auraHasApplications
         and SupportsResourceAuraStackMode(powerType)
+    local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
     local fullSegments = {}
 
     local function FinalizeAuraVisuals()
@@ -1239,6 +1444,12 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
         else
             HideResourceAuraStackSegments(holder)
+        end
+    end
+
+    local function ClearForSecretMath()
+        for _, seg in ipairs(holder.segments) do
+            seg:SetValue(0)
         end
     end
 
@@ -1262,10 +1473,17 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         end)
         local readyColor, rechargingColor, maxColor = GetResourceColors(5, settings)
         local allReady = true
+        local readyCount = 0
         for i = 1, numSegs do
             if not runeData[i].ready then allReady = false; break end
         end
-        local activeReadyColor = allReady and maxColor or readyColor
+        for i = 1, numSegs do
+            if runeData[i].ready then
+                readyCount = readyCount + 1
+            end
+        end
+        local thresholdActive = thresholdEnabled and readyCount >= thresholdValue
+        local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
         for i = 1, numSegs do
             local r = runeData[i]
             local seg = holder.segments[i]
@@ -1286,44 +1504,77 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     end
 
     if powerType == 7 then
+        if IsUnitPowerSecret("player", 7) or IsUnitPowerMaxSecret("player", 7) then
+            ClearForSecretMath()
+            FinalizeAuraVisuals()
+            return
+        end
+
         -- Soul Shards: fractional fill with ready/recharging colors
         local raw = UnitPower("player", 7, true)
         local rawMax = UnitPowerMax("player", 7, true)
         local max = UnitPowerMax("player", 7)
+        if issecretvalue and (issecretvalue(raw) or issecretvalue(rawMax) or issecretvalue(max)) then
+            ClearForSecretMath()
+            FinalizeAuraVisuals()
+            return
+        end
+
         if max > 0 and rawMax > 0 then
             local perShard = rawMax / max
-            local filled = math_floor(raw / perShard)
-            local partial = (raw % perShard) / perShard
-            local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
-            local isMax = (filled == max)
-            local activeReadyColor = isMax and maxColor or readyColor
-            for i = 1, math_min(#holder.segments, max) do
-                local seg = holder.segments[i]
-                if i <= filled then
-                    seg:SetValue(1)
-                    seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
-                    fullSegments[i] = true
-                elseif i == filled + 1 and partial > 0 then
-                    seg:SetValue(partial)
-                    seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
-                else
-                    seg:SetValue(0)
-                    seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+            if perShard > 0 then
+                local filled = math_floor(raw / perShard)
+                local partial = (raw % perShard) / perShard
+                local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
+                local isMax = (filled == max)
+                local thresholdActive = thresholdEnabled and filled >= thresholdValue
+                local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
+                for i = 1, math_min(#holder.segments, max) do
+                    local seg = holder.segments[i]
+                    if i <= filled then
+                        seg:SetValue(1)
+                        seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
+                        fullSegments[i] = true
+                    elseif i == filled + 1 and partial > 0 then
+                        seg:SetValue(partial)
+                        seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+                    else
+                        seg:SetValue(0)
+                        seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+                    end
                 end
+            else
+                ClearForSecretMath()
             end
+        else
+            ClearForSecretMath()
         end
         FinalizeAuraVisuals()
         return
     end
 
     if powerType == 19 then
+        if IsUnitPowerSecret("player", 19) or IsUnitPowerMaxSecret("player", 19) then
+            ClearForSecretMath()
+            FinalizeAuraVisuals()
+            return
+        end
+
         -- Essence: partial recharge with ready/recharging colors
         local filled = UnitPower("player", 19)
         local max = UnitPowerMax("player", 19)
-        local partial = UnitPartialPower("player", 19) / 1000
+        local partialRaw = UnitPartialPower("player", 19)
+        if issecretvalue and (issecretvalue(filled) or issecretvalue(max) or issecretvalue(partialRaw)) then
+            ClearForSecretMath()
+            FinalizeAuraVisuals()
+            return
+        end
+
+        local partial = partialRaw / 1000
         local readyColor, rechargingColor, maxColor = GetResourceColors(19, settings)
         local isMax = (filled == max)
-        local activeReadyColor = isMax and maxColor or readyColor
+        local thresholdActive = thresholdEnabled and filled >= thresholdValue
+        local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= filled then
@@ -1344,11 +1595,24 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
 
     -- Combo Points: color changes at max, charged coloring for Rogues
     if powerType == 4 then
+        if IsUnitPowerSecret("player", 4) or IsUnitPowerMaxSecret("player", 4) then
+            ClearForSecretMath()
+            FinalizeAuraVisuals()
+            return
+        end
+
         local current = UnitPower("player", 4)
         local max = UnitPowerMax("player", 4)
+        if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
+            ClearForSecretMath()
+            FinalizeAuraVisuals()
+            return
+        end
+
         local normalColor, maxColor, chargedColor = GetResourceColors(4, settings)
         local isMax = (current == max and max > 0)
-        local baseColor = isMax and maxColor or normalColor
+        local thresholdActive = thresholdEnabled and current >= thresholdValue
+        local baseColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
 
         -- Charged combo points (Rogue only)
         local chargedPoints
@@ -1375,8 +1639,19 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     end
 
     -- Generic segmented with max color: HolyPower, Chi, ArcaneCharges
+    if IsUnitPowerSecret("player", powerType) or IsUnitPowerMaxSecret("player", powerType) then
+        ClearForSecretMath()
+        FinalizeAuraVisuals()
+        return
+    end
+
     local current = UnitPower("player", powerType)
     local max = UnitPowerMax("player", powerType)
+    if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
+        ClearForSecretMath()
+        FinalizeAuraVisuals()
+        return
+    end
     local normalColor, maxColor
     if RESOURCE_COLOR_DEFS[powerType] then
         normalColor, maxColor = GetResourceColors(powerType, settings)
@@ -1385,7 +1660,8 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         normalColor, maxColor = color, color
     end
     local isMax = (current == max and max > 0)
-    local activeColor = isMax and maxColor or normalColor
+    local thresholdActive = thresholdEnabled and current >= thresholdValue
+    local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
     for i = 1, math_min(#holder.segments, max) do
         local seg = holder.segments[i]
         if i <= current then
@@ -1410,6 +1686,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     end
 
     -- Read stacks from viewer frame (applications is plain for MW)
+    local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(RESOURCE_MAELSTROM_WEAPON, settings)
     local stacks = 0
     local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
     local instId = viewerFrame and viewerFrame.auraInstanceID
@@ -1419,9 +1696,21 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
             stacks = auraData.applications or 0
         end
     end
+    if issecretvalue and issecretvalue(stacks) then
+        for i = 1, #holder.segments do
+            holder.segments[i]:SetValue(0)
+            if holder.overlaySegments and holder.overlaySegments[i] then
+                holder.overlaySegments[i]:SetValue(0)
+                holder.overlaySegments[i]:SetAlpha(0)
+            end
+        end
+        HideResourceAuraStackSegments(holder)
+        return
+    end
 
     local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
+    local thresholdActive = thresholdEnabled and stacks >= thresholdValue
     local isMax = stacks > 0 and stacks == mwMaxStacks
 
     for i = 1, half do
@@ -1441,6 +1730,9 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         if isMax then
             baseSeg:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
             overlaySeg:SetStatusBarColor(maxColor[1], maxColor[2], maxColor[3], 1)
+        elseif thresholdActive then
+            baseSeg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
+            overlaySeg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
         else
             baseSeg:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
             overlaySeg:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
@@ -2032,6 +2324,13 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
+
+    local maxPower = UnitPowerMax("player", powerType)
+    local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
+    if issecretvalue and issecretvalue(maxPower) then
+        maxPowerIsSecret = true
+    end
+    UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)

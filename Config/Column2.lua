@@ -210,6 +210,59 @@ local function RefreshColumn2()
         if col2 and col2._infoBtn then col2._infoBtn:Hide() end
         if not col2 then return end
 
+        if CS.barPanelTab == "resource_anchoring" then
+            if col2._barsStylingScroll then
+                col2._barsStylingScroll.frame:Hide()
+            end
+
+            if not col2._resourceStylingTabGroup then
+                local tabGroup = AceGUI:Create("TabGroup")
+                tabGroup:SetTabs({
+                    { value = "bar_text", text = "Bar/Text Styling" },
+                    { value = "colors", text = "Colors" },
+                })
+                tabGroup:SetLayout("Fill")
+                tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                    CS.resourceStylingTab = tab
+                    widget:ReleaseChildren()
+                    local scroll = AceGUI:Create("ScrollFrame")
+                    scroll:SetLayout("List")
+                    widget:AddChild(scroll)
+                    col2._resourceStylingSubScroll = scroll
+                    if tab == "colors" then
+                        if ST._BuildResourceBarColorsStylingPanel then
+                            ST._BuildResourceBarColorsStylingPanel(scroll)
+                        else
+                            ST._BuildResourceBarStylingPanel(scroll, "colors")
+                        end
+                    else
+                        if ST._BuildResourceBarBarTextStylingPanel then
+                            ST._BuildResourceBarBarTextStylingPanel(scroll)
+                        else
+                            ST._BuildResourceBarStylingPanel(scroll, "bar_text")
+                        end
+                    end
+                end)
+                tabGroup.frame:SetParent(col2.content)
+                tabGroup.frame:ClearAllPoints()
+                tabGroup.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
+                tabGroup.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+                col2._resourceStylingTabGroup = tabGroup
+            end
+
+            if CS.resourceStylingTab ~= "bar_text" and CS.resourceStylingTab ~= "colors" then
+                CS.resourceStylingTab = "bar_text"
+            end
+            col2._resourceStylingTabGroup.frame:Show()
+            col2._resourceStylingTabGroup:SelectTab(CS.resourceStylingTab or "bar_text")
+            return
+        end
+
+        if col2._resourceStylingTabGroup then
+            col2._resourceStylingTabGroup.frame:Hide()
+        end
+        col2._resourceStylingSubScroll = nil
+
         -- Create/show styling scroll
         if not col2._barsStylingScroll then
             local scroll = AceGUI:Create("ScrollFrame")
@@ -229,10 +282,8 @@ local function RefreshColumn2()
             label:SetText("Unit Frame anchoring has no separate appearance settings.")
             label:SetFullWidth(true)
             col2._barsStylingScroll:AddChild(label)
-        elseif CS.barPanelTab == "castbar_anchoring" then
-            ST._BuildCastBarStylingPanel(col2._barsStylingScroll)
         else
-            ST._BuildResourceBarStylingPanel(col2._barsStylingScroll)
+            ST._BuildCastBarStylingPanel(col2._barsStylingScroll)
         end
         return
     end
@@ -240,6 +291,12 @@ local function RefreshColumn2()
     -- Normal mode: hide bars styling scroll
     if col2 and col2._barsStylingScroll then
         col2._barsStylingScroll.frame:Hide()
+    end
+    if col2 and col2._resourceStylingTabGroup then
+        col2._resourceStylingTabGroup.frame:Hide()
+    end
+    if col2 then
+        col2._resourceStylingSubScroll = nil
     end
     if col2 and col2._infoBtn then col2._infoBtn:Show() end
 

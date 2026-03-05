@@ -1047,8 +1047,12 @@ function CooldownCompanion:RefreshConfigPanel()
     local function saveScroll(widget)
         if not widget then return nil end
         local s = widget.status or widget.localstatus
-        if s and s.offset and s.offset > 0 then
-            return { offset = s.offset, scrollvalue = s.scrollvalue }
+        if s then
+            local offset = tonumber(s.offset) or 0
+            local scrollvalue = tonumber(s.scrollvalue) or 0
+            if offset > 0 or scrollvalue > 0 then
+                return { offset = s.offset, scrollvalue = s.scrollvalue }
+            end
         end
     end
     local function restoreScroll(widget, saved)
@@ -1077,9 +1081,28 @@ function CooldownCompanion:RefreshConfigPanel()
             tostring(tonumber(state.step) or 0),
         }, ":")
     end
+    local function getBarsStylingScrollKey()
+        if not CS.resourceBarPanelActive then return nil end
+        local barTab = tostring(CS.barPanelTab or "")
+        if barTab == "resource_anchoring" then
+            local styleTab = tostring(CS.resourceStylingTab or "bar_text")
+            return barTab .. ":" .. styleTab
+        end
+        return barTab
+    end
+    local function getBarsStylingScrollWidget(col2)
+        if not col2 then return nil end
+        if CS.resourceBarPanelActive and CS.barPanelTab == "resource_anchoring" then
+            return col2._resourceStylingSubScroll
+        end
+        return col2._barsStylingScroll
+    end
 
     local saved1   = saveScroll(CS.col1Scroll)
     local saved2   = saveScroll(CS.col2Scroll)
+    local col2Before = CS.configFrame and CS.configFrame.col2
+    local savedBarsStyling = saveScroll(getBarsStylingScrollWidget(col2Before))
+    local savedBarsStylingKey = getBarsStylingScrollKey()
     local col3Before = CS.configFrame and CS.configFrame.col3
     local savedCab = col3Before and col3Before._customAuraScroll and saveScroll(col3Before._customAuraScroll)
     local savedAaf = col3Before and col3Before._autoAddScroll and saveScroll(col3Before._autoAddScroll)
@@ -1125,6 +1148,16 @@ function CooldownCompanion:RefreshConfigPanel()
     -- Restore AceGUI scroll state.
     restoreScroll(CS.col1Scroll, saved1)
     restoreScroll(CS.col2Scroll, saved2)
+    local col2After = CS.configFrame and CS.configFrame.col2
+    local barsStylingAfter = getBarsStylingScrollWidget(col2After)
+    if barsStylingAfter then
+        local currentBarsKey = getBarsStylingScrollKey()
+        if savedBarsStyling and savedBarsStylingKey and currentBarsKey and savedBarsStylingKey == currentBarsKey then
+            restoreScroll(barsStylingAfter, savedBarsStyling)
+        else
+            clearScroll(barsStylingAfter)
+        end
+    end
     local col3After = CS.configFrame and CS.configFrame.col3
     if col3After and col3After._customAuraScroll then
         restoreScroll(col3After._customAuraScroll, savedCab)
