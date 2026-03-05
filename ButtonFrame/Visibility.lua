@@ -100,7 +100,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
     end
 
-    -- Check hideWhileZeroCharges (charge-based items)
+    -- Check hideWhileZeroCharges (charge-based spells and items)
     local hidReasonZeroCharges = false
     if buttonData.hideWhileZeroCharges then
         if button._mainCDShown then

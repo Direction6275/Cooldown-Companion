@@ -65,6 +65,12 @@ end
 local function FilterTargetAuraTracking(bd)
     return bd.auraTracking == true and bd.auraUnit == "target"
 end
+local function FilterChargeCapable(bd)
+    if not bd.hasCharges then return false end
+    if bd.type == "spell" then return true end
+    if bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
+    return false
+end
 
 -- Returns true if any selected button has field truthy
 local function AnySelectedHas(group, field)
@@ -107,6 +113,15 @@ local function AnySelectedNonEquippable(group)
     for idx in pairs(CS.selectedButtons) do
         local bd = group.buttons[idx]
         if bd and bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
+    end
+    return false
+end
+
+-- Returns true if any selected button is charge-capable (spells or non-equippable items with charges)
+local function AnySelectedChargeCapable(group)
+    for idx in pairs(CS.selectedButtons) do
+        local bd = group.buttons[idx]
+        if bd and FilterChargeCapable(bd) then return true end
     end
     return false
 end
@@ -167,7 +182,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         buttonData[field] = value
     end
 
-    -- Filtered apply: only write to non-equippable items (charge/stack toggles).
+    -- Filtered apply: only write to non-equippable items (stack toggles).
     -- When clearing (value is falsy), write to ALL selected to clean stale data.
     local function ApplyToNonEquippable(field, value)
         if isBatch then
@@ -175,6 +190,23 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 local bd = group.buttons[idx]
                 if bd then
                     if not value or FilterNonEquippable(bd) then
+                        bd[field] = value
+                    end
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
+
+    -- Filtered apply: only write to charge-capable buttons (charge toggles).
+    -- When clearing (value is falsy), write to ALL selected to clean stale data.
+    local function ApplyToChargeCapable(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then
+                    if not value or FilterChargeCapable(bd) then
                         bd[field] = value
                     end
                 end
@@ -352,72 +384,73 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     end -- not allPassive
 
-    -- Item-specific zero charges/stacks visibility toggles
-    -- Batch: show if any selected non-equippable item exists
-    local showItemChargeSection
-    if isBatch then showItemChargeSection = isItem and AnySelectedNonEquippable(group)
-    else showItemChargeSection = isItem and not CooldownCompanion.IsItemEquippable(buttonData) end
-    if showItemChargeSection then
-        -- Batch: show charges section if any selected has charges
-        local hasCharges
-        if isBatch then hasCharges = AnySelectedHas(group, "hasCharges")
-        else hasCharges = buttonData.hasCharges end
-        if hasCharges then
-            -- Hide While At Zero Charges
-            local hideZeroChargesCb = AceGUI:Create("CheckBox")
-            hideZeroChargesCb:SetLabel("Hide While At Zero Charges")
-            SetCheckboxValue(hideZeroChargesCb, "hideWhileZeroCharges", FilterNonEquippable)
-            hideZeroChargesCb:SetFullWidth(true)
-            WrapBatchCallback(hideZeroChargesCb, function(widget, event, val)
-                ApplyToNonEquippable("hideWhileZeroCharges", val or nil)
-                if val then
-                    ApplyToNonEquippable("desaturateWhileZeroCharges", nil)
-                else
-                    ApplyToNonEquippable("useBaselineAlphaFallbackZeroCharges", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(hideZeroChargesCb)
-
-            -- Baseline Alpha Fallback (nested under hideWhileZeroCharges)
-            -- Batch: show if any selected has it on
-            local showFallbackZeroCharges
-            if isBatch then showFallbackZeroCharges = AnySelectedHasFiltered(group, "hideWhileZeroCharges", FilterNonEquippable)
-            else showFallbackZeroCharges = buttonData.hideWhileZeroCharges end
-            if showFallbackZeroCharges then
-                local fallbackZeroChargesCb = AceGUI:Create("CheckBox")
-                fallbackZeroChargesCb:SetLabel("Use Baseline Alpha Fallback")
-                SetCheckboxValue(fallbackZeroChargesCb, "useBaselineAlphaFallbackZeroCharges", FilterNonEquippable)
-                fallbackZeroChargesCb:SetFullWidth(true)
-                ApplyCheckboxIndent(fallbackZeroChargesCb, 20)
-                WrapBatchCallback(fallbackZeroChargesCb, function(widget, event, val)
-                    ApplyToNonEquippable("useBaselineAlphaFallbackZeroCharges", val or nil)
-                end)
-                scroll:AddChild(fallbackZeroChargesCb)
-
-                -- (?) tooltip
-                CreateInfoButton(fallbackZeroChargesCb.frame, fallbackZeroChargesCb.checkbg, "LEFT", "RIGHT", fallbackZeroChargesCb.text:GetStringWidth() + 4, 0, {
-                    "Use Baseline Alpha Fallback",
-                    {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-                }, infoButtons)
+    -- Charge-based visibility toggles (spells + non-equippable items with charges)
+    -- Batch: show if any selected button is charge-capable
+    local showChargeSection
+    if isBatch then showChargeSection = AnySelectedChargeCapable(group)
+    else showChargeSection = buttonData.hasCharges and (buttonData.type == "spell" or (isItem and not CooldownCompanion.IsItemEquippable(buttonData))) end
+    if showChargeSection then
+        -- Hide While At Zero Charges
+        local hideZeroChargesCb = AceGUI:Create("CheckBox")
+        hideZeroChargesCb:SetLabel("Hide While At Zero Charges")
+        SetCheckboxValue(hideZeroChargesCb, "hideWhileZeroCharges", FilterChargeCapable)
+        hideZeroChargesCb:SetFullWidth(true)
+        WrapBatchCallback(hideZeroChargesCb, function(widget, event, val)
+            ApplyToChargeCapable("hideWhileZeroCharges", val or nil)
+            if val then
+                ApplyToChargeCapable("desaturateWhileZeroCharges", nil)
+            else
+                ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
             end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(hideZeroChargesCb)
 
-            -- Desaturate While At Zero Charges
-            local desatZeroChargesCb = AceGUI:Create("CheckBox")
-            desatZeroChargesCb:SetLabel("Desaturate While At Zero Charges")
-            SetCheckboxValue(desatZeroChargesCb, "desaturateWhileZeroCharges", FilterNonEquippable)
-            desatZeroChargesCb:SetFullWidth(true)
-            WrapBatchCallback(desatZeroChargesCb, function(widget, event, val)
-                ApplyToNonEquippable("desaturateWhileZeroCharges", val or nil)
-                if val then
-                    ApplyToNonEquippable("hideWhileZeroCharges", nil)
-                    ApplyToNonEquippable("useBaselineAlphaFallbackZeroCharges", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
+        -- Baseline Alpha Fallback (nested under hideWhileZeroCharges)
+        -- Batch: show if any selected has it on
+        local showFallbackZeroCharges
+        if isBatch then showFallbackZeroCharges = AnySelectedHasFiltered(group, "hideWhileZeroCharges", FilterChargeCapable)
+        else showFallbackZeroCharges = buttonData.hideWhileZeroCharges end
+        if showFallbackZeroCharges then
+            local fallbackZeroChargesCb = AceGUI:Create("CheckBox")
+            fallbackZeroChargesCb:SetLabel("Use Baseline Alpha Fallback")
+            SetCheckboxValue(fallbackZeroChargesCb, "useBaselineAlphaFallbackZeroCharges", FilterChargeCapable)
+            fallbackZeroChargesCb:SetFullWidth(true)
+            ApplyCheckboxIndent(fallbackZeroChargesCb, 20)
+            WrapBatchCallback(fallbackZeroChargesCb, function(widget, event, val)
+                ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", val or nil)
             end)
-            scroll:AddChild(desatZeroChargesCb)
+            scroll:AddChild(fallbackZeroChargesCb)
+
+            -- (?) tooltip
+            CreateInfoButton(fallbackZeroChargesCb.frame, fallbackZeroChargesCb.checkbg, "LEFT", "RIGHT", fallbackZeroChargesCb.text:GetStringWidth() + 4, 0, {
+                "Use Baseline Alpha Fallback",
+                {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+            }, infoButtons)
         end
 
+        -- Desaturate While At Zero Charges
+        local desatZeroChargesCb = AceGUI:Create("CheckBox")
+        desatZeroChargesCb:SetLabel("Desaturate While At Zero Charges")
+        SetCheckboxValue(desatZeroChargesCb, "desaturateWhileZeroCharges", FilterChargeCapable)
+        desatZeroChargesCb:SetFullWidth(true)
+        WrapBatchCallback(desatZeroChargesCb, function(widget, event, val)
+            ApplyToChargeCapable("desaturateWhileZeroCharges", val or nil)
+            if val then
+                ApplyToChargeCapable("hideWhileZeroCharges", nil)
+                ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(desatZeroChargesCb)
+    end
+
+    -- Stack-based visibility toggles (non-equippable items without charges)
+    -- Batch: show if any selected non-equippable item exists
+    local showStackSection
+    if isBatch then showStackSection = isItem and AnySelectedNonEquippable(group)
+    else showStackSection = isItem and not CooldownCompanion.IsItemEquippable(buttonData) end
+    if showStackSection then
         -- Batch: show stacks section if any selected lacks charges (stack-based items)
         local hasStacks
         if isBatch then hasStacks = not AllSelectedAre(group, "hasCharges")
