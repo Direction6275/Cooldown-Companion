@@ -693,8 +693,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Charge count tracking: detect whether the main cooldown (0 charges)
     -- is active.  Filter GCD so only real cooldown reads as true.
-    -- Skip during aura override: button.cooldown shows the aura, not the main CD.
-    if buttonData.hasCharges and not auraOverrideActive then
+    -- Item and readable-spell paths are always safe. Restricted-spell fallbacks
+    -- that depend on button.cooldown or isGCDOnly are gated on not auraOverrideActive.
+    if buttonData.hasCharges then
         if buttonData.type == "item" then
             -- Items: 0 charges = on cooldown. No GCD to filter.
             local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
@@ -711,9 +712,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local slotShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             if slotShown ~= nil then
                 button._mainCDShown = slotShown and not isGCDOnly
-            elseif button._isBar then
+            elseif not auraOverrideActive and button._isBar then
                 button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
-            else
+            elseif not auraOverrideActive then
                 -- Icon mode: no action bar slot, fall back to scratchCooldown.
                 local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
                 if mainCDDuration and not mainCDDuration:HasSecretValues() then
@@ -861,16 +862,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         else
             -- Restricted mode: charges unreadable via C_Spell.
-            -- Track charge consumption via UNIT_SPELLCAST_SUCCEEDED (_chargesSpent)
-            -- and combine with _mainCDShown (Blizzard shows main sweep only at 0
-            -- charges) for immediate zero-charge detection.
-
-            -- Reset happens in OnSpellCast (when casting from full), not here,
-            -- to avoid race with _chargeRecharging lag.
+            -- Use _mainCDShown as the canonical zero-charge signal. Blizzard only
+            -- shows main sweep at 0 charges; recharge without main sweep is partial.
             if not button._chargeRecharging then
                 cc = style.chargeFontColor or {1, 1, 1, 1}             -- FULL (max charges)
-            elseif (button._chargesSpent or 0) >= (buttonData.maxCharges or 2)
-                   and button._mainCDShown then
+            elseif button._mainCDShown then
                 cc = style.chargeFontColorZero or {1, 1, 1, 1}         -- ZERO (all spent)
             else
                 cc = style.chargeFontColorMissing or {1, 1, 1, 1}      -- MISSING (recharging)

@@ -121,11 +121,12 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             hasRealCharges = nil
                         end
                     elseif issecretvalue(mc) then
-                        -- maxCharges is secret (common at login before talent data
-                        -- propagates). GetSpellCharges returning a non-nil table means
-                        -- the game considers this spell charge-based — set true so
-                        -- buttons whose saved hasCharges was cleared can recover.
-                        hasRealCharges = true
+                        -- maxCharges is secret: can't distinguish mc=1 (not charge-based)
+                        -- from mc>1 (charge-based). Preserve existing classification from
+                        -- the DB (line 102 initializes hasRealCharges from buttonData.hasCharges).
+                        -- A later re-evaluation when values become readable
+                        -- (OnTalentsChanged, OnSpecChanged, QueueTalentChargeRefresh)
+                        -- will resolve this correctly.
                     end
                 else
                     -- chargeInfo nil: check if spell has "use count" (brez shared
