@@ -164,6 +164,7 @@ local defaults = {
                         openWorld = false,
                         rested = false,
                         petBattle = true,
+                        vehicleUI = true,
                     },
                 }
             ]]

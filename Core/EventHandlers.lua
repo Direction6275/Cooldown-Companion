@@ -200,6 +200,9 @@ function CooldownCompanion:CachePlayerState()
     end
     self._isResting = IsResting()
     self._inPetBattle = C_PetBattles.IsInBattle()
+    self._inVehicleUI = UnitHasVehicleUI("player")
+        or C_ActionBar.HasVehicleActionBar()
+        or C_ActionBar.HasOverrideActionBar()
 end
 
 function CooldownCompanion:OnZoneChanged()
@@ -227,6 +230,14 @@ end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
+    self:RefreshAllGroupsVisibilityOnly()
+end
+
+function CooldownCompanion:OnVehicleUIChanged(event, unit)
+    if unit and unit ~= "player" then return end
+    self._inVehicleUI = UnitHasVehicleUI("player")
+        or C_ActionBar.HasVehicleActionBar()
+        or C_ActionBar.HasOverrideActionBar()
     self:RefreshAllGroupsVisibilityOnly()
 end
 
@@ -279,6 +290,16 @@ function CooldownCompanion:OnActionBarLayoutChanged()
     self:RebuildSlotMapping()
     self:RebuildItemSlotCache()
     self:OnKeybindsChanged()
+    -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
+    -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
+    -- AceEvent registrations (AceEvent allows only one handler per event).
+    local wasInVehicleUI = self._inVehicleUI
+    self._inVehicleUI = UnitHasVehicleUI("player")
+        or C_ActionBar.HasVehicleActionBar()
+        or C_ActionBar.HasOverrideActionBar()
+    if self._inVehicleUI ~= wasInVehicleUI then
+        self:RefreshAllGroupsVisibilityOnly()
+    end
 end
 
 ------------------------------------------------------------------------

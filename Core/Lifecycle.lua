@@ -142,6 +142,13 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PET_BATTLE_OPENING_START", "OnPetBattleStart")
     self:RegisterEvent("PET_BATTLE_OVER", "OnPetBattleEnd")
 
+    -- Vehicle / override UI events — hide groups when normal bars are replaced.
+    -- UPDATE_OVERRIDE_ACTIONBAR and UPDATE_VEHICLE_ACTIONBAR are already
+    -- registered above for keybind rebuilds; OnActionBarLayoutChanged piggybacks
+    -- the vehicle state check to avoid duplicate AceEvent registrations.
+    self:RegisterEvent("UNIT_ENTERED_VEHICLE", "OnVehicleUIChanged")
+    self:RegisterEvent("UNIT_EXITED_VEHICLE", "OnVehicleUIChanged")
+
     -- Aura (buff/debuff) changes — drives aura tracking overlay
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
