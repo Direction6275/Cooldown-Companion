@@ -249,7 +249,7 @@ local function UpdateBarDisplay(button)
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
     if onCooldown and not button.buttonData.isPassive then
-        if button.buttonData.hasCharges and not button._mainCDShown then
+        if button.buttonData.hasCharges and not button._zeroChargesConfirmed then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
         else
             wantCdColor = style.barCooldownColor
@@ -287,7 +287,7 @@ local function UpdateBarDisplay(button)
         if style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
         end
-        if not wantDesat and button.buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+        if not wantDesat and button.buttonData.desaturateWhileZeroCharges and button._zeroChargesConfirmed then
             wantDesat = true
         end
         if not wantDesat and button.buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
@@ -337,7 +337,7 @@ local function UpdateBarDisplay(button)
             button._barCdColor = nil
             local resetColor
             if onCooldown then
-                if button.buttonData.hasCharges and not button._mainCDShown then
+                if button.buttonData.hasCharges and not button._zeroChargesConfirmed then
                     resetColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
                 else
                     resetColor = style.barCooldownColor
@@ -830,6 +830,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
+    button._chargeCountReadable = nil
+    button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil
     button._displaySpellId = nil
     button._itemCount = nil

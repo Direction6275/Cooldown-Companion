@@ -540,7 +540,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
         end
-        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._mainCDShown then
+        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._zeroChargesConfirmed then
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
@@ -675,6 +675,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._vertexG = nil
     button._vertexB = nil
     button._chargeText = nil
+    button._chargeCountReadable = nil
+    button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil

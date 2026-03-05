@@ -103,7 +103,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     -- Check hideWhileZeroCharges (charge-based spells and items)
     local hidReasonZeroCharges = false
     if buttonData.hideWhileZeroCharges then
-        if button._mainCDShown then
+        if button._zeroChargesConfirmed then
             shouldHide = true
             hidReasonZeroCharges = true
         end
@@ -171,7 +171,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             otherHide = true
         end
         if hidReasonNoProc then otherHide = true end
-        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
@@ -211,7 +211,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             otherHide = true
         end
         if hidReasonNoProc then otherHide = true end
-        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
@@ -276,7 +276,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
         if hidReasonNoProc then otherHide = true end
-        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
@@ -304,7 +304,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
         if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
         if hidReasonNoProc then otherHide = true end
-        if buttonData.hideWhileZeroCharges and button._mainCDShown then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if not otherHide then
             local groupId = button._groupId

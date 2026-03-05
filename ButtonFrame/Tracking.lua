@@ -7,7 +7,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
 -- Localize frequently-used globals
-local tonumber = tonumber
 local issecretvalue = issecretvalue
 local InCombatLockdown = InCombatLockdown
 local IsItemInRange = C_Item.IsItemInRange
@@ -20,25 +19,15 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     local spellID = chargeSpellID or buttonData.id
     local charges = C_Spell.GetSpellCharges(spellID)
 
-    -- Try to read current charges as plain number (works outside restricted).
-    -- Prefer charges.currentCharges (authoritative charge system value) over
-    -- GetSpellDisplayCount (UI-oriented, may drop to 0 during lockouts).
+    -- Read current charges only from the authoritative charge API field.
+    -- Display-count APIs are UI-oriented and can transiently read 0 during
+    -- lockout windows even when charges remain.
     local cur
     if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
         cur = charges.currentCharges
     end
-    if cur == nil then
-        cur = tonumber(C_Spell.GetSpellDisplayCount(spellID))
-    end
-    if cur == nil then
-        -- Tertiary fallback: cast count can reflect cast availability semantics
-        -- for some spells; for standard charge spells this still tracks charges.
-        local castCount = C_Spell.GetSpellCastCount(spellID)
-        if castCount ~= nil and not issecretvalue(castCount) then
-            cur = castCount
-        end
-    end
     button._currentReadableCharges = cur
+    button._chargeCountReadable = (cur ~= nil)
 
     -- Update persisted maxCharges when readable. Prefer API maxCharges over
     -- display count, which can reflect current charges instead of true max.
@@ -51,7 +40,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     end
 
     -- Fallback: if API maxCharges is unavailable (nil/secret), keep upward-only
-    -- observed max.  The primary path above is bidirectional (tracks decreases too).
+    -- observed max from readable charge count.
     if cur and cur > persistedMax then
         buttonData.maxCharges = cur
     end
@@ -76,8 +65,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
                 button.count:SetText(cur)
             end
         else
-            -- Secret: pass directly to SetText (C-level renders it)
-            -- Can't compare secrets, so always call SetText
+            -- Unreadable in restricted mode: use display API for text only.
             button._chargeText = nil
             button.count:SetText(C_Spell.GetSpellDisplayCount(spellID))
         end
@@ -99,6 +87,7 @@ local function UpdateItemChargeTracking(button, buttonData)
     -- Items are always readable — feed the same field spells use so the
     -- three-state charge color block can use direct comparison.
     button._currentReadableCharges = chargeCount
+    button._chargeCountReadable = true
 
     -- Display charge text with change detection
     local showChargeText = button.style and button.style.showChargeText
