@@ -370,17 +370,21 @@ function CooldownCompanion:UpdateButtonIcon(button)
                 -- widget which updates per-stage (e.g. Heating Up → Hot Streak).
                 -- Same BuffIcon/BuffBar dual-structure handling as cdmChildSlot above.
                 local vf = button._auraViewerFrame
+                local hasViewerIcon
                 if vf then
                     local iconTexture = vf.Icon
                     if iconTexture and not iconTexture.GetTextureFileID then
                         iconTexture = iconTexture.Icon
                     end
                     if iconTexture and iconTexture.GetTextureFileID then
+                        -- GetTextureFileID may return a secret value in combat;
+                        -- pass it straight through — do not test or branch on it.
                         icon = iconTexture:GetTextureFileID()
+                        hasViewerIcon = true
                     end
                 end
-                -- Fallback: static spell texture (viewer hidden or unavailable)
-                if not icon then
+                if not hasViewerIcon then
+                    -- Fallback: static spell texture (viewer hidden or unavailable)
                     local baseSpellId = child.cooldownInfo.spellID
                     if baseSpellId then
                         icon = C_Spell.GetSpellTexture(baseSpellId)
@@ -406,24 +410,26 @@ function CooldownCompanion:UpdateButtonIcon(button)
     -- Aura icon swap: show the tracked aura spell's icon while aura is active
     if buttonData.type == "spell" and button._auraActive
        and buttonData.auraShowAuraIcon and buttonData.auraSpellID and button._auraSpellID then
-        local auraIcon
         -- Read the viewer frame's Icon texture (updates per-stage for multi-stage
-        -- auras like Hot Streak).
+        -- auras like Hot Streak). GetTextureFileID may return a secret value in
+        -- combat; pass it straight through — do not test or branch on it.
         local vf = button._auraViewerFrame
+        local hasViewerIcon
         if vf then
             local iconTexture = vf.Icon
             if iconTexture and not iconTexture.GetTextureFileID then
                 iconTexture = iconTexture.Icon
             end
             if iconTexture and iconTexture.GetTextureFileID then
-                auraIcon = iconTexture:GetTextureFileID()
+                icon = iconTexture:GetTextureFileID()
+                hasViewerIcon = true
             end
         end
-        -- Fallback: static spell texture (viewer hidden or unavailable)
-        if not auraIcon then
-            auraIcon = C_Spell.GetSpellTexture(button._auraSpellID)
+        if not hasViewerIcon then
+            -- Fallback: static spell texture (viewer hidden or unavailable)
+            local auraIcon = C_Spell.GetSpellTexture(button._auraSpellID)
+            if auraIcon then icon = auraIcon end
         end
-        if auraIcon then icon = auraIcon end
     end
 
     local prevDisplayId = button._displaySpellId

@@ -405,10 +405,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if shouldShow ~= (button._showingAuraIcon or false) then
                 button._showingAuraIcon = shouldShow
                 CooldownCompanion:UpdateButtonIcon(button)
-            elseif shouldShow then
-                -- Per-tick refresh: viewer Icon may change on stage transitions
+            elseif shouldShow and viewerFrame then
+                -- Detect viewer Icon texture changes for stage transitions
                 -- within an already-active aura (e.g. Heating Up → Hot Streak).
-                CooldownCompanion:UpdateButtonIcon(button)
+                local iconObj = viewerFrame.Icon
+                if iconObj and not iconObj.GetTextureFileID then
+                    iconObj = iconObj.Icon
+                end
+                if iconObj and iconObj.GetTextureFileID then
+                    local vfTexId = iconObj:GetTextureFileID()
+                    if issecretvalue(vfTexId) then
+                        -- Secret in combat: can't compare, always refresh
+                        CooldownCompanion:UpdateButtonIcon(button)
+                    elseif vfTexId ~= button._lastViewerTexId then
+                        button._lastViewerTexId = vfTexId
+                        CooldownCompanion:UpdateButtonIcon(button)
+                    end
+                end
             end
         else
             button._showingAuraIcon = nil
