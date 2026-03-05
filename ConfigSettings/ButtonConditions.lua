@@ -787,6 +787,7 @@ local function BuildLoadConditionsTab(container)
         group.loadConditions = {
             raid = false, dungeon = false, delve = false, battleground = false,
             arena = false, openWorld = false, rested = false, petBattle = true,
+            vehicleUI = true,
         }
     end
     local lc = group.loadConditions
@@ -830,6 +831,7 @@ local function BuildLoadConditionsTab(container)
         { key = "openWorld",     label = "Open World" },
         { key = "rested",        label = "Rested Area" },
         { key = "petBattle",     label = "Pet Battle", default = true },
+        { key = "vehicleUI",    label = "Vehicle / Override UI", default = true },
     }
 
     for _, cond in ipairs(conditions) do

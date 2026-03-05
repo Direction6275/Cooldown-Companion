@@ -280,6 +280,10 @@ function CooldownCompanion:CheckLoadConditions(group)
     -- AceDB has no per-group metatable defaults for loadConditions sub-keys.
     if lc.petBattle ~= false and self._inPetBattle then return false end
 
+    -- If vehicle/override UI condition is enabled and player is in a vehicle or
+    -- override bar, unload. Default is true; nil treated as true (same as petBattle).
+    if lc.vehicleUI ~= false and self._inVehicleUI then return false end
+
     return true
 end
 
