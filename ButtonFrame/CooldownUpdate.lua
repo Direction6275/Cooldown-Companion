@@ -862,16 +862,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         else
             -- Restricted mode: charges unreadable via C_Spell.
-            -- Track charge consumption via UNIT_SPELLCAST_SUCCEEDED (_chargesSpent)
-            -- and combine with _mainCDShown (Blizzard shows main sweep only at 0
-            -- charges) for immediate zero-charge detection.
-
-            -- Reset happens in OnSpellCast (when casting from full), not here,
-            -- to avoid race with _chargeRecharging lag.
+            -- Use _mainCDShown as the canonical zero-charge signal. Blizzard only
+            -- shows main sweep at 0 charges; recharge without main sweep is partial.
             if not button._chargeRecharging then
                 cc = style.chargeFontColor or {1, 1, 1, 1}             -- FULL (max charges)
-            elseif (button._chargesSpent or 0) >= (buttonData.maxCharges or 2)
-                   or button._mainCDShown then
+            elseif button._mainCDShown then
                 cc = style.chargeFontColorZero or {1, 1, 1, 1}         -- ZERO (all spent)
             else
                 cc = style.chargeFontColorMissing or {1, 1, 1, 1}      -- MISSING (recharging)
