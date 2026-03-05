@@ -370,15 +370,52 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._auraInstanceID = nil
         end
 
+        -- Viewer icon change detection: for passive aura-tracked buttons, the
+        -- viewer frame's Icon widget updates per-stage (e.g. Heating Up → Hot Streak)
+        -- but UpdateButtonIcon is not called per-tick. Detect texture changes here
+        -- and trigger an icon update only when the viewer icon actually changes.
+        if buttonData.isPassive and viewerFrame then
+            local iconObj = viewerFrame.Icon
+            if iconObj and not iconObj.GetTextureFileID then
+                iconObj = iconObj.Icon
+            end
+            if iconObj and iconObj.GetTextureFileID then
+                local vfTexId = iconObj:GetTextureFileID()
+                if issecretvalue(vfTexId) then
+                    -- Secret in combat: can't compare, always refresh
+                    -- (SetTexture accepts secret values as pass-through)
+                    button._auraViewerFrame = viewerFrame
+                    CooldownCompanion:UpdateButtonIcon(button)
+                elseif vfTexId ~= button._lastViewerTexId then
+                    button._lastViewerTexId = vfTexId
+                    button._auraViewerFrame = viewerFrame
+                    CooldownCompanion:UpdateButtonIcon(button)
+                end
+            end
+        elseif buttonData.isPassive and button._lastViewerTexId then
+            button._lastViewerTexId = nil
+            button._auraViewerFrame = nil
+            CooldownCompanion:UpdateButtonIcon(button)
+        end
+
         -- Aura icon swap: trigger icon update on _auraActive transition
         if buttonData.auraShowAuraIcon and buttonData.auraSpellID then
             local shouldShow = auraOverrideActive and true or false
+            button._auraViewerFrame = shouldShow and viewerFrame or nil
             if shouldShow ~= (button._showingAuraIcon or false) then
                 button._showingAuraIcon = shouldShow
+                CooldownCompanion:UpdateButtonIcon(button)
+            elseif shouldShow then
+                -- Per-tick refresh: viewer Icon may change on stage transitions
+                -- within an already-active aura (e.g. Heating Up → Hot Streak).
                 CooldownCompanion:UpdateButtonIcon(button)
             end
         else
             button._showingAuraIcon = nil
+            -- Don't clear _auraViewerFrame for passive buttons — managed above
+            if not buttonData.isPassive then
+                button._auraViewerFrame = nil
+            end
         end
 
         -- Read aura stack text from viewer frame (combat-safe, secret pass-through)

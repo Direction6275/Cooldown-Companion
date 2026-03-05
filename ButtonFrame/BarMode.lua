@@ -690,6 +690,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
     button._showingAuraIcon = false
+    button._auraViewerFrame = nil
+    button._lastViewerTexId = nil
 
     button._auraInstanceID = nil
     button._viewerBar = nil
@@ -833,6 +835,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._itemCount = nil
     button._auraActive = nil
     button._showingAuraIcon = nil
+    button._auraViewerFrame = nil
+    button._lastViewerTexId = nil
 
     button._auraInstanceID = nil
     button._viewerBar = nil
