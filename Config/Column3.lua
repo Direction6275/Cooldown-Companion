@@ -21,6 +21,7 @@ local function RefreshColumn3()
         end
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then ST._RefreshButtonSettingsColumn() return end
+        local maxCustomAuraTabs = ST.MAX_CUSTOM_AURA_BARS or 3
 
         -- Hide button settings content that lives on the same col3 content area
         if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
@@ -28,25 +29,60 @@ local function RefreshColumn3()
         if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._autoAddScroll then col3._autoAddScroll.frame:Hide() end
 
-        -- Create/show custom aura scroll
-        if not col3._customAuraScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(col3.content)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-            col3._customAuraScroll = scroll
+        -- Create/show custom aura tab group
+        if col3._customAuraScroll then
+            col3._customAuraScroll.frame:Hide()
+        end
+        if not col3._customAuraTabGroup then
+            local customAuraTabs = {}
+            for slotIdx = 1, maxCustomAuraTabs do
+                customAuraTabs[#customAuraTabs + 1] = {
+                    value = "bar_" .. slotIdx,
+                    text = "Bar " .. slotIdx,
+                }
+            end
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetTabs(customAuraTabs)
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.customAuraBarTab = tab
+                widget:ReleaseChildren()
+
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                col3._customAuraSubScroll = scroll
+
+                local selectedSlot = tonumber((tab or ""):match("^bar_(%d+)$")) or 1
+                ST._BuildCustomAuraBarPanel(scroll, selectedSlot)
+            end)
+            tabGroup.frame:SetParent(col3.content)
+            col3._customAuraTabGroup = tabGroup
         end
 
-        col3._customAuraScroll:ReleaseChildren()
-        col3._customAuraScroll.frame:Show()
-        ST._BuildCustomAuraBarPanel(col3._customAuraScroll)
+        col3._customAuraTabGroup.frame:ClearAllPoints()
+        col3._customAuraTabGroup.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        col3._customAuraTabGroup.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+
+        local selectedTab = tostring(CS.customAuraBarTab or "bar_1")
+        local selectedSlot = tonumber(selectedTab:match("^bar_(%d+)$"))
+        if not selectedSlot or selectedSlot < 1 or selectedSlot > maxCustomAuraTabs then
+            selectedTab = "bar_1"
+            CS.customAuraBarTab = selectedTab
+        end
+        col3._customAuraTabGroup.frame:Show()
+        col3._customAuraTabGroup:SelectTab(selectedTab)
         return
     end
 
-    -- Normal mode: hide custom aura scroll
+    -- Normal mode: hide custom aura panel
     local col3Normal = CS.configFrame and CS.configFrame.col3
+    if col3Normal and col3Normal._customAuraTabGroup then
+        col3Normal._customAuraTabGroup.frame:Hide()
+    end
+    if col3Normal then
+        col3Normal._customAuraSubScroll = nil
+    end
     if col3Normal and col3Normal._customAuraScroll then
         col3Normal._customAuraScroll.frame:Hide()
     end

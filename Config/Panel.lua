@@ -35,6 +35,33 @@ local function SetPrimaryMode(mode, opts)
     return true
 end
 
+local function GetClassColoredText(text)
+    local safeText = tostring(text or "")
+    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if classColor then
+        if classColor.WrapTextInColorCode then
+            return classColor:WrapTextInColorCode(safeText)
+        end
+        local r = math.floor(((classColor.r or 1) * 255) + 0.5)
+        local g = math.floor(((classColor.g or 1) * 255) + 0.5)
+        local b = math.floor(((classColor.b or 1) * 255) + 0.5)
+        return string.format("|cff%02x%02x%02x%s|r", r, g, b, safeText)
+    end
+    return safeText
+end
+
+local function GetCustomAuraBarsColumnTitle()
+    local specIdx = C_SpecializationInfo.GetSpecialization()
+    if not specIdx then
+        return "Custom Aura Bars"
+    end
+    local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+    if not specName or specName == "" then
+        return "Custom Aura Bars"
+    end
+    return "Custom Aura Bars: " .. GetClassColoredText(specName)
+end
+
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
@@ -1097,6 +1124,14 @@ function CooldownCompanion:RefreshConfigPanel()
         end
         return col2._barsStylingScroll
     end
+    local function getCustomAuraScrollKey()
+        if not CS.resourceBarPanelActive then return nil end
+        return tostring(CS.customAuraBarTab or "bar_1")
+    end
+    local function getCustomAuraScrollWidget(col3)
+        if not col3 then return nil end
+        return col3._customAuraSubScroll or col3._customAuraScroll
+    end
 
     local saved1   = saveScroll(CS.col1Scroll)
     local saved2   = saveScroll(CS.col2Scroll)
@@ -1104,7 +1139,8 @@ function CooldownCompanion:RefreshConfigPanel()
     local savedBarsStyling = saveScroll(getBarsStylingScrollWidget(col2Before))
     local savedBarsStylingKey = getBarsStylingScrollKey()
     local col3Before = CS.configFrame and CS.configFrame.col3
-    local savedCab = col3Before and col3Before._customAuraScroll and saveScroll(col3Before._customAuraScroll)
+    local savedCab = saveScroll(getCustomAuraScrollWidget(col3Before))
+    local savedCabKey = getCustomAuraScrollKey()
     local savedAaf = col3Before and col3Before._autoAddScroll and saveScroll(col3Before._autoAddScroll)
     local savedAafKey = getAutoAddScrollKey()
     local savedBtn = saveScroll(buttonSettingsScroll)
@@ -1119,7 +1155,7 @@ function CooldownCompanion:RefreshConfigPanel()
     if CS.resourceBarPanelActive then
         CS.configFrame.col1:SetTitle("Bars & Frames")
         CS.configFrame.col2:SetTitle("Styling")
-        CS.configFrame.col3:SetTitle("Custom Aura Bars")
+        CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
         CS.configFrame.col4:SetTitle("Layout & Order")
     else
         CS.configFrame.col1:SetTitle("Groups")
@@ -1138,7 +1174,7 @@ function CooldownCompanion:RefreshConfigPanel()
 
     -- Recompute Column 3 title after RefreshColumn3(), since it may cancel Auto Add.
     if CS.resourceBarPanelActive then
-        CS.configFrame.col3:SetTitle("Custom Aura Bars")
+        CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
     elseif CS.autoAddFlowActive then
         CS.configFrame.col3:SetTitle("Auto Add")
     else
@@ -1159,8 +1195,14 @@ function CooldownCompanion:RefreshConfigPanel()
         end
     end
     local col3After = CS.configFrame and CS.configFrame.col3
-    if col3After and col3After._customAuraScroll then
-        restoreScroll(col3After._customAuraScroll, savedCab)
+    local customAuraAfter = getCustomAuraScrollWidget(col3After)
+    if customAuraAfter then
+        local currentCabKey = getCustomAuraScrollKey()
+        if savedCab and savedCabKey and currentCabKey and savedCabKey == currentCabKey then
+            restoreScroll(customAuraAfter, savedCab)
+        else
+            clearScroll(customAuraAfter)
+        end
     end
     if col3After and col3After._autoAddScroll then
         local currentAafKey = getAutoAddScrollKey()
