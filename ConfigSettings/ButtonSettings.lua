@@ -537,7 +537,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end -- canTrackAura
 
     -- Show Aura Icon toggle (spells with aura tracking only — passive auras already show their own icon)
-    if buttonData.auraTracking and not buttonData.isPassive and buttonData.auraSpellID then
+    if buttonData.auraTracking and not buttonData.isPassive then
         local auraIconCb = AceGUI:Create("CheckBox")
         auraIconCb:SetLabel("Show Aura Icon")
         auraIconCb:SetValue(buttonData.auraShowAuraIcon == true)

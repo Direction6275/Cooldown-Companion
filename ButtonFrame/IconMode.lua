@@ -409,7 +409,7 @@ function CooldownCompanion:UpdateButtonIcon(button)
 
     -- Aura icon swap: show the tracked aura spell's icon while aura is active
     if buttonData.type == "spell" and button._auraActive
-       and buttonData.auraShowAuraIcon and buttonData.auraSpellID and button._auraSpellID then
+       and buttonData.auraShowAuraIcon and button._auraSpellID then
         -- Read the viewer frame's Icon texture (updates per-stage for multi-stage
         -- auras like Hot Streak). GetTextureFileID may return a secret value in
         -- combat; pass it straight through — do not test or branch on it.
