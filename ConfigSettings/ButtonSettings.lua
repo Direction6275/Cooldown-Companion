@@ -361,6 +361,21 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraEditBox:SetRelativeWidth(0.70)
     auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
         text = text:gsub("%s", "")
+        if text ~= "" then
+            local hasId = false
+            for id in text:gmatch("%d+") do
+                hasId = true
+                local numId = tonumber(id)
+                if not buffTrackableSpells[numId] and not CooldownCompanion.viewerAuraFrames[numId] then
+                    local name = C_Spell.GetSpellName(numId)
+                    print("|cffff8800Cooldown Companion:|r " .. (name and (name .. " (" .. id .. ")") or ("ID " .. id)) .. " is not a CDM-tracked aura.")
+                    widget:SetText("")
+                    text = ""
+                    break
+                end
+            end
+            if not hasId then text = "" end
+        end
         buttonData.auraSpellID = text ~= "" and text or nil
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
@@ -537,7 +552,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end -- canTrackAura
 
     -- Show Aura Icon toggle (spells with aura tracking only — passive auras already show their own icon)
-    if buttonData.auraTracking and not buttonData.isPassive and buttonData.auraSpellID then
+    if buttonData.auraTracking and not buttonData.isPassive then
         local auraIconCb = AceGUI:Create("CheckBox")
         auraIconCb:SetLabel("Show Aura Icon")
         auraIconCb:SetValue(buttonData.auraShowAuraIcon == true)
