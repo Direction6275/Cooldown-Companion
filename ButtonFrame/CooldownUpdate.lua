@@ -256,9 +256,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- (auraDataUnit set by GetAuraData) but doesn't expose auraInstanceID.
                 local viewerCooldown = viewerFrame.Cooldown
                 if viewerFrame.auraDataUnit and viewerCooldown and viewerCooldown:IsShown() then
-                    if not viewerCooldown:HasSecretValues() then
+                    local startMs, durMs = viewerCooldown:GetCooldownTimes()
+                    if not issecretvalue(durMs) then
                         -- Plain values: safe to do ms->s arithmetic
-                        local startMs, durMs = viewerCooldown:GetCooldownTimes()
                         if durMs > 0 and (startMs + durMs) > GetTime() * 1000 then
                             button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
                             auraOverrideActive = true
@@ -268,6 +268,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     else
                         -- Secret values: can't convert ms->s. Mark aura active;
                         -- grace period covers continuity from previous tick's display.
+                        -- (HasSecretValues() on viewer widgets is unreliable when
+                        -- Blizzard secure code set the values — check the returned
+                        -- value directly with issecretvalue() instead.)
                         auraOverrideActive = true
                         fetchOk = true
                         button._auraUnit = viewerFrame.auraDataUnit or auraUnit
