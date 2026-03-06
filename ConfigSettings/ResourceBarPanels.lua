@@ -946,107 +946,143 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
 
     if not textCollapsed then
-        -- Per-resource "Show Text" checkboxes (continuous bars only)
+        -- Per-resource "Show Text" checkboxes (continuous + segmented resources)
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
-            if not SEGMENTED_TYPES_CONFIG[pt] and pt ~= 100 then
-                if not settings.resources[pt] then
-                    settings.resources[pt] = {}
-                end
-                local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
-                local cb = AceGUI:Create("CheckBox")
-                cb:SetLabel("Show " .. name .. " Text")
-                cb:SetValue(settings.resources[pt].showText ~= false)
-                cb:SetFullWidth(true)
-                cb:SetCallback("OnValueChanged", function(widget, event, val)
-                    if not settings.resources[pt] then settings.resources[pt] = {} end
+            local capturedPt = pt
+            local isSegmentedResource = (SEGMENTED_TYPES_CONFIG[capturedPt] == true) or (capturedPt == 100)
+            if not settings.resources[capturedPt] then
+                settings.resources[capturedPt] = {}
+            end
+            local resSettings = settings.resources[capturedPt]
+            local name = POWER_NAMES_CONFIG[capturedPt] or ("Power " .. capturedPt)
+
+            local showTextEnabled
+            if isSegmentedResource then
+                -- Segmented resources are off by default unless explicitly enabled.
+                showTextEnabled = resSettings.showText == true
+            else
+                showTextEnabled = resSettings.showText ~= false
+            end
+
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetLabel("Show " .. name .. " Text")
+            cb:SetValue(showTextEnabled)
+            cb:SetFullWidth(true)
+            cb:SetCallback("OnValueChanged", function(widget, event, val)
+                if not settings.resources[capturedPt] then settings.resources[capturedPt] = {} end
+                if isSegmentedResource then
+                    settings.resources[capturedPt].showText = val and true or nil
+                else
                     if val then
-                        settings.resources[pt].showText = nil
+                        settings.resources[capturedPt].showText = nil
                     else
-                        settings.resources[pt].showText = false
+                        settings.resources[capturedPt].showText = false
                     end
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                container:AddChild(cb)
+                end
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(cb)
 
-                local advExpanded = AddAdvancedToggle(cb, "rbText_" .. pt, rbTextAdvBtns, settings.resources[pt].showText ~= false)
-                if advExpanded and settings.resources[pt].showText ~= false then
-                    local resSettings = settings.resources[pt]
-
-                    local textFormatDrop = AceGUI:Create("Dropdown")
-                    textFormatDrop:SetLabel("Text Format")
-                    local textFormatOptions = {
+            local advExpanded = AddAdvancedToggle(cb, "rbText_" .. capturedPt, rbTextAdvBtns, showTextEnabled)
+            if advExpanded and showTextEnabled then
+                local textFormatDrop = AceGUI:Create("Dropdown")
+                textFormatDrop:SetLabel("Text Format")
+                local textFormatOptions
+                local textFormatOrder
+                if isSegmentedResource then
+                    textFormatOptions = {
+                        current = "Current Value",
+                        current_max = "Current / Max",
+                    }
+                    textFormatOrder = { "current", "current_max" }
+                else
+                    textFormatOptions = {
                         current = "Current Value",
                         current_max = "Current / Max",
                         percent = "Percent",
                     }
-                    local textFormatOrder = { "current", "current_max", "percent" }
-                    textFormatDrop:SetList(textFormatOptions, textFormatOrder)
-                    local textFormatValue = resSettings.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                    textFormatOrder = { "current", "current_max", "percent" }
+                end
+                textFormatDrop:SetList(textFormatOptions, textFormatOrder)
+                local textFormatValue = resSettings.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                if isSegmentedResource then
+                    if textFormatValue ~= "current" and textFormatValue ~= "current_max" then
+                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                    end
+                else
                     if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
                         textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
                     end
-                    textFormatDrop:SetValue(textFormatValue)
-                    textFormatDrop:SetFullWidth(true)
-                    textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        if val == "current" or val == "current_max" or val == "percent" then
-                            settings.resources[pt].textFormat = val
-                        else
-                            settings.resources[pt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
-                        end
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(textFormatDrop)
-
-                    local fontDrop = AceGUI:Create("Dropdown")
-                    fontDrop:SetLabel("Font")
-                    CS.SetupFontDropdown(fontDrop)
-                    fontDrop:SetValue(resSettings.textFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
-                    fontDrop:SetFullWidth(true)
-                    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        settings.resources[pt].textFont = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(fontDrop)
-
-                    local sizeDrop = AceGUI:Create("Slider")
-                    sizeDrop:SetLabel("Font Size")
-                    sizeDrop:SetSliderValues(6, 24, 1)
-                    sizeDrop:SetValue(resSettings.textFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
-                    sizeDrop:SetFullWidth(true)
-                    sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        settings.resources[pt].textFontSize = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(sizeDrop)
-
-                    local outlineDrop = AceGUI:Create("Dropdown")
-                    outlineDrop:SetLabel("Outline")
-                    outlineDrop:SetList(CS.outlineOptions)
-                    outlineDrop:SetValue(resSettings.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
-                    outlineDrop:SetFullWidth(true)
-                    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        settings.resources[pt].textFontOutline = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(outlineDrop)
-
-                    local textColorPicker = AceGUI:Create("ColorPicker")
-                    textColorPicker:SetLabel("Text Color")
-                    local tc = resSettings.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
-                    textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-                    textColorPicker:SetHasAlpha(true)
-                    textColorPicker:SetFullWidth(true)
-                    textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                        settings.resources[pt].textFontColor = {r, g, b, a}
-                    end)
-                    textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                        settings.resources[pt].textFontColor = {r, g, b, a}
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(textColorPicker)
                 end
+                textFormatDrop:SetValue(textFormatValue)
+                textFormatDrop:SetFullWidth(true)
+                textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    if isSegmentedResource then
+                        if val == "current" or val == "current_max" then
+                            settings.resources[capturedPt].textFormat = val
+                        else
+                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                        end
+                    else
+                        if val == "current" or val == "current_max" or val == "percent" then
+                            settings.resources[capturedPt].textFormat = val
+                        else
+                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                        end
+                    end
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(textFormatDrop)
+
+                local fontDrop = AceGUI:Create("Dropdown")
+                fontDrop:SetLabel("Font")
+                CS.SetupFontDropdown(fontDrop)
+                fontDrop:SetValue(resSettings.textFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                fontDrop:SetFullWidth(true)
+                fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.resources[capturedPt].textFont = val
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(fontDrop)
+
+                local sizeDrop = AceGUI:Create("Slider")
+                sizeDrop:SetLabel("Font Size")
+                sizeDrop:SetSliderValues(6, 24, 1)
+                sizeDrop:SetValue(resSettings.textFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                sizeDrop:SetFullWidth(true)
+                sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.resources[capturedPt].textFontSize = val
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(sizeDrop)
+
+                local outlineDrop = AceGUI:Create("Dropdown")
+                outlineDrop:SetLabel("Outline")
+                outlineDrop:SetList(CS.outlineOptions)
+                outlineDrop:SetValue(resSettings.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                outlineDrop:SetFullWidth(true)
+                outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.resources[capturedPt].textFontOutline = val
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(outlineDrop)
+
+                local textColorPicker = AceGUI:Create("ColorPicker")
+                textColorPicker:SetLabel("Text Color")
+                local tc = resSettings.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+                textColorPicker:SetHasAlpha(true)
+                textColorPicker:SetFullWidth(true)
+                textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+                    settings.resources[capturedPt].textFontColor = {r, g, b, a}
+                end)
+                textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+                    settings.resources[capturedPt].textFontColor = {r, g, b, a}
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(textColorPicker)
             end
         end
     end

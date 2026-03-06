@@ -1667,6 +1667,16 @@ local function CreateSegmentedBar(parent, numSegments)
         holder.segments[i] = seg
     end
 
+    holder.textLayer = CreateFrame("Frame", nil, holder)
+    holder.textLayer:SetAllPoints(holder)
+    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
+
+    holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
+    holder.text:SetPoint("CENTER")
+    holder.text:SetTextColor(1, 1, 1, 1)
+    holder.text:Hide()
+
     holder._barType = "segmented"
     holder._numSegments = numSegments
     return holder
@@ -1797,6 +1807,16 @@ local function CreateOverlayBar(parent, halfSegments)
         holder.overlaySegments[i] = seg
     end
 
+    holder.textLayer = CreateFrame("Frame", nil, holder)
+    holder.textLayer:SetAllPoints(holder)
+    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
+
+    holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
+    holder.text:SetPoint("CENTER")
+    holder.text:SetTextColor(1, 1, 1, 1)
+    holder.text:Hide()
+
     return holder
 end
 
@@ -1895,6 +1915,42 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
     end
 end
 
+local function IsSegmentedTextResource(powerType)
+    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
+end
+
+local function FormatSegmentedTextNumber(value)
+    local n = tonumber(value) or 0
+    local rounded = math_floor((n * 10) + 0.5) / 10
+    local formatted = string_format("%.1f", rounded)
+    return (formatted:gsub("%.0$", ""))
+end
+
+local function ClearSegmentedText(holder)
+    if holder and holder.text then
+        holder.text:SetText("")
+    end
+end
+
+local function SetSegmentedText(holder, currentValue, maxValue)
+    if not holder or not holder.text or not holder.text:IsShown() then return end
+    if type(currentValue) ~= "number" then
+        holder.text:SetText("")
+        return
+    end
+
+    local textFormat = holder._textFormat
+    if textFormat == "current_max" then
+        if type(maxValue) ~= "number" then
+            holder.text:SetText("")
+            return
+        end
+        holder.text:SetText(FormatSegmentedTextNumber(currentValue) .. " / " .. FormatSegmentedTextNumber(maxValue))
+    else
+        holder.text:SetText(FormatSegmentedTextNumber(currentValue))
+    end
+end
+
 ------------------------------------------------------------------------
 -- Update logic: Continuous resources (SECRET in combat — NO Lua arithmetic)
 ------------------------------------------------------------------------
@@ -1976,6 +2032,15 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         end
     end
 
+    local function FinalizeSegmentedUpdate(currentValue, maxValue, clearText)
+        FinalizeAuraVisuals()
+        if clearText then
+            ClearSegmentedText(holder)
+        else
+            SetSegmentedText(holder, currentValue, maxValue)
+        end
+    end
+
     if powerType == 5 then
         -- DK Runes: sorted by readiness (ready left, longest CD right)
         local now = GetTime()
@@ -2007,29 +2072,34 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         end
         local thresholdActive = thresholdEnabled and readyCount >= thresholdValue
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
+        local runeValueTotal = 0
         for i = 1, numSegs do
             local r = runeData[i]
             local seg = holder.segments[i]
+            local segValue = 0
             if r.ready then
-                seg:SetValue(1)
+                segValue = 1
+                seg:SetValue(segValue)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
             elseif r.duration and r.duration > 0 then
-                seg:SetValue(math_min((now - r.start) / r.duration, 1))
+                segValue = math_min((now - r.start) / r.duration, 1)
+                seg:SetValue(segValue)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             else
-                seg:SetValue(0)
+                seg:SetValue(segValue)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
+            runeValueTotal = runeValueTotal + segValue
         end
-        FinalizeAuraVisuals()
+        FinalizeSegmentedUpdate(runeValueTotal, numSegs, false)
         return
     end
 
     if powerType == 7 then
         if IsUnitPowerSecret("player", 7) or IsUnitPowerMaxSecret("player", 7) then
             ClearForSecretMath()
-            FinalizeAuraVisuals()
+            FinalizeSegmentedUpdate(nil, nil, true)
             return
         end
 
@@ -2039,15 +2109,17 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local max = UnitPowerMax("player", 7)
         if issecretvalue and (issecretvalue(raw) or issecretvalue(rawMax) or issecretvalue(max)) then
             ClearForSecretMath()
-            FinalizeAuraVisuals()
+            FinalizeSegmentedUpdate(nil, nil, true)
             return
         end
 
+        local displayCurrent
         if max > 0 and rawMax > 0 then
             local perShard = rawMax / max
             if perShard > 0 then
                 local filled = math_floor(raw / perShard)
                 local partial = (raw % perShard) / perShard
+                displayCurrent = filled + partial
                 local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
                 local isMax = (filled == max)
                 local thresholdActive = thresholdEnabled and filled >= thresholdValue
@@ -2072,14 +2144,18 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         else
             ClearForSecretMath()
         end
-        FinalizeAuraVisuals()
+        if type(displayCurrent) == "number" then
+            FinalizeSegmentedUpdate(displayCurrent, max, false)
+        else
+            FinalizeSegmentedUpdate(nil, nil, true)
+        end
         return
     end
 
     if powerType == 19 then
         if IsUnitPowerSecret("player", 19) or IsUnitPowerMaxSecret("player", 19) then
             ClearForSecretMath()
-            FinalizeAuraVisuals()
+            FinalizeSegmentedUpdate(nil, nil, true)
             return
         end
 
@@ -2089,11 +2165,12 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local partialRaw = UnitPartialPower("player", 19)
         if issecretvalue and (issecretvalue(filled) or issecretvalue(max) or issecretvalue(partialRaw)) then
             ClearForSecretMath()
-            FinalizeAuraVisuals()
+            FinalizeSegmentedUpdate(nil, nil, true)
             return
         end
 
         local partial = partialRaw / 1000
+        local displayCurrent = filled + partial
         local readyColor, rechargingColor, maxColor = GetResourceColors(19, settings)
         local isMax = (filled == max)
         local thresholdActive = thresholdEnabled and filled >= thresholdValue
@@ -2112,7 +2189,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
         end
-        FinalizeAuraVisuals()
+        FinalizeSegmentedUpdate(displayCurrent, max, false)
         return
     end
 
@@ -2120,7 +2197,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if powerType == 4 then
         if IsUnitPowerSecret("player", 4) or IsUnitPowerMaxSecret("player", 4) then
             ClearForSecretMath()
-            FinalizeAuraVisuals()
+            FinalizeSegmentedUpdate(nil, nil, true)
             return
         end
 
@@ -2128,7 +2205,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local max = UnitPowerMax("player", 4)
         if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
             ClearForSecretMath()
-            FinalizeAuraVisuals()
+            FinalizeSegmentedUpdate(nil, nil, true)
             return
         end
 
@@ -2157,14 +2234,14 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 seg:SetValue(0)
             end
         end
-        FinalizeAuraVisuals()
+        FinalizeSegmentedUpdate(current, max, false)
         return
     end
 
     -- Generic segmented with max color: HolyPower, Chi, ArcaneCharges
     if IsUnitPowerSecret("player", powerType) or IsUnitPowerMaxSecret("player", powerType) then
         ClearForSecretMath()
-        FinalizeAuraVisuals()
+        FinalizeSegmentedUpdate(nil, nil, true)
         return
     end
 
@@ -2172,7 +2249,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     local max = UnitPowerMax("player", powerType)
     if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
         ClearForSecretMath()
-        FinalizeAuraVisuals()
+        FinalizeSegmentedUpdate(nil, nil, true)
         return
     end
     local normalColor, maxColor
@@ -2195,7 +2272,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             seg:SetValue(0)
         end
     end
-    FinalizeAuraVisuals()
+    FinalizeSegmentedUpdate(current, max, false)
 end
 
 ------------------------------------------------------------------------
@@ -2228,6 +2305,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
             end
         end
         HideResourceAuraStackSegments(holder)
+        ClearSegmentedText(holder)
         return
     end
 
@@ -2282,6 +2360,8 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     else
         HideResourceAuraStackSegments(holder)
     end
+
+    SetSegmentedText(holder, stacks, mwMaxStacks)
 end
 
 ------------------------------------------------------------------------
@@ -2861,6 +2941,41 @@ local function StyleContinuousBar(bar, powerType, settings)
     UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 end
 
+local function StyleSegmentedText(holder, powerType, settings)
+    if not holder or not holder.text then return end
+    if not IsSegmentedTextResource(powerType) then
+        holder.text:SetShown(false)
+        holder._textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+        ClearSegmentedText(holder)
+        return
+    end
+
+    local resourceConfig = settings.resources and settings.resources[powerType]
+    local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
+    if textFormat ~= "current" and textFormat ~= "current_max" then
+        textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+    end
+    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
+    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+    local textOutline = resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
+        textColor = DEFAULT_RESOURCE_TEXT_COLOR
+    end
+
+    local textFont = CooldownCompanion:FetchFont(textFontName)
+    holder.text:SetFont(textFont, textSize, textOutline)
+    holder.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
+
+    -- Segmented resources are off by default unless explicitly enabled.
+    local showText = resourceConfig and resourceConfig.showText == true
+    holder.text:SetShown(showText)
+    holder._textFormat = textFormat
+    if not showText then
+        ClearSegmentedText(holder)
+    end
+end
+
 local function StyleSegmentedBar(holder, powerType, settings)
     -- All segmented types use their first color return as the initial segment color.
     -- UpdateSegmentedBar dynamically recolors per-segment each tick.
@@ -2868,7 +2983,7 @@ local function StyleSegmentedBar(holder, powerType, settings)
     for _, seg in ipairs(holder.segments) do
         seg:SetStatusBarColor(color[1], color[2], color[3], 1)
     end
-    -- Segmented bars hide text by default (no text FontString on segmented)
+    StyleSegmentedText(holder, powerType, settings)
 end
 
 function CooldownCompanion:ApplyResourceBars()
@@ -3056,6 +3171,7 @@ function CooldownCompanion:ApplyResourceBars()
                 barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                 barInfo.frame.overlaySegments[i]:Show()
             end
+            StyleSegmentedText(barInfo.frame, powerType, settings)
 
         elseif powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
             -- Custom aura bar
@@ -3605,16 +3721,18 @@ ApplyPreviewData = function()
                 end
             elseif barInfo.barType == "segmented" then
                 local n = #barInfo.frame.segments
+                local filled = math_floor(n * 0.6)
                 for i, seg in ipairs(barInfo.frame.segments) do
-                    if i <= math_floor(n * 0.6) then
+                    if i <= filled then
                         seg:SetValue(1)
-                    elseif i == math_floor(n * 0.6) + 1 then
+                    elseif i == filled + 1 then
                         seg:SetValue(0.5)
                     else
                         seg:SetValue(0)
                     end
                 end
                 ApplyResourceAuraLanePreview(barInfo, 0.5)
+                SetSegmentedText(barInfo.frame, filled + 0.5, n)
             elseif barInfo.barType == "mw_segmented" then
                 -- Preview at 7 stacks (all 5 base full, 2 overlay full)
                 local half = #barInfo.frame.segments
@@ -3629,6 +3747,7 @@ ApplyPreviewData = function()
                     end
                 end
                 ApplyResourceAuraLanePreview(barInfo, 0.5)
+                SetSegmentedText(barInfo.frame, previewStacks, mwMaxStacks)
             elseif barInfo.barType == "custom_continuous" then
                 local cabConfig = barInfo.cabConfig
                 local isActive = cabConfig and cabConfig.trackingMode == "active"
