@@ -588,32 +588,37 @@ function CooldownCompanion:RebuildTalentNodeCache()
     end
 end
 
--- Check whether a per-button talent condition is satisfied.
--- Returns true if no condition set, or if condition is met.
--- Fail-open: unknown/stale nodes return true (show button).
+-- Check whether per-button talent conditions are satisfied.
+-- Returns true if no conditions set. All conditions use AND logic.
+-- Fail-open per condition: unknown/stale nodes skip (don't fail the check).
 function CooldownCompanion:IsTalentConditionMet(buttonData)
-    local nodeID = buttonData.talentNodeID
-    if not nodeID then return true end
+    local conditions = buttonData.talentConditions
+    if not conditions or #conditions == 0 then return true end
 
     local cache = self._talentNodeCache
-    local entry = cache and cache[nodeID]
-    if not entry then
-        -- Node not in cache: either stale or tree not loaded yet → fail-open
-        return true
+    if not cache then return true end
+
+    for _, cond in ipairs(conditions) do
+        local entry = cache[cond.nodeID]
+        if entry then
+            local isTaken = entry.activeRank > 0
+
+            -- For choice nodes: if a specific entryID is required, verify it matches
+            if isTaken and cond.entryID then
+                isTaken = (entry.activeEntryID == cond.entryID)
+            end
+
+            local show = cond.show or "taken"
+            if show == "not_taken" then
+                if isTaken then return false end
+            else
+                if not isTaken then return false end
+            end
+        end
+        -- Node not in cache: stale or tree not loaded → fail-open (skip)
     end
 
-    local isTaken = entry.activeRank > 0
-
-    -- For choice nodes: if a specific entryID is required, verify it matches
-    if isTaken and buttonData.talentEntryID then
-        isTaken = (entry.activeEntryID == buttonData.talentEntryID)
-    end
-
-    local show = buttonData.talentShow or "taken"
-    if show == "not_taken" then
-        return not isTaken
-    end
-    return isTaken
+    return true
 end
 
 -- Utility functions

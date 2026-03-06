@@ -791,10 +791,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end -- not visCollapsed
 
     ------------------------------------------------------------------------
-    -- TALENT CONDITION (independent section, not nested under Visibility Rules)
+    -- TALENT CONDITIONS (independent section, not nested under Visibility Rules)
     ------------------------------------------------------------------------
     local talentHeading = AceGUI:Create("Heading")
-    talentHeading:SetText("Talent Condition")
+    talentHeading:SetText("Talent Conditions")
     ColorHeading(talentHeading)
     talentHeading:SetFullWidth(true)
     scroll:AddChild(talentHeading)
@@ -809,36 +809,41 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end)
 
     local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
-        "Talent Condition",
-        {"Gate this button's visibility on whether a specific talent is taken. The button is excluded from the group entirely when the condition is not met.", 1, 1, 1, true},
+        "Talent Conditions",
+        {"Gate this button's visibility on talent conditions. All conditions must be met (AND logic).", 1, 1, 1, true},
         {"Uses class and spec tree talents only (hero talents are handled by folder-level filters).", 0.7, 0.7, 0.7, true},
     }, infoButtons)
     talentHeading.right:ClearAllPoints()
     talentHeading.right:SetPoint("RIGHT", talentHeading.frame, "RIGHT", -3, 0)
     talentHeading.right:SetPoint("LEFT", talentInfoBtn, "RIGHT", 4, 0)
 
-    -- Summary line (shown when collapsed): icon + talent name or "None"
+    -- Determine current talent condition state
+    local conditions = buttonData.talentConditions
+    local condCount = conditions and #conditions or 0
     local hasTalent
     if isBatch then
-        hasTalent = GetBatchFieldValue(group, "talentNodeID")
+        hasTalent = GetBatchFieldValue(group, "talentConditions")
     else
-        hasTalent = buttonData.talentNodeID and true or false
+        hasTalent = condCount > 0
     end
 
     if talentCollapsed then
         local summaryLabel = AceGUI:Create("Label")
-        if hasTalent == nil then
-            -- Mixed state in batch
+        if isBatch and hasTalent == nil then
             summaryLabel:SetText("|cff888888Multiple conditions|r")
-        elseif hasTalent then
-            local displayName = buttonData.talentName or "Unknown Talent"
-            local displayIcon = buttonData.talentSpellID and C_Spell.GetSpellTexture(buttonData.talentSpellID)
-            local showText = (buttonData.talentShow == "not_taken") and " (not taken)" or " (taken)"
+        elseif hasTalent and condCount > 0 then
+            local firstCond = conditions[1]
+            local displayIcon = firstCond.spellID and C_Spell.GetSpellTexture(firstCond.spellID)
             if displayIcon then
                 summaryLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
                 summaryLabel:SetImageSize(16, 16)
             end
-            summaryLabel:SetText(displayName .. showText)
+            if condCount == 1 then
+                local showText = (firstCond.show == "not_taken") and " (not taken)" or " (taken)"
+                summaryLabel:SetText((firstCond.name or "Unknown") .. showText)
+            else
+                summaryLabel:SetText(condCount .. " conditions")
+            end
         else
             summaryLabel:SetText("|cff888888None|r")
         end
@@ -847,73 +852,102 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     end
 
     if not talentCollapsed then
-    -- Current condition display
-    local currentLabel = AceGUI:Create("Label")
+
+    -- Condition list display
     if isBatch and hasTalent == nil then
-        currentLabel:SetText("|cff888888Multiple conditions — pick or clear to unify.|r")
-    elseif hasTalent then
-        local displayName = buttonData.talentName or "Unknown Talent"
-        local displayIcon = buttonData.talentSpellID and C_Spell.GetSpellTexture(buttonData.talentSpellID)
-        local showText = (buttonData.talentShow == "not_taken") and " (not taken)" or " (taken)"
-        if displayIcon then
-            currentLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
-            currentLabel:SetImageSize(16, 16)
-        end
-        currentLabel:SetText("|cffFFFFFF" .. displayName .. "|r" .. showText)
-    else
-        currentLabel:SetText("|cff888888No talent condition set.|r")
-    end
-    currentLabel:SetFullWidth(true)
-    scroll:AddChild(currentLabel)
-
-    -- Stale node warning
-    if not isBatch and buttonData.talentNodeID then
+        local mixedLabel = AceGUI:Create("Label")
+        mixedLabel:SetText("|cff888888Multiple conditions — pick or clear to unify.|r")
+        mixedLabel:SetFullWidth(true)
+        scroll:AddChild(mixedLabel)
+    elseif condCount > 0 then
         local cache = CooldownCompanion._talentNodeCache
-        if cache and not cache[buttonData.talentNodeID] then
-            local warnLabel = AceGUI:Create("Label")
-            warnLabel:SetText("|cffff8800Talent node not found in current tree. Condition may need updating.|r")
-            warnLabel:SetFullWidth(true)
-            scroll:AddChild(warnLabel)
+        for _, cond in ipairs(conditions) do
+            local condLabel = AceGUI:Create("Label")
+            local displayIcon = cond.spellID and C_Spell.GetSpellTexture(cond.spellID)
+            if displayIcon then
+                condLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
+                condLabel:SetImageSize(16, 16)
+            end
+            local nameText = cond.name or "Unknown Talent"
+            local showText, showColor
+            if cond.show == "not_taken" then
+                showText = " |cffff4d4d(not taken)|r"
+            else
+                showText = " |cff33dd33(taken)|r"
+            end
+            condLabel:SetText("|cffFFFFFF" .. nameText .. "|r" .. showText)
+            condLabel:SetFullWidth(true)
+            scroll:AddChild(condLabel)
+
+            -- Per-condition stale node warning
+            if not isBatch and cache and not cache[cond.nodeID] then
+                local warnLabel = AceGUI:Create("Label")
+                warnLabel:SetText("|cffff8800  Node not found in current tree.|r")
+                warnLabel:SetFullWidth(true)
+                scroll:AddChild(warnLabel)
+            end
         end
+    else
+        local emptyLabel = AceGUI:Create("Label")
+        emptyLabel:SetText("|cff888888No talent conditions set.|r")
+        emptyLabel:SetFullWidth(true)
+        scroll:AddChild(emptyLabel)
     end
 
-    -- Polarity dropdown (only when a condition is set)
-    if hasTalent and hasTalent ~= nil then
-        local polarityDrop = AceGUI:Create("Dropdown")
-        polarityDrop:SetLabel("Show Button When Talent Is")
-        polarityDrop:SetList({
-            ["taken"] = "Taken",
-            ["not_taken"] = "Not Taken",
-        })
-        local currentPolarity = buttonData.talentShow or "taken"
-        polarityDrop:SetValue(currentPolarity)
-        polarityDrop:SetFullWidth(true)
-        polarityDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            ApplyToSelected("talentShow", val)
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(polarityDrop)
-    end
-
-    -- Pick Talent button
+    -- Pick/Edit Talent Conditions button
     local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick Talent")
+    pickBtn:SetText(condCount > 0 and "Edit Talent Conditions" or "Pick Talents")
     pickBtn:SetFullWidth(true)
     pickBtn:SetCallback("OnClick", function()
-        local currentNodeID = not isBatch and buttonData.talentNodeID or nil
-        local currentEntryID = not isBatch and buttonData.talentEntryID or nil
-        CooldownCompanion:OpenTalentPicker(function(result)
-            if result then
-                ApplyToSelected("talentNodeID", result.nodeID)
-                ApplyToSelected("talentEntryID", result.entryID)
-                ApplyToSelected("talentSpellID", result.spellID)
-                ApplyToSelected("talentName", result.talentName)
-                if not buttonData.talentShow then
-                    ApplyToSelected("talentShow", "taken")
+        local initialConditions = not isBatch and buttonData.talentConditions or nil
+        CooldownCompanion:OpenTalentPicker(function(results)
+            if results then
+                -- Deep-copy each condition for batch mode safety
+                if CS.selectedButtons then
+                    local count = 0
+                    for _ in pairs(CS.selectedButtons) do count = count + 1 end
+                    if count >= 2 then
+                        for idx in pairs(CS.selectedButtons) do
+                            local bd = group.buttons[idx]
+                            if bd then
+                                local copy = {}
+                                for i, cond in ipairs(results) do
+                                    copy[i] = {
+                                        nodeID  = cond.nodeID,
+                                        entryID = cond.entryID,
+                                        spellID = cond.spellID,
+                                        name    = cond.name,
+                                        show    = cond.show,
+                                    }
+                                end
+                                bd.talentConditions = copy
+                                -- Clean old fields for migration safety
+                                bd.talentNodeID  = nil
+                                bd.talentEntryID = nil
+                                bd.talentSpellID = nil
+                                bd.talentName    = nil
+                                bd.talentShow    = nil
+                            end
+                        end
+                    else
+                        buttonData.talentConditions = results
+                        buttonData.talentNodeID  = nil
+                        buttonData.talentEntryID = nil
+                        buttonData.talentSpellID = nil
+                        buttonData.talentName    = nil
+                        buttonData.talentShow    = nil
+                    end
+                else
+                    buttonData.talentConditions = results
+                    buttonData.talentNodeID  = nil
+                    buttonData.talentEntryID = nil
+                    buttonData.talentSpellID = nil
+                    buttonData.talentName    = nil
+                    buttonData.talentShow    = nil
                 end
             else
-                -- Clear
+                -- Clear all
+                ApplyToSelected("talentConditions", nil)
                 ApplyToSelected("talentNodeID", nil)
                 ApplyToSelected("talentEntryID", nil)
                 ApplyToSelected("talentSpellID", nil)
@@ -922,16 +956,17 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             end
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
-        end, currentNodeID, currentEntryID)
+        end, initialConditions)
     end)
     scroll:AddChild(pickBtn)
 
-    -- Clear button (only when a condition exists)
+    -- Clear All button (only when conditions exist)
     if hasTalent then
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Talent Condition")
+        clearBtn:SetText("Clear All Talent Conditions")
         clearBtn:SetFullWidth(true)
         clearBtn:SetCallback("OnClick", function()
+            ApplyToSelected("talentConditions", nil)
             ApplyToSelected("talentNodeID", nil)
             ApplyToSelected("talentEntryID", nil)
             ApplyToSelected("talentSpellID", nil)

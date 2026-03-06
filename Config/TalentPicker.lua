@@ -1,6 +1,7 @@
 --[[
     CooldownCompanion - Config/TalentPicker.lua: Visual talent tree picker
     rendered inside the existing config panel columns (col1 = class, col3 = spec).
+    Supports multi-condition 3-way toggle (taken / not taken / clear) with Accept to commit.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -10,6 +11,9 @@ local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 
 local ipairs = ipairs
+local pairs = pairs
+local tostring = tostring
+local wipe = wipe
 local math_min = math.min
 local math_max = math.max
 local math_floor = math.floor
@@ -31,12 +35,13 @@ local EDGE_THICKNESS_INACTIVE = 1.2
 local BTN_ROW_HEIGHT = 30
 
 -- Colors
-local COLOR_BORDER_TAKEN    = { 0.3, 0.85, 0.3, 1 }
-local COLOR_BORDER_NOTTAKEN = { 0.4, 0.4, 0.4, 0.7 }
-local COLOR_BORDER_SELECTED = { 1.0, 0.82, 0.0, 1 }
-local COLOR_BORDER_CHOICE   = { 0.6, 0.5, 0.85, 1 }
-local COLOR_EDGE_ACTIVE     = { 0.85, 0.75, 0.2, 0.9 }
-local COLOR_EDGE_INACTIVE   = { 0.35, 0.35, 0.35, 0.5 }
+local COLOR_BORDER_TAKEN           = { 0.3, 0.85, 0.3, 1 }
+local COLOR_BORDER_NOTTAKEN        = { 0.4, 0.4, 0.4, 0.7 }
+local COLOR_BORDER_CHOICE          = { 0.6, 0.5, 0.85, 1 }
+local COLOR_BORDER_PENDING_TAKEN   = { 0.2, 1.0, 0.2, 1 }
+local COLOR_BORDER_PENDING_NOTTAKEN = { 1.0, 0.3, 0.3, 1 }
+local COLOR_EDGE_ACTIVE            = { 0.85, 0.75, 0.2, 0.9 }
+local COLOR_EDGE_INACTIVE          = { 0.35, 0.35, 0.35, 0.5 }
 
 ------------------------------------------------------------------------
 -- STATE
@@ -46,15 +51,76 @@ local specTreeFrame = nil
 local specEmptyText = nil
 local backBtn = nil
 local clearBtn = nil
+local acceptBtn = nil
 local nodeButtons = {}
 local choiceButtons = {}
 local classEdgeLines = {}
 local specEdgeLines = {}
-local onSelectCallback = nil
+local onAcceptCallback = nil
 local savedCol1Title = nil
 local savedCol3Title = nil
 local savedPanelTitle = nil
 local isRestoring = false
+
+-- Pending conditions: key = "nodeID" or "nodeID:entryID" → condition table
+local pendingConditions = {}
+
+------------------------------------------------------------------------
+-- PENDING STATE HELPERS
+------------------------------------------------------------------------
+local function PendingKey(nodeID, entryID)
+    if entryID then
+        return tostring(nodeID) .. ":" .. tostring(entryID)
+    end
+    return tostring(nodeID)
+end
+
+local function GetPendingState(nodeID, entryID)
+    return pendingConditions[PendingKey(nodeID, entryID)]
+end
+
+local function SetPendingState(nodeID, entryID, spellID, name, show)
+    local key = PendingKey(nodeID, entryID)
+    if show then
+        pendingConditions[key] = {
+            nodeID  = nodeID,
+            entryID = entryID,
+            spellID = spellID,
+            name    = name,
+            show    = show,
+        }
+    else
+        pendingConditions[key] = nil
+    end
+end
+
+local function CyclePendingState(nodeID, entryID, spellID, name)
+    local existing = GetPendingState(nodeID, entryID)
+    if not existing then
+        SetPendingState(nodeID, entryID, spellID, name, "taken")
+    elseif existing.show == "taken" then
+        SetPendingState(nodeID, entryID, spellID, name, "not_taken")
+    else
+        -- not_taken → clear
+        SetPendingState(nodeID, entryID, nil, nil, nil)
+    end
+end
+
+-- Check if any entry of a given nodeID has a pending condition (for choice node parents)
+local function GetPendingStateForNode(nodeID)
+    -- Check direct node key first (non-choice nodes)
+    local direct = pendingConditions[tostring(nodeID)]
+    if direct then return direct end
+
+    -- Check all entry keys for this node
+    local prefix = tostring(nodeID) .. ":"
+    for key, cond in pairs(pendingConditions) do
+        if key:sub(1, #prefix) == prefix then
+            return cond
+        end
+    end
+    return nil
+end
 
 ------------------------------------------------------------------------
 -- HELPERS
@@ -72,6 +138,44 @@ local function SetNodeBorderThickness(btn, thickness)
     btn.icon:SetPoint("TOPLEFT", thickness, -thickness)
     btn.icon:SetPoint("BOTTOMRIGHT", -thickness, thickness)
 end
+
+local function SetNodeBorderColor(btn, color)
+    for _, border in ipairs(btn.borders) do
+        SetBorderColor(border, color)
+    end
+end
+
+-- Determine border color for a node button based on pending state and talent state
+local function GetNodeBorderColor(nodeID, entryID, isTaken, isChoice)
+    -- Check pending state: for choice nodes check the specific entry, for regular check the node
+    local pending
+    if entryID then
+        pending = GetPendingState(nodeID, entryID)
+    else
+        pending = GetPendingStateForNode(nodeID)
+    end
+
+    if pending then
+        if pending.show == "taken" then
+            return COLOR_BORDER_PENDING_TAKEN
+        else
+            return COLOR_BORDER_PENDING_NOTTAKEN
+        end
+    end
+
+    -- No pending state — use talent state colors
+    if isTaken then
+        return COLOR_BORDER_TAKEN
+    elseif isChoice then
+        return COLOR_BORDER_CHOICE
+    end
+    return COLOR_BORDER_NOTTAKEN
+end
+
+------------------------------------------------------------------------
+-- REFRESH PICKER BORDERS
+------------------------------------------------------------------------
+local RefreshPickerBorders
 
 local function CreateNodeButton(parent, index)
     local btn = CreateFrame("Button", nil, parent)
@@ -114,8 +218,21 @@ local function CreateNodeButton(parent, index)
                 GameTooltip:AddLine(self._rankText, 0.7, 0.7, 0.7)
             end
         end
+        -- Pending state info
+        local pending = self._entryID
+            and GetPendingState(self._nodeID, self._entryID)
+            or  GetPendingStateForNode(self._nodeID)
+        if pending then
+            if pending.show == "taken" then
+                GameTooltip:AddLine("Condition: Show when taken", 0.2, 1.0, 0.2)
+            else
+                GameTooltip:AddLine("Condition: Show when NOT taken", 1.0, 0.3, 0.3)
+            end
+        end
         if self._isChoiceNode then
             GameTooltip:AddLine("Click to see choices", 0.5, 0.8, 1)
+        else
+            GameTooltip:AddLine("Click to cycle condition", 0.5, 0.8, 1)
         end
         GameTooltip:Show()
     end)
@@ -150,25 +267,29 @@ local function CreateChoiceButton(parent)
     btn.highlight:SetColorTexture(1, 1, 1, 0.15)
 
     btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if self._spellID then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetSpellByID(self._spellID)
-            GameTooltip:Show()
         elseif self._talentName then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(self._talentName, 1, 1, 1)
-            GameTooltip:Show()
         end
+        -- Pending state info
+        if self._nodeID then
+            local pending = GetPendingState(self._nodeID, self._entryID)
+            if pending then
+                if pending.show == "taken" then
+                    GameTooltip:AddLine("Condition: Show when taken", 0.2, 1.0, 0.2)
+                else
+                    GameTooltip:AddLine("Condition: Show when NOT taken", 1.0, 0.3, 0.3)
+                end
+            end
+        end
+        GameTooltip:AddLine("Click to cycle condition", 0.5, 0.8, 1)
+        GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     return btn
-end
-
-local function SetNodeBorderColor(btn, color)
-    for _, border in ipairs(btn.borders) do
-        SetBorderColor(border, color)
-    end
 end
 
 ------------------------------------------------------------------------
@@ -186,7 +307,7 @@ end
 local HideTalentPicker
 local PopulateTree
 
-local function ShowChoiceFrame(parentBtn, entries, nodeID, currentEntryID)
+local function ShowChoiceFrame(parentBtn, entries, nodeID)
     local configFrame = CS.configFrame
     if not configFrame then return end
 
@@ -237,30 +358,20 @@ local function ShowChoiceFrame(parentBtn, entries, nodeID, currentEntryID)
             cb.icon:SetVertexColor(1, 1, 1)
         end
 
-        local borderColor = COLOR_BORDER_NOTTAKEN
-        if entry.entryID == currentEntryID then
-            borderColor = COLOR_BORDER_SELECTED
-        elseif entry.isTaken then
-            borderColor = COLOR_BORDER_TAKEN
-        end
-        SetNodeBorderColor(cb, borderColor)
-
+        -- Store identity for pending state lookups
+        cb._nodeID = nodeID
+        cb._entryID = entry.entryID
+        cb._isTaken = entry.isTaken
         cb._talentName = entry.name
         cb._spellID = entry.spellID
 
+        -- Border color: pending state > taken > not taken
+        local borderColor = GetNodeBorderColor(nodeID, entry.entryID, entry.isTaken, false)
+        SetNodeBorderColor(cb, borderColor)
+
         cb:SetScript("OnClick", function()
-            HideChoiceFrame()
-            local selectCb = onSelectCallback
-            local result = {
-                nodeID = nodeID,
-                entryID = entry.entryID,
-                spellID = entry.spellID,
-                talentName = entry.name,
-            }
-            HideTalentPicker()
-            if selectCb then
-                selectCb(result)
-            end
+            CyclePendingState(nodeID, entry.entryID, entry.spellID, entry.name)
+            RefreshPickerBorders()
         end)
     end
 end
@@ -280,7 +391,7 @@ local function EnsureTreeFrames()
 end
 
 ------------------------------------------------------------------------
--- BACK + CLEAR BUTTONS (lazy, created once)
+-- BACK + CLEAR + ACCEPT BUTTONS (lazy, created once)
 ------------------------------------------------------------------------
 local function EnsureButtons()
     if not backBtn then
@@ -297,10 +408,35 @@ local function EnsureButtons()
         clearBtn:SetText("Clear")
         clearBtn:SetWidth(80)
         clearBtn:SetCallback("OnClick", function()
-            local cb = onSelectCallback
+            wipe(pendingConditions)
+            RefreshPickerBorders()
+        end)
+    end
+
+    if not acceptBtn then
+        acceptBtn = AceGUI:Create("Button")
+        acceptBtn:SetText("Accept")
+        acceptBtn:SetWidth(120)
+        acceptBtn:SetCallback("OnClick", function()
+            local results = nil
+            local count = 0
+            for _ in pairs(pendingConditions) do count = count + 1 end
+            if count > 0 then
+                results = {}
+                for _, cond in pairs(pendingConditions) do
+                    results[#results + 1] = {
+                        nodeID  = cond.nodeID,
+                        entryID = cond.entryID,
+                        spellID = cond.spellID,
+                        name    = cond.name,
+                        show    = cond.show,
+                    }
+                end
+            end
+            local cb = onAcceptCallback
             HideTalentPicker()
             if cb then
-                cb(nil)
+                cb(results)
             end
         end)
     end
@@ -309,7 +445,7 @@ end
 ------------------------------------------------------------------------
 -- SHOW / HIDE TALENT PICKER
 ------------------------------------------------------------------------
-local function ShowTalentPicker(configFrame, currentNodeID, currentEntryID)
+local function ShowTalentPicker(configFrame, initialConditions)
     CS.talentPickerMode = true
 
     local col1 = configFrame.col1
@@ -325,7 +461,7 @@ local function ShowTalentPicker(configFrame, currentNodeID, currentEntryID)
     -- Change titles
     col1:SetTitle("Class")
     col3:SetTitle("Spec")
-    configFrame:SetTitle("Pick a Talent")
+    configFrame:SetTitle("Pick Talent Conditions")
 
     -- Hide col2 + col4
     col2.frame:Hide()
@@ -355,6 +491,21 @@ local function ShowTalentPicker(configFrame, currentNodeID, currentEntryID)
     if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Hide() end
     if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Hide() end
 
+    -- Initialize pending conditions from initial conditions
+    wipe(pendingConditions)
+    if initialConditions then
+        for _, cond in ipairs(initialConditions) do
+            local key = PendingKey(cond.nodeID, cond.entryID)
+            pendingConditions[key] = {
+                nodeID  = cond.nodeID,
+                entryID = cond.entryID,
+                spellID = cond.spellID,
+                name    = cond.name,
+                show    = cond.show,
+            }
+        end
+    end
+
     -- Create/show tree frames + buttons
     EnsureTreeFrames()
     EnsureButtons()
@@ -380,14 +531,20 @@ local function ShowTalentPicker(configFrame, currentNodeID, currentEntryID)
     classTreeFrame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
     classTreeFrame:Show()
 
-    -- Position spec tree (full content area)
+    -- Position spec tree (full content area, with room for accept button at bottom)
     specTreeFrame:ClearAllPoints()
     specTreeFrame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-    specTreeFrame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+    specTreeFrame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, BTN_ROW_HEIGHT)
     specTreeFrame:Show()
 
+    -- Position accept button at bottom of col3.content
+    acceptBtn.frame:SetParent(col3.content)
+    acceptBtn.frame:ClearAllPoints()
+    acceptBtn.frame:SetPoint("BOTTOM", col3.content, "BOTTOM", 0, 0)
+    acceptBtn.frame:Show()
+
     -- Populate talent trees
-    PopulateTree(currentNodeID, currentEntryID)
+    PopulateTree()
 end
 
 HideTalentPicker = function()
@@ -403,6 +560,7 @@ HideTalentPicker = function()
     if specEmptyText then specEmptyText:Hide() end
     if backBtn then backBtn.frame:Hide() end
     if clearBtn then clearBtn.frame:Hide() end
+    if acceptBtn then acceptBtn.frame:Hide() end
     HideChoiceFrame()
 
     -- Hide all node buttons and edges
@@ -447,7 +605,8 @@ HideTalentPicker = function()
     savedCol1Title = nil
     savedCol3Title = nil
     savedPanelTitle = nil
-    onSelectCallback = nil
+    onAcceptCallback = nil
+    wipe(pendingConditions)
     isRestoring = false
 
     -- RefreshConfigPanel restores col3 state correctly
@@ -502,7 +661,6 @@ end
 
 local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
                                   panelMinX, panelMinY, panelScale,
-                                  currentNodeID, currentEntryID,
                                   btnIndex, nodeIDToBtn)
     for _, node in ipairs(nodeSet) do
         btnIndex = btnIndex + 1
@@ -547,42 +705,28 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
             btn.icon:SetVertexColor(1, 1, 1)
         end
 
+        -- Store identity for pending state and border refresh
+        btn._nodeID = node.nodeID
+        btn._entryID = nil  -- regular nodes use nil; choice entries set per-entry
+        btn._isTaken = isTaken
+        btn._isChoiceNode = node.isChoice
         btn._talentName = primaryEntry.name
         btn._spellID = primaryEntry.spellID
-        btn._isChoiceNode = node.isChoice
         btn._rankText = (node.activeRank .. "/" .. node.maxRanks)
 
-        -- Border color: selected > taken > choice-untaken > not taken
-        local borderColor
-        if node.nodeID == currentNodeID then
-            borderColor = COLOR_BORDER_SELECTED
-        elseif isTaken then
-            borderColor = COLOR_BORDER_TAKEN
-        elseif node.isChoice then
-            borderColor = COLOR_BORDER_CHOICE
-        else
-            borderColor = COLOR_BORDER_NOTTAKEN
-        end
+        -- Border color: pending > taken > choice > not taken
+        local borderColor = GetNodeBorderColor(node.nodeID, nil, isTaken, node.isChoice)
         SetNodeBorderColor(btn, borderColor)
 
         -- Click handler
         local nodeRef = node
         btn:SetScript("OnClick", function(self)
             if nodeRef.isChoice and #nodeRef.entries > 1 then
-                ShowChoiceFrame(self, nodeRef.entries, nodeRef.nodeID, currentEntryID)
+                ShowChoiceFrame(self, nodeRef.entries, nodeRef.nodeID)
             else
                 HideChoiceFrame()
-                local cb = onSelectCallback
-                local result = {
-                    nodeID = nodeRef.nodeID,
-                    entryID = nil,
-                    spellID = primaryEntry.spellID,
-                    talentName = primaryEntry.name,
-                }
-                HideTalentPicker()
-                if cb then
-                    cb(result)
-                end
+                CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, primaryEntry.name)
+                RefreshPickerBorders()
             end
         end)
 
@@ -631,7 +775,31 @@ local function DrawEdgesInPanel(scrollChild, panelNodes, nodeIDToBtn, edgePool)
     end
 end
 
-PopulateTree = function(currentNodeID, currentEntryID)
+-- Re-apply border colors to all visible node + choice buttons based on pending state
+RefreshPickerBorders = function()
+    for _, btn in ipairs(nodeButtons) do
+        if btn:IsShown() and btn._nodeID then
+            local borderColor = GetNodeBorderColor(btn._nodeID, btn._entryID, btn._isTaken, btn._isChoiceNode)
+            SetNodeBorderColor(btn, borderColor)
+        end
+    end
+    for _, cb in ipairs(choiceButtons) do
+        if cb:IsShown() and cb._nodeID then
+            local pending = GetPendingState(cb._nodeID, cb._entryID)
+            local borderColor
+            if pending then
+                borderColor = pending.show == "taken" and COLOR_BORDER_PENDING_TAKEN or COLOR_BORDER_PENDING_NOTTAKEN
+            elseif cb._isTaken then
+                borderColor = COLOR_BORDER_TAKEN
+            else
+                borderColor = COLOR_BORDER_NOTTAKEN
+            end
+            SetNodeBorderColor(cb, borderColor)
+        end
+    end
+end
+
+PopulateTree = function()
     -- Hide all existing buttons and edges
     for _, btn in ipairs(nodeButtons) do btn:Hide() end
     for _, cb in ipairs(choiceButtons) do cb:Hide() end
@@ -753,7 +921,7 @@ PopulateTree = function(currentNodeID, currentEntryID)
         local cOffsetX = math_max(0, (cFrameW - cContentW) * 0.5)
 
         btnIndex = PlaceNodesInPanel(classTreeFrame, classNodes, cOffsetX, 0,
-            cMinX, cMinY, cScale, currentNodeID, currentEntryID, btnIndex, nodeIDToBtn)
+            cMinX, cMinY, cScale, btnIndex, nodeIDToBtn)
 
         DrawEdgesInPanel(classTreeFrame, classNodes, nodeIDToBtn, classEdgeLines)
 
@@ -771,7 +939,7 @@ PopulateTree = function(currentNodeID, currentEntryID)
         local sOffsetX = math_max(0, (sFrameW - sContentW) * 0.5)
 
         btnIndex = PlaceNodesInPanel(specTreeFrame, specNodes, sOffsetX, 0,
-            sMinX, sMinY, sScale, currentNodeID, currentEntryID, btnIndex, nodeIDToBtn)
+            sMinX, sMinY, sScale, btnIndex, nodeIDToBtn)
 
         DrawEdgesInPanel(specTreeFrame, specNodes, nodeIDToBtn, specEdgeLines)
     else
@@ -789,7 +957,7 @@ PopulateTree = function(currentNodeID, currentEntryID)
         local offsetX = math_max(0, (cFrameW - contentW) * 0.5)
 
         btnIndex = PlaceNodesInPanel(classTreeFrame, allNodes, offsetX, 0,
-            minX, minY, scale, currentNodeID, currentEntryID, btnIndex, nodeIDToBtn)
+            minX, minY, scale, btnIndex, nodeIDToBtn)
 
         DrawEdgesInPanel(classTreeFrame, allNodes, nodeIDToBtn, classEdgeLines)
 
@@ -808,13 +976,13 @@ end
 ------------------------------------------------------------------------
 
 -- Open the talent picker inside the config panel columns.
--- callback(result): called with { nodeID, entryID, spellID, talentName } or nil (clear).
--- currentNodeID/currentEntryID: highlight current selection.
-function CooldownCompanion:OpenTalentPicker(callback, currentNodeID, currentEntryID)
+-- callback(results): called with array of conditions or nil (clear all).
+-- initialConditions: array of existing conditions to pre-load as pending.
+function CooldownCompanion:OpenTalentPicker(callback, initialConditions)
     local configFrame = CS.configFrame
     if not configFrame then return end
-    onSelectCallback = callback
-    ShowTalentPicker(configFrame, currentNodeID, currentEntryID)
+    onAcceptCallback = callback
+    ShowTalentPicker(configFrame, initialConditions)
 end
 
 function CooldownCompanion:CloseTalentPicker()
