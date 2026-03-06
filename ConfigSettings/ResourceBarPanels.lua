@@ -2011,10 +2011,6 @@ local function BuildCustomAuraBarAnchorSettings(container, customBars, settings,
         container:AddChild(fillDrop)
     end
 
-    local dragHint = AceGUI:Create("Label")
-    dragHint:SetText("|cff888888Tip: When unlocked, drag from the header in-world or use the 4-way nudger. Middle-click the header to lock placement.|r")
-    dragHint:SetFullWidth(true)
-    container:AddChild(dragHint)
 end
 
 local function BuildCustomAuraBarPanel(container, slotIdx)

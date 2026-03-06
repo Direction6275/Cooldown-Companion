@@ -2318,16 +2318,19 @@ local function UpdateCustomAuraBar(barInfo)
         end
     end
 
-    -- Hide When Inactive: hide the bar frame when aura is absent
+    -- Hide When Inactive: hide the bar frame when aura is absent.
+    -- Independent bars are forced visible while unlocked so users can drag/place them.
     if cabConfig.hideWhenInactive then
+        local forceVisibleForPlacement = barInfo._isIndependent and IsIndependentCustomAuraUnlocked(barInfo)
+        local shouldShow = auraPresent or forceVisibleForPlacement
         local wasShown = barInfo.frame:IsShown()
-        barInfo.frame:SetShown(auraPresent)
-        if wasShown ~= auraPresent then
+        barInfo.frame:SetShown(shouldShow)
+        if wasShown ~= shouldShow then
             if not barInfo._isIndependent then
                 layoutDirty = true
             end
         end
-        if not auraPresent then return end
+        if not shouldShow then return end
     end
 
     local maxStacks = cabConfig.maxStacks or 1
