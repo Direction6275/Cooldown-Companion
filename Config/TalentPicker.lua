@@ -38,7 +38,7 @@ local BTN_ROW_HEIGHT = 30
 local COLOR_BORDER_TAKEN           = { 0.3, 0.85, 0.3, 1 }
 local COLOR_BORDER_NOTTAKEN        = { 0.4, 0.4, 0.4, 0.7 }
 local COLOR_BORDER_CHOICE          = { 0.6, 0.5, 0.85, 1 }
-local COLOR_BORDER_PENDING_TAKEN   = { 0.2, 1.0, 0.2, 1 }
+local COLOR_BORDER_PENDING_TAKEN   = { 0.3, 0.7, 1.0, 1 }
 local COLOR_BORDER_PENDING_NOTTAKEN = { 1.0, 0.3, 0.3, 1 }
 local COLOR_EDGE_ACTIVE            = { 0.85, 0.75, 0.2, 0.9 }
 local COLOR_EDGE_INACTIVE          = { 0.35, 0.35, 0.35, 0.5 }
@@ -224,7 +224,7 @@ local function CreateNodeButton(parent, index)
             or  GetPendingStateForNode(self._nodeID)
         if pending then
             if pending.show == "taken" then
-                GameTooltip:AddLine("Condition: Show when taken", 0.2, 1.0, 0.2)
+                GameTooltip:AddLine("Condition: Show when taken", 0.3, 0.7, 1.0)
             else
                 GameTooltip:AddLine("Condition: Show when NOT taken", 1.0, 0.3, 0.3)
             end
@@ -278,7 +278,7 @@ local function CreateChoiceButton(parent)
             local pending = GetPendingState(self._nodeID, self._entryID)
             if pending then
                 if pending.show == "taken" then
-                    GameTooltip:AddLine("Condition: Show when taken", 0.2, 1.0, 0.2)
+                    GameTooltip:AddLine("Condition: Show when taken", 0.3, 0.7, 1.0)
                 else
                     GameTooltip:AddLine("Condition: Show when NOT taken", 1.0, 0.3, 0.3)
                 end
@@ -416,7 +416,7 @@ local function EnsureButtons()
     if not acceptBtn then
         acceptBtn = AceGUI:Create("Button")
         acceptBtn:SetText("Accept")
-        acceptBtn:SetWidth(120)
+        acceptBtn:SetWidth(160)
         acceptBtn:SetCallback("OnClick", function()
             local results = nil
             local count = 0
@@ -531,16 +531,16 @@ local function ShowTalentPicker(configFrame, initialConditions)
     classTreeFrame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
     classTreeFrame:Show()
 
-    -- Position spec tree (full content area, with room for accept button at bottom)
+    -- Position spec tree (full content area)
     specTreeFrame:ClearAllPoints()
     specTreeFrame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-    specTreeFrame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, BTN_ROW_HEIGHT)
+    specTreeFrame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     specTreeFrame:Show()
 
-    -- Position accept button at bottom of col3.content
-    acceptBtn.frame:SetParent(col3.content)
+    -- Position accept button at bottom center of main panel (where modeStatusRow normally sits)
+    acceptBtn.frame:SetParent(configFrame.frame)
     acceptBtn.frame:ClearAllPoints()
-    acceptBtn.frame:SetPoint("BOTTOM", col3.content, "BOTTOM", 0, 0)
+    acceptBtn.frame:SetPoint("BOTTOM", configFrame.frame, "BOTTOM", 0, 21)
     acceptBtn.frame:Show()
 
     -- Populate talent trees

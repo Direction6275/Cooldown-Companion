@@ -810,8 +810,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
         "Talent Conditions",
-        {"Gate this button's visibility on talent conditions. All conditions must be met (AND logic).", 1, 1, 1, true},
-        {"Uses class and spec tree talents only (hero talents are handled by folder-level filters).", 0.7, 0.7, 0.7, true},
+        {"Show or hide this button based on which talents you have selected. If you add multiple conditions, all of them must pass.", 1, 1, 1, true},
     }, infoButtons)
     talentHeading.right:ClearAllPoints()
     talentHeading.right:SetPoint("RIGHT", talentHeading.frame, "RIGHT", -3, 0)
@@ -894,10 +893,14 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(emptyLabel)
     end
 
-    -- Pick/Edit Talent Conditions button
+    -- Button row: side-by-side Pick + Clear using Flow layout
+    local talentBtnRow = AceGUI:Create("SimpleGroup")
+    talentBtnRow:SetFullWidth(true)
+    talentBtnRow:SetLayout("Flow")
+
     local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText(condCount > 0 and "Edit Talent Conditions" or "Pick Talents")
-    pickBtn:SetFullWidth(true)
+    pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
+    pickBtn:SetRelativeWidth(hasTalent and 0.5 or 1)
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
         CooldownCompanion:OpenTalentPicker(function(results)
@@ -958,13 +961,13 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             CooldownCompanion:RefreshConfigPanel()
         end, initialConditions)
     end)
-    scroll:AddChild(pickBtn)
+    talentBtnRow:AddChild(pickBtn)
 
     -- Clear All button (only when conditions exist)
     if hasTalent then
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear All Talent Conditions")
-        clearBtn:SetFullWidth(true)
+        clearBtn:SetText("Clear")
+        clearBtn:SetRelativeWidth(0.5)
         clearBtn:SetCallback("OnClick", function()
             ApplyToSelected("talentConditions", nil)
             ApplyToSelected("talentNodeID", nil)
@@ -975,8 +978,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        scroll:AddChild(clearBtn)
+        talentBtnRow:AddChild(clearBtn)
     end
+
+    scroll:AddChild(talentBtnRow)
 
     end -- not talentCollapsed
 
