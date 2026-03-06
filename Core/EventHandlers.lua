@@ -74,6 +74,7 @@ end
 
 function CooldownCompanion:OnTalentsChanged()
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
+    self:RebuildTalentNodeCache()
     self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
@@ -181,6 +182,7 @@ end
 
 function CooldownCompanion:OnSpecChanged()
     self:CacheCurrentSpec()
+    self:RebuildTalentNodeCache()
     self:RefreshChargeFlags()
     self:RefreshAllGroups()
     self:EvaluateResourceBars()
@@ -244,6 +246,7 @@ end
 
 function CooldownCompanion:OnHeroTalentChanged()
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
+    self:RebuildTalentNodeCache()
     self:RefreshChargeFlags("spell")
     self:RefreshAllGroups()
     self:RefreshConfigPanel()
@@ -255,6 +258,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
     C_Timer.After(1, function()
         self:CachePlayerState()
         self:CacheCurrentSpec()
+        self:RebuildTalentNodeCache()
         self:InvalidateMountAlphaCache()
         self:RefreshChargeFlags()
         if isFullInit then

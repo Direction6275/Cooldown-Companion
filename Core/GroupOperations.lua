@@ -310,6 +310,9 @@ function CooldownCompanion:GroupHasPetSpells(groupId)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
+    -- Per-button talent condition: gate visibility on a specific talent node.
+    if not self:IsTalentConditionMet(buttonData) then return false end
+
     -- Passive/proc spells are tracked via aura, not spellbook presence.
     -- Multi-CDM-child buttons: verify their specific slot still exists in the CDM
     -- (spell may not be available on the current spec/talent loadout).
@@ -546,6 +549,71 @@ function CooldownCompanion:UnlockAllFrames()
             frame:SetAlpha(1)
         end
     end
+end
+
+------------------------------------------------------------------------
+-- TALENT NODE CACHE (for per-button talent conditions)
+------------------------------------------------------------------------
+
+-- Rebuild the runtime talent node cache from the active talent config.
+-- Called on TRAIT_CONFIG_UPDATED, PLAYER_ENTERING_WORLD, spec changes.
+function CooldownCompanion:RebuildTalentNodeCache()
+    if not self._talentNodeCache then
+        self._talentNodeCache = {}
+    else
+        wipe(self._talentNodeCache)
+    end
+
+    local configID = C_ClassTalents.GetActiveConfigID()
+    if not configID then return end
+
+    local specID = self._currentSpecId
+    if not specID then return end
+
+    local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
+    if not treeID then return end
+
+    local nodeIDs = C_Traits.GetTreeNodes(treeID)
+    if not nodeIDs then return end
+
+    for _, nodeID in ipairs(nodeIDs) do
+        local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+        if nodeInfo and nodeInfo.isVisible and not nodeInfo.subTreeID
+           and nodeInfo.type ~= Enum.TraitNodeType.SubTreeSelection then
+            self._talentNodeCache[nodeID] = {
+                activeRank = nodeInfo.activeRank or 0,
+                activeEntryID = nodeInfo.activeEntry and nodeInfo.activeEntry.entryID or nil,
+            }
+        end
+    end
+end
+
+-- Check whether a per-button talent condition is satisfied.
+-- Returns true if no condition set, or if condition is met.
+-- Fail-open: unknown/stale nodes return true (show button).
+function CooldownCompanion:IsTalentConditionMet(buttonData)
+    local nodeID = buttonData.talentNodeID
+    if not nodeID then return true end
+
+    local cache = self._talentNodeCache
+    local entry = cache and cache[nodeID]
+    if not entry then
+        -- Node not in cache: either stale or tree not loaded yet → fail-open
+        return true
+    end
+
+    local isTaken = entry.activeRank > 0
+
+    -- For choice nodes: if a specific entryID is required, verify it matches
+    if isTaken and buttonData.talentEntryID then
+        isTaken = (entry.activeEntryID == buttonData.talentEntryID)
+    end
+
+    local show = buttonData.talentShow or "taken"
+    if show == "not_taken" then
+        return not isTaken
+    end
+    return isTaken
 end
 
 -- Utility functions
