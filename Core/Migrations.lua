@@ -37,6 +37,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateBarOrdering()
     self:MigrateRemoveAuraDurationCache()
     self:MigrateResourceBarYOffset()
+    self:MigrateResourceAuraOverlayEntries()
     self:MigrateMaxStacksGlowStyles()
     self:MigrateTalentConditions()
     self:MigrateChoiceTalentConditions()
@@ -1095,6 +1096,92 @@ function CooldownCompanion:MigrateResourceBarYOffset()
     local rb = self.db.profile.resourceBars
     if rb and rb.yOffset and rb.yOffset < 0 then
         rb.yOffset = math.abs(rb.yOffset)
+    end
+end
+
+local function HasResourceAuraOverlayEntries(resource)
+    if type(resource) ~= "table" or type(resource.auraOverlayEntries) ~= "table" then
+        return false
+    end
+    return next(resource.auraOverlayEntries) ~= nil
+end
+
+local function HasLegacyResourceAuraOverlayData(resource)
+    if type(resource) ~= "table" then
+        return false
+    end
+    return resource.auraColorSpellID ~= nil
+        or resource.auraActiveColor ~= nil
+        or resource.auraColorTrackingMode ~= nil
+        or resource.auraColorMaxStacks ~= nil
+end
+
+local function GetEffectiveResourceAuraOverlayEnabled(resource)
+    if type(resource) ~= "table" then
+        return false
+    end
+    if type(resource.auraOverlayEnabled) == "boolean" then
+        return resource.auraOverlayEnabled
+    end
+    if HasResourceAuraOverlayEntries(resource) then
+        return true
+    end
+    local auraSpellID = tonumber(resource.auraColorSpellID)
+    return auraSpellID and auraSpellID > 0 or false
+end
+
+local function CopyResourceAuraOverlayColor(color)
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        return nil
+    end
+    return { color[1], color[2], color[3] }
+end
+
+local function ClearLegacyResourceAuraOverlayFields(resource)
+    if type(resource) ~= "table" then
+        return
+    end
+    resource.auraColorSpellID = nil
+    resource.auraActiveColor = nil
+    resource.auraColorTrackingMode = nil
+    resource.auraColorMaxStacks = nil
+end
+
+function CooldownCompanion:MigrateResourceAuraOverlayEntries()
+    local rb = self.db.profile.resourceBars
+    if not rb or type(rb.resources) ~= "table" then return end
+
+    local currentSpecID = nil
+    local specIndex = C_SpecializationInfo.GetSpecialization()
+    if specIndex then
+        currentSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+    end
+
+    for _, resource in pairs(rb.resources) do
+        if type(resource) == "table" then
+            local hasEntries = HasResourceAuraOverlayEntries(resource)
+            local hasLegacyData = HasLegacyResourceAuraOverlayData(resource)
+            local effectiveEnabled = GetEffectiveResourceAuraOverlayEnabled(resource)
+
+            if not hasEntries and hasLegacyData and currentSpecID then
+                resource.auraOverlayEntries = {
+                    [currentSpecID] = {
+                        auraColorSpellID = tonumber(resource.auraColorSpellID) or nil,
+                        auraActiveColor = CopyResourceAuraOverlayColor(resource.auraActiveColor),
+                        auraColorTrackingMode = resource.auraColorTrackingMode,
+                        auraColorMaxStacks = resource.auraColorMaxStacks,
+                    },
+                }
+                hasEntries = true
+                ClearLegacyResourceAuraOverlayFields(resource)
+            elseif hasEntries and hasLegacyData then
+                ClearLegacyResourceAuraOverlayFields(resource)
+            end
+
+            if hasEntries or hasLegacyData or type(resource.auraOverlayEnabled) == "boolean" then
+                resource.auraOverlayEnabled = effectiveEnabled and true or false
+            end
+        end
     end
 end
 

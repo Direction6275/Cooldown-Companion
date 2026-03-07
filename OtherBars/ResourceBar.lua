@@ -1026,14 +1026,74 @@ local function SupportsResourceAuraStackMode(powerType)
     return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
 end
 
-local function GetResourceAuraTrackingMode(resource)
+local function GetResourceAuraEntry(resource, specID)
+    if type(resource) ~= "table" or not specID then
+        return nil
+    end
+
+    local entries = resource.auraOverlayEntries
+    if type(entries) ~= "table" then
+        return nil
+    end
+
+    local direct = entries[specID]
+    if type(direct) == "table" then
+        return direct
+    end
+
+    local alternate = entries[tostring(specID)]
+    if type(alternate) == "table" then
+        return alternate
+    end
+
+    return nil
+end
+
+local function GetLegacyResourceAuraEntry(resource)
     if type(resource) ~= "table" then
+        return nil
+    end
+
+    if resource.auraColorSpellID ~= nil
+        or resource.auraActiveColor ~= nil
+        or resource.auraColorTrackingMode ~= nil
+        or resource.auraColorMaxStacks ~= nil then
+        return resource
+    end
+
+    return nil
+end
+
+local function GetActiveResourceAuraEntry(resource)
+    if type(resource) ~= "table" then
+        return nil
+    end
+
+    local hasEntryTable = type(resource.auraOverlayEntries) == "table" and next(resource.auraOverlayEntries) ~= nil
+    local specID = GetCurrentSpecID()
+    if specID then
+        local entry = GetResourceAuraEntry(resource, specID)
+        if type(entry) == "table" then
+            return entry
+        end
+        if hasEntryTable then
+            return nil
+        end
+    elseif hasEntryTable then
+        return nil
+    end
+
+    return GetLegacyResourceAuraEntry(resource)
+end
+
+local function GetResourceAuraTrackingMode(resourceEntry)
+    if type(resourceEntry) ~= "table" then
         return "active"
     end
-    if resource.auraColorTrackingMode == "stacks" or resource.auraColorTrackingMode == "active" then
-        return resource.auraColorTrackingMode
+    if resourceEntry.auraColorTrackingMode == "stacks" or resourceEntry.auraColorTrackingMode == "active" then
+        return resourceEntry.auraColorTrackingMode
     end
-    local configured = tonumber(resource.auraColorMaxStacks)
+    local configured = tonumber(resourceEntry.auraColorMaxStacks)
     if configured and configured >= 2 then
         return "stacks"
     end
@@ -1044,8 +1104,10 @@ local function GetResourceAuraConfiguredMaxStacks(powerType, settings)
     if not settings or not settings.resources then return nil end
     local resource = settings.resources[powerType]
     if not resource then return nil end
-    if GetResourceAuraTrackingMode(resource) ~= "stacks" then return nil end
-    local configured = tonumber(resource.auraColorMaxStacks)
+    local entry = GetActiveResourceAuraEntry(resource)
+    if not entry then return nil end
+    if GetResourceAuraTrackingMode(entry) ~= "stacks" then return nil end
+    local configured = tonumber(entry.auraColorMaxStacks)
     if not configured then return nil end
     configured = math_floor(configured)
     if configured <= 1 then return nil end
@@ -1060,6 +1122,13 @@ local function IsResourceAuraOverlayEnabled(resource)
     if type(resource.auraOverlayEnabled) == "boolean" then
         return resource.auraOverlayEnabled
     end
+    if type(resource.auraOverlayEntries) == "table" then
+        for _, entry in pairs(resource.auraOverlayEntries) do
+            if type(entry) == "table" then
+                return true
+            end
+        end
+    end
     local auraSpellID = tonumber(resource.auraColorSpellID)
     return auraSpellID and auraSpellID > 0 or false
 end
@@ -1069,8 +1138,12 @@ local function GetResourceAuraState(powerType, settings, auraActiveCache)
     local resource = settings.resources[powerType]
     if not resource then return nil, nil, false end
     if not IsResourceAuraOverlayEnabled(resource) then return nil, nil, false end
+    local auraEntry = GetActiveResourceAuraEntry(resource)
+    if not auraEntry then
+        return nil, nil, false
+    end
 
-    local auraSpellID = tonumber(resource.auraColorSpellID)
+    local auraSpellID = tonumber(auraEntry.auraColorSpellID)
     if not auraSpellID or auraSpellID <= 0 then
         return nil, nil, false
     end
@@ -1124,7 +1197,7 @@ local function GetResourceAuraState(powerType, settings, auraActiveCache)
         return nil, nil, false
     end
 
-    local color = resource.auraActiveColor
+    local color = auraEntry.auraActiveColor
     if type(color) ~= "table" or not color[1] or not color[2] or not color[3] then
         color = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
     end
@@ -3687,14 +3760,19 @@ ApplyPreviewData = function()
             HideResourceAuraStackSegments(barInfo.frame)
             return
         end
-        local auraSpellID = resource and tonumber(resource.auraColorSpellID) or nil
+        local auraEntry = GetActiveResourceAuraEntry(resource)
+        if not auraEntry then
+            HideResourceAuraStackSegments(barInfo.frame)
+            return
+        end
+        local auraSpellID = tonumber(auraEntry.auraColorSpellID)
         local auraMaxStacks = GetResourceAuraConfiguredMaxStacks(powerType, settings)
         if not auraSpellID or auraSpellID <= 0 or not auraMaxStacks then
             HideResourceAuraStackSegments(barInfo.frame)
             return
         end
 
-        local auraColor = resource and resource.auraActiveColor
+        local auraColor = auraEntry.auraActiveColor
         if type(auraColor) ~= "table" or not auraColor[1] or not auraColor[2] or not auraColor[3] then
             auraColor = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
         end

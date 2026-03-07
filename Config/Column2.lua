@@ -221,6 +221,7 @@ local function RefreshColumn2()
                 tabGroup:SetTabs({
                     { value = "bar_text", text = "Bar/Text Styling" },
                     { value = "colors", text = "Colors" },
+                    { value = "aura_overlays", text = "Aura Overlays" },
                 })
                 tabGroup:SetLayout("Fill")
                 tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
@@ -235,6 +236,12 @@ local function RefreshColumn2()
                             ST._BuildResourceBarColorsStylingPanel(scroll)
                         else
                             ST._BuildResourceBarStylingPanel(scroll, "colors")
+                        end
+                    elseif tab == "aura_overlays" then
+                        if ST._BuildResourceBarAuraOverlaysStylingPanel then
+                            ST._BuildResourceBarAuraOverlaysStylingPanel(scroll)
+                        else
+                            ST._BuildResourceBarStylingPanel(scroll, "aura_overlays")
                         end
                     else
                         if ST._BuildResourceBarBarTextStylingPanel then
@@ -251,7 +258,10 @@ local function RefreshColumn2()
                 col2._resourceStylingTabGroup = tabGroup
             end
 
-            if CS.resourceStylingTab ~= "bar_text" and CS.resourceStylingTab ~= "colors" then
+            if CS.resourceStylingTab ~= "bar_text"
+                and CS.resourceStylingTab ~= "colors"
+                and CS.resourceStylingTab ~= "aura_overlays"
+            then
                 CS.resourceStylingTab = "bar_text"
             end
             col2._resourceStylingTabGroup.frame:Show()

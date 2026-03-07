@@ -172,6 +172,7 @@ ST._configState = {
     resourceBarPanelActive = false,
     barPanelTab = "resource_anchoring",
     resourceStylingTab = "bar_text",
+    resourceAuraOverlayDrafts = {},
     customAuraBarTab = "bar_1",
     customAuraBarSubTabs = {},
     groupPresetSelection = {

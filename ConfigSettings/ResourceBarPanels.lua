@@ -54,6 +54,9 @@ end
 ------------------------------------------------------------------------
 
 local resourceBarCollapsedSections = {}
+local resourceAuraEntryCollapsedStates = {}
+local RESOURCE_AURA_ENTRY_MINIMIZE_ATLAS = "common-icon-minus"
+local RESOURCE_AURA_ENTRY_EXPAND_ATLAS = "common-icon-plus"
 
 -- Power names + segmented check for config UI (mirrors ResourceBar.lua constants)
 local POWER_NAMES_CONFIG = {
@@ -179,8 +182,8 @@ local function GetConfigActiveResources()
     local _, _, classID = UnitClass("player")
     if not classID then return {} end
 
+    local specID = nil
     local specIdx = C_SpecializationInfo.GetSpecialization()
-    local specID
     if specIdx then
         specID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
     end
@@ -195,6 +198,36 @@ local function GetConfigActiveResources()
     end
 
     return CLASS_RESOURCES_CONFIG[classID] or {}
+end
+
+local function GetCurrentConfigSpecID()
+    local specIdx = C_SpecializationInfo.GetSpecialization()
+    if specIdx then
+        return C_SpecializationInfo.GetSpecializationInfo(specIdx)
+    end
+    return nil
+end
+
+local function GetPlayerSpecOptionsConfig()
+    local specList = {}
+    local specOrder = {}
+    local specInfoByID = {}
+
+    for i = 1, (GetNumSpecializations() or 0) do
+        local specID, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
+        if specID and name then
+            specList[specID] = name
+            specOrder[#specOrder + 1] = specID
+            specInfoByID[specID] = {
+                specID = specID,
+                name = name,
+                icon = icon,
+                order = i,
+            }
+        end
+    end
+
+    return specList, specOrder, specInfoByID
 end
 
 local function ResolveAuraColorSpellIDFromText(text)
@@ -220,12 +253,147 @@ local function ResolveAuraColorSpellIDFromText(text)
     return nil, false
 end
 
+local function GetResourceAuraEntryCountConfig(resource)
+    if type(resource) ~= "table" or type(resource.auraOverlayEntries) ~= "table" then
+        return 0
+    end
+
+    local count = 0
+    for _, entry in pairs(resource.auraOverlayEntries) do
+        if type(entry) == "table" then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function GetResourceAuraEntryConfig(resource, specID)
+    if type(resource) ~= "table" or not specID then
+        return nil
+    end
+
+    local entries = resource.auraOverlayEntries
+    if type(entries) ~= "table" then
+        return nil
+    end
+
+    local direct = entries[specID]
+    if type(direct) == "table" then
+        return direct
+    end
+
+    local alternate = entries[tostring(specID)]
+    if type(alternate) == "table" then
+        return alternate
+    end
+
+    return nil
+end
+
+local function GetOrderedResourceAuraEntrySpecsConfig(resource, specOrder)
+    local ordered = {}
+    local seen = {}
+
+    if type(resource) ~= "table" or type(resource.auraOverlayEntries) ~= "table" then
+        return ordered
+    end
+
+    for _, specID in ipairs(specOrder or {}) do
+        if GetResourceAuraEntryConfig(resource, specID) then
+            ordered[#ordered + 1] = specID
+            seen[specID] = true
+        end
+    end
+
+    local extras = {}
+    for key, entry in pairs(resource.auraOverlayEntries) do
+        if type(entry) == "table" then
+            local numericKey = tonumber(key)
+            local normalizedKey = numericKey or key
+            if not seen[normalizedKey] then
+                extras[#extras + 1] = normalizedKey
+                seen[normalizedKey] = true
+            end
+        end
+    end
+
+    table.sort(extras, function(a, b)
+        local aNum, bNum = tonumber(a), tonumber(b)
+        if aNum and bNum then
+            return aNum < bNum
+        end
+        return tostring(a) < tostring(b)
+    end)
+
+    for _, specID in ipairs(extras) do
+        ordered[#ordered + 1] = specID
+    end
+
+    return ordered
+end
+
+local function GetUnusedResourceAuraSpecsConfig(resource, specOrder)
+    local available = {}
+
+    for _, specID in ipairs(specOrder or {}) do
+        if not GetResourceAuraEntryConfig(resource, specID) then
+            available[#available + 1] = specID
+        end
+    end
+
+    return available
+end
+
+local function EnsureResourceAuraDraftStoreConfig()
+    if type(CS.resourceAuraOverlayDrafts) ~= "table" then
+        CS.resourceAuraOverlayDrafts = {}
+    end
+    return CS.resourceAuraOverlayDrafts
+end
+
+local function GetResourceAuraDraftConfig(powerType)
+    return EnsureResourceAuraDraftStoreConfig()[powerType]
+end
+
+local function SetResourceAuraDraftConfig(powerType, state)
+    EnsureResourceAuraDraftStoreConfig()[powerType] = state
+end
+
+local function CreateResourceAuraDraftConfig(powerType, resource, preferredSpecID, specOrder)
+    local availableSpecs = GetUnusedResourceAuraSpecsConfig(resource, specOrder)
+    if #availableSpecs == 0 then
+        return nil
+    end
+
+    local selectedSpecID = nil
+    for _, specID in ipairs(availableSpecs) do
+        if specID == preferredSpecID then
+            selectedSpecID = specID
+            break
+        end
+    end
+    if not selectedSpecID then
+        selectedSpecID = availableSpecs[1]
+    end
+
+    local draft = {
+        specID = selectedSpecID,
+    }
+    if SupportsResourceAuraStackModeConfig(powerType) then
+        draft.auraColorTrackingMode = "active"
+    end
+    return draft
+end
+
 local function IsResourceAuraOverlayEnabledConfig(resource)
     if type(resource) ~= "table" then
         return false
     end
     if type(resource.auraOverlayEnabled) == "boolean" then
         return resource.auraOverlayEnabled
+    end
+    if GetResourceAuraEntryCountConfig(resource) > 0 then
+        return true
     end
     local auraSpellID = tonumber(resource.auraColorSpellID)
     return auraSpellID and auraSpellID > 0 or false
@@ -257,6 +425,13 @@ local function GetSafeRGBAConfig(color, fallback)
         return color
     end
     return fallback
+end
+
+local function CopyRGBConfig(color)
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        return nil
+    end
+    return { color[1], color[2], color[3] }
 end
 
 local function GetSegmentedThresholdValueConfig(resource)
@@ -305,6 +480,533 @@ local function GetContinuousTickAbsoluteConfig(resource)
     return value
 end
 
+local function AttachAuraAutocompleteHandlers(editBoxWidget, onAuraSelect)
+    editBoxWidget:SetCallback("OnTextChanged", function(widget, event, text)
+        if text and #text >= 1 then
+            local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
+            local results = CS.SearchAutocompleteInCache(text, cache)
+            CS.ShowAutocompleteResults(results, widget, onAuraSelect)
+        else
+            CS.HideAutocomplete()
+        end
+    end)
+
+    local editboxFrame = editBoxWidget.editbox
+    if not editboxFrame._cdcAutocompHooked then
+        editboxFrame._cdcAutocompHooked = true
+        editboxFrame:HookScript("OnKeyDown", function(self, key)
+            CS.HandleAutocompleteKeyDown(key)
+        end)
+    end
+end
+
+local function AddResourceAuraEntryFields(container, powerType, resourceName, entry, options)
+    options = options or {}
+
+    if options.specList and options.specOrder and options.onSpecChanged then
+        local specDrop = AceGUI:Create("Dropdown")
+        specDrop:SetLabel("Specialization")
+        specDrop:SetList(options.specList, options.specOrder)
+        specDrop:SetValue(options.specID)
+        specDrop:SetFullWidth(true)
+        specDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            options.onSpecChanged(tonumber(val) or val)
+        end)
+        container:AddChild(specDrop)
+    end
+
+    local spellID = tonumber(entry and entry.auraColorSpellID) or nil
+    local spellEdit = AceGUI:Create("EditBox")
+    if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
+    spellEdit:SetLabel(resourceName .. " Aura (Spell ID or Name)")
+    spellEdit:SetText(spellID and tostring(spellID) or "")
+    spellEdit:SetFullWidth(true)
+    spellEdit:DisableButton(true)
+
+    local function CommitSpellID(id)
+        CS.HideAutocomplete()
+        if options.onSpellChanged then
+            options.onSpellChanged(id)
+        end
+    end
+
+    spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+        if CS.ConsumeAutocompleteEnter() then return end
+        CS.HideAutocomplete()
+
+        local id, explicitClear = ResolveAuraColorSpellIDFromText(text)
+        if not id and not explicitClear then
+            return
+        end
+
+        CommitSpellID(id)
+    end)
+
+    AttachAuraAutocompleteHandlers(spellEdit, function(selectedEntry)
+        CommitSpellID(selectedEntry.id)
+    end)
+
+    container:AddChild(spellEdit)
+
+    if spellID then
+        local auraName = C_Spell.GetSpellName(spellID)
+        if auraName then
+            local auraLabel = AceGUI:Create("Label")
+            auraLabel:SetText("|cff888888" .. auraName .. "|r")
+            auraLabel:SetFullWidth(true)
+            container:AddChild(auraLabel)
+        end
+    end
+
+    local auraColorPicker = AceGUI:Create("ColorPicker")
+    auraColorPicker:SetLabel(resourceName .. " Aura Active Color")
+    local auraColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR_CONFIG)
+    auraColorPicker:SetColor(auraColor[1], auraColor[2], auraColor[3])
+    auraColorPicker:SetHasAlpha(false)
+    auraColorPicker:SetFullWidth(true)
+    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+        if options.onColorChanged then
+            options.onColorChanged(r, g, b)
+        end
+    end)
+    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+        if options.onColorConfirmed then
+            options.onColorConfirmed(r, g, b)
+        end
+    end)
+    container:AddChild(auraColorPicker)
+
+    if SupportsResourceAuraStackModeConfig(powerType) then
+        local trackingMode = GetResourceAuraTrackingModeConfig(entry)
+        local trackDrop = AceGUI:Create("Dropdown")
+        trackDrop:SetLabel("Tracking Mode")
+        trackDrop:SetList({
+            stacks = "Stack Count",
+            active = "Active (On/Off)",
+        }, { "stacks", "active" })
+        trackDrop:SetValue(trackingMode)
+        trackDrop:SetFullWidth(true)
+        trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if options.onTrackingChanged then
+                options.onTrackingChanged(val)
+            end
+        end)
+        container:AddChild(trackDrop)
+
+        if trackingMode ~= "active" then
+            local auraStackEdit = AceGUI:Create("EditBox")
+            if auraStackEdit.editbox.Instructions then auraStackEdit.editbox.Instructions:Hide() end
+            auraStackEdit:SetLabel(resourceName .. " Aura Max Stacks")
+            auraStackEdit:SetText(entry and entry.auraColorMaxStacks and tostring(entry.auraColorMaxStacks) or "")
+            auraStackEdit:SetFullWidth(true)
+            auraStackEdit:DisableButton(true)
+            auraStackEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+                local cleaned = text and text:gsub("%s", "") or ""
+                local parsed = nil
+                if cleaned ~= "" then
+                    local num = tonumber(cleaned)
+                    if num then
+                        num = math.floor(num)
+                        if num >= 2 then
+                            if num > 99 then num = 99 end
+                            parsed = num
+                        end
+                    end
+                    if not parsed then
+                        local current = entry and entry.auraColorMaxStacks
+                        widget:SetText(current and tostring(current) or "")
+                        return
+                    end
+                end
+
+                if options.onMaxStacksChanged then
+                    options.onMaxStacksChanged(parsed)
+                end
+                widget:SetText(parsed and tostring(parsed) or "")
+            end)
+            container:AddChild(auraStackEdit)
+
+            local auraStackHint = AceGUI:Create("Label")
+            auraStackHint:SetText("|cff888888Stack mode maps aura stacks to a bar proportion (e.g. 1/2 = half bar). Applies only to segmented/overlay resources.|r")
+            auraStackHint:SetFullWidth(true)
+            container:AddChild(auraStackHint)
+        end
+    end
+end
+
+local function GetSpecDisplayInfoConfig(specID, specInfoByID)
+    local numericSpecID = tonumber(specID) or specID
+    local info = specInfoByID and specInfoByID[numericSpecID]
+    if info then
+        return info
+    end
+
+    local _, name, _, icon = GetSpecializationInfoForSpecID(numericSpecID)
+    return {
+        specID = numericSpecID,
+        name = name or ("Spec " .. tostring(specID)),
+        icon = icon,
+    }
+end
+
+local function GetResourceAuraEntryCollapsedBucketConfig(powerType, create)
+    local powerKey = tonumber(powerType) or powerType
+    local bucket = resourceAuraEntryCollapsedStates[powerKey]
+    if not bucket and create then
+        bucket = {}
+        resourceAuraEntryCollapsedStates[powerKey] = bucket
+    end
+    return bucket, powerKey
+end
+
+local function IsResourceAuraEntryCollapsedConfig(powerType, specID)
+    local bucket = GetResourceAuraEntryCollapsedBucketConfig(powerType, false)
+    return bucket and bucket[tostring(specID)] == true or false
+end
+
+local function SetResourceAuraEntryCollapsedConfig(powerType, specID, isCollapsed)
+    local specKey = tostring(specID)
+    if isCollapsed then
+        local bucket = GetResourceAuraEntryCollapsedBucketConfig(powerType, true)
+        bucket[specKey] = true
+        return
+    end
+
+    local bucket, powerKey = GetResourceAuraEntryCollapsedBucketConfig(powerType, false)
+    if not bucket then
+        return
+    end
+
+    bucket[specKey] = nil
+    if not next(bucket) then
+        resourceAuraEntryCollapsedStates[powerKey] = nil
+    end
+end
+
+local function ClearLegacyResourceAuraFieldsConfig(resource)
+    if type(resource) ~= "table" then
+        return
+    end
+    resource.auraColorSpellID = nil
+    resource.auraActiveColor = nil
+    resource.auraColorTrackingMode = nil
+    resource.auraColorMaxStacks = nil
+end
+
+local function GetResourceAuraEntrySummaryTextConfig(powerType, entry)
+    local auraSpellID = tonumber(entry and entry.auraColorSpellID)
+    local auraText = "No aura selected"
+    if auraSpellID then
+        auraText = C_Spell.GetSpellName(auraSpellID) or ("Spell ID " .. auraSpellID)
+    end
+
+    local trackingText = "Active"
+    local maxStacks = nil
+    if SupportsResourceAuraStackModeConfig(powerType) then
+        local trackingMode = GetResourceAuraTrackingModeConfig(entry)
+        if trackingMode == "stacks" then
+            trackingText = "Stacks"
+            local configuredMaxStacks = tonumber(entry and entry.auraColorMaxStacks)
+            if configuredMaxStacks and configuredMaxStacks >= 2 then
+                maxStacks = configuredMaxStacks
+            end
+        end
+    end
+
+    local summary = "|cff888888Aura:|r " .. auraText .. " |cff888888Mode:|r " .. trackingText
+    if maxStacks then
+        summary = summary .. " (Max " .. maxStacks .. ")"
+    end
+    return summary
+end
+
+local function ClearResourceAuraEntryConfig(powerType, resource, specID)
+    if type(resource.auraOverlayEntries) ~= "table" then
+        return
+    end
+
+    SetResourceAuraEntryCollapsedConfig(powerType, specID, false)
+    resource.auraOverlayEntries[specID] = nil
+    resource.auraOverlayEntries[tostring(specID)] = nil
+    if not next(resource.auraOverlayEntries) then
+        resource.auraOverlayEntries = nil
+        SetResourceAuraDraftConfig(powerType, nil)
+    end
+
+    CooldownCompanion:ApplyResourceBars()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function CompactUntitledInlineGroupConfig(group)
+    local frame = group and group.frame
+    local content = group and group.content
+    local border = content and content:GetParent()
+    local titleText = group and group.titletext
+    if not frame or not content or not border or not titleText then
+        return
+    end
+
+    titleText:Hide()
+    border:ClearAllPoints()
+    border:SetPoint("TOPLEFT", 0, 0)
+    border:SetPoint("BOTTOMRIGHT", -1, 3)
+    content:ClearAllPoints()
+    content:SetPoint("TOPLEFT", 10, -6)
+    content:SetPoint("BOTTOMRIGHT", -10, 10)
+
+    group:SetCallback("OnRelease", function(widget)
+        local releaseTitle = widget and widget.titletext
+        local releaseContent = widget and widget.content
+        local releaseBorder = releaseContent and releaseContent:GetParent()
+        if not releaseTitle or not releaseContent or not releaseBorder then
+            return
+        end
+
+        releaseTitle:Show()
+        releaseBorder:ClearAllPoints()
+        releaseBorder:SetPoint("TOPLEFT", 0, -17)
+        releaseBorder:SetPoint("BOTTOMRIGHT", -1, 3)
+        releaseContent:ClearAllPoints()
+        releaseContent:SetPoint("TOPLEFT", 10, -10)
+        releaseContent:SetPoint("BOTTOMRIGHT", -10, 10)
+    end)
+end
+
+local function AttachResourceAuraEntryToggleButton(parentWidget, isCollapsed, onClickFn)
+    local frame = parentWidget and parentWidget.frame
+    if not frame then
+        return nil
+    end
+
+    local btn = frame._cdcResourceAuraEntryToggleBtn
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(15, 15)
+        btn._icon = btn:CreateTexture(nil, "ARTWORK")
+        btn._icon:SetAllPoints()
+        frame._cdcResourceAuraEntryToggleBtn = btn
+    end
+
+    local atlas = isCollapsed and RESOURCE_AURA_ENTRY_EXPAND_ATLAS or RESOURCE_AURA_ENTRY_MINIMIZE_ATLAS
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    btn:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
+    btn:Show()
+    btn._icon:Show()
+    btn._icon:SetAtlas(atlas, false)
+    btn:SetHighlightAtlas(atlas)
+    if btn:GetHighlightTexture() then
+        btn:GetHighlightTexture():SetAlpha(0.3)
+    end
+
+    btn:SetScript("OnClick", onClickFn)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(isCollapsed and "Edit entry" or "Minimize entry")
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    parentWidget:SetCallback("OnRelease", function()
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end)
+
+    return btn
+end
+
+local function AddResourceAuraEntryCard(container, settings, powerType, resourceName, resource, specID, specInfoByID)
+    local entry = GetResourceAuraEntryConfig(resource, specID)
+    if type(entry) ~= "table" then
+        return
+    end
+
+    local specInfo = GetSpecDisplayInfoConfig(specID, specInfoByID)
+    local isCollapsed = IsResourceAuraEntryCollapsedConfig(powerType, specID)
+    local entryGroup = AceGUI:Create("InlineGroup")
+    entryGroup:SetTitle("")
+    entryGroup:SetLayout("List")
+    entryGroup:SetFullWidth(true)
+    CompactUntitledInlineGroupConfig(entryGroup)
+    container:AddChild(entryGroup)
+
+    local headerRow = AceGUI:Create("SimpleGroup")
+    headerRow:SetLayout("Flow")
+    headerRow:SetFullWidth(true)
+
+    local specLabel = AceGUI:Create("Label")
+    specLabel:SetText(specInfo.name or ("Spec " .. tostring(specID)))
+    specLabel:SetFontObject(GameFontNormalLarge)
+    if specInfo.icon then
+        specLabel:SetImage(specInfo.icon)
+        specLabel:SetImageSize(20, 20)
+    else
+        specLabel:SetImage(nil)
+    end
+    specLabel:SetRelativeWidth(0.88)
+    headerRow:AddChild(specLabel)
+    entryGroup:AddChild(headerRow)
+    AttachResourceAuraEntryToggleButton(headerRow, isCollapsed, function()
+        SetResourceAuraEntryCollapsedConfig(powerType, specID, not isCollapsed)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if isCollapsed then
+        local summaryLabel = AceGUI:Create("Label")
+        summaryLabel:SetText(GetResourceAuraEntrySummaryTextConfig(powerType, entry))
+        summaryLabel:SetFullWidth(true)
+        entryGroup:AddChild(summaryLabel)
+        return
+    end
+
+    AddResourceAuraEntryFields(entryGroup, powerType, resourceName, entry, {
+        onSpellChanged = function(id)
+            entry.auraColorSpellID = id
+            ClearLegacyResourceAuraFieldsConfig(resource)
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+        onColorChanged = function(r, g, b)
+            entry.auraActiveColor = { r, g, b }
+        end,
+        onColorConfirmed = function(r, g, b)
+            entry.auraActiveColor = { r, g, b }
+            ClearLegacyResourceAuraFieldsConfig(resource)
+            CooldownCompanion:ApplyResourceBars()
+        end,
+        onTrackingChanged = function(val)
+            entry.auraColorTrackingMode = val
+            if val == "stacks" then
+                local current = tonumber(entry.auraColorMaxStacks)
+                if not current or current < 2 then
+                    entry.auraColorMaxStacks = 2
+                end
+            end
+            ClearLegacyResourceAuraFieldsConfig(resource)
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+        onMaxStacksChanged = function(parsed)
+            entry.auraColorMaxStacks = parsed
+            ClearLegacyResourceAuraFieldsConfig(resource)
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    local clearSpacer = AceGUI:Create("Label")
+    clearSpacer:SetText(" ")
+    clearSpacer:SetFullWidth(true)
+    entryGroup:AddChild(clearSpacer)
+
+    local clearBtn = AceGUI:Create("Button")
+    clearBtn:SetText("Clear Entry")
+    clearBtn:SetFullWidth(true)
+    clearBtn:SetCallback("OnClick", function()
+        ClearResourceAuraEntryConfig(powerType, resource, specID)
+    end)
+    entryGroup:AddChild(clearBtn)
+end
+
+local function AddResourceAuraDraftEditor(container, settings, powerType, resourceName, resource, specList, specOrder)
+    local draft = GetResourceAuraDraftConfig(powerType)
+    if type(draft) ~= "table" then
+        return
+    end
+
+    local draftGroup = AceGUI:Create("InlineGroup")
+    draftGroup:SetTitle("Add Entry")
+    draftGroup:SetLayout("List")
+    draftGroup:SetFullWidth(true)
+    container:AddChild(draftGroup)
+
+    local helpLabel = AceGUI:Create("Label")
+    helpLabel:SetText("|cff888888Choose which specialization this aura overlay should load for, then fill in the overlay settings.|r")
+    helpLabel:SetFullWidth(true)
+    draftGroup:AddChild(helpLabel)
+
+    AddResourceAuraEntryFields(draftGroup, powerType, resourceName, draft, {
+        specList = specList,
+        specOrder = specOrder,
+        specID = draft.specID,
+        onSpecChanged = function(val)
+            draft.specID = val
+        end,
+        onSpellChanged = function(id)
+            draft.auraColorSpellID = id
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+        onColorChanged = function(r, g, b)
+            draft.auraActiveColor = { r, g, b }
+        end,
+        onColorConfirmed = function(r, g, b)
+            draft.auraActiveColor = { r, g, b }
+        end,
+        onTrackingChanged = function(val)
+            draft.auraColorTrackingMode = val
+            if val == "stacks" then
+                local current = tonumber(draft.auraColorMaxStacks)
+                if not current or current < 2 then
+                    draft.auraColorMaxStacks = 2
+                end
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+        onMaxStacksChanged = function(parsed)
+            draft.auraColorMaxStacks = parsed
+        end,
+    })
+
+    local buttonRow = AceGUI:Create("SimpleGroup")
+    buttonRow:SetLayout("Flow")
+    buttonRow:SetFullWidth(true)
+
+    local addBtn = AceGUI:Create("Button")
+    addBtn:SetText("Add Entry")
+    addBtn:SetRelativeWidth(0.49)
+    addBtn:SetCallback("OnClick", function()
+        local specID = tonumber(draft.specID)
+        if not specID or GetResourceAuraEntryConfig(resource, specID) then
+            return
+        end
+
+        if type(resource.auraOverlayEntries) ~= "table" then
+            resource.auraOverlayEntries = {}
+        end
+
+        local savedEntry = {
+            auraColorSpellID = tonumber(draft.auraColorSpellID) or nil,
+            auraActiveColor = CopyRGBConfig(draft.auraActiveColor),
+            auraColorTrackingMode = draft.auraColorTrackingMode,
+            auraColorMaxStacks = draft.auraColorMaxStacks,
+        }
+        resource.auraOverlayEntries[specID] = savedEntry
+        resource.auraOverlayEnabled = true
+        ClearLegacyResourceAuraFieldsConfig(resource)
+        SetResourceAuraEntryCollapsedConfig(powerType, specID, false)
+        SetResourceAuraDraftConfig(powerType, nil)
+
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    buttonRow:AddChild(addBtn)
+
+    local cancelBtn = AceGUI:Create("Button")
+    cancelBtn:SetText("Cancel")
+    cancelBtn:SetRelativeWidth(0.49)
+    cancelBtn:SetCallback("OnClick", function()
+        SetResourceAuraDraftConfig(powerType, false)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    buttonRow:AddChild(cancelBtn)
+
+    draftGroup:AddChild(buttonRow)
+end
+
 local function AddResourceAuraOverrideControls(container, settings, powerType, resourceName, auraAdvButtons)
     if not settings.resources[powerType] then
         settings.resources[powerType] = {}
@@ -320,6 +1022,8 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         if not settings.resources[powerType] then settings.resources[powerType] = {} end
         local wasEnabled = IsResourceAuraOverlayEnabledConfig(settings.resources[powerType])
         settings.resources[powerType].auraOverlayEnabled = (val == true)
+        SetResourceAuraDraftConfig(powerType, nil)
+
         if val and not wasEnabled then
             if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
                 CooldownCompanion.db.profile.showAdvanced = {}
@@ -342,148 +1046,87 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         return
     end
 
-    local spellEdit = AceGUI:Create("EditBox")
-    if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
-    spellEdit:SetLabel(resourceName .. " Aura (Spell ID or Name)")
-    spellEdit:SetText(res.auraColorSpellID and tostring(res.auraColorSpellID) or "")
-    spellEdit:SetFullWidth(true)
-    spellEdit:DisableButton(true)
+    local specList, specOrder, specInfoByID = GetPlayerSpecOptionsConfig()
+    local currentSpecID = GetCurrentConfigSpecID()
+    local entryCount = GetResourceAuraEntryCountConfig(res)
+    local draftState = GetResourceAuraDraftConfig(powerType)
 
-    local function onAuraSelect(entry)
-        CS.HideAutocomplete()
-        if not settings.resources[powerType] then settings.resources[powerType] = {} end
-        settings.resources[powerType].auraColorSpellID = entry.id
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
+    if entryCount == 0 and draftState == nil then
+        SetResourceAuraDraftConfig(powerType, CreateResourceAuraDraftConfig(powerType, res, currentSpecID, specOrder))
+        draftState = GetResourceAuraDraftConfig(powerType)
     end
 
-    spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-        if CS.ConsumeAutocompleteEnter() then return end
-        CS.HideAutocomplete()
-
-        local id, explicitClear = ResolveAuraColorSpellIDFromText(text)
-        if not id and not explicitClear then
-            return
-        end
-
-        if not settings.resources[powerType] then settings.resources[powerType] = {} end
-        settings.resources[powerType].auraColorSpellID = id
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    spellEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if text and #text >= 1 then
-            local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
-            local results = CS.SearchAutocompleteInCache(text, cache)
-            CS.ShowAutocompleteResults(results, widget, onAuraSelect)
-        else
-            CS.HideAutocomplete()
-        end
-    end)
-
-    local editboxFrame = spellEdit.editbox
-    if not editboxFrame._cdcAutocompHooked then
-        editboxFrame._cdcAutocompHooked = true
-        editboxFrame:HookScript("OnKeyDown", function(self, key)
-            CS.HandleAutocompleteKeyDown(key)
-        end)
+    local orderedSpecs = GetOrderedResourceAuraEntrySpecsConfig(res, specOrder)
+    for _, specID in ipairs(orderedSpecs) do
+        AddResourceAuraEntryCard(container, settings, powerType, resourceName, res, specID, specInfoByID)
     end
 
-    container:AddChild(spellEdit)
-
-    if res.auraColorSpellID then
-        local auraName = C_Spell.GetSpellName(res.auraColorSpellID)
-        if auraName then
-            local auraLabel = AceGUI:Create("Label")
-            auraLabel:SetText("|cff888888" .. auraName .. "|r")
-            auraLabel:SetFullWidth(true)
-            container:AddChild(auraLabel)
-        end
-    end
-
-    local auraColorPicker = AceGUI:Create("ColorPicker")
-    auraColorPicker:SetLabel(resourceName .. " Aura Active Color")
-    local auraColor = res.auraActiveColor or DEFAULT_RESOURCE_AURA_ACTIVE_COLOR_CONFIG
-    auraColorPicker:SetColor(auraColor[1], auraColor[2], auraColor[3])
-    auraColorPicker:SetHasAlpha(false)
-    auraColorPicker:SetFullWidth(true)
-    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-        if not settings.resources[powerType] then settings.resources[powerType] = {} end
-        settings.resources[powerType].auraActiveColor = { r, g, b }
-    end)
-    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-        if not settings.resources[powerType] then settings.resources[powerType] = {} end
-        settings.resources[powerType].auraActiveColor = { r, g, b }
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(auraColorPicker)
-
-    if SupportsResourceAuraStackModeConfig(powerType) then
-        local trackingMode = GetResourceAuraTrackingModeConfig(res)
-        local trackDrop = AceGUI:Create("Dropdown")
-        trackDrop:SetLabel("Tracking Mode")
-        trackDrop:SetList({
-            stacks = "Stack Count",
-            active = "Active (On/Off)",
-        }, { "stacks", "active" })
-        trackDrop:SetValue(trackingMode)
-        trackDrop:SetFullWidth(true)
-        trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            if not settings.resources[powerType] then settings.resources[powerType] = {} end
-            settings.resources[powerType].auraColorTrackingMode = val
-            if val == "stacks" then
-                local current = tonumber(settings.resources[powerType].auraColorMaxStacks)
-                if not current or current < 2 then
-                    settings.resources[powerType].auraColorMaxStacks = 2
-                end
-            end
-            CooldownCompanion:ApplyResourceBars()
+    local availableSpecs = GetUnusedResourceAuraSpecsConfig(res, specOrder)
+    if type(draftState) == "table" then
+        AddResourceAuraDraftEditor(container, settings, powerType, resourceName, res, specList, availableSpecs)
+    elseif #availableSpecs > 0 then
+        local addBtn = AceGUI:Create("Button")
+        addBtn:SetText("Add Entry")
+        addBtn:SetFullWidth(true)
+        addBtn:SetCallback("OnClick", function()
+            SetResourceAuraDraftConfig(powerType, CreateResourceAuraDraftConfig(powerType, res, currentSpecID, specOrder))
             CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(trackDrop)
+        addBtn:SetCallback("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+            if entryCount == 0 then
+                GameTooltip:AddLine("No specialization entries configured yet.")
+            else
+                GameTooltip:AddLine("Add another specialization entry for this resource aura overlay.", 1, 1, 1, true)
+            end
+            GameTooltip:Show()
+        end)
+        addBtn:SetCallback("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        container:AddChild(addBtn)
+    end
+end
 
-        if trackingMode ~= "active" then
-            local auraStackEdit = AceGUI:Create("EditBox")
-            if auraStackEdit.editbox.Instructions then auraStackEdit.editbox.Instructions:Hide() end
-            auraStackEdit:SetLabel(resourceName .. " Aura Max Stacks")
-            auraStackEdit:SetText(res.auraColorMaxStacks and tostring(res.auraColorMaxStacks) or "")
-            auraStackEdit:SetFullWidth(true)
-            auraStackEdit:DisableButton(true)
-            auraStackEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-                if not settings.resources[powerType] then settings.resources[powerType] = {} end
+local function BuildResourceAuraOverlaySection(container, settings)
+    local auraHeading = AceGUI:Create("Heading")
+    auraHeading:SetText("Resource Aura Overlays")
+    ColorHeading(auraHeading)
+    auraHeading:SetFullWidth(true)
+    container:AddChild(auraHeading)
 
-                local cleaned = text and text:gsub("%s", "") or ""
-                local parsed = nil
-                if cleaned ~= "" then
-                    local num = tonumber(cleaned)
-                    if num then
-                        num = math.floor(num)
-                        if num >= 2 then
-                            if num > 99 then num = 99 end
-                            parsed = num
-                        end
-                    end
-                    if not parsed then
-                        local current = settings.resources[powerType].auraColorMaxStacks
-                        widget:SetText(current and tostring(current) or "")
-                        return
-                    end
-                end
+    local auraKey = "rb_resource_aura_overlays"
+    local auraCollapsed = resourceBarCollapsedSections[auraKey]
 
-                settings.resources[powerType].auraColorMaxStacks = parsed
-                widget:SetText(parsed and tostring(parsed) or "")
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            container:AddChild(auraStackEdit)
+    local auraCollapseBtn = AttachCollapseButton(auraHeading, auraCollapsed, function()
+        resourceBarCollapsedSections[auraKey] = not resourceBarCollapsedSections[auraKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
 
-            local auraStackHint = AceGUI:Create("Label")
-            auraStackHint:SetText("|cff888888Stack mode maps aura stacks to a bar proportion (e.g. 1/2 = half bar). Applies only to segmented/overlay resources.|r")
-            auraStackHint:SetFullWidth(true)
-            container:AddChild(auraStackHint)
+    local auraInfoBtn = CreateInfoButton(auraHeading.frame, auraCollapseBtn, "LEFT", "RIGHT", 4, 0, {
+        "Resource Aura Overlays",
+        {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
+        " ",
+        {"You can set the active color, and optional stack lanes for segmented resources.", 1, 1, 1, true},
+    }, auraHeading)
+
+    auraHeading.right:ClearAllPoints()
+    auraHeading.right:SetPoint("RIGHT", auraHeading.frame, "RIGHT", -3, 0)
+    auraHeading.right:SetPoint("LEFT", auraInfoBtn, "RIGHT", 4, 0)
+
+    if not auraCollapsed then
+        local rbAuraOverlayAdvBtns = {}
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            if not settings.resources[pt] then
+                settings.resources[pt] = {}
+            end
+            if settings.resources[pt].enabled ~= false then
+                local resourceName = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+                AddResourceAuraOverrideControls(container, settings, pt, resourceName, rbAuraOverlayAdvBtns)
+            end
         end
     end
-
 end
 
 local function IsResourceBarVerticalConfig(settings)
@@ -821,6 +1464,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local mode = sectionMode or "all"
     local showBarText = (mode == "all" or mode == "bar_text")
     local showColors = (mode == "all" or mode == "colors")
+    local showAuraOverlays = (mode == "all" or mode == "aura_overlays")
 
     if showBarText then
     -- Bar Texture
@@ -1514,46 +2158,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         end
     end
 
-    -- ============ Per-Resource Aura Overlays Section ============
-    local auraHeading = AceGUI:Create("Heading")
-    auraHeading:SetText("Resource Aura Overlays")
-    ColorHeading(auraHeading)
-    auraHeading:SetFullWidth(true)
-    container:AddChild(auraHeading)
-
-    local auraKey = "rb_resource_aura_overlays"
-    local auraCollapsed = resourceBarCollapsedSections[auraKey]
-
-    local auraCollapseBtn = AttachCollapseButton(auraHeading, auraCollapsed, function()
-        resourceBarCollapsedSections[auraKey] = not resourceBarCollapsedSections[auraKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    local auraInfoBtn = CreateInfoButton(auraHeading.frame, auraCollapseBtn, "LEFT", "RIGHT", 4, 0, {
-        "Resource Aura Overlays",
-        {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
-        " ",
-        {"You can set the active color, and optional stack lanes for segmented resources.", 1, 1, 1, true},
-    }, auraHeading)
-
-    auraHeading.right:ClearAllPoints()
-    auraHeading.right:SetPoint("RIGHT", auraHeading.frame, "RIGHT", -3, 0)
-    auraHeading.right:SetPoint("LEFT", auraInfoBtn, "RIGHT", 4, 0)
-
-    if not auraCollapsed then
-        local rbAuraOverlayAdvBtns = {}
-        local resources = GetConfigActiveResources()
-        for _, pt in ipairs(resources) do
-            if not settings.resources[pt] then
-                settings.resources[pt] = {}
-            end
-            if settings.resources[pt].enabled ~= false then
-                local resourceName = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
-                AddResourceAuraOverrideControls(container, settings, pt, resourceName, rbAuraOverlayAdvBtns)
-            end
-        end
-    end
-
     -- ============ Thresholds & Ticks Section ============
     local thresholdHeading = AceGUI:Create("Heading")
     thresholdHeading:SetText("Thresholds & Ticks")
@@ -1764,6 +2368,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     end
 
+    if showAuraOverlays then
+        BuildResourceAuraOverlaySection(container, settings)
+    end
+
 end
 
 local function BuildResourceBarBarTextStylingPanel(container)
@@ -1772,6 +2380,10 @@ end
 
 local function BuildResourceBarColorsStylingPanel(container)
     BuildResourceBarStylingPanel(container, "colors")
+end
+
+local function BuildResourceBarAuraOverlaysStylingPanel(container)
+    BuildResourceBarStylingPanel(container, "aura_overlays")
 end
 
 ------------------------------------------------------------------------
@@ -3032,5 +3644,6 @@ ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
 ST._BuildResourceBarColorsStylingPanel = BuildResourceBarColorsStylingPanel
+ST._BuildResourceBarAuraOverlaysStylingPanel = BuildResourceBarAuraOverlaysStylingPanel
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
 ST._BuildLayoutOrderPanel = BuildLayoutOrderPanel
