@@ -6,7 +6,9 @@ Copyright © 2026 Cantrelle ("Direction6275")
 The contents of this AddOn, excluding third-party libraries and resources, are copyrighted to their respective authors, with all rights reserved.
 This AddOn is free to download and use. The author grants you the following rights:
 
-You may include this AddOn unmodified in a UI pack, provided that the UI pack is distributed entirely free of charge. A UI pack is considered free only if no monetary compensation, donations, Patreon pledges, subscription fees, tips, or any other form of payment or financial benefit is solicited or received by the distributor in connection with access to or distribution of the UI pack, whether directly or indirectly. If a distributor begins accepting any form of compensation after initially distributing a UI pack containing this AddOn, they must immediately remove this AddOn from all future distributions.
+You may include this AddOn unmodified in a UI pack, provided that the UI pack is distributed entirely free of charge. 
+A UI pack is considered free only if no monetary compensation, donations, Patreon pledges, subscription fees, tips, or any other form of payment or financial benefit is solicited or received by the distributor in connection with access to or distribution of the UI pack, whether directly or indirectly. 
+If a distributor begins accepting any form of compensation after initially distributing a UI pack containing this AddOn, they must immediately remove this AddOn from all future distributions.
 
 You may make modifications to this AddOn for private use only. You may not publish, distribute, or share modified versions of this AddOn.
 
