@@ -67,6 +67,12 @@ local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
     wipe(CS.customAuraBarSubTabs)
+    wipe(CS.resourceAuraOverlayDrafts)
+    if CS.characterScopedCopySelection then
+        for key in pairs(CS.characterScopedCopySelection) do
+            CS.characterScopedCopySelection[key] = nil
+        end
+    end
     SetPrimaryMode("buttons", { skipRefresh = true })
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()

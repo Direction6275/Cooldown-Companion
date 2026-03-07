@@ -5,6 +5,7 @@ local CS = ST._configState
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
+local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 
 ------------------------------------------------------------------------
 -- Frame Anchoring panels
@@ -29,7 +30,7 @@ local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "custom" }
 
 local function BuildFrameAnchoringPlayerPanel(container)
     local db = CooldownCompanion.db.profile
-    local settings = db.frameAnchoring
+    local settings = CooldownCompanion:GetFrameAnchoringSettings()
 
     -- Enable Frame Anchoring
     local enableCb = AceGUI:Create("CheckBox")
@@ -42,6 +43,11 @@ local function BuildFrameAnchoringPlayerPanel(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(enableCb)
+
+    AddCharacterScopedCopyControls(container, "frameAnchoring", "Frame Anchoring", function()
+        CooldownCompanion:EvaluateFrameAnchoring()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
 
     if not settings.enabled then return end
 
@@ -242,8 +248,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
 end
 
 local function BuildFrameAnchoringTargetPanel(container)
-    local db = CooldownCompanion.db.profile
-    local settings = db.frameAnchoring
+    local settings = CooldownCompanion:GetFrameAnchoringSettings()
 
     if not settings.enabled then
         local disabledLabel = AceGUI:Create("Label")

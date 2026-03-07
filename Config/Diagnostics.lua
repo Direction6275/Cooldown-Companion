@@ -48,6 +48,7 @@ local function BuildDiagnosticSnapshot()
     end
 
     local charName = UnitName("player")
+    local charKey = db.keys.char
 
     snapshot.meta = {
         addonVersion = addonVersion,
@@ -55,6 +56,7 @@ local function BuildDiagnosticSnapshot()
         interfaceVersion = interfaceVersion,
         locale = GetLocale(),
         charName = charName,
+        charKey = charKey,
         className = classFilename,
         classID = classID,
         specID = specID,
@@ -117,10 +119,15 @@ local function BuildDiagnosticSnapshot()
             end
         end
     end
-    if db.profile.resourceBars and db.profile.resourceBars.customAuraBars then
-        for sid in pairs(db.profile.resourceBars.customAuraBars) do
-            if sid ~= 0 and not specNameCache[sid] then
-                specNameCache[sid] = GetSpecializationNameForSpecID(sid) or nil
+    local resourceStores = rawget(db.profile, "resourceBarsByChar")
+    if type(resourceStores) == "table" then
+        for _, resourceSettings in pairs(resourceStores) do
+            if type(resourceSettings) == "table" and type(resourceSettings.customAuraBars) == "table" then
+                for sid in pairs(resourceSettings.customAuraBars) do
+                    if sid ~= 0 and not specNameCache[sid] then
+                        specNameCache[sid] = GetSpecializationNameForSpecID(sid) or nil
+                    end
+                end
             end
         end
     end
@@ -394,7 +401,18 @@ local function FormatDiagnosticAsText(diag)
 
     -- Resource Bars (with type names and explicit anchorGroupId)
     add("--- Resource Bars ---")
-    local rb = p.resourceBars
+    local currentCharKey = diag.meta and diag.meta.charKey
+    local rbStore = rawget(p, "resourceBarsByChar")
+    local rb = type(rbStore) == "table" and currentCharKey and rbStore[currentCharKey] or nil
+    if type(rbStore) == "table" then
+        local storedChars = {}
+        for charKey in pairs(rbStore) do
+            storedChars[#storedChars + 1] = tostring(charKey)
+        end
+        table.sort(storedChars)
+        add("currentChar=" .. tostring(currentCharKey))
+        add("storedCharacters=" .. table.concat(storedChars, ", "))
+    end
     if rb then
         local rbSimple = {}
         local hasAnchorGroupId = false
@@ -454,18 +472,40 @@ local function FormatDiagnosticAsText(diag)
     -- Cast Bar (with explicit anchorGroupId)
     add("")
     add("--- Cast Bar ---")
-    if p.castBar then
-        add(dumpKVWithNils(p.castBar, {"anchorGroupId"}))
+    local cbStore = rawget(p, "castBarByChar")
+    local cb = type(cbStore) == "table" and currentCharKey and cbStore[currentCharKey] or nil
+    if type(cbStore) == "table" then
+        local storedChars = {}
+        for charKey in pairs(cbStore) do
+            storedChars[#storedChars + 1] = tostring(charKey)
+        end
+        table.sort(storedChars)
+        add("currentChar=" .. tostring(currentCharKey))
+        add("storedCharacters=" .. table.concat(storedChars, ", "))
+    end
+    if cb then
+        add(dumpKVWithNils(cb, {"anchorGroupId"}))
     end
 
     -- Frame Anchoring (with explicit anchorGroupId)
     add("")
     add("--- Frame Anchoring ---")
-    if p.frameAnchoring then
+    local faStore = rawget(p, "frameAnchoringByChar")
+    local fa = type(faStore) == "table" and currentCharKey and faStore[currentCharKey] or nil
+    if type(faStore) == "table" then
+        local storedChars = {}
+        for charKey in pairs(faStore) do
+            storedChars[#storedChars + 1] = tostring(charKey)
+        end
+        table.sort(storedChars)
+        add("currentChar=" .. tostring(currentCharKey))
+        add("storedCharacters=" .. table.concat(storedChars, ", "))
+    end
+    if fa then
         local faSimple = {}
         local faComplex = {}
         local hasAnchorGroupId = false
-        for k, v in pairs(p.frameAnchoring) do
+        for k, v in pairs(fa) do
             if k == "anchorGroupId" then hasAnchorGroupId = true end
             if type(v) == "table" then
                 faComplex[k] = v

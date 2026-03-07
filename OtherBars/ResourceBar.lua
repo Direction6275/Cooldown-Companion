@@ -226,8 +226,7 @@ local layoutDirty = false
 ------------------------------------------------------------------------
 
 local function GetResourceBarSettings()
-    return CooldownCompanion.db and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.resourceBars
+    return CooldownCompanion:GetResourceBarSettings()
 end
 
 local function IsVerticalResourceLayout(settings)

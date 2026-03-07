@@ -7,6 +7,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
+local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
 
 ------------------------------------------------------------------------
@@ -15,7 +16,7 @@ local GetBarTextureOptions = ST._GetBarTextureOptions
 
 local function BuildCastBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
-    local settings = db.castBar
+    local settings = CooldownCompanion:GetCastBarSettings()
 
     -- Enable Anchoring
     local enableCb = AceGUI:Create("CheckBox")
@@ -28,6 +29,12 @@ local function BuildCastBarAnchoringPanel(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(enableCb)
+
+    AddCharacterScopedCopyControls(container, "castBar", "Cast Bar", function()
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
 
     if not settings.enabled then return end
 
@@ -117,8 +124,7 @@ local function BuildCastBarAnchoringPanel(container)
 end
 
 local function BuildCastBarStylingPanel(container)
-    local db = CooldownCompanion.db.profile
-    local settings = db.castBar
+    local settings = CooldownCompanion:GetCastBarSettings()
 
     -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
     local styleCb = AceGUI:Create("CheckBox")

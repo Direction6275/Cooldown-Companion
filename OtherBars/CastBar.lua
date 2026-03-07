@@ -44,7 +44,7 @@ local originalFXSizes = nil
 ------------------------------------------------------------------------
 
 local function GetCastBarSettings()
-    return CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.castBar
+    return CooldownCompanion:GetCastBarSettings()
 end
 
 local function GetEffectiveAnchorGroupId(settings)
@@ -445,8 +445,7 @@ local function ApplyPosition(cb, s, height)
     local cbPosition = s.position or "below"
     local cbOrder = s.order or 2000
     local predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
-    local rbSettings = CooldownCompanion.db and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.resourceBars
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local gap = rbSettings and (rbSettings.yOffset or 3) or 3
     local barSpacing = rbSettings and (rbSettings.barSpacing or 3.6) or 3.6
 

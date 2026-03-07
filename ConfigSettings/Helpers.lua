@@ -595,6 +595,68 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     container:AddChild(buttonRow)
 end
 
+local function AddCharacterScopedCopyControls(container, systemKey, label, onCopied)
+    if not CS.characterScopedCopySelection then
+        CS.characterScopedCopySelection = {
+            resourceBars = nil,
+            castBar = nil,
+            frameAnchoring = nil,
+        }
+    end
+
+    local copyValues, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
+    if #copyOrder == 0 then
+        local hintLabel = AceGUI:Create("Label")
+        hintLabel:SetText("|cff888888No other character " .. label:lower() .. " settings are stored in this profile yet.|r")
+        hintLabel:SetFullWidth(true)
+        container:AddChild(hintLabel)
+        return
+    end
+
+    local selected = CS.characterScopedCopySelection[systemKey]
+    if not selected or not copyValues[selected] then
+        selected = copyOrder[1]
+        CS.characterScopedCopySelection[systemKey] = selected
+    end
+
+    local copyRow = AceGUI:Create("SimpleGroup")
+    copyRow:SetFullWidth(true)
+    copyRow:SetLayout("Flow")
+
+    local sourceDrop = AceGUI:Create("Dropdown")
+    sourceDrop:SetLabel("Copy " .. label .. " From")
+    sourceDrop:SetList(copyValues, copyOrder)
+    sourceDrop:SetValue(selected)
+    sourceDrop:SetRelativeWidth(0.72)
+    sourceDrop:SetCallback("OnValueChanged", function(widget, event, value)
+        CS.characterScopedCopySelection[systemKey] = value
+    end)
+    copyRow:AddChild(sourceDrop)
+
+    local copyButton = AceGUI:Create("Button")
+    copyButton:SetText("Copy")
+    copyButton:SetRelativeWidth(0.25)
+    copyButton:SetCallback("OnClick", function()
+        local sourceCharKey = CS.characterScopedCopySelection and CS.characterScopedCopySelection[systemKey]
+        if not sourceCharKey then
+            return
+        end
+
+        local ok = CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
+        if not ok then
+            CooldownCompanion:Print("Copy failed.")
+            return
+        end
+
+        if onCopied then
+            onCopied()
+        end
+    end)
+    copyRow:AddChild(copyButton)
+
+    container:AddChild(copyRow)
+end
+
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
 local LSM = LibStub("LibSharedMedia-3.0")
 local function GetBarTextureOptions()
@@ -615,4 +677,5 @@ ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
+ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
 ST._GetBarTextureOptions = GetBarTextureOptions

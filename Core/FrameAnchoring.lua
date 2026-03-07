@@ -52,8 +52,7 @@ local MIRROR_POINTS = {
 ------------------------------------------------------------------------
 
 local function GetFrameAnchoringSettings()
-    return CooldownCompanion.db and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.frameAnchoring
+    return CooldownCompanion:GetFrameAnchoringSettings()
 end
 
 local function GetEffectiveAnchorGroupId(settings)

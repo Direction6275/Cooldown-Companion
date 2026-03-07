@@ -42,6 +42,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateTalentConditions()
     self:MigrateChoiceTalentConditions()
     self:MigrateNewDefaults()
+    self:MigrateCharacterScopedBarSettings()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -1148,41 +1149,10 @@ local function ClearLegacyResourceAuraOverlayFields(resource)
 end
 
 function CooldownCompanion:MigrateResourceAuraOverlayEntries()
-    local rb = self.db.profile.resourceBars
-    if not rb or type(rb.resources) ~= "table" then return end
-
-    local currentSpecID = nil
-    local specIndex = C_SpecializationInfo.GetSpecialization()
-    if specIndex then
-        currentSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-    end
-
-    for _, resource in pairs(rb.resources) do
-        if type(resource) == "table" then
-            local hasEntries = HasResourceAuraOverlayEntries(resource)
-            local hasLegacyData = HasLegacyResourceAuraOverlayData(resource)
-            local effectiveEnabled = GetEffectiveResourceAuraOverlayEnabled(resource)
-
-            if not hasEntries and hasLegacyData and currentSpecID then
-                resource.auraOverlayEntries = {
-                    [currentSpecID] = {
-                        auraColorSpellID = tonumber(resource.auraColorSpellID) or nil,
-                        auraActiveColor = CopyResourceAuraOverlayColor(resource.auraActiveColor),
-                        auraColorTrackingMode = resource.auraColorTrackingMode,
-                        auraColorMaxStacks = resource.auraColorMaxStacks,
-                    },
-                }
-                hasEntries = true
-                ClearLegacyResourceAuraOverlayFields(resource)
-            elseif hasEntries and hasLegacyData then
-                ClearLegacyResourceAuraOverlayFields(resource)
-            end
-
-            if hasEntries or hasLegacyData or type(resource.auraOverlayEnabled) == "boolean" then
-                resource.auraOverlayEnabled = effectiveEnabled and true or false
-            end
-        end
-    end
+    -- Resource aura overlay legacy conversion now happens when the current
+    -- character's resource bar settings bucket is materialized from the shared
+    -- seed, so the data can be filtered by character/class before becoming
+    -- persistent per-character state.
 end
 
 -- Migrate old frame-based glow styles to new StatusBar indicator styles.
@@ -1313,4 +1283,10 @@ function CooldownCompanion:MigrateNewDefaults()
     end
 
     profile.newDefaultsMigrated = true
+end
+
+function CooldownCompanion:MigrateCharacterScopedBarSettings()
+    self:CaptureLegacyScopedBarSettingsSeeds()
+    self:EnsureLegacyScopedBarSeenCharacters()
+    self:EnsureCurrentCharacterScopedBarSettings()
 end

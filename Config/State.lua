@@ -173,6 +173,11 @@ ST._configState = {
     barPanelTab = "resource_anchoring",
     resourceStylingTab = "bar_text",
     resourceAuraOverlayDrafts = {},
+    characterScopedCopySelection = {
+        resourceBars = nil,
+        castBar = nil,
+        frameAnchoring = nil,
+    },
     customAuraBarTab = "bar_1",
     customAuraBarSubTabs = {},
     groupPresetSelection = {

@@ -7,6 +7,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
+local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local CreateInfoButton = ST._CreateInfoButton
 local tabInfoButtons = CS.tabInfoButtons
 
@@ -746,13 +747,21 @@ local function CompactUntitledInlineGroupConfig(group)
         return
     end
 
+    local originalLayoutFinished = group.LayoutFinished
+
     titleText:Hide()
     border:ClearAllPoints()
     border:SetPoint("TOPLEFT", 0, 0)
     border:SetPoint("BOTTOMRIGHT", -1, 3)
     content:ClearAllPoints()
     content:SetPoint("TOPLEFT", 10, -6)
-    content:SetPoint("BOTTOMRIGHT", -10, 10)
+    content:SetPoint("BOTTOMRIGHT", -10, 6)
+    group.LayoutFinished = function(self, width, height)
+        if self.noAutoHeight then
+            return
+        end
+        self:SetHeight((height or 0) + 15)
+    end
 
     group:SetCallback("OnRelease", function(widget)
         local releaseTitle = widget and widget.titletext
@@ -769,6 +778,7 @@ local function CompactUntitledInlineGroupConfig(group)
         releaseContent:ClearAllPoints()
         releaseContent:SetPoint("TOPLEFT", 10, -10)
         releaseContent:SetPoint("BOTTOMRIGHT", -10, 10)
+        widget.LayoutFinished = originalLayoutFinished
     end)
 end
 
@@ -1149,7 +1159,7 @@ end
 
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
-    local settings = db.resourceBars
+    local settings = CooldownCompanion:GetResourceBarSettings()
     local isVerticalLayout = IsResourceBarVerticalConfig(settings)
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
     local gapField, gapLabel = GetResourceGapFieldConfig(settings)
@@ -1166,6 +1176,12 @@ local function BuildResourceBarAnchoringPanel(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(enableCb)
+
+    AddCharacterScopedCopyControls(container, "resourceBars", "Resource Bars", function()
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
 
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
@@ -1450,8 +1466,7 @@ local function GetResourceBarTextureOptions()
 end
 
 local function BuildResourceBarStylingPanel(container, sectionMode)
-    local db = CooldownCompanion.db.profile
-    local settings = db.resourceBars
+    local settings = CooldownCompanion:GetResourceBarSettings()
 
     if not settings.enabled then
         local label = AceGUI:Create("Label")
@@ -2663,8 +2678,7 @@ end
 
 local function BuildCustomAuraBarPanel(container, slotIdx)
     auraBarAutocompleteCache = nil
-    local db = CooldownCompanion.db.profile
-    local settings = db.resourceBars
+    local settings = CooldownCompanion:GetResourceBarSettings()
     local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings)
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
     local maxSlots = ST.MAX_CUSTOM_AURA_BARS or 3
@@ -3348,9 +3362,8 @@ end
 ------------------------------------------------------------------------
 
 local function BuildLayoutOrderPanel(container)
-    local db = CooldownCompanion.db.profile
-    local rbSettings = db.resourceBars
-    local cbSettings = db.castBar
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local cbSettings = CooldownCompanion:GetCastBarSettings()
     local isVerticalLayout = IsResourceBarVerticalConfig(rbSettings)
 
     if not rbSettings or not rbSettings.enabled then
@@ -3597,10 +3610,10 @@ local function BuildLayoutOrderPanel(container)
             table.insert(castSlots, {
                 label = "Cast Bar",
                 color = cbColor,
-                getPos = function() return db.castBar.position or "below" end,
-                getOrder = function() return db.castBar.order or 2000 end,
-                setPos = function(v) db.castBar.position = v end,
-                setOrder = function(v) db.castBar.order = v end,
+                getPos = function() return cbSettings.position or "below" end,
+                getOrder = function() return cbSettings.order or 2000 end,
+                setPos = function(v) cbSettings.position = v end,
+                setOrder = function(v) cbSettings.order = v end,
             })
         end
     end
