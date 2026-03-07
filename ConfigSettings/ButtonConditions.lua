@@ -790,6 +790,326 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     end -- not visCollapsed
 
+    ------------------------------------------------------------------------
+    -- TALENT CONDITIONS (independent section, not nested under Visibility Rules)
+    ------------------------------------------------------------------------
+    local function ResolveConditionClassName(cond)
+        if not cond then
+            return nil
+        end
+
+        if cond.className and cond.className ~= "" then
+            return cond.className
+        end
+
+        if cond.classID then
+            local name = GetClassInfo(cond.classID)
+            return name or ("Class " .. cond.classID)
+        end
+
+        return nil
+    end
+
+    local function ResolveConditionSpecName(cond)
+        if not cond then
+            return nil
+        end
+
+        if cond.specName and cond.specName ~= "" then
+            return cond.specName
+        end
+
+        if cond.specID then
+            local _, name = GetSpecializationInfoForSpecID(cond.specID)
+            return name or ("Spec " .. cond.specID)
+        end
+
+        return nil
+    end
+
+    local function ResolveConditionHeroName(cond)
+        if not cond then
+            return nil
+        end
+
+        if cond.heroName and cond.heroName ~= "" then
+            return cond.heroName
+        end
+
+        if cond.heroSubTreeID then
+            return "Hero " .. cond.heroSubTreeID
+        end
+
+        return nil
+    end
+
+    local function GetConditionContextSuffix(cond)
+        local parts = {}
+        local className = ResolveConditionClassName(cond)
+        local specName = ResolveConditionSpecName(cond)
+        local heroName = ResolveConditionHeroName(cond)
+
+        if className then
+            parts[#parts + 1] = className
+        end
+        if specName then
+            parts[#parts + 1] = specName
+        end
+        if heroName then
+            parts[#parts + 1] = heroName
+        end
+
+        if #parts == 0 then
+            return ""
+        end
+
+        return " [" .. table.concat(parts, ", ") .. "]"
+    end
+
+    local function GetConditionListContextSuffix(list)
+        local scope = {}
+
+        for _, cond in ipairs(list or {}) do
+            if not scope.className then
+                scope.className = ResolveConditionClassName(cond)
+            end
+            if not scope.specName then
+                scope.specName = ResolveConditionSpecName(cond)
+            end
+            if not scope.heroName then
+                scope.heroName = ResolveConditionHeroName(cond)
+            end
+        end
+
+        if not scope.className and not scope.specName and not scope.heroName then
+            return ""
+        end
+
+        local parts = {}
+        if scope.className then
+            parts[#parts + 1] = scope.className
+        end
+        if scope.specName then
+            parts[#parts + 1] = scope.specName
+        end
+        if scope.heroName then
+            parts[#parts + 1] = scope.heroName
+        end
+        return " [" .. table.concat(parts, ", ") .. "]"
+    end
+
+    local function GetConditionDisplayName(cond)
+        return (cond.name or "Unknown Talent") .. GetConditionContextSuffix(cond)
+    end
+
+    local talentHeading = AceGUI:Create("Heading")
+    talentHeading:SetText("Talent Conditions")
+    ColorHeading(talentHeading)
+    talentHeading:SetFullWidth(true)
+    scroll:AddChild(talentHeading)
+
+    local talentKey = isBatch
+        and (CS.selectedGroup .. "_batch_talentcondition")
+        or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_talentcondition")
+    local talentCollapsed = CS.collapsedSections[talentKey]
+    local talentCollapseBtn = AttachCollapseButton(talentHeading, talentCollapsed, function()
+        CS.collapsedSections[talentKey] = not CS.collapsedSections[talentKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
+        "Talent Conditions",
+        {"Show or hide this button based on which talents you have selected. If you add multiple conditions, all of them must pass.", 1, 1, 1, true},
+    }, infoButtons)
+    talentHeading.right:ClearAllPoints()
+    talentHeading.right:SetPoint("RIGHT", talentHeading.frame, "RIGHT", -3, 0)
+    talentHeading.right:SetPoint("LEFT", talentInfoBtn, "RIGHT", 4, 0)
+
+    -- Determine current talent condition state
+    local conditions = buttonData.talentConditions
+    local condCount = conditions and #conditions or 0
+    local hasTalent
+    if isBatch then
+        hasTalent = GetBatchFieldValue(group, "talentConditions")
+    else
+        hasTalent = condCount > 0
+    end
+
+    if talentCollapsed then
+        local summaryLabel = AceGUI:Create("Label")
+        if isBatch and hasTalent == nil then
+            summaryLabel:SetText("|cff888888Multiple conditions|r")
+        elseif hasTalent and condCount > 0 then
+            local firstCond = conditions[1]
+            local displayIcon = firstCond.spellID and C_Spell.GetSpellTexture(firstCond.spellID)
+            if displayIcon then
+                summaryLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
+                summaryLabel:SetImageSize(16, 16)
+            end
+            if condCount == 1 then
+                local showText = (firstCond.show == "not_taken") and " (not taken)" or " (taken)"
+                summaryLabel:SetText(GetConditionDisplayName(firstCond) .. showText)
+            else
+                summaryLabel:SetText(condCount .. " conditions" .. GetConditionListContextSuffix(conditions))
+            end
+        else
+            summaryLabel:SetText("|cff888888None|r")
+        end
+        summaryLabel:SetFullWidth(true)
+        scroll:AddChild(summaryLabel)
+    end
+
+    if not talentCollapsed then
+
+    -- Condition list display
+    if isBatch and hasTalent == nil then
+        local mixedLabel = AceGUI:Create("Label")
+        mixedLabel:SetText("|cff888888Multiple conditions — pick or clear to unify.|r")
+        mixedLabel:SetFullWidth(true)
+        scroll:AddChild(mixedLabel)
+    elseif condCount > 0 then
+        local cache = CooldownCompanion._talentNodeCache
+        local currentSpecID = CooldownCompanion._currentSpecId
+        local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
+        for _, cond in ipairs(conditions) do
+            local condLabel = AceGUI:Create("Label")
+            local displayIcon = cond.spellID and C_Spell.GetSpellTexture(cond.spellID)
+            if displayIcon then
+                condLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
+                condLabel:SetImageSize(16, 16)
+            end
+            local nameText = GetConditionDisplayName(cond)
+            local showText, showColor
+            if cond.show == "not_taken" then
+                showText = " |cffff4d4d(not taken)|r"
+            else
+                showText = " |cff33dd33(taken)|r"
+            end
+            condLabel:SetText("|cffFFFFFF" .. nameText .. "|r" .. showText)
+            condLabel:SetFullWidth(true)
+            scroll:AddChild(condLabel)
+
+            -- Per-condition stale node warning
+            local matchesCurrentScope = (not cond.specID or cond.specID == currentSpecID)
+                and (not cond.heroSubTreeID or cond.heroSubTreeID == currentHeroSubTreeID)
+            if not isBatch and matchesCurrentScope and cache and not cache[cond.nodeID] then
+                local warnLabel = AceGUI:Create("Label")
+                warnLabel:SetText("|cffff8800  This talent is not in your current active tree, so it behaves as not taken right now.|r")
+                warnLabel:SetFullWidth(true)
+                scroll:AddChild(warnLabel)
+            end
+        end
+    else
+        local emptyLabel = AceGUI:Create("Label")
+        emptyLabel:SetText("|cff888888No talent conditions set.|r")
+        emptyLabel:SetFullWidth(true)
+        scroll:AddChild(emptyLabel)
+    end
+
+    -- Button row: side-by-side Pick + Clear using Flow layout
+    local talentBtnRow = AceGUI:Create("SimpleGroup")
+    talentBtnRow:SetFullWidth(true)
+    talentBtnRow:SetLayout("Flow")
+
+    local pickBtn = AceGUI:Create("Button")
+    pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
+    pickBtn:SetRelativeWidth(hasTalent and 0.5 or 1)
+    pickBtn:SetCallback("OnClick", function()
+        local initialConditions = not isBatch and buttonData.talentConditions or nil
+        CooldownCompanion:OpenTalentPicker(function(results)
+            if results then
+                local normalized, changed = CooldownCompanion:NormalizeTalentConditions(results)
+                if changed then
+                    results = normalized
+                end
+            end
+            if results then
+                -- Deep-copy each condition for batch mode safety
+                if CS.selectedButtons then
+                    local count = 0
+                    for _ in pairs(CS.selectedButtons) do count = count + 1 end
+                    if count >= 2 then
+                        for idx in pairs(CS.selectedButtons) do
+                            local bd = group.buttons[idx]
+                            if bd then
+                                local copy = {}
+                                for i, cond in ipairs(results) do
+                                    copy[i] = {
+                                        nodeID  = cond.nodeID,
+                                        entryID = cond.entryID,
+                                        spellID = cond.spellID,
+                                        name    = cond.name,
+                                        show    = cond.show,
+                                        classID = cond.classID,
+                                        className = cond.className,
+                                        specID = cond.specID,
+                                        specName = cond.specName,
+                                        heroSubTreeID = cond.heroSubTreeID,
+                                        heroName = cond.heroName,
+                                    }
+                                end
+                                bd.talentConditions = copy
+                                -- Clean old fields for migration safety
+                                bd.talentNodeID  = nil
+                                bd.talentEntryID = nil
+                                bd.talentSpellID = nil
+                                bd.talentName    = nil
+                                bd.talentShow    = nil
+                            end
+                        end
+                    else
+                        buttonData.talentConditions = results
+                        buttonData.talentNodeID  = nil
+                        buttonData.talentEntryID = nil
+                        buttonData.talentSpellID = nil
+                        buttonData.talentName    = nil
+                        buttonData.talentShow    = nil
+                    end
+                else
+                    buttonData.talentConditions = results
+                    buttonData.talentNodeID  = nil
+                    buttonData.talentEntryID = nil
+                    buttonData.talentSpellID = nil
+                    buttonData.talentName    = nil
+                    buttonData.talentShow    = nil
+                end
+            else
+                -- Clear all
+                ApplyToSelected("talentConditions", nil)
+                ApplyToSelected("talentNodeID", nil)
+                ApplyToSelected("talentEntryID", nil)
+                ApplyToSelected("talentSpellID", nil)
+                ApplyToSelected("talentName", nil)
+                ApplyToSelected("talentShow", nil)
+            end
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end, initialConditions, group)
+    end)
+    talentBtnRow:AddChild(pickBtn)
+
+    -- Clear All button (only when conditions exist)
+    if hasTalent then
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear")
+        clearBtn:SetRelativeWidth(0.5)
+        clearBtn:SetCallback("OnClick", function()
+            ApplyToSelected("talentConditions", nil)
+            ApplyToSelected("talentNodeID", nil)
+            ApplyToSelected("talentEntryID", nil)
+            ApplyToSelected("talentSpellID", nil)
+            ApplyToSelected("talentName", nil)
+            ApplyToSelected("talentShow", nil)
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        talentBtnRow:AddChild(clearBtn)
+    end
+
+    scroll:AddChild(talentBtnRow)
+
+    end -- not talentCollapsed
+
 end
 
 ------------------------------------------------------------------------

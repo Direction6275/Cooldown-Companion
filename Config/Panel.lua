@@ -148,6 +148,11 @@ local function CreateConfigPanel()
     local isCollapsing = false
     content:HookScript("OnHide", function()
         if isCollapsing then return end
+        -- If talent picker is open when panel closes, clean up its raw frames
+        -- (RefreshConfigPanel inside CloseTalentPicker is guarded by IsShown, so it's safe)
+        if CS.talentPickerMode then
+            CooldownCompanion:CloseTalentPicker()
+        end
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
@@ -162,11 +167,23 @@ local function CreateConfigPanel()
     -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
     content:EnableKeyboard(true)
     content:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" and CooldownCompanion.db.profile.escClosesConfig then
-            if not InCombatLockdown() then
-                self:SetPropagateKeyboardInput(false)
+        if key == "ESCAPE" then
+            -- Talent picker open: close picker instead of panel
+            if CS.talentPickerMode then
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                CooldownCompanion:CloseTalentPicker()
+                return
             end
-            self:Hide()
+            if CooldownCompanion.db.profile.escClosesConfig then
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(false)
+                end
+                self:Hide()
+            elseif not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(true)
+            end
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
         end
@@ -1002,6 +1019,22 @@ local function CreateConfigPanel()
         local groupReferenceWidth = oldRemaining - math.floor(oldRemaining / 2)
         local equalColWidth = math.min(groupReferenceWidth, math.floor(baseW / 4))
 
+        -- Talent picker mode: 2 wide columns (col1 + col3), col2/col4 hidden
+        if CS.talentPickerMode then
+            local wideColWidth = equalColWidth * 2 + pad
+            local usedWidth = (wideColWidth * 2) + pad
+            local leftInset = math.floor((w - usedWidth) * 0.5)
+
+            col1.frame:ClearAllPoints()
+            col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+            col1.frame:SetSize(wideColWidth, h)
+
+            col3.frame:ClearAllPoints()
+            col3.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
+            col3.frame:SetSize(wideColWidth, h)
+            return
+        end
+
         local usedWidth = (equalColWidth * 4) + (pad * 3)
         local leftInset = math.floor((w - usedWidth) * 0.5)
 
@@ -1051,6 +1084,8 @@ local function CreateConfigPanel()
     -- Store references
     frame.profileBar = profileBar
     frame.versionText = versionText
+    frame.modeStatusRow = modeStatusRow
+    frame.profileGear = profileGear
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
@@ -1070,6 +1105,7 @@ end
 function CooldownCompanion:RefreshConfigPanel()
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
+    if CS.talentPickerMode then return end
 
     -- Save AceGUI scroll state before any column rebuilds.
     local function saveScroll(widget)

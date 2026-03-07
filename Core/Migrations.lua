@@ -38,6 +38,8 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateRemoveAuraDurationCache()
     self:MigrateResourceBarYOffset()
     self:MigrateMaxStacksGlowStyles()
+    self:MigrateTalentConditions()
+    self:MigrateChoiceTalentConditions()
     self:MigrateNewDefaults()
 end
 
@@ -54,6 +56,8 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.auraIndicatorMigrated = nil
     profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
+    profile.talentConditionsMigrated = nil
+    profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
 end
 
@@ -1126,6 +1130,56 @@ end
 -- New defaults: desaturateOnCooldown=true, showOutOfRange=true, showGCDSwipe=false,
 -- showLossOfControl=false, showTooltips=false, barAuraEffect="color",
 -- resourceBars.enabled=false, castBar.enabled=false, frameAnchoring.inheritAlpha=true.
+-- Migrate flat talent condition fields (talentNodeID, talentEntryID, talentSpellID,
+-- talentName, talentShow) into the new talentConditions array format.
+function CooldownCompanion:MigrateTalentConditions()
+    if self.db.profile.talentConditionsMigrated then return end
+    local profile = self.db.profile
+
+    for _, group in pairs(profile.groups) do
+        if group.buttons then
+            for _, bd in pairs(group.buttons) do
+                if bd.talentNodeID then
+                    bd.talentConditions = {
+                        {
+                            nodeID  = bd.talentNodeID,
+                            entryID = bd.talentEntryID,
+                            spellID = bd.talentSpellID,
+                            name    = bd.talentName,
+                            show    = bd.talentShow or "taken",
+                        },
+                    }
+                    bd.talentNodeID  = nil
+                    bd.talentEntryID = nil
+                    bd.talentSpellID = nil
+                    bd.talentName    = nil
+                    bd.talentShow    = nil
+                end
+            end
+        end
+    end
+
+    profile.talentConditionsMigrated = true
+end
+
+function CooldownCompanion:MigrateChoiceTalentConditions()
+    local profile = self.db.profile
+    if profile.choiceTalentConditionsMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        if group.buttons then
+            for _, bd in pairs(group.buttons) do
+                local normalized, changed = self:NormalizeTalentConditions(bd.talentConditions)
+                if changed then
+                    bd.talentConditions = normalized
+                end
+            end
+        end
+    end
+
+    profile.choiceTalentConditionsMigrated = true
+end
+
 -- Uses rawget for metatabled tables so we only write when the user never explicitly set
 -- the field (rawget returns nil), preventing the new metatable default from silently
 -- changing existing behavior.

@@ -91,12 +91,13 @@ local function PlaceRowBadge(frame, badge, offsetX)
     return offsetX - ROW_BADGE_SIZE - ROW_BADGE_SPACING
 end
 
-local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4)
+local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4, badge5)
     local offsetX = -ROW_BADGE_RIGHT_PAD
     offsetX = PlaceRowBadge(frame, badge1, offsetX)
     offsetX = PlaceRowBadge(frame, badge2, offsetX)
     offsetX = PlaceRowBadge(frame, badge3, offsetX)
-    PlaceRowBadge(frame, badge4, offsetX)
+    offsetX = PlaceRowBadge(frame, badge4, offsetX)
+    PlaceRowBadge(frame, badge5, offsetX)
 end
 
 local function IsBuffViewerChild(frame)
@@ -873,8 +874,15 @@ local function RefreshColumn2()
             end
         end
 
-        -- Right-to-left: warning stays rightmost, then override/sound/aura.
-        LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge)
+        local talentBadge = EnsureRowBadge(rowFrame, "_cdcTalentBadge", "UI-HUD-MicroMenu-SpecTalents-Mouseover")
+        talentBadge:SetFrameLevel(rowBadgeLevel)
+        if buttonData.talentConditions and #buttonData.talentConditions > 0 then
+            SetRowBadgeTooltip(talentBadge, "Has talent conditions")
+            talentBadge:Show()
+        end
+
+        -- Right-to-left: warning stays rightmost, then override/sound/aura/talent.
+        LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
 
         -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
         -- so that mousedown doesn't trigger selection; we handle clicks on mouseup instead

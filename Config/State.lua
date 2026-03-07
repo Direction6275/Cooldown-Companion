@@ -151,6 +151,9 @@ ST._configState = {
     collapsedFolders = {},
     folderAccentBars = {},
 
+    -- Talent picker mode (2-column layout)
+    talentPickerMode = false,
+
     -- Autocomplete state
     autocompleteCache = nil,
     pendingEditBoxFocus = false,

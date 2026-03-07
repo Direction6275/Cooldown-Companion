@@ -71,6 +71,7 @@ Config\State.lua
 Config\Popups.lua
 Config\Diagnostics.lua
 Config\Pickers.lua
+Config\TalentPicker.lua
 Config\SpellItemAdd.lua
 Config\AutoImport.lua
 Config\DragReorder.lua
