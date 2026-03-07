@@ -793,6 +793,88 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     ------------------------------------------------------------------------
     -- TALENT CONDITIONS (independent section, not nested under Visibility Rules)
     ------------------------------------------------------------------------
+    local function ResolveConditionSpecName(cond)
+        if not cond then
+            return nil
+        end
+
+        if cond.specName and cond.specName ~= "" then
+            return cond.specName
+        end
+
+        if cond.specID then
+            local _, name = GetSpecializationInfoForSpecID(cond.specID)
+            return name or ("Spec " .. cond.specID)
+        end
+
+        return nil
+    end
+
+    local function ResolveConditionHeroName(cond)
+        if not cond then
+            return nil
+        end
+
+        if cond.heroName and cond.heroName ~= "" then
+            return cond.heroName
+        end
+
+        if cond.heroSubTreeID then
+            return "Hero " .. cond.heroSubTreeID
+        end
+
+        return nil
+    end
+
+    local function GetConditionContextSuffix(cond)
+        local parts = {}
+        local specName = ResolveConditionSpecName(cond)
+        local heroName = ResolveConditionHeroName(cond)
+
+        if specName then
+            parts[#parts + 1] = specName
+        end
+        if heroName then
+            parts[#parts + 1] = heroName
+        end
+
+        if #parts == 0 then
+            return ""
+        end
+
+        return " [" .. table.concat(parts, ", ") .. "]"
+    end
+
+    local function GetConditionListContextSuffix(list)
+        local scope = {}
+
+        for _, cond in ipairs(list or {}) do
+            if not scope.specName then
+                scope.specName = ResolveConditionSpecName(cond)
+            end
+            if not scope.heroName then
+                scope.heroName = ResolveConditionHeroName(cond)
+            end
+        end
+
+        if not scope.specName and not scope.heroName then
+            return ""
+        end
+
+        local parts = {}
+        if scope.specName then
+            parts[#parts + 1] = scope.specName
+        end
+        if scope.heroName then
+            parts[#parts + 1] = scope.heroName
+        end
+        return " [" .. table.concat(parts, ", ") .. "]"
+    end
+
+    local function GetConditionDisplayName(cond)
+        return (cond.name or "Unknown Talent") .. GetConditionContextSuffix(cond)
+    end
+
     local talentHeading = AceGUI:Create("Heading")
     talentHeading:SetText("Talent Conditions")
     ColorHeading(talentHeading)
@@ -839,9 +921,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             end
             if condCount == 1 then
                 local showText = (firstCond.show == "not_taken") and " (not taken)" or " (taken)"
-                summaryLabel:SetText((firstCond.name or "Unknown") .. showText)
+                summaryLabel:SetText(GetConditionDisplayName(firstCond) .. showText)
             else
-                summaryLabel:SetText(condCount .. " conditions")
+                summaryLabel:SetText(condCount .. " conditions" .. GetConditionListContextSuffix(conditions))
             end
         else
             summaryLabel:SetText("|cff888888None|r")
@@ -860,6 +942,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(mixedLabel)
     elseif condCount > 0 then
         local cache = CooldownCompanion._talentNodeCache
+        local currentSpecID = CooldownCompanion._currentSpecId
+        local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
         for _, cond in ipairs(conditions) do
             local condLabel = AceGUI:Create("Label")
             local displayIcon = cond.spellID and C_Spell.GetSpellTexture(cond.spellID)
@@ -867,7 +951,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 condLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
                 condLabel:SetImageSize(16, 16)
             end
-            local nameText = cond.name or "Unknown Talent"
+            local nameText = GetConditionDisplayName(cond)
             local showText, showColor
             if cond.show == "not_taken" then
                 showText = " |cffff4d4d(not taken)|r"
@@ -879,7 +963,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             scroll:AddChild(condLabel)
 
             -- Per-condition stale node warning
-            if not isBatch and cache and not cache[cond.nodeID] then
+            local matchesCurrentScope = (not cond.specID or cond.specID == currentSpecID)
+                and (not cond.heroSubTreeID or cond.heroSubTreeID == currentHeroSubTreeID)
+            if not isBatch and matchesCurrentScope and cache and not cache[cond.nodeID] then
                 local warnLabel = AceGUI:Create("Label")
                 warnLabel:SetText("|cffff8800  This talent is not in your current active tree, so it behaves as not taken right now.|r")
                 warnLabel:SetFullWidth(true)
@@ -927,6 +1013,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                                         spellID = cond.spellID,
                                         name    = cond.name,
                                         show    = cond.show,
+                                        specID = cond.specID,
+                                        specName = cond.specName,
+                                        heroSubTreeID = cond.heroSubTreeID,
+                                        heroName = cond.heroName,
                                     }
                                 end
                                 bd.talentConditions = copy

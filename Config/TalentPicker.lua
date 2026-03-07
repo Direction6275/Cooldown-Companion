@@ -81,6 +81,89 @@ local pendingConditions = {}
 ------------------------------------------------------------------------
 -- PENDING STATE HELPERS
 ------------------------------------------------------------------------
+local function GetSpecDisplayName(specID)
+    if not specID then
+        return nil
+    end
+
+    local _, name = GetSpecializationInfoForSpecID(specID)
+    return name or ("Spec " .. specID)
+end
+
+local function GetHeroDisplayName(configID, subTreeID)
+    if not subTreeID then
+        return nil
+    end
+
+    local subTreeInfo = configID and C_Traits.GetSubTreeInfo(configID, subTreeID) or nil
+    return (subTreeInfo and subTreeInfo.name) or ("Hero " .. subTreeID)
+end
+
+local function BuildConditionContext(heroSubTreeID)
+    local specID = pickerSelectedSpecID
+    if not specID then
+        return nil
+    end
+
+    return {
+        specID = specID,
+        specName = GetSpecDisplayName(specID),
+        heroSubTreeID = heroSubTreeID,
+        heroName = heroSubTreeID and GetHeroDisplayName(pickerSelectedConfigID, heroSubTreeID) or nil,
+    }
+end
+
+local function ClearConflictingPendingScopes(specID, heroSubTreeID)
+    for key, cond in pairs(pendingConditions) do
+        if cond.specID ~= specID then
+            pendingConditions[key] = nil
+        elseif heroSubTreeID and cond.heroSubTreeID and cond.heroSubTreeID ~= heroSubTreeID then
+            pendingConditions[key] = nil
+        end
+    end
+end
+
+local function GetPreferredPendingScope(source)
+    local ordered = source
+    if type(ordered) ~= "table" then
+        ordered = pendingConditions
+    end
+
+    for _, cond in ipairs(ordered) do
+        if cond.specID then
+            return cond.specID, cond.heroSubTreeID
+        end
+    end
+
+    if ordered == pendingConditions then
+        for _, cond in pairs(pendingConditions) do
+            if cond.specID then
+                return cond.specID, cond.heroSubTreeID
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function FillPendingConditionContext()
+    local specID = pickerSelectedSpecID
+    local specName = GetSpecDisplayName(specID)
+
+    for _, cond in pairs(pendingConditions) do
+        if specID and not cond.specID then
+            cond.specID = specID
+            cond.specName = specName
+        elseif cond.specID and not cond.specName then
+            cond.specName = GetSpecDisplayName(cond.specID)
+        end
+
+        if cond.heroSubTreeID and not cond.heroName then
+            cond.heroName = GetHeroDisplayName(pickerSelectedConfigID, cond.heroSubTreeID)
+        end
+    end
+end
+
 local function PendingKey(nodeID, entryID)
     if entryID then
         return tostring(nodeID) .. ":" .. tostring(entryID)
@@ -104,7 +187,7 @@ local function ClearPendingStateForNode(nodeID)
     end
 end
 
-local function SetPendingState(nodeID, entryID, spellID, name, show)
+local function SetPendingState(nodeID, entryID, spellID, name, show, context)
     local key = PendingKey(nodeID, entryID)
     if show then
         pendingConditions[key] = {
@@ -113,25 +196,35 @@ local function SetPendingState(nodeID, entryID, spellID, name, show)
             spellID = spellID,
             name    = name,
             show    = show,
+            specID = context and context.specID or nil,
+            specName = context and context.specName or nil,
+            heroSubTreeID = context and context.heroSubTreeID or nil,
+            heroName = context and context.heroName or nil,
         }
     else
         pendingConditions[key] = nil
     end
 end
 
-local function CyclePendingState(nodeID, entryID, spellID, name)
+local function CyclePendingState(nodeID, entryID, spellID, name, context)
     local existing = GetPendingState(nodeID, entryID)
     if not existing then
-        SetPendingState(nodeID, entryID, spellID, name, "taken")
+        if context and context.specID then
+            ClearConflictingPendingScopes(context.specID, context.heroSubTreeID)
+        end
+        SetPendingState(nodeID, entryID, spellID, name, "taken", context)
     elseif existing.show == "taken" then
-        SetPendingState(nodeID, entryID, spellID, name, "not_taken")
+        if context and context.specID then
+            ClearConflictingPendingScopes(context.specID, context.heroSubTreeID)
+        end
+        SetPendingState(nodeID, entryID, spellID, name, "not_taken", context)
     else
         -- not_taken → clear
         SetPendingState(nodeID, entryID, nil, nil, nil)
     end
 end
 
-local function CycleChoicePendingState(nodeID, entryID, spellID, name)
+local function CycleChoicePendingState(nodeID, entryID, spellID, name, context)
     local existing = GetPendingState(nodeID, entryID)
     local nextShow
     if not existing then
@@ -142,7 +235,10 @@ local function CycleChoicePendingState(nodeID, entryID, spellID, name)
 
     ClearPendingStateForNode(nodeID)
     if nextShow then
-        SetPendingState(nodeID, entryID, spellID, name, nextShow)
+        if context and context.specID then
+            ClearConflictingPendingScopes(context.specID, context.heroSubTreeID)
+        end
+        SetPendingState(nodeID, entryID, spellID, name, nextShow, context)
     end
 end
 
@@ -342,6 +438,7 @@ local choiceFrame = nil
 local function HideChoiceFrame()
     if choiceFrame then
         choiceFrame._nodeID = nil
+        choiceFrame._heroSubTreeID = nil
         choiceFrame:Hide()
     end
 end
@@ -527,7 +624,7 @@ local function GetChoiceFrameLevel(parentBtn)
     return level + 20
 end
 
-local function ShowChoiceFrame(parentBtn, entries, nodeID)
+local function ShowChoiceFrame(parentBtn, entries, nodeID, heroSubTreeID)
     local configFrame = CS.configFrame
     if not configFrame then return end
 
@@ -556,6 +653,7 @@ local function ShowChoiceFrame(parentBtn, entries, nodeID)
     choiceFrame:ClearAllPoints()
     choiceFrame:SetPoint("TOP", parentBtn, "BOTTOM", 0, -4)
     choiceFrame._nodeID = nodeID
+    choiceFrame._heroSubTreeID = heroSubTreeID
     choiceFrame:Show()
     choiceFrame:Raise()
 
@@ -590,18 +688,18 @@ local function ShowChoiceFrame(parentBtn, entries, nodeID)
 
         cb:SetScript("OnClick", function(_, mouseButton)
             if mouseButton and mouseButton ~= "LeftButton" then return end
-            CycleChoicePendingState(nodeID, entry.entryID, entry.spellID, entry.name)
+            CycleChoicePendingState(nodeID, entry.entryID, entry.spellID, entry.name, BuildConditionContext(choiceFrame._heroSubTreeID))
             RefreshPickerBorders()
         end)
     end
 end
 
-local function ToggleChoiceFrame(parentBtn, entries, nodeID)
+local function ToggleChoiceFrame(parentBtn, entries, nodeID, heroSubTreeID)
     if choiceFrame and choiceFrame:IsShown() and choiceFrame._nodeID == nodeID then
         HideChoiceFrame()
         return
     end
-    ShowChoiceFrame(parentBtn, entries, nodeID)
+    ShowChoiceFrame(parentBtn, entries, nodeID, heroSubTreeID)
 end
 
 ------------------------------------------------------------------------
@@ -724,6 +822,10 @@ local function EnsureButtons()
                         spellID = cond.spellID,
                         name    = cond.name,
                         show    = cond.show,
+                        specID = cond.specID,
+                        specName = cond.specName,
+                        heroSubTreeID = cond.heroSubTreeID,
+                        heroName = cond.heroName,
                     }
                 end
                 local normalized, changed = CooldownCompanion:NormalizeTalentConditions(results)
@@ -795,8 +897,9 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
 
     -- Initialize pending conditions from initial conditions
     wipe(pendingConditions)
+    local source = nil
     if initialConditions then
-        local source = initialConditions
+        source = initialConditions
         local normalized, changed = CooldownCompanion:NormalizeTalentConditions(initialConditions)
         if changed then
             source = normalized
@@ -809,8 +912,18 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
                 spellID = cond.spellID,
                 name    = cond.name,
                 show    = cond.show,
+                specID = cond.specID,
+                specName = cond.specName,
+                heroSubTreeID = cond.heroSubTreeID,
+                heroName = cond.heroName,
             }
         end
+    end
+
+    local preferredSpecID, preferredHeroSubTreeID = GetPreferredPendingScope(source)
+    if preferredSpecID then
+        pickerSelectedSpecID = preferredSpecID
+        pickerSelectedHeroSubTreeID = preferredHeroSubTreeID
     end
 
     -- Create/show tree frames + buttons
@@ -849,6 +962,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
 
     -- Position spec content; hero gutter is enabled during PopulateTree when needed
     RefreshPickerDropdowns(true, true)
+    FillPendingConditionContext()
     LayoutSpecFrames(col3.content, pickerSelectedSpecID ~= nil)
     specTreeFrame:Show()
 
@@ -1097,11 +1211,11 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
         btn:SetScript("OnClick", function(self, mouseButton)
             if nodeRef.isChoice and #nodeRef.entries > 1 then
                 if mouseButton == "LeftButton" or mouseButton == nil then
-                    ToggleChoiceFrame(self, nodeRef.entries, nodeRef.nodeID)
+                    ToggleChoiceFrame(self, nodeRef.entries, nodeRef.nodeID, nodeRef.subTreeID)
                 end
             else
                 HideChoiceFrame()
-                CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, primaryEntry.name)
+                CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, primaryEntry.name, BuildConditionContext(nodeRef.subTreeID))
                 RefreshPickerBorders()
             end
         end)

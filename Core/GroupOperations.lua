@@ -74,6 +74,10 @@ local function CopyTalentCondition(cond)
         spellID = cond.spellID,
         name = cond.name,
         show = cond.show or "taken",
+        specID = cond.specID,
+        specName = cond.specName,
+        heroSubTreeID = cond.heroSubTreeID,
+        heroName = cond.heroName,
     }
 end
 
@@ -89,22 +93,41 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
     if type(conditions) ~= "table" then return nil, false end
 
     local grouped = {}
-    local orderedNodeIDs = {}
+    local orderedGroupKeys = {}
     local passthrough = {}
     local hasDuplicateNode = false
     local hasLegacyChoiceRow = false
+    local hasUnscopedNodeCondition = false
+    local scopedSpecIDs = {}
+    local scopedHeroIDs = {}
+    local scopedSpecCount = 0
+    local scopedHeroCount = 0
 
     for _, cond in ipairs(conditions) do
         if type(cond) == "table" and cond.nodeID then
             if IsLegacyChoiceRowCondition(cond) then
                 hasLegacyChoiceRow = true
             end
-            local nodeID = cond.nodeID
-            local group = grouped[nodeID]
+            if not cond.specID then
+                hasUnscopedNodeCondition = true
+            end
+            if cond.specID and not scopedSpecIDs[cond.specID] then
+                scopedSpecIDs[cond.specID] = true
+                scopedSpecCount = scopedSpecCount + 1
+            end
+            if cond.heroSubTreeID and not scopedHeroIDs[cond.heroSubTreeID] then
+                scopedHeroIDs[cond.heroSubTreeID] = true
+                scopedHeroCount = scopedHeroCount + 1
+            end
+
+            local groupKey = tostring(cond.nodeID)
+                .. "|" .. tostring(cond.specID or 0)
+                .. "|" .. tostring(cond.heroSubTreeID or 0)
+            local group = grouped[groupKey]
             if not group then
                 group = {}
-                grouped[nodeID] = group
-                orderedNodeIDs[#orderedNodeIDs + 1] = nodeID
+                grouped[groupKey] = group
+                orderedGroupKeys[#orderedGroupKeys + 1] = groupKey
             else
                 hasDuplicateNode = true
             end
@@ -114,7 +137,12 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
         end
     end
 
-    if not hasDuplicateNode and not hasLegacyChoiceRow then
+    if not hasDuplicateNode
+        and not hasLegacyChoiceRow
+        and scopedSpecCount <= 1
+        and scopedHeroCount <= 1
+        and not (scopedSpecCount > 0 and hasUnscopedNodeCondition)
+    then
         return conditions, false
     end
 
@@ -123,8 +151,8 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
         normalized[#normalized + 1] = cond
     end
 
-    for _, nodeID in ipairs(orderedNodeIDs) do
-        local group = grouped[nodeID]
+    for _, groupKey in ipairs(orderedGroupKeys) do
+        local group = grouped[groupKey]
         if group and #group > 0 then
             local firstCondition = nil
             local firstSpecific = nil
@@ -178,6 +206,48 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
                 normalized[#normalized + 1] = resolved
             end
         end
+    end
+
+    local chosenSpecID = nil
+    for _, cond in ipairs(normalized) do
+        if type(cond) == "table" and cond.nodeID and cond.specID then
+            chosenSpecID = cond.specID
+            break
+        end
+    end
+    if chosenSpecID then
+        local filtered = {}
+        for _, cond in ipairs(normalized) do
+            if type(cond) == "table" and cond.nodeID then
+                if cond.specID == chosenSpecID then
+                    filtered[#filtered + 1] = cond
+                end
+            else
+                filtered[#filtered + 1] = cond
+            end
+        end
+        normalized = filtered
+    end
+
+    local chosenHeroSubTreeID = nil
+    for _, cond in ipairs(normalized) do
+        if type(cond) == "table" and cond.nodeID and cond.heroSubTreeID then
+            chosenHeroSubTreeID = cond.heroSubTreeID
+            break
+        end
+    end
+    if chosenHeroSubTreeID then
+        local filtered = {}
+        for _, cond in ipairs(normalized) do
+            if type(cond) == "table" and cond.nodeID then
+                if not cond.heroSubTreeID or cond.heroSubTreeID == chosenHeroSubTreeID then
+                    filtered[#filtered + 1] = cond
+                end
+            else
+                filtered[#filtered + 1] = cond
+            end
+        end
+        normalized = filtered
     end
 
     if #normalized == 0 then
@@ -744,6 +814,17 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
     end
 
     for _, cond in ipairs(conditions) do
+        if cond.specID and cond.specID ~= self._currentSpecId then
+            return false
+        end
+
+        if cond.heroSubTreeID then
+            local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+            if cond.heroSubTreeID ~= activeHeroSubTreeID then
+                return false
+            end
+        end
+
         local entry = cache and cache[cond.nodeID] or nil
         local isTaken = entry and entry.activeRank > 0 or false
 
