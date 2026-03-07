@@ -68,6 +68,7 @@ local defaults = {
                         showTooltips = false,
                         desaturateOnCooldown = true, -- Desaturate icon while on cooldown
                         showCooldownSwipe = true,
+                        showCooldownSwipeFill = true,
                         cooldownSwipeReverse = false,
                         showCooldownSwipeEdge = true,
                         showGCDSwipe = false, -- Show GCD swipe animation on icons
@@ -189,6 +190,7 @@ local defaults = {
             showTooltips = false,
             desaturateOnCooldown = true,
             showCooldownSwipe = true,
+            showCooldownSwipeFill = true,
             cooldownSwipeReverse = false,
             showCooldownSwipeEdge = true,
             showGCDSwipe = false,
@@ -442,7 +444,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
-        keys = {"showCooldownSwipe", "cooldownSwipeReverse", "showCooldownSwipeEdge"},
+        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge"},
         modes = {icons = true},
     },
     showGCDSwipe = {

@@ -654,6 +654,17 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     container:AddChild(reverseCb)
     ApplyCheckboxIndent(reverseCb, 20)
 
+    local fillCb = AceGUI:Create("CheckBox")
+    fillCb:SetLabel("Show Swipe Fill")
+    fillCb:SetValue(styleTable.showCooldownSwipeFill ~= false)
+    fillCb:SetFullWidth(true)
+    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showCooldownSwipeFill = val
+        refreshCallback()
+    end)
+    container:AddChild(fillCb)
+    ApplyCheckboxIndent(fillCb, 20)
+
     local edgeCb = AceGUI:Create("CheckBox")
     edgeCb:SetLabel("Show Swipe Edge")
     edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)

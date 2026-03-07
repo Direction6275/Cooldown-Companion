@@ -798,6 +798,18 @@ local function BuildEffectsTab(container)
         container:AddChild(reverseCb)
         ApplyCheckboxIndent(reverseCb, 20)
 
+        -- Show Swipe Fill
+        local fillCb = AceGUI:Create("CheckBox")
+        fillCb:SetLabel("Show Swipe Fill")
+        fillCb:SetValue(style.showCooldownSwipeFill ~= false)
+        fillCb:SetFullWidth(true)
+        fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showCooldownSwipeFill = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(fillCb)
+        ApplyCheckboxIndent(fillCb, 20)
+
         -- Show Swipe Edge
         local edgeCb = AceGUI:Create("CheckBox")
         edgeCb:SetLabel("Show Swipe Edge")

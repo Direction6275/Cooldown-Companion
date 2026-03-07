@@ -91,7 +91,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
     local swipeEnabled = style.showCooldownSwipe ~= false
-    button.cooldown:SetDrawSwipe(swipeEnabled)
+    local fillEnabled = style.showCooldownSwipeFill ~= false
+    button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
     button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
     button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
     button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
@@ -726,7 +727,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
     local swipeEnabled = style.showCooldownSwipe ~= false
-    button.cooldown:SetDrawSwipe(swipeEnabled)
+    local fillEnabled = style.showCooldownSwipeFill ~= false
+    button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
     button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
     button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
 
