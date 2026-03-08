@@ -22,6 +22,8 @@ local auraPreviewTokens = {}
 local auraButtonPreviewTokens = {}
 local pandemicPreviewTokens = {}
 local pandemicButtonPreviewTokens = {}
+local readyPreviewTokens = {}
+local readyButtonPreviewTokens = {}
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
@@ -321,6 +323,113 @@ function CooldownCompanion:ClearAllPandemicPreviews()
             if button.UpdateCooldown then
                 button:UpdateCooldown()
             end
+        end
+    end
+end
+
+-- Set or clear ready glow preview on a specific button.
+function CooldownCompanion:SetReadyGlowPreview(groupId, buttonIndex, show)
+    if not show then
+        BumpButtonPreviewToken(readyButtonPreviewTokens, groupId, buttonIndex)
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._readyGlowPreview = show or nil
+            button._readyGlowActive = false
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
+            return
+        end
+    end
+end
+
+-- Set or clear ready glow preview for every button in a group.
+function CooldownCompanion:SetGroupReadyGlowPreview(groupId, show)
+    readyButtonPreviewTokens[groupId] = nil
+    if not show then
+        readyPreviewTokens[groupId] = (readyPreviewTokens[groupId] or 0) + 1
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._readyGlowPreview = show or nil
+        button._readyGlowActive = false
+        if button.UpdateCooldown then
+            button:UpdateCooldown()
+        end
+    end
+end
+
+-- Trigger a timed ready glow preview for a specific button (default: 3 seconds).
+function CooldownCompanion:PlayReadyGlowPreview(groupId, buttonIndex, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = BumpButtonPreviewToken(readyButtonPreviewTokens, groupId, buttonIndex)
+    self:SetReadyGlowPreview(groupId, buttonIndex, true)
+
+    C_Timer_After(duration, function()
+        local groupTokens = readyButtonPreviewTokens[groupId]
+        if not groupTokens or groupTokens[buttonIndex] ~= token then return end
+        self:SetReadyGlowPreview(groupId, buttonIndex, false)
+    end)
+end
+
+-- Trigger a timed ready glow preview for a whole group (default: 3 seconds).
+function CooldownCompanion:PlayGroupReadyGlowPreview(groupId, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = (readyPreviewTokens[groupId] or 0) + 1
+    readyPreviewTokens[groupId] = token
+
+    self:SetGroupReadyGlowPreview(groupId, true)
+
+    C_Timer_After(duration, function()
+        if readyPreviewTokens[groupId] ~= token then return end
+        self:SetGroupReadyGlowPreview(groupId, false)
+    end)
+end
+
+-- Clear all ready glow previews across every group.
+function CooldownCompanion:ClearAllReadyGlowPreviews()
+    readyPreviewTokens = {}
+    readyButtonPreviewTokens = {}
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            button._readyGlowPreview = nil
+            button._readyGlowActive = false
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            end
+        end
+    end
+end
+
+-- Invalidate ready glow cache on all buttons in a group.
+function CooldownCompanion:InvalidateGroupReadyGlow(groupId)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._readyGlowActive = nil
+    end
+end
+
+-- Invalidate ready glow cache on a specific button so the next tick re-applies.
+function CooldownCompanion:InvalidateReadyGlow(groupId, buttonIndex)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._readyGlowActive = nil
+            return
         end
     end
 end

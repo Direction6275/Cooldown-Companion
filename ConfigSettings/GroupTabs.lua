@@ -34,6 +34,7 @@ local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
+local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
@@ -603,6 +604,7 @@ local function BuildEffectsTab(container)
         CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
         BuildBarEffectsTab(container, group, style)
         return
     end
@@ -753,6 +755,50 @@ local function BuildEffectsTab(container)
     else
     CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
     end -- pandemicAdvExpanded
+
+    -- ================================================================
+    -- Ready Glow (glow while off cooldown)
+    -- ================================================================
+    local readyEnableCb = AceGUI:Create("CheckBox")
+    readyEnableCb:SetLabel("Show Ready Glow")
+    readyEnableCb:SetValue(style.readyGlowStyle ~= "none")
+    readyEnableCb:SetFullWidth(true)
+    readyEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.readyGlowStyle = val and "solid" or "none"
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(readyEnableCb)
+
+    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyEnableCb, "readyGlow", tabInfoButtons, style.readyGlowStyle ~= "none")
+    CreateCheckboxPromoteButton(readyEnableCb, readyAdvBtn, "readyGlow", group, style)
+
+    if readyAdvExpanded and style.readyGlowStyle ~= "none" then
+    local readyCombatCb = AceGUI:Create("CheckBox")
+    readyCombatCb:SetLabel("Show Only In Combat")
+    readyCombatCb:SetValue(style.readyGlowCombatOnly or false)
+    readyCombatCb:SetFullWidth(true)
+    readyCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.readyGlowCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(readyCombatCb)
+    ApplyCheckboxIndent(readyCombatCb, 20)
+
+    BuildReadyGlowControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
+    local readyPreviewBtn = AceGUI:Create("Button")
+    readyPreviewBtn:SetText("Preview Ready Glow (3s)")
+    readyPreviewBtn:SetFullWidth(true)
+    readyPreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupReadyGlowPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(readyPreviewBtn)
+    else
+    CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+    end -- readyAdvExpanded
 
     -- ================================================================
     -- Desaturate on Cooldown

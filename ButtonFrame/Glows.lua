@@ -33,6 +33,7 @@ local PROC_STYLE_LCG_AUTOCAST = "lcgAutoCast"
 local PROC_GLOW_LCG_KEY = "CooldownCompanionProc"
 local AURA_GLOW_LCG_KEY = "CooldownCompanionAura"
 local PANDEMIC_GLOW_LCG_KEY = "CooldownCompanionPandemic"
+local READY_GLOW_LCG_KEY = "CooldownCompanionReady"
 
 local function IsLibCustomGlowStyle(style)
     return style == PROC_STYLE_LCG_BUTTON or style == PROC_STYLE_LCG_AUTOCAST
@@ -547,6 +548,51 @@ local function SetAuraGlow(button, show, pandemicOverride)
     })
 end
 
+-- Show or hide ready glow on a button (glow while off cooldown).
+-- Follows the same caching pattern as SetProcGlow.
+local function SetReadyGlow(button, show)
+    local rg = button.readyGlow
+    if not rg then return end
+
+    local desiredState
+    if show then
+        local style = button.style
+        local glowStyle = NormalizeGlowStyle((style and style.readyGlowStyle) or "solid")
+        local c = (style and style.readyGlowColor) or {0.2, 1.0, 0.2, 1}
+        local sz = GetGlowSize(style, "readyGlowSize", glowStyle, {
+            solid = 2, pixel = 4, glow = 32, autocast = 1,
+        })
+        local th = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 2) or 0
+        local usesSpeed = UsesGlowSpeed(glowStyle)
+        local spd = usesSpeed and ((style and style.readyGlowSpeed) or 60) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
+    end
+    if button._readyGlowActive == desiredState then return end
+    button._readyGlowActive = desiredState
+
+    HideGlowStyles(rg)
+
+    if not desiredState then return end
+
+    local style = button.style
+    local glowStyle = NormalizeGlowStyle((style and style.readyGlowStyle) or "solid")
+    local color = (style and style.readyGlowColor) or {0.2, 1.0, 0.2, 1}
+    local sz = GetGlowSize(style, "readyGlowSize", glowStyle, {
+        solid = 2, pixel = 4, glow = 32, autocast = 1,
+    })
+    local usesSpeed = UsesGlowSpeed(glowStyle)
+    local readyThickness = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 2) or 0
+    local readySpeed = usesSpeed and ((style and style.readyGlowSpeed) or 60) or 0
+    ShowGlowStyle(rg, glowStyle, button, color, {
+        size = sz,
+        thickness = readyThickness,
+        speed = readySpeed,
+        frequency = usesSpeed and SpeedToGlowFrequency(readySpeed) or nil,
+        scale = math_min(math_max(sz, 0.2), 3),
+        key = READY_GLOW_LCG_KEY,
+    })
+end
+
 -- Create a pixel glow frame with particle pairs for animated border effect.
 -- parent: parent frame to attach to
 -- numParticles: number of particle pairs (default ST.PARTICLE_COUNT = 12)
@@ -760,3 +806,4 @@ ST._CreateAssistedHighlight = CreateAssistedHighlight
 ST._GetViewerAuraStackText = GetViewerAuraStackText
 ST._SetupTooltipScripts = SetupTooltipScripts
 ST._SetBarAuraEffect = SetBarAuraEffect
+ST._SetReadyGlow = SetReadyGlow
