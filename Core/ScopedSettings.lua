@@ -472,7 +472,7 @@ local function ComposeCopiedResourceBarSettings(source, target)
         end
     end
 
-    copied.customAuraBars = type(source) == "table" and CloneSettingValue(source.customAuraBars) or nil
+    copied.customAuraBars = type(target) == "table" and CloneSettingValue(target.customAuraBars) or copied.customAuraBars
 
     return copied
 end
