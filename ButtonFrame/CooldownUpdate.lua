@@ -237,6 +237,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if not viewerFrame and not hasExplicitAuraOverride then
                 viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(buttonData.id)
                     or (button._displaySpellId and CooldownCompanion:ResolveBuffViewerFrameForSpell(button._displaySpellId))
+                -- Try base spell for form-variant spells (e.g. Stampeding Roar)
+                if not viewerFrame then
+                    local baseId = C_Spell.GetBaseSpell(buttonData.id)
+                    if baseId and baseId ~= buttonData.id and baseId ~= button._auraSpellID then
+                        viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(baseId)
+                    end
+                end
             end
         end
         if not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
@@ -317,6 +324,33 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                                 button._viewerBar = nil
                             end
                         end
+                    end
+                end
+            end
+        end
+        -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
+        -- the viewer path has no auraInstanceID (form-variant spells like
+        -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
+        if not auraOverrideActive and auraUnit == "player" then
+            local baseId = C_Spell.GetBaseSpell(buttonData.id)
+            -- Try base spell first (buff is applied as base), then _auraSpellID
+            local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
+            local auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
+            if not auraData then
+                auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
+            end
+            if auraData then
+                local instId = auraData.auraInstanceID
+                if instId and not issecretvalue(instId) then
+                    local durationObj = C_UnitAuras.GetAuraDuration("player", instId)
+                    if durationObj then
+                        button._durationObj = durationObj
+                        button._viewerBar = nil
+                        button.cooldown:SetCooldownFromDurationObject(durationObj)
+                        button._auraInstanceID = instId
+                        button._auraUnit = "player"
+                        auraOverrideActive = true
+                        fetchOk = true
                     end
                 end
             end

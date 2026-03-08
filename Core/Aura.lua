@@ -127,10 +127,22 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return first and tonumber(first)
     end
     if buttonData.type == "spell" then
-        local auraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-        if auraId and auraId ~= 0 then return auraId end
-        -- Many spells share the same ID for cast and buff; fall back to the spell's own ID
-        return buttonData.id
+        -- Resolve through base spell so form-variant spells (e.g. Stampeding
+        -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
+        -- buff is always applied as the base spell regardless of form.
+        local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+        local auraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
+        if auraId and auraId ~= 0 then
+            -- If the cooldown aura is a form variant of the same base spell,
+            -- use the base spell ID — the buff is always applied as base form.
+            local auraBase = C_Spell.GetBaseSpell(auraId)
+            if auraBase and auraBase == baseId and auraBase ~= auraId then
+                return baseId
+            end
+            return auraId
+        end
+        -- Many spells share the same ID for cast and buff; fall back to the base spell ID
+        return baseId
     end
     return nil
 end
