@@ -1376,10 +1376,12 @@ local function RenderNodePanel(panelFrame, nodeSet, nodeIDToBtn, edgePool, btnIn
     local treeH = maxY - minY + NODE_SIZE
     local scaleX = treeW > 0 and usableW / treeW or 1
     local scaleY = treeH > 0 and usableH / treeH or 1
-    local scale = math_min(scaleX, scaleY)
-    local contentW = treeW * scale + NODE_PADDING * 2
+    local scale = math_min(scaleX, scaleY, 1.5)
+    local spanW = (maxX - minX) * scale
+    local spanH = (maxY - minY) * scale
+    local contentW = spanW + NODE_SIZE + NODE_PADDING * 2
     local offsetX = math_max(0, (frameW - contentW) * 0.5)
-    local contentH = treeH * scale + NODE_PADDING * 2
+    local contentH = spanH + NODE_SIZE + NODE_PADDING * 2
     local offsetY = math_max(0, (frameH - panelTopPadding - contentH) * 0.5)
 
     btnIndex = PlaceNodesInPanel(panelFrame, nodeSet, offsetX, panelTopPadding + offsetY,
