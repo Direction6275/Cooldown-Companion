@@ -920,3 +920,29 @@ StaticPopupDialogs["CDC_DELETE_GROUP_SETTINGS_PRESET"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
+    text = "Copy selected %s settings from the chosen character to this character?",
+    button1 = "Copy",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and data.systemKey and data.sourceCharKey) then
+            CooldownCompanion:Print("Copy failed: missing context.")
+            return
+        end
+
+        local ok = CooldownCompanion:CopyCharacterScopedSettings(data.systemKey, data.sourceCharKey)
+        if not ok then
+            CooldownCompanion:Print("Copy failed.")
+            return
+        end
+
+        if data.onCopied then
+            data.onCopied()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}

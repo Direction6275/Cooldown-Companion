@@ -39,6 +39,13 @@ local function CopySubsystemDefaults(defaultKey)
     return CopyTable(defaults)
 end
 
+local function CloneSettingValue(value)
+    if type(value) == "table" then
+        return CopyTable(value)
+    end
+    return value
+end
+
 local function EnsureScopedBarSystemStore(profile, storeKey)
     local store = rawget(profile, storeKey)
     if type(store) ~= "table" then
@@ -123,6 +130,80 @@ local function GetCurrentClassSpecInfo()
     end
 
     return specIDs, currentSpecID
+end
+
+-- Keep these resource mappings aligned with OtherBars/ResourceBar.lua.
+local CLASS_RESOURCES_BY_CLASS_ID = {
+    [1]  = { 1 },
+    [2]  = { 9, 0 },
+    [3]  = { 2 },
+    [4]  = { 4, 3 },
+    [5]  = { 0 },
+    [6]  = { 5, 6 },
+    [7]  = { 0 },
+    [8]  = { 0 },
+    [9]  = { 7, 0 },
+    [10] = { 0 },
+    [11] = { 0 },
+    [12] = { 17 },
+    [13] = { 19, 0 },
+}
+
+local SPEC_RESOURCES_BY_SPEC_ID = {
+    [258] = { 13, 0 },
+    [262] = { 11, 0 },
+    [263] = { 100, 0 },
+    [62]  = { 16, 0 },
+    [269] = { 12, 3 },
+    [268] = { 3 },
+    [581] = { 17 },
+}
+
+local DRUID_FORM_RESOURCES = {
+    { 1 },
+    { 4, 3 },
+    { 8 },
+}
+
+local function BuildResourceSet(resourceList, result)
+    if type(resourceList) ~= "table" or type(result) ~= "table" then
+        return result
+    end
+
+    for _, powerType in pairs(resourceList) do
+        local numericPowerType = tonumber(powerType)
+        if numericPowerType then
+            result[numericPowerType] = true
+        end
+    end
+
+    return result
+end
+
+local function GetCurrentClassApplicableResourceSet()
+    local _, _, classID = UnitClass("player")
+    if not classID then
+        return {}
+    end
+
+    local resourceSet = {}
+    BuildResourceSet(CLASS_RESOURCES_BY_CLASS_ID[classID], resourceSet)
+
+    if classID == 11 then
+        for _, resourceList in pairs(DRUID_FORM_RESOURCES) do
+            BuildResourceSet(resourceList, resourceSet)
+        end
+    end
+
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    for i = 1, numSpecs do
+        local specID = GetSpecializationInfoForClassID(classID, i)
+        if specID then
+            BuildResourceSet(SPEC_RESOURCES_BY_SPEC_ID[specID], resourceSet)
+        end
+    end
+
+    return resourceSet
 end
 
 local function CopyResourceAuraOverlayColor(color)
@@ -312,6 +393,81 @@ local function SanitizeFrameAnchoringAnchors(settings)
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
 end
 
+local function CopyPreservedResourceAuraOverlayState(targetResource, copiedResource)
+    if type(copiedResource) ~= "table" then
+        return copiedResource
+    end
+
+    copiedResource.auraOverlayEnabled = nil
+    copiedResource.auraOverlayEntries = nil
+    copiedResource.auraColorSpellID = nil
+    copiedResource.auraActiveColor = nil
+    copiedResource.auraColorTrackingMode = nil
+    copiedResource.auraColorMaxStacks = nil
+
+    if type(targetResource) ~= "table" then
+        return copiedResource
+    end
+
+    if type(targetResource.auraOverlayEnabled) == "boolean" then
+        copiedResource.auraOverlayEnabled = targetResource.auraOverlayEnabled
+    end
+    if type(targetResource.auraOverlayEntries) == "table" then
+        copiedResource.auraOverlayEntries = CopyTable(targetResource.auraOverlayEntries)
+    end
+    if targetResource.auraColorSpellID ~= nil then
+        copiedResource.auraColorSpellID = targetResource.auraColorSpellID
+    end
+    if targetResource.auraActiveColor ~= nil then
+        copiedResource.auraActiveColor = CopyTable(targetResource.auraActiveColor)
+    end
+    if targetResource.auraColorTrackingMode ~= nil then
+        copiedResource.auraColorTrackingMode = targetResource.auraColorTrackingMode
+    end
+    if targetResource.auraColorMaxStacks ~= nil then
+        copiedResource.auraColorMaxStacks = targetResource.auraColorMaxStacks
+    end
+
+    return copiedResource
+end
+
+local function ComposeCopiedResourceBarSettings(source, target)
+    local copied = type(target) == "table" and CopyTable(target) or CopySubsystemDefaults("resourceBars")
+    local applicableResources = GetCurrentClassApplicableResourceSet()
+
+    if type(source) == "table" then
+        for key, value in pairs(source) do
+            if key ~= "resources" and key ~= "customAuraBars" and key ~= "customAuraBarSlots" then
+                copied[key] = CloneSettingValue(value)
+            end
+        end
+    end
+
+    if type(source) == "table" and type(source.customAuraBarSlots) == "table" then
+        copied.customAuraBarSlots = CopyTable(source.customAuraBarSlots)
+    end
+
+    if type(copied.resources) ~= "table" then
+        copied.resources = {}
+    end
+
+    local sourceResources = type(source) == "table" and source.resources or nil
+    local targetResources = type(target) == "table" and target.resources or nil
+    if type(sourceResources) == "table" then
+        for powerType in pairs(applicableResources) do
+            local sourceResource = sourceResources[powerType]
+            if type(sourceResource) == "table" then
+                local targetResource = type(targetResources) == "table" and targetResources[powerType] or nil
+                copied.resources[powerType] = CopyPreservedResourceAuraOverlayState(targetResource, CopyTable(sourceResource))
+            end
+        end
+    end
+
+    copied.customAuraBars = type(target) == "table" and CloneSettingValue(target.customAuraBars) or nil
+
+    return copied
+end
+
 local function NormalizeScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
         NormalizeCustomAuraBarsForCurrentClass(settings)
@@ -491,7 +647,12 @@ function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
         return false, "missing_source"
     end
 
-    local copied = CopyTable(source)
+    local copied
+    if systemKey == "resourceBars" then
+        copied = ComposeCopiedResourceBarSettings(source, self:GetResourceBarSettings())
+    else
+        copied = CopyTable(source)
+    end
     NormalizeScopedBarSettings(systemKey, copied)
     SanitizeCopiedOrSeededScopedBarSettings(systemKey, copied)
     store[currentChar] = copied

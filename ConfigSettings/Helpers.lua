@@ -642,15 +642,17 @@ local function AddCharacterScopedCopyControls(container, systemKey, label, onCop
             return
         end
 
-        local ok = CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
-        if not ok then
-            CooldownCompanion:Print("Copy failed.")
+        if not ShowPopupAboveConfig then
+            CooldownCompanion:Print("Copy confirmation is unavailable.")
             return
         end
 
-        if onCopied then
-            onCopied()
-        end
+        ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
+            systemKey = systemKey,
+            systemLabel = label,
+            sourceCharKey = sourceCharKey,
+            onCopied = onCopied,
+        })
     end)
     copyRow:AddChild(copyButton)
 
