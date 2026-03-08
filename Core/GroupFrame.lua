@@ -50,19 +50,6 @@ local function NormalizeCompactGrowthDirection(growthDirection)
     return "center"
 end
 
-local function GetCompactAnchorFixedPoint(orientation, compactGrowthDirection)
-    if compactGrowthDirection == "start" then
-        return "TOPLEFT"
-    end
-    if compactGrowthDirection == "end" then
-        if orientation == "horizontal" then
-            return "TOPRIGHT"
-        end
-        return "BOTTOMLEFT"
-    end
-    return nil
-end
-
 local function GetCompactSlotForIndex(visibleIndex, visibleCount, buttonsPerRow, orientation, compactGrowthDirection)
     local slotIndex = visibleIndex - 1
     if orientation == "horizontal" then
@@ -622,7 +609,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local numButtons = frame.visibleButtonCount or #group.buttons
 
     local targetWidth, targetHeight
-    local oldWidth, oldHeight = frame:GetSize()
 
     if numButtons == 0 then
         targetWidth, targetHeight = buttonWidth, buttonHeight
@@ -649,34 +635,10 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         return false
     end
 
+    -- Automatic compact reflow must not rewrite the user's saved anchor.
+    -- Growth direction only affects button placement inside the frame.
     frame:SetSize(targetWidth, targetHeight)
 
-    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
-    local fixedPoint = group.compactLayout and GetCompactAnchorFixedPoint(orientation, compactGrowthDirection) or nil
-    local canCompensateAnchor = frame._hasBeenSized and oldWidth > 0 and oldHeight > 0
-    if fixedPoint and canCompensateAnchor then
-        local anchorPoint = (group.anchor and group.anchor.point) or "CENTER"
-        local oldFixedX, oldFixedY = GetAnchorOffset(fixedPoint, oldWidth, oldHeight)
-        local oldAnchorX, oldAnchorY = GetAnchorOffset(anchorPoint, oldWidth, oldHeight)
-        local newFixedX, newFixedY = GetAnchorOffset(fixedPoint, targetWidth, targetHeight)
-        local newAnchorX, newAnchorY = GetAnchorOffset(anchorPoint, targetWidth, targetHeight)
-
-        local deltaX = (oldFixedX - oldAnchorX) - (newFixedX - newAnchorX)
-        local deltaY = (oldFixedY - oldAnchorY) - (newFixedY - newAnchorY)
-        if deltaX ~= 0 or deltaY ~= 0 then
-            frame:AdjustPointsOffset(deltaX, deltaY)
-            if group.anchor then
-                local _, _, _, x, y = frame:GetPoint(1)
-                if x and y then
-                    group.anchor.x = x
-                    group.anchor.y = y
-                    UpdateCoordLabel(frame, x, y)
-                end
-            end
-        end
-    end
-
-    frame._hasBeenSized = true
     frame._sizeDirty = nil
     return true
 end
