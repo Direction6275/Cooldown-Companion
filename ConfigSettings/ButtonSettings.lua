@@ -734,21 +734,33 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
-    local delBtn = AceGUI:Create("Button")
-    delBtn:SetText("Delete Selected")
-    delBtn:SetFullWidth(true)
-    delBtn:SetCallback("OnClick", function()
-        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
-            { groupId = CS.selectedGroup, indices = multiIndices })
+    local dupBtn = AceGUI:Create("Button")
+    dupBtn:SetText("Duplicate Selected")
+    dupBtn:SetFullWidth(true)
+    dupBtn:SetCallback("OnClick", function()
+        local sourceGroupId = CS.selectedGroup
+        local group = CooldownCompanion.db.profile.groups[sourceGroupId]
+        if not group then return end
+        local sorted = {}
+        for _, idx in ipairs(multiIndices) do table.insert(sorted, idx) end
+        table.sort(sorted, function(a, b) return a > b end)
+        for _, idx in ipairs(sorted) do
+            local copy = CopyTable(group.buttons[idx])
+            table.insert(group.buttons, idx + 1, copy)
+        end
+        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+        CS.selectedButton = nil
+        wipe(CS.selectedButtons)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    scroll:AddChild(delBtn)
+    scroll:AddChild(dupBtn)
 
-    local spacer = AceGUI:Create("Label")
-    spacer:SetText(" ")
-    spacer:SetFullWidth(true)
-    local font, _, flags = spacer.label:GetFont()
-    spacer:SetFont(font, 3, flags or "")
-    scroll:AddChild(spacer)
+    local spacer1 = AceGUI:Create("Label")
+    spacer1:SetText(" ")
+    spacer1:SetFullWidth(true)
+    local font, _, flags = spacer1.label:GetFont()
+    spacer1:SetFont(font, 3, flags or "")
+    scroll:AddChild(spacer1)
 
     local moveBtn = AceGUI:Create("Button")
     moveBtn:SetText("Move Selected")
@@ -762,26 +774,74 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
         local indices = multiIndices
         local db = CooldownCompanion.db.profile
         UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
-            local groupIds = {}
-            for id in pairs(db.groups) do
-                if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
-                    table.insert(groupIds, id)
+            local folderGroups, looseGroups = {}, {}
+            for id, group in pairs(db.groups) do
+                if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                    if group.folderId and db.folders[group.folderId] then
+                        folderGroups[group.folderId] = folderGroups[group.folderId] or {}
+                        table.insert(folderGroups[group.folderId], { id = id, name = group.name })
+                    else
+                        table.insert(looseGroups, { id = id, name = group.name })
+                    end
                 end
             end
-            table.sort(groupIds)
-            for _, gid in ipairs(groupIds) do
-                if gid ~= sourceGroupId then
+            local sortedFolders = {}
+            for fid, folder in pairs(db.folders) do
+                if folderGroups[fid] then
+                    table.insert(sortedFolders, { id = fid, name = folder.name, order = folder.order or fid })
+                end
+            end
+            table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+            local hasFolders = #sortedFolders > 0
+            for _, folder in ipairs(sortedFolders) do
+                local hdr = UIDropDownMenu_CreateInfo()
+                hdr.text = folder.name
+                hdr.isTitle = true
+                hdr.notCheckable = true
+                UIDropDownMenu_AddButton(hdr, level)
+                table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
+                for _, g in ipairs(folderGroups[folder.id]) do
                     local info = UIDropDownMenu_CreateInfo()
-                    info.text = db.groups[gid].name
+                    info.text = g.name
                     info.func = function()
                         for _, idx in ipairs(indices) do
-                            table.insert(db.groups[gid].buttons, db.groups[sourceGroupId].buttons[idx])
+                            table.insert(db.groups[g.id].buttons, db.groups[sourceGroupId].buttons[idx])
                         end
                         table.sort(indices, function(a, b) return a > b end)
                         for _, idx in ipairs(indices) do
                             table.remove(db.groups[sourceGroupId].buttons, idx)
                         end
-                        CooldownCompanion:RefreshGroupFrame(gid)
+                        CooldownCompanion:RefreshGroupFrame(g.id)
+                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                        CS.selectedButton = nil
+                        wipe(CS.selectedButtons)
+                        CooldownCompanion:RefreshConfigPanel()
+                        CloseDropDownMenus()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+            if #looseGroups > 0 then
+                if hasFolders then
+                    local hdr = UIDropDownMenu_CreateInfo()
+                    hdr.text = "No Folder"
+                    hdr.isTitle = true
+                    hdr.notCheckable = true
+                    UIDropDownMenu_AddButton(hdr, level)
+                end
+                table.sort(looseGroups, function(a, b) return a.name < b.name end)
+                for _, g in ipairs(looseGroups) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = g.name
+                    info.func = function()
+                        for _, idx in ipairs(indices) do
+                            table.insert(db.groups[g.id].buttons, db.groups[sourceGroupId].buttons[idx])
+                        end
+                        table.sort(indices, function(a, b) return a > b end)
+                        for _, idx in ipairs(indices) do
+                            table.remove(db.groups[sourceGroupId].buttons, idx)
+                        end
+                        CooldownCompanion:RefreshGroupFrame(g.id)
                         CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                         CS.selectedButton = nil
                         wipe(CS.selectedButtons)
@@ -796,6 +856,22 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
         ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
     end)
     scroll:AddChild(moveBtn)
+
+    local spacer2 = AceGUI:Create("Label")
+    spacer2:SetText(" ")
+    spacer2:SetFullWidth(true)
+    local font2, _, flags2 = spacer2.label:GetFont()
+    spacer2:SetFont(font2, 3, flags2 or "")
+    scroll:AddChild(spacer2)
+
+    local delBtn = AceGUI:Create("Button")
+    delBtn:SetText("Delete Selected")
+    delBtn:SetFullWidth(true)
+    delBtn:SetCallback("OnClick", function()
+        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount,
+            { groupId = CS.selectedGroup, indices = multiIndices })
+    end)
+    scroll:AddChild(delBtn)
 
     -- Batch visibility settings when all selected share the same type
     if uniformType then
