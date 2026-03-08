@@ -193,6 +193,7 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
         if not canPromote then return end
         CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CS.buttonSettingsTab = "overrides"
         CooldownCompanion:RefreshConfigPanel()
     end)
 
@@ -282,6 +283,7 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
         if not canPromote then return end
         CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CS.buttonSettingsTab = "overrides"
         CooldownCompanion:RefreshConfigPanel()
     end)
 
