@@ -974,18 +974,19 @@ local function RefreshColumn2()
                         local folderGroups, looseGroups = {}, {}
                         for id, group in pairs(db.groups) do
                             if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                                local gName = group.name or ("Group " .. id)
                                 if group.folderId and db.folders[group.folderId] then
                                     folderGroups[group.folderId] = folderGroups[group.folderId] or {}
-                                    table.insert(folderGroups[group.folderId], { id = id, name = group.name })
+                                    table.insert(folderGroups[group.folderId], { id = id, name = gName })
                                 else
-                                    table.insert(looseGroups, { id = id, name = group.name })
+                                    table.insert(looseGroups, { id = id, name = gName })
                                 end
                             end
                         end
                         local sortedFolders = {}
                         for fid, folder in pairs(db.folders) do
                             if folderGroups[fid] then
-                                table.insert(sortedFolders, { id = fid, name = folder.name, order = folder.order or fid })
+                                table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
                             end
                         end
                         table.sort(sortedFolders, function(a, b) return a.order < b.order end)
@@ -1056,18 +1057,19 @@ local function RefreshColumn2()
                     local folderGroups, looseGroups = {}, {}
                     for id, group in pairs(db.groups) do
                         if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                            local gName = group.name or ("Group " .. id)
                             if group.folderId and db.folders[group.folderId] then
                                 folderGroups[group.folderId] = folderGroups[group.folderId] or {}
-                                table.insert(folderGroups[group.folderId], { id = id, name = group.name })
+                                table.insert(folderGroups[group.folderId], { id = id, name = gName })
                             else
-                                table.insert(looseGroups, { id = id, name = group.name })
+                                table.insert(looseGroups, { id = id, name = gName })
                             end
                         end
                     end
                     local sortedFolders = {}
                     for fid, folder in pairs(db.folders) do
                         if folderGroups[fid] then
-                            table.insert(sortedFolders, { id = fid, name = folder.name, order = folder.order or fid })
+                            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
                         end
                     end
                     table.sort(sortedFolders, function(a, b) return a.order < b.order end)
