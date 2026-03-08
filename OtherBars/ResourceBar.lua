@@ -2727,6 +2727,7 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
             ClearMaxStacksIndicator(barInfo)
             barInfo.frame:Hide()
             barInfo.cabConfig = nil
+            barInfo.powerType = nil
             barInfo._isIndependent = nil
             barInfo._side = nil
             barInfo._order = nil
@@ -2838,6 +2839,7 @@ local function PrepareCustomAuraBar(
     end
 
     barInfo.cabConfig = cabConfig
+    barInfo.powerType = powerType
     barInfo.frame:SetSize(customWidth, customHeight)
     barInfo.frame._isVertical = customIsVertical
     barInfo.frame._reverseFill = customReverseFill
