@@ -95,6 +95,11 @@ local function BuildDiagnosticSnapshot()
         }
     end
 
+    local resourceBarRuntime = nil
+    if CooldownCompanion.GetResourceBarRuntimeDebugInfo then
+        resourceBarRuntime = CooldownCompanion:GetResourceBarRuntimeDebugInfo()
+    end
+
     snapshot.runtime = {
         currentInstanceType = CooldownCompanion._currentInstanceType,
         currentSpecId = CooldownCompanion._currentSpecId,
@@ -106,6 +111,7 @@ local function BuildDiagnosticSnapshot()
         procOverlaySpells = procOverlaySpells,
         rangeCheckSpells = rangeCheckSpells,
         groupFrameStates = groupFrameStates,
+        resourceBarRuntime = resourceBarRuntime,
     }
 
     -- Build spec name cache for all referenced spec IDs
@@ -257,6 +263,28 @@ local function FormatDiagnosticAsText(diag)
         add("  " .. (#parts > 0 and table.concat(parts, "  ") or "none"))
     end
 
+    if r.resourceBarRuntime and #r.resourceBarRuntime > 0 then
+        add("Resource Bar Runtime:")
+        for _, entry in ipairs(r.resourceBarRuntime) do
+            local parts = {
+                ("[%s]"):format(tostring(entry.index or "?")),
+                tostring(entry.barType or "unknown"),
+                "powerType=" .. tostring(entry.powerType or "nil"),
+                entry.shown and "shown" or "hidden",
+            }
+            if entry.spellID then
+                parts[#parts + 1] = "spellID=" .. tostring(entry.spellID)
+            end
+            if entry.hideWhenInactive then
+                parts[#parts + 1] = "hideWhenInactive=true"
+            end
+            if entry.isIndependent then
+                parts[#parts + 1] = "independent=true"
+            end
+            add("  " .. table.concat(parts, " "))
+        end
+    end
+
     -- Groups (sorted by display order, not ID)
     add("")
     add("--- Groups ---")
@@ -402,21 +430,21 @@ local function FormatDiagnosticAsText(diag)
     -- Resource Bars (with type names and explicit anchorGroupId)
     add("--- Resource Bars ---")
     local currentCharKey = diag.meta and diag.meta.charKey
+    local legacyRb = rawget(p, "resourceBars")
+    local legacyRbSeed = rawget(p, "legacyResourceBarsSeed")
     local rbStore = rawget(p, "resourceBarsByChar")
     local rb = type(rbStore) == "table" and currentCharKey and rbStore[currentCharKey] or nil
-    if type(rbStore) == "table" then
-        local storedChars = {}
-        for charKey in pairs(rbStore) do
-            storedChars[#storedChars + 1] = tostring(charKey)
+    local function addResourceBarBucket(label, settings)
+        if type(settings) ~= "table" then
+            add(label .. "=nil")
+            return
         end
-        table.sort(storedChars)
-        add("currentChar=" .. tostring(currentCharKey))
-        add("storedCharacters=" .. table.concat(storedChars, ", "))
-    end
-    if rb then
+
+        add(label .. ":")
+
         local rbSimple = {}
         local hasAnchorGroupId = false
-        for k, v in pairs(rb) do
+        for k, v in pairs(settings) do
             if k == "anchorGroupId" then hasAnchorGroupId = true end
             if k ~= "resources" and k ~= "customAuraBars" then
                 rbSimple[#rbSimple + 1] = tostring(k) .. "=" .. formatValue(v)
@@ -426,48 +454,63 @@ local function FormatDiagnosticAsText(diag)
             rbSimple[#rbSimple + 1] = "anchorGroupId=nil"
         end
         table.sort(rbSimple)
-        add(table.concat(rbSimple, " "))
+        add("  " .. table.concat(rbSimple, " "))
 
-        if rb.resources then
-            add("resources:")
+        if settings.resources then
+            add("  resources:")
             local rids = {}
-            for id in pairs(rb.resources) do rids[#rids + 1] = id end
+            for id in pairs(settings.resources) do rids[#rids + 1] = id end
             table.sort(rids)
             for _, id in ipairs(rids) do
                 local typeName = RESOURCE_NAMES[id]
-                local label = typeName
+                local entryLabel = typeName
                     and ("[%s] (%s)"):format(tostring(id), typeName)
                     or ("[%s]"):format(tostring(id))
-                local kv = dumpKV(rb.resources[id])
-                add(("  %s %s"):format(label, kv ~= "" and kv or "(default)"))
+                local kv = dumpKV(settings.resources[id])
+                add(("    %s %s"):format(entryLabel, kv ~= "" and kv or "(default)"))
             end
         end
 
-        if rb.customAuraBars then
+        if settings.customAuraBars then
             local hasAny = false
-            for _ in pairs(rb.customAuraBars) do hasAny = true; break end
+            for _ in pairs(settings.customAuraBars) do hasAny = true; break end
             if hasAny then
-                add("customAuraBars:")
+                add("  customAuraBars:")
                 local specIds = {}
-                for sid in pairs(rb.customAuraBars) do specIds[#specIds + 1] = sid end
+                for sid in pairs(settings.customAuraBars) do specIds[#specIds + 1] = sid end
                 table.sort(specIds)
                 for _, sid in ipairs(specIds) do
                     local sName = sid == 0 and "Default" or specNames[sid]
-                    local label = sName
+                    local entryLabel = sName
                         and ("[%s] (%s)"):format(tostring(sid), sName)
                         or ("[%s]"):format(tostring(sid))
-                    add(("  %s"):format(label))
-                    local specBars = rb.customAuraBars[sid]
+                    add(("    %s"):format(entryLabel))
+                    local specBars = settings.customAuraBars[sid]
                     local slots = {}
                     for slot in pairs(specBars) do slots[#slots + 1] = slot end
                     table.sort(slots, function(a, b) return tostring(a) < tostring(b) end)
                     for _, slot in ipairs(slots) do
-                        add(("    %s: %s"):format(tostring(slot), dumpKV(specBars[slot])))
+                        add(("      %s: %s"):format(tostring(slot), dumpKV(specBars[slot])))
                     end
                 end
             end
         end
     end
+
+    addResourceBarBucket("legacyProfile.resourceBars", legacyRb)
+    addResourceBarBucket("legacyResourceBarsSeed", legacyRbSeed)
+    if type(rbStore) == "table" then
+        local storedChars = {}
+        for charKey in pairs(rbStore) do
+            storedChars[#storedChars + 1] = tostring(charKey)
+        end
+        table.sort(storedChars)
+        add("currentChar=" .. tostring(currentCharKey))
+        add("storedCharacters=" .. table.concat(storedChars, ", "))
+    else
+        add("resourceBarsByChar=nil")
+    end
+    addResourceBarBucket("resourceBarsByChar[currentChar]", rb)
 
     -- Cast Bar (with explicit anchorGroupId)
     add("")

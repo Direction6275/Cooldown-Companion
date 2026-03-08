@@ -169,8 +169,7 @@ function CooldownCompanion:OnEnable()
     -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
     EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
         C_Timer.After(0.2, function()
-            self:BuildViewerAuraMap()
-            self:RefreshConfigPanel()
+            self:QueueBuildViewerAuraMap()
         end)
     end, self)
 
@@ -196,6 +195,7 @@ function CooldownCompanion:OnEnable()
             -- Blizzard's OnAcquireItemFrame calls SetTooltipsShown(true) on new children.
             hooksecurefunc(viewer, "RefreshLayout", function(frame)
                 if CooldownCompanion._cdmPickMode then return end
+                CooldownCompanion:QueueBuildViewerAuraMap()
                 if CooldownCompanion.db
                    and CooldownCompanion.db.profile.cdmHidden then
                     for _, child in pairs({frame:GetChildren()}) do

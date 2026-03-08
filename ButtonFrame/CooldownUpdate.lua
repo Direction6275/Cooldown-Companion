@@ -190,6 +190,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraOverrideActive = false
     if buttonData.auraTracking and button._auraSpellID then
         local auraUnit = button._auraUnit or "player"
+        local hasExplicitAuraOverride = buttonData.auraSpellID ~= nil
 
         local viewerFrame
 
@@ -217,7 +218,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._parsedAuraIDsRaw = buttonData.auraSpellID
             end
             for _, numId in ipairs(ids) do
-                local f = CooldownCompanion.viewerAuraFrames[numId]
+                local f = CooldownCompanion:ResolveBuffViewerFrameForSpell(numId)
                 if f then
                     if f.auraInstanceID then
                         viewerFrame = f
@@ -232,9 +233,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- _displaySpellId tracks the current override (e.g. Solar → Lunar Eclipse)
         -- and is always present in the viewer map after BuildViewerAuraMap.
         if not viewerFrame then
-            viewerFrame = CooldownCompanion.viewerAuraFrames[button._auraSpellID]
-                or CooldownCompanion.viewerAuraFrames[buttonData.id]
-                or (button._displaySpellId and CooldownCompanion.viewerAuraFrames[button._displaySpellId])
+            viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(button._auraSpellID)
+            if not viewerFrame and not hasExplicitAuraOverride then
+                viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(buttonData.id)
+                    or (button._displaySpellId and CooldownCompanion:ResolveBuffViewerFrameForSpell(button._displaySpellId))
+            end
         end
         if not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID

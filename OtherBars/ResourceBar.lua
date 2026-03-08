@@ -2452,10 +2452,11 @@ local function UpdateCustomAuraBar(barInfo)
     local isActive = cabConfig.trackingMode == "active"
     local useDrain = isActive
     local needsDuration = useDrain or cabConfig.showDurationText
-    local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[cabConfig.spellID]
+    local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(cabConfig.spellID)
+    local auraUnit = viewerFrame and viewerFrame.auraDataUnit or "player"
     local instId = viewerFrame and viewerFrame.auraInstanceID
     if instId then
-        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
+        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, instId)
         if auraData then
             auraPresent = true
             applications = auraData.applications or 0
@@ -2465,7 +2466,7 @@ local function UpdateCustomAuraBar(barInfo)
                 stacks = applications
             end
             if needsDuration then
-                durationObj = C_UnitAuras.GetAuraDuration("player", instId)
+                durationObj = C_UnitAuras.GetAuraDuration(auraUnit, instId)
             end
         end
     end
@@ -2700,6 +2701,225 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
             end
         end
     end
+end
+
+local function FinalizeAppliedBarVisibility(barInfo, powerType, previewActive)
+    if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
+        if previewActive then
+            barInfo.frame:Show()
+        elseif barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
+            UpdateCustomAuraBar(barInfo)
+        else
+            barInfo.frame:Show()
+            UpdateCustomAuraBar(barInfo)
+        end
+    else
+        barInfo.frame:Show()
+    end
+end
+
+local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
+    for i = firstHiddenIndex, #resourceBarFrames do
+        local barInfo = resourceBarFrames[i]
+        if barInfo and barInfo.frame then
+            owner:ClearIndependentCustomAuraRuntimeState(barInfo.frame)
+            ClearResourceAuraVisuals(barInfo.frame)
+            ClearMaxStacksIndicator(barInfo)
+            barInfo.frame:Hide()
+            barInfo.cabConfig = nil
+            barInfo._isIndependent = nil
+            barInfo._side = nil
+            barInfo._order = nil
+            barInfo._effectiveThickness = nil
+            if barInfo.frame.brightnessOverlay then
+                barInfo.frame.brightnessOverlay:Hide()
+            end
+        end
+    end
+end
+
+local function PrepareCustomAuraBar(
+    targetContainer,
+    barInfo,
+    powerType,
+    customBars,
+    settings,
+    isVerticalLayout,
+    reverseVerticalFill,
+    effectiveWidth,
+    effectiveHeight,
+    segmentGap
+)
+    local cabIndex = powerType - CUSTOM_AURA_BAR_BASE + 1
+    local cabConfig = customBars[cabIndex]
+    local isActive = cabConfig.trackingMode == "active"
+    local mode = isActive and "continuous" or (cabConfig.displayMode or "segmented")
+    local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
+    local targetBarType = "custom_" .. mode
+    local isIndependentCustomAura = IsCustomAuraBarIndependent(cabConfig)
+    local customOrientation = isVerticalLayout and "vertical" or "horizontal"
+    if isIndependentCustomAura then
+        local independentOrientation = cabConfig.independentOrientation
+        if independentOrientation == "vertical" or independentOrientation == "horizontal" then
+            customOrientation = independentOrientation
+        end
+    end
+    local customIsVertical = customOrientation == "vertical"
+    local customReverseFill = false
+    if customIsVertical then
+        if isIndependentCustomAura then
+            local fillDirection = cabConfig.independentVerticalFillDirection
+            if fillDirection == "top_to_bottom" then
+                customReverseFill = true
+            elseif fillDirection == "bottom_to_top" then
+                customReverseFill = false
+            else
+                customReverseFill = settings.verticalFillDirection == "top_to_bottom"
+            end
+        else
+            customReverseFill = reverseVerticalFill
+        end
+    end
+    local customWidth = effectiveWidth
+    local customHeight = effectiveHeight
+    if isIndependentCustomAura then
+        local independentSize = cabConfig.independentSize
+        customWidth = tonumber(independentSize and independentSize.width) or customWidth
+        customHeight = tonumber(independentSize and independentSize.height) or customHeight
+        if customWidth < 4 then
+            customWidth = 4
+        elseif customWidth > 1200 then
+            customWidth = 1200
+        end
+        if customHeight < 4 then
+            customHeight = 4
+        elseif customHeight > 1200 then
+            customHeight = 1200
+        end
+    end
+
+    local needsRecreate = not barInfo or barInfo.barType ~= targetBarType
+    if not needsRecreate and mode == "segmented" then
+        needsRecreate = barInfo.frame._numSegments ~= maxStacks
+    end
+    if not needsRecreate and mode == "overlay" then
+        needsRecreate = barInfo.halfSegments ~= math.ceil(maxStacks / 2)
+    end
+
+    if needsRecreate then
+        if barInfo and barInfo.frame then
+            ClearResourceAuraVisuals(barInfo.frame)
+            ClearMaxStacksIndicator(barInfo)
+            barInfo.frame:Hide()
+        end
+        if mode == "continuous" then
+            local bar = CreateContinuousBar(targetContainer)
+            bar:SetMinMaxValues(0, maxStacks)
+            barInfo = { frame = bar, barType = "custom_continuous", powerType = powerType }
+        elseif mode == "segmented" then
+            local holder = CreateSegmentedBar(targetContainer, maxStacks)
+            for si = 1, maxStacks do
+                holder.segments[si]:SetMinMaxValues(si - 1, si)
+            end
+            barInfo = { frame = holder, barType = "custom_segmented", powerType = powerType }
+        elseif mode == "overlay" then
+            local half = math.ceil(maxStacks / 2)
+            local holder = CreateOverlayBar(targetContainer, half)
+            barInfo = { frame = holder, barType = "custom_overlay", powerType = powerType, halfSegments = half }
+        end
+    end
+
+    if mode == "continuous" then
+        EnsureCustomAuraContinuousThresholdOverlay(barInfo.frame)
+    elseif mode == "segmented" then
+        EnsureCustomAuraSegmentThresholdOverlays(barInfo.frame)
+    elseif mode == "overlay" then
+        EnsureCustomAuraOverlayThresholdOverlays(barInfo.frame, barInfo.halfSegments or math.ceil(maxStacks / 2))
+    end
+
+    barInfo.cabConfig = cabConfig
+    barInfo.frame:SetSize(customWidth, customHeight)
+    barInfo.frame._isVertical = customIsVertical
+    barInfo.frame._reverseFill = customReverseFill
+    if mode == "segmented" then
+        LayoutSegments(
+            barInfo.frame,
+            customWidth,
+            customHeight,
+            segmentGap,
+            settings,
+            customOrientation,
+            customReverseFill
+        )
+    elseif mode == "overlay" then
+        LayoutOverlaySegments(
+            barInfo.frame,
+            customWidth,
+            customHeight,
+            segmentGap,
+            settings,
+            barInfo.halfSegments,
+            customOrientation,
+            customReverseFill
+        )
+    end
+    if mode == "continuous" then
+        local barTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
+        barInfo.frame:SetStatusBarTexture(barTexture)
+        barInfo.frame:SetOrientation(customIsVertical and "VERTICAL" or "HORIZONTAL")
+        barInfo.frame:SetReverseFill(customIsVertical and customReverseFill or false)
+        barInfo.frame._isVertical = customIsVertical
+        barInfo.frame._reverseFill = customReverseFill
+        local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+        barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
+        local borderStyle = settings.borderStyle or "pixel"
+        local borderColor = settings.borderColor or { 0, 0, 0, 1 }
+        local borderSize = settings.borderSize or 1
+        if borderStyle == "pixel" then
+            ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize)
+        else
+            HidePixelBorders(barInfo.frame.borders)
+        end
+        LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize)
+        local durationTextFontName = cabConfig.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT
+        local durationTextSize = tonumber(cabConfig.durationTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+        local durationTextOutline = cabConfig.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+        local durationTextColor = cabConfig.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+        if type(durationTextColor) ~= "table" or durationTextColor[1] == nil or durationTextColor[2] == nil or durationTextColor[3] == nil then
+            durationTextColor = DEFAULT_RESOURCE_TEXT_COLOR
+        end
+        local durationTextFont = CooldownCompanion:FetchFont(durationTextFontName)
+        barInfo.frame.text:SetFont(durationTextFont, durationTextSize, durationTextOutline)
+        barInfo.frame.text:SetTextColor(durationTextColor[1], durationTextColor[2], durationTextColor[3], durationTextColor[4] ~= nil and durationTextColor[4] or 1)
+        if not barInfo.frame.stackText then
+            barInfo.frame.stackText = (barInfo.frame.textLayer or barInfo.frame):CreateFontString(nil, "OVERLAY")
+            barInfo.frame.stackText:SetTextColor(1, 1, 1, 1)
+        end
+        local stackTextFontName = cabConfig.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT
+        local stackTextSize = tonumber(cabConfig.stackTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+        local stackTextOutline = cabConfig.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+        local stackTextColor = cabConfig.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+        if type(stackTextColor) ~= "table" or stackTextColor[1] == nil or stackTextColor[2] == nil or stackTextColor[3] == nil then
+            stackTextColor = DEFAULT_RESOURCE_TEXT_COLOR
+        end
+        local stackTextFont = CooldownCompanion:FetchFont(stackTextFontName)
+        barInfo.frame.stackText:SetFont(stackTextFont, stackTextSize, stackTextOutline)
+        barInfo.frame.stackText:SetTextColor(stackTextColor[1], stackTextColor[2], stackTextColor[3], stackTextColor[4] ~= nil and stackTextColor[4] or 1)
+        barInfo.frame.brightnessOverlay:Hide()
+    end
+    StyleCustomAuraBar(barInfo, cabConfig)
+
+    if cabConfig.maxStacksGlowEnabled then
+        EnsureMaxStacksIndicator(barInfo)
+        local indBorderStyle = settings.borderStyle or "pixel"
+        local indBorderSize = settings.borderSize or 1
+        local indBarTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
+        LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize)
+    else
+        ClearMaxStacksIndicator(barInfo)
+    end
+
+    return barInfo, isIndependentCustomAura
 end
 
 ------------------------------------------------------------------------
@@ -3174,17 +3394,7 @@ function CooldownCompanion:ApplyResourceBars()
     end
 
     -- Hide existing bars that we don't need
-    for i = #filtered + 1, #resourceBarFrames do
-        if resourceBarFrames[i] and resourceBarFrames[i].frame then
-            self:ClearIndependentCustomAuraRuntimeState(resourceBarFrames[i].frame)
-            ClearResourceAuraVisuals(resourceBarFrames[i].frame)
-            ClearMaxStacksIndicator(resourceBarFrames[i])
-            resourceBarFrames[i].frame:Hide()
-            if resourceBarFrames[i].frame.brightnessOverlay then
-                resourceBarFrames[i].frame.brightnessOverlay:Hide()
-            end
-        end
-    end
+    HideUnusedResourceBarFrames(self, #filtered + 1)
 
     for idx, powerType in ipairs(filtered) do
         local isSegmented = SEGMENTED_TYPES[powerType]
@@ -3246,185 +3456,19 @@ function CooldownCompanion:ApplyResourceBars()
             StyleSegmentedText(barInfo.frame, powerType, settings)
 
         elseif powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
-            -- Custom aura bar
-            local cabIndex = powerType - CUSTOM_AURA_BAR_BASE + 1
-            local cabConfig = customBars[cabIndex]
-            local isActive = cabConfig.trackingMode == "active"
-            local mode = isActive and "continuous" or (cabConfig.displayMode or "segmented")
-            local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
-            local targetBarType = "custom_" .. mode
-            local isIndependentCustomAura = IsCustomAuraBarIndependent(cabConfig)
-            local customOrientation = isVerticalLayout and "vertical" or "horizontal"
-            if isIndependentCustomAura then
-                local independentOrientation = cabConfig.independentOrientation
-                if independentOrientation == "vertical" or independentOrientation == "horizontal" then
-                    customOrientation = independentOrientation
-                end
-            end
-            local customIsVertical = customOrientation == "vertical"
-            local customReverseFill = false
-            if customIsVertical then
-                if isIndependentCustomAura then
-                    local fillDirection = cabConfig.independentVerticalFillDirection
-                    if fillDirection == "top_to_bottom" then
-                        customReverseFill = true
-                    elseif fillDirection == "bottom_to_top" then
-                        customReverseFill = false
-                    else
-                        customReverseFill = settings.verticalFillDirection == "top_to_bottom"
-                    end
-                else
-                    customReverseFill = reverseVerticalFill
-                end
-            end
-            local customWidth = effectiveWidth
-            local customHeight = effectiveHeight
-            if isIndependentCustomAura then
-                local independentSize = cabConfig.independentSize
-                customWidth = tonumber(independentSize and independentSize.width) or customWidth
-                customHeight = tonumber(independentSize and independentSize.height) or customHeight
-                if customWidth < 4 then
-                    customWidth = 4
-                elseif customWidth > 1200 then
-                    customWidth = 1200
-                end
-                if customHeight < 4 then
-                    customHeight = 4
-                elseif customHeight > 1200 then
-                    customHeight = 1200
-                end
-            end
-
-            -- Determine if bar needs recreation
-            local needsRecreate = not barInfo or barInfo.barType ~= targetBarType
-            if not needsRecreate and mode == "segmented" then
-                needsRecreate = barInfo.frame._numSegments ~= maxStacks
-            end
-            if not needsRecreate and mode == "overlay" then
-                needsRecreate = barInfo.halfSegments ~= math.ceil(maxStacks / 2)
-            end
-
-            if needsRecreate then
-                if barInfo and barInfo.frame then
-                    ClearResourceAuraVisuals(barInfo.frame)
-                    ClearMaxStacksIndicator(barInfo)
-                    barInfo.frame:Hide()
-                end
-                if mode == "continuous" then
-                    local bar = CreateContinuousBar(targetContainer)
-                    bar:SetMinMaxValues(0, maxStacks)
-                    barInfo = { frame = bar, barType = "custom_continuous", powerType = powerType }
-                elseif mode == "segmented" then
-                    local holder = CreateSegmentedBar(targetContainer, maxStacks)
-                    -- Set per-segment MinMax for secret-safe SetValue(stacks) clamping
-                    for si = 1, maxStacks do
-                        holder.segments[si]:SetMinMaxValues(si - 1, si)
-                    end
-                    barInfo = { frame = holder, barType = "custom_segmented", powerType = powerType }
-                elseif mode == "overlay" then
-                    local half = math.ceil(maxStacks / 2)
-                    local holder = CreateOverlayBar(targetContainer, half)
-                    barInfo = { frame = holder, barType = "custom_overlay", powerType = powerType, halfSegments = half }
-                end
-                resourceBarFrames[idx] = barInfo
-            end
-
-            if mode == "continuous" then
-                EnsureCustomAuraContinuousThresholdOverlay(barInfo.frame)
-            elseif mode == "segmented" then
-                EnsureCustomAuraSegmentThresholdOverlays(barInfo.frame)
-            elseif mode == "overlay" then
-                EnsureCustomAuraOverlayThresholdOverlays(barInfo.frame, barInfo.halfSegments or math.ceil(maxStacks / 2))
-            end
-
-            barInfo.cabConfig = cabConfig
-            barInfo.frame:Show()  -- ensure reused frames visible for layout; OnUpdate re-hides if hideWhenInactive
-            barInfo.frame:SetSize(customWidth, customHeight)
-            barInfo.frame._isVertical = customIsVertical
-            barInfo.frame._reverseFill = customReverseFill
-            if mode == "segmented" then
-                LayoutSegments(
-                    barInfo.frame,
-                    customWidth,
-                    customHeight,
-                    segmentGap,
-                    settings,
-                    customOrientation,
-                    customReverseFill
-                )
-            elseif mode == "overlay" then
-                LayoutOverlaySegments(
-                    barInfo.frame,
-                    customWidth,
-                    customHeight,
-                    segmentGap,
-                    settings,
-                    barInfo.halfSegments,
-                    customOrientation,
-                    customReverseFill
-                )
-            end
-            -- Continuous bar styling (text font, background, borders)
-            if mode == "continuous" then
-                local barTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
-                barInfo.frame:SetStatusBarTexture(barTexture)
-                barInfo.frame:SetOrientation(customIsVertical and "VERTICAL" or "HORIZONTAL")
-                barInfo.frame:SetReverseFill(customIsVertical and customReverseFill or false)
-                barInfo.frame._isVertical = customIsVertical
-                barInfo.frame._reverseFill = customReverseFill
-                local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
-                barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
-                local borderStyle = settings.borderStyle or "pixel"
-                local borderColor = settings.borderColor or { 0, 0, 0, 1 }
-                local borderSize = settings.borderSize or 1
-                if borderStyle == "pixel" then
-                    ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize)
-                else
-                    HidePixelBorders(barInfo.frame.borders)
-                end
-                LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize)
-                -- Duration text style (bar.text)
-                local durationTextFontName = cabConfig.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT
-                local durationTextSize = tonumber(cabConfig.durationTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-                local durationTextOutline = cabConfig.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
-                local durationTextColor = cabConfig.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-                if type(durationTextColor) ~= "table" or durationTextColor[1] == nil or durationTextColor[2] == nil or durationTextColor[3] == nil then
-                    durationTextColor = DEFAULT_RESOURCE_TEXT_COLOR
-                end
-                local durationTextFont = CooldownCompanion:FetchFont(durationTextFontName)
-                barInfo.frame.text:SetFont(durationTextFont, durationTextSize, durationTextOutline)
-                barInfo.frame.text:SetTextColor(durationTextColor[1], durationTextColor[2], durationTextColor[3], durationTextColor[4] ~= nil and durationTextColor[4] or 1)
-                -- Lazily create stackText FontString for custom aura bars
-                if not barInfo.frame.stackText then
-                    barInfo.frame.stackText = (barInfo.frame.textLayer or barInfo.frame):CreateFontString(nil, "OVERLAY")
-                    barInfo.frame.stackText:SetTextColor(1, 1, 1, 1)
-                end
-                -- Stack text style (bar.stackText)
-                local stackTextFontName = cabConfig.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT
-                local stackTextSize = tonumber(cabConfig.stackTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-                local stackTextOutline = cabConfig.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
-                local stackTextColor = cabConfig.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-                if type(stackTextColor) ~= "table" or stackTextColor[1] == nil or stackTextColor[2] == nil or stackTextColor[3] == nil then
-                    stackTextColor = DEFAULT_RESOURCE_TEXT_COLOR
-                end
-                local stackTextFont = CooldownCompanion:FetchFont(stackTextFontName)
-                barInfo.frame.stackText:SetFont(stackTextFont, stackTextSize, stackTextOutline)
-                barInfo.frame.stackText:SetTextColor(stackTextColor[1], stackTextColor[2], stackTextColor[3], stackTextColor[4] ~= nil and stackTextColor[4] or 1)
-                barInfo.frame.brightnessOverlay:Hide()
-            end
-            -- Apply bar color AFTER texture setup (SetStatusBarTexture resets vertex color)
-            StyleCustomAuraBar(barInfo, cabConfig)
-
-            -- Max stacks indicator (StatusBar-based, secret-safe)
-            if cabConfig.maxStacksGlowEnabled then
-                EnsureMaxStacksIndicator(barInfo)
-                local indBorderStyle = settings.borderStyle or "pixel"
-                local indBorderSize = settings.borderSize or 1
-                local indBarTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
-                LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize)
-            else
-                ClearMaxStacksIndicator(barInfo)
-            end
+            barInfo = PrepareCustomAuraBar(
+                targetContainer,
+                barInfo,
+                powerType,
+                customBars,
+                settings,
+                isVerticalLayout,
+                reverseVerticalFill,
+                effectiveWidth,
+                effectiveHeight,
+                segmentGap
+            )
+            resourceBarFrames[idx] = barInfo
         elseif isSegmented then
             local max = UnitPowerMax("player", powerType)
             if powerType == 5 then max = 6 end  -- Runes always 6
@@ -3478,7 +3522,6 @@ function CooldownCompanion:ApplyResourceBars()
             barInfo._order = nil
             barInfo._effectiveThickness = nil
             self:ApplyIndependentCustomAuraPlacement(barInfo, barInfo.cabConfig, settings)
-            barInfo.frame:Show()
         else
             self:ClearIndependentCustomAuraRuntimeState(barInfo.frame)
             if barInfo.frame:GetParent() ~= targetContainer then
@@ -3487,8 +3530,9 @@ function CooldownCompanion:ApplyResourceBars()
             barInfo._side = sideList[idx]
             barInfo._order = orderList[idx]
             barInfo._effectiveThickness = effectiveThickness
-            barInfo.frame:Show()
         end
+
+        FinalizeAppliedBarVisibility(barInfo, powerType, isPreviewActive)
     end
 
     activeResources = filtered
@@ -3631,6 +3675,25 @@ function CooldownCompanion:GetSpecCustomAuraBars()
     local settings = GetResourceBarSettings()
     if not settings then return {} end
     return GetSpecCustomAuraBars(settings)
+end
+
+function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
+    local info = {}
+    for idx, barInfo in ipairs(resourceBarFrames) do
+        local entry = {
+            index = idx,
+            powerType = barInfo.powerType,
+            barType = barInfo.barType,
+            shown = barInfo.frame and barInfo.frame:IsShown() or false,
+            isIndependent = barInfo._isIndependent == true,
+        }
+        if barInfo.cabConfig and barInfo.cabConfig.spellID then
+            entry.spellID = tonumber(barInfo.cabConfig.spellID) or barInfo.cabConfig.spellID
+            entry.hideWhenInactive = barInfo.cabConfig.hideWhenInactive == true
+        end
+        info[#info + 1] = entry
+    end
+    return info
 end
 
 function CooldownCompanion:InitializeCustomAuraIndependentAnchor(slotIdx)

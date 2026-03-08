@@ -19,6 +19,53 @@ local VIEWER_NAMES = ST._VIEWER_NAMES
 local COOLDOWN_VIEWER_NAMES = ST._COOLDOWN_VIEWER_NAMES
 local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
 local cdmAlphaGuard = ST._cdmAlphaGuard
+local pendingViewerAuraMapToken = 0
+
+local function IsBuffViewerChild(frame)
+    if not frame then return false end
+    local parent = frame:GetParent()
+    local parentName = parent and parent:GetName()
+    return BUFF_VIEWER_SET[parentName] == true
+end
+
+local function DoesViewerChildMatchSpellID(child, spellID)
+    if not child or not spellID or not IsBuffViewerChild(child) then
+        return false
+    end
+
+    local cooldownInfo = child.cooldownInfo
+    if type(cooldownInfo) ~= "table" then
+        return false
+    end
+
+    local cooldownID = child.cooldownID
+    if cooldownID == nil and child.GetCooldownID then
+        cooldownID = child:GetCooldownID()
+    end
+    if cooldownID == nil then
+        return false
+    end
+
+    if child.SpellIDMatchesAnyAssociatedSpellIDs then
+        return child:SpellIDMatchesAnyAssociatedSpellIDs(spellID)
+    end
+
+    if cooldownInfo.spellID == spellID
+        or cooldownInfo.overrideSpellID == spellID
+        or cooldownInfo.overrideTooltipSpellID == spellID then
+        return true
+    end
+
+    if cooldownInfo.linkedSpellIDs then
+        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
+            if linkedSpellID == spellID then
+                return true
+            end
+        end
+    end
+
+    return false
+end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     self._cooldownsDirty = true
@@ -57,16 +104,17 @@ end
 -- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
 -- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
 function CooldownCompanion:ClearAuraUnit(unitToken)
-    local vf = self.viewerAuraFrames
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
             local shouldClear = button._auraUnit == unitToken
             -- _auraUnit defaults to "player" even for debuff-tracking buttons
             -- whose viewer frame has auraDataUnit == "target".  Check the viewer
             -- map as a fallback so target-switch clears actually reach them.
-            if not shouldClear and unitToken == "target" and vf then
-                local f = (button._auraSpellID and vf[button._auraSpellID])
-                    or vf[bd.id]
+            if not shouldClear and unitToken == "target" then
+                local f = button._auraSpellID and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
+                if not f and not bd.auraSpellID then
+                    f = self:ResolveBuffViewerFrameForSpell(bd.id)
+                end
                 shouldClear = f and f.auraDataUnit == "target"
             end
             if shouldClear then
@@ -90,13 +138,14 @@ function CooldownCompanion:OnTargetChanged()
     -- read old auraInstanceIDs.  Keep _auraActive so the grace period
     -- can provide a brief (~450ms) holdover while CDM refreshes.
     local now = GetTime()
-    local vf = self.viewerAuraFrames
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
             local isTarget = button._auraUnit == "target"
-            if not isTarget and vf then
-                local f = (button._auraSpellID and vf[button._auraSpellID])
-                    or vf[bd.id]
+            if not isTarget then
+                local f = button._auraSpellID and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
+                if not f and not bd.auraSpellID then
+                    f = self:ResolveBuffViewerFrameForSpell(bd.id)
+                end
                 isTarget = f and f.auraDataUnit == "target"
             end
             if isTarget then
@@ -140,13 +189,13 @@ CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
 
 -- Shared helper: scan a list of viewer frames for a child matching spellID.
 -- Checks cooldownInfo spell associations used by CDM (base, overrides, linked).
-local function FindChildInViewers(viewerNames, spellID)
+local function FindChildInViewers(viewerNames, spellID, buffOnly)
     for _, name in ipairs(viewerNames) do
         local viewer = _G[name]
         if viewer then
             for _, child in pairs({viewer:GetChildren()}) do
                 local info = child.cooldownInfo
-                if info then
+                if info and (not buffOnly or IsBuffViewerChild(child)) then
                     if info.spellID == spellID
                        or info.overrideSpellID == spellID
                        or info.overrideTooltipSpellID == spellID then
@@ -190,6 +239,38 @@ function CooldownCompanion:ApplyCdmAlpha()
             end
         end
     end
+end
+
+function CooldownCompanion:QueueBuildViewerAuraMap()
+    pendingViewerAuraMapToken = pendingViewerAuraMapToken + 1
+    local token = pendingViewerAuraMapToken
+    C_Timer.After(0, function()
+        if pendingViewerAuraMapToken ~= token then return end
+        self:BuildViewerAuraMap()
+        self:RefreshConfigPanel()
+    end)
+end
+
+function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
+    if not spellID or spellID == 0 or not GetCVarBool("cooldownViewerEnabled") then
+        return nil
+    end
+
+    local child = self.viewerAuraFrames and self.viewerAuraFrames[spellID]
+    if DoesViewerChildMatchSpellID(child, spellID) then
+        return child
+    end
+
+    child = FindChildInViewers(VIEWER_NAMES, spellID, true)
+    if DoesViewerChildMatchSpellID(child, spellID) then
+        self.viewerAuraFrames[spellID] = child
+        return child
+    end
+
+    if self.viewerAuraFrames then
+        self.viewerAuraFrames[spellID] = nil
+    end
+    return nil
 end
 
 -- Build a mapping from spellID → Blizzard cooldown viewer child frame.
