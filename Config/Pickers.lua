@@ -63,11 +63,24 @@ local function IsVisibleSafe(region)
     return IsAccessibleBoolean(visible)
 end
 
-local function GetAccessibleRect(region)
+local function IsRectMeasurementSafe(region)
     if not region or not region.GetRect then
-        return nil, nil, nil, nil
+        return false
     end
     if region.IsForbidden and region:IsForbidden() then
+        return false
+    end
+    if region.IsAnchoringRestricted then
+        local isRestricted = GetAccessibleBoolean(region:IsAnchoringRestricted())
+        if isRestricted == nil or isRestricted then
+            return false
+        end
+    end
+    return true
+end
+
+local function GetAccessibleRect(region)
+    if not IsRectMeasurementSafe(region) then
         return nil, nil, nil, nil
     end
     local left, bottom, width, height = region:GetRect()
@@ -269,6 +282,20 @@ local function IsAddonFrame(name)
     return false
 end
 
+local function ResolveNamedMeasurableFrame(frame)
+    while frame do
+        if frame.IsForbidden and frame:IsForbidden() then
+            return nil, nil
+        end
+        local name = frame:GetName()
+        if name and name ~= "" and not IsAddonFrame(name) and IsRectMeasurementSafe(frame) then
+            return frame, name
+        end
+        frame = frame:GetParent()
+    end
+    return nil, nil
+end
+
 ------------------------------------------------------------------------
 -- Helper: Check if a frame has visible content (not an empty container)
 ------------------------------------------------------------------------
@@ -388,19 +415,9 @@ local function StartPickFrame(callback, sourceGroupId)
             local foci = GetMouseFoci()
             local focus = foci and foci[1]
             if focus and focus ~= WorldFrame then
-                resolvedFrame, name = ResolveNamedFrame(focus)
-            end
-
-            -- If resolved to a blocked addon child, walk up for an allowed group frame
-            if name and IsAddonFrame(name) then
-                local parent = resolvedFrame:GetParent()
-                while parent do
-                    local pname = parent:GetName()
-                    if pname and pname ~= "" and not IsAddonFrame(pname) then
-                        resolvedFrame, name = parent, pname
-                        break
-                    end
-                    parent = parent:GetParent()
+                resolvedFrame, name = ResolveNamedMeasurableFrame(focus)
+                if not name then
+                    resolvedFrame, name = ResolveNamedFrame(focus)
                 end
             end
 
