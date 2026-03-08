@@ -26,6 +26,7 @@ local SetupTooltipScripts = ST._SetupTooltipScripts
 local SetAssistedHighlight = ST._SetAssistedHighlight
 local SetProcGlow = ST._SetProcGlow
 local SetAuraGlow = ST._SetAuraGlow
+local SetReadyGlow = ST._SetReadyGlow
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -120,11 +121,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Aura active glow elements (solid border + animated glow + pixel glow)
     button.auraGlow = CreateGlowContainer(button, 32)
 
+    -- Ready glow elements (glow while off cooldown)
+    button.readyGlow = CreateGlowContainer(button, 32)
+
     -- Frame levels: just above cooldown
     local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
     button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
     button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
     button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
+    button.readyGlow.solidFrame:SetFrameLevel(auraGlowLevel)
+    button.readyGlow.procFrame:SetFrameLevel(auraGlowLevel)
+    button.readyGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
 
     -- Apply custom cooldown text font settings
     local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
@@ -298,6 +305,17 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         end
         if button.auraGlow.pixelFrame then
             SetFrameClickThroughRecursive(button.auraGlow.pixelFrame, true, true)
+        end
+    end
+    if button.readyGlow then
+        if button.readyGlow.solidFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.solidFrame, true, true)
+        end
+        if button.readyGlow.procFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
+        end
+        if button.readyGlow.pixelFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.pixelFrame, true, true)
         end
     end
 
@@ -651,6 +669,22 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         end
         SetAuraGlow(button, showAuraGlow, pandemicOverride)
     end
+
+    -- Ready glow (glow while off cooldown)
+    if button.readyGlow then
+        local showReady = false
+        if button._readyGlowPreview then
+            showReady = true
+        elseif style.readyGlowStyle and style.readyGlowStyle ~= "none"
+               and not buttonData.isPassive
+               and not button._noCooldown
+               and (not style.readyGlowCombatOnly or inCombat)
+               and button._desatCooldownActive == false
+               and not (procOverlayActive and style.procGlowStyle ~= "none") then
+            showReady = true
+        end
+        SetReadyGlow(button, showReady)
+    end
 end
 
 function CooldownCompanion:UpdateButtonStyle(button, style)
@@ -675,6 +709,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._desatCooldownActive = nil
+    button._noCooldown = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
@@ -684,6 +719,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil
+    button._readyGlowActive = nil
     button._displaySpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
@@ -860,6 +896,17 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         SetAuraGlow(button, false)
     end
 
+    -- Update ready glow frames
+    if button.readyGlow then
+        button.readyGlow.solidFrame:SetAllPoints()
+        ApplyEdgePositions(button.readyGlow.solidTextures, button, button.style.readyGlowSize or 2)
+        FitHighlightFrame(button.readyGlow.procFrame, button, button.style.readyGlowSize or 32)
+        if button.readyGlow.pixelFrame then
+            button.readyGlow.pixelFrame:SetAllPoints()
+        end
+        SetReadyGlow(button, false)
+    end
+
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
 
@@ -907,13 +954,30 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
             SetFrameClickThroughRecursive(button.auraGlow.pixelFrame, true, true)
         end
     end
+    if button.readyGlow then
+        if button.readyGlow.solidFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.solidFrame, true, true)
+        end
+        if button.readyGlow.procFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
+        end
+        if button.readyGlow.pixelFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.pixelFrame, true, true)
+        end
+    end
 
-    -- Re-set aura glow frame levels after strata order
+    -- Re-set aura/ready glow frame levels after strata order
     if button.auraGlow then
         local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
         button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
         button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
         button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
+    end
+    if button.readyGlow then
+        local readyGlowLevel = button.cooldown:GetFrameLevel() + 1
+        button.readyGlow.solidFrame:SetFrameLevel(readyGlowLevel)
+        button.readyGlow.procFrame:SetFrameLevel(readyGlowLevel)
+        button.readyGlow.pixelFrame:SetFrameLevel(readyGlowLevel)
     end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)

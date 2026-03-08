@@ -34,8 +34,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     local hidReasonAuraActive = false
     local hidReasonNoProc = false
 
-    -- Check hideWhileOnCooldown
-    if buttonData.hideWhileOnCooldown then
+    -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
+    if buttonData.hideWhileOnCooldown and not button._noCooldown then
         if buttonData.hasCharges then
             -- Charged spells: hide when recharging or all charges consumed
             if button._mainCDShown or button._chargeRecharging then
@@ -54,8 +54,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         end
     end
 
-    -- Check hideWhileNotOnCooldown (inverse of hideWhileOnCooldown)
-    if buttonData.hideWhileNotOnCooldown then
+    -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
+    if buttonData.hideWhileNotOnCooldown and not button._noCooldown then
         if buttonData.hasCharges then
             -- Charged spells: hide only at max charges
             if not button._mainCDShown and not button._chargeRecharging then

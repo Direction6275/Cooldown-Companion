@@ -148,6 +148,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- For transforming spells (e.g. Command Demon → pet ability), use the
     -- current override spell for cooldown queries. _displaySpellId is set
     -- by UpdateButtonIcon on SPELL_UPDATE_ICON and creation.
+    -- Lazy-cache no-cooldown detection for spells (GCD-only, no real CD).
+    -- Computed once (nil → true/false), reset in UpdateButtonStyle on respec.
+    if button._noCooldown == nil then
+        if buttonData.type == "spell" and not buttonData.isPassive and not buttonData.hasCharges then
+            local baseCd = GetSpellBaseCooldown(buttonData.id)
+            button._noCooldown = (not baseCd or baseCd == 0)
+        else
+            button._noCooldown = false
+        end
+    end
+
     local cooldownSpellId = button._displaySpellId or buttonData.id
 
     -- Deferred icon refresh for cdmChildSlot buttons (set by OnSpellUpdateIcon).

@@ -826,6 +826,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Invalidate cached state
     button._desaturated = nil
     button._desatCooldownActive = nil
+    button._noCooldown = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil

@@ -1157,6 +1157,17 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
     }, opts)
 end
 
+local function BuildReadyGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "readyGlowStyle", colorKey = "readyGlowColor", colorLabel = "Glow Color",
+        sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed",
+        defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
+        enableLabel = "Show Ready Glow",
+        styleOptions = LCG_GLOW_STYLE_OPTIONS,
+        styleOrder = LCG_GLOW_STYLE_ORDER,
+    }, opts)
+end
+
 local function BuildPandemicBarControls(container, styleTable, refreshCallback, opts)
     BuildBarEffectControls(container, styleTable, refreshCallback, {
         colorKey = "barPandemicColor", colorLabel = "Pandemic Bar Color",
@@ -1419,6 +1430,7 @@ ST._BuildProcGlowControls = BuildProcGlowControls
 ST._BuildPandemicGlowControls = BuildPandemicGlowControls
 ST._BuildPandemicBarControls = BuildPandemicBarControls
 ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
+ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls

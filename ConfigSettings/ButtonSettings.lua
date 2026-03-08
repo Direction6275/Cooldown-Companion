@@ -33,6 +33,7 @@ local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
+local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
@@ -919,7 +920,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     local sectionOrder = {
         "borderSettings", "backgroundColor", "cooldownText", "auraText", "auraStackText",
         "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
-        "lossOfControl", "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator",
+        "lossOfControl", "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator", "readyGlow",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
     }
 
@@ -943,6 +944,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         procGlow = BuildProcGlowControls,
         pandemicGlow = BuildPandemicGlowControls,
         auraIndicator = BuildAuraIndicatorControls,
+        readyGlow = BuildReadyGlowControls,
         barColors = BuildBarColorsControls,
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
@@ -950,8 +952,19 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         barActiveAura = BuildBarActiveAuraControls,
     }
 
+    -- Detect no-cooldown spells to skip irrelevant override sections
+    local isNoCooldownSpell = false
+    if buttonData.type == "spell" and not buttonData.isPassive and not buttonData.hasCharges then
+        local baseCd = GetSpellBaseCooldown(buttonData.id)
+        isNoCooldownSpell = (not baseCd or baseCd == 0)
+    end
+
     for _, sectionId in ipairs(sectionOrder) do
         if buttonData.overrideSections[sectionId] then
+            -- Skip readyGlow/desaturation for no-CD spells (meaningless — never triggers)
+            if isNoCooldownSpell and (sectionId == "readyGlow" or sectionId == "desaturation") then
+                -- skip
+            else
             local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
             -- Skip sections not applicable to current display mode
             if sectionDef and sectionDef.modes[displayMode] then
@@ -983,6 +996,8 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                         combatOnlyKey = "auraGlowCombatOnly"
                     elseif sectionId == "pandemicGlow" or sectionId == "pandemicBar" then
                         combatOnlyKey = "pandemicGlowCombatOnly"
+                    elseif sectionId == "readyGlow" then
+                        combatOnlyKey = "readyGlowCombatOnly"
                     elseif sectionId == "assistedHighlight" then
                         combatOnlyKey = "assistedHighlightCombatOnly"
                     end
@@ -1066,11 +1081,22 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                             end
                         end)
                         scroll:AddChild(pandemicPreviewBtn)
+                    elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
+                        local readyPreviewBtn = AceGUI:Create("Button")
+                        readyPreviewBtn:SetText("Preview Ready Glow (3s)")
+                        readyPreviewBtn:SetFullWidth(true)
+                        readyPreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayReadyGlowPreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(readyPreviewBtn)
                     end
 
                 end
                 end
             end
+            end -- isNoCooldownSpell gate
         end
     end
 end

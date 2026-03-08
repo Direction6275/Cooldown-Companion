@@ -99,6 +99,22 @@ local function AllSelectedAre(group, field)
     return true
 end
 
+-- Returns true if a button has no real cooldown (GCD-only spell)
+local function IsNoCooldownSpell(bd)
+    if not bd or bd.type ~= "spell" or bd.isPassive or bd.hasCharges then return false end
+    local baseCd = GetSpellBaseCooldown(bd.id)
+    return not baseCd or baseCd == 0
+end
+
+-- Returns true if all selected buttons are no-cooldown spells
+local function AllSelectedNoCooldown(group)
+    for idx in pairs(CS.selectedButtons) do
+        local bd = group.buttons[idx]
+        if bd and not IsNoCooldownSpell(bd) then return false end
+    end
+    return true
+end
+
 -- Returns true if any selected item button is equippable
 local function AnySelectedEquippable(group)
     for idx in pairs(CS.selectedButtons) do
@@ -319,7 +335,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local allPassive
     if isBatch then allPassive = AllSelectedAre(group, "isPassive")
     else allPassive = buttonData.isPassive end
-    if not allPassive then
+    local allNoCooldown
+    if isBatch then allNoCooldown = AllSelectedNoCooldown(group)
+    else allNoCooldown = IsNoCooldownSpell(buttonData) end
+    if not allPassive and not allNoCooldown then
     local hideCDCb = AceGUI:Create("CheckBox")
     hideCDCb:SetLabel("Hide While On Cooldown")
     SetCheckboxValue(hideCDCb, "hideWhileOnCooldown")
