@@ -1181,6 +1181,51 @@ local function ComputeBounds(nodeSet)
     return mnX, mxX, mnY, mxY
 end
 
+-- Iteratively trim extremes where the gap to the next value exceeds the
+-- remaining range — detects nodes far outside the main cluster.
+local function TrimOutlierRange(sorted)
+    local lo, hi = 1, #sorted
+    while hi > lo + 1 and (sorted[hi] - sorted[hi - 1]) > (sorted[hi - 1] - sorted[lo]) do
+        hi = hi - 1
+    end
+    while lo < hi - 1 and (sorted[lo + 1] - sorted[lo]) > (sorted[hi] - sorted[lo + 1]) do
+        lo = lo + 1
+    end
+    return sorted[lo], sorted[hi]
+end
+
+local function ComputeTrimmedBounds(nodeSet)
+    if #nodeSet < 4 then
+        return ComputeBounds(nodeSet)
+    end
+    local xs, ys = {}, {}
+    for _, n in ipairs(nodeSet) do
+        xs[#xs + 1] = n.px
+        ys[#ys + 1] = n.py
+    end
+    table.sort(xs)
+    table.sort(ys)
+    -- Per-axis outlier fences
+    local fenceMinX, fenceMaxX = TrimOutlierRange(xs)
+    local fenceMinY, fenceMaxY = TrimOutlierRange(ys)
+    -- Recompute bounds excluding nodes outside either fence, so an
+    -- X-outlier's Y value doesn't inflate the Y range (and vice versa).
+    local mnX, mxX, mnY, mxY = math.huge, -math.huge, math.huge, -math.huge
+    for _, n in ipairs(nodeSet) do
+        if n.px >= fenceMinX and n.px <= fenceMaxX
+            and n.py >= fenceMinY and n.py <= fenceMaxY then
+            if n.px < mnX then mnX = n.px end
+            if n.px > mxX then mxX = n.px end
+            if n.py < mnY then mnY = n.py end
+            if n.py > mxY then mxY = n.py end
+        end
+    end
+    if mnX == math.huge then
+        return ComputeBounds(nodeSet)
+    end
+    return mnX, mxX, mnY, mxY
+end
+
 local function FindEntryByID(entries, entryID)
     if not entries or not entryID then
         return nil
@@ -1208,8 +1253,8 @@ local function GetPrimaryDisplayEntry(entries, nodeID)
 end
 
 local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
-                                  panelMinX, panelMinY, panelScale,
-                                  btnIndex, nodeIDToBtn)
+                                  panelMinX, panelMinY, panelMaxX, panelMaxY,
+                                  panelScale, btnIndex, nodeIDToBtn)
     for _, node in ipairs(nodeSet) do
         btnIndex = btnIndex + 1
         local btn = nodeButtons[btnIndex]
@@ -1218,15 +1263,21 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
             nodeButtons[btnIndex] = btn
         end
 
-        local x = panelOffsetX + (node.px - panelMinX) * panelScale + NODE_PADDING
-        local y = yOffset + (node.py - panelMinY) * panelScale + NODE_PADDING
+        -- Hide nodes that fall outside the trimmed bounds (outliers).
+        if node.px < panelMinX or node.px > panelMaxX
+            or node.py < panelMinY or node.py > panelMaxY then
+            btn:Hide()
+        else
+            local x = panelOffsetX + (node.px - panelMinX) * panelScale + NODE_PADDING
+            local y = yOffset + (node.py - panelMinY) * panelScale + NODE_PADDING
 
-        btn:SetParent(scrollChild)
-        btn:SetFrameStrata(scrollChild:GetFrameStrata())
-        btn:SetFrameLevel((scrollChild:GetFrameLevel() or 0) + 5)
-        btn:ClearAllPoints()
-        btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", x, -y)
-        btn:Show()
+            btn:SetParent(scrollChild)
+            btn:SetFrameStrata(scrollChild:GetFrameStrata())
+            btn:SetFrameLevel((scrollChild:GetFrameLevel() or 0) + 5)
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", x, -y)
+            btn:Show()
+        end
 
         -- Display: choice rows prefer the conditioned option, then the first option.
         local primaryEntry = node.isChoice
@@ -1284,7 +1335,7 @@ local function DrawEdgesInPanel(scrollChild, panelNodes, nodeIDToBtn, edgePool)
             if srcBtn then
                 for _, edge in ipairs(node.visibleEdges) do
                     local dstBtn = panelNodeIDs[edge.targetNode] and nodeIDToBtn[edge.targetNode] or nil
-                    if dstBtn then
+                    if dstBtn and srcBtn:IsShown() and dstBtn:IsShown() then
                         lineIndex = lineIndex + 1
                         local line = edgePool[lineIndex]
                         if not line then
@@ -1320,17 +1371,19 @@ local function RenderNodePanel(panelFrame, nodeSet, nodeIDToBtn, edgePool, btnIn
     local panelTopPadding = topPadding or 0
     local usableW = math_max(frameW - NODE_PADDING * 2, NODE_SIZE)
     local usableH = math_max(frameH - panelTopPadding - NODE_PADDING * 2, NODE_SIZE)
-    local minX, maxX, minY, maxY = ComputeBounds(nodeSet)
+    local minX, maxX, minY, maxY = ComputeTrimmedBounds(nodeSet)
     local treeW = maxX - minX + NODE_SIZE
     local treeH = maxY - minY + NODE_SIZE
     local scaleX = treeW > 0 and usableW / treeW or 1
     local scaleY = treeH > 0 and usableH / treeH or 1
-    local scale = math_min(scaleX, scaleY, 1.0)
+    local scale = math_min(scaleX, scaleY)
     local contentW = treeW * scale + NODE_PADDING * 2
     local offsetX = math_max(0, (frameW - contentW) * 0.5)
+    local contentH = treeH * scale + NODE_PADDING * 2
+    local offsetY = math_max(0, (frameH - panelTopPadding - contentH) * 0.5)
 
-    btnIndex = PlaceNodesInPanel(panelFrame, nodeSet, offsetX, panelTopPadding,
-        minX, minY, scale, btnIndex, nodeIDToBtn)
+    btnIndex = PlaceNodesInPanel(panelFrame, nodeSet, offsetX, panelTopPadding + offsetY,
+        minX, minY, maxX, maxY, scale, btnIndex, nodeIDToBtn)
     DrawEdgesInPanel(panelFrame, nodeSet, nodeIDToBtn, edgePool)
 
     return btnIndex
@@ -1362,7 +1415,7 @@ local function RenderHeroChoiceList(panelFrame, nodeSet, nodeIDToBtn, btnIndex)
 
     for _, node in ipairs(orderedNodes) do
         btnIndex = PlaceNodesInPanel(panelFrame, { node }, centeredX - NODE_PADDING, nextY - NODE_PADDING,
-            node.px, node.py, 0, btnIndex, nodeIDToBtn)
+            node.px, node.py, node.px, node.py, 0, btnIndex, nodeIDToBtn)
         nextY = nextY + NODE_SIZE + 10
     end
 
