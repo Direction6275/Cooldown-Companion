@@ -937,41 +937,111 @@ local function RefreshColumn2()
                 local sourceGroupId = CS.selectedGroup
                 local sourceIndex = i
                 local entryData = buttonData
-                UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level)
-                    -- Duplicate option
-                    local dupInfo = UIDropDownMenu_CreateInfo()
-                    dupInfo.text = "Duplicate"
-                    dupInfo.notCheckable = true
-                    dupInfo.func = function()
-                        -- Deep copy the button data
-                        local copy = {}
-                        for k, v in pairs(entryData) do
-                            if type(v) == "table" then
-                                copy[k] = {}
-                                for k2, v2 in pairs(v) do
-                                    copy[k][k2] = v2
+                UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
+                    level = level or 1
+                    if level == 1 then
+                        -- Duplicate option
+                        local dupInfo = UIDropDownMenu_CreateInfo()
+                        dupInfo.text = "Duplicate"
+                        dupInfo.notCheckable = true
+                        dupInfo.func = function()
+                            local copy = CopyTable(entryData)
+                            table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                            CooldownCompanion:RefreshConfigPanel()
+                            CloseDropDownMenus()
+                        end
+                        UIDropDownMenu_AddButton(dupInfo, level)
+                        -- Move to... submenu
+                        local moveInfo = UIDropDownMenu_CreateInfo()
+                        moveInfo.text = "Move to..."
+                        moveInfo.notCheckable = true
+                        moveInfo.hasArrow = true
+                        moveInfo.menuList = "MOVE_TO_GROUP"
+                        UIDropDownMenu_AddButton(moveInfo, level)
+                        -- Remove option
+                        local removeInfo = UIDropDownMenu_CreateInfo()
+                        removeInfo.text = "Remove"
+                        removeInfo.notCheckable = true
+                        removeInfo.func = function()
+                            CloseDropDownMenus()
+                            local name = entryData.name or "this entry"
+                            ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
+                        end
+                        UIDropDownMenu_AddButton(removeInfo, level)
+                    elseif menuList == "MOVE_TO_GROUP" then
+                        local db = CooldownCompanion.db.profile
+                        local folderGroups, looseGroups = {}, {}
+                        for id, group in pairs(db.groups) do
+                            if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                                local gName = group.name or ("Group " .. id)
+                                if group.folderId and db.folders[group.folderId] then
+                                    folderGroups[group.folderId] = folderGroups[group.folderId] or {}
+                                    table.insert(folderGroups[group.folderId], { id = id, name = gName })
+                                else
+                                    table.insert(looseGroups, { id = id, name = gName })
                                 end
-                            else
-                                copy[k] = v
                             end
                         end
-                        -- Insert after current position
-                        table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
-                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                        CloseDropDownMenus()
+                        local sortedFolders = {}
+                        for fid, folder in pairs(db.folders) do
+                            if folderGroups[fid] then
+                                table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                            end
+                        end
+                        table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+                        local hasFolders = #sortedFolders > 0
+                        for _, folder in ipairs(sortedFolders) do
+                            local hdr = UIDropDownMenu_CreateInfo()
+                            hdr.text = folder.name
+                            hdr.isTitle = true
+                            hdr.notCheckable = true
+                            UIDropDownMenu_AddButton(hdr, level)
+                            table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
+                            for _, g in ipairs(folderGroups[folder.id]) do
+                                local info = UIDropDownMenu_CreateInfo()
+                                info.text = g.name
+                                info.notCheckable = true
+                                info.func = function()
+                                    table.insert(db.groups[g.id].buttons, entryData)
+                                    table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                    CooldownCompanion:RefreshGroupFrame(g.id)
+                                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                    CS.selectedButton = nil
+                                    wipe(CS.selectedButtons)
+                                    CooldownCompanion:RefreshConfigPanel()
+                                    CloseDropDownMenus()
+                                end
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+                        end
+                        if #looseGroups > 0 then
+                            if hasFolders then
+                                local hdr = UIDropDownMenu_CreateInfo()
+                                hdr.text = "No Folder"
+                                hdr.isTitle = true
+                                hdr.notCheckable = true
+                                UIDropDownMenu_AddButton(hdr, level)
+                            end
+                            table.sort(looseGroups, function(a, b) return a.name < b.name end)
+                            for _, g in ipairs(looseGroups) do
+                                local info = UIDropDownMenu_CreateInfo()
+                                info.text = g.name
+                                info.notCheckable = true
+                                info.func = function()
+                                    table.insert(db.groups[g.id].buttons, entryData)
+                                    table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                    CooldownCompanion:RefreshGroupFrame(g.id)
+                                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                    CS.selectedButton = nil
+                                    wipe(CS.selectedButtons)
+                                    CooldownCompanion:RefreshConfigPanel()
+                                    CloseDropDownMenus()
+                                end
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+                        end
                     end
-                    UIDropDownMenu_AddButton(dupInfo, level)
-                    -- Remove option
-                    local removeInfo = UIDropDownMenu_CreateInfo()
-                    removeInfo.text = "Remove"
-                    removeInfo.notCheckable = true
-                    removeInfo.func = function()
-                        CloseDropDownMenus()
-                        local name = entryData.name or "this entry"
-                        ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
-                    end
-                    UIDropDownMenu_AddButton(removeInfo, level)
                 end, "MENU")
                 CS.buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
                 ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
@@ -984,21 +1054,65 @@ local function RefreshColumn2()
                 local entryData = buttonData
                 UIDropDownMenu_Initialize(CS.moveMenuFrame, function(self, level)
                     local db = CooldownCompanion.db.profile
-                    local groupIds = {}
-                    for id in pairs(db.groups) do
-                        if CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
-                            table.insert(groupIds, id)
+                    local folderGroups, looseGroups = {}, {}
+                    for id, group in pairs(db.groups) do
+                        if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                            local gName = group.name or ("Group " .. id)
+                            if group.folderId and db.folders[group.folderId] then
+                                folderGroups[group.folderId] = folderGroups[group.folderId] or {}
+                                table.insert(folderGroups[group.folderId], { id = id, name = gName })
+                            else
+                                table.insert(looseGroups, { id = id, name = gName })
+                            end
                         end
                     end
-                    table.sort(groupIds)
-                    for _, gid in ipairs(groupIds) do
-                        if gid ~= sourceGroupId then
+                    local sortedFolders = {}
+                    for fid, folder in pairs(db.folders) do
+                        if folderGroups[fid] then
+                            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                        end
+                    end
+                    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+                    local hasFolders = #sortedFolders > 0
+                    for _, folder in ipairs(sortedFolders) do
+                        local hdr = UIDropDownMenu_CreateInfo()
+                        hdr.text = folder.name
+                        hdr.isTitle = true
+                        hdr.notCheckable = true
+                        UIDropDownMenu_AddButton(hdr, level)
+                        table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
+                        for _, g in ipairs(folderGroups[folder.id]) do
                             local info = UIDropDownMenu_CreateInfo()
-                            info.text = db.groups[gid].name
+                            info.text = g.name
                             info.func = function()
-                                table.insert(db.groups[gid].buttons, entryData)
+                                table.insert(db.groups[g.id].buttons, entryData)
                                 table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                CooldownCompanion:RefreshGroupFrame(gid)
+                                CooldownCompanion:RefreshGroupFrame(g.id)
+                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                                CooldownCompanion:RefreshConfigPanel()
+                                CloseDropDownMenus()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+                        end
+                    end
+                    if #looseGroups > 0 then
+                        if hasFolders then
+                            local hdr = UIDropDownMenu_CreateInfo()
+                            hdr.text = "No Folder"
+                            hdr.isTitle = true
+                            hdr.notCheckable = true
+                            UIDropDownMenu_AddButton(hdr, level)
+                        end
+                        table.sort(looseGroups, function(a, b) return a.name < b.name end)
+                        for _, g in ipairs(looseGroups) do
+                            local info = UIDropDownMenu_CreateInfo()
+                            info.text = g.name
+                            info.func = function()
+                                table.insert(db.groups[g.id].buttons, entryData)
+                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                CooldownCompanion:RefreshGroupFrame(g.id)
                                 CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                                 CS.selectedButton = nil
                                 wipe(CS.selectedButtons)
