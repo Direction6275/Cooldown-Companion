@@ -850,23 +850,7 @@ end
 ------------------------------------------------------------------------
 -- Helper: Check if a spell is in CDM Essential or Utility categories
 ------------------------------------------------------------------------
-local function IsSpellInCDMCooldown(spellId)
-    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info then
-                    if info.spellID == spellId or info.overrideSpellID == spellId
-                       or info.overrideTooltipSpellID == spellId then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
+local IsSpellInCDMCooldown = ST.IsSpellInCDMCooldown
 
 ------------------------------------------------------------------------
 -- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)

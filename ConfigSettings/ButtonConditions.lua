@@ -15,7 +15,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
-local IsActiveSpellBookSpell = ST.IsActiveSpellBookSpell
+local HasTooltipCooldown = ST.HasTooltipCooldown
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -105,7 +105,7 @@ end
 local function IsNoCooldownSpell(bd)
     if not bd or bd.type ~= "spell" or bd.isPassive or bd.hasCharges then return false end
     local baseCd = GetSpellBaseCooldown(bd.id)
-    return (not baseCd or baseCd == 0) and not IsActiveSpellBookSpell(bd.id)
+    return (not baseCd or baseCd == 0) and not HasTooltipCooldown(bd.id)
 end
 
 -- Returns true if all selected buttons are no-cooldown spells
