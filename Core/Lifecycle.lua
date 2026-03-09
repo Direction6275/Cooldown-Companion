@@ -162,6 +162,7 @@ function CooldownCompanion:OnEnable()
         self._unitTargetFrame = CreateFrame("Frame")
         self._unitTargetFrame:SetScript("OnEvent", function()
             self._cooldownsDirty = true
+            self:UpdateAllCooldowns()
         end)
     end
     self._unitTargetFrame:RegisterUnitEvent("UNIT_TARGET", "player")

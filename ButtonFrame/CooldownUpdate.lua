@@ -41,7 +41,7 @@ local IsConfigButtonForceVisible = ST.IsConfigButtonForceVisible
 
 -- IsItemEquippable from Helpers (exported on CooldownCompanion)
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
-local TARGET_SWITCH_HOLD_SECS = 0.45
+local TARGET_SWITCH_SAFETY_CAP = 0.60
 
 local function GetViewerNameFontString(viewerFrame)
     -- BuffBar viewer items render name text on Bar.Name. BuffIcon entries have no name text.
@@ -274,7 +274,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     auraOverrideActive = true
                     fetchOk = true
                 end
-            elseif not button._targetSwitchAt then
+            else
                 -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
                 -- Covers spells where the viewer tracks the buff duration internally
                 -- (auraDataUnit set by GetAuraData) but doesn't expose auraInstanceID.
@@ -383,19 +383,32 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 fetchOk = true
             end
         end
-        -- Grace period: if aura data is momentarily unavailable (target switch,
-        -- ~250-430ms) but we had an active aura DurationObject last tick, keep
-        -- aura state alive.  Restoring _durationObj preserves bar fill, color,
-        -- and time text.
-        -- Target-switch path: _targetSwitchAt set → time-bounded hold (skip stale
-        -- DurationObject expiry which references old target's aura instance).
-        -- Player path: DurationObject fast-path + 3-tick counter.
+        -- Grace period: if aura data is momentarily unavailable but we had an
+        -- active aura DurationObject last tick, keep aura state alive.
+        -- Restoring _durationObj preserves bar fill, color, and time text.
+        -- Target-switch path: holds until UNIT_AURA confirms data received
+        -- (debuff absent on new target) or primary path provides fresh data.
+        -- Player path: DurationObject expiry + 3-tick counter.
         if not auraOverrideActive and button._auraActive
            and prevAuraDurationObj and not buttonData.isPassive then
             local expired = false
             if button._targetSwitchAt then
-                -- Target-switch hold: time-bounded, skip stale DurationObject expiry
-                expired = (GetTime() - button._targetSwitchAt) > TARGET_SWITCH_HOLD_SECS
+                -- CDM processes UNIT_TARGET before PLAYER_TARGET_CHANGED,
+                -- so the viewer frame already reflects the new target.
+                -- If CDM has no aura data, the debuff is confirmed absent.
+                if viewerFrame and not viewerFrame.auraInstanceID then
+                    local vc = viewerFrame.Cooldown
+                    if not (viewerFrame.auraDataUnit and vc and vc:IsShown()) then
+                        expired = true
+                    end
+                end
+                if not expired then
+                    if button._targetSwitchDataReceived then
+                        expired = true
+                    else
+                        expired = (GetTime() - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
+                    end
+                end
             elseif not prevAuraDurationObj:HasSecretValues() then
                 expired = prevAuraDurationObj:GetRemainingDuration() <= 0
             end
@@ -410,6 +423,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             else
                 button._auraGraceTicks = nil
                 button._targetSwitchAt = nil
+                button._targetSwitchDataReceived = nil
             end
         else
             button._auraGraceTicks = nil
@@ -417,17 +431,34 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if auraOverrideActive and button._durationObj then
                     -- Primary path provided fresh DurationObject: hold complete
                     button._targetSwitchAt = nil
+                    button._targetSwitchDataReceived = nil
                 elseif not button._auraActive then
                     -- Safety: _auraActive already false, clear stale hold
                     button._targetSwitchAt = nil
+                    button._targetSwitchDataReceived = nil
                 end
             end
         end
         -- Target-switch hold catch-all: preserve _auraActive for buttons
         -- without a previous DurationObject (tracked via fallback path only)
         if not auraOverrideActive and button._targetSwitchAt and button._auraActive then
-            if (GetTime() - button._targetSwitchAt) > TARGET_SWITCH_HOLD_SECS then
+            local catchAllExpired
+            if viewerFrame and not viewerFrame.auraInstanceID then
+                local vc = viewerFrame.Cooldown
+                if not (viewerFrame.auraDataUnit and vc and vc:IsShown()) then
+                    catchAllExpired = true
+                end
+            end
+            if not catchAllExpired then
+                if button._targetSwitchDataReceived then
+                    catchAllExpired = true
+                else
+                    catchAllExpired = (GetTime() - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
+                end
+            end
+            if catchAllExpired then
                 button._targetSwitchAt = nil
+                button._targetSwitchDataReceived = nil
             else
                 button._durationObj = prevAuraDurationObj
                 auraOverrideActive = true

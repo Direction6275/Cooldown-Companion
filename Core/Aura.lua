@@ -8,6 +8,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+
 local ipairs = ipairs
 local pairs = pairs
 local wipe = wipe
@@ -54,6 +55,17 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
         end)
     end
 
+    -- Signal that the server has delivered target aura data, so the hold
+    -- logic in CooldownUpdate can terminate early instead of waiting for the
+    -- safety cap timeout.
+    if unit == "target" then
+        self:ForEachButton(function(button)
+            if button._targetSwitchAt then
+                button._targetSwitchDataReceived = true
+            end
+        end)
+    end
+
     -- Update immediately — CDM viewer frames registered their event handlers
     -- before our addon loaded, so by the time this handler fires the CDM has
     -- already refreshed its children with fresh auraInstanceID data.
@@ -83,6 +95,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 button._auraActive = false
                 button._inPandemic = false
                 button._targetSwitchAt = nil
+                button._targetSwitchDataReceived = nil
             end
         end
     end)
@@ -96,8 +109,8 @@ function CooldownCompanion:OnTargetChanged()
         return
     end
     -- New target: clear stale instance IDs so the viewer path doesn't
-    -- read old auraInstanceIDs.  Keep _auraActive so the grace period
-    -- can provide a brief (~450ms) holdover while CDM refreshes.
+    -- read old auraInstanceIDs.  Keep _auraActive so the hold can
+    -- maintain visual continuity while CDM refreshes.
     local now = GetTime()
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
@@ -113,10 +126,16 @@ function CooldownCompanion:OnTargetChanged()
                 button._auraInstanceID = nil
                 button._inPandemic = false
                 button._targetSwitchAt = now
+                button._targetSwitchDataReceived = nil
             end
         end
     end)
-    self._cooldownsDirty = true
+    -- Synchronous probe: CDM viewer frames register their event handlers on
+    -- Blizzard frames created before addons load.  If UNIT_TARGET has already
+    -- been processed by the time PLAYER_TARGET_CHANGED fires, the CDM children
+    -- will have fresh auraInstanceID data.  Probing immediately lets the
+    -- primary path clear _targetSwitchAt in the same frame — zero hold.
+    self:UpdateAllCooldowns()
 end
 
 
