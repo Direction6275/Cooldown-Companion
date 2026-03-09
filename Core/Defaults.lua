@@ -116,6 +116,7 @@ local defaults = {
                         readyGlowThickness = 2,
                         readyGlowSpeed = 60,
                         readyGlowCombatOnly = false,
+                        readyGlowDuration = 0,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
                         barAuraEffect = "color",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -243,6 +244,7 @@ local defaults = {
             readyGlowThickness = 2,
             readyGlowSpeed = 60,
             readyGlowCombatOnly = false,
+            readyGlowDuration = 0,
             barAuraColor = {0.2, 1.0, 0.2, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -506,7 +508,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     readyGlow = {
         label = "Ready Glow",
-        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowCombatOnly"},
+        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowCombatOnly", "readyGlowDuration"},
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab

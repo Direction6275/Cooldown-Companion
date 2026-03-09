@@ -785,6 +785,31 @@ local function BuildEffectsTab(container)
     container:AddChild(readyCombatCb)
     ApplyCheckboxIndent(readyCombatCb, 20)
 
+    local readyDurCb = AceGUI:Create("CheckBox")
+    readyDurCb:SetLabel("Auto-Hide After Duration")
+    readyDurCb:SetValue((style.readyGlowDuration or 0) > 0)
+    readyDurCb:SetFullWidth(true)
+    readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.readyGlowDuration = val and 3 or 0
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(readyDurCb)
+    ApplyCheckboxIndent(readyDurCb, 20)
+
+    if (style.readyGlowDuration or 0) > 0 then
+        local readyDurSlider = AceGUI:Create("Slider")
+        readyDurSlider:SetLabel("Duration (seconds)")
+        readyDurSlider:SetSliderValues(0.5, 5, 0.5)
+        readyDurSlider:SetValue(style.readyGlowDuration or 3)
+        readyDurSlider:SetFullWidth(true)
+        readyDurSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.readyGlowDuration = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(readyDurSlider)
+    end
+
     BuildReadyGlowControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

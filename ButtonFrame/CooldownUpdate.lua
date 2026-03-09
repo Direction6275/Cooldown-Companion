@@ -877,6 +877,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Track on-CD → off-CD transition for ready glow duration timer.
+    -- desatWasActive is true only when the previous tick had an active cooldown,
+    -- so nil → false (initial load) does NOT set a start time.
+    if desatWasActive and button._desatCooldownActive == false then
+        button._readyGlowStartTime = GetTime()
+    elseif button._desatCooldownActive == true then
+        button._readyGlowStartTime = nil
+    end
+
     if not button._isBar then
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     end

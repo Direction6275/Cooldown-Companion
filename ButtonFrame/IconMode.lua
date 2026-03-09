@@ -681,7 +681,13 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
                and (not style.readyGlowCombatOnly or inCombat)
                and button._desatCooldownActive == false
                and not (procOverlayActive and style.procGlowStyle ~= "none") then
-            showReady = true
+            local dur = style.readyGlowDuration or 0
+            if dur > 0 then
+                showReady = button._readyGlowStartTime ~= nil
+                    and (GetTime() - button._readyGlowStartTime) <= dur
+            else
+                showReady = true
+            end
         end
         SetReadyGlow(button, showReady)
     end
@@ -709,6 +715,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._desatCooldownActive = nil
+    button._readyGlowStartTime = nil
     button._noCooldown = nil
     button._vertexR = nil
     button._vertexG = nil

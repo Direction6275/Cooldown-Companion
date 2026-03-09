@@ -1121,6 +1121,33 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 cont:AddChild(auraInvertCb)
                                 ApplyCheckboxIndent(auraInvertCb, 20)
                             end
+
+                            if sectionId == "readyGlow" then
+                                local durCb = AceGUI:Create("CheckBox")
+                                durCb:SetLabel("Auto-Hide After Duration")
+                                durCb:SetValue((overrides.readyGlowDuration or 0) > 0)
+                                durCb:SetFullWidth(true)
+                                durCb:SetCallback("OnValueChanged", function(widget, event, val)
+                                    overrides.readyGlowDuration = val and 3 or 0
+                                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end)
+                                cont:AddChild(durCb)
+                                ApplyCheckboxIndent(durCb, 20)
+
+                                if (overrides.readyGlowDuration or 0) > 0 then
+                                    local durSlider = AceGUI:Create("Slider")
+                                    durSlider:SetLabel("Duration (seconds)")
+                                    durSlider:SetSliderValues(0.5, 5, 0.5)
+                                    durSlider:SetValue(overrides.readyGlowDuration or 3)
+                                    durSlider:SetFullWidth(true)
+                                    durSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                        overrides.readyGlowDuration = val
+                                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                    end)
+                                    cont:AddChild(durSlider)
+                                end
+                            end
                         end
                     end
 
