@@ -714,17 +714,6 @@ local function OpenFormatEditor(style, groupId, opts)
         {"|cff00ff00{keybind}|r  Keybind text", 1, 1, 1},
         {"|cff00ff00{status}|r  Shows ready, cooldown, or aura automatically", 1, 1, 1},
         {"|cff00ff00{icon}|r  Inline spell icon", 1, 1, 1},
-        " ",
-        {"Visual Effects", 1, 0.82, 0},
-        " ",
-        {"|cffcc44ff{pulse}...{/pulse}|r  Smooth alpha oscillation", 1, 1, 1},
-        " ",
-        {"Color Overrides", 1, 0.82, 0},
-        " ",
-        {"|cff44bbff{cooldown}...{/cooldown}|r  Force cooldown color", 1, 1, 1},
-        {"|cff44bbff{ready}...{/ready}|r  Force ready color", 1, 1, 1},
-        {"|cff44bbff{active}...{/active}|r  Force aura active color", 1, 1, 1},
-        {"|cff44bbff{custom}...{/custom}|r  User-defined custom color", 1, 1, 1},
     }, tokenHeading)
     tokenHeading.right:ClearAllPoints()
     tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)
