@@ -100,6 +100,21 @@ local function BuildDiagnosticSnapshot()
         resourceBarRuntime = CooldownCompanion:GetResourceBarRuntimeDebugInfo()
     end
 
+    local loadedAddons = {}
+    for i = 1, C_AddOns.GetNumAddOns() do
+        local name, title, _, loadable, reason, security = C_AddOns.GetAddOnInfo(i)
+        local isLoaded = C_AddOns.IsAddOnLoaded(i)
+        if isLoaded then
+            local version = C_AddOns.GetAddOnMetadata(i, "Version")
+            loadedAddons[#loadedAddons + 1] = {
+                name = name,
+                title = title,
+                version = version or "?",
+            }
+        end
+    end
+    table.sort(loadedAddons, function(a, b) return a.name < b.name end)
+
     snapshot.runtime = {
         currentInstanceType = CooldownCompanion._currentInstanceType,
         currentSpecId = CooldownCompanion._currentSpecId,
@@ -112,6 +127,7 @@ local function BuildDiagnosticSnapshot()
         rangeCheckSpells = rangeCheckSpells,
         groupFrameStates = groupFrameStates,
         resourceBarRuntime = resourceBarRuntime,
+        loadedAddons = loadedAddons,
     }
 
     -- Build spec name cache for all referenced spec IDs
@@ -282,6 +298,15 @@ local function FormatDiagnosticAsText(diag)
                 parts[#parts + 1] = "independent=true"
             end
             add("  " .. table.concat(parts, " "))
+        end
+    end
+
+    -- Loaded Addons
+    add("")
+    add("--- Loaded Addons (" .. tostring(r.loadedAddons and #r.loadedAddons or 0) .. ") ---")
+    if r.loadedAddons and #r.loadedAddons > 0 then
+        for _, addon in ipairs(r.loadedAddons) do
+            add(("  %s (v%s)"):format(addon.name, addon.version or "?"))
         end
     end
 
