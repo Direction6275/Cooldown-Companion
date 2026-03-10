@@ -321,16 +321,27 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
             end
         end
         GameTooltip:Show()
-        -- Expand tooltip width to fit the widest non-wrapping line
+        -- Expand tooltip width to fit the widest non-wrapping line.
+        -- Wrapping lines don't drive width directly but enforce a
+        -- comfortable minimum so wrapped text isn't cramped.
         local pad = 20
+        local wrapFloor = 250
         local maxW = 0
+        local hasWrap = false
         for i = 1, GameTooltip:NumLines() do
-            local fs = _G["GameTooltipTextLeft" .. i]
-            if fs then
-                local w = fs:GetUnboundedStringWidth()
-                if w > maxW then maxW = w end
+            local entry = tooltipLines[i]
+            local isWrapping = type(entry) == "table" and entry[5]
+            if isWrapping then
+                hasWrap = true
+            else
+                local fs = _G["GameTooltipTextLeft" .. i]
+                if fs then
+                    local w = fs:GetUnboundedStringWidth()
+                    if w > maxW then maxW = w end
+                end
             end
         end
+        if hasWrap and maxW < wrapFloor then maxW = wrapFloor end
         if maxW > 0 then
             GameTooltip:SetMinimumWidth(maxW + pad)
             GameTooltip:Show()
