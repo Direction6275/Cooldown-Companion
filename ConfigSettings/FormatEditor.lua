@@ -37,6 +37,7 @@ local COLOR_UNKNOWN      = "ffff4444"  -- red
 local COLOR_COND_PRESENT = "ffffff00"  -- yellow:  {?token} "show if present"
 local COLOR_COND_NEGATED = "ffff8844"  -- orange:  {!token} "show if empty"
 local COLOR_EFFECT       = "ffcc44ff"  -- purple:  {flash}, {pulse}, {glow}
+local COLOR_COLOR_TAG    = "ff44bbff"  -- blue:    {cooldown}, {ready}, {active}
 
 local function BuildSyntaxString(segments)
     -- Pass 1: pair cond_start with cond_end, and effect_start with effect_end
@@ -47,6 +48,10 @@ local function BuildSyntaxString(segments)
     local effectStack = {}
     local effectOpenMatched = {}
     local effectCloseMatched = {}
+
+    local colorStack = {}
+    local colorOpenMatched = {}
+    local colorCloseMatched = {}
 
     for i, seg in ipairs(segments) do
         if seg.type == "cond_start" then
@@ -68,6 +73,17 @@ local function BuildSyntaxString(segments)
                     effectOpenMatched[effectStack[j].index] = true
                     effectCloseMatched[i] = true
                     table.remove(effectStack, j)
+                    break
+                end
+            end
+        elseif seg.type == "color_start" then
+            colorStack[#colorStack + 1] = { index = i, value = seg.value }
+        elseif seg.type == "color_end" then
+            for j = #colorStack, 1, -1 do
+                if colorStack[j].value == seg.value then
+                    colorOpenMatched[colorStack[j].index] = true
+                    colorCloseMatched[i] = true
+                    table.remove(colorStack, j)
                     break
                 end
             end
@@ -104,6 +120,12 @@ local function BuildSyntaxString(segments)
             parts[#parts + 1] = "|c" .. color .. "{" .. seg.value .. "}|r"
         elseif seg.type == "effect_end" then
             local color = effectCloseMatched[i] and COLOR_EFFECT or COLOR_UNKNOWN
+            parts[#parts + 1] = "|c" .. color .. "{/" .. seg.value .. "}|r"
+        elseif seg.type == "color_start" then
+            local color = colorOpenMatched[i] and COLOR_COLOR_TAG or COLOR_UNKNOWN
+            parts[#parts + 1] = "|c" .. color .. "{" .. seg.value .. "}|r"
+        elseif seg.type == "color_end" then
+            local color = colorCloseMatched[i] and COLOR_COLOR_TAG or COLOR_UNKNOWN
             parts[#parts + 1] = "|c" .. color .. "{/" .. seg.value .. "}|r"
         end
     end
@@ -182,6 +204,32 @@ local function ValidateFormat(segments)
         end
     end
     for _, entry in ipairs(effectStack) do
+        warnings[#warnings + 1] = "{" .. entry.value .. "} is never closed"
+    end
+
+    -- Color tag pairing
+    local colorStack = {}
+    for i, seg in ipairs(segments) do
+        if seg.type == "color_start" then
+            colorStack[#colorStack + 1] = { value = seg.value, index = i }
+        elseif seg.type == "color_end" then
+            local found = false
+            for j = #colorStack, 1, -1 do
+                if colorStack[j].value == seg.value then
+                    if colorStack[j].index == i - 1 then
+                        warnings[#warnings + 1] = "Empty {" .. seg.value .. "}: add content between {" .. seg.value .. "} and {/" .. seg.value .. "}"
+                    end
+                    table.remove(colorStack, j)
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                warnings[#warnings + 1] = "{/" .. seg.value .. "} has no matching opener"
+            end
+        end
+    end
+    for _, entry in ipairs(colorStack) do
         warnings[#warnings + 1] = "{" .. entry.value .. "} is never closed"
     end
 
@@ -275,6 +323,13 @@ local function EvaluateMockPresence(tokenName, mockState)
     return false
 end
 
+local function ResolvePreviewColor(name, cdColor, readyColor, auraColor)
+    if name == "cooldown" then return cdColor
+    elseif name == "ready" then return readyColor
+    elseif name == "active" then return auraColor
+    end
+end
+
 local function PreviewSubstitute(segments, style, mockState)
     local parts = {}
     local baseColor = style.textFontColor or {1, 1, 1, 1}
@@ -291,6 +346,9 @@ local function PreviewSubstitute(segments, style, mockState)
     local auraActive = mockState.auraTime and mockState.auraTime > 0
     local timeVal = mockState.time
     local auraVal = mockState.auraTime
+
+    local colorOverride = nil
+    local colorStack = {}
 
     for _, seg in ipairs(segments) do
         if seg.type == "cond_start" then
@@ -313,8 +371,18 @@ local function PreviewSubstitute(segments, style, mockState)
             if seg.value == "pulse" then pulseDepth = pulseDepth + 1 end
         elseif seg.type == "effect_end" then
             if seg.value == "pulse" and pulseDepth > 0 then pulseDepth = pulseDepth - 1 end
+        elseif seg.type == "color_start" then
+            colorStack[#colorStack + 1] = colorOverride
+            colorOverride = ResolvePreviewColor(seg.value, cdColor, readyColor, auraColor)
+        elseif seg.type == "color_end" then
+            colorOverride = colorStack[#colorStack]
+            colorStack[#colorStack] = nil
         elseif seg.type == "literal" then
-            parts[#parts + 1] = seg.value
+            if colorOverride then
+                parts[#parts + 1] = WrapPreviewColor(seg.value, colorOverride)
+            else
+                parts[#parts + 1] = seg.value
+            end
             if pulseDepth > 0 then pulseActive = true end
         elseif seg.unknown then
             -- unknown tokens render empty
@@ -322,10 +390,10 @@ local function PreviewSubstitute(segments, style, mockState)
             local prevPartCount = #parts
             local token = seg.value
             if token == "name" then
-                parts[#parts + 1] = WrapPreviewColor(mockState.name or "Fireball", baseColor)
+                parts[#parts + 1] = WrapPreviewColor(mockState.name or "Fireball", colorOverride or baseColor)
             elseif token == "time" then
                 if timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(timeVal), cdColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(timeVal), colorOverride or cdColor)
                 end
             elseif token == "charges" then
                 if mockState.charges then
@@ -333,35 +401,35 @@ local function PreviewSubstitute(segments, style, mockState)
                     if mockState.charges == mockState.maxCharges then cc = chargeFull
                     elseif mockState.charges == 0 then cc = chargeZero
                     else cc = chargeMissing end
-                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.charges), cc)
+                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.charges), colorOverride or cc)
                 end
             elseif token == "maxcharges" then
                 if mockState.maxCharges and mockState.maxCharges > 1 then
-                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.maxCharges), baseColor)
+                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.maxCharges), colorOverride or baseColor)
                 end
             elseif token == "stacks" then
                 if mockState.stacks and mockState.stacks > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.stacks), baseColor)
+                    parts[#parts + 1] = WrapPreviewColor(tostring(mockState.stacks), colorOverride or baseColor)
                 end
             elseif token == "aura" then
                 if auraVal and auraVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(auraVal), auraColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(auraVal), colorOverride or auraColor)
                 end
             elseif token == "keybind" then
                 if mockState.keybind and mockState.keybind ~= "" then
-                    parts[#parts + 1] = WrapPreviewColor(mockState.keybind, baseColor)
+                    parts[#parts + 1] = WrapPreviewColor(mockState.keybind, colorOverride or baseColor)
                 end
             elseif token == "status" then
                 if auraActive then
                     if auraVal and auraVal > 0 then
-                        parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(auraVal), auraColor)
+                        parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(auraVal), colorOverride or auraColor)
                     else
-                        parts[#parts + 1] = WrapPreviewColor("Active", auraColor)
+                        parts[#parts + 1] = WrapPreviewColor("Active", colorOverride or auraColor)
                     end
                 elseif timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(timeVal), cdColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(timeVal), colorOverride or cdColor)
                 else
-                    parts[#parts + 1] = WrapPreviewColor(style.textReadyText or "Ready", readyColor)
+                    parts[#parts + 1] = WrapPreviewColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end
             elseif token == "icon" then
                 if mockState.icon then
@@ -456,7 +524,7 @@ local function OpenFormatEditor(style, groupId)
     local window = AceGUI:Create("Window")
     window:SetTitle("Format String Editor")
     window:SetWidth(400)
-    window:SetHeight(560)
+    window:SetHeight(620)
     window:SetLayout("List")
     window:EnableResize(false)
     formatEditorFrame = window
@@ -551,6 +619,8 @@ local function OpenFormatEditor(style, groupId)
         local anyPulse = false
         for i, mock in ipairs(mockStates) do
             local preview, hasPulse = PreviewSubstitute(segments, currentStyle, mock.state)
+            -- Flatten newlines for single-line preview rows
+            preview = preview:gsub("\n", " ")
             previewPrefixes[i]:SetText(mock.label)
             previewContents[i]:SetText(preview)
             previewPulse[i] = hasPulse
@@ -633,6 +703,12 @@ local function OpenFormatEditor(style, groupId)
         {"Visual Effects", 1, 0.82, 0},
         " ",
         {"|cffcc44ff{pulse}...{/pulse}|r  Smooth alpha oscillation", 1, 1, 1},
+        " ",
+        {"Color Overrides", 1, 0.82, 0},
+        " ",
+        {"|cff44bbff{cooldown}...{/cooldown}|r  Force cooldown color", 1, 1, 1},
+        {"|cff44bbff{ready}...{/ready}|r  Force ready color", 1, 1, 1},
+        {"|cff44bbff{active}...{/active}|r  Force aura active color", 1, 1, 1},
     }, tokenHeading)
     tokenHeading.right:ClearAllPoints()
     tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)
@@ -750,6 +826,52 @@ local function OpenFormatEditor(style, groupId)
         InsertAtCursor("{pulse}{/pulse}", 7)
     end)
     effectGroup:AddChild(pulseBtn)
+
+    -- ================================================================
+    -- COLOR INSERT BUTTONS
+    -- ================================================================
+    local colorHeading = AceGUI:Create("Heading")
+    colorHeading:SetText("Insert Color")
+    colorHeading:SetFullWidth(true)
+    window:AddChild(colorHeading)
+
+    local colorInfo = CreateInfoButton(colorHeading.frame, colorHeading.label, "LEFT", "RIGHT", 4, 0, {
+        {"Color Overrides", 1, 0.82, 0, true},
+        " ",
+        {"Wrap tokens or literal text to force a specific", 1, 1, 1, true},
+        {"color, overriding the token's default coloring.", 1, 1, 1, true},
+        " ",
+        {"|cff44bbff{cooldown}|r  Cooldown color (red by default)", 1, 1, 1, true},
+        {"|cff44bbff{ready}|r  Ready color (green by default)", 1, 1, 1, true},
+        {"|cff44bbff{active}|r  Aura active color (cyan by default)", 1, 1, 1, true},
+        " ",
+        {"Example:", 0.7, 0.7, 0.7, true},
+        {"{cooldown}{name}{/cooldown}", 0.7, 0.7, 0.7, true},
+        {"Shows the spell name in the cooldown color.", 0.7, 0.7, 0.7, true},
+        " ",
+        {"Nestable: inner color overrides outer.", 0.7, 0.7, 0.7, true},
+        {"Composes with conditionals and effects.", 0.7, 0.7, 0.7, true},
+    }, colorHeading)
+    colorHeading.right:ClearAllPoints()
+    colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
+    colorHeading.right:SetPoint("LEFT", colorInfo, "RIGHT", 4, 0)
+
+    local colorGroup = AceGUI:Create("SimpleGroup")
+    colorGroup:SetFullWidth(true)
+    colorGroup:SetLayout("Flow")
+    window:AddChild(colorGroup)
+
+    for _, colorName in ipairs({"cooldown", "ready", "active"}) do
+        local colorBtn = AceGUI:Create("Button")
+        colorBtn:SetText("{" .. colorName .. "}")
+        colorBtn:SetAutoWidth(true)
+        colorBtn:SetCallback("OnClick", function()
+            local open = "{" .. colorName .. "}"
+            local close = "{/" .. colorName .. "}"
+            InsertAtCursor(open .. close, #open)
+        end)
+        colorGroup:AddChild(colorBtn)
+    end
 
     -- ================================================================
     -- SAVE BUTTON

@@ -172,6 +172,12 @@ local function BuildTextAppearanceTab(container, group, style)
         {"Visual Effects", 1, 0.82, 0, true},
         " ",
         {"|cffcc44ff{pulse}...{/pulse}|r  Smooth alpha oscillation", 0.6, 1, 0.6, true},
+        " ",
+        {"Color Overrides", 1, 0.82, 0, true},
+        " ",
+        {"|cff44bbff{cooldown}...{/cooldown}|r  Force cooldown color", 0.6, 1, 0.6, true},
+        {"|cff44bbff{ready}...{/ready}|r  Force ready color", 0.6, 1, 0.6, true},
+        {"|cff44bbff{active}...{/active}|r  Force aura active color", 0.6, 1, 0.6, true},
     }, tabInfoButtons)
     fmtHeading.right:ClearAllPoints()
     fmtHeading.right:SetPoint("RIGHT", fmtHeading.frame, "RIGHT", -3, 0)
@@ -377,6 +383,24 @@ local function BuildTextEffectsTab(container, group, style)
         "  Pulse only when charges exist.",
         "",
         "Pulse affects the whole line's alpha.",
+        "",
+        "",
+        "|cffffffffColor Overrides:|r",
+        "",
+        "|cff44bbff{cooldown}...{/cooldown}|r  Force cooldown color",
+        "|cff44bbff{ready}...{/ready}|r  Force ready color",
+        "|cff44bbff{active}...{/active}|r  Force aura active color",
+        "",
+        "Overrides a token's default color:",
+        "|cff777777{cooldown}{name}{/cooldown}|r",
+        "  Shows the spell name in the cooldown color.",
+        "",
+        "Also colors literal text:",
+        "|cff777777{ready}Ready!{/ready}|r",
+        "  Shows 'Ready!' in the ready color.",
+        "",
+        "Nestable (inner overrides outer) and",
+        "composes with conditionals and effects.",
     }, "\n"))
     effectsLabel:SetFullWidth(true)
     container:AddChild(effectsLabel)

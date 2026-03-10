@@ -51,6 +51,12 @@ local KNOWN_EFFECTS = {
     pulse = true,
 }
 
+local KNOWN_COLORS = {
+    cooldown = true,
+    ready = true,
+    active = true,
+}
+
 local function ParseFormatString(fmt)
     local segments = {}
     local pos = 1
@@ -95,6 +101,8 @@ local function ParseFormatString(fmt)
                 segments[#segments + 1] = { type = "cond_end", value = condToken }
             elseif KNOWN_EFFECTS[condToken] then
                 segments[#segments + 1] = { type = "effect_end", value = condToken }
+            elseif KNOWN_COLORS[condToken] then
+                segments[#segments + 1] = { type = "color_end", value = condToken }
             else
                 segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace, closeBrace) }
             end
@@ -102,6 +110,8 @@ local function ParseFormatString(fmt)
             segments[#segments + 1] = { type = "token", value = inner }
         elseif KNOWN_EFFECTS[inner] then
             segments[#segments + 1] = { type = "effect_start", value = inner }
+        elseif KNOWN_COLORS[inner] then
+            segments[#segments + 1] = { type = "color_start", value = inner }
         else
             -- Unknown token — render as empty
             segments[#segments + 1] = { type = "token", value = inner, unknown = true }
@@ -187,6 +197,16 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
 end
 
 ------------------------------------------------------------------------
+-- COLOR TAG RESOLUTION
+------------------------------------------------------------------------
+local function ResolveColorName(name, cdColor, readyColor, auraColor)
+    if name == "cooldown" then return cdColor
+    elseif name == "ready" then return readyColor
+    elseif name == "active" then return auraColor
+    end
+end
+
+------------------------------------------------------------------------
 -- SUBSTITUTE TOKENS
 -- Builds the final display string from pre-parsed segments.
 -- Returns: displayText, secretValue (if one token resolved to a secret)
@@ -253,6 +273,10 @@ local function SubstituteTokens(button, segments, style, effectState)
     -- Pulse effect depth counter for {pulse}...{/pulse} wrapper tags
     local pulseDepth = 0
 
+    -- Color override state for {cooldown}...{/cooldown} etc.
+    local colorOverride = nil
+    local colorStack = {}
+
     for _, seg in ipairs(segments) do
         -- Conditional section handling
         if seg.type == "cond_start" then
@@ -282,8 +306,20 @@ local function SubstituteTokens(button, segments, style, effectState)
                 pulseDepth = pulseDepth - 1
             end
 
+        elseif seg.type == "color_start" then
+            colorStack[#colorStack + 1] = colorOverride
+            colorOverride = ResolveColorName(seg.value, cdColor, readyColor, auraColor)
+
+        elseif seg.type == "color_end" then
+            colorOverride = colorStack[#colorStack]
+            colorStack[#colorStack] = nil
+
         elseif seg.type == "literal" then
-            parts[#parts + 1] = seg.value
+            if colorOverride then
+                parts[#parts + 1] = WrapColor(seg.value, colorOverride)
+            else
+                parts[#parts + 1] = seg.value
+            end
             if pulseDepth > 0 and effectState then
                 effectState.pulseActive = true
             end
@@ -302,7 +338,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     local itemName = C_Item.GetItemNameByID(buttonData.id)
                     if itemName then name = itemName end
                 end
-                parts[#parts + 1] = WrapColor(name, baseColor)
+                parts[#parts + 1] = WrapColor(name, colorOverride or baseColor)
 
             elseif token == "time" then
                 if timeIsSecret then
@@ -312,7 +348,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = "%TIME%"
                 elseif timeRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), colorOverride or cdColor)
                 end
 
             elseif token == "charges" then
@@ -325,20 +361,20 @@ local function SubstituteTokens(button, segments, style, effectState)
                     else
                         cc = chargeMissing
                     end
-                    parts[#parts + 1] = WrapColor(tostring(currentCharges), cc)
+                    parts[#parts + 1] = WrapColor(tostring(currentCharges), colorOverride or cc)
                 end
 
             elseif token == "maxcharges" then
                 if maxCharges and maxCharges > 1 then
-                    parts[#parts + 1] = WrapColor(tostring(maxCharges), baseColor)
+                    parts[#parts + 1] = WrapColor(tostring(maxCharges), colorOverride or baseColor)
                 end
 
             elseif token == "stacks" then
                 local stackText = button._auraStackText
                 if stackText and stackText ~= "" then
-                    parts[#parts + 1] = WrapColor(stackText, baseColor)
+                    parts[#parts + 1] = WrapColor(stackText, colorOverride or baseColor)
                 elseif button._itemCount and button._itemCount > 0 then
-                    parts[#parts + 1] = WrapColor(tostring(button._itemCount), baseColor)
+                    parts[#parts + 1] = WrapColor(tostring(button._itemCount), colorOverride or baseColor)
                 end
 
             elseif token == "aura" then
@@ -349,13 +385,13 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = "%AURA%"
                 elseif auraRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), auraColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), colorOverride or auraColor)
                 end
 
             elseif token == "keybind" then
                 local kb = CooldownCompanion:GetKeybindText(buttonData)
                 if kb and kb ~= "" then
-                    parts[#parts + 1] = WrapColor(kb, baseColor)
+                    parts[#parts + 1] = WrapColor(kb, colorOverride or baseColor)
                 end
 
             elseif token == "status" then
@@ -367,9 +403,9 @@ local function SubstituteTokens(button, segments, style, effectState)
                         end
                         parts[#parts + 1] = "%STATUS%"
                     elseif auraRemaining then
-                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), auraColor)
+                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), colorOverride or auraColor)
                     else
-                        parts[#parts + 1] = WrapColor("Active", auraColor)
+                        parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
                 elseif timeIsSecret then
                     if not secretValue then
@@ -378,9 +414,9 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = "%STATUS%"
                 elseif timeRemaining and timeRemaining > 0 then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), colorOverride or cdColor)
                 else
-                    parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", readyColor)
+                    parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end
 
             elseif token == "icon" then
