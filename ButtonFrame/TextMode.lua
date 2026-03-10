@@ -20,7 +20,6 @@ local issecretvalue = issecretvalue
 local ApplyEdgePositions = ST._ApplyEdgePositions
 
 -- Imports from Glows
-local SetupTooltipScripts = ST._SetupTooltipScripts
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
@@ -140,7 +139,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     if tokenName == "name" then
         return true  -- spell/item always has a name
     elseif tokenName == "time" then
-        return (timeRemaining and timeRemaining > 0) or timeIsSecret
+        return timeIsSecret or (timeRemaining and timeRemaining > 0)
     elseif tokenName == "charges" then
         return button._currentReadableCharges ~= nil
     elseif tokenName == "maxcharges" then
@@ -151,7 +150,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
         if stackText and stackText ~= "" then return true end
         return button._itemCount and button._itemCount > 0
     elseif tokenName == "aura" then
-        return (auraRemaining and auraRemaining > 0) or auraIsSecret
+        return auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData)
         return kb and kb ~= ""
@@ -196,11 +195,11 @@ local function SubstituteTokens(button, segments, style)
     local durationIsSecret = false
     if button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
-        if rem and rem > 0 then
+        if rem then
             if issecretvalue(rem) then
                 durationIsSecret = true
                 durationRemaining = rem
-            else
+            elseif rem > 0 then
                 durationRemaining = rem
             end
         end
@@ -405,30 +404,6 @@ local function UpdateTextDisplay(button)
         button.textString:SetText(text)
     end
 
-    -- State-driven dynamic background
-    if style.textDynamicBackground then
-        local stateColor
-        if button._auraActive then
-            stateColor = style.textAuraColor or {0, 0.925, 1, 1}
-        elseif button._desatCooldownActive then
-            stateColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
-        else
-            stateColor = style.textReadyColor or {0.2, 1, 0.2, 1}
-        end
-        local intensity = style.textDynamicBgIntensity or 0.15
-        button.bg:SetColorTexture(stateColor[1], stateColor[2], stateColor[3], intensity)
-    end
-
-    -- Zebra striping (additive overlay on top of static/dynamic bg)
-    if button.zebraBg then
-        if style.textZebraStripe and button.index % 2 == 0 then
-            local zc = style.textZebraColor or {1, 1, 1, 0.04}
-            button.zebraBg:SetColorTexture(zc[1], zc[2], zc[3], zc[4])
-            button.zebraBg:Show()
-        else
-            button.zebraBg:Hide()
-        end
-    end
 end
 
 ------------------------------------------------------------------------
@@ -483,16 +458,6 @@ local function UpdateTextStyle(button, newStyle)
     local fmt = button.buttonData.textFormat or newStyle.textFormat or "{name}  {status}"
     button._textSegments = ParseFormatString(fmt)
 
-    -- Tooltip setup
-    local showTooltips = newStyle.showTextTooltips == true
-    if showTooltips then
-        SetupTooltipScripts(button)
-        button:EnableMouse(true)
-    else
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-        button:EnableMouse(false)
-    end
 end
 
 ------------------------------------------------------------------------
@@ -512,11 +477,6 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button.bg = button:CreateTexture(nil, "BACKGROUND", nil, 0)
     button.bg:SetAllPoints()
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-
-    -- Zebra stripe overlay (sublayer 1, above main bg)
-    button.zebraBg = button:CreateTexture(nil, "BACKGROUND", nil, 1)
-    button.zebraBg:SetAllPoints()
-    button.zebraBg:Hide()
 
     -- Border textures
     local borderSize = style.textBorderSize or 0
@@ -628,13 +588,6 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     -- Click-through (text buttons are non-interactive by default)
     SetFrameClickThroughRecursive(button, true, true)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
-
-    -- Tooltip setup
-    local showTooltips = style.showTextTooltips == true
-    if showTooltips then
-        SetupTooltipScripts(button)
-        button:EnableMouse(true)
-    end
 
     return button
 end
