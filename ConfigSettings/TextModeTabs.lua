@@ -478,3 +478,4 @@ end
 -- Exports
 ST._BuildTextAppearanceTab = BuildTextAppearanceTab
 ST._BuildTextEffectsTab = BuildTextEffectsTab
+ST._BuildFormatSummary = BuildFormatSummary

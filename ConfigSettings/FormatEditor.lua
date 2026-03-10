@@ -523,19 +523,19 @@ end
 ------------------------------------------------------------------------
 -- OPEN FORMAT EDITOR
 ------------------------------------------------------------------------
-local function OpenFormatEditor(style, groupId)
+local function OpenFormatEditor(style, groupId, opts)
     -- If already open, bring to front and refresh
     if formatEditorFrame then
         formatEditorFrame:Show()
         formatEditorFrame.frame:Raise()
         if formatEditorFrame._refresh then
-            formatEditorFrame._refresh(style, groupId)
+            formatEditorFrame._refresh(style, groupId, opts)
         end
         return
     end
 
     local window = AceGUI:Create("Window")
-    window:SetTitle("Format String Editor")
+    window:SetTitle((opts and opts.title) or "Format String Editor")
     window:SetWidth(400)
     window:SetHeight(660)
     window:SetLayout("List")
@@ -565,7 +565,9 @@ local function OpenFormatEditor(style, groupId)
     -- Track the raw (uncolored) format string separately.
     -- The EditBox text contains |c...|r color codes for native rendering;
     -- currentRawText is the actual format string the user is editing.
-    local currentRawText = style.textFormat or "{name}  {status}"
+    local currentFormatTarget = (opts and opts.saveTarget) or style
+    local currentDefaultFormat = (opts and opts.defaultFormat) or "{name}  {status}"
+    local currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
 
     -- Helper: colorize raw text and set into EditBox, preserving cursor position.
     local function ApplyColorized(rawText, rawCursorPos)
@@ -914,8 +916,8 @@ local function OpenFormatEditor(style, groupId)
     saveBtn:SetText("Save & Close")
     saveBtn:SetCallback("OnClick", function()
         if currentRawText and currentRawText ~= "" then
-            style.textFormat = currentRawText
-            CooldownCompanion:RefreshGroupFrame(groupId)
+            currentFormatTarget.textFormat = currentRawText
+            CooldownCompanion:RefreshGroupFrame(currentGroupId)
             CooldownCompanion:RefreshConfigPanel()
         end
         window:Hide()
@@ -950,16 +952,20 @@ local function OpenFormatEditor(style, groupId)
     -- Save on Enter (Ctrl+Enter in multiline)
     editGroup:SetCallback("OnEnterPressed", function(widget, event, text)
         if currentRawText and currentRawText ~= "" then
-            currentStyle.textFormat = currentRawText
+            currentFormatTarget.textFormat = currentRawText
             CooldownCompanion:RefreshGroupFrame(currentGroupId)
         end
     end)
 
     -- Refresh function for re-opening with different style/group
-    window._refresh = function(newStyle, newGroupId)
+    window._refresh = function(newStyle, newGroupId, newOpts)
+        newOpts = newOpts or {}
         currentStyle = newStyle
         currentGroupId = newGroupId
-        currentRawText = newStyle.textFormat or "{name}  {status}"
+        currentFormatTarget = newOpts.saveTarget or newStyle
+        currentDefaultFormat = newOpts.defaultFormat or "{name}  {status}"
+        window:SetTitle(newOpts.title or "Format String Editor")
+        currentRawText = currentFormatTarget.textFormat or currentDefaultFormat
         ApplyColorized(currentRawText, #currentRawText)
         UpdateDisplay()
     end
@@ -976,8 +982,8 @@ local function OpenFormatEditor(style, groupId)
             widget._saveBtn = nil
         end
         -- Auto-save on close
-        if currentRawText and currentRawText ~= "" and currentRawText ~= (currentStyle.textFormat or "{name}  {status}") then
-            currentStyle.textFormat = currentRawText
+        if currentRawText and currentRawText ~= "" and currentRawText ~= (currentFormatTarget.textFormat or currentDefaultFormat) then
+            currentFormatTarget.textFormat = currentRawText
             CooldownCompanion:RefreshGroupFrame(currentGroupId)
             CooldownCompanion:RefreshConfigPanel()
         end

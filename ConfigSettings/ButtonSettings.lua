@@ -161,48 +161,9 @@ local function BuildSpellSoundAlertsTab(scroll, buttonData, infoButtons)
     BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 end
 
--- Per-button text format override (shown when group is in text mode)
-local function BuildTextFormatOverride(scroll, buttonData)
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group or group.displayMode ~= "text" then return end
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Format Override")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
-    local fmtInfo = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
-        {"Per-Button Format Override", 1, 0.82, 0, true},
-        " ",
-        {"Leave empty to use the group default format string.", 1, 1, 1, true},
-        {"See the group Appearance tab for available tokens.", 1, 1, 1, true},
-    }, CS.tabInfoButtons)
-    heading.right:ClearAllPoints()
-    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-    heading.right:SetPoint("LEFT", fmtInfo, "RIGHT", 4, 0)
-
-    local fmtBox = AceGUI:Create("EditBox")
-    if fmtBox.editbox.Instructions then fmtBox.editbox.Instructions:Hide() end
-    fmtBox:SetLabel("Format")
-    fmtBox:SetText(buttonData.textFormat or "")
-    fmtBox:SetFullWidth(true)
-    fmtBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        if text == "" then
-            buttonData.textFormat = nil
-        else
-            buttonData.textFormat = text
-        end
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(fmtBox)
-end
-
 local function BuildSpellSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-
-    BuildTextFormatOverride(scroll, buttonData)
 
     local isHarmful = buttonData.type == "spell" and C_Spell.IsSpellHarmful(buttonData.id)
     -- Look up viewer frame: for multi-slot buttons, use the slot-specific CDM child
@@ -607,8 +568,6 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
-    BuildTextFormatOverride(scroll, buttonData)
-
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
     if buttonData.hasCharges then return end
 
@@ -729,10 +688,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
 end
 
 local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group then return end
-
-    BuildTextFormatOverride(scroll, buttonData)
+    -- Currently no equip-item-specific settings
 end
 
 ------------------------------------------------------------------------
@@ -1014,12 +970,86 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local displayMode = group.displayMode or "icons"
 
-    -- Check if any overrides exist
+    -- Per-button text format override (text mode only)
+    if displayMode == "text" then
+        local fmtHeading = AceGUI:Create("Heading")
+        fmtHeading:SetText("Format Override")
+        ColorHeading(fmtHeading)
+        fmtHeading:SetFullWidth(true)
+        scroll:AddChild(fmtHeading)
+
+        local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtHeading.label, "LEFT", "RIGHT", 4, 0, {
+            {"Per-Button Format Override", 1, 0.82, 0, true},
+            " ",
+            {"Overrides the group format string for this button only.", 1, 1, 1, true},
+            {"Clear the override to revert to the group default.", 1, 1, 1, true},
+        }, infoButtons)
+        fmtHeading.right:ClearAllPoints()
+        fmtHeading.right:SetPoint("RIGHT", fmtHeading.frame, "RIGHT", -3, 0)
+        fmtHeading.right:SetPoint("LEFT", fmtInfo, "RIGHT", 4, 0)
+
+        local effectiveFmt = buttonData.textFormat or group.style.textFormat or "{name}  {status}"
+
+        -- Preview label
+        local fmtPreview = AceGUI:Create("Label")
+        fmtPreview:SetText(ST._RenderFormatPreview(effectiveFmt, group.style))
+        fmtPreview:SetFullWidth(true)
+        fmtPreview:SetFontObject(GameFontHighlight)
+        scroll:AddChild(fmtPreview)
+
+        -- "Using group default" note or tag summary
+        if not buttonData.textFormat then
+            local defaultNote = AceGUI:Create("Label")
+            defaultNote:SetText("|cff888888Using group default|r")
+            defaultNote:SetFullWidth(true)
+            defaultNote:SetFontObject(GameFontHighlightSmall)
+            scroll:AddChild(defaultNote)
+        else
+            local summary = ST._BuildFormatSummary(effectiveFmt)
+            if summary ~= "" then
+                local fmtSummary = AceGUI:Create("Label")
+                fmtSummary:SetText(summary)
+                fmtSummary:SetFullWidth(true)
+                fmtSummary:SetFontObject(GameFontHighlightSmall)
+                scroll:AddChild(fmtSummary)
+            end
+        end
+
+        -- Edit button
+        local editBtn = AceGUI:Create("Button")
+        editBtn:SetText("Edit Format Override")
+        editBtn:SetFullWidth(true)
+        editBtn:SetCallback("OnClick", function()
+            ST._OpenFormatEditor(group.style, CS.selectedGroup, {
+                title = "Button Format Override",
+                saveTarget = buttonData,
+                defaultFormat = group.style.textFormat or "{name}  {status}",
+            })
+        end)
+        scroll:AddChild(editBtn)
+
+        -- Clear button (only when override exists)
+        if buttonData.textFormat then
+            local clearBtn = AceGUI:Create("Button")
+            clearBtn:SetText("Clear Override")
+            clearBtn:SetFullWidth(true)
+            clearBtn:SetCallback("OnClick", function()
+                buttonData.textFormat = nil
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(clearBtn)
+        end
+    end
+
+    -- Check if any style overrides exist
     if not buttonData.overrideSections or not next(buttonData.overrideSections) then
-        local noOverridesLabel = AceGUI:Create("Label")
-        noOverridesLabel:SetText("|cff888888No appearance overrides.\n\nTo customize this button's appearance, select it and click the |A:Crosshair_VehichleCursor_32:0:0|a icon next to a group settings section heading.|r")
-        noOverridesLabel:SetFullWidth(true)
-        scroll:AddChild(noOverridesLabel)
+        if displayMode ~= "text" then
+            local noOverridesLabel = AceGUI:Create("Label")
+            noOverridesLabel:SetText("|cff888888No appearance overrides.\n\nTo customize this button's appearance, select it and click the |A:Crosshair_VehichleCursor_32:0:0|a icon next to a group settings section heading.|r")
+            noOverridesLabel:SetFullWidth(true)
+            scroll:AddChild(noOverridesLabel)
+        end
         return
     end
 
