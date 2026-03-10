@@ -13,6 +13,8 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
+local CreatePromoteButton = ST._CreatePromoteButton
+local BuildTextColorsControls = ST._BuildTextColorsControls
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -299,70 +301,12 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:RefreshConfigPanel()
     end)
 
+    CreatePromoteButton(colorsHeading, "textColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
     if not colorsCollapsed then
-    local textColorPicker = AceGUI:Create("ColorPicker")
-    textColorPicker:SetLabel("Text Color")
-    textColorPicker:SetHasAlpha(true)
-    local tc = style.textFontColor or {1, 1, 1, 1}
-    textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-    textColorPicker:SetFullWidth(true)
-    textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textFontColor = {r, g, b, a}
+    BuildTextColorsControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
-    textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textFontColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(textColorPicker)
-
-    local cdColorPicker = AceGUI:Create("ColorPicker")
-    cdColorPicker:SetLabel("Cooldown Color")
-    cdColorPicker:SetHasAlpha(true)
-    local cdc = style.textCooldownColor or {1, 0.3, 0.3, 1}
-    cdColorPicker:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
-    cdColorPicker:SetFullWidth(true)
-    cdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textCooldownColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    cdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textCooldownColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(cdColorPicker)
-
-    local readyColorPicker = AceGUI:Create("ColorPicker")
-    readyColorPicker:SetLabel("Ready Color")
-    readyColorPicker:SetHasAlpha(true)
-    local rc = style.textReadyColor or {0.2, 1.0, 0.2, 1}
-    readyColorPicker:SetColor(rc[1], rc[2], rc[3], rc[4])
-    readyColorPicker:SetFullWidth(true)
-    readyColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textReadyColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    readyColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textReadyColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(readyColorPicker)
-
-    local auraColorPicker = AceGUI:Create("ColorPicker")
-    auraColorPicker:SetLabel("Aura Color")
-    auraColorPicker:SetHasAlpha(true)
-    local ac = style.textAuraColor or {0, 0.925, 1, 1}
-    auraColorPicker:SetColor(ac[1], ac[2], ac[3], ac[4])
-    auraColorPicker:SetFullWidth(true)
-    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textAuraColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textAuraColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(auraColorPicker)
     end -- not colorsCollapsed
 
     -- ================================================================

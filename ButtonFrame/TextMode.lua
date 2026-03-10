@@ -267,7 +267,7 @@ local function SubstituteTokens(button, segments, style)
                         secretValue = timeRemaining
                         secretColorToken = "cd"
                     end
-                    parts[#parts + 1] = "%%TIME%%"
+                    parts[#parts + 1] = "%TIME%"
                 elseif timeRemaining then
                     parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), cdColor)
                 end
@@ -304,7 +304,7 @@ local function SubstituteTokens(button, segments, style)
                         secretValue = auraRemaining
                         secretColorToken = "aura"
                     end
-                    parts[#parts + 1] = "%%AURA%%"
+                    parts[#parts + 1] = "%AURA%"
                 elseif auraRemaining then
                     parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), auraColor)
                 end
@@ -322,7 +322,7 @@ local function SubstituteTokens(button, segments, style)
                             secretValue = auraRemaining
                             secretColorToken = "aura"
                         end
-                        parts[#parts + 1] = "%%STATUS%%"
+                        parts[#parts + 1] = "%STATUS%"
                     elseif auraRemaining then
                         parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), auraColor)
                     else
@@ -333,11 +333,11 @@ local function SubstituteTokens(button, segments, style)
                         secretValue = timeRemaining
                         secretColorToken = "cd"
                     end
-                    parts[#parts + 1] = "%%STATUS%%"
+                    parts[#parts + 1] = "%STATUS%"
                 elseif timeRemaining and timeRemaining > 0 then
                     parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), cdColor)
                 else
-                    parts[#parts + 1] = WrapColor("Ready", readyColor)
+                    parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", readyColor)
                 end
 
             elseif token == "icon" then

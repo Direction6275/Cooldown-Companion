@@ -313,6 +313,7 @@ local defaults = {
             textAlignment = "LEFT",
             textCooldownColor = {1, 0.3, 0.3, 1},
             textReadyColor = {0.2, 1.0, 0.2, 1},
+            textReadyText = "Ready",
             textAuraColor = {0, 0.925, 1, 1},
             textBgColor = {0, 0, 0, 0},
             textBorderSize = 0,
@@ -587,7 +588,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     textColors = {
         label = "Text Colors",
-        keys = {"textFontColor", "textCooldownColor", "textReadyColor", "textAuraColor"},
+        keys = {"textFontColor", "textCooldownColor", "textReadyColor", "textAuraColor", "textReadyText"},
         modes = {text = true},
     },
     textBackground = {

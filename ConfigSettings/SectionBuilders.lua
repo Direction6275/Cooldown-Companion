@@ -1465,6 +1465,86 @@ local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
 end
 
 ------------------------------------------------------------------------
+-- Text Mode — Text Colors
+------------------------------------------------------------------------
+local function BuildTextColorsControls(container, styleTable, refreshCallback)
+    local textColorPicker = AceGUI:Create("ColorPicker")
+    textColorPicker:SetLabel("Text Color")
+    textColorPicker:SetHasAlpha(true)
+    local tc = styleTable.textFontColor or {1, 1, 1, 1}
+    textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
+    textColorPicker:SetFullWidth(true)
+    textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.textFontColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.textFontColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(textColorPicker)
+
+    local cdColorPicker = AceGUI:Create("ColorPicker")
+    cdColorPicker:SetLabel("Cooldown Color")
+    cdColorPicker:SetHasAlpha(true)
+    local cdc = styleTable.textCooldownColor or {1, 0.3, 0.3, 1}
+    cdColorPicker:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
+    cdColorPicker:SetFullWidth(true)
+    cdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.textCooldownColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    cdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.textCooldownColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(cdColorPicker)
+
+    local readyColorPicker = AceGUI:Create("ColorPicker")
+    readyColorPicker:SetLabel("Ready Color")
+    readyColorPicker:SetHasAlpha(true)
+    local rc = styleTable.textReadyColor or {0.2, 1.0, 0.2, 1}
+    readyColorPicker:SetColor(rc[1], rc[2], rc[3], rc[4])
+    readyColorPicker:SetFullWidth(true)
+    readyColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.textReadyColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    readyColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.textReadyColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(readyColorPicker)
+
+    local readyTextBox = AceGUI:Create("EditBox")
+    if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
+    readyTextBox:SetLabel("Ready Text")
+    readyTextBox:SetText(styleTable.textReadyText or "Ready")
+    readyTextBox:SetFullWidth(true)
+    readyTextBox:SetCallback("OnEnterPressed", function(widget, event, val)
+        styleTable.textReadyText = val
+        refreshCallback()
+    end)
+    container:AddChild(readyTextBox)
+
+    local auraColorPicker = AceGUI:Create("ColorPicker")
+    auraColorPicker:SetLabel("Aura Color")
+    auraColorPicker:SetHasAlpha(true)
+    local ac = styleTable.textAuraColor or {0, 0.925, 1, 1}
+    auraColorPicker:SetColor(ac[1], ac[2], ac[3], ac[4])
+    auraColorPicker:SetFullWidth(true)
+    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.textAuraColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.textAuraColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(auraColorPicker)
+end
+
+------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
@@ -1491,3 +1571,4 @@ ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls
+ST._BuildTextColorsControls = BuildTextColorsControls

@@ -227,8 +227,9 @@ local function BuildLayoutTab(container)
         if #group.buttons > 1 then
             local bprSlider = AceGUI:Create("Slider")
             bprSlider:SetLabel("Entries per Row/Column")
-            bprSlider:SetSliderValues(1, math.max(#group.buttons, 12), 1)
-            bprSlider:SetValue(style.buttonsPerRow or 12)
+            local numEntries = math.max(1, #group.buttons)
+            bprSlider:SetSliderValues(1, numEntries, 1)
+            bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numEntries))
             bprSlider:SetFullWidth(true)
             bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
                 style.buttonsPerRow = val
@@ -284,18 +285,20 @@ local function BuildLayoutTab(container)
         container:AddChild(orientDrop)
     end
 
-    -- Buttons Per Row/Column
-    local numButtons = math.max(1, #group.buttons)
-    local bprSlider = AceGUI:Create("Slider")
-    bprSlider:SetLabel("Buttons Per Row/Column")
-    bprSlider:SetSliderValues(1, numButtons, 1)
-    bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numButtons))
-    bprSlider:SetFullWidth(true)
-    bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.buttonsPerRow = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    container:AddChild(bprSlider)
+    -- Buttons Per Row/Column (icon/bar modes only; text mode has its own slider)
+    if group.displayMode ~= "text" then
+        local numButtons = math.max(1, #group.buttons)
+        local bprSlider = AceGUI:Create("Slider")
+        bprSlider:SetLabel("Buttons Per Row/Column")
+        bprSlider:SetSliderValues(1, numButtons, 1)
+        bprSlider:SetValue(math.min(style.buttonsPerRow or 12, numButtons))
+        bprSlider:SetFullWidth(true)
+        bprSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.buttonsPerRow = val
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        container:AddChild(bprSlider)
+    end
 
     -- ================================================================
     -- ADVANCED: Alpha (from Extras)
