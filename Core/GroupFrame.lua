@@ -550,15 +550,14 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if isTextMode and style.showTextGroupHeader then
         if not frame.textHeader then
             frame.textHeader = frame:CreateFontString(nil, "OVERLAY")
-            frame.textHeader:SetJustifyH("LEFT")
             frame.textHeader:SetJustifyV("TOP")
         end
         local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
-        local fontSize = style.textFontSize or 12
+        local fontSize = style.textHeaderFontSize or style.textFontSize or 12
         local fontOutline = style.textFontOutline or "OUTLINE"
         frame.textHeader:SetFont(font, fontSize, fontOutline)
-        local baseColor = style.textFontColor or {1, 1, 1, 1}
-        frame.textHeader:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
+        local hdrColor = style.textHeaderFontColor or {1, 1, 1, 1}
+        frame.textHeader:SetTextColor(hdrColor[1], hdrColor[2], hdrColor[3], hdrColor[4] or 1)
         if style.textShadow then
             frame.textHeader:SetShadowColor(0, 0, 0, 0.8)
             frame.textHeader:SetShadowOffset(1, -1)
@@ -566,9 +565,15 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             frame.textHeader:SetShadowColor(0, 0, 0, 0)
             frame.textHeader:SetShadowOffset(0, 0)
         end
+        local align = style.textAlignment or "LEFT"
+        frame.textHeader:SetJustifyH(align)
         frame.textHeader:SetText(group.name or "")
         frame.textHeader:ClearAllPoints()
-        frame.textHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -1)
+        local anchor = align == "RIGHT" and "TOPRIGHT" or align == "CENTER" and "TOP" or "TOPLEFT"
+        local parentAnchor = anchor
+        local xOff = (align == "CENTER") and 0 or (align == "RIGHT") and -2 or 2
+        frame.textHeader:SetPoint(anchor, frame, parentAnchor, xOff, -1)
+        frame.textHeader:SetWidth(frame:GetWidth() - 4)
         frame.textHeader:Show()
         headerHeight = fontSize + 4
     elseif frame.textHeader then

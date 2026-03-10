@@ -95,8 +95,38 @@ local function BuildTextAppearanceTab(container, group, style)
     headerCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showTextGroupHeader = val or false
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(headerCb)
+
+    if style.showTextGroupHeader then
+        local headerSizeSlider = AceGUI:Create("Slider")
+        headerSizeSlider:SetLabel("Header Font Size")
+        headerSizeSlider:SetSliderValues(6, 36, 1)
+        headerSizeSlider:SetValue(style.textHeaderFontSize or 12)
+        headerSizeSlider:SetFullWidth(true)
+        headerSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.textHeaderFontSize = val
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        container:AddChild(headerSizeSlider)
+
+        local headerColorPicker = AceGUI:Create("ColorPicker")
+        headerColorPicker:SetLabel("Header Color")
+        headerColorPicker:SetHasAlpha(true)
+        local hc = style.textHeaderFontColor or {1, 1, 1, 1}
+        headerColorPicker:SetColor(hc[1], hc[2], hc[3], hc[4])
+        headerColorPicker:SetFullWidth(true)
+        headerColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.textHeaderFontColor = {r, g, b, a}
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        headerColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.textHeaderFontColor = {r, g, b, a}
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end)
+        container:AddChild(headerColorPicker)
+    end
     end -- not textSettingsCollapsed
 
     -- ================================================================

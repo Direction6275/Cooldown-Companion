@@ -319,6 +319,8 @@ local defaults = {
             textBorderColor = {0, 0, 0, 1},
             textShadow = false,
             showTextGroupHeader = false,
+            textHeaderFontSize = 12,
+            textHeaderFontColor = {1, 1, 1, 1},
         },
         locked = false,
         cdmHidden = false,
@@ -570,7 +572,7 @@ ST.OVERRIDE_SECTIONS = {
     -- Text Mode
     textDimensions = {
         label = "Text Dimensions",
-        keys = {"textWidth", "textHeight", "showTextGroupHeader"},
+        keys = {"textWidth", "textHeight", "showTextGroupHeader", "textHeaderFontSize", "textHeaderFontColor"},
         modes = {text = true},
     },
     textFormat = {
