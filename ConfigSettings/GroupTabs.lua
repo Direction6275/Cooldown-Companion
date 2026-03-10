@@ -1183,7 +1183,7 @@ local function BuildAppearanceTab(container)
         -- (?) tooltip for shared positioning
         CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
             "Shared Position",
-            {"Anchor and offset settings are shared between Cooldown Text and Aura Text since they use the same text element.", 1, 1, 1, true},
+            {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
         }, cdAnchorDrop)
 
         local cdXSlider = AceGUI:Create("Slider")
@@ -1207,6 +1207,7 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(cdYSlider)
+
     end -- cdTextAdvExpanded + showCooldownText
 
     -- Show Charge Text toggle
@@ -1361,7 +1362,7 @@ local function BuildAppearanceTab(container)
 
     local auraPosInfo = CreateInfoButton(auraTextCb.frame, auraTextPromoteBtn, "LEFT", "RIGHT", 4, 0, {
         "Shared Position",
-        {"Position (anchor, X/Y offset) is controlled in the Cooldown Text section above. Cooldown Text and Aura Duration Text share the same text element.", 1, 1, 1, true},
+        {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
     }, auraTextCb)
     if style.showAuraText == false then
         auraPosInfo:Hide()
@@ -1416,6 +1417,61 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(auraFontColor)
+
+        local sepPosCb = AceGUI:Create("CheckBox")
+        sepPosCb:SetLabel("Separate Text Positions")
+        sepPosCb:SetValue(style.separateTextPositions or false)
+        sepPosCb:SetFullWidth(true)
+        sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.separateTextPositions = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(sepPosCb)
+
+        CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
+            "Separate Text Positions",
+            {"When enabled, aura duration text and cooldown text use independent positions. Aura text position is controlled below; cooldown text position is in the Cooldown Text section above.", 1, 1, 1, true},
+        }, sepPosCb)
+
+        if style.separateTextPositions then
+            local atAnchorValues = {}
+            for _, pt in ipairs(CS.anchorPoints) do
+                atAnchorValues[pt] = CS.anchorPointLabels[pt]
+            end
+            local atAnchorDrop = AceGUI:Create("Dropdown")
+            atAnchorDrop:SetLabel("Anchor")
+            atAnchorDrop:SetList(atAnchorValues, CS.anchorPoints)
+            atAnchorDrop:SetValue(style.auraTextAnchor or "TOPLEFT")
+            atAnchorDrop:SetFullWidth(true)
+            atAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                style.auraTextAnchor = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+            container:AddChild(atAnchorDrop)
+
+            local atXSlider = AceGUI:Create("Slider")
+            atXSlider:SetLabel("X Offset")
+            atXSlider:SetSliderValues(-20, 20, 0.1)
+            atXSlider:SetValue(style.auraTextXOffset or 2)
+            atXSlider:SetFullWidth(true)
+            atXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.auraTextXOffset = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+            container:AddChild(atXSlider)
+
+            local atYSlider = AceGUI:Create("Slider")
+            atYSlider:SetLabel("Y Offset")
+            atYSlider:SetSliderValues(-20, 20, 0.1)
+            atYSlider:SetValue(style.auraTextYOffset or -2)
+            atYSlider:SetFullWidth(true)
+            atYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.auraTextYOffset = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+            container:AddChild(atYSlider)
+        end
     end -- auraTextAdvExpanded + showAuraText
 
     -- Show Aura Stack Text toggle

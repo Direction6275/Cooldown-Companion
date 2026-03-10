@@ -154,6 +154,38 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.overlayFrame = CreateFrame("Frame", nil, button)
     button.overlayFrame:SetAllPoints()
     button.overlayFrame:EnableMouse(false)
+
+    -- Secondary cooldown text: shown at a separate position during aura override (icon mode only).
+    -- An invisible CooldownFrame whose only job is hosting a text region that WoW's C++
+    -- CooldownFrame countdown rendering drives automatically — handles secret values natively.
+    if style.separateTextPositions and buttonData.auraTracking and not buttonData.isPassive then
+        local secCd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+        secCd:SetDrawSwipe(false)
+        secCd:SetDrawEdge(false)
+        secCd:SetDrawBling(false)
+        secCd:SetSwipeColor(0, 0, 0, 0)
+        secCd:SetSize(1, 1)
+        secCd:SetPoint("CENTER")
+        secCd:SetHideCountdownNumbers(false)
+        SetFrameClickThroughRecursive(secCd, true, true)
+        button.secondaryCooldown = secCd
+
+        -- Extract text region, reparent to overlay so it renders above cooldown swipe
+        local secRegion = secCd:GetRegions()
+        if secRegion and secRegion.SetFont then
+            secRegion:SetParent(button.overlayFrame)
+            secRegion:ClearAllPoints()
+            local secAnchor = style.cooldownTextAnchor or "CENTER"
+            local secXOff = style.cooldownTextXOffset or 0
+            local secYOff = style.cooldownTextYOffset or 0
+            secRegion:SetPoint(secAnchor, button.overlayFrame, secAnchor, secXOff, secYOff)
+            secRegion:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+            local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
+            secRegion:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+            button._secondaryCdTextRegion = secRegion
+        end
+    end
+
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
 
@@ -495,6 +527,26 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
+    -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
+    if button._secondaryCdTextRegion then
+        local wantAuraPos = button._auraActive == true
+        if button._cdTextAtAuraPos ~= wantAuraPos then
+            button._cdTextAtAuraPos = wantAuraPos
+            button._cdTextRegion:ClearAllPoints()
+            if wantAuraPos then
+                local auraAnchor = style.auraTextAnchor or "TOPLEFT"
+                local auraXOff = style.auraTextXOffset or 2
+                local auraYOff = style.auraTextYOffset or -2
+                button._cdTextRegion:SetPoint(auraAnchor, button.overlayFrame, auraAnchor, auraXOff, auraYOff)
+            else
+                local cdAnchor = style.cooldownTextAnchor or "CENTER"
+                local cdXOff = style.cooldownTextXOffset or 0
+                local cdYOff = style.cooldownTextYOffset or 0
+                button._cdTextRegion:SetPoint(cdAnchor, button.overlayFrame, cdAnchor, cdXOff, cdYOff)
+            end
+        end
+    end
+
     -- Cooldown/aura text: pick font + visibility based on current state.
     -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
     if button._cdTextRegion then
@@ -533,6 +585,22 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if button._cdTextHidden ~= wantHide then
             button._cdTextHidden = wantHide
             button.cooldown:SetHideCountdownNumbers(wantHide)
+        end
+    end
+
+    -- Secondary cooldown text: visible only when aura is active AND a real cooldown is running
+    if button._secondaryCdTextRegion then
+        local showSecondary = button._auraActive and button._secondaryCdActive
+        if showSecondary then
+            local cc = style.cooldownFontColor or {1, 1, 1, 1}
+            button._secondaryCdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        else
+            button._secondaryCdTextRegion:SetTextColor(0, 0, 0, 0)
+        end
+        local wantHideSecondary = not showSecondary
+        if button._secondaryCdTextHidden ~= wantHideSecondary then
+            button._secondaryCdTextHidden = wantHideSecondary
+            button.secondaryCooldown:SetHideCountdownNumbers(wantHideSecondary)
         end
     end
 

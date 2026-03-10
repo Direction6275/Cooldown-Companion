@@ -58,6 +58,10 @@ local defaults = {
                         cooldownTextAnchor = "CENTER",
                         cooldownTextXOffset = 0,
                         cooldownTextYOffset = 0,
+                        separateTextPositions = false,
+                        auraTextAnchor = "TOPLEFT",
+                        auraTextXOffset = 2,
+                        auraTextYOffset = -2,
                         showAuraText = true, -- nil defaults to true via ~= false
                         auraTextFont = "Friz Quadrata TT",
                         auraTextFontSize = 12,
@@ -192,6 +196,10 @@ local defaults = {
             cooldownTextAnchor = "CENTER",
             cooldownTextXOffset = 0,
             cooldownTextYOffset = 0,
+            separateTextPositions = false,
+            auraTextAnchor = "TOPLEFT",
+            auraTextXOffset = 2,
+            auraTextYOffset = -2,
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
@@ -432,7 +440,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor"},
+        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
         modes = {icons = true, bars = true},
     },
     auraStackText = {

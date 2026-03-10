@@ -598,6 +598,51 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.cooldown:Hide()
     end
 
+    -- Secondary cooldown text: probe spell/item CD during aura override
+    if auraOverrideActive and button.secondaryCooldown then
+        if buttonData.type == "spell" and not buttonData.isPassive then
+            local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+            if probeInfo then
+                -- Filter GCD-only (same pattern as sound alert probe)
+                local probeIsGCDOnly = false
+                local gcdInfo = CooldownCompanion._gcdInfo
+                if gcdInfo then
+                    if buttonData._cooldownSecrecy == 0 then
+                        probeIsGCDOnly = (probeInfo.startTime == gcdInfo.startTime
+                            and probeInfo.duration == gcdInfo.duration)
+                    else
+                        probeIsGCDOnly = (probeInfo.isOnGCD and CooldownCompanion._gcdActive)
+                    end
+                end
+                if not probeIsGCDOnly then
+                    button.secondaryCooldown:SetCooldown(probeInfo.startTime, probeInfo.duration)
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldown(probeInfo.startTime, probeInfo.duration)
+                    button._secondaryCdActive = scratchCooldown:IsShown()
+                    scratchCooldown:Hide()
+                else
+                    button.secondaryCooldown:SetCooldown(0, 0)
+                    button._secondaryCdActive = false
+                end
+            else
+                button.secondaryCooldown:SetCooldown(0, 0)
+                button._secondaryCdActive = false
+            end
+        elseif buttonData.type == "item" then
+            local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+            if cdDuration and cdDuration > 0 then
+                button.secondaryCooldown:SetCooldown(cdStart, cdDuration)
+                button._secondaryCdActive = true
+            else
+                button.secondaryCooldown:SetCooldown(0, 0)
+                button._secondaryCdActive = false
+            end
+        end
+    elseif button.secondaryCooldown and button._secondaryCdActive then
+        button._secondaryCdActive = false
+        button.secondaryCooldown:SetCooldown(0, 0)
+    end
+
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
             if not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
