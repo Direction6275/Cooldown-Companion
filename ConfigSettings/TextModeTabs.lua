@@ -16,6 +16,8 @@ local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local CreatePromoteButton = ST._CreatePromoteButton
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local OpenFormatEditor = ST._OpenFormatEditor
+local RenderFormatPreview = ST._RenderFormatPreview
+local ParseFormatString = ST._ParseFormatString
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -38,6 +40,58 @@ local TOKEN_HELP_TEXT = table.concat({
     "  Cooldown time (red) when on CD",
     "  Aura time (cyan) when aura active",
 }, "\n")
+
+-- Syntax colors for summary (matching FormatEditor.lua)
+local SUM_TOKEN  = "ff00ff00"
+local SUM_COND_P = "ffffff00"
+local SUM_COND_N = "ffff8844"
+local SUM_EFFECT = "ffcc44ff"
+local SUM_COLOR  = "ff44bbff"
+local SUM_GRAY   = "ff888888"
+local SUM_SEP    = "  |cff666666\194\183|r  "
+
+local function BuildFormatSummary(formatString)
+    local segments = ParseFormatString(formatString)
+    local tokens, colors, effects, conds = {}, {}, {}, {}
+    local seen = {}
+    for _, seg in ipairs(segments) do
+        if seg.type == "token" and not seg.unknown and not seen["t:" .. seg.value] then
+            tokens[#tokens + 1] = "|c" .. SUM_TOKEN .. seg.value .. "|r"
+            seen["t:" .. seg.value] = true
+        elseif seg.type == "color_start" and not seen["c:" .. seg.value] then
+            colors[#colors + 1] = "|c" .. SUM_COLOR .. seg.value .. "|r"
+            seen["c:" .. seg.value] = true
+        elseif seg.type == "effect_start" and not seen["e:" .. seg.value] then
+            effects[#effects + 1] = "|c" .. SUM_EFFECT .. seg.value .. "|r"
+            seen["e:" .. seg.value] = true
+        elseif seg.type == "cond_start" then
+            local prefix = seg.negated and "!" or "?"
+            local key = prefix .. seg.value
+            if not seen["d:" .. key] then
+                local c = seg.negated and SUM_COND_N or SUM_COND_P
+                conds[#conds + 1] = "|c" .. c .. key .. "|r"
+                seen["d:" .. key] = true
+            end
+        end
+    end
+
+    local parts = {}
+    if #tokens > 0 then
+        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Tokens:|r " .. table.concat(tokens, ", ")
+    end
+    if #conds > 0 then
+        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Conditions:|r " .. table.concat(conds, ", ")
+    end
+    if #colors > 0 then
+        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Colors:|r " .. table.concat(colors, ", ")
+    end
+    if #effects > 0 then
+        parts[#parts + 1] = "|c" .. SUM_GRAY .. "Effects:|r " .. table.concat(effects, ", ")
+    end
+
+    if #parts == 0 then return "" end
+    return table.concat(parts, SUM_SEP)
+end
 
 local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
@@ -187,11 +241,22 @@ local function BuildTextAppearanceTab(container, group, style)
     fmtHeading.right:SetPoint("LEFT", fmtInfo, "RIGHT", 4, 0)
 
     if not fmtCollapsed then
-    local fmtLabel = AceGUI:Create("Label")
-    fmtLabel:SetText("|cffffffff" .. (style.textFormat or "{name}  {status}") .. "|r")
-    fmtLabel:SetFullWidth(true)
-    fmtLabel:SetFontObject(GameFontHighlight)
-    container:AddChild(fmtLabel)
+    local fmt = style.textFormat or "{name}  {status}"
+
+    local fmtPreview = AceGUI:Create("Label")
+    fmtPreview:SetText(RenderFormatPreview(fmt, style))
+    fmtPreview:SetFullWidth(true)
+    fmtPreview:SetFontObject(GameFontHighlight)
+    container:AddChild(fmtPreview)
+
+    local summary = BuildFormatSummary(fmt)
+    if summary ~= "" then
+        local fmtSummary = AceGUI:Create("Label")
+        fmtSummary:SetText(summary)
+        fmtSummary:SetFullWidth(true)
+        fmtSummary:SetFontObject(GameFontHighlightSmall)
+        container:AddChild(fmtSummary)
+    end
 
     local editBtn = AceGUI:Create("Button")
     editBtn:SetText("Edit Format")

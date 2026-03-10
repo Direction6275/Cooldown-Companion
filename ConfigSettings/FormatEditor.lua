@@ -1012,3 +1012,16 @@ end
 ------------------------------------------------------------------------
 ST._OpenFormatEditor = OpenFormatEditor
 ST._CloseFormatEditor = CloseFormatEditor
+
+ST._RenderFormatPreview = function(formatString, style)
+    local segments = ParseFormatString(formatString)
+    local name = GetPreviewName()
+    local icon = GetPreviewIcon()
+    -- "All present" mock state so every token renders visibly
+    local mockState = {
+        name = name, time = 83, charges = 1, maxCharges = 3,
+        stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon,
+    }
+    local rendered = PreviewSubstitute(segments, style, mockState)
+    return rendered
+end
