@@ -15,6 +15,7 @@ local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local CreatePromoteButton = ST._CreatePromoteButton
 local BuildTextColorsControls = ST._BuildTextColorsControls
+local OpenFormatEditor = ST._OpenFormatEditor
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -173,46 +174,19 @@ local function BuildTextAppearanceTab(container, group, style)
     fmtHeading.right:SetPoint("LEFT", fmtInfo, "RIGHT", 4, 0)
 
     if not fmtCollapsed then
-    local fmtBox = AceGUI:Create("EditBox")
-    if fmtBox.editbox.Instructions then fmtBox.editbox.Instructions:Hide() end
-    fmtBox:SetLabel("Format")
-    fmtBox:SetText(style.textFormat or "{name}  {status}")
-    fmtBox:SetFullWidth(true)
-    fmtBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        style.textFormat = text
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    container:AddChild(fmtBox)
+    local fmtLabel = AceGUI:Create("Label")
+    fmtLabel:SetText("|cffffffff" .. (style.textFormat or "{name}  {status}") .. "|r")
+    fmtLabel:SetFullWidth(true)
+    fmtLabel:SetFontObject(GameFontHighlight)
+    container:AddChild(fmtLabel)
 
-    -- Token insert dropdown
-    local tokenDrop = AceGUI:Create("Dropdown")
-    tokenDrop:SetLabel("Insert Token")
-    tokenDrop:SetList({
-        name = "{name}",
-        time = "{time}",
-        charges = "{charges}",
-        maxcharges = "{maxcharges}",
-        stacks = "{stacks}",
-        aura = "{aura}",
-        keybind = "{keybind}",
-        status = "{status}",
-        icon = "{icon}",
-    }, {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon"})
-    tokenDrop:SetFullWidth(true)
-    tokenDrop:SetCallback("OnValueChanged", function(widget, event, token)
-        local editbox = fmtBox.editbox
-        local text = editbox:GetText() or ""
-        local cursor = editbox:GetCursorPosition()
-        local insert = "{" .. token .. "}"
-        local newText = text:sub(1, cursor) .. insert .. text:sub(cursor + 1)
-        editbox:SetText(newText)
-        editbox:SetCursorPosition(cursor + #insert)
-        editbox:SetFocus()
-        -- Reset dropdown so it can be used again for the same token
-        widget:SetValue(nil)
-        widget:SetText("")
+    local editBtn = AceGUI:Create("Button")
+    editBtn:SetText("Edit Format")
+    editBtn:SetFullWidth(true)
+    editBtn:SetCallback("OnClick", function()
+        OpenFormatEditor(style, CS.selectedGroup)
     end)
-    container:AddChild(tokenDrop)
+    container:AddChild(editBtn)
     end -- not fmtCollapsed
 
     -- ================================================================

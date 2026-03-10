@@ -90,5 +90,6 @@ ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\ButtonSettings.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua
+ConfigSettings\FormatEditor.lua
 ConfigSettings\TextModeTabs.lua
 ConfigSettings\GroupTabs.lua
