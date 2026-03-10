@@ -317,6 +317,12 @@ local defaults = {
             textBgColor = {0, 0, 0, 0},
             textBorderSize = 0,
             textBorderColor = {0, 0, 0, 1},
+            textDynamicBackground = false,
+            textDynamicBgIntensity = 0.15,
+            textShadow = false,
+            textZebraStripe = false,
+            textZebraColor = {1, 1, 1, 0.04},
+            showTextGroupHeader = false,
             showTextTooltips = false,
         },
         locked = false,
@@ -569,7 +575,7 @@ ST.OVERRIDE_SECTIONS = {
     -- Text Mode
     textDimensions = {
         label = "Text Dimensions",
-        keys = {"textWidth", "textHeight"},
+        keys = {"textWidth", "textHeight", "showTextGroupHeader"},
         modes = {text = true},
     },
     textFormat = {
@@ -579,7 +585,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     textFont = {
         label = "Text Font",
-        keys = {"textFont", "textFontSize", "textFontOutline", "textAlignment"},
+        keys = {"textFont", "textFontSize", "textFontOutline", "textAlignment", "textShadow"},
         modes = {text = true},
     },
     textColors = {
@@ -589,7 +595,9 @@ ST.OVERRIDE_SECTIONS = {
     },
     textBackground = {
         label = "Text Background",
-        keys = {"textBgColor", "textBorderSize", "textBorderColor"},
+        keys = {"textBgColor", "textBorderSize", "textBorderColor",
+                "textDynamicBackground", "textDynamicBgIntensity",
+                "textZebraStripe", "textZebraColor"},
         modes = {text = true},
     },
     textTooltips = {

@@ -67,12 +67,35 @@ local function ParseFormatString(fmt)
             segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace) }
             break
         end
-        local tokenName = fmt:sub(openBrace + 1, closeBrace - 1):lower()
-        if KNOWN_TOKENS[tokenName] then
-            segments[#segments + 1] = { type = "token", value = tokenName }
+        local inner = fmt:sub(openBrace + 1, closeBrace - 1):lower()
+
+        -- Conditional start: {?token} or {!token}
+        local condPrefix = inner:sub(1, 1)
+        if condPrefix == "?" or condPrefix == "!" then
+            local condToken = inner:sub(2)
+            if KNOWN_TOKENS[condToken] then
+                segments[#segments + 1] = {
+                    type = "cond_start",
+                    value = condToken,
+                    negated = (condPrefix == "!"),
+                }
+            else
+                -- Unknown conditional token — treat as literal
+                segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace, closeBrace) }
+            end
+        -- Conditional end: {/token}
+        elseif condPrefix == "/" then
+            local condToken = inner:sub(2)
+            if KNOWN_TOKENS[condToken] then
+                segments[#segments + 1] = { type = "cond_end", value = condToken }
+            else
+                segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace, closeBrace) }
+            end
+        elseif KNOWN_TOKENS[inner] then
+            segments[#segments + 1] = { type = "token", value = inner }
         else
             -- Unknown token — render as empty
-            segments[#segments + 1] = { type = "token", value = tokenName, unknown = true }
+            segments[#segments + 1] = { type = "token", value = inner, unknown = true }
         end
         pos = closeBrace + 1
     end
@@ -106,6 +129,38 @@ local function WrapColor(text, color)
         math_floor(color[2] * 255),
         math_floor(color[3] * 255),
         text)
+end
+
+------------------------------------------------------------------------
+-- EVALUATE TOKEN PRESENCE
+-- Returns true if the given token would produce non-empty output.
+-- Used by conditional sections ({?token}...{/token}).
+------------------------------------------------------------------------
+local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
+    if tokenName == "name" then
+        return true  -- spell/item always has a name
+    elseif tokenName == "time" then
+        return (timeRemaining and timeRemaining > 0) or timeIsSecret
+    elseif tokenName == "charges" then
+        return button._currentReadableCharges ~= nil
+    elseif tokenName == "maxcharges" then
+        local mc = button.buttonData.maxCharges
+        return mc and mc > 1
+    elseif tokenName == "stacks" then
+        local stackText = button._auraStackText
+        if stackText and stackText ~= "" then return true end
+        return button._itemCount and button._itemCount > 0
+    elseif tokenName == "aura" then
+        return (auraRemaining and auraRemaining > 0) or auraIsSecret
+    elseif tokenName == "keybind" then
+        local kb = CooldownCompanion:GetKeybindText(button.buttonData)
+        return kb and kb ~= ""
+    elseif tokenName == "status" then
+        return true  -- always resolves to Ready/time/Active
+    elseif tokenName == "icon" then
+        return button.icon and button.icon:GetTexture() ~= nil
+    end
+    return false
 end
 
 ------------------------------------------------------------------------
@@ -169,8 +224,28 @@ local function SubstituteTokens(button, segments, style)
         timeIsSecret = durationIsSecret
     end
 
+    -- Conditional skip state for {?token}...{/token} and {!token}...{/token}
+    local skipDepth = 0
+
     for _, seg in ipairs(segments) do
-        if seg.type == "literal" then
+        -- Conditional section handling
+        if seg.type == "cond_start" then
+            if skipDepth > 0 then
+                skipDepth = skipDepth + 1
+            else
+                local present = EvaluateTokenPresence(button, seg.value, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
+                local shouldShow = (seg.negated and not present) or (not seg.negated and present)
+                if not shouldShow then
+                    skipDepth = 1
+                end
+            end
+        elseif seg.type == "cond_end" then
+            if skipDepth > 0 then
+                skipDepth = skipDepth - 1
+            end
+        elseif skipDepth > 0 then
+            -- Inside a false conditional — skip this segment
+        elseif seg.type == "literal" then
             parts[#parts + 1] = seg.value
         elseif seg.unknown then
             -- Unknown tokens render as empty
@@ -329,6 +404,31 @@ local function UpdateTextDisplay(button)
         button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
         button.textString:SetText(text)
     end
+
+    -- State-driven dynamic background
+    if style.textDynamicBackground then
+        local stateColor
+        if button._auraActive then
+            stateColor = style.textAuraColor or {0, 0.925, 1, 1}
+        elseif button._desatCooldownActive then
+            stateColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
+        else
+            stateColor = style.textReadyColor or {0.2, 1, 0.2, 1}
+        end
+        local intensity = style.textDynamicBgIntensity or 0.15
+        button.bg:SetColorTexture(stateColor[1], stateColor[2], stateColor[3], intensity)
+    end
+
+    -- Zebra striping (additive overlay on top of static/dynamic bg)
+    if button.zebraBg then
+        if style.textZebraStripe and button.index % 2 == 0 then
+            local zc = style.textZebraColor or {1, 1, 1, 0.04}
+            button.zebraBg:SetColorTexture(zc[1], zc[2], zc[3], zc[4])
+            button.zebraBg:Show()
+        else
+            button.zebraBg:Hide()
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -364,6 +464,15 @@ local function UpdateTextStyle(button, newStyle)
     local align = newStyle.textAlignment or "LEFT"
     button.textString:SetJustifyH(align)
 
+    -- Text shadow
+    if newStyle.textShadow then
+        button.textString:SetShadowColor(0, 0, 0, 0.8)
+        button.textString:SetShadowOffset(1, -1)
+    else
+        button.textString:SetShadowColor(0, 0, 0, 0)
+        button.textString:SetShadowOffset(0, 0)
+    end
+
     -- Anchor text within frame respecting border
     button.textString:ClearAllPoints()
     local inset = (borderSize > 0 and borderSize or 0) + 2
@@ -398,11 +507,16 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button:SetSize(w, h)
     button._isText = true
 
-    -- Background
+    -- Background (sublayer 0)
     local bgColor = style.textBgColor or {0, 0, 0, 0}
-    button.bg = button:CreateTexture(nil, "BACKGROUND")
+    button.bg = button:CreateTexture(nil, "BACKGROUND", nil, 0)
     button.bg:SetAllPoints()
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+    -- Zebra stripe overlay (sublayer 1, above main bg)
+    button.zebraBg = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+    button.zebraBg:SetAllPoints()
+    button.zebraBg:Hide()
 
     -- Border textures
     local borderSize = style.textBorderSize or 0
@@ -428,6 +542,15 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button.textString:SetJustifyH(align)
     button.textString:SetJustifyV("MIDDLE")
     button.textString:SetWordWrap(false)
+
+    -- Text shadow
+    if style.textShadow then
+        button.textString:SetShadowColor(0, 0, 0, 0.8)
+        button.textString:SetShadowOffset(1, -1)
+    else
+        button.textString:SetShadowColor(0, 0, 0, 0)
+        button.textString:SetShadowOffset(0, 0)
+    end
 
     local inset = (borderSize > 0 and borderSize or 0) + 2
     button.textString:SetPoint("TOPLEFT", inset, -1)

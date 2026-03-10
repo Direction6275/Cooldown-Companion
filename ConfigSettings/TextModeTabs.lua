@@ -87,6 +87,16 @@ local function BuildTextAppearanceTab(container, group, style)
         end)
         container:AddChild(spacingSlider)
     end
+
+    local headerCb = AceGUI:Create("CheckBox")
+    headerCb:SetLabel("Show Group Header")
+    headerCb:SetValue(style.showTextGroupHeader == true)
+    headerCb:SetFullWidth(true)
+    headerCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showTextGroupHeader = val or false
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+    end)
+    container:AddChild(headerCb)
     end -- not textSettingsCollapsed
 
     -- ================================================================
@@ -117,6 +127,14 @@ local function BuildTextAppearanceTab(container, group, style)
         {"{keybind}  — Keybind text", 1, 1, 1, true},
         {"{status}  — Auto: Ready / time / Active", 1, 1, 1, true},
         {"{icon}  — Inline spell icon", 1, 1, 1, true},
+        " ",
+        {"Conditional Sections", 1, 0.82, 0, true},
+        " ",
+        {"{?token}...{/token}  — Show when token has a value", 0.6, 1, 0.6, true},
+        {"{!token}...{/token}  — Show when token is empty", 0.6, 1, 0.6, true},
+        " ",
+        {"Example:", 0.7, 0.7, 0.7, true},
+        {"{name} {?time}(CD: {time}){/time}", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons)
     fmtHeading.right:ClearAllPoints()
     fmtHeading.right:SetPoint("RIGHT", fmtHeading.frame, "RIGHT", -3, 0)
@@ -133,6 +151,36 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end)
     container:AddChild(fmtBox)
+
+    -- Token insert dropdown
+    local tokenDrop = AceGUI:Create("Dropdown")
+    tokenDrop:SetLabel("Insert Token")
+    tokenDrop:SetList({
+        name = "{name}",
+        time = "{time}",
+        charges = "{charges}",
+        maxcharges = "{maxcharges}",
+        stacks = "{stacks}",
+        aura = "{aura}",
+        keybind = "{keybind}",
+        status = "{status}",
+        icon = "{icon}",
+    }, {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon"})
+    tokenDrop:SetFullWidth(true)
+    tokenDrop:SetCallback("OnValueChanged", function(widget, event, token)
+        local editbox = fmtBox.editbox
+        local text = editbox:GetText() or ""
+        local cursor = editbox:GetCursorPosition()
+        local insert = "{" .. token .. "}"
+        local newText = text:sub(1, cursor) .. insert .. text:sub(cursor + 1)
+        editbox:SetText(newText)
+        editbox:SetCursorPosition(cursor + #insert)
+        editbox:SetFocus()
+        -- Reset dropdown so it can be used again for the same token
+        widget:SetValue(nil)
+        widget:SetText("")
+    end)
+    container:AddChild(tokenDrop)
     end -- not fmtCollapsed
 
     -- ================================================================
@@ -194,6 +242,16 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(alignDrop)
+
+    local shadowCb = AceGUI:Create("CheckBox")
+    shadowCb:SetLabel("Text Shadow")
+    shadowCb:SetValue(style.textShadow == true)
+    shadowCb:SetFullWidth(true)
+    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.textShadow = val or false
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(shadowCb)
     end -- not fontCollapsed
 
     -- ================================================================
@@ -335,6 +393,61 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(borderColorPicker)
+
+    -- Dynamic Background
+    local dynBgCb = AceGUI:Create("CheckBox")
+    dynBgCb:SetLabel("Dynamic Background")
+    dynBgCb:SetValue(style.textDynamicBackground == true)
+    dynBgCb:SetFullWidth(true)
+    dynBgCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.textDynamicBackground = val or false
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(dynBgCb)
+
+    if style.textDynamicBackground then
+        local intensitySlider = AceGUI:Create("Slider")
+        intensitySlider:SetLabel("Background Intensity")
+        intensitySlider:SetSliderValues(0.05, 0.50, 0.01)
+        intensitySlider:SetValue(style.textDynamicBgIntensity or 0.15)
+        intensitySlider:SetFullWidth(true)
+        intensitySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.textDynamicBgIntensity = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(intensitySlider)
+    end
+
+    -- Zebra Striping
+    local zebraCb = AceGUI:Create("CheckBox")
+    zebraCb:SetLabel("Zebra Striping")
+    zebraCb:SetValue(style.textZebraStripe == true)
+    zebraCb:SetFullWidth(true)
+    zebraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.textZebraStripe = val or false
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(zebraCb)
+
+    if style.textZebraStripe then
+        local zebraColorPicker = AceGUI:Create("ColorPicker")
+        zebraColorPicker:SetLabel("Stripe Color")
+        zebraColorPicker:SetHasAlpha(true)
+        local zc = style.textZebraColor or {1, 1, 1, 0.04}
+        zebraColorPicker:SetColor(zc[1], zc[2], zc[3], zc[4])
+        zebraColorPicker:SetFullWidth(true)
+        zebraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+            style.textZebraColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        zebraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+            style.textZebraColor = {r, g, b, a}
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(zebraColorPicker)
+    end
     end -- not bgCollapsed
 
     -- ================================================================

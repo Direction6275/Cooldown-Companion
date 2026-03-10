@@ -544,6 +544,38 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
     wipe(frame.buttons)
 
+    -- Text mode group header
+    local isTextMode = group.displayMode == "text"
+    local headerHeight = 0
+    if isTextMode and style.showTextGroupHeader then
+        if not frame.textHeader then
+            frame.textHeader = frame:CreateFontString(nil, "OVERLAY")
+            frame.textHeader:SetJustifyH("LEFT")
+            frame.textHeader:SetJustifyV("TOP")
+        end
+        local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
+        local fontSize = style.textFontSize or 12
+        local fontOutline = style.textFontOutline or "OUTLINE"
+        frame.textHeader:SetFont(font, fontSize, fontOutline)
+        local baseColor = style.textFontColor or {1, 1, 1, 1}
+        frame.textHeader:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
+        if style.textShadow then
+            frame.textHeader:SetShadowColor(0, 0, 0, 0.8)
+            frame.textHeader:SetShadowOffset(1, -1)
+        else
+            frame.textHeader:SetShadowColor(0, 0, 0, 0)
+            frame.textHeader:SetShadowOffset(0, 0)
+        end
+        frame.textHeader:SetText(group.name or "")
+        frame.textHeader:ClearAllPoints()
+        frame.textHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -1)
+        frame.textHeader:Show()
+        headerHeight = fontSize + 4
+    elseif frame.textHeader then
+        frame.textHeader:Hide()
+    end
+    frame._textHeaderHeight = headerHeight
+
     -- Create new buttons (skip untalented spells)
     local visibleIndex = 0
     for i, buttonData in ipairs(group.buttons) do
@@ -560,15 +592,16 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             end
 
             -- Position the button using visibleIndex for gap-free layout
+            local yOffset = headerHeight
             local row, col
             if orientation == "horizontal" then
                 row = math_floor((visibleIndex - 1) / buttonsPerRow)
                 col = (visibleIndex - 1) % buttonsPerRow
-                button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+                button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -(row * (buttonHeight + spacing) + yOffset))
             else
                 col = math_floor((visibleIndex - 1) / buttonsPerRow)
                 row = (visibleIndex - 1) % buttonsPerRow
-                button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+                button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -(row * (buttonHeight + spacing) + yOffset))
             end
 
             button:Show()
@@ -640,6 +673,11 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
         local width = cols * buttonWidth + (cols - 1) * spacing
         local height = rows * buttonHeight + (rows - 1) * spacing
+
+        -- Add text group header height if active
+        local headerH = frame._textHeaderHeight or 0
+        height = height + headerH
+
         targetWidth = math_max(width, buttonWidth)
         targetHeight = math_max(height, buttonHeight)
     end
@@ -713,6 +751,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     end
 
     local visibleCount = #visibleButtons
+    local headerH = frame._textHeaderHeight or 0
     for visibleIndex, button in ipairs(visibleButtons) do
         button:ClearAllPoints()
         local row, col = GetCompactSlotForIndex(
@@ -722,7 +761,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
             orientation,
             compactGrowthDirection
         )
-        button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -row * (buttonHeight + spacing))
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", col * (buttonWidth + spacing), -(row * (buttonHeight + spacing) + headerH))
     end
 
     if frame.visibleButtonCount ~= visibleCount then
