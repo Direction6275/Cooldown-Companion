@@ -146,7 +146,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
     -- (?) tooltip for shared positioning note
     CreateInfoButton(auraTextCb.frame, auraTextCb.checkbg, "LEFT", "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0, {
         "Shared Position",
-        {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' in advanced settings to use independent positions.", 1, 1, 1, true},
+        {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
     }, auraTextCb)
 
     if styleTable.showAuraText ~= false then

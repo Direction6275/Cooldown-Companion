@@ -350,6 +350,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             SetFrameClickThroughRecursive(button.readyGlow.pixelFrame, true, true)
         end
     end
+    if button.secondaryCooldown then
+        SetFrameClickThroughRecursive(button.secondaryCooldown, true, true)
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -528,7 +531,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     end
 
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
-    if button._secondaryCdTextRegion then
+    if button._secondaryCdTextRegion and button._cdTextRegion then
         local wantAuraPos = button._auraActive == true
         if button._cdTextAtAuraPos ~= wantAuraPos then
             button._cdTextAtAuraPos = wantAuraPos
@@ -590,7 +593,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- Secondary cooldown text: visible only when aura is active AND a real cooldown is running
     if button._secondaryCdTextRegion then
-        local showSecondary = button._auraActive and button._secondaryCdActive
+        local showSecondary = button._auraActive and button._secondaryCdActive and style.showCooldownText
         if showSecondary then
             local cc = style.cooldownFontColor or {1, 1, 1, 1}
             button._secondaryCdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
