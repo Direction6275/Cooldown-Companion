@@ -321,6 +321,20 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
             end
         end
         GameTooltip:Show()
+        -- Expand tooltip width to fit the widest non-wrapping line
+        local pad = 20
+        local maxW = 0
+        for i = 1, GameTooltip:NumLines() do
+            local fs = _G["GameTooltipTextLeft" .. i]
+            if fs then
+                local w = fs:GetUnboundedStringWidth()
+                if w > maxW then maxW = w end
+            end
+        end
+        if maxW > 0 then
+            GameTooltip:SetMinimumWidth(maxW + pad)
+            GameTooltip:Show()
+        end
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 

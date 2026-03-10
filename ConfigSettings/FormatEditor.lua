@@ -517,6 +517,23 @@ local function OpenFormatEditor(style, groupId)
     tokenHeading:SetFullWidth(true)
     window:AddChild(tokenHeading)
 
+    local tokenInfo = CreateInfoButton(tokenHeading.frame, tokenHeading.label, "LEFT", "RIGHT", 4, 0, {
+        {"Available Tokens", 1, 0.82, 0},
+        " ",
+        {"|cff99ff99{name}|r  Spell/item display name", 1, 1, 1},
+        {"|cff99ff99{time}|r  Cooldown remaining", 1, 1, 1},
+        {"|cff99ff99{charges}|r  Current charges", 1, 1, 1},
+        {"|cff99ff99{maxcharges}|r  Maximum charges", 1, 1, 1},
+        {"|cff99ff99{stacks}|r  Aura stacks / item count", 1, 1, 1},
+        {"|cff99ff99{aura}|r  Aura duration remaining", 1, 1, 1},
+        {"|cff99ff99{keybind}|r  Keybind text", 1, 1, 1},
+        {"|cff99ff99{status}|r  Shows ready, cooldown, or aura automatically", 1, 1, 1},
+        {"|cff99ff99{icon}|r  Inline spell icon", 1, 1, 1},
+    }, tokenHeading)
+    tokenHeading.right:ClearAllPoints()
+    tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)
+    tokenHeading.right:SetPoint("LEFT", tokenInfo, "RIGHT", 4, 0)
+
     local tokenGroup = AceGUI:Create("SimpleGroup")
     tokenGroup:SetFullWidth(true)
     tokenGroup:SetLayout("Flow")
