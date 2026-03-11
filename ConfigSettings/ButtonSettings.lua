@@ -991,11 +991,22 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         local effectiveFmt = buttonData.textFormat or group.style.textFormat or "{name}  {status}"
 
         -- Preview label
+        local preSpacer = AceGUI:Create("Label")
+        preSpacer:SetText(" ")
+        preSpacer:SetFullWidth(true)
+        scroll:AddChild(preSpacer)
+
         local fmtPreview = AceGUI:Create("Label")
         fmtPreview:SetText(ST._RenderFormatPreview(effectiveFmt, group.style))
         fmtPreview:SetFullWidth(true)
         fmtPreview:SetFontObject(GameFontHighlight)
+        fmtPreview:SetJustifyH("CENTER")
         scroll:AddChild(fmtPreview)
+
+        local postSpacer = AceGUI:Create("Label")
+        postSpacer:SetText(" ")
+        postSpacer:SetFullWidth(true)
+        scroll:AddChild(postSpacer)
 
         -- "Using group default" note or tag summary
         if not buttonData.textFormat then
@@ -1014,6 +1025,11 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                 scroll:AddChild(fmtSummary)
             end
         end
+
+        local btnSpacer = AceGUI:Create("Label")
+        btnSpacer:SetText(" ")
+        btnSpacer:SetFullWidth(true)
+        scroll:AddChild(btnSpacer)
 
         -- Edit button
         local editBtn = AceGUI:Create("Button")
