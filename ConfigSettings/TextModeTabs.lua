@@ -384,6 +384,8 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:RefreshConfigPanel()
     end)
 
+    CreatePromoteButton(bgHeading, "textBackground", CS.selectedButton and group.buttons[CS.selectedButton], style)
+
     if not bgCollapsed then
     local bgColorPicker = AceGUI:Create("ColorPicker")
     bgColorPicker:SetLabel("Background Color")

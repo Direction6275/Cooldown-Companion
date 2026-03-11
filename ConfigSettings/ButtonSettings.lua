@@ -41,6 +41,7 @@ local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
 local BuildTextColorsControls = ST._BuildTextColorsControls
+local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -1091,7 +1092,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator", "readyGlow",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
-        "textFont", "textColors",
+        "textFont", "textColors", "textBackground",
     }
 
     -- Map of section IDs to builder functions
@@ -1122,6 +1123,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         barActiveAura = BuildBarActiveAuraControls,
         textFont = BuildTextFontControls,
         textColors = BuildTextColorsControls,
+        textBackground = BuildTextBackgroundControls,
     }
 
     -- Detect no-cooldown spells to skip irrelevant override sections

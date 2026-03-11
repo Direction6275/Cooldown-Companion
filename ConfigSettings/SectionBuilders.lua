@@ -1467,6 +1467,51 @@ end
 ------------------------------------------------------------------------
 -- Text Mode — Text Colors
 ------------------------------------------------------------------------
+local function BuildTextBackgroundControls(container, styleTable, refreshCallback)
+    local bgColorPicker = AceGUI:Create("ColorPicker")
+    bgColorPicker:SetLabel("Background Color")
+    bgColorPicker:SetHasAlpha(true)
+    local bg = styleTable.textBgColor or {0, 0, 0, 0}
+    bgColorPicker:SetColor(bg[1], bg[2], bg[3], bg[4])
+    bgColorPicker:SetFullWidth(true)
+    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.textBgColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.textBgColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(bgColorPicker)
+
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(styleTable.textBorderSize or 0)
+    borderSlider:SetFullWidth(true)
+    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.textBorderSize = val
+        refreshCallback()
+    end)
+    container:AddChild(borderSlider)
+
+    local borderColorPicker = AceGUI:Create("ColorPicker")
+    borderColorPicker:SetLabel("Border Color")
+    borderColorPicker:SetHasAlpha(true)
+    local bc = styleTable.textBorderColor or {0, 0, 0, 1}
+    borderColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
+    borderColorPicker:SetFullWidth(true)
+    borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
+        styleTable.textBorderColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
+        styleTable.textBorderColor = {r, g, b, a}
+        refreshCallback()
+    end)
+    container:AddChild(borderColorPicker)
+end
+
 local function BuildTextFontControls(container, styleTable, refreshCallback)
     local fontDrop = AceGUI:Create("Dropdown")
     fontDrop:SetLabel("Font")
@@ -1623,3 +1668,4 @@ ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls
 ST._BuildTextFontControls = BuildTextFontControls
 ST._BuildTextColorsControls = BuildTextColorsControls
+ST._BuildTextBackgroundControls = BuildTextBackgroundControls
