@@ -237,7 +237,8 @@ local function RefreshColumn1(preserveDrag)
         if group.displayMode == "bars" then
             modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause")
         elseif group.displayMode == "text" then
-            modeBadge:SetAtlas("communities-icon-chat")
+            modeBadge:SetAtlas("poi-workorders", false)
+            modeBadge:SetSize(14, 14)
         else
             modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked")
         end
