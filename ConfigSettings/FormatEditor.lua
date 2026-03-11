@@ -654,7 +654,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local window = AceGUI:Create("Window")
     window:SetTitle((opts and opts.title) or "Format String Editor")
     window:SetWidth(400)
-    window:SetHeight(660)
+    window:SetHeight(600)
     window:SetLayout("List")
     window:EnableResize(false)
     formatEditorFrame = window
@@ -673,8 +673,10 @@ local function OpenFormatEditor(style, groupId, opts)
     local editGroup = AceGUI:Create("MultiLineEditBox")
     editGroup:SetLabel("Format String")
     editGroup:SetFullWidth(true)
-    editGroup:SetNumLines(3)
+    editGroup:SetNumLines(6)
     editGroup.button:Hide()  -- hide "Accept" button, we save on change
+    editGroup.scrollBar:Hide()
+    editGroup.scrollBG:SetPoint("TOPRIGHT", editGroup.frame, "TOPRIGHT", -4, -23)
     window:AddChild(editGroup)
 
     local eb = editGroup.editBox
