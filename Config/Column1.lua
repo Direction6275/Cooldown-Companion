@@ -1169,7 +1169,7 @@ local function RefreshColumn1(preserveDrag)
 
         -- Top row: "New Icon Group" | "New Bar Group" | "New Text Group" (thirds)
         local barW = CS.col1ButtonBar:GetWidth() or 300
-        local thirdW = barW / 3
+        local thirdW = (barW - 6) / 3
 
         local newIconBtn = AceGUI:Create("Button")
         newIconBtn:SetText("Icon Group")
@@ -1183,7 +1183,7 @@ local function RefreshColumn1(preserveDrag)
         newIconBtn.frame:SetParent(CS.col1ButtonBar)
         newIconBtn.frame:ClearAllPoints()
         newIconBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-        newIconBtn.frame:SetWidth(thirdW - 2)
+        newIconBtn.frame:SetWidth(thirdW)
         newIconBtn.frame:SetHeight(28)
         newIconBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newIconBtn)
@@ -1206,8 +1206,8 @@ local function RefreshColumn1(preserveDrag)
         end)
         newBarBtn.frame:SetParent(CS.col1ButtonBar)
         newBarBtn.frame:ClearAllPoints()
-        newBarBtn.frame:SetPoint("LEFT", newIconBtn.frame, "RIGHT", 2, 0)
-        newBarBtn.frame:SetWidth(thirdW - 2)
+        newBarBtn.frame:SetPoint("LEFT", newIconBtn.frame, "RIGHT", 3, 0)
+        newBarBtn.frame:SetWidth(thirdW)
         newBarBtn.frame:SetHeight(28)
         newBarBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newBarBtn)
@@ -1230,19 +1230,19 @@ local function RefreshColumn1(preserveDrag)
         end)
         newTextBtn.frame:SetParent(CS.col1ButtonBar)
         newTextBtn.frame:ClearAllPoints()
-        newTextBtn.frame:SetPoint("LEFT", newBarBtn.frame, "RIGHT", 2, 0)
-        newTextBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
+        newTextBtn.frame:SetPoint("LEFT", newBarBtn.frame, "RIGHT", 3, 0)
+        newTextBtn.frame:SetWidth(thirdW)
         newTextBtn.frame:SetHeight(28)
         newTextBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newTextBtn)
 
         -- Dynamic equal-width resize for the top row
-        CS.col1ButtonBar._topRowBtns = {newIconBtn.frame, newBarBtn.frame}
+        CS.col1ButtonBar._topRowBtns = {newIconBtn.frame, newBarBtn.frame, newTextBtn.frame}
         CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
             if self._topRowBtns then
-                local tw = w / 3
+                local tw = (w - 6) / 3
                 for _, f in ipairs(self._topRowBtns) do
-                    f:SetWidth(tw - 2)
+                    f:SetWidth(tw)
                 end
             end
         end)
@@ -1257,7 +1257,7 @@ local function RefreshColumn1(preserveDrag)
         newFolderBtn.frame:SetParent(CS.col1ButtonBar)
         newFolderBtn.frame:ClearAllPoints()
         newFolderBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOMLEFT", 0, 0)
-        newFolderBtn.frame:SetPoint("RIGHT", CS.col1ButtonBar, "CENTER", -2, 0)
+        newFolderBtn.frame:SetPoint("RIGHT", CS.col1ButtonBar, "CENTER", -1.5, 0)
         newFolderBtn.frame:SetHeight(28)
         newFolderBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newFolderBtn)
@@ -1269,7 +1269,7 @@ local function RefreshColumn1(preserveDrag)
         end)
         importBtn.frame:SetParent(CS.col1ButtonBar)
         importBtn.frame:ClearAllPoints()
-        importBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOM", 2, 0)
+        importBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOM", 1.5, 0)
         importBtn.frame:SetPoint("BOTTOMRIGHT", CS.col1ButtonBar, "BOTTOMRIGHT", 0, 0)
         importBtn.frame:SetHeight(28)
         importBtn.frame:Show()
