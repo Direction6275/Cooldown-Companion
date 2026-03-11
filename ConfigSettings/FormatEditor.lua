@@ -323,13 +323,28 @@ end
 local function EvaluateMockPresence(tokenName, mockState)
     if tokenName == "name" then return true
     elseif tokenName == "time" then return mockState.time and mockState.time > 0
-    elseif tokenName == "charges" then return mockState.charges ~= nil
-    elseif tokenName == "maxcharges" then return mockState.maxCharges and mockState.maxCharges > 1
+    elseif tokenName == "charges" then return mockState.hasCharges == true
+    elseif tokenName == "maxcharges" then
+        if not mockState.hasCharges then return false end
+        return mockState.charges ~= nil and mockState.maxCharges ~= nil
+            and mockState.charges == mockState.maxCharges
+    elseif tokenName == "missingcharges" then
+        if not mockState.hasCharges then return false end
+        return mockState.charges ~= nil and mockState.maxCharges ~= nil
+            and mockState.charges > 0 and mockState.charges < mockState.maxCharges
+    elseif tokenName == "zerocharges" then
+        if not mockState.hasCharges then return false end
+        return mockState.charges ~= nil and mockState.charges == 0
     elseif tokenName == "stacks" then return mockState.stacks and mockState.stacks > 0
     elseif tokenName == "aura" then return mockState.auraTime and mockState.auraTime > 0
     elseif tokenName == "keybind" then return mockState.keybind and mockState.keybind ~= ""
     elseif tokenName == "status" then return true
     elseif tokenName == "icon" then return mockState.icon ~= nil
+    elseif tokenName == "pandemic" then return mockState.pandemic == true
+    elseif tokenName == "proc" then return mockState.proc == true
+    elseif tokenName == "unusable" then return mockState.unusable == true
+    elseif tokenName == "oor" then return mockState.oor == true
+    elseif tokenName == "available" then return not mockState.time or mockState.time <= 0
     end
     return false
 end
@@ -499,25 +514,120 @@ local function GetPreviewIcon()
 end
 
 ------------------------------------------------------------------------
+-- DETECT USED TOKENS (value tokens + conditionals)
+------------------------------------------------------------------------
+local function DetectUsedTokens(segments)
+    local used = {}
+    for _, seg in ipairs(segments) do
+        if seg.type == "cond_start" then
+            used[seg.value] = true
+        elseif seg.type == "token" and not seg.unknown then
+            used[seg.value] = true
+        end
+    end
+    return used
+end
+
+------------------------------------------------------------------------
 -- BUILD MOCK STATES
 ------------------------------------------------------------------------
-local function BuildMockStates(style)
+local EXTRA_ROW_COLOR = {0.6, 0.6, 0.6}
+
+-- Tokens that differentiate Ready/Cooldown states
+local CD_STATE_TRIGGERS = {
+    time = true, status = true, available = true,
+    charges = true, maxcharges = true, missingcharges = true, zerocharges = true,
+}
+
+-- Tokens that differentiate Aura state
+local AURA_STATE_TRIGGERS = {
+    aura = true, status = true, stacks = true, pandemic = true,
+}
+
+local function BuildMockStates(style, segments)
     local name = GetPreviewName()
     local icon = GetPreviewIcon()
-    return {
-        {
+    local states = {}
+
+    if not segments then return states end
+
+    local used = DetectUsedTokens(segments)
+
+    -- Determine which base rows to show
+    local showCDStates = false
+    local showAura = false
+    for token in pairs(used) do
+        if CD_STATE_TRIGGERS[token] then showCDStates = true end
+        if AURA_STATE_TRIGGERS[token] then showAura = true end
+    end
+
+    if showCDStates then
+        states[#states + 1] = {
             label = WrapPreviewColor("Ready:", style.textReadyColor or {0.2, 1.0, 0.2, 1}),
-            state = { name = name, time = 0, charges = 2, maxCharges = 3, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
-        },
-        {
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+        }
+        states[#states + 1] = {
             label = WrapPreviewColor("Cooldown:", style.textCooldownColor or {1, 0.3, 0.3, 1}),
-            state = { name = name, time = 83, charges = 1, maxCharges = 3, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
-        },
-        {
+            state = { name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+        }
+    end
+    if showAura then
+        states[#states + 1] = {
             label = WrapPreviewColor("Aura:", style.textAuraColor or {0, 0.925, 1, 1}),
-            state = { name = name, time = 0, charges = 2, maxCharges = 3, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon },
-        },
-    }
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon },
+        }
+    end
+
+    -- Fallback: if no base rows but format has value tokens, show a generic preview
+    if #states == 0 then
+        local hasValueToken = false
+        for _, seg in ipairs(segments) do
+            if seg.type == "token" and not seg.unknown then
+                hasValueToken = true
+                break
+            end
+        end
+        if hasValueToken then
+            states[#states + 1] = {
+                label = WrapPreviewColor("Preview:", EXTRA_ROW_COLOR),
+                state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            }
+        end
+    end
+
+    -- Extra rows for conditional-only tokens that need dedicated scenarios
+    if used["zerocharges"] then
+        states[#states + 1] = {
+            label = WrapPreviewColor("Zero Charges:", EXTRA_ROW_COLOR),
+            state = { name = name, time = 83, charges = 0, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+        }
+    end
+    if used["proc"] then
+        states[#states + 1] = {
+            label = WrapPreviewColor("Proc:", EXTRA_ROW_COLOR),
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true },
+        }
+    end
+    if used["pandemic"] then
+        states[#states + 1] = {
+            label = WrapPreviewColor("Pandemic:", EXTRA_ROW_COLOR),
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 1, auraTime = 4.5, keybind = "F1", icon = icon, pandemic = true },
+        }
+    end
+    if used["unusable"] then
+        states[#states + 1] = {
+            label = WrapPreviewColor("Unusable:", EXTRA_ROW_COLOR),
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, unusable = true },
+        }
+    end
+    if used["oor"] then
+        states[#states + 1] = {
+            label = WrapPreviewColor("Out of Range:", EXTRA_ROW_COLOR),
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, oor = true },
+        }
+    end
+
+    return states
 end
 
 ------------------------------------------------------------------------
@@ -598,26 +708,10 @@ local function OpenFormatEditor(style, groupId, opts)
     previewHeading:SetFullWidth(true)
     window:AddChild(previewHeading)
 
-    local previewPrefixes = {}
-    local previewContents = {}
-    for i = 1, 3 do
-        local rowGroup = AceGUI:Create("SimpleGroup")
-        rowGroup:SetFullWidth(true)
-        rowGroup:SetLayout("Flow")
-        window:AddChild(rowGroup)
-
-        local prefix = AceGUI:Create("Label")
-        prefix:SetRelativeWidth(0.25)
-        prefix:SetFontObject(GameFontHighlight)
-        rowGroup:AddChild(prefix)
-        previewPrefixes[i] = prefix
-
-        local content = AceGUI:Create("Label")
-        content:SetRelativeWidth(0.75)
-        content:SetFontObject(GameFontHighlight)
-        rowGroup:AddChild(content)
-        previewContents[i] = content
-    end
+    local previewContainer = AceGUI:Create("SimpleGroup")
+    previewContainer:SetFullWidth(true)
+    previewContainer:SetLayout("List")
+    window:AddChild(previewContainer)
 
     -- ================================================================
     -- UPDATE FUNCTION (refreshes preview from currentRawText)
@@ -625,24 +719,44 @@ local function OpenFormatEditor(style, groupId, opts)
     local currentStyle = style
     local currentGroupId = groupId
 
-    -- Per-row pulse state: previewPulse[i] = true if that row has active pulse content
-    local previewPulse = {}
-
     local function UpdateDisplay()
         local segments = ParseFormatString(currentRawText)
-        local mockStates = BuildMockStates(currentStyle)
+        local mockStates = BuildMockStates(currentStyle, segments)
+
+        -- Rebuild preview rows
+        previewContainer:ReleaseChildren()
+        local contentLabels = {}
+        local pulseFlags = {}
         local anyPulse = false
+
         for i, mock in ipairs(mockStates) do
+            local rowGroup = AceGUI:Create("SimpleGroup")
+            rowGroup:SetFullWidth(true)
+            rowGroup:SetLayout("Flow")
+            previewContainer:AddChild(rowGroup)
+
+            local prefix = AceGUI:Create("Label")
+            prefix:SetRelativeWidth(0.25)
+            prefix:SetFontObject(GameFontHighlight)
+            prefix:SetText(mock.label)
+            rowGroup:AddChild(prefix)
+
+            local content = AceGUI:Create("Label")
+            content:SetRelativeWidth(0.75)
+            content:SetFontObject(GameFontHighlight)
+            rowGroup:AddChild(content)
+
             local preview, hasPulse = PreviewSubstitute(segments, currentStyle, mock.state)
-            -- Flatten newlines for single-line preview rows
             preview = preview:gsub("\n", " ")
-            previewPrefixes[i]:SetText(mock.label)
-            previewContents[i]:SetText(preview)
-            previewPulse[i] = hasPulse
+            content:SetText(preview)
+
+            contentLabels[i] = content
+            pulseFlags[i] = hasPulse
             if hasPulse then anyPulse = true end
         end
 
         -- Install or remove pulse animation OnUpdate
+        local rowCount = #mockStates
         if anyPulse then
             local wf = window.frame
             wf._pulseElapsed = 0
@@ -651,19 +765,16 @@ local function OpenFormatEditor(style, groupId, opts)
                 if self._pulseElapsed < (1 / 30) then return end
                 self._pulseElapsed = self._pulseElapsed - (1 / 30)
                 local alpha = 0.7 + 0.3 * math.sin(GetTime() * 2 * math.pi)
-                for idx = 1, 3 do
-                    if previewPulse[idx] then
-                        previewContents[idx].label:SetAlpha(alpha)
-                    else
-                        previewContents[idx].label:SetAlpha(1.0)
+                for idx = 1, rowCount do
+                    if pulseFlags[idx] and contentLabels[idx].label then
+                        contentLabels[idx].label:SetAlpha(alpha)
+                    elseif contentLabels[idx].label then
+                        contentLabels[idx].label:SetAlpha(1.0)
                     end
                 end
             end)
         else
             window.frame:SetScript("OnUpdate", nil)
-            for idx = 1, 3 do
-                previewContents[idx].label:SetAlpha(1.0)
-            end
         end
 
         local warnings = ValidateFormat(segments)
@@ -1024,8 +1135,9 @@ ST._RenderFormatPreview = function(formatString, style)
     local icon = GetPreviewIcon()
     -- "All present" mock state so every token renders visibly
     local mockState = {
-        name = name, time = 83, charges = 1, maxCharges = 3,
+        name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true,
         stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon,
+        proc = true, pandemic = true,
     }
     local rendered = PreviewSubstitute(segments, style, mockState)
     return rendered
