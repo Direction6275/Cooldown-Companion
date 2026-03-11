@@ -516,17 +516,16 @@ local function UpdateTextDisplay(button)
         local fmtStr = text:gsub("|c%x%x%x%x%x%x%x%x", "")
         fmtStr = fmtStr:gsub("|r", "")
 
-        -- Replace our sentinel placeholders with a unique marker before escaping %
+        -- Replace ALL sentinel placeholders with a unique marker before escaping %
         -- Sentinels are literal %TIME%, %AURA%, %STATUS% in the string
         local SENTINEL = "\001SECRET\001"
-        local replaced = false
+        local secretCount = 0
         for _, placeholder in ipairs({"%TIME%", "%AURA%", "%STATUS%"}) do
-            if not replaced then
+            while true do
                 local idx = fmtStr:find(placeholder, 1, true)
-                if idx then
-                    fmtStr = fmtStr:sub(1, idx - 1) .. SENTINEL .. fmtStr:sub(idx + #placeholder)
-                    replaced = true
-                end
+                if not idx then break end
+                fmtStr = fmtStr:sub(1, idx - 1) .. SENTINEL .. fmtStr:sub(idx + #placeholder)
+                secretCount = secretCount + 1
             end
         end
 
@@ -534,7 +533,16 @@ local function UpdateTextDisplay(button)
         fmtStr = fmtStr:gsub("%%", "%%%%")
         fmtStr = fmtStr:gsub(SENTINEL, "%%.1f")
 
-        button.textString:SetFormattedText(fmtStr, secretValue)
+        -- Pass secretValue once per format specifier
+        if secretCount == 1 then
+            button.textString:SetFormattedText(fmtStr, secretValue)
+        elseif secretCount == 2 then
+            button.textString:SetFormattedText(fmtStr, secretValue, secretValue)
+        else
+            local args = {}
+            for i = 1, secretCount do args[i] = secretValue end
+            button.textString:SetFormattedText(fmtStr, unpack(args))
+        end
     else
         -- Normal path: full per-token coloring via escape sequences
         local baseColor = style.textFontColor or {1, 1, 1, 1}
