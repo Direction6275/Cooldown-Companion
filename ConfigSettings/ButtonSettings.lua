@@ -983,8 +983,8 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtHeading.label, "LEFT", "RIGHT", 4, 0, {
             {"Per-Button Format Override", 1, 0.82, 0, true},
             " ",
-            {"Overrides the group format string for this button only.", 1, 1, 1, true},
-            {"Clear the override to revert to the group default.", 1, 1, 1, true},
+            {"Overrides the group format string for this button only.", 1, 1, 1},
+            {"Clear the override to revert to the group default.", 1, 1, 1},
         }, infoButtons)
         fmtHeading.right:ClearAllPoints()
         fmtHeading.right:SetPoint("RIGHT", fmtHeading.frame, "RIGHT", -3, 0)
