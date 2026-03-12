@@ -506,6 +506,31 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
+    text = "Moving '%s' to a different panel will remove its appearance overrides. Continue?",
+    button1 = "Move",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not data then return end
+        local buttonData = ST._PerformCrossPanelMove(
+            data.sourcePanelId, data.sourceIndex,
+            data.targetPanelId, data.targetIndex
+        )
+        if buttonData then
+            ST._StripButtonOverrides(buttonData)
+            CooldownCompanion:RefreshGroupFrame(data.sourcePanelId)
+            CooldownCompanion:RefreshGroupFrame(data.targetPanelId)
+            CS.selectedButton = nil
+            wipe(CS.selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
     text = "This folder contains groups with foreign spec filters. Moving to character will remove those filters. Continue?",
     button1 = "Continue",

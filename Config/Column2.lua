@@ -612,6 +612,9 @@ local function RefreshColumn2()
 
         local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
 
+        -- Metadata for cross-panel drag detection
+        local col2RenderedRows = {}
+
         -- Render each panel's buttons (with headers for multi-panel containers)
         for _, panelInfo in ipairs(panels) do
             local panelId = panelInfo.groupId
@@ -620,10 +623,6 @@ local function RefreshColumn2()
 
             -- Panel header (only for multi-panel containers)
             if isMultiPanel then
-                local collapseTag = isCollapsed
-                    and "|A:common-icon-plus:10:10|a "
-                    or "|A:common-icon-minus:10:10|a "
-
                 local modeLabel
                 if panel.displayMode == "bars" then
                     modeLabel = "|cff888888[Bars]|r "
@@ -634,13 +633,32 @@ local function RefreshColumn2()
                 end
 
                 local btnCount = panel.buttons and #panel.buttons or 0
-                local headerText = collapseTag .. (panel.name or ("Panel " .. panelId)) .. "  " .. modeLabel .. "|cff666666(" .. btnCount .. ")|r"
+                local headerText = (panel.name or ("Panel " .. panelId)) .. "  " .. modeLabel .. "|cff666666(" .. btnCount .. ")|r"
 
                 local header = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(header)
                 header:SetText(headerText)
-                header:SetImage(ST._GetGroupIcon(panel))
-                header:SetImageSize(24, 24)
+                header:SetImage(134400) -- invisible dummy for 32px row height
+                header:SetImageSize(32, 32)
+                header.image:SetAlpha(0)
+
+                -- Mode badge overlay (pooled on widget, same pattern as old Column 1)
+                local modeBadge = header._cdcModeBadge
+                if not modeBadge then
+                    modeBadge = header.frame:CreateTexture(nil, "ARTWORK")
+                    header._cdcModeBadge = modeBadge
+                end
+                modeBadge:ClearAllPoints()
+                modeBadge:SetSize(16, 16)
+                modeBadge:SetPoint("CENTER", header.image, "CENTER", 0, 0)
+                if panel.displayMode == "bars" then
+                    modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
+                elseif panel.displayMode == "text" then
+                    modeBadge:SetAtlas("poi-workorders", false)
+                else
+                    modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
+                end
+                modeBadge:Show()
                 header:SetFullWidth(true)
                 header:SetFontObject(GameFontHighlight)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -654,22 +672,17 @@ local function RefreshColumn2()
 
                 header.frame:SetScript("OnMouseUp", function(self, mouseButton)
                     if mouseButton == "LeftButton" then
-                        if IsShiftKeyDown() then
-                            -- Shift+click: toggle collapse without changing selection
-                            CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId]
+                        -- Left-click: select or deselect this panel
+                        if CS.selectedGroup == panelId then
+                            CS.selectedGroup = nil
                         else
-                            -- Normal click: select this panel (or toggle collapse if already selected)
-                            if CS.selectedGroup == panelId then
-                                CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId]
-                            else
-                                CS.selectedGroup = panelId
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                            end
+                            CS.selectedGroup = panelId
                         end
+                        CS.selectedButton = nil
+                        wipe(CS.selectedButtons)
                         CooldownCompanion:RefreshConfigPanel()
                     elseif mouseButton == "RightButton" then
-                        -- Panel context menu (same as old panel list context menu)
+                        -- Panel context menu
                         if not CS.panelContextMenu then
                             CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
                         end
@@ -744,8 +757,28 @@ local function RefreshColumn2()
                     end
                 end)
 
+                -- Collapse/expand button overlay (pooled on underlying frame)
+                local collapseBtn = header.frame._cdcCollapseBtn
+                if not collapseBtn then
+                    collapseBtn = CreateFrame("Button", nil, header.frame)
+                    collapseBtn:SetSize(10, 10)
+                    collapseBtn.icon = collapseBtn:CreateTexture(nil, "OVERLAY")
+                    collapseBtn.icon:SetAllPoints()
+                    header.frame._cdcCollapseBtn = collapseBtn
+                end
+                collapseBtn:ClearAllPoints()
+                collapseBtn:SetPoint("RIGHT", header.frame, "RIGHT", -4, 0)
+                collapseBtn:SetFrameLevel(header.frame:GetFrameLevel() + 2)
+                collapseBtn.icon:SetAtlas(isCollapsed and "common-icon-plus" or "common-icon-minus", false)
+                collapseBtn:SetScript("OnClick", function()
+                    CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId]
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                collapseBtn:Show()
+
                 CS.col2Scroll:AddChild(header)
                 scrollChildCount = scrollChildCount + 1
+                table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
             end
 
             -- Button list for this panel (skip if collapsed in multi-panel mode)
@@ -1137,6 +1170,9 @@ local function RefreshColumn2()
 
                     CS.col2Scroll:AddChild(entry)
                     scrollChildCount = scrollChildCount + 1
+                    if isMultiPanel then
+                        table.insert(col2RenderedRows, { kind = "button", panelId = panelId, buttonIndex = i, widget = entry })
+                    end
 
                     entryFrame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
 
@@ -1169,8 +1205,11 @@ local function RefreshColumn2()
                                 scrollWidget = CS.col2Scroll,
                                 widget = entry,
                                 startY = cursorY,
-                                childOffset = dragChildOffset,
-                                totalDraggable = dragTotal,
+                                -- Multi-panel: use rendered rows for cross-panel awareness
+                                col2RenderedRows = isMultiPanel and col2RenderedRows or nil,
+                                -- Single-panel fallback
+                                childOffset = not isMultiPanel and dragChildOffset or nil,
+                                totalDraggable = not isMultiPanel and dragTotal or nil,
                             }
                             StartDragTracking()
                         end

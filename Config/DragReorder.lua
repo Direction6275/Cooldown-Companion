@@ -74,6 +74,111 @@ local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
     return dropIndex, anchorFrame, anchorAbove
 end
 
+------------------------------------------------------------------------
+-- Column 2 cross-panel drop target detection
+------------------------------------------------------------------------
+local function FindPreviousPanelId(renderedRows, currentIndex)
+    for i = currentIndex - 1, 1, -1 do
+        if renderedRows[i].kind == "header" then
+            return renderedRows[i].panelId
+        end
+    end
+    return nil
+end
+
+local function GetCol2DropTarget(cursorY, renderedRows)
+    if not renderedRows or #renderedRows == 0 then return nil end
+
+    for i, rowMeta in ipairs(renderedRows) do
+        local frame = rowMeta.widget and rowMeta.widget.frame
+        if frame and frame:IsShown() then
+            local top = frame:GetTop()
+            local bottom = frame:GetBottom()
+            if top and bottom and cursorY <= top and cursorY >= bottom then
+                local mid = (top + bottom) / 2
+
+                if rowMeta.kind == "button" then
+                    if cursorY > mid then
+                        return {
+                            action = "insert",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = rowMeta.buttonIndex,
+                            anchorFrame = frame,
+                            anchorAbove = true,
+                        }
+                    else
+                        return {
+                            action = "insert",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = rowMeta.buttonIndex + 1,
+                            anchorFrame = frame,
+                            anchorAbove = false,
+                        }
+                    end
+                elseif rowMeta.kind == "header" then
+                    if rowMeta.isCollapsed then
+                        -- Drop onto collapsed header = append to that panel
+                        return {
+                            action = "append-to-collapsed",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = nil, -- will resolve to #buttons+1
+                            anchorFrame = frame,
+                            anchorAbove = false,
+                        }
+                    else
+                        -- Expanded header: top half → append to previous panel, bottom half → insert at pos 1
+                        if cursorY > mid then
+                            local prevPanelId = FindPreviousPanelId(renderedRows, i)
+                            if prevPanelId then
+                                return {
+                                    action = "append",
+                                    targetPanelId = prevPanelId,
+                                    targetIndex = nil, -- will resolve to #buttons+1
+                                    anchorFrame = frame,
+                                    anchorAbove = true,
+                                }
+                            end
+                            -- No previous panel (first header) → insert at pos 1 of this panel
+                            return {
+                                action = "insert",
+                                targetPanelId = rowMeta.panelId,
+                                targetIndex = 1,
+                                anchorFrame = frame,
+                                anchorAbove = false,
+                            }
+                        else
+                            return {
+                                action = "insert",
+                                targetPanelId = rowMeta.panelId,
+                                targetIndex = 1,
+                                anchorFrame = frame,
+                                anchorAbove = false,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Below all rows: append to last panel
+    local lastRow = renderedRows[#renderedRows]
+    if lastRow then
+        local panelId = lastRow.panelId
+        local lastFrame = lastRow.widget and lastRow.widget.frame
+        if lastFrame and lastFrame:IsShown() then
+            return {
+                action = "append",
+                targetPanelId = panelId,
+                targetIndex = nil,
+                anchorFrame = lastFrame,
+                anchorAbove = false,
+            }
+        end
+    end
+    return nil
+end
+
 local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
     if not anchorFrame then
         HideDragIndicator()
@@ -498,6 +603,38 @@ local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
 end
 
 ------------------------------------------------------------------------
+-- Cross-panel move helpers
+------------------------------------------------------------------------
+local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, targetIndex)
+    local db = CooldownCompanion.db.profile
+    local sourceGroup = db.groups[sourcePanelId]
+    local targetGroup = db.groups[targetPanelId]
+    if not sourceGroup or not targetGroup then return nil end
+    local buttonData = table.remove(sourceGroup.buttons, sourceIndex)
+    if not buttonData then return nil end
+    -- Resolve "append" targets (nil targetIndex = after last button)
+    if not targetIndex then
+        targetIndex = #targetGroup.buttons + 1
+    end
+    local maxTarget = #targetGroup.buttons + 1
+    if targetIndex > maxTarget then targetIndex = maxTarget end
+    table.insert(targetGroup.buttons, targetIndex, buttonData)
+    return buttonData
+end
+
+local function StripButtonOverrides(buttonData)
+    buttonData.styleOverrides = nil
+    buttonData.overrideSections = nil
+    buttonData.textFormat = nil
+end
+
+local function ButtonHasOverrides(buttonData)
+    return (buttonData.styleOverrides and next(buttonData.styleOverrides))
+        or (buttonData.overrideSections and next(buttonData.overrideSections))
+        or buttonData.textFormat ~= nil
+end
+
+------------------------------------------------------------------------
 -- Drag lifecycle
 ------------------------------------------------------------------------
 local function CancelDrag()
@@ -598,8 +735,43 @@ local function FinishDrag()
         ApplyCol1Drop(state)
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "button" then
-        PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
-        CooldownCompanion:RefreshGroupFrame(state.groupId)
+        if state.dropTarget then
+            -- Cross-panel-aware path (multi-panel containers)
+            local dt = state.dropTarget
+            -- Resolve append targets
+            local resolvedIndex = dt.targetIndex
+            if not resolvedIndex then
+                local tg = CooldownCompanion.db.profile.groups[dt.targetPanelId]
+                resolvedIndex = tg and (#tg.buttons + 1) or 1
+            end
+            if dt.targetPanelId == state.groupId then
+                -- Same panel: existing intra-panel reorder
+                PerformButtonReorder(state.groupId, state.sourceIndex, resolvedIndex)
+                CooldownCompanion:RefreshGroupFrame(state.groupId)
+            else
+                -- Cross-panel move
+                local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
+                local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
+                if buttonData and ButtonHasOverrides(buttonData) then
+                    ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
+                        sourcePanelId = state.groupId,
+                        sourceIndex = state.sourceIndex,
+                        targetPanelId = dt.targetPanelId,
+                        targetIndex = resolvedIndex,
+                    })
+                    return  -- popup handles move + refresh
+                end
+                PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
+                CooldownCompanion:RefreshGroupFrame(state.groupId)
+                CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
+            end
+        else
+            -- Legacy single-panel path (no col2RenderedRows)
+            PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
+            CooldownCompanion:RefreshGroupFrame(state.groupId)
+        end
+        CS.selectedButton = nil
+        wipe(CS.selectedButtons)
         CooldownCompanion:RefreshConfigPanel()
     end
 end
@@ -713,6 +885,20 @@ local function StartDragTracking()
                 else
                     HideDragIndicator()
                 end
+            elseif CS.dragState.col2RenderedRows then
+                -- Column 2 cross-panel drop detection
+                local dropTarget = GetCol2DropTarget(cursorY, CS.dragState.col2RenderedRows)
+                CS.dragState.dropTarget = dropTarget
+                if dropTarget then
+                    ResetDragIndicatorStyle()
+                    if dropTarget.action == "append-to-collapsed" then
+                        ShowFolderDropOverlay(dropTarget.anchorFrame, CS.dragState.scrollWidget)
+                    else
+                        ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
+                    end
+                else
+                    HideDragIndicator()
+                end
             else
                 local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
                     CS.dragState.scrollWidget, cursorY,
@@ -743,3 +929,5 @@ ST._ShowDragIndicator = ShowDragIndicator
 ST._GetCol1DropTarget = GetCol1DropTarget
 ST._ShowFolderDropOverlay = ShowFolderDropOverlay
 ST._ResetDragIndicatorStyle = ResetDragIndicatorStyle
+ST._PerformCrossPanelMove = PerformCrossPanelMove
+ST._StripButtonOverrides = StripButtonOverrides

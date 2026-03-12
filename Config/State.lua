@@ -505,6 +505,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcAuraBadge then entry.frame._cdcAuraBadge:Hide() end
     if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
+    if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     entry.image:SetAlpha(1)
     if entry.image and entry.image.SetDesaturated then
         entry.image:SetDesaturated(false)
