@@ -1220,6 +1220,11 @@ function CooldownCompanion:RefreshConfigPanel()
         CS.configFrame.col2:SetTitle("Styling")
         CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
         CS.configFrame.col4:SetTitle("Layout & Order")
+    elseif CS.browseMode then
+        CS.configFrame.col1:SetTitle("Browse Characters")
+        CS.configFrame.col2:SetTitle("Preview")
+        CS.configFrame.col3:SetTitle("Button Settings")
+        CS.configFrame.col4:SetTitle("Group Settings")
     else
         CS.configFrame.col1:SetTitle("Groups")
         CS.configFrame.col2:SetTitle("Spells / Items")

@@ -324,6 +324,173 @@ local function RefreshColumn2()
     CS.col2Scroll.frame:Show()
     CS.col2Scroll:ReleaseChildren()
 
+    -- Cross-character browse mode: read-only preview
+    if CS.browseMode then
+        if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
+        local db = CooldownCompanion.db.profile
+
+        if not CS.browseContainerId then
+            local label = AceGUI:Create("Label")
+            label:SetText("|cff888888Select a group to preview its contents.|r")
+            label:SetFullWidth(true)
+            CS.col2Scroll:AddChild(label)
+            return
+        end
+
+        -- Guard: source container may have been deleted
+        if not db.groupContainers[CS.browseContainerId] then
+            CS.browseContainerId = nil
+            local label = AceGUI:Create("Label")
+            label:SetText("|cff888888Group no longer exists.|r")
+            label:SetFullWidth(true)
+            CS.col2Scroll:AddChild(label)
+            return
+        end
+
+        local panels = CooldownCompanion:GetPanels(CS.browseContainerId)
+
+        for _, panelInfo in ipairs(panels) do
+            local panel = panelInfo.group
+            local panelGroupId = panelInfo.groupId
+
+            -- Panel header
+            local headerText = panel.name or "Panel"
+            local buttonCount = panel.buttons and #panel.buttons or 0
+            local modeTag = panel.displayMode == "bars" and " [Bars]"
+                         or panel.displayMode == "text" and " [Text]"
+                         or " [Icons]"
+            headerText = headerText .. "  |cff888888(" .. buttonCount .. " buttons)" .. modeTag .. "|r"
+
+            local heading = AceGUI:Create("Heading")
+            heading:SetText(headerText)
+            heading:SetFullWidth(true)
+            CS.col2Scroll:AddChild(heading)
+
+            -- Button list (read-only)
+            if panel.buttons then
+                for _, buttonData in ipairs(panel.buttons) do
+                    local entry = AceGUI:Create("InteractiveLabel")
+                    CleanRecycledEntry(entry)
+                    local icon = GetButtonIcon(buttonData)
+                    entry:SetImage(icon)
+                    entry:SetImageSize(20, 20)
+                    entry:SetText(buttonData.name or ("ID: " .. (buttonData.id or "?")))
+                    entry:SetFullWidth(true)
+                    entry:SetFontObject(GameFontHighlightSmall)
+                    CS.col2Scroll:AddChild(entry)
+                end
+            end
+
+            -- "Copy Panel" button
+            local copyPanelBtn = AceGUI:Create("Button")
+            copyPanelBtn:SetText("Copy Panel")
+            copyPanelBtn:SetFullWidth(true)
+            copyPanelBtn:SetCallback("OnClick", function()
+                -- Guard: source still exists
+                if not db.groups[panelGroupId] then
+                    CooldownCompanion:Print("Source panel no longer exists.")
+                    return
+                end
+                if not CS.browseContextMenu then
+                    CS.browseContextMenu = CreateFrame("Frame", "CDCBrowseContextMenu", UIParent, "UIDropDownMenuTemplate")
+                end
+                UIDropDownMenu_Initialize(CS.browseContextMenu, function(self, level)
+                    -- "As New Group"
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = "As New Group"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        if not db.groups[panelGroupId] then return end
+                        local srcContainer = db.groupContainers[CS.browseContainerId]
+                        local groupName = (srcContainer and srcContainer.name) or panel.name or "Copied Group"
+                        local newCid, newGid = CooldownCompanion:CopyPanelAsNewGroup(panelGroupId, groupName)
+                        if newCid then
+                            CS.browseMode = false
+                            CS.browseCharKey = nil
+                            CS.browseContainerId = nil
+                            CS.selectedContainer = newCid
+                            CS.selectedGroup = newGid
+                            CooldownCompanion:RefreshConfigPanel()
+                            CooldownCompanion:Print("Panel copied as new group.")
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Separator
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = ""
+                    info.isTitle = true
+                    info.notCheckable = true
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- List current character's visible containers
+                    local targets = {}
+                    for cid, c in pairs(db.groupContainers) do
+                        if CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                            targets[#targets + 1] = { id = cid, name = c.name, order = c.order or cid }
+                        end
+                    end
+                    table.sort(targets, function(a, b) return a.order < b.order end)
+
+                    for _, target in ipairs(targets) do
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "Into: " .. target.name
+                        info.notCheckable = true
+                        local targetId = target.id
+                        info.func = function()
+                            CloseDropDownMenus()
+                            if not db.groups[panelGroupId] then return end
+                            if not db.groupContainers[targetId] then return end
+                            local newGid = CooldownCompanion:CopyPanelToContainer(panelGroupId, targetId)
+                            if newGid then
+                                CS.browseMode = false
+                                CS.browseCharKey = nil
+                                CS.browseContainerId = nil
+                                CS.selectedContainer = targetId
+                                CS.selectedGroup = newGid
+                                CooldownCompanion:RefreshConfigPanel()
+                                CooldownCompanion:Print("Panel copied into " .. target.name .. ".")
+                            end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end, "MENU")
+                CS.browseContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                ToggleDropDownMenu(1, nil, CS.browseContextMenu, "cursor", 0, 0)
+            end)
+            CS.col2Scroll:AddChild(copyPanelBtn)
+        end
+
+        -- "Copy Entire Group" button at the bottom
+        local spacer = AceGUI:Create("Label")
+        spacer:SetText(" ")
+        spacer:SetFullWidth(true)
+        CS.col2Scroll:AddChild(spacer)
+
+        local copyAllBtn = AceGUI:Create("Button")
+        copyAllBtn:SetText("Copy Entire Group")
+        copyAllBtn:SetFullWidth(true)
+        copyAllBtn:SetCallback("OnClick", function()
+            if not db.groupContainers[CS.browseContainerId] then
+                CooldownCompanion:Print("Source group no longer exists.")
+                return
+            end
+            local newId = CooldownCompanion:CopyContainerFromBrowse(CS.browseContainerId)
+            if newId then
+                CS.browseMode = false
+                CS.browseCharKey = nil
+                CS.browseContainerId = nil
+                CS.selectedContainer = newId
+                CS.selectedGroup = nil
+                CooldownCompanion:RefreshConfigPanel()
+                CooldownCompanion:Print("Group copied successfully.")
+            end
+        end)
+        CS.col2Scroll:AddChild(copyAllBtn)
+        return
+    end
+
     -- Multi-group selection: show inline action buttons (container IDs)
     local multiGroupCount = 0
     local multiContainerIds = {}

@@ -6,6 +6,9 @@ local ADDON_NAME, ST = ...
 
 -- Default database structure
 local defaults = {
+    global = {
+        characterInfo = {},  -- [charKey] = { classFilename, classID }
+    },
     profile = {
         minimap = {
             hide = false,

@@ -14,6 +14,34 @@ local RenderAutoAddFlow = ST._RenderAutoAddFlow
 -- COLUMN 3: Button Settings (normal) / Custom Aura Bars (bars mode)
 ------------------------------------------------------------------------
 local function RefreshColumn3()
+    -- Cross-character browse mode: show placeholder
+    if CS.browseMode then
+        local col3 = CS.configFrame and CS.configFrame.col3
+        if col3 then
+            if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
+            if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
+            if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
+            if col3._autoAddScroll then col3._autoAddScroll.frame:Hide() end
+            if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
+            if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
+            if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
+            -- Show a browse mode label
+            if not col3._browsePlaceholder then
+                col3._browsePlaceholder = col3.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                col3._browsePlaceholder:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 4, -4)
+            end
+            local charName = CS.browseCharKey and (CS.browseCharKey:match("^(.-)%s*%-") or CS.browseCharKey) or "..."
+            col3._browsePlaceholder:SetText("Browsing " .. charName .. "'s groups")
+            col3._browsePlaceholder:Show()
+        end
+        return
+    end
+    -- Hide browse placeholder when not in browse mode
+    local col3BrowseClean = CS.configFrame and CS.configFrame.col3
+    if col3BrowseClean and col3BrowseClean._browsePlaceholder then
+        col3BrowseClean._browsePlaceholder:Hide()
+    end
+
     -- Bars & Frames panel mode: show Custom Aura Bars
     if CS.resourceBarPanelActive then
         if CS.autoAddFlowActive and ST._CancelAutoAddFlow then

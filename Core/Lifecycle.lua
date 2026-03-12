@@ -227,6 +227,12 @@ function CooldownCompanion:OnEnable()
     self._playerClassID = select(3, UnitClass("player"))
     self._isDracthyr = (select(2, UnitRace("player")) == "Dracthyr")
 
+    -- Store class info in global scope for cross-character browse mode
+    self.db.global.characterInfo[self.db.keys.char] = {
+        classFilename = select(2, UnitClass("player")),
+        classID = self._playerClassID,
+    }
+
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 

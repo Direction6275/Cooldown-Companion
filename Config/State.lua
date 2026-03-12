@@ -141,6 +141,12 @@ ST._configState = {
     folderIconPickerFrame = nil,
     panelContextMenu = nil,
 
+    -- Cross-character browse mode
+    browseMode = false,
+    browseCharKey = nil,
+    browseContainerId = nil,
+    browseContextMenu = nil,
+
     -- Drag-reorder state
     dragState = nil,
     dragIndicator = nil,
@@ -847,6 +853,10 @@ local function ResetConfigSelection(full)
         CS.selectedContainer = nil
         CS.selectedGroup = nil
         wipe(CS.selectedGroups)
+        -- Exit browse mode on full reset
+        CS.browseMode = false
+        CS.browseCharKey = nil
+        CS.browseContainerId = nil
     end
 end
 

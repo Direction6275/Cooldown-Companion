@@ -30,6 +30,199 @@ local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 ------------------------------------------------------------------------
+-- Browse mode: class-colored name helper
+------------------------------------------------------------------------
+local function GetClassColoredCharName(charKey, classFilename)
+    local name = charKey:match("^(.-)%s*%-") or charKey
+    if classFilename then
+        local cc = C_ClassColor.GetClassColor(classFilename)
+        if cc then
+            return cc:WrapTextInColorCode(name), cc
+        end
+    end
+    return name, nil
+end
+
+------------------------------------------------------------------------
+-- Browse mode: render cross-character browsing UI in Column 1
+------------------------------------------------------------------------
+local function RenderBrowseMode()
+    if not CS.col1Scroll then return end
+    CS.col1Scroll:ReleaseChildren()
+
+    -- Hide button bar in browse mode
+    if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+
+    local db = CooldownCompanion.db.profile
+
+    if not CS.browseCharKey then
+        -- Phase A: Character list
+        local backBtn = AceGUI:Create("InteractiveLabel")
+        backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to My Groups")
+        backBtn:SetFullWidth(true)
+        backBtn:SetFontObject(GameFontHighlight)
+        backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        backBtn:SetCallback("OnClick", function()
+            CS.browseMode = false
+            CS.browseCharKey = nil
+            CS.browseContainerId = nil
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        CS.col1Scroll:AddChild(backBtn)
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Other Characters")
+        heading:SetFullWidth(true)
+        CS.col1Scroll:AddChild(heading)
+
+        local chars = CooldownCompanion:EnumerateBrowseCharacters()
+        if #chars == 0 then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetText("|cff888888No other characters have groups on this profile.|r")
+            emptyLabel:SetFullWidth(true)
+            CS.col1Scroll:AddChild(emptyLabel)
+            return
+        end
+
+        for _, charInfo in ipairs(chars) do
+            local entry = AceGUI:Create("InteractiveLabel")
+            CleanRecycledEntry(entry)
+            local displayName, cc = GetClassColoredCharName(charInfo.charKey, charInfo.classFilename)
+
+            -- Class icon (use individual atlas to avoid tiled-sheet border)
+            if charInfo.classFilename then
+                entry:SetImage(134400) -- placeholder to initialise image widget
+                entry.image:SetAtlas("classicon-" .. strlower(charInfo.classFilename), false)
+                entry:SetImageSize(32, 32)
+            else
+                entry:SetImage(134400)
+                entry:SetImageSize(32, 32)
+            end
+
+            entry:SetText(displayName)
+            entry:SetFullWidth(true)
+            entry:SetFontObject(GameFontHighlight)
+            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            entry:SetCallback("OnClick", function()
+                CS.browseCharKey = charInfo.charKey
+                CS.browseContainerId = nil
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            CS.col1Scroll:AddChild(entry)
+        end
+    else
+        -- Phase B: Selected character's groups
+        local backBtn = AceGUI:Create("InteractiveLabel")
+        backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to Characters")
+        backBtn:SetFullWidth(true)
+        backBtn:SetFontObject(GameFontHighlight)
+        backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        backBtn:SetCallback("OnClick", function()
+            CS.browseCharKey = nil
+            CS.browseContainerId = nil
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        CS.col1Scroll:AddChild(backBtn)
+
+        -- Character heading with class color
+        local charInfo = CooldownCompanion.db.global.characterInfo and CooldownCompanion.db.global.characterInfo[CS.browseCharKey]
+        local classFilename = charInfo and charInfo.classFilename
+        local charName = CS.browseCharKey:match("^(.-)%s*%-") or CS.browseCharKey
+        local displayHeading = charName .. "'s Groups"
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText(displayHeading)
+        heading:SetFullWidth(true)
+        if classFilename then
+            local cc = C_ClassColor.GetClassColor(classFilename)
+            if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
+        end
+        CS.col1Scroll:AddChild(heading)
+
+        local containers = CooldownCompanion:GetCharacterContainers(CS.browseCharKey)
+        if #containers == 0 then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetText("|cff888888This character has no groups.|r")
+            emptyLabel:SetFullWidth(true)
+            CS.col1Scroll:AddChild(emptyLabel)
+            return
+        end
+
+        for _, item in ipairs(containers) do
+            local containerId = item.containerId
+            local container = item.container
+
+            local entry = AceGUI:Create("InteractiveLabel")
+            CleanRecycledEntry(entry)
+
+            local panelCount = CooldownCompanion:GetPanelCount(containerId)
+            local displayName = container.name
+            if panelCount > 1 then
+                displayName = displayName .. "  |cff888888(" .. panelCount .. " panels)|r"
+            end
+
+            entry:SetText(displayName)
+            entry:SetImage(GetContainerIcon(containerId, db))
+            entry:SetImageSize(32, 32)
+            entry:SetFullWidth(true)
+            entry:SetFontObject(GameFontHighlight)
+            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+            -- Green highlight for selected browse container
+            if CS.browseContainerId == containerId then
+                entry:SetColor(0, 1, 0)
+            end
+
+            -- Neutralize built-in OnClick
+            entry:SetCallback("OnClick", function() end)
+
+            -- Left-click: select for preview; Right-click: copy context menu
+            entry.frame:SetScript("OnMouseUp", function(self, button)
+                if button == "LeftButton" then
+                    if CS.browseContainerId == containerId then
+                        CS.browseContainerId = nil
+                    else
+                        CS.browseContainerId = containerId
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                elseif button == "RightButton" then
+                    -- Verify source still exists
+                    if not db.groupContainers[containerId] then return end
+                    if not CS.browseContextMenu then
+                        CS.browseContextMenu = CreateFrame("Frame", "CDCBrowseContextMenu", UIParent, "UIDropDownMenuTemplate")
+                    end
+                    UIDropDownMenu_Initialize(CS.browseContextMenu, function(self, level)
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = "Copy Entire Group"
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            if not db.groupContainers[containerId] then return end
+                            local newId = CooldownCompanion:CopyContainerFromBrowse(containerId)
+                            if newId then
+                                CS.browseMode = false
+                                CS.browseCharKey = nil
+                                CS.browseContainerId = nil
+                                CS.selectedContainer = newId
+                                CS.selectedGroup = nil
+                                CooldownCompanion:RefreshConfigPanel()
+                                CooldownCompanion:Print("Group copied successfully.")
+                            end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end, "MENU")
+                    CS.browseContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                    ToggleDropDownMenu(1, nil, CS.browseContextMenu, "cursor", 0, 0)
+                end
+            end)
+
+            CS.col1Scroll:AddChild(entry)
+            SetupGroupRowIndicators(entry, container)
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
 local function RefreshColumn1(preserveDrag)
@@ -87,6 +280,14 @@ local function RefreshColumn1(preserveDrag)
         col1NormalMode._barsPanelTabGroup.frame:Hide()
     end
     CS.col1Scroll.frame:Show()
+
+    -- Cross-character browse mode: render browse UI instead of normal groups
+    if CS.browseMode then
+        CancelDrag()
+        RenderBrowseMode()
+        return
+    end
+
     if CS.col1ButtonBar then CS.col1ButtonBar:Show() end
 
     if not preserveDrag then CancelDrag() end
@@ -1202,6 +1403,27 @@ local function RefreshColumn1(preserveDrag)
     end
     if hasCharContent or CS.showPhantomSections then
         RenderSection("char", charIds, charName .. "'s Groups")
+    end
+
+    -- Browse badge: show "Browse Other Characters" link if other chars have groups
+    local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
+    if #browseChars > 0 then
+        local browseBtn = AceGUI:Create("InteractiveLabel")
+        browseBtn:SetText("|cff66aaff|A:communities-icon-searchmagnifyingglass:12:12|a Browse Other Characters|r")
+        browseBtn:SetFullWidth(true)
+        browseBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        browseBtn:SetCallback("OnClick", function()
+            CS.browseMode = true
+            CS.browseCharKey = nil
+            CS.browseContainerId = nil
+            CS.selectedContainer = nil
+            CS.selectedGroup = nil
+            CS.selectedButton = nil
+            wipe(CS.selectedButtons)
+            wipe(CS.selectedGroups)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        CS.col1Scroll:AddChild(browseBtn)
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows

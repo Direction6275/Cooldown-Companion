@@ -16,6 +16,26 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 -- COLUMN 4: Group Settings / Tab Column
 ------------------------------------------------------------------------
 local function RefreshColumn4(container)
+    -- Cross-character browse mode: show placeholder
+    if CS.browseMode then
+        if container.placeholderLabel then container.placeholderLabel:Hide() end
+        if container.tabGroup then container.tabGroup.frame:Hide() end
+        if container.containerTabGroup then container.containerTabGroup.frame:Hide() end
+        if container.layoutOrderScroll then container.layoutOrderScroll.frame:Hide() end
+        if not container._browsePlaceholder then
+            container._browsePlaceholder = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            container._browsePlaceholder:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -4)
+        end
+        local charName = CS.browseCharKey and (CS.browseCharKey:match("^(.-)%s*%-") or CS.browseCharKey) or "..."
+        container._browsePlaceholder:SetText("Browsing " .. charName .. "'s groups")
+        container._browsePlaceholder:Show()
+        return
+    end
+    -- Hide browse placeholder when not in browse mode
+    if container._browsePlaceholder then
+        container._browsePlaceholder:Hide()
+    end
+
     -- Resource Bar panel mode: show Layout & Order panel instead of group settings
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
@@ -257,6 +277,10 @@ local function RefreshProfileBar(bar)
         CS.selectedButton = nil
         wipe(CS.selectedButtons)
         wipe(CS.selectedGroups)
+        -- Exit browse mode on profile switch
+        CS.browseMode = false
+        CS.browseCharKey = nil
+        CS.browseContainerId = nil
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:RefreshAllGroups()
     end)

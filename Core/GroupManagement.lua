@@ -963,3 +963,139 @@ function CooldownCompanion:FindTalentSpellByName(name)
 
     return nil
 end
+
+------------------------------------------------------------------------
+-- Cross-Character Browse Helpers
+------------------------------------------------------------------------
+
+--- Scan profile containers for unique createdBy values other than current char.
+--- Returns sorted array of { charKey, classFilename, classID }.
+function CooldownCompanion:EnumerateBrowseCharacters()
+    local db = self.db.profile
+    local currentChar = self.db.keys.char
+    local seen = {}
+    local result = {}
+
+    for _, container in pairs(db.groupContainers) do
+        local key = container.createdBy
+        if key and key ~= currentChar and not container.isGlobal and not seen[key] then
+            seen[key] = true
+            local info = self.db.global.characterInfo and self.db.global.characterInfo[key]
+            result[#result + 1] = {
+                charKey = key,
+                classFilename = info and info.classFilename or nil,
+                classID = info and info.classID or nil,
+            }
+        end
+    end
+
+    table_sort(result, function(a, b) return a.charKey < b.charKey end)
+    return result
+end
+
+--- Return sorted array of { containerId, container } for a given character key.
+function CooldownCompanion:GetCharacterContainers(charKey)
+    local db = self.db.profile
+    local result = {}
+
+    for containerId, container in pairs(db.groupContainers) do
+        if container.createdBy == charKey and not container.isGlobal then
+            -- Skip empty containers (no panels with buttons)
+            local hasButtons = false
+            for _, group in pairs(db.groups) do
+                if group.parentContainerId == containerId and group.buttons and #group.buttons > 0 then
+                    hasButtons = true
+                    break
+                end
+            end
+            if hasButtons then
+                result[#result + 1] = { containerId = containerId, container = container }
+            end
+        end
+    end
+
+    table_sort(result, function(a, b)
+        return (a.container.order or a.containerId) < (b.container.order or b.containerId)
+    end)
+    return result
+end
+
+--- Copy a container from browse mode. Reuses DuplicateContainer, renames to original name.
+function CooldownCompanion:CopyContainerFromBrowse(sourceContainerId)
+    local sourceContainer = self.db.profile.groupContainers[sourceContainerId]
+    if not sourceContainer then return nil end
+
+    local originalName = sourceContainer.name
+    local newContainerId = self:DuplicateContainer(sourceContainerId)
+    if newContainerId then
+        -- Rename from "X (Copy)" back to original name
+        self.db.profile.groupContainers[newContainerId].name = originalName
+    end
+    return newContainerId
+end
+
+--- Copy a panel into an existing container owned by the current character.
+function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId)
+    local db = self.db.profile
+    local sourcePanel = db.groups[sourceGroupId]
+    if not sourcePanel then return nil end
+    if not db.groupContainers[targetContainerId] then return nil end
+
+    local newGroupId = db.nextGroupId
+    db.nextGroupId = newGroupId + 1
+
+    local newPanel = CopyTable(sourcePanel)
+    newPanel.parentContainerId = targetContainerId
+    newPanel.order = self:GetPanelCount(targetContainerId) + 1
+
+    local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
+    newPanel.anchor = {
+        point = "TOPLEFT",
+        relativeTo = containerFrameName,
+        relativePoint = "TOPLEFT",
+        x = 0,
+        y = 0,
+    }
+
+    db.groups[newGroupId] = newPanel
+    self:CreateGroupFrame(newGroupId)
+    return newGroupId
+end
+
+--- Copy a panel as a brand new standalone group (container + panel).
+function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
+    local db = self.db.profile
+    local sourcePanel = db.groups[sourceGroupId]
+    if not sourcePanel then return nil, nil end
+
+    -- Create a new container
+    local containerId = self:CreateContainer(sourceName or "Copied Group")
+
+    -- Create container frame
+    if self.CreateContainerFrame then
+        self:CreateContainerFrame(containerId)
+    end
+
+    -- Deep-copy the source panel into the new container
+    local newGroupId = db.nextGroupId
+    db.nextGroupId = newGroupId + 1
+
+    local newPanel = CopyTable(sourcePanel)
+    newPanel.parentContainerId = containerId
+    newPanel.order = 1
+    newPanel.name = "Panel 1"
+
+    local containerFrameName = "CooldownCompanionContainer" .. containerId
+    newPanel.anchor = {
+        point = "TOPLEFT",
+        relativeTo = containerFrameName,
+        relativePoint = "TOPLEFT",
+        x = 0,
+        y = 0,
+    }
+
+    db.groups[newGroupId] = newPanel
+    self:CreateGroupFrame(newGroupId)
+
+    return containerId, newGroupId
+end
