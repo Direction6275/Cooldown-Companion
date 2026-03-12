@@ -66,6 +66,7 @@ end
 local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
+    wipe(CS.collapsedPanels)
     wipe(CS.customAuraBarSubTabs)
     wipe(CS.resourceAuraOverlayDrafts)
     if CS.characterScopedCopySelection then
@@ -1213,7 +1214,12 @@ function CooldownCompanion:RefreshConfigPanel()
         else
             CS.configFrame.col3:SetTitle("Button Settings")
         end
-        CS.configFrame.col4:SetTitle("Group Settings")
+        -- Col 4: "Panel Settings" when a panel is selected, "Group Settings" otherwise
+        if CS.selectedContainer and CS.selectedGroup then
+            CS.configFrame.col4:SetTitle("Panel Settings")
+        else
+            CS.configFrame.col4:SetTitle("Group Settings")
+        end
     end
     RefreshColumn1()
     RefreshColumn2()
@@ -1358,6 +1364,13 @@ function CooldownCompanion:SetupConfig()
                 for _, group in pairs(CooldownCompanion.db.profile.groups) do
                     if not group.isGlobal then
                         group.createdBy = charKey
+                    end
+                end
+            end
+            if CooldownCompanion.db.profile.groupContainers then
+                for _, container in pairs(CooldownCompanion.db.profile.groupContainers) do
+                    if not container.isGlobal then
+                        container.createdBy = charKey
                     end
                 end
             end

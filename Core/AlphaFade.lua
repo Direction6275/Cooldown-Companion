@@ -236,15 +236,15 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         local isHovering = frame:IsMouseOver()
         if isHovering then
             forceFull = true
-            state.hoverExpire = now + (group.customFade and group.fadeDelay or 1)
+            state.hoverExpire = now + (group.fadeDelay or 1)
         elseif state.hoverExpire and now < state.hoverExpire then
             forceFull = true
         end
     end
 
     local desired = forceFull and 1 or (forceHidden and 0 or group.baselineAlpha)
-    local fadeIn = group.customFade and group.fadeInDuration or 0.2
-    local fadeOut = group.customFade and group.fadeOutDuration or 0.2
+    local fadeIn = group.fadeInDuration or 0.2
+    local fadeOut = group.fadeOutDuration or 0.2
     local alpha = UpdateFadedAlpha(state, desired, now, fadeIn, fadeOut)
 
     -- Only call SetAlpha when value actually changes
@@ -289,10 +289,18 @@ function CooldownCompanion:InitAlphaUpdateFrame()
             end
         end
 
+        local containers = self.db.profile.groupContainers or {}
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() then
-                local needsUpdate = GroupNeedsAlphaUpdate(group)
+                -- Resolve alpha source: container owns alpha settings for panels
+                local alphaSource = group
+                if group.parentContainerId then
+                    local c = containers[group.parentContainerId]
+                    if c then alphaSource = c end
+                end
+
+                local needsUpdate = GroupNeedsAlphaUpdate(alphaSource)
                 -- Also process if the group has stale alpha state that needs cleanup
                 if not needsUpdate then
                     local state = self.alphaState[groupId]
@@ -301,7 +309,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
                     end
                 end
                 if needsUpdate then
-                    self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
+                    self:UpdateGroupAlpha(groupId, alphaSource, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
                 end
             end
         end

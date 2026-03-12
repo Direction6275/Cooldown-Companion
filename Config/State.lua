@@ -103,11 +103,13 @@ local PROFILE_BAR_HEIGHT = 36
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
-    selectedGroup = nil,
+    selectedContainer = nil,     -- containerId selected in Column 1
+    selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
     selectedButton = nil,
     selectedButtons = {},
-    selectedGroups = {},
+    selectedGroups = {},         -- multi-selected container IDs
     selectedTab = "appearance",
+    selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     newInput = "",
 
@@ -134,6 +136,7 @@ ST._configState = {
     gearDropdownFrame = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
+    panelContextMenu = nil,
 
     -- Drag-reorder state
     dragState = nil,
@@ -149,6 +152,7 @@ ST._configState = {
     -- Collapsed sections state
     collapsedSections = {},
     collapsedFolders = {},
+    collapsedPanels = {},
     folderAccentBars = {},
 
     -- Talent picker mode (2-column layout)
@@ -278,6 +282,27 @@ local function GetGroupIcon(group)
 end
 
 ------------------------------------------------------------------------
+-- Helper: Get icon for a container (from its first panel's first button)
+------------------------------------------------------------------------
+local function GetContainerIcon(containerId, db)
+    if not db or not db.groups then return 134400 end
+    local firstPanel, firstOrder
+    for gid, group in pairs(db.groups) do
+        if group.parentContainerId == containerId then
+            local order = group.order or gid
+            if not firstOrder or order < firstOrder then
+                firstOrder = order
+                firstPanel = group
+            end
+        end
+    end
+    if firstPanel then
+        return GetGroupIcon(firstPanel)
+    end
+    return 134400
+end
+
+------------------------------------------------------------------------
 -- Helper: Get icon for a folder (manual override, else first child group's first button)
 ------------------------------------------------------------------------
 local function IsValidIconTexture(iconTexture)
@@ -286,20 +311,35 @@ local function IsValidIconTexture(iconTexture)
 end
 
 local function GetAutoFolderIcon(folderId, db)
-    if not db or not db.groups then
+    if not db then
         return 134400
     end
-    local children = {}
-    for gid, group in pairs(db.groups) do
-        if group.folderId == folderId then
-            table.insert(children, { id = gid, order = group.order or gid })
+    -- Post-migration: folderId lives on containers, not groups
+    local containers = db.groupContainers
+    if containers then
+        local children = {}
+        for cid, container in pairs(containers) do
+            if container.folderId == folderId then
+                table.insert(children, { id = cid, order = container.order or cid })
+            end
         end
-    end
-    table.sort(children, function(a, b) return a.order < b.order end)
-    if children[1] then
-        local group = db.groups[children[1].id]
-        if group then
-            return GetGroupIcon(group)
+        table.sort(children, function(a, b) return a.order < b.order end)
+        if children[1] and db.groups then
+            -- Find first panel of this container for its icon
+            local containerId = children[1].id
+            local firstPanel, firstOrder
+            for gid, group in pairs(db.groups) do
+                if group.parentContainerId == containerId then
+                    local order = group.order or gid
+                    if not firstOrder or order < firstOrder then
+                        firstOrder = order
+                        firstPanel = group
+                    end
+                end
+            end
+            if firstPanel then
+                return GetGroupIcon(firstPanel)
+            end
         end
     end
     return 134400
@@ -799,6 +839,7 @@ local function ResetConfigSelection(full)
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     if full then
+        CS.selectedContainer = nil
         CS.selectedGroup = nil
         wipe(CS.selectedGroups)
     end
@@ -853,6 +894,25 @@ local function SpecSetHasForeignSpecs(specs, playerSpecIds)
     return false
 end
 
+local function GetEffectiveContainerSpecFilter(container, db)
+    if not container then return nil end
+    return container.specs
+end
+
+local function ContainersHaveForeignSpecs(containers, requireGlobal)
+    local playerSpecIds = BuildPlayerSpecSet()
+    for _, c in ipairs(containers) do
+        if not requireGlobal or c.isGlobal then
+            local effectiveSpecs = GetEffectiveContainerSpecFilter(c)
+            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Legacy compat: used by folder-level checks
 local function GetEffectiveGroupSpecFilter(group, db)
     if not group then return nil end
     if group.folderId and db and db.folders then
@@ -880,21 +940,20 @@ end
 
 local function FolderHasForeignSpecs(folderId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not (db and db.folders and db.groups) then return false end
+    if not (db and db.folders) then return false end
 
     local folder = db.folders[folderId]
     if not folder then return false end
 
     local playerSpecIds = BuildPlayerSpecSet()
-    if SpecSetHasForeignSpecs(folder.specs, playerSpecIds) then
-        return true
-    end
-
-    for _, group in pairs(db.groups) do
-        if group.folderId == folderId then
-            local effectiveSpecs = GetEffectiveGroupSpecFilter(group, db)
-            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
-                return true
+    -- Post-migration: specs live on containers, not folders
+    local containers = db.groupContainers
+    if containers then
+        for _, container in pairs(containers) do
+            if container.folderId == folderId then
+                if SpecSetHasForeignSpecs(container.specs, playerSpecIds) then
+                    return true
+                end
             end
         end
     end
@@ -916,6 +975,7 @@ ST._CreateTextButton = CreateTextButton
 ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
 ST._GetGroupIcon = GetGroupIcon
+ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
 ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._GenerateFolderName = GenerateFolderName
@@ -929,4 +989,5 @@ ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
+ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
 ST._FolderHasForeignSpecs = FolderHasForeignSpecs

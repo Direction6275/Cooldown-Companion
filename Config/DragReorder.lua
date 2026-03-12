@@ -195,63 +195,64 @@ local function ApplyCol1Drop(state)
     local db = CooldownCompanion.db.profile
 
     if state.kind == "group" or state.kind == "folder-group" then
-        local sourceGroupId = state.sourceGroupId
-        local group = db.groups[sourceGroupId]
-        if not group then return end
+        -- Column 1 rows are containers now (sourceGroupId holds a containerId)
+        local sourceContainerId = state.sourceGroupId
+        local container = db.groupContainers[sourceContainerId]
+        if not container then return end
 
         if dropTarget.action == "into-folder" then
-            -- Move group into the target folder
-            CooldownCompanion:MoveGroupToFolder(sourceGroupId, dropTarget.targetFolderId)
+            -- Move container into the target folder
+            CooldownCompanion:MoveGroupToFolder(sourceContainerId, dropTarget.targetFolderId)
         elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             local targetRow = dropTarget.targetRow
             if dropTarget.isBelowAll then
                 -- Dropped below all rows: always become top-level
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             elseif targetRow.kind == "group" and targetRow.inFolder then
                 -- If dropping on a row that's in a folder, join that folder
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, targetRow.inFolder)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetRow.inFolder)
             elseif targetRow.kind == "folder" then
                 -- Dropping before/after a folder header = top-level
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             elseif targetRow.kind == "phantom" then
                 -- Dropping on phantom section placeholder = top-level in that section
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             else
-                -- Dropping on a loose group = stay/become loose
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                -- Dropping on a loose container = stay/become loose
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             end
 
             -- Cross-section move: toggle global/character status
             local targetSection = targetRow.section or state.sourceSection
             if targetSection ~= state.sourceSection then
                 if targetSection == "global" then
-                    group.isGlobal = true
+                    container.isGlobal = true
                 else
-                    group.isGlobal = false
-                    group.createdBy = CooldownCompanion.db.keys.char
+                    container.isGlobal = false
+                    container.createdBy = CooldownCompanion.db.keys.char
                 end
             end
 
             -- Reassign order values for all items in the target section
-            -- to place the dragged group at the right position
+            -- to place the dragged container at the right position
             local section = targetSection
             local renderedRows = state.col1RenderedRows
             if renderedRows then
-                -- Build ordered list of items in the same container (folder or top-level)
+                -- Build ordered list of items in the same parent (folder or top-level)
                 -- and reassign order values
-                local targetFolderId = group.folderId
+                local targetFolderId = container.folderId
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
                     if row.section == section then
                         if targetFolderId then
-                            -- Ordering within a folder: collect groups in same folder
-                            if row.kind == "group" and row.inFolder == targetFolderId and row.id ~= sourceGroupId then
+                            -- Ordering within a folder: collect containers in same folder
+                            if row.kind == "group" and row.inFolder == targetFolderId and row.id ~= sourceContainerId then
                                 table.insert(orderItems, row.id)
                             end
                         else
-                            -- Top-level ordering: collect top-level items (folders + loose groups)
+                            -- Top-level ordering: collect top-level items (folders + loose containers)
                             if (row.kind == "folder") or (row.kind == "group" and not row.inFolder) then
-                                if row.id ~= sourceGroupId then
+                                if row.id ~= sourceContainerId then
                                     table.insert(orderItems, { kind = row.kind, id = row.id })
                                 end
                             end
@@ -262,17 +263,17 @@ local function ApplyCol1Drop(state)
                 -- Find insertion position
                 local insertPos
                 if targetFolderId then
-                    -- Within folder: find target group position
+                    -- Within folder: find target container position
                     insertPos = #orderItems + 1
-                    for idx, gid in ipairs(orderItems) do
-                        if gid == dropTarget.targetRow.id then
+                    for idx, cid in ipairs(orderItems) do
+                        if cid == dropTarget.targetRow.id then
                             insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
                             break
                         end
                     end
-                    table.insert(orderItems, insertPos, sourceGroupId)
-                    for i, gid in ipairs(orderItems) do
-                        db.groups[gid].order = i
+                    table.insert(orderItems, insertPos, sourceContainerId)
+                    for i, cid in ipairs(orderItems) do
+                        db.groupContainers[cid].order = i
                     end
                 else
                     -- Top-level: find target position among mixed items
@@ -283,20 +284,21 @@ local function ApplyCol1Drop(state)
                             break
                         end
                     end
-                    table.insert(orderItems, insertPos, { kind = "group", id = sourceGroupId })
+                    table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
                     for i, item in ipairs(orderItems) do
                         if item.kind == "folder" then
                             db.folders[item.id].order = i
                         else
-                            db.groups[item.id].order = i
+                            db.groupContainers[item.id].order = i
                         end
                     end
                 end
             end
         end
     elseif state.kind == "multi-group" then
-        local sourceGroupIds = state.sourceGroupIds
-        if not sourceGroupIds then return end
+        -- Multi-select: sourceGroupIds holds container IDs (Column 1 rows are containers)
+        local sourceContainerIds = state.sourceGroupIds
+        if not sourceContainerIds then return end
 
         local targetRow = dropTarget.targetRow
         -- Determine target folder and section
@@ -315,59 +317,59 @@ local function ApplyCol1Drop(state)
 
         local targetSection = targetRow.section or state.sourceSection
 
-        -- Set folder and cross-section toggle for each selected group
-        for gid in pairs(sourceGroupIds) do
-            local g = db.groups[gid]
-            if g then
-                CooldownCompanion:MoveGroupToFolder(gid, targetFolderId)
-                local groupSection = g.isGlobal and "global" or "char"
-                if groupSection ~= targetSection then
+        -- Set folder and cross-section toggle for each selected container
+        for cid in pairs(sourceContainerIds) do
+            local c = db.groupContainers[cid]
+            if c then
+                CooldownCompanion:MoveGroupToFolder(cid, targetFolderId)
+                local containerSection = c.isGlobal and "global" or "char"
+                if containerSection ~= targetSection then
                     if targetSection == "global" then
-                        g.isGlobal = true
+                        c.isGlobal = true
                     else
-                        g.isGlobal = false
-                        g.createdBy = CooldownCompanion.db.keys.char
+                        c.isGlobal = false
+                        c.createdBy = CooldownCompanion.db.keys.char
                     end
                 end
             end
         end
 
-        -- Sort selected groups by current order to preserve relative ordering
+        -- Sort selected containers by current order to preserve relative ordering
         local sortedSelected = {}
-        for gid in pairs(sourceGroupIds) do
-            local g = db.groups[gid]
-            if g then
-                table.insert(sortedSelected, { id = gid, order = g.order or gid })
+        for cid in pairs(sourceContainerIds) do
+            local c = db.groupContainers[cid]
+            if c then
+                table.insert(sortedSelected, { id = cid, order = c.order or cid })
             end
         end
         table.sort(sortedSelected, function(a, b) return a.order < b.order end)
 
-        -- Rebuild order for target container
+        -- Rebuild order for target section
         local renderedRows = state.col1RenderedRows
         if renderedRows then
             if targetFolderId then
                 -- Ordering within a folder
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
-                    if row.kind == "group" and row.inFolder == targetFolderId and not sourceGroupIds[row.id] then
+                    if row.kind == "group" and row.inFolder == targetFolderId and not sourceContainerIds[row.id] then
                         table.insert(orderItems, row.id)
                     end
                 end
 
                 -- Find insertion position
                 local insertPos = #orderItems + 1
-                for idx, gid in ipairs(orderItems) do
-                    if gid == targetRow.id then
+                for idx, cid in ipairs(orderItems) do
+                    if cid == targetRow.id then
                         insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
                         break
                     end
                 end
-                -- Insert all selected groups at the position, preserving relative order
+                -- Insert all selected containers at the position, preserving relative order
                 for i, item in ipairs(sortedSelected) do
                     table.insert(orderItems, insertPos + i - 1, item.id)
                 end
-                for i, gid in ipairs(orderItems) do
-                    db.groups[gid].order = i
+                for i, cid in ipairs(orderItems) do
+                    db.groupContainers[cid].order = i
                 end
             else
                 -- Top-level ordering
@@ -375,7 +377,7 @@ local function ApplyCol1Drop(state)
                 for _, row in ipairs(renderedRows) do
                     if row.section == targetSection then
                         if (row.kind == "folder") or (row.kind == "group" and not row.inFolder) then
-                            if not sourceGroupIds[row.id] then
+                            if not sourceContainerIds[row.id] then
                                 table.insert(orderItems, { kind = row.kind, id = row.id })
                             end
                         end
@@ -389,7 +391,7 @@ local function ApplyCol1Drop(state)
                         break
                     end
                 end
-                -- Insert all selected groups at the position
+                -- Insert all selected containers at the position
                 for i, item in ipairs(sortedSelected) do
                     table.insert(orderItems, insertPos + i - 1, { kind = "group", id = item.id })
                 end
@@ -397,7 +399,7 @@ local function ApplyCol1Drop(state)
                     if item.kind == "folder" then
                         db.folders[item.id].order = i
                     else
-                        db.groups[item.id].order = i
+                        db.groupContainers[item.id].order = i
                     end
                 end
             end
@@ -411,19 +413,19 @@ local function ApplyCol1Drop(state)
         local targetRow = dropTarget.targetRow
         local section = targetRow.section or state.sourceSection
 
-        -- Cross-section move: toggle folder section and update all child groups
+        -- Cross-section move: toggle folder section and update all child containers
         if section ~= state.sourceSection then
             folder.section = section
             if section == "char" then
                 folder.createdBy = CooldownCompanion.db.keys.char
             end
-            for groupId, group in pairs(db.groups) do
-                if group.folderId == sourceFolderId then
+            for containerId, container in pairs(db.groupContainers) do
+                if container.folderId == sourceFolderId then
                     if section == "global" then
-                        group.isGlobal = true
+                        container.isGlobal = true
                     else
-                        group.isGlobal = false
-                        group.createdBy = CooldownCompanion.db.keys.char
+                        container.isGlobal = false
+                        container.createdBy = CooldownCompanion.db.keys.char
                     end
                 end
             end
@@ -460,13 +462,13 @@ local function ApplyCol1Drop(state)
                 if item.kind == "folder" then
                     db.folders[item.id].order = i
                 else
-                    db.groups[item.id].order = i
+                    db.groupContainers[item.id].order = i
                 end
             end
         end
     end
 
-    -- Group order may have changed — re-evaluate auto-anchored bars
+    -- Container order may have changed — re-evaluate auto-anchored bars
     CooldownCompanion:EvaluateResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:EvaluateCastBar()
@@ -544,12 +546,12 @@ local function FinishDrag()
         local dropTarget = state.dropTarget
         if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
             local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
-            local sourceGroup = CooldownCompanion.db.profile.groups[state.sourceGroupId]
+            local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
             if targetSection and targetSection ~= state.sourceSection
                and state.sourceSection == "global"
-               and sourceGroup and sourceGroup.specs
-               and GroupsHaveForeignSpecs({sourceGroup}, false) then
-                ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceGroup.name, {
+               and sourceContainer and sourceContainer.specs
+               and GroupsHaveForeignSpecs({sourceContainer}, false) then
+                ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
                     dragState = state,
                 })
                 return
@@ -561,8 +563,8 @@ local function FinishDrag()
             if targetSection == "char" then
                 local db = CooldownCompanion.db.profile
                 local groupList = {}
-                for gid in pairs(state.sourceGroupIds) do
-                    if db.groups[gid] then groupList[#groupList + 1] = db.groups[gid] end
+                for cid in pairs(state.sourceGroupIds) do
+                    if db.groupContainers[cid] then groupList[#groupList + 1] = db.groupContainers[cid] end
                 end
                 if GroupsHaveForeignSpecs(groupList, true) then
                     ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {

@@ -316,15 +316,16 @@ local function RefreshColumn2()
     CS.col2Scroll.frame:Show()
     CS.col2Scroll:ReleaseChildren()
 
-    -- Multi-group selection: show inline action buttons instead of spell list
+    -- Multi-group selection: show inline action buttons (container IDs)
     local multiGroupCount = 0
-    local multiGroupIds = {}
-    for gid in pairs(CS.selectedGroups) do
+    local multiContainerIds = {}
+    for cid in pairs(CS.selectedGroups) do
         multiGroupCount = multiGroupCount + 1
-        table.insert(multiGroupIds, gid)
+        table.insert(multiContainerIds, cid)
     end
     if multiGroupCount >= 2 then
         local db = CooldownCompanion.db.profile
+        local containers = db.groupContainers or {}
 
         local heading = AceGUI:Create("Heading")
         heading:SetText(multiGroupCount .. " Groups Selected")
@@ -338,7 +339,13 @@ local function RefreshColumn2()
         delBtn:SetText("Delete Selected")
         delBtn:SetFullWidth(true)
         delBtn:SetCallback("OnClick", function()
-            ShowPopupAboveConfig("CDC_DELETE_SELECTED_GROUPS", multiGroupCount, { groupIds = multiGroupIds })
+            for _, cid in ipairs(multiContainerIds) do
+                CooldownCompanion:DeleteGroup(cid)
+            end
+            CS.selectedContainer = nil
+            CS.selectedGroup = nil
+            wipe(CS.selectedGroups)
+            CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col2Scroll:AddChild(delBtn)
 
@@ -358,20 +365,18 @@ local function RefreshColumn2()
                 CS.moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
             end
             UIDropDownMenu_Initialize(CS.moveMenuFrame, function(self, level)
-                -- "(No Folder)" option
                 local info = UIDropDownMenu_CreateInfo()
                 info.text = "(No Folder)"
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    for _, gid in ipairs(multiGroupIds) do
-                        CooldownCompanion:MoveGroupToFolder(gid, nil)
+                    for _, cid in ipairs(multiContainerIds) do
+                        CooldownCompanion:MoveGroupToFolder(cid, nil)
                     end
                     CooldownCompanion:RefreshConfigPanel()
                 end
                 UIDropDownMenu_AddButton(info, level)
 
-                -- Collect all folders from both sections
                 local folderList = {}
                 for fid, folder in pairs(db.folders) do
                     table.insert(folderList, {
@@ -395,47 +400,11 @@ local function RefreshColumn2()
                     info.notCheckable = true
                     info.func = function()
                         CloseDropDownMenus()
-                        local targetSection = f.section
-
-                        -- Check for foreign specs when moving global→char
-                        local hasForeignSpecs = false
-                        if targetSection == "char" then
-                            local groupList = {}
-                            for _, gid in ipairs(multiGroupIds) do
-                                if db.groups[gid] then groupList[#groupList + 1] = db.groups[gid] end
-                            end
-                            hasForeignSpecs = GroupsHaveForeignSpecs(groupList, true)
+                        for _, cid in ipairs(multiContainerIds) do
+                            CooldownCompanion:MoveGroupToFolder(cid, f.id)
                         end
-
-                        local doMove = function()
-                            for _, gid in ipairs(multiGroupIds) do
-                                local g = db.groups[gid]
-                                if g then
-                                    CooldownCompanion:MoveGroupToFolder(gid, f.id)
-                                    -- Cross-section: toggle global/char
-                                    local groupSection = g.isGlobal and "global" or "char"
-                                    if groupSection ~= targetSection then
-                                        if targetSection == "global" then
-                                            g.isGlobal = true
-                                        else
-                                            g.isGlobal = false
-                                            g.createdBy = CooldownCompanion.db.keys.char
-                                        end
-                                    end
-                                end
-                            end
-                            CooldownCompanion:RefreshAllGroups()
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-
-                        if hasForeignSpecs then
-                            ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
-                                groupIds = multiGroupIds,
-                                callback = doMove,
-                            })
-                        else
-                            doMove()
-                        end
+                        CooldownCompanion:RefreshAllGroups()
+                        CooldownCompanion:RefreshConfigPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end
@@ -452,152 +421,11 @@ local function RefreshColumn2()
         spacer2:SetFont(f2, 3, fl2 or "")
         CS.col2Scroll:AddChild(spacer2)
 
-        -- Group into New Folder
-        local newFolderBtn = AceGUI:Create("Button")
-        newFolderBtn:SetText("Group into New Folder")
-        newFolderBtn:SetFullWidth(true)
-        newFolderBtn:SetCallback("OnClick", function()
-            if not CS.moveMenuFrame then
-                CS.moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-            end
-            UIDropDownMenu_Initialize(CS.moveMenuFrame, function(self, level)
-                for _, entry in ipairs({
-                    { text = "New Global Folder", section = "global" },
-                    { text = "New Character Folder", section = "char" },
-                }) do
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = entry.text
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local targetSection = entry.section
-
-                        -- Check for foreign specs when targeting char section
-                        local hasForeignSpecs = false
-                        if targetSection == "char" then
-                            local groupList = {}
-                            for _, gid in ipairs(multiGroupIds) do
-                                if db.groups[gid] then groupList[#groupList + 1] = db.groups[gid] end
-                            end
-                            hasForeignSpecs = GroupsHaveForeignSpecs(groupList, true)
-                        end
-
-                        local doGroupIntoFolder = function()
-                            local folderName = GenerateFolderName("New Folder")
-                            local folderId = CooldownCompanion:CreateFolder(folderName, targetSection)
-                            for _, gid in ipairs(multiGroupIds) do
-                                local g = db.groups[gid]
-                                if g then
-                                    CooldownCompanion:MoveGroupToFolder(gid, folderId)
-                                    local groupSection = g.isGlobal and "global" or "char"
-                                    if groupSection ~= targetSection then
-                                        if targetSection == "global" then
-                                            g.isGlobal = true
-                                        else
-                                            g.isGlobal = false
-                                            g.createdBy = CooldownCompanion.db.keys.char
-                                        end
-                                    end
-                                end
-                            end
-                            CooldownCompanion:RefreshAllGroups()
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-
-                        if hasForeignSpecs then
-                            ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
-                                groupIds = multiGroupIds,
-                                callback = doGroupIntoFolder,
-                            })
-                        else
-                            doGroupIntoFolder()
-                        end
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-                end
-            end, "MENU")
-            CS.moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-            ToggleDropDownMenu(1, nil, CS.moveMenuFrame, "cursor", 0, 0)
-        end)
-        CS.col2Scroll:AddChild(newFolderBtn)
-
-        local spacer3 = AceGUI:Create("Label")
-        spacer3:SetText(" ")
-        spacer3:SetFullWidth(true)
-        local f3, _, fl3 = spacer3.label:GetFont()
-        spacer3:SetFont(f3, 3, fl3 or "")
-        CS.col2Scroll:AddChild(spacer3)
-
-        -- Make Global / Make Character
-        local anyChar = false
-        for _, gid in ipairs(multiGroupIds) do
-            local g = db.groups[gid]
-            if g and not g.isGlobal then
-                anyChar = true
-                break
-            end
-        end
-
-        local toggleBtn = AceGUI:Create("Button")
-        toggleBtn:SetText(anyChar and "Make All Global" or "Make All Character")
-        toggleBtn:SetFullWidth(true)
-        toggleBtn:SetCallback("OnClick", function()
-            if anyChar then
-                -- Make all global
-                for _, gid in ipairs(multiGroupIds) do
-                    local g = db.groups[gid]
-                    if g and not g.isGlobal then
-                        g.isGlobal = true
-                        CooldownCompanion:MoveGroupToFolder(gid, nil)
-                    end
-                end
-                CooldownCompanion:RefreshAllGroups()
-                CooldownCompanion:RefreshConfigPanel()
-            else
-                -- Make all character — check for foreign specs
-                local groupList = {}
-                for _, gid in ipairs(multiGroupIds) do
-                    if db.groups[gid] then groupList[#groupList + 1] = db.groups[gid] end
-                end
-                local hasForeignSpecs = GroupsHaveForeignSpecs(groupList, false)
-
-                local doToggle = function()
-                    for _, gid in ipairs(multiGroupIds) do
-                        local g = db.groups[gid]
-                        if g and g.isGlobal then
-                            g.isGlobal = false
-                            g.createdBy = CooldownCompanion.db.keys.char
-                            CooldownCompanion:MoveGroupToFolder(gid, nil)
-                        end
-                    end
-                    CooldownCompanion:RefreshAllGroups()
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-
-                if hasForeignSpecs then
-                    ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
-                        groupIds = multiGroupIds,
-                        callback = doToggle,
-                    })
-                else
-                    doToggle()
-                end
-            end
-        end)
-        CS.col2Scroll:AddChild(toggleBtn)
-
-        local spacer4 = AceGUI:Create("Label")
-        spacer4:SetText(" ")
-        spacer4:SetFullWidth(true)
-        local f4, _, fl4 = spacer4.label:GetFont()
-        spacer4:SetFont(f4, 3, fl4 or "")
-        CS.col2Scroll:AddChild(spacer4)
-
-        -- Lock / Unlock All
+        -- Lock / Unlock All (operates on containers)
         local anyLocked = false
-        for _, gid in ipairs(multiGroupIds) do
-            local g = db.groups[gid]
-            if g and g.locked then
+        for _, cid in ipairs(multiContainerIds) do
+            local c = containers[cid]
+            if c and c.locked then
                 anyLocked = true
                 break
             end
@@ -608,23 +436,27 @@ local function RefreshColumn2()
         lockBtn:SetFullWidth(true)
         lockBtn:SetCallback("OnClick", function()
             local newState = not anyLocked
-            for _, gid in ipairs(multiGroupIds) do
-                local g = db.groups[gid]
-                if g then
-                    g.locked = newState
-                    CooldownCompanion:RefreshGroupFrame(gid)
+            for _, cid in ipairs(multiContainerIds) do
+                local c = containers[cid]
+                if c then
+                    c.locked = newState
+                    for gid, g in pairs(db.groups) do
+                        if g.parentContainerId == cid then
+                            CooldownCompanion:RefreshGroupFrame(gid)
+                        end
+                    end
                 end
             end
             CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col2Scroll:AddChild(lockBtn)
 
-        local spacer5 = AceGUI:Create("Label")
-        spacer5:SetText(" ")
-        spacer5:SetFullWidth(true)
-        local f5, _, fl5 = spacer5.label:GetFont()
-        spacer5:SetFont(f5, 3, fl5 or "")
-        CS.col2Scroll:AddChild(spacer5)
+        local spacer3 = AceGUI:Create("Label")
+        spacer3:SetText(" ")
+        spacer3:SetFullWidth(true)
+        local f3, _, fl3 = spacer3.label:GetFont()
+        spacer3:SetFont(f3, 3, fl3 or "")
+        CS.col2Scroll:AddChild(spacer3)
 
         -- Export Selected
         local exportBtn = AceGUI:Create("Button")
@@ -632,10 +464,11 @@ local function RefreshColumn2()
         exportBtn:SetFullWidth(true)
         exportBtn:SetCallback("OnClick", function()
             local exportGroups = {}
-            for _, gid in ipairs(multiGroupIds) do
-                local g = db.groups[gid]
-                if g then
-                    table.insert(exportGroups, BuildGroupExportData(g))
+            for _, cid in ipairs(multiContainerIds) do
+                for gid, g in pairs(db.groups) do
+                    if g.parentContainerId == cid then
+                        table.insert(exportGroups, BuildGroupExportData(g))
+                    end
                 end
             end
             local payload = { type = "groups", version = 1, groups = exportGroups }
@@ -647,518 +480,730 @@ local function RefreshColumn2()
         return
     end
 
-    if not CS.selectedGroup then
+    -- Unified container view: show search bar + all panels' buttons (with collapsible headers for multi-panel)
+    if CS.selectedContainer then
+        local profile = CooldownCompanion.db.profile
+        local container = profile.groupContainers and profile.groupContainers[CS.selectedContainer]
+        if not container then
+            local label = AceGUI:Create("Label")
+            label:SetText("Container not found")
+            label:SetFullWidth(true)
+            CS.col2Scroll:AddChild(label)
+            return
+        end
+
+        -- Collect sorted panels
+        local panels = CooldownCompanion:GetPanels(CS.selectedContainer)
+        local panelCount = #panels
+        local isMultiPanel = panelCount > 1
+
+        -- Safety: auto-select if single panel and not selected
+        if panelCount == 1 and not CS.selectedGroup then
+            CS.selectedGroup = panels[1].groupId
+        end
+
+        -- Search / add bar (targets CS.selectedGroup)
+        local inputBox = AceGUI:Create("EditBox")
+        if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
+        inputBox:SetLabel("")
+        inputBox:SetText(CS.newInput)
+        inputBox:DisableButton(true)
+        inputBox:SetFullWidth(true)
+        inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            if CS.ConsumeAutocompleteEnter() then return end
+            CS.HideAutocomplete()
+            CS.newInput = text
+            if CS.newInput ~= "" and CS.selectedGroup then
+                if TryAdd(CS.newInput) then
+                    CS.newInput = ""
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+        end)
+        inputBox:SetCallback("OnTextChanged", function(widget, event, text)
+            CS.newInput = text
+            if text and #text >= 1 then
+                local results = SearchAutocomplete(text)
+                CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
+            else
+                CS.HideAutocomplete()
+            end
+        end)
+        inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
+        local editboxFrame = inputBox.editbox
+        if not editboxFrame._cdcAutocompHooked then
+            editboxFrame._cdcAutocompHooked = true
+            editboxFrame:HookScript("OnKeyDown", function(self, key)
+                CS.HandleAutocompleteKeyDown(key)
+            end)
+        end
+        CS.col2Scroll:AddChild(inputBox)
+
+        if CS.pendingEditBoxFocus then
+            CS.pendingEditBoxFocus = false
+            C_Timer.After(0, function()
+                if inputBox.editbox then
+                    inputBox:SetFocus()
+                end
+            end)
+        end
+
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(2)
+        spacer.noAutoHeight = true
+        CS.col2Scroll:AddChild(spacer)
+
+        local addRow = AceGUI:Create("SimpleGroup")
+        addRow:SetFullWidth(true)
+        addRow:SetLayout("Flow")
+
+        local manualAddBtn = AceGUI:Create("Button")
+        manualAddBtn:SetText("Manual Add")
+        manualAddBtn:SetRelativeWidth(0.49)
+        manualAddBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        manualAddBtn:SetCallback("OnClick", function(_, _, mouseButton)
+            if mouseButton == "RightButton" then
+                if InCombatLockdown() then
+                    CooldownCompanion:Print("Cannot open spellbook during combat.")
+                    return
+                end
+                PlayerSpellsUtil.ToggleSpellBookFrame()
+                return
+            end
+            if CS.newInput ~= "" and CS.selectedGroup then
+                if TryAdd(CS.newInput) then
+                    CS.newInput = ""
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+        end)
+        addRow:AddChild(manualAddBtn)
+
+        local autoAddBtn = AceGUI:Create("Button")
+        autoAddBtn:SetText("Auto Add")
+        autoAddBtn:SetRelativeWidth(0.49)
+        autoAddBtn:SetCallback("OnClick", function()
+            OpenAutoAddFlow()
+        end)
+        autoAddBtn:SetCallback("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+            GameTooltip:AddLine("Auto Add")
+            GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        autoAddBtn:SetCallback("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        addRow:AddChild(autoAddBtn)
+
+        CS.col2Scroll:AddChild(addRow)
+
+        local sep = AceGUI:Create("Heading")
+        sep:SetText("")
+        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        if cc then sep.label:SetTextColor(cc.r, cc.g, cc.b) end
+        sep:SetFullWidth(true)
+        CS.col2Scroll:AddChild(sep)
+
+        -- Track scroll child count for drag offset computation
+        -- inputBox, spacer, addRow, sep = 4 children so far
+        local scrollChildCount = 4
+
+        local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
+
+        -- Render each panel's buttons (with headers for multi-panel containers)
+        for _, panelInfo in ipairs(panels) do
+            local panelId = panelInfo.groupId
+            local panel = panelInfo.group
+            local isCollapsed = isMultiPanel and CS.collapsedPanels[panelId]
+
+            -- Panel header (only for multi-panel containers)
+            if isMultiPanel then
+                local collapseTag = isCollapsed
+                    and "|A:common-icon-plus:10:10|a "
+                    or "|A:common-icon-minus:10:10|a "
+
+                local modeLabel
+                if panel.displayMode == "bars" then
+                    modeLabel = "|cff888888[Bars]|r "
+                elseif panel.displayMode == "text" then
+                    modeLabel = "|cff888888[Text]|r "
+                else
+                    modeLabel = "|cff888888[Icons]|r "
+                end
+
+                local btnCount = panel.buttons and #panel.buttons or 0
+                local headerText = collapseTag .. (panel.name or ("Panel " .. panelId)) .. "  " .. modeLabel .. "|cff666666(" .. btnCount .. ")|r"
+
+                local header = AceGUI:Create("InteractiveLabel")
+                CleanRecycledEntry(header)
+                header:SetText(headerText)
+                header:SetImage(ST._GetGroupIcon(panel))
+                header:SetImageSize(24, 24)
+                header:SetFullWidth(true)
+                header:SetFontObject(GameFontHighlight)
+                header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+                -- Highlight selected panel header green
+                if CS.selectedGroup == panelId then
+                    header:SetColor(0.3, 0.8, 0.3)
+                end
+
+                header:SetCallback("OnClick", function() end)
+
+                header.frame:SetScript("OnMouseUp", function(self, mouseButton)
+                    if mouseButton == "LeftButton" then
+                        if IsShiftKeyDown() then
+                            -- Shift+click: toggle collapse without changing selection
+                            CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId]
+                        else
+                            -- Normal click: select this panel (or toggle collapse if already selected)
+                            if CS.selectedGroup == panelId then
+                                CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId]
+                            else
+                                CS.selectedGroup = panelId
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                            end
+                        end
+                        CooldownCompanion:RefreshConfigPanel()
+                    elseif mouseButton == "RightButton" then
+                        -- Panel context menu (same as old panel list context menu)
+                        if not CS.panelContextMenu then
+                            CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
+                        end
+                        local ctxContainerId = CS.selectedContainer
+                        UIDropDownMenu_Initialize(CS.panelContextMenu, function(self, level)
+                            local info = UIDropDownMenu_CreateInfo()
+                            info.text = "Rename"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                ShowPopupAboveConfig("CDC_RENAME_GROUP", panel.name or "Panel", { groupId = panelId })
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            local switchModes = {
+                                { mode = "icons", label = "Icons" },
+                                { mode = "bars", label = "Bars" },
+                                { mode = "text", label = "Text" },
+                            }
+                            for _, m in ipairs(switchModes) do
+                                if panel.displayMode ~= m.mode then
+                                    info = UIDropDownMenu_CreateInfo()
+                                    info.text = "Switch to " .. m.label
+                                    info.notCheckable = true
+                                    local targetMode = m.mode
+                                    info.func = function()
+                                        CloseDropDownMenus()
+                                        panel.displayMode = targetMode
+                                        if targetMode == "bars" or targetMode == "text" then
+                                            panel.style.orientation = "vertical"
+                                        end
+                                        if targetMode ~= "icons" and panel.masqueEnabled then
+                                            CooldownCompanion:ToggleGroupMasque(panelId, false)
+                                        end
+                                        CooldownCompanion:RefreshGroupFrame(panelId)
+                                        CooldownCompanion:RefreshConfigPanel()
+                                    end
+                                    UIDropDownMenu_AddButton(info, level)
+                                end
+                            end
+
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "Duplicate"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                local newPanelId = CooldownCompanion:DuplicatePanel(ctxContainerId, panelId)
+                                if newPanelId then
+                                    CS.selectedGroup = newPanelId
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            if panelCount > 1 then
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = "|cffff4444Delete|r"
+                                info.notCheckable = true
+                                info.func = function()
+                                    CloseDropDownMenus()
+                                    CooldownCompanion:DeletePanel(ctxContainerId, panelId)
+                                    if CS.selectedGroup == panelId then
+                                        CS.selectedGroup = nil
+                                    end
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+                        end, "MENU")
+                        CS.panelContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                        ToggleDropDownMenu(1, nil, CS.panelContextMenu, "cursor", 0, 0)
+                    end
+                end)
+
+                CS.col2Scroll:AddChild(header)
+                scrollChildCount = scrollChildCount + 1
+            end
+
+            -- Button list for this panel (skip if collapsed in multi-panel mode)
+            if not isCollapsed then
+                local panelButtons = panel.buttons or {}
+                local numButtons = #panelButtons
+                local panelChildOffset = scrollChildCount
+
+                for i, buttonData in ipairs(panelButtons) do
+                    local entry = AceGUI:Create("InteractiveLabel")
+                    CleanRecycledEntry(entry)
+                    local usable = CooldownCompanion:IsButtonUsable(buttonData)
+
+                    local entryName = buttonData.name
+                    if buttonData.type == "spell" then
+                        local child
+                        if buttonData.cdmChildSlot then
+                            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+                            child = allChildren and allChildren[buttonData.cdmChildSlot]
+                        else
+                            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+                        end
+                        if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
+                            local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
+                            if spellName then entryName = spellName end
+                        else
+                            local spellName = C_Spell.GetSpellName(buttonData.id)
+                            if spellName then entryName = spellName end
+                        end
+                        if buttonData.cdmChildSlot then
+                            entryName = entryName .. " #" .. buttonData.cdmChildSlot
+                        end
+                        local addedAs = buttonData.addedAs
+                        if addedAs ~= "spell" and addedAs ~= "aura" then
+                            addedAs = buttonData.isPassive and "aura" or "spell"
+                        end
+                        local icons = ""
+                        if addedAs ~= "aura" then
+                            icons = icons .. "|A:ui_adv_atk:15:15|a"
+                        end
+                        if addedAs == "aura" or buttonData.auraTracking then
+                            icons = icons .. "|A:ui_adv_health:15:15|a"
+                        end
+                        if icons ~= "" then
+                            entryName = entryName .. "  " .. icons
+                        end
+                    elseif buttonData.type == "item" then
+                        if C_Item.IsEquippableItem(buttonData.id) then
+                            entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
+                        else
+                            entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
+                        end
+                    end
+                    entry:SetText(entryName or ("Unknown " .. buttonData.type))
+                    entry:SetImage(GetButtonIcon(buttonData))
+                    entry:SetImageSize(32, 32)
+                    if entry.image and entry.image.SetDesaturated then
+                        entry.image:SetDesaturated(not usable)
+                    end
+                    entry:SetFullWidth(true)
+                    entry:SetFontObject(GameFontHighlight)
+                    entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+                    -- Selection highlighting: only show if this panel is the selected one
+                    if CS.selectedGroup == panelId then
+                        if CS.selectedButtons[i] then
+                            entry:SetColor(0.4, 0.7, 1.0)
+                        elseif CS.selectedButton == i then
+                            entry:SetColor(0.4, 0.7, 1.0)
+                        elseif not usable then
+                            entry:SetColor(0.5, 0.5, 0.5)
+                        end
+                    elseif not usable then
+                        entry:SetColor(0.5, 0.5, 0.5)
+                    end
+
+                    -- Right-side row badges
+                    local rowFrame = entry.frame
+                    local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
+                    local warnBadge, overrideBadge, soundBadge, auraBadge
+
+                    if not usable then
+                        warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
+                        warnBadge:SetFrameLevel(rowBadgeLevel)
+                        SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
+                        warnBadge:Show()
+                    end
+
+                    if CooldownCompanion:HasStyleOverrides(buttonData) then
+                        overrideBadge = EnsureRowBadge(
+                            rowFrame,
+                            "_cdcOverrideBadge",
+                            "Crosshair_VehichleCursor_32",
+                            OVERRIDE_BADGE_ICON_SIZE
+                        )
+                        overrideBadge:SetFrameLevel(rowBadgeLevel)
+                        SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
+                        overrideBadge:Show()
+                    end
+
+                    if buttonData.type == "spell" then
+                        local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
+                        if enabledSoundEvents then
+                            soundBadge = EnsureRowBadge(rowFrame, "_cdcSoundBadge", "common-icon-sound")
+                            soundBadge:SetFrameLevel(rowBadgeLevel)
+                            SetRowBadgeTooltip(soundBadge, "Sound alerts enabled")
+                            soundBadge:Show()
+                        end
+
+                        if buttonData.auraTracking then
+                            auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
+                            auraBadge:SetFrameLevel(rowBadgeLevel)
+                            local auraReady = IsAuraTrackingReady(buttonData, cdmEnabled)
+                            if auraReady then
+                                auraBadge.icon:SetVertexColor(1, 1, 1, 1)
+                                SetRowBadgeTooltip(auraBadge, "Aura tracking: Active", 0.2, 1, 0.2)
+                            else
+                                auraBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
+                                SetRowBadgeTooltip(auraBadge, "Aura tracking: Inactive", 1, 0.2, 0.2)
+                            end
+                            auraBadge:Show()
+                        end
+                    end
+
+                    local talentBadge = EnsureRowBadge(rowFrame, "_cdcTalentBadge", "UI-HUD-MicroMenu-SpecTalents-Mouseover")
+                    talentBadge:SetFrameLevel(rowBadgeLevel)
+                    if buttonData.talentConditions and #buttonData.talentConditions > 0 then
+                        SetRowBadgeTooltip(talentBadge, "Has talent conditions")
+                        talentBadge:Show()
+                    end
+
+                    LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
+
+                    entry:SetCallback("OnClick", function() end)
+
+                    -- Handle clicks via OnMouseUp with drag guard
+                    -- Capture upvalues for this button's panel context
+                    local btnPanelId = panelId
+                    local btnIndex = i
+                    local entryFrame = entry.frame
+                    entryFrame:SetScript("OnMouseUp", function(self, mouseButton)
+                        if CS.dragState and CS.dragState.phase == "active" then return end
+                        if mouseButton == "LeftButton" and GetCursorInfo() then
+                            if TryReceiveCursorDrop() then return end
+                        end
+                        if mouseButton == "LeftButton" then
+                            -- Auto-select this button's panel
+                            local panelChanged = CS.selectedGroup ~= btnPanelId
+                            if panelChanged then
+                                CS.selectedGroup = btnPanelId
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                            end
+
+                            if IsControlKeyDown() then
+                                if CS.selectedButtons[btnIndex] then
+                                    CS.selectedButtons[btnIndex] = nil
+                                else
+                                    CS.selectedButtons[btnIndex] = true
+                                end
+                                if CS.selectedButton and not CS.selectedButtons[CS.selectedButton] and next(CS.selectedButtons) then
+                                    CS.selectedButtons[CS.selectedButton] = true
+                                end
+                                CS.selectedButton = nil
+                            else
+                                wipe(CS.selectedButtons)
+                                if not panelChanged and CS.selectedButton == btnIndex then
+                                    CS.selectedButton = nil
+                                else
+                                    CS.selectedButton = btnIndex
+                                end
+                            end
+                            CooldownCompanion:RefreshConfigPanel()
+                        elseif mouseButton == "RightButton" then
+                            -- Auto-select panel on right-click too
+                            if CS.selectedGroup ~= btnPanelId then
+                                CS.selectedGroup = btnPanelId
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                            end
+                            if not CS.buttonContextMenu then
+                                CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
+                            end
+                            local sourceGroupId = btnPanelId
+                            local sourceIndex = btnIndex
+                            local entryData = buttonData
+                            UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
+                                level = level or 1
+                                if level == 1 then
+                                    local dupInfo = UIDropDownMenu_CreateInfo()
+                                    dupInfo.text = "Duplicate"
+                                    dupInfo.notCheckable = true
+                                    dupInfo.func = function()
+                                        local copy = CopyTable(entryData)
+                                        table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                        CooldownCompanion:RefreshConfigPanel()
+                                        CloseDropDownMenus()
+                                    end
+                                    UIDropDownMenu_AddButton(dupInfo, level)
+
+                                    local moveInfo = UIDropDownMenu_CreateInfo()
+                                    moveInfo.text = "Move to..."
+                                    moveInfo.notCheckable = true
+                                    moveInfo.hasArrow = true
+                                    moveInfo.menuList = "MOVE_TO_GROUP"
+                                    UIDropDownMenu_AddButton(moveInfo, level)
+
+                                    local removeInfo = UIDropDownMenu_CreateInfo()
+                                    removeInfo.text = "Remove"
+                                    removeInfo.notCheckable = true
+                                    removeInfo.func = function()
+                                        CloseDropDownMenus()
+                                        local name = entryData.name or "this entry"
+                                        ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
+                                    end
+                                    UIDropDownMenu_AddButton(removeInfo, level)
+                                elseif menuList == "MOVE_TO_GROUP" then
+                                    local db = CooldownCompanion.db.profile
+                                    local containers = db.groupContainers or {}
+                                    local folderGroups, looseGroups = {}, {}
+                                    for id, group in pairs(db.groups) do
+                                        if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                                            local gName = group.name or ("Group " .. id)
+                                            local cid = group.parentContainerId
+                                            local ctr = cid and containers[cid]
+                                            local fid = ctr and ctr.folderId
+                                            if fid and db.folders[fid] then
+                                                folderGroups[fid] = folderGroups[fid] or {}
+                                                table.insert(folderGroups[fid], { id = id, name = gName })
+                                            else
+                                                table.insert(looseGroups, { id = id, name = gName })
+                                            end
+                                        end
+                                    end
+                                    local sortedFolders = {}
+                                    for fid, folder in pairs(db.folders) do
+                                        if folderGroups[fid] then
+                                            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                                        end
+                                    end
+                                    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+                                    local hasFolders = #sortedFolders > 0
+                                    for _, folder in ipairs(sortedFolders) do
+                                        local hdr = UIDropDownMenu_CreateInfo()
+                                        hdr.text = folder.name
+                                        hdr.isTitle = true
+                                        hdr.notCheckable = true
+                                        UIDropDownMenu_AddButton(hdr, level)
+                                        table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
+                                        for _, g in ipairs(folderGroups[folder.id]) do
+                                            local info = UIDropDownMenu_CreateInfo()
+                                            info.text = g.name
+                                            info.notCheckable = true
+                                            info.func = function()
+                                                table.insert(db.groups[g.id].buttons, entryData)
+                                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                                CooldownCompanion:RefreshGroupFrame(g.id)
+                                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                                CS.selectedButton = nil
+                                                wipe(CS.selectedButtons)
+                                                CooldownCompanion:RefreshConfigPanel()
+                                                CloseDropDownMenus()
+                                            end
+                                            UIDropDownMenu_AddButton(info, level)
+                                        end
+                                    end
+                                    if #looseGroups > 0 then
+                                        if hasFolders then
+                                            local hdr = UIDropDownMenu_CreateInfo()
+                                            hdr.text = "No Folder"
+                                            hdr.isTitle = true
+                                            hdr.notCheckable = true
+                                            UIDropDownMenu_AddButton(hdr, level)
+                                        end
+                                        table.sort(looseGroups, function(a, b) return a.name < b.name end)
+                                        for _, g in ipairs(looseGroups) do
+                                            local info = UIDropDownMenu_CreateInfo()
+                                            info.text = g.name
+                                            info.notCheckable = true
+                                            info.func = function()
+                                                table.insert(db.groups[g.id].buttons, entryData)
+                                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                                CooldownCompanion:RefreshGroupFrame(g.id)
+                                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                                CS.selectedButton = nil
+                                                wipe(CS.selectedButtons)
+                                                CooldownCompanion:RefreshConfigPanel()
+                                                CloseDropDownMenus()
+                                            end
+                                            UIDropDownMenu_AddButton(info, level)
+                                        end
+                                    end
+                                end
+                            end, "MENU")
+                            CS.buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                            ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
+                        elseif mouseButton == "MiddleButton" then
+                            if CS.selectedGroup ~= btnPanelId then
+                                CS.selectedGroup = btnPanelId
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                            end
+                            if not CS.moveMenuFrame then
+                                CS.moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+                            end
+                            local sourceGroupId = btnPanelId
+                            local sourceIndex = btnIndex
+                            local entryData = buttonData
+                            UIDropDownMenu_Initialize(CS.moveMenuFrame, function(self, level)
+                                local db = CooldownCompanion.db.profile
+                                local containers = db.groupContainers or {}
+                                local folderGroups, looseGroups = {}, {}
+                                for id, group in pairs(db.groups) do
+                                    if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                                        local gName = group.name or ("Group " .. id)
+                                        local cid = group.parentContainerId
+                                        local ctr = cid and containers[cid]
+                                        local fid = ctr and ctr.folderId
+                                        if fid and db.folders[fid] then
+                                            folderGroups[fid] = folderGroups[fid] or {}
+                                            table.insert(folderGroups[fid], { id = id, name = gName })
+                                        else
+                                            table.insert(looseGroups, { id = id, name = gName })
+                                        end
+                                    end
+                                end
+                                local sortedFolders = {}
+                                for fid, folder in pairs(db.folders) do
+                                    if folderGroups[fid] then
+                                        table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                                    end
+                                end
+                                table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+                                local hasFolders = #sortedFolders > 0
+                                for _, folder in ipairs(sortedFolders) do
+                                    local hdr = UIDropDownMenu_CreateInfo()
+                                    hdr.text = folder.name
+                                    hdr.isTitle = true
+                                    hdr.notCheckable = true
+                                    UIDropDownMenu_AddButton(hdr, level)
+                                    table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
+                                    for _, g in ipairs(folderGroups[folder.id]) do
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.text = g.name
+                                        info.func = function()
+                                            table.insert(db.groups[g.id].buttons, entryData)
+                                            table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                            CooldownCompanion:RefreshGroupFrame(g.id)
+                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                            CS.selectedButton = nil
+                                            wipe(CS.selectedButtons)
+                                            CooldownCompanion:RefreshConfigPanel()
+                                            CloseDropDownMenus()
+                                        end
+                                        UIDropDownMenu_AddButton(info, level)
+                                    end
+                                end
+                                if #looseGroups > 0 then
+                                    if hasFolders then
+                                        local hdr = UIDropDownMenu_CreateInfo()
+                                        hdr.text = "No Folder"
+                                        hdr.isTitle = true
+                                        hdr.notCheckable = true
+                                        UIDropDownMenu_AddButton(hdr, level)
+                                    end
+                                    table.sort(looseGroups, function(a, b) return a.name < b.name end)
+                                    for _, g in ipairs(looseGroups) do
+                                        local info = UIDropDownMenu_CreateInfo()
+                                        info.text = g.name
+                                        info.func = function()
+                                            table.insert(db.groups[g.id].buttons, entryData)
+                                            table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+                                            CooldownCompanion:RefreshGroupFrame(g.id)
+                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                            CS.selectedButton = nil
+                                            wipe(CS.selectedButtons)
+                                            CooldownCompanion:RefreshConfigPanel()
+                                            CloseDropDownMenus()
+                                        end
+                                        UIDropDownMenu_AddButton(info, level)
+                                    end
+                                end
+                            end, "MENU")
+                            CS.moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+                            ToggleDropDownMenu(1, nil, CS.moveMenuFrame, "cursor", 0, 0)
+                        end
+                    end)
+
+                    CS.col2Scroll:AddChild(entry)
+                    scrollChildCount = scrollChildCount + 1
+
+                    entryFrame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
+
+                    -- Hold-click drag reorder (within this panel only)
+                    if not entryFrame._cdcDragHooked then
+                        entryFrame._cdcDragHooked = true
+                        entryFrame:HookScript("OnMouseDown", function(self, mouseBtn)
+                            if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
+                        end)
+                    end
+                    local dragPanelId = panelId
+                    local dragBtnIndex = i
+                    local dragChildOffset = panelChildOffset
+                    local dragTotal = numButtons
+                    entryFrame._cdcOnMouseDown = function(self, mouseButton)
+                        if GetCursorInfo() then return end
+                        if mouseButton == "LeftButton" and not IsControlKeyDown() then
+                            -- Auto-select this panel for drag context
+                            if CS.selectedGroup ~= dragPanelId then
+                                CS.selectedGroup = dragPanelId
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                            end
+                            local cursorY = GetScaledCursorPosition(CS.col2Scroll)
+                            CS.dragState = {
+                                kind = "button",
+                                phase = "pending",
+                                sourceIndex = dragBtnIndex,
+                                groupId = dragPanelId,
+                                scrollWidget = CS.col2Scroll,
+                                widget = entry,
+                                startY = cursorY,
+                                childOffset = dragChildOffset,
+                                totalDraggable = dragTotal,
+                            }
+                            StartDragTracking()
+                        end
+                    end
+                end -- button loop
+            end -- not collapsed
+        end -- panel loop
+
+        -- "Add Panel" button (multi-panel only)
+        if isMultiPanel then
+            local addPanelBtn = AceGUI:Create("Button")
+            addPanelBtn:SetText("Add Panel")
+            addPanelBtn:SetFullWidth(true)
+            addPanelBtn:SetCallback("OnClick", function()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
+                if newPanelId then
+                    CS.selectedGroup = newPanelId
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            CS.col2Scroll:AddChild(addPanelBtn)
+        end
+
+        return
+    end
+
+    -- No container selected
+    if not CS.selectedContainer then
         local label = AceGUI:Create("Label")
         label:SetText("Select a group first")
         label:SetFullWidth(true)
         CS.col2Scroll:AddChild(label)
         return
-    end
-
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group then return end
-
-    -- Input editbox
-    local inputBox = AceGUI:Create("EditBox")
-    if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
-    inputBox:SetLabel("")
-    inputBox:SetText(CS.newInput)
-    inputBox:DisableButton(true)
-    inputBox:SetFullWidth(true)
-    inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        if CS.ConsumeAutocompleteEnter() then return end
-        CS.HideAutocomplete()
-        CS.newInput = text
-        if CS.newInput ~= "" and CS.selectedGroup then
-            if TryAdd(CS.newInput) then
-                CS.newInput = ""
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end
-    end)
-    inputBox:SetCallback("OnTextChanged", function(widget, event, text)
-        CS.newInput = text
-        if text and #text >= 1 then
-            local results = SearchAutocomplete(text)
-            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
-        else
-            CS.HideAutocomplete()
-        end
-    end)
-    inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
-    -- Arrow key / Enter navigation for autocomplete dropdown.
-    -- HookScript is necessary because AceGUI has no OnKeyDown callback.
-    -- Guarded: only acts when the autocomplete dropdown is visible; no-op otherwise.
-    local editboxFrame = inputBox.editbox
-    if not editboxFrame._cdcAutocompHooked then
-        editboxFrame._cdcAutocompHooked = true
-        editboxFrame:HookScript("OnKeyDown", function(self, key)
-            CS.HandleAutocompleteKeyDown(key)
-        end)
-    end
-    CS.col2Scroll:AddChild(inputBox)
-
-    if CS.pendingEditBoxFocus then
-        CS.pendingEditBoxFocus = false
-        C_Timer.After(0, function()
-            if inputBox.editbox then
-                inputBox:SetFocus()
-            end
-        end)
-    end
-
-    local spacer = AceGUI:Create("SimpleGroup")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(2)
-    spacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(spacer)
-
-    local addRow = AceGUI:Create("SimpleGroup")
-    addRow:SetFullWidth(true)
-    addRow:SetLayout("Flow")
-
-    local manualAddBtn = AceGUI:Create("Button")
-    manualAddBtn:SetText("Manual Add")
-    manualAddBtn:SetRelativeWidth(0.49)
-    manualAddBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    manualAddBtn:SetCallback("OnClick", function(_, _, button)
-        if button == "RightButton" then
-            if InCombatLockdown() then
-                CooldownCompanion:Print("Cannot open spellbook during combat.")
-                return
-            end
-            PlayerSpellsUtil.ToggleSpellBookFrame()
-            return
-        end
-        if CS.newInput ~= "" and CS.selectedGroup then
-            if TryAdd(CS.newInput) then
-                CS.newInput = ""
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end
-    end)
-    addRow:AddChild(manualAddBtn)
-
-    local autoAddBtn = AceGUI:Create("Button")
-    autoAddBtn:SetText("Auto Add")
-    autoAddBtn:SetRelativeWidth(0.49)
-    autoAddBtn:SetCallback("OnClick", function()
-        OpenAutoAddFlow()
-    end)
-    autoAddBtn:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-        GameTooltip:AddLine("Auto Add")
-        GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    autoAddBtn:SetCallback("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    addRow:AddChild(autoAddBtn)
-
-    CS.col2Scroll:AddChild(addRow)
-
-    -- Separator
-    local sep = AceGUI:Create("Heading")
-    sep:SetText("")
-    local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-    if cc then sep.label:SetTextColor(cc.r, cc.g, cc.b) end
-    sep:SetFullWidth(true)
-    CS.col2Scroll:AddChild(sep)
-
-    -- Spell/Item list
-    -- childOffset = 4 (inputBox, spacer, addRow, sep are the first 4 children before draggable entries)
-    local numButtons = #group.buttons
-    local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
-    for i, buttonData in ipairs(group.buttons) do
-        local entry = AceGUI:Create("InteractiveLabel")
-        CleanRecycledEntry(entry)
-        local usable = CooldownCompanion:IsButtonUsable(buttonData)
-        -- Show current spell name via viewer child's overrideSpellID (tracks current form)
-        local entryName = buttonData.name
-        if buttonData.type == "spell" then
-            -- For multi-slot buttons, use the slot-specific CDM child
-            local child
-            if buttonData.cdmChildSlot then
-                local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-                child = allChildren and allChildren[buttonData.cdmChildSlot]
-            else
-                child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-            end
-            if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
-                local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
-                if spellName then entryName = spellName end
-            else
-                local spellName = C_Spell.GetSpellName(buttonData.id)
-                if spellName then entryName = spellName end
-            end
-            -- Append slot number for multi-entry spells
-            if buttonData.cdmChildSlot then
-                entryName = entryName .. " #" .. buttonData.cdmChildSlot
-            end
-            -- Append tracking type icon(s): sword = spell classification,
-            -- heart = aura classification and/or active aura attachment.
-            local addedAs = buttonData.addedAs
-            if addedAs ~= "spell" and addedAs ~= "aura" then
-                addedAs = buttonData.isPassive and "aura" or "spell"
-            end
-            local icons = ""
-            if addedAs ~= "aura" then
-                icons = icons .. "|A:ui_adv_atk:15:15|a"
-            end
-            if addedAs == "aura" or buttonData.auraTracking then
-                icons = icons .. "|A:ui_adv_health:15:15|a"
-            end
-            if icons ~= "" then
-                entryName = entryName .. "  " .. icons
-            end
-        elseif buttonData.type == "item" then
-            if C_Item.IsEquippableItem(buttonData.id) then
-                entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
-            else
-                entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
-            end
-        end
-        entry:SetText(entryName or ("Unknown " .. buttonData.type))
-        entry:SetImage(GetButtonIcon(buttonData))
-        entry:SetImageSize(32, 32)
-        if entry.image and entry.image.SetDesaturated then
-            entry.image:SetDesaturated(not usable)
-        end
-        entry:SetFullWidth(true)
-        entry:SetFontObject(GameFontHighlight)
-        entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        if CS.selectedButtons[i] then
-            entry:SetColor(0.4, 0.7, 1.0)
-        elseif CS.selectedButton == i then
-            entry:SetColor(0.4, 0.7, 1.0)
-        elseif not usable then
-            entry:SetColor(0.5, 0.5, 0.5)
-        end
-
-        -- Right-side row badges (all normalized to warning icon size).
-        local rowFrame = entry.frame
-        local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
-        local warnBadge, overrideBadge, soundBadge, auraBadge
-
-        if not usable then
-            warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
-            warnBadge:SetFrameLevel(rowBadgeLevel)
-            SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
-            warnBadge:Show()
-        end
-
-        if CooldownCompanion:HasStyleOverrides(buttonData) then
-            overrideBadge = EnsureRowBadge(
-                rowFrame,
-                "_cdcOverrideBadge",
-                "Crosshair_VehichleCursor_32",
-                OVERRIDE_BADGE_ICON_SIZE
-            )
-            overrideBadge:SetFrameLevel(rowBadgeLevel)
-            SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
-            overrideBadge:Show()
-        end
-
-        if buttonData.type == "spell" then
-            local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
-            if enabledSoundEvents then
-                soundBadge = EnsureRowBadge(rowFrame, "_cdcSoundBadge", "common-icon-sound")
-                soundBadge:SetFrameLevel(rowBadgeLevel)
-                SetRowBadgeTooltip(soundBadge, "Sound alerts enabled")
-                soundBadge:Show()
-            end
-
-            if buttonData.auraTracking then
-                auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
-                auraBadge:SetFrameLevel(rowBadgeLevel)
-                local auraReady = IsAuraTrackingReady(buttonData, cdmEnabled)
-                if auraReady then
-                    auraBadge.icon:SetVertexColor(1, 1, 1, 1)
-                    SetRowBadgeTooltip(auraBadge, "Aura tracking: Active", 0.2, 1, 0.2)
-                else
-                    auraBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
-                    SetRowBadgeTooltip(auraBadge, "Aura tracking: Inactive", 1, 0.2, 0.2)
-                end
-                auraBadge:Show()
-            end
-        end
-
-        local talentBadge = EnsureRowBadge(rowFrame, "_cdcTalentBadge", "UI-HUD-MicroMenu-SpecTalents-Mouseover")
-        talentBadge:SetFrameLevel(rowBadgeLevel)
-        if buttonData.talentConditions and #buttonData.talentConditions > 0 then
-            SetRowBadgeTooltip(talentBadge, "Has talent conditions")
-            talentBadge:Show()
-        end
-
-        -- Right-to-left: warning stays rightmost, then override/sound/aura/talent.
-        LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
-
-        -- Neutralize InteractiveLabel's built-in OnClick (Label_OnClick Fire)
-        -- so that mousedown doesn't trigger selection; we handle clicks on mouseup instead
-        entry:SetCallback("OnClick", function() end)
-
-        -- Handle clicks via OnMouseUp with drag guard
-        local entryFrame = entry.frame
-        entryFrame:SetScript("OnMouseUp", function(self, button)
-            -- If a drag was active, suppress this click
-            if CS.dragState and CS.dragState.phase == "active" then return end
-            -- If cursor holds a spell/item from spellbook/bags, receive the drop
-            if button == "LeftButton" and GetCursorInfo() then
-                if TryReceiveCursorDrop() then return end
-            end
-            if button == "LeftButton" then
-                if IsControlKeyDown() then
-                    -- Ctrl+click: toggle multi-select
-                    if CS.selectedButtons[i] then
-                        CS.selectedButtons[i] = nil
-                    else
-                        CS.selectedButtons[i] = true
-                    end
-                    -- Include current selectedButton in multi-select if starting fresh
-                    if CS.selectedButton and not CS.selectedButtons[CS.selectedButton] and next(CS.selectedButtons) then
-                        CS.selectedButtons[CS.selectedButton] = true
-                    end
-                    CS.selectedButton = nil
-                else
-                    -- Normal click: toggle single select, clear multi-select
-                    wipe(CS.selectedButtons)
-                    if CS.selectedButton == i then
-                        CS.selectedButton = nil
-                    else
-                        CS.selectedButton = i
-                    end
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            elseif button == "RightButton" then
-                if not CS.buttonContextMenu then
-                    CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
-                end
-                local sourceGroupId = CS.selectedGroup
-                local sourceIndex = i
-                local entryData = buttonData
-                UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
-                    level = level or 1
-                    if level == 1 then
-                        -- Duplicate option
-                        local dupInfo = UIDropDownMenu_CreateInfo()
-                        dupInfo.text = "Duplicate"
-                        dupInfo.notCheckable = true
-                        dupInfo.func = function()
-                            local copy = CopyTable(entryData)
-                            table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
-                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                            CooldownCompanion:RefreshConfigPanel()
-                            CloseDropDownMenus()
-                        end
-                        UIDropDownMenu_AddButton(dupInfo, level)
-                        -- Move to... submenu
-                        local moveInfo = UIDropDownMenu_CreateInfo()
-                        moveInfo.text = "Move to..."
-                        moveInfo.notCheckable = true
-                        moveInfo.hasArrow = true
-                        moveInfo.menuList = "MOVE_TO_GROUP"
-                        UIDropDownMenu_AddButton(moveInfo, level)
-                        -- Remove option
-                        local removeInfo = UIDropDownMenu_CreateInfo()
-                        removeInfo.text = "Remove"
-                        removeInfo.notCheckable = true
-                        removeInfo.func = function()
-                            CloseDropDownMenus()
-                            local name = entryData.name or "this entry"
-                            ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
-                        end
-                        UIDropDownMenu_AddButton(removeInfo, level)
-                    elseif menuList == "MOVE_TO_GROUP" then
-                        local db = CooldownCompanion.db.profile
-                        local folderGroups, looseGroups = {}, {}
-                        for id, group in pairs(db.groups) do
-                            if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
-                                local gName = group.name or ("Group " .. id)
-                                if group.folderId and db.folders[group.folderId] then
-                                    folderGroups[group.folderId] = folderGroups[group.folderId] or {}
-                                    table.insert(folderGroups[group.folderId], { id = id, name = gName })
-                                else
-                                    table.insert(looseGroups, { id = id, name = gName })
-                                end
-                            end
-                        end
-                        local sortedFolders = {}
-                        for fid, folder in pairs(db.folders) do
-                            if folderGroups[fid] then
-                                table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
-                            end
-                        end
-                        table.sort(sortedFolders, function(a, b) return a.order < b.order end)
-                        local hasFolders = #sortedFolders > 0
-                        for _, folder in ipairs(sortedFolders) do
-                            local hdr = UIDropDownMenu_CreateInfo()
-                            hdr.text = folder.name
-                            hdr.isTitle = true
-                            hdr.notCheckable = true
-                            UIDropDownMenu_AddButton(hdr, level)
-                            table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
-                            for _, g in ipairs(folderGroups[folder.id]) do
-                                local info = UIDropDownMenu_CreateInfo()
-                                info.text = g.name
-                                info.notCheckable = true
-                                info.func = function()
-                                    table.insert(db.groups[g.id].buttons, entryData)
-                                    table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                    CooldownCompanion:RefreshGroupFrame(g.id)
-                                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                    CS.selectedButton = nil
-                                    wipe(CS.selectedButtons)
-                                    CooldownCompanion:RefreshConfigPanel()
-                                    CloseDropDownMenus()
-                                end
-                                UIDropDownMenu_AddButton(info, level)
-                            end
-                        end
-                        if #looseGroups > 0 then
-                            if hasFolders then
-                                local hdr = UIDropDownMenu_CreateInfo()
-                                hdr.text = "No Folder"
-                                hdr.isTitle = true
-                                hdr.notCheckable = true
-                                UIDropDownMenu_AddButton(hdr, level)
-                            end
-                            table.sort(looseGroups, function(a, b) return a.name < b.name end)
-                            for _, g in ipairs(looseGroups) do
-                                local info = UIDropDownMenu_CreateInfo()
-                                info.text = g.name
-                                info.notCheckable = true
-                                info.func = function()
-                                    table.insert(db.groups[g.id].buttons, entryData)
-                                    table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                    CooldownCompanion:RefreshGroupFrame(g.id)
-                                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                    CS.selectedButton = nil
-                                    wipe(CS.selectedButtons)
-                                    CooldownCompanion:RefreshConfigPanel()
-                                    CloseDropDownMenus()
-                                end
-                                UIDropDownMenu_AddButton(info, level)
-                            end
-                        end
-                    end
-                end, "MENU")
-                CS.buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-                ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
-            elseif button == "MiddleButton" then
-                if not CS.moveMenuFrame then
-                    CS.moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-                end
-                local sourceGroupId = CS.selectedGroup
-                local sourceIndex = i
-                local entryData = buttonData
-                UIDropDownMenu_Initialize(CS.moveMenuFrame, function(self, level)
-                    local db = CooldownCompanion.db.profile
-                    local folderGroups, looseGroups = {}, {}
-                    for id, group in pairs(db.groups) do
-                        if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
-                            local gName = group.name or ("Group " .. id)
-                            if group.folderId and db.folders[group.folderId] then
-                                folderGroups[group.folderId] = folderGroups[group.folderId] or {}
-                                table.insert(folderGroups[group.folderId], { id = id, name = gName })
-                            else
-                                table.insert(looseGroups, { id = id, name = gName })
-                            end
-                        end
-                    end
-                    local sortedFolders = {}
-                    for fid, folder in pairs(db.folders) do
-                        if folderGroups[fid] then
-                            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
-                        end
-                    end
-                    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
-                    local hasFolders = #sortedFolders > 0
-                    for _, folder in ipairs(sortedFolders) do
-                        local hdr = UIDropDownMenu_CreateInfo()
-                        hdr.text = folder.name
-                        hdr.isTitle = true
-                        hdr.notCheckable = true
-                        UIDropDownMenu_AddButton(hdr, level)
-                        table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
-                        for _, g in ipairs(folderGroups[folder.id]) do
-                            local info = UIDropDownMenu_CreateInfo()
-                            info.text = g.name
-                            info.func = function()
-                                table.insert(db.groups[g.id].buttons, entryData)
-                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                CooldownCompanion:RefreshGroupFrame(g.id)
-                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                                CooldownCompanion:RefreshConfigPanel()
-                                CloseDropDownMenus()
-                            end
-                            UIDropDownMenu_AddButton(info, level)
-                        end
-                    end
-                    if #looseGroups > 0 then
-                        if hasFolders then
-                            local hdr = UIDropDownMenu_CreateInfo()
-                            hdr.text = "No Folder"
-                            hdr.isTitle = true
-                            hdr.notCheckable = true
-                            UIDropDownMenu_AddButton(hdr, level)
-                        end
-                        table.sort(looseGroups, function(a, b) return a.name < b.name end)
-                        for _, g in ipairs(looseGroups) do
-                            local info = UIDropDownMenu_CreateInfo()
-                            info.text = g.name
-                            info.func = function()
-                                table.insert(db.groups[g.id].buttons, entryData)
-                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                CooldownCompanion:RefreshGroupFrame(g.id)
-                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                                CooldownCompanion:RefreshConfigPanel()
-                                CloseDropDownMenus()
-                            end
-                            UIDropDownMenu_AddButton(info, level)
-                        end
-                    end
-                end, "MENU")
-                CS.moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-                ToggleDropDownMenu(1, nil, CS.moveMenuFrame, "cursor", 0, 0)
-            end
-        end)
-
-        CS.col2Scroll:AddChild(entry)
-
-        -- Accept spell/item drops on each entry frame
-        entryFrame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
-
-        -- Hold-click drag reorder via handler-table HookScript pattern
-        if not entryFrame._cdcDragHooked then
-            entryFrame._cdcDragHooked = true
-            entryFrame:HookScript("OnMouseDown", function(self, mouseBtn)
-                if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
-            end)
-        end
-        entryFrame._cdcOnMouseDown = function(self, button)
-            -- Don't start internal drag-reorder when cursor holds a spell/item
-            if GetCursorInfo() then return end
-            if button == "LeftButton" and not IsControlKeyDown() then
-                local cursorY = GetScaledCursorPosition(CS.col2Scroll)
-                CS.dragState = {
-                    kind = "button",
-                    phase = "pending",
-                    sourceIndex = i,
-                    groupId = CS.selectedGroup,
-                    scrollWidget = CS.col2Scroll,
-                    widget = entry,
-                    startY = cursorY,
-                    childOffset = 4,
-                    totalDraggable = numButtons,
-                }
-                StartDragTracking()
-            end
-        end
     end
 
 end

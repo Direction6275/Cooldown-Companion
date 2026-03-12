@@ -43,6 +43,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateChoiceTalentConditions()
     self:MigrateNewDefaults()
     self:MigrateCharacterScopedBarSettings()
+    self:MigrateGroupsToContainers()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -61,6 +62,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
+    profile._migratedContainersV1 = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1289,4 +1291,155 @@ function CooldownCompanion:MigrateCharacterScopedBarSettings()
     self:CaptureLegacyScopedBarSettingsSeeds()
     self:EnsureLegacyScopedBarSeenCharacters()
     self:EnsureCurrentCharacterScopedBarSettings()
+end
+
+------------------------------------------------------------------------
+-- MigrateGroupsToContainers: Wraps each existing group in a container.
+-- Groups become "panels" (parentContainerId set), containers own the
+-- organizational/visibility/alpha fields that previously lived on groups.
+------------------------------------------------------------------------
+
+-- Fields that move from group (panel) to container during migration.
+-- These are cleared from the panel after copying to the container.
+local CONTAINER_FIELDS = {
+    -- Organizational
+    "folderId", "createdBy", "isGlobal", "enabled", "locked",
+    -- Visibility / filtering
+    "specs", "heroTalents",
+    -- Anchor & strata (container owns the position; panel re-anchors to container frame)
+    "anchor", "frameStrata",
+    -- Alpha fade system
+    "baselineAlpha",
+    "forceAlphaInCombat", "forceAlphaOutOfCombat",
+    "forceAlphaRegularMounted", "forceAlphaDragonriding",
+    "forceAlphaTargetExists", "forceAlphaMouseover",
+    "forceHideInCombat", "forceHideOutOfCombat",
+    "forceHideRegularMounted", "forceHideDragonriding",
+    "treatTravelFormAsMounted",
+    "fadeDelay", "fadeInDuration", "fadeOutDuration",
+}
+
+-- Fields that stay on the panel but also get a copy in the container for reference.
+-- "loadConditions" moves entirely to the container.
+local LOAD_CONDITIONS_KEY = "loadConditions"
+
+function CooldownCompanion:MigrateGroupsToContainers()
+    local profile = self.db.profile
+    if profile._migratedContainersV1 then return end
+
+    -- Ensure tables exist (may be first load after schema addition)
+    if not profile.groupContainers then
+        profile.groupContainers = {}
+    end
+    if not profile.nextContainerId then
+        profile.nextContainerId = 1
+    end
+
+    -- Skip if there are no groups to migrate
+    if not next(profile.groups) then
+        profile._migratedContainersV1 = true
+        return
+    end
+
+    for groupId, group in pairs(profile.groups) do
+        -- Skip groups already linked to a container (e.g. from container import)
+        if group.parentContainerId then
+            -- Verify the container actually exists
+            if profile.groupContainers[group.parentContainerId] then
+                -- Already migrated — nothing to do
+            else
+                -- Orphaned reference — clear it so this group gets wrapped below
+                group.parentContainerId = nil
+            end
+        end
+        if group.parentContainerId then
+            -- Skip — already linked to a valid container
+        else
+
+        local containerId = profile.nextContainerId
+        profile.nextContainerId = containerId + 1
+
+        -- Build the container from group fields
+        local container = {
+            name = group.name or ("Group " .. groupId),
+            order = group.order or groupId,
+        }
+
+        -- Copy organizational/visibility/alpha fields to container
+        for _, key in ipairs(CONTAINER_FIELDS) do
+            local val = group[key]
+            if val ~= nil then
+                if type(val) == "table" then
+                    container[key] = CopyTable(val)
+                else
+                    container[key] = val
+                end
+            end
+        end
+
+        -- Copy loadConditions to container
+        if group[LOAD_CONDITIONS_KEY] and type(group[LOAD_CONDITIONS_KEY]) == "table" then
+            container[LOAD_CONDITIONS_KEY] = CopyTable(group[LOAD_CONDITIONS_KEY])
+        end
+
+        -- Ensure container has required defaults
+        if container.enabled == nil then container.enabled = true end
+        if container.locked == nil then container.locked = false end
+        if container.baselineAlpha == nil then container.baselineAlpha = 1 end
+        if container.fadeDelay == nil then container.fadeDelay = 1 end
+        if container.fadeInDuration == nil then container.fadeInDuration = 0.2 end
+        if container.fadeOutDuration == nil then container.fadeOutDuration = 0.2 end
+        if not container.anchor then
+            container.anchor = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", x = 0, y = 0 }
+        end
+
+        profile.groupContainers[containerId] = container
+
+        -- Update the panel (group): link to container, set panel identity
+        group.parentContainerId = containerId
+        group.name = "Panel 1"
+        group.order = 1
+
+        -- Re-anchor panel to the container frame
+        group.anchor = {
+            point = "TOPLEFT",
+            relativeTo = "CooldownCompanionContainer" .. containerId,
+            relativePoint = "TOPLEFT",
+            x = 0,
+            y = 0,
+        }
+
+        -- Clear fields that now live on the container
+        for _, key in ipairs(CONTAINER_FIELDS) do
+            -- anchor was already replaced above; skip re-clearing
+            if key ~= "anchor" then
+                group[key] = nil
+            end
+        end
+        group[LOAD_CONDITIONS_KEY] = nil
+
+        end -- close else (group without parentContainerId)
+    end
+
+    -- Migrate folder spec/hero cascading to containers
+    -- (Folders no longer carry spec/hero filters — containers own them now)
+    if profile.folders then
+        for folderId, folder in pairs(profile.folders) do
+            if folder.specs and next(folder.specs) then
+                -- Copy folder specs to each child container that doesn't already have them
+                for containerId, container in pairs(profile.groupContainers) do
+                    if container.folderId == folderId and not container.specs then
+                        container.specs = CopyTable(folder.specs)
+                        if folder.heroTalents and next(folder.heroTalents) then
+                            container.heroTalents = CopyTable(folder.heroTalents)
+                        end
+                    end
+                end
+                folder.specs = nil
+                folder.heroTalents = nil
+            end
+        end
+    end
+
+    profile._migratedContainersV1 = true
 end

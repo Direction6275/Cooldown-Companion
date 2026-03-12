@@ -66,6 +66,60 @@ local function RefreshColumn4(container)
         return
     end
 
+    -- Container settings mode: selectedContainer set, no panel selected
+    if CS.selectedContainer and not CS.selectedGroup then
+        if container.placeholderLabel then container.placeholderLabel:Hide() end
+        if container.tabGroup then container.tabGroup.frame:Hide() end
+
+        -- Create or reuse container settings tab group
+        if not container.containerTabGroup then
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.selectedContainerTab = tab
+                for _, btn in ipairs(CS.tabInfoButtons) do
+                    btn:ClearAllPoints()
+                    btn:Hide()
+                    btn:SetParent(nil)
+                end
+                wipe(CS.tabInfoButtons)
+                widget:ReleaseChildren()
+
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                CS.col4Scroll = scroll
+
+                if tab == "general" then
+                    ST._BuildContainerGeneralTab(scroll, CS.selectedContainer)
+                elseif tab == "layout" then
+                    ST._BuildContainerLayoutTab(scroll, CS.selectedContainer)
+                elseif tab == "loadconditions" then
+                    ST._BuildContainerLoadConditionsTab(scroll, CS.selectedContainer)
+                end
+            end)
+            tabGroup.frame:SetParent(container)
+            tabGroup.frame:ClearAllPoints()
+            tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.containerTabGroup = tabGroup
+        end
+
+        container.containerTabGroup:SetTabs({
+            { value = "general",         text = "General" },
+            { value = "layout",          text = "Layout" },
+            { value = "loadconditions",  text = "Load Conditions" },
+        })
+        container.containerTabGroup.frame:Show()
+        container.containerTabGroup:SelectTab(CS.selectedContainerTab or "general")
+        return
+    end
+
+    -- Hide container tab group when not in container mode
+    if container.containerTabGroup then
+        container.containerTabGroup.frame:Hide()
+    end
+
     if not CS.selectedGroup then
         -- Show placeholder, hide tab group
         if not container.placeholderLabel then
@@ -196,6 +250,7 @@ local function RefreshProfileBar(bar)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
         db:SetProfile(val)
+        CS.selectedContainer = nil
         CS.selectedGroup = nil
         CS.selectedButton = nil
         wipe(CS.selectedButtons)

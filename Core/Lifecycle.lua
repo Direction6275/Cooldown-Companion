@@ -53,6 +53,7 @@ function CooldownCompanion:OnInitialize()
 
     -- Initialize storage tables
     self.groupFrames = {}
+    self.containerFrames = {}
     self.buttonFrames = {}
 
     -- Hidden scratch CooldownFrame for secret-safe GCD activity detection
@@ -234,8 +235,10 @@ function CooldownCompanion:OnEnable()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
+    self.containerAlphaState = {}
 
-    -- Create all group frames
+    -- Create all container frames, then group (panel) frames
+    self:CreateAllContainerFrames()
     self:CreateAllGroupFrames()
 
     -- Start a ticker to update cooldowns periodically
@@ -411,27 +414,27 @@ function CooldownCompanion:SlashCommand(input)
     end
 
     if input == "lock" or input == "unlock" then
-        -- Toggle: if any visible group is unlocked, lock all; otherwise unlock all
+        -- Toggle: if any visible container is unlocked, lock all; otherwise unlock all
         local anyUnlocked = false
-        for groupId, group in pairs(self.db.profile.groups) do
-            if self:IsGroupVisibleToCurrentChar(groupId) and not group.locked then
+        for containerId, container in pairs(self.db.profile.groupContainers) do
+            if self:IsContainerVisibleToCurrentChar(containerId) and not container.locked then
                 anyUnlocked = true
                 break
             end
         end
         if anyUnlocked then
-            for groupId, group in pairs(self.db.profile.groups) do
-                if self:IsGroupVisibleToCurrentChar(groupId) then
-                    group.locked = true
+            for containerId, container in pairs(self.db.profile.groupContainers) do
+                if self:IsContainerVisibleToCurrentChar(containerId) then
+                    container.locked = true
                 end
             end
             self:LockAllFrames()
             self:RefreshConfigPanel()
             self:Print("All frames locked.")
         else
-            for groupId, group in pairs(self.db.profile.groups) do
-                if self:IsGroupVisibleToCurrentChar(groupId) then
-                    group.locked = false
+            for containerId, container in pairs(self.db.profile.groupContainers) do
+                if self:IsContainerVisibleToCurrentChar(containerId) then
+                    container.locked = false
                 end
             end
             self:UnlockAllFrames()

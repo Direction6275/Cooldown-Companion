@@ -37,12 +37,38 @@ end
 function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
+
+    -- For panels, delegate visibility to the parent container
+    if group.parentContainerId then
+        return self:IsContainerVisibleToCurrentChar(group.parentContainerId)
+    end
+
+    -- Legacy path (no container)
     if group.isGlobal then return true end
     return group.createdBy == self.db.keys.char
 end
 
+-- Resolve the container for a panel group, or nil if the group has no container.
+function CooldownCompanion:GetParentContainer(groupOrGroupId)
+    local group = groupOrGroupId
+    if type(groupOrGroupId) == "number" then
+        group = self.db.profile.groups[groupOrGroupId]
+    end
+    if not group or not group.parentContainerId then return nil end
+    local containers = self.db.profile.groupContainers
+    return containers and containers[group.parentContainerId]
+end
+
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
+
+    -- Container cascade: if the group is a panel, use the container's specs
+    local container = self:GetParentContainer(group)
+    if container then
+        return container.specs, container.specs ~= nil
+    end
+
+    -- Legacy folder cascade (pre-migration or non-panel groups)
     local folderId = group.folderId
     if folderId then
         local folders = self.db and self.db.profile and self.db.profile.folders
@@ -56,6 +82,14 @@ end
 
 function CooldownCompanion:GetEffectiveHeroTalents(group)
     if not group then return nil, false end
+
+    -- Container cascade: if the group is a panel, use the container's heroTalents
+    local container = self:GetParentContainer(group)
+    if container then
+        return container.heroTalents, container.heroTalents ~= nil
+    end
+
+    -- Legacy folder cascade (pre-migration or non-panel groups)
     local folderId = group.folderId
     if folderId then
         local folders = self.db and self.db.profile and self.db.profile.folders
@@ -260,7 +294,7 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
 end
 
 -- Folder filters are authoritative. When a folder filter is active, all child
--- groups are normalized to match it.
+-- containers are normalized to match it.
 function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
     local db = self.db and self.db.profile
     local folder = db and db.folders and db.folders[folderId]
@@ -271,17 +305,19 @@ function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
     local folderHeroTalents = hasFolderSpecs and folder.heroTalents
     local hasFolderHeroTalents = folderHeroTalents and next(folderHeroTalents)
 
-    for _, group in pairs(db.groups) do
-        if group.folderId == folderId then
+    -- Post-migration: folderId lives on containers, not groups
+    local containers = db.groupContainers or {}
+    for _, container in pairs(containers) do
+        if container.folderId == folderId then
             if hasFolderSpecs then
-                group.specs = CopyTable(folderSpecs)
+                container.specs = CopyTable(folderSpecs)
             else
-                group.specs = nil
+                container.specs = nil
             end
             if hasFolderHeroTalents then
-                group.heroTalents = CopyTable(folderHeroTalents)
+                container.heroTalents = CopyTable(folderHeroTalents)
             else
-                group.heroTalents = nil
+                container.heroTalents = nil
             end
         end
     end
@@ -363,12 +399,25 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     local group = opts.group or self.db.profile.groups[groupId]
     if not group then return false end
 
-    if group.enabled == false then return false end
+    -- If this panel has a parent container, check container-level state first
+    local container = self:GetParentContainer(group)
+    if container then
+        if container.enabled == false then return false end
+
+        -- Container-level load conditions
+        if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(container) then
+            return false
+        end
+    else
+        -- Legacy path: enabled lives on the group
+        if group.enabled == false then return false end
+    end
 
     if opts.requireButtons and (not group.buttons or #group.buttons == 0) then
         return false
     end
 
+    -- Spec and hero talent filtering (GetEffectiveSpecs already delegates to container)
     local effectiveSpecs = self:GetEffectiveSpecs(group)
     if effectiveSpecs and next(effectiveSpecs) then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
@@ -384,10 +433,13 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    local checkLoadConditions = opts.checkLoadConditions
-    if checkLoadConditions == nil then checkLoadConditions = true end
-    if checkLoadConditions and not self:CheckLoadConditions(group) then
-        return false
+    -- Panel-level load conditions (only for legacy groups without containers)
+    if not container then
+        local checkLoadConditions = opts.checkLoadConditions
+        if checkLoadConditions == nil then checkLoadConditions = true end
+        if checkLoadConditions and not self:CheckLoadConditions(group) then
+            return false
+        end
     end
 
     return true
@@ -409,7 +461,10 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if group.displayMode ~= "icons" then return false end
-    if group.isGlobal then return false end
+    -- Check isGlobal on container (or group for legacy)
+    local container = self:GetParentContainer(group)
+    local isGlobal = container and container.isGlobal or group.isGlobal
+    if isGlobal then return false end
     if not self:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
@@ -482,17 +537,7 @@ function CooldownCompanion:CheckLoadConditions(group)
 end
 
 
-function CooldownCompanion:ToggleGroupGlobal(groupId)
-    local group = self.db.profile.groups[groupId]
-    if not group then return end
-    group.isGlobal = not group.isGlobal
-    if not group.isGlobal then
-        group.createdBy = self.db.keys.char
-    end
-    -- Clear folder assignment — the folder belongs to the old section
-    group.folderId = nil
-    self:RefreshAllGroups()
-end
+-- ToggleGroupGlobal is defined in GroupManagement.lua (container-aware version)
 
 function CooldownCompanion:GroupHasPetSpells(groupId)
     local group = self.db.profile.groups[groupId]
@@ -597,6 +642,32 @@ function CooldownCompanion:CreateAllGroupFrames()
 end
 
 function CooldownCompanion:RefreshAllGroups()
+    -- Clean up stale container frames (e.g. after profile switch)
+    if self.containerFrames then
+        local containers = self.db.profile.groupContainers or {}
+        for containerId, frame in pairs(self.containerFrames) do
+            if not containers[containerId] then
+                frame:Hide()
+                self.containerFrames[containerId] = nil
+                if self.containerAlphaState then
+                    self.containerAlphaState[containerId] = nil
+                end
+            end
+        end
+        -- Ensure all current-profile containers have frames
+        for containerId, _ in pairs(containers) do
+            if self:IsContainerVisibleToCurrentChar(containerId) then
+                if not self.containerFrames[containerId] then
+                    self:CreateContainerFrame(containerId)
+                end
+            else
+                if self.containerFrames[containerId] then
+                    self.containerFrames[containerId]:Hide()
+                end
+            end
+        end
+    end
+
     -- Fully deactivate frames for groups not in the current profile
     -- (e.g. after a profile switch). Removes from groupFrames so
     -- ForEachButton / event handlers skip them entirely.
@@ -663,12 +734,16 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
                 if active then
                     frame:Show()
+                    -- Resolve locked/alpha from container
+                    local container = self:GetParentContainer(group)
+                    local isLocked = container and container.locked or group.locked
+                    local baseAlpha = container and container.baselineAlpha or group.baselineAlpha or 1
                     -- Force 100% alpha while unlocked for easier positioning
-                    if not group.locked then
+                    if not isLocked then
                         frame:SetAlpha(1)
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.
-                    elseif group.baselineAlpha < 1 then
+                    elseif baseAlpha < 1 then
                         local alphaState = self.alphaState and self.alphaState[groupId]
                         if alphaState and alphaState.currentAlpha then
                             frame:SetAlpha(alphaState.currentAlpha)
@@ -746,6 +821,14 @@ function CooldownCompanion:LockAllFrames()
             end
         end
     end
+    -- Lock container frames
+    if self.containerFrames then
+        for _, frame in pairs(self.containerFrames) do
+            if frame and frame.dragHandle then
+                frame.dragHandle:Hide()
+            end
+        end
+    end
 end
 
 function CooldownCompanion:UnlockAllFrames()
@@ -757,6 +840,17 @@ function CooldownCompanion:UnlockAllFrames()
             end
             -- Force 100% alpha while unlocked for easier positioning
             frame:SetAlpha(1)
+        end
+    end
+    -- Unlock container frames
+    if self.containerFrames then
+        for containerId, frame in pairs(self.containerFrames) do
+            if frame and frame.dragHandle then
+                local container = self.db.profile.groupContainers[containerId]
+                if container and not container.locked then
+                    frame.dragHandle:Show()
+                end
+            end
         end
     end
 end

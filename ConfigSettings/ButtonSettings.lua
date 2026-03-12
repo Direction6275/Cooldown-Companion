@@ -777,13 +777,17 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
         local indices = multiIndices
         local db = CooldownCompanion.db.profile
         UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+            local containers = db.groupContainers or {}
             local folderGroups, looseGroups = {}, {}
             for id, group in pairs(db.groups) do
                 if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
                     local gName = group.name or ("Group " .. id)
-                    if group.folderId and db.folders[group.folderId] then
-                        folderGroups[group.folderId] = folderGroups[group.folderId] or {}
-                        table.insert(folderGroups[group.folderId], { id = id, name = gName })
+                    local cid = group.parentContainerId
+                    local container = cid and containers[cid]
+                    local fid = container and container.folderId
+                    if fid and db.folders[fid] then
+                        folderGroups[fid] = folderGroups[fid] or {}
+                        table.insert(folderGroups[fid], { id = id, name = gName })
                     else
                         table.insert(looseGroups, { id = id, name = gName })
                     end

@@ -357,7 +357,10 @@ local function SanitizeAnchorGroupID(groupId)
     if type(group) ~= "table" then
         return nil
     end
-    if group.displayMode ~= "icons" or group.isGlobal then
+    -- Check isGlobal on container (or group for legacy)
+    local container = group.parentContainerId and profile.groupContainers and profile.groupContainers[group.parentContainerId]
+    local isGlobal = container and container.isGlobal or group.isGlobal
+    if group.displayMode ~= "icons" or isGlobal then
         return nil
     end
     if not CooldownCompanion:IsGroupVisibleToCurrentChar(numericGroupID) then
@@ -529,10 +532,20 @@ function CooldownCompanion:EnsureLegacyScopedBarSeenCharacters()
         end
     end
 
+    -- Legacy: groups may have isGlobal (pre-migration data)
     if type(profile.groups) == "table" then
         for _, group in pairs(profile.groups) do
             if type(group) == "table" and group.isGlobal == false then
                 MarkLegacyScopedBarSeenCharacter(snapshot, group.createdBy)
+            end
+        end
+    end
+
+    -- Post-migration: containers own isGlobal/createdBy
+    if type(profile.groupContainers) == "table" then
+        for _, container in pairs(profile.groupContainers) do
+            if type(container) == "table" and container.isGlobal == false then
+                MarkLegacyScopedBarSeenCharacter(snapshot, container.createdBy)
             end
         end
     end

@@ -273,6 +273,13 @@ local function IsAddonFrame(name)
             if CooldownCompanion:WouldCreateCircularAnchor(pickFrameSourceGroupId, groupId) then return true end
         end
         return false
+    -- Allow container frames through selectively (exclude circular chains)
+    elseif name:find("^CooldownCompanionContainer%d+$") then
+        local containerId = tonumber(name:match("^CooldownCompanionContainer(%d+)$"))
+        if containerId and pickFrameSourceGroupId then
+            if CooldownCompanion:WouldCreateCircularAnchor(pickFrameSourceGroupId, containerId, "container") then return true end
+        end
+        return false
     elseif name:find("^CooldownCompanion") then
         return true
     end

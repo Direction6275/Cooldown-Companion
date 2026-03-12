@@ -15,6 +15,7 @@ local CleanRecycledEntry = ST._CleanRecycledEntry
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local GetGroupIcon = ST._GetGroupIcon
+local GetContainerIcon = ST._GetContainerIcon
 local GetFolderIcon = ST._GetFolderIcon
 local OpenFolderIconPicker = ST._OpenFolderIconPicker
 local GenerateFolderName = ST._GenerateFolderName
@@ -24,7 +25,7 @@ local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
 local BuildGroupExportData = ST._BuildGroupExportData
 local EncodeExportData = ST._EncodeExportData
-local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
@@ -113,8 +114,8 @@ local function RefreshColumn1(preserveDrag)
     -- Track all rendered rows for drag system: sequential index -> metadata
     local col1RenderedRows = {}
 
-    -- Build top-level items for a section (folders + loose groups), sorted by order
-    local function BuildSectionItems(section, sectionGroupIds)
+    -- Build top-level items for a section (folders + loose containers), sorted by order
+    local function BuildSectionItems(section, sectionContainerIds)
         -- Collect folders for this section
         local sectionFolderIds = {}
         for fid, folder in pairs(db.folders) do
@@ -128,95 +129,124 @@ local function RefreshColumn1(preserveDrag)
             end
         end
 
-        -- Determine which groups are in valid folders for this section
+        -- Determine which containers are in valid folders for this section
         local validFolderIds = {}
         for _, fid in ipairs(sectionFolderIds) do
             validFolderIds[fid] = true
         end
 
-        -- Split groups: those in a valid folder vs loose
-        local looseGroupIds = {}
-        local folderChildGroups = {}  -- [folderId] = { groupId, ... }
-        for _, gid in ipairs(sectionGroupIds) do
-            local group = db.groups[gid]
-            if group.folderId and validFolderIds[group.folderId] then
-                if not folderChildGroups[group.folderId] then
-                    folderChildGroups[group.folderId] = {}
+        -- Split containers: those in a valid folder vs loose
+        local looseContainerIds = {}
+        local folderChildContainers = {}  -- [folderId] = { containerId, ... }
+        for _, cid in ipairs(sectionContainerIds) do
+            local container = db.groupContainers[cid]
+            if container.folderId and validFolderIds[container.folderId] then
+                if not folderChildContainers[container.folderId] then
+                    folderChildContainers[container.folderId] = {}
                 end
-                table.insert(folderChildGroups[group.folderId], gid)
+                table.insert(folderChildContainers[container.folderId], cid)
             else
-                table.insert(looseGroupIds, gid)
+                table.insert(looseContainerIds, cid)
             end
         end
 
-        -- Sort folder children by group order
-        for fid, children in pairs(folderChildGroups) do
+        -- Sort folder children by container order
+        for fid, children in pairs(folderChildContainers) do
             table.sort(children, function(a, b)
-                local orderA = db.groups[a].order or a
-                local orderB = db.groups[b].order or b
+                local orderA = db.groupContainers[a].order or a
+                local orderB = db.groupContainers[b].order or b
                 return orderA < orderB
             end)
         end
 
-        -- Build top-level items list: folders + loose groups
+        -- Build top-level items list: folders + loose containers
         local items = {}
         for _, fid in ipairs(sectionFolderIds) do
             table.insert(items, { kind = "folder", id = fid, order = db.folders[fid].order or fid })
         end
-        for _, gid in ipairs(looseGroupIds) do
-            table.insert(items, { kind = "group", id = gid, order = db.groups[gid].order or gid })
+        for _, cid in ipairs(looseContainerIds) do
+            table.insert(items, { kind = "container", id = cid, order = db.groupContainers[cid].order or cid })
         end
         table.sort(items, function(a, b) return a.order < b.order end)
 
-        return items, folderChildGroups
+        return items, folderChildContainers
     end
 
-    -- Shift label right to make room for mode badge after UpdateImageAnchor reflows
-    local MODE_BADGE_W = 18
-    local function ApplyModeBadgeOffset(widget)
-        local lbl = widget.label
-        for i = 1, lbl:GetNumPoints() do
-            local pt, rel, relPt, x, y = lbl:GetPoint(i)
-            if rel == widget.image then
-                lbl:SetPoint(pt, rel, relPt, (x or 0) + MODE_BADGE_W, y or 0)
-                lbl:SetWidth(lbl:GetWidth() - MODE_BADGE_W)
-                return
+    local function IsContainerInactive(containerId, container)
+        if not container then return true end
+        if container.enabled == false then return true end
+        -- Check if container has any panels with buttons
+        local hasButtons = false
+        for _, group in pairs(db.groups) do
+            if group.parentContainerId == containerId and group.buttons and #group.buttons > 0 then
+                hasButtons = true
+                break
+            end
+        end
+        if not hasButtons then return true end
+        -- Check load conditions via any panel (they inherit from container)
+        for gid, group in pairs(db.groups) do
+            if group.parentContainerId == containerId then
+                local active = CooldownCompanion:IsGroupActive(nil, {
+                    group = group,
+                    requireButtons = true,
+                    checkCharVisibility = false,
+                    checkLoadConditions = true,
+                })
+                if active then return false end
+            end
+        end
+        return true
+    end
+
+    -- Helper: count panels belonging to a container
+    local function GetPanelCount(containerId)
+        local count = 0
+        for _, group in pairs(db.groups) do
+            if group.parentContainerId == containerId then
+                count = count + 1
+            end
+        end
+        return count
+    end
+
+    -- Helper: refresh all panel frames in a container
+    local function RefreshContainerPanels(containerId)
+        for gid, group in pairs(db.groups) do
+            if group.parentContainerId == containerId then
+                CooldownCompanion:RefreshGroupFrame(gid)
             end
         end
     end
 
-    local function IsGroupInactive(group)
-        if not group then return true end
-        return not CooldownCompanion:IsGroupActive(nil, {
-            group = group,
-            requireButtons = true,
-            checkCharVisibility = false,
-            checkLoadConditions = true,
-        })
-    end
-
-    -- Helper: render a single group row (reused by both sections)
-    local function RenderGroupRow(groupId, inFolder, sectionTag)
-        local group = db.groups[groupId]
-        if not group then return end
+    -- Helper: render a single container row (reused by both sections)
+    local function RenderContainerRow(containerId, inFolder, sectionTag)
+        local container = db.groupContainers[containerId]
+        if not container then return end
 
         local entry = AceGUI:Create("InteractiveLabel")
-        -- Clean recycled widget sub-elements before setup
         CleanRecycledEntry(entry)
-        local isInactive = IsGroupInactive(group)
+        local isInactive = IsContainerInactive(containerId, container)
 
-        entry:SetText(group.name)
+        -- Show panel count in name when >1 panel
+        local panelCount = GetPanelCount(containerId)
+        local displayName = container.name
+        if panelCount > 1 then
+            displayName = displayName .. "  |cff888888(" .. panelCount .. " panels)|r"
+        end
+
+        entry:SetText(displayName)
         entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
-        entry:SetImageSize(inFolder and 13 or 1, 30)  -- extra width indents folder children
+        entry:SetImageSize(inFolder and 13 or 1, 30)
         entry.image:SetAlpha(0)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
-        -- Color: blue for multi-selected, green for selected, gray for inactive, default otherwise
-        if CS.selectedGroups[groupId] then
+        -- Color: blue for multi-selected, green for selected, gray for inactive
+        if CS.selectedGroups[containerId] then
             entry:SetColor(0.4, 0.7, 1.0)
-        elseif CS.selectedGroup == groupId then
+        elseif CS.selectedContainer == containerId then
             entry:SetColor(0, 1, 0)
         elseif isInactive then
             entry:SetColor(0.5, 0.5, 0.5)
@@ -224,39 +254,10 @@ local function RefreshColumn1(preserveDrag)
 
         CS.col1Scroll:AddChild(entry)
 
-        -- Mode badge between group icon and label text (reuse texture from recycled widget)
-        local modeBadge = entry._cdcModeBadge
-        if not modeBadge then
-            modeBadge = entry.frame:CreateTexture(nil, "ARTWORK")
-            entry._cdcModeBadge = modeBadge
-        end
-        modeBadge:ClearAllPoints()
-        modeBadge:SetTexture(nil)
-        modeBadge:SetTexCoord(0, 1, 0, 1)
-        modeBadge:SetSize(14, 14)
-        if group.displayMode == "bars" then
-            modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause")
-        elseif group.displayMode == "text" then
-            modeBadge:SetAtlas("poi-workorders", false)
-            modeBadge:SetSize(14, 14)
-        else
-            modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked")
-        end
-        modeBadge:SetPoint("LEFT", entry.image, "RIGHT", 2, 0)
-        modeBadge:Show()
-        -- Hook OnWidthSet so badge offset survives UpdateImageAnchor reflows (once per widget)
-        if not entry._cdcWidthHooked then
-            entry._cdcWidthHooked = true
-            hooksecurefunc(entry, "OnWidthSet", function(self)
-                if self._cdcModeBadge and self._cdcModeBadge:IsShown() then
-                    ApplyModeBadgeOffset(self)
-                end
-            end)
-        end
-        -- Apply offset now (first layout already ran before hook was installed)
-        ApplyModeBadgeOffset(entry)
+        -- No mode badge for containers (panels have individual modes)
+        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
 
-        SetupGroupRowIndicators(entry, group)
+        SetupGroupRowIndicators(entry, container)
 
         -- Neutralize built-in OnClick so mousedown doesn't fire
         entry:SetCallback("OnClick", function() end)
@@ -266,37 +267,49 @@ local function RefreshColumn1(preserveDrag)
             if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
-                    if CS.specExpandedGroupId == groupId then
+                    if CS.specExpandedGroupId == containerId then
                         CS.specExpandedGroupId = nil
                     else
-                        CS.specExpandedGroupId = groupId
+                        CS.specExpandedGroupId = containerId
                         CS.specExpandedFolderId = nil
                     end
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 elseif IsControlKeyDown() then
-                    -- Ctrl+click: toggle multi-select
-                    if CS.selectedGroups[groupId] then
-                        CS.selectedGroups[groupId] = nil
+                    -- Ctrl+click: toggle multi-select (container IDs)
+                    if CS.selectedGroups[containerId] then
+                        CS.selectedGroups[containerId] = nil
                     else
-                        CS.selectedGroups[groupId] = true
+                        CS.selectedGroups[containerId] = true
                     end
-                    -- Auto-promote current single selection into multi-select
-                    if CS.selectedGroup and not CS.selectedGroups[CS.selectedGroup] and next(CS.selectedGroups) then
-                        CS.selectedGroups[CS.selectedGroup] = true
+                    if CS.selectedContainer and not CS.selectedGroups[CS.selectedContainer] and next(CS.selectedGroups) then
+                        CS.selectedGroups[CS.selectedContainer] = true
                     end
+                    CS.selectedContainer = nil
                     CS.selectedGroup = nil
                     CS.selectedButton = nil
                     wipe(CS.selectedButtons)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
-                -- Normal click: toggle selection, clear multi-select
+                -- Normal click: toggle-through selection, clear multi-select
                 wipe(CS.selectedGroups)
-                if CS.selectedGroup == groupId then
-                    CS.selectedGroup = nil
+                if CS.selectedContainer == containerId then
+                    if CS.selectedGroup then
+                        -- First re-click: clear panel selection (return to container settings)
+                        CS.selectedGroup = nil
+                    else
+                        -- Second re-click: deselect container entirely
+                        CS.selectedContainer = nil
+                    end
                 else
-                    CS.selectedGroup = groupId
+                    CS.selectedContainer = containerId
+                    CS.selectedGroup = nil
+                    -- Auto-select if single-panel container
+                    local panels = CooldownCompanion:GetPanels(containerId)
+                    if panels and #panels == 1 then
+                        CS.selectedGroup = panels[1].groupId
+                    end
                 end
                 CS.selectedButton = nil
                 wipe(CS.selectedButtons)
@@ -314,36 +327,36 @@ local function RefreshColumn1(preserveDrag)
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            ShowPopupAboveConfig("CDC_RENAME_GROUP", group.name, { groupId = groupId })
+                            ShowPopupAboveConfig("CDC_RENAME_GROUP", container.name, { containerId = containerId })
                         end
                         UIDropDownMenu_AddButton(info, level)
 
                         -- Toggle Global
                         info = UIDropDownMenu_CreateInfo()
-                        info.text = group.isGlobal and "Make Character-Only" or "Make Global"
+                        info.text = container.isGlobal and "Make Character-Only" or "Make Global"
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            if group.isGlobal and group.specs
-                               and GroupsHaveForeignSpecs({group}, false) then
-                                ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", group.name, { groupId = groupId })
+                            if container.isGlobal and container.specs
+                               and ContainersHaveForeignSpecs({container}, false) then
+                                ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
                                 return
                             end
-                            CooldownCompanion:ToggleGroupGlobal(groupId)
+                            CooldownCompanion:ToggleGroupGlobal(containerId)
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
 
                         -- Move to Folder submenu
-                        local groupSection = group.isGlobal and "global" or "char"
+                        local containerSection = container.isGlobal and "global" or "char"
                         local hasFolders = false
                         for fid, folder in pairs(db.folders) do
-                            if folder.section == groupSection then
+                            if folder.section == containerSection then
                                 hasFolders = true
                                 break
                             end
                         end
-                        if hasFolders or group.folderId then
+                        if hasFolders or container.folderId then
                             info = UIDropDownMenu_CreateInfo()
                             info.text = "Move to Folder"
                             info.notCheckable = true
@@ -354,12 +367,12 @@ local function RefreshColumn1(preserveDrag)
 
                         -- Toggle On/Off
                         info = UIDropDownMenu_CreateInfo()
-                        info.text = (group.enabled ~= false) and "Disable" or "Enable"
+                        info.text = (container.enabled ~= false) and "Disable" or "Enable"
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            group.enabled = not (group.enabled ~= false)
-                            CooldownCompanion:RefreshGroupFrame(groupId)
+                            container.enabled = not (container.enabled ~= false)
+                            RefreshContainerPanels(containerId)
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
@@ -370,9 +383,10 @@ local function RefreshColumn1(preserveDrag)
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            local newGroupId = CooldownCompanion:DuplicateGroup(groupId)
-                            if newGroupId then
-                                CS.selectedGroup = newGroupId
+                            local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
+                            if newContainerId then
+                                CS.selectedContainer = newContainerId
+                                CS.selectedGroup = nil
                                 CooldownCompanion:RefreshConfigPanel()
                             end
                         end
@@ -386,10 +400,15 @@ local function RefreshColumn1(preserveDrag)
                             info.func = function()
                                 CloseDropDownMenus()
                                 local exportGroups = {}
-                                for gid in pairs(CS.selectedGroups) do
-                                    local g = db.groups[gid]
-                                    if g then
-                                        table.insert(exportGroups, BuildGroupExportData(g))
+                                for cid in pairs(CS.selectedGroups) do
+                                    local c = db.groupContainers[cid]
+                                    if c then
+                                        -- Export each panel of each selected container
+                                        for gid, g in pairs(db.groups) do
+                                            if g.parentContainerId == cid then
+                                                table.insert(exportGroups, BuildGroupExportData(g))
+                                            end
+                                        end
                                     end
                                 end
                                 local payload = { type = "groups", version = 1, groups = exportGroups }
@@ -401,7 +420,19 @@ local function RefreshColumn1(preserveDrag)
                             info.notCheckable = true
                             info.func = function()
                                 CloseDropDownMenus()
-                                local payload = { type = "group", version = 1, group = BuildGroupExportData(group) }
+                                -- Export container + all panels
+                                local panels = {}
+                                for gid, g in pairs(db.groups) do
+                                    if g.parentContainerId == containerId then
+                                        table.insert(panels, BuildGroupExportData(g))
+                                    end
+                                end
+                                local containerData = CopyTable(container)
+                                containerData.createdBy = nil
+                                containerData.order = nil
+                                containerData.folderId = nil
+                                containerData.isGlobal = nil
+                                local payload = { type = "container", version = 1, container = containerData, panels = panels }
                                 local exportString = EncodeExportData(payload)
                                 ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
                             end
@@ -410,12 +441,12 @@ local function RefreshColumn1(preserveDrag)
 
                         -- Lock/Unlock
                         info = UIDropDownMenu_CreateInfo()
-                        info.text = group.locked and "Unlock" or "Lock"
+                        info.text = container.locked and "Unlock" or "Lock"
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            group.locked = not group.locked
-                            CooldownCompanion:RefreshGroupFrame(groupId)
+                            container.locked = not container.locked
+                            RefreshContainerPanels(containerId)
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
@@ -426,43 +457,23 @@ local function RefreshColumn1(preserveDrag)
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            if CS.specExpandedGroupId == groupId then
+                            if CS.specExpandedGroupId == containerId then
                                 CS.specExpandedGroupId = nil
                             else
-                                CS.specExpandedGroupId = groupId
+                                CS.specExpandedGroupId = containerId
                                 CS.specExpandedFolderId = nil
                             end
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
 
-                        -- Switch display mode (3-way: Icons / Bars / Text)
-                        local switchModes = {
-                            {mode = "icons", label = "Icons"},
-                            {mode = "bars", label = "Bars"},
-                            {mode = "text", label = "Text"},
-                        }
-                        for _, entry in ipairs(switchModes) do
-                            if group.displayMode ~= entry.mode then
-                                info = UIDropDownMenu_CreateInfo()
-                                info.text = "Switch to " .. entry.label
-                                info.notCheckable = true
-                                local targetMode = entry.mode
-                                info.func = function()
-                                    CloseDropDownMenus()
-                                    group.displayMode = targetMode
-                                    if targetMode == "bars" or targetMode == "text" then
-                                        group.style.orientation = "vertical"
-                                    end
-                                    if targetMode ~= "icons" and group.masqueEnabled then
-                                        CooldownCompanion:ToggleGroupMasque(groupId, false)
-                                    end
-                                    CooldownCompanion:RefreshGroupFrame(groupId)
-                                    CooldownCompanion:RefreshConfigPanel()
-                                end
-                                UIDropDownMenu_AddButton(info, level)
-                            end
-                        end
+                        -- Add Panel submenu
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "Add Panel"
+                        info.notCheckable = true
+                        info.hasArrow = true
+                        info.menuList = "ADD_PANEL"
+                        UIDropDownMenu_AddButton(info, level)
 
                         -- Delete
                         info = UIDropDownMenu_CreateInfo()
@@ -470,27 +481,24 @@ local function RefreshColumn1(preserveDrag)
                         info.notCheckable = true
                         info.func = function()
                             CloseDropDownMenus()
-                            local name = group and group.name or "this group"
-                            ShowPopupAboveConfig("CDC_DELETE_GROUP", name, { groupId = groupId })
+                            ShowPopupAboveConfig("CDC_DELETE_GROUP", container.name, { containerId = containerId })
                         end
                         UIDropDownMenu_AddButton(info, level)
                     elseif menuList == "MOVE_TO_FOLDER" then
-                        -- "(No Folder)" option
                         local info = UIDropDownMenu_CreateInfo()
                         info.text = "(No Folder)"
-                        info.checked = (group.folderId == nil)
+                        info.checked = (container.folderId == nil)
                         info.func = function()
                             CloseDropDownMenus()
-                            CooldownCompanion:MoveGroupToFolder(groupId, nil)
+                            CooldownCompanion:MoveGroupToFolder(containerId, nil)
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
 
-                        -- List all folders in this group's section
-                        local groupSection = group.isGlobal and "global" or "char"
+                        local containerSection = container.isGlobal and "global" or "char"
                         local folderList = {}
                         for fid, folder in pairs(db.folders) do
-                            if folder.section == groupSection then
+                            if folder.section == containerSection then
                                 table.insert(folderList, { id = fid, name = folder.name, order = folder.order or fid })
                             end
                         end
@@ -498,11 +506,33 @@ local function RefreshColumn1(preserveDrag)
                         for _, f in ipairs(folderList) do
                             info = UIDropDownMenu_CreateInfo()
                             info.text = f.name
-                            info.checked = (group.folderId == f.id)
+                            info.checked = (container.folderId == f.id)
                             info.func = function()
                                 CloseDropDownMenus()
-                                CooldownCompanion:MoveGroupToFolder(groupId, f.id)
+                                CooldownCompanion:MoveGroupToFolder(containerId, f.id)
                                 CooldownCompanion:RefreshConfigPanel()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+                        end
+                    elseif menuList == "ADD_PANEL" then
+                        local modes = {
+                            { mode = "icons", label = "Icon Panel" },
+                            { mode = "bars", label = "Bar Panel" },
+                            { mode = "text", label = "Text Panel" },
+                        }
+                        for _, m in ipairs(modes) do
+                            local info = UIDropDownMenu_CreateInfo()
+                            info.text = m.label
+                            info.notCheckable = true
+                            local targetMode = m.mode
+                            info.func = function()
+                                CloseDropDownMenus()
+                                local newPanelId = CooldownCompanion:CreatePanel(containerId, targetMode)
+                                if newPanelId then
+                                    CS.selectedContainer = containerId
+                                    CS.selectedGroup = newPanelId
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end
                             end
                             UIDropDownMenu_AddButton(info, level)
                         end
@@ -512,128 +542,119 @@ local function RefreshColumn1(preserveDrag)
                 ToggleDropDownMenu(1, nil, CS.groupContextMenu, "cursor", 0, 0)
                 return
             elseif button == "MiddleButton" then
-                group.locked = not group.locked
-                CooldownCompanion:RefreshGroupFrame(groupId)
+                container.locked = not container.locked
+                RefreshContainerPanels(containerId)
                 CooldownCompanion:RefreshConfigPanel()
                 return
             end
         end)
 
         -- Tag entry frame with metadata for drag system
-        entry.frame._cdcItemKind = "group"
-        entry.frame._cdcGroupId = groupId
-        entry.frame._cdcInFolder = inFolder and group.folderId or nil
+        entry.frame._cdcItemKind = "container"
+        entry.frame._cdcGroupId = containerId
+        entry.frame._cdcInFolder = inFolder and container.folderId or nil
         entry.frame._cdcSection = sectionTag
 
         -- Track in rendered rows list
         local rowIndex = #col1RenderedRows + 1
         col1RenderedRows[rowIndex] = {
-            kind = "group",
-            id = groupId,
+            kind = "container",
+            id = containerId,
             widget = entry,
-            inFolder = inFolder and group.folderId or nil,
+            inFolder = inFolder and container.folderId or nil,
             section = sectionTag,
         }
 
         -- Inline spec filter panel (expanded via Shift+Left-click)
-        if CS.specExpandedGroupId == groupId then
-            local _, inheritedFromFolder = CooldownCompanion:GetEffectiveSpecs(group)
-            if inheritedFromFolder then
-                local inheritedLabel = AceGUI:Create("Label")
-                inheritedLabel:SetText("|cff888888Inherited from folder filter. Edit the folder instead.|r")
-                inheritedLabel:SetFullWidth(true)
-                CS.col1Scroll:AddChild(inheritedLabel)
-            else
-                local numSpecs = GetNumSpecializations()
-                local configID = C_ClassTalents.GetActiveConfigID()
-                local htIndent = inFolder and 32 or 20
-                for i = 1, numSpecs do
-                    local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-                    local cb = AceGUI:Create("CheckBox")
-                    cb:SetLabel(name)
-                    cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
-                    cb:SetFullWidth(true)
-                    cb:SetValue(group.specs and group.specs[specId] or false)
-                    cb:SetCallback("OnValueChanged", function(widget, event, value)
-                        if value then
-                            if not group.specs then group.specs = {} end
-                            group.specs[specId] = true
-                        else
-                            if group.specs then
-                                group.specs[specId] = nil
-                                if not next(group.specs) then
-                                    group.specs = nil
-                                end
+        if CS.specExpandedGroupId == containerId then
+            local numSpecs = GetNumSpecializations()
+            local configID = C_ClassTalents.GetActiveConfigID()
+            local htIndent = inFolder and 32 or 20
+            for i = 1, numSpecs do
+                local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
+                local cb = AceGUI:Create("CheckBox")
+                cb:SetLabel(name)
+                cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
+                cb:SetFullWidth(true)
+                cb:SetValue(container.specs and container.specs[specId] or false)
+                cb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if value then
+                        if not container.specs then container.specs = {} end
+                        container.specs[specId] = true
+                    else
+                        if container.specs then
+                            container.specs[specId] = nil
+                            if not next(container.specs) then
+                                container.specs = nil
                             end
-                            CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
                         end
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                    CS.col1Scroll:AddChild(cb)
-                    ApplyCheckboxIndent(cb, inFolder and 12 or 0)
-
-                    -- Hero talent sub-tree checkboxes (indented, only when spec is checked)
-                    BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, group, configID, specId, htIndent, groupId)
-                end
-
-                local playerSpecIds = {}
-                for i = 1, numSpecs do
-                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-                    if specId then playerSpecIds[specId] = true end
-                end
-
-                local foreignSpecs = {}
-                if group.specs then
-                    for specId in pairs(group.specs) do
-                        if not playerSpecIds[specId] then
-                            table.insert(foreignSpecs, specId)
-                        end
+                        CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
                     end
-                end
-
-                if #foreignSpecs > 0 then
-                    table.sort(foreignSpecs)
-                    for _, specId in ipairs(foreignSpecs) do
-                        local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
-                        if name then
-                            local fcb = AceGUI:Create("CheckBox")
-                            fcb:SetLabel(name)
-                            if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
-                            fcb:SetFullWidth(true)
-                            fcb:SetValue(true)
-                            fcb:SetCallback("OnValueChanged", function(widget, event, value)
-                                if not value then
-                                    if group.specs then
-                                        group.specs[specId] = nil
-                                        if not next(group.specs) then
-                                            group.specs = nil
-                                        end
-                                    end
-                                else
-                                    if not group.specs then group.specs = {} end
-                                    group.specs[specId] = true
-                                end
-                                CooldownCompanion:RefreshGroupFrame(groupId)
-                                CooldownCompanion:RefreshConfigPanel()
-                            end)
-                            CS.col1Scroll:AddChild(fcb)
-                            ApplyCheckboxIndent(fcb, inFolder and 12 or 0)
-                        end
-                    end
-                end
-
-                local clearBtn = AceGUI:Create("Button")
-                clearBtn:SetText("Clear All")
-                clearBtn:SetFullWidth(true)
-                clearBtn:SetCallback("OnClick", function()
-                    group.specs = nil
-                    group.heroTalents = nil
-                    CooldownCompanion:RefreshGroupFrame(groupId)
+                    RefreshContainerPanels(containerId)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                CS.col1Scroll:AddChild(clearBtn)
+                CS.col1Scroll:AddChild(cb)
+                ApplyCheckboxIndent(cb, inFolder and 12 or 0)
+
+                BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId)
             end
+
+            local playerSpecIds = {}
+            for i = 1, numSpecs do
+                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
+                if specId then playerSpecIds[specId] = true end
+            end
+
+            local foreignSpecs = {}
+            if container.specs then
+                for specId in pairs(container.specs) do
+                    if not playerSpecIds[specId] then
+                        table.insert(foreignSpecs, specId)
+                    end
+                end
+            end
+
+            if #foreignSpecs > 0 then
+                table.sort(foreignSpecs)
+                for _, specId in ipairs(foreignSpecs) do
+                    local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
+                    if name then
+                        local fcb = AceGUI:Create("CheckBox")
+                        fcb:SetLabel(name)
+                        if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+                        fcb:SetFullWidth(true)
+                        fcb:SetValue(true)
+                        fcb:SetCallback("OnValueChanged", function(widget, event, value)
+                            if not value then
+                                if container.specs then
+                                    container.specs[specId] = nil
+                                    if not next(container.specs) then
+                                        container.specs = nil
+                                    end
+                                end
+                            else
+                                if not container.specs then container.specs = {} end
+                                container.specs[specId] = true
+                            end
+                            RefreshContainerPanels(containerId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end)
+                        CS.col1Scroll:AddChild(fcb)
+                        ApplyCheckboxIndent(fcb, inFolder and 12 or 0)
+                    end
+                end
+            end
+
+            local clearBtn = AceGUI:Create("Button")
+            clearBtn:SetText("Clear All")
+            clearBtn:SetFullWidth(true)
+            clearBtn:SetCallback("OnClick", function()
+                container.specs = nil
+                container.heroTalents = nil
+                RefreshContainerPanels(containerId)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            CS.col1Scroll:AddChild(clearBtn)
         end
 
         -- Hold-click drag reorder via handler-table HookScript pattern
@@ -646,15 +667,15 @@ local function RefreshColumn1(preserveDrag)
         end
         entryFrame._cdcOnMouseDown = function(self, button)
             if button == "LeftButton" and not IsShiftKeyDown() and not IsControlKeyDown() then
-                local isMulti = next(CS.selectedGroups) and CS.selectedGroups[groupId]
+                local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
                 local cursorY = GetScaledCursorPosition(CS.col1Scroll)
                 CS.dragState = {
                     kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
                     phase = "pending",
-                    sourceGroupId = groupId,
+                    sourceGroupId = containerId,
                     sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
                     sourceSection = sectionTag,
-                    sourceFolderId = inFolder and group.folderId or nil,
+                    sourceFolderId = inFolder and container.folderId or nil,
                     scrollWidget = CS.col1Scroll,
                     widget = entry,
                     startY = cursorY,
@@ -668,7 +689,7 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: render a folder header row
-    local function RenderFolderRow(folderId, sectionTag, childGroupIds)
+    local function RenderFolderRow(folderId, sectionTag, childContainerIds)
         local folder = db.folders[folderId]
         if not folder then return end
 
@@ -687,11 +708,11 @@ local function RefreshColumn1(preserveDrag)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         local allChildrenInactive = false
-        if childGroupIds and #childGroupIds > 0 then
+        if childContainerIds and #childContainerIds > 0 then
             allChildrenInactive = true
-            for _, gid in ipairs(childGroupIds) do
-                local childGroup = db.groups[gid]
-                if childGroup and not IsGroupInactive(childGroup) then
+            for _, cid in ipairs(childContainerIds) do
+                local childContainer = db.groupContainers[cid]
+                if childContainer and not IsContainerInactive(cid, childContainer) then
                     allChildrenInactive = false
                     break
                 end
@@ -740,18 +761,24 @@ local function RefreshColumn1(preserveDrag)
                 CS.collapsedFolders[folderId] = not CS.collapsedFolders[folderId]
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "MiddleButton" then
+                -- Lock/unlock all containers in this folder
+                local containers = db.groupContainers or {}
                 local anyLocked = false
-                for gid, g in pairs(db.groups) do
-                    if g.folderId == folderId and g.locked then
+                for _, c in pairs(containers) do
+                    if c.folderId == folderId and c.locked then
                         anyLocked = true
                         break
                     end
                 end
                 local newState = not anyLocked
-                for gid, g in pairs(db.groups) do
-                    if g.folderId == folderId then
-                        g.locked = newState
-                        CooldownCompanion:RefreshGroupFrame(gid)
+                for cid, c in pairs(containers) do
+                    if c.folderId == folderId then
+                        c.locked = newState
+                        for gid, g in pairs(db.groups) do
+                            if g.parentContainerId == cid then
+                                CooldownCompanion:RefreshGroupFrame(gid)
+                            end
+                        end
                     end
                 end
                 CooldownCompanion:RefreshConfigPanel()
@@ -813,10 +840,11 @@ local function RefreshColumn1(preserveDrag)
                     end
                     UIDropDownMenu_AddButton(info, level)
 
-                    -- Lock All / Unlock All
+                    -- Lock All / Unlock All (operates on containers in folder)
+                    local containers = db.groupContainers or {}
                     local anyLocked = false
-                    for gid, g in pairs(db.groups) do
-                        if g.folderId == folderId and g.locked then
+                    for _, c in pairs(containers) do
+                        if c.folderId == folderId and c.locked then
                             anyLocked = true
                             break
                         end
@@ -827,10 +855,14 @@ local function RefreshColumn1(preserveDrag)
                     info.func = function()
                         CloseDropDownMenus()
                         local newState = not anyLocked
-                        for gid, g in pairs(db.groups) do
-                            if g.folderId == folderId then
-                                g.locked = newState
-                                CooldownCompanion:RefreshGroupFrame(gid)
+                        for cid, c in pairs(containers) do
+                            if c.folderId == folderId then
+                                c.locked = newState
+                                for gid, g in pairs(db.groups) do
+                                    if g.parentContainerId == cid then
+                                        CooldownCompanion:RefreshGroupFrame(gid)
+                                    end
+                                end
                             end
                         end
                         CooldownCompanion:RefreshConfigPanel()
@@ -869,10 +901,15 @@ local function RefreshColumn1(preserveDrag)
                         if folder.heroTalents and next(folder.heroTalents) then
                             folderData.heroTalents = CopyTable(folder.heroTalents)
                         end
+                        -- Collect all panels from containers in this folder
                         local childGroups = {}
-                        for gid, g in pairs(db.groups) do
-                            if g.folderId == folderId then
-                                table.insert(childGroups, BuildGroupExportData(g))
+                        for cid, c in pairs(db.groupContainers) do
+                            if c.folderId == folderId then
+                                for gid, g in pairs(db.groups) do
+                                    if g.parentContainerId == cid then
+                                        table.insert(childGroups, BuildGroupExportData(g))
+                                    end
+                                end
                             end
                         end
                         local payload = { type = "folder", version = 1, folder = folderData, groups = childGroups }
@@ -1026,8 +1063,8 @@ local function RefreshColumn1(preserveDrag)
 
     -- Render a section (global or character)
     local function RenderSection(section, sectionGroupIds, headingText)
-        local items, folderChildGroups = BuildSectionItems(section, sectionGroupIds)
-        local isEmpty = #items == 0 and not next(folderChildGroups)
+        local items, folderChildContainers = BuildSectionItems(section, sectionGroupIds)
+        local isEmpty = #items == 0 and not next(folderChildContainers)
         if isEmpty and not CS.showPhantomSections then return end
 
         local heading = AceGUI:Create("Heading")
@@ -1059,17 +1096,17 @@ local function RefreshColumn1(preserveDrag)
 
         for _, item in ipairs(items) do
             if item.kind == "folder" then
-                RenderFolderRow(item.id, section, folderChildGroups[item.id])
+                RenderFolderRow(item.id, section, folderChildContainers[item.id])
                 if CS.specExpandedFolderId == item.id then
                     RenderFolderSpecPanel(item.id)
                 end
                 -- If expanded, render children with accent bar
                 if not CS.collapsedFolders[item.id] then
-                    local children = folderChildGroups[item.id]
+                    local children = folderChildContainers[item.id]
                     if children and #children > 0 then
                         local firstEntry, lastEntry
-                        for _, gid in ipairs(children) do
-                            local entry = RenderGroupRow(gid, true, section)
+                        for _, cid in ipairs(children) do
+                            local entry = RenderContainerRow(cid, true, section)
                             if entry then
                                 if not firstEntry then firstEntry = entry end
                                 lastEntry = entry
@@ -1092,26 +1129,26 @@ local function RefreshColumn1(preserveDrag)
                         end
                     end
                 end
-            else
-                RenderGroupRow(item.id, false, section)
+            elseif item.kind == "container" then
+                RenderContainerRow(item.id, false, section)
             end
         end
     end
 
-    -- Split groups into global and character-owned
+    -- Split containers into global and character-owned
+    local containers = db.groupContainers or {}
     local globalIds = {}
     local charIds = {}
-    for id, group in pairs(db.groups) do
-        if group.isGlobal then
+    for id, container in pairs(containers) do
+        if container.isGlobal then
             table.insert(globalIds, id)
-        elseif group.createdBy == charKey then
+        elseif container.createdBy == charKey then
             table.insert(charIds, id)
         end
     end
 
     -- Render sections
     if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
-        -- Check if there are any global folders
         local hasGlobalContent = #globalIds > 0
         if not hasGlobalContent then
             for _, folder in pairs(db.folders) do
@@ -1127,7 +1164,6 @@ local function RefreshColumn1(preserveDrag)
     end
 
     local charName = charKey:match("^(.-)%s*%-") or charKey
-    -- Always show character section (even if empty, folders might exist)
     local hasCharContent = #charIds > 0
     if not hasCharContent then
         for _, folder in pairs(db.folders) do
@@ -1152,10 +1188,11 @@ local function RefreshColumn1(preserveDrag)
 
         -- Helper: generate a unique group name with the given base
         local function GenerateGroupName(base)
-            local db = CooldownCompanion.db.profile
+            local profile = CooldownCompanion.db.profile
             local existing = {}
-            for _, g in pairs(db.groups) do
-                existing[g.name] = true
+            -- Check container names (groups are now "panels" under containers)
+            for _, c in pairs(profile.groupContainers or {}) do
+                existing[c.name] = true
             end
             local name = base
             if existing[name] then
@@ -1175,8 +1212,9 @@ local function RefreshColumn1(preserveDrag)
         local newIconBtn = AceGUI:Create("Button")
         newIconBtn:SetText("Icon Group")
         newIconBtn:SetCallback("OnClick", function()
-            local groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-            CS.selectedGroup = groupId
+            local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+            CS.selectedContainer = containerId
+            CS.selectedGroup = nil
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
@@ -1192,15 +1230,18 @@ local function RefreshColumn1(preserveDrag)
         local newBarBtn = AceGUI:Create("Button")
         newBarBtn:SetText("Bar Group")
         newBarBtn:SetCallback("OnClick", function()
-            local groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+            local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             local group = CooldownCompanion.db.profile.groups[groupId]
-            group.displayMode = "bars"
-            group.style.orientation = "vertical"
-            if group.masqueEnabled then
-                CooldownCompanion:ToggleGroupMasque(groupId, false)
+            if group then
+                group.displayMode = "bars"
+                group.style.orientation = "vertical"
+                if group.masqueEnabled then
+                    CooldownCompanion:ToggleGroupMasque(groupId, false)
+                end
+                CooldownCompanion:RefreshGroupFrame(groupId)
             end
-            CooldownCompanion:RefreshGroupFrame(groupId)
-            CS.selectedGroup = groupId
+            CS.selectedContainer = containerId
+            CS.selectedGroup = nil
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
@@ -1216,15 +1257,18 @@ local function RefreshColumn1(preserveDrag)
         local newTextBtn = AceGUI:Create("Button")
         newTextBtn:SetText("Text Group")
         newTextBtn:SetCallback("OnClick", function()
-            local groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+            local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             local group = CooldownCompanion.db.profile.groups[groupId]
-            group.displayMode = "text"
-            group.style.orientation = "vertical"
-            if group.masqueEnabled then
-                CooldownCompanion:ToggleGroupMasque(groupId, false)
+            if group then
+                group.displayMode = "text"
+                group.style.orientation = "vertical"
+                if group.masqueEnabled then
+                    CooldownCompanion:ToggleGroupMasque(groupId, false)
+                end
+                CooldownCompanion:RefreshGroupFrame(groupId)
             end
-            CooldownCompanion:RefreshGroupFrame(groupId)
-            CS.selectedGroup = groupId
+            CS.selectedContainer = containerId
+            CS.selectedGroup = nil
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
