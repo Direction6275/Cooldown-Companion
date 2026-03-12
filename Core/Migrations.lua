@@ -44,6 +44,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateNewDefaults()
     self:MigrateCharacterScopedBarSettings()
     self:MigrateGroupsToContainers()
+    self:MigrateContainerAlphaToPanel()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -63,6 +64,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
     profile._migratedContainersV1 = nil
+    profile._migratedContainerAlphaToPanel = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1442,4 +1444,81 @@ function CooldownCompanion:MigrateGroupsToContainers()
     end
 
     profile._migratedContainersV1 = true
+end
+
+-------------------------------------------------------------------------
+-- MigrateContainerAlphaToPanel: Copies container-level alpha settings
+-- down to each child panel so panels own their own alpha independently.
+-------------------------------------------------------------------------
+local ALPHA_FIELDS = {
+    "baselineAlpha",
+    "forceAlphaInCombat", "forceAlphaOutOfCombat",
+    "forceAlphaRegularMounted", "forceAlphaDragonriding",
+    "forceAlphaTargetExists", "forceAlphaMouseover",
+    "forceHideInCombat", "forceHideOutOfCombat",
+    "forceHideRegularMounted", "forceHideDragonriding",
+    "fadeInDuration", "fadeOutDuration", "fadeDelay",
+    "customFade", "treatTravelFormAsMounted",
+}
+
+function CooldownCompanion:MigrateContainerAlphaToPanel()
+    local profile = self.db.profile
+    if profile._migratedContainerAlphaToPanel then return end
+
+    local containers = profile.groupContainers
+    if not containers then
+        profile._migratedContainerAlphaToPanel = true
+        return
+    end
+
+    for containerId, container in pairs(containers) do
+        -- Check if container has non-default alpha settings
+        local hasCustomAlpha = (container.baselineAlpha ~= nil and container.baselineAlpha ~= 1)
+        if not hasCustomAlpha then
+            for _, key in ipairs(ALPHA_FIELDS) do
+                if key ~= "baselineAlpha" and container[key] then
+                    hasCustomAlpha = true
+                    break
+                end
+            end
+        end
+
+        -- Copy alpha fields to each child panel that has default alpha
+        for groupId, group in pairs(profile.groups) do
+            if group.parentContainerId == containerId then
+                if hasCustomAlpha then
+                    -- Only copy to panels with default alpha (no custom settings)
+                    local panelHasCustomAlpha = (group.baselineAlpha ~= nil and group.baselineAlpha ~= 1)
+                    if not panelHasCustomAlpha then
+                        for _, key in ipairs(ALPHA_FIELDS) do
+                            if key ~= "baselineAlpha" and group[key] then
+                                panelHasCustomAlpha = true
+                                break
+                            end
+                        end
+                    end
+
+                    if not panelHasCustomAlpha then
+                        for _, key in ipairs(ALPHA_FIELDS) do
+                            local val = container[key]
+                            if val ~= nil then
+                                if type(val) == "table" then
+                                    group[key] = CopyTable(val)
+                                else
+                                    group[key] = val
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- Ensure every panel has baselineAlpha set for nil-safety
+                if group.baselineAlpha == nil then
+                    group.baselineAlpha = 1
+                end
+            end
+        end
+    end
+
+    profile._migratedContainerAlphaToPanel = true
 end

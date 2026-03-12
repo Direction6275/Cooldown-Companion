@@ -343,9 +343,6 @@ function CooldownCompanion:DeleteContainer(containerId)
         self.containerFrames[containerId]:Hide()
         self.containerFrames[containerId] = nil
     end
-    if self.containerAlphaState then
-        self.containerAlphaState[containerId] = nil
-    end
 
     db.groupContainers[containerId] = nil
 end
@@ -441,6 +438,11 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         compactLayout = false,
         maxVisibleButtons = 0,
         compactGrowthDirection = "center",
+        -- Alpha fade defaults (panels own their own alpha)
+        baselineAlpha = 1,
+        fadeDelay = 1,
+        fadeInDuration = 0.2,
+        fadeOutDuration = 0.2,
     }
 
     -- Style defaults (nil-guard respects user-customized globalStyle)

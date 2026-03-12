@@ -22,7 +22,7 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 
 -- Resolve lock + alpha for a group frame.
--- Panels use their OWN group.locked (nil = locked); alpha comes from the parent container.
+-- Panels use their OWN group.locked (nil = locked); alpha comes from the panel itself.
 -- Legacy groups (no container) use group.locked and group.baselineAlpha directly.
 local function GetContainerState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
@@ -31,11 +31,8 @@ local function GetContainerState(groupId)
     if not group then return true, 1 end
 
     if group.parentContainerId then
-        local container = profile.groupContainers and profile.groupContainers[group.parentContainerId]
-        if container then
-            -- Panel: own lock state (nil/true = locked, false = unlocked), container's alpha
-            return group.locked ~= false, container.baselineAlpha or 1
-        end
+        -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
+        return group.locked ~= false, group.baselineAlpha or 1
     end
 
     -- Legacy path (no container)

@@ -164,7 +164,7 @@ function CooldownCompanion:InvalidateMountAlphaCache()
     self._mountAlphaDirty = true
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
@@ -172,7 +172,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
     end
 
     -- Force 100% alpha while group is unlocked for easier positioning
-    if not group.locked then
+    if not locked then
         if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 then
             frame:SetAlpha(1)
             state.currentAlpha = 1
@@ -264,7 +264,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
     local UPDATE_INTERVAL = 1 / 30 -- ~30Hz for smooth fading
 
     local function GroupNeedsAlphaUpdate(group)
-        if group.baselineAlpha < 1 then return true end
+        if (group.baselineAlpha or 1) < 1 then return true end
         return group.forceHideInCombat or group.forceHideOutOfCombat
             or group.forceHideRegularMounted or group.forceHideDragonriding
     end
@@ -293,14 +293,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() then
-                -- Resolve alpha source: container owns alpha settings for panels
-                local alphaSource = group
-                if group.parentContainerId then
-                    local c = containers[group.parentContainerId]
-                    if c then alphaSource = c end
-                end
-
-                local needsUpdate = GroupNeedsAlphaUpdate(alphaSource)
+                local needsUpdate = GroupNeedsAlphaUpdate(group)
                 -- Also process if the group has stale alpha state that needs cleanup
                 if not needsUpdate then
                     local state = self.alphaState[groupId]
@@ -309,7 +302,15 @@ function CooldownCompanion:InitAlphaUpdateFrame()
                     end
                 end
                 if needsUpdate then
-                    self:UpdateGroupAlpha(groupId, alphaSource, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
+                    -- Resolve locked from the container (panels don't have their own lock toggle)
+                    local locked = true
+                    if group.parentContainerId then
+                        local c = containers[group.parentContainerId]
+                        if c then locked = c.locked end
+                    else
+                        locked = group.locked
+                    end
+                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
                 end
             end
         end

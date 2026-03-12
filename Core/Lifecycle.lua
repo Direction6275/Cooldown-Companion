@@ -235,7 +235,6 @@ function CooldownCompanion:OnEnable()
 
     -- Initialize alpha fade state (runtime only, not saved)
     self.alphaState = {}
-    self.containerAlphaState = {}
 
     -- Create all container frames, then group (panel) frames
     self:CreateAllContainerFrames()

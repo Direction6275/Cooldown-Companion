@@ -1841,134 +1841,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(lockedCb)
-
-    -- Alpha heading
-    local alphaHeading = AceGUI:Create("Heading")
-    alphaHeading:SetText("Alpha / Fade")
-    alphaHeading:SetFullWidth(true)
-    scroll:AddChild(alphaHeading)
-
-    -- Baseline Alpha
-    local alphaSlider = AceGUI:Create("Slider")
-    alphaSlider:SetLabel("Baseline Alpha")
-    alphaSlider:SetSliderValues(0, 1, 0.05)
-    alphaSlider:SetValue(container.baselineAlpha or 1)
-    alphaSlider:SetFullWidth(true)
-    alphaSlider:SetCallback("OnValueChanged", function(widget, event, value)
-        container.baselineAlpha = value
-        RefreshPanels()
-    end)
-    alphaSlider:SetCallback("OnMouseUp", function()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(alphaSlider)
-
-    -- Show force conditions when alpha < 1 or any forceHide is active
-    local hasForceHide = container.forceHideInCombat or container.forceHideOutOfCombat
-        or container.forceHideRegularMounted or container.forceHideDragonriding
-    if (container.baselineAlpha or 1) < 1 or hasForceHide then
-        -- Force Fully Visible section
-        local visHeading = AceGUI:Create("Heading")
-        visHeading:SetText("Force Fully Visible (Alpha = 1)")
-        visHeading:SetFullWidth(true)
-        scroll:AddChild(visHeading)
-
-        local visFields = {
-            { key = "forceAlphaInCombat", label = "In Combat" },
-            { key = "forceAlphaOutOfCombat", label = "Out of Combat" },
-            { key = "forceAlphaRegularMounted", label = "Regular Mounted" },
-            { key = "forceAlphaDragonriding", label = "Skyriding" },
-            { key = "forceAlphaTargetExists", label = "Target Exists" },
-            { key = "forceAlphaMouseover", label = "On Mouseover" },
-        }
-        for _, f in ipairs(visFields) do
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetLabel(f.label)
-            cb:SetFullWidth(true)
-            cb:SetValue(container[f.key] or false)
-            local fieldKey = f.key
-            cb:SetCallback("OnValueChanged", function(widget, event, value)
-                container[fieldKey] = value or nil
-                RefreshPanels()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(cb)
-        end
-
-        -- Force Fully Hidden section
-        local hideHeading = AceGUI:Create("Heading")
-        hideHeading:SetText("Force Fully Hidden (Alpha = 0)")
-        hideHeading:SetFullWidth(true)
-        scroll:AddChild(hideHeading)
-
-        local hideFields = {
-            { key = "forceHideInCombat", label = "In Combat" },
-            { key = "forceHideOutOfCombat", label = "Out of Combat" },
-            { key = "forceHideRegularMounted", label = "Regular Mounted" },
-            { key = "forceHideDragonriding", label = "Skyriding" },
-        }
-        for _, f in ipairs(hideFields) do
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetLabel(f.label)
-            cb:SetFullWidth(true)
-            cb:SetValue(container[f.key] or false)
-            local fieldKey = f.key
-            cb:SetCallback("OnValueChanged", function(widget, event, value)
-                container[fieldKey] = value or nil
-                RefreshPanels()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(cb)
-        end
-
-        -- Fade durations
-        local fadeHeading = AceGUI:Create("Heading")
-        fadeHeading:SetText("Fade Timing")
-        fadeHeading:SetFullWidth(true)
-        scroll:AddChild(fadeHeading)
-
-        local fadeInSlider = AceGUI:Create("Slider")
-        fadeInSlider:SetLabel("Fade In Duration")
-        fadeInSlider:SetSliderValues(0, 2, 0.05)
-        fadeInSlider:SetValue(container.fadeInDuration or 0.2)
-        fadeInSlider:SetFullWidth(true)
-        fadeInSlider:SetCallback("OnValueChanged", function(widget, event, value)
-            container.fadeInDuration = value
-        end)
-        scroll:AddChild(fadeInSlider)
-
-        local fadeOutSlider = AceGUI:Create("Slider")
-        fadeOutSlider:SetLabel("Fade Out Duration")
-        fadeOutSlider:SetSliderValues(0, 2, 0.05)
-        fadeOutSlider:SetValue(container.fadeOutDuration or 0.2)
-        fadeOutSlider:SetFullWidth(true)
-        fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, value)
-            container.fadeOutDuration = value
-        end)
-        scroll:AddChild(fadeOutSlider)
-
-        local fadeDelaySlider = AceGUI:Create("Slider")
-        fadeDelaySlider:SetLabel("Mouseover Grace Period")
-        fadeDelaySlider:SetSliderValues(0, 5, 0.1)
-        fadeDelaySlider:SetValue(container.fadeDelay or 1)
-        fadeDelaySlider:SetFullWidth(true)
-        fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, value)
-            container.fadeDelay = value
-        end)
-        scroll:AddChild(fadeDelaySlider)
-
-        -- Travel form as mounted
-        if CooldownCompanion._playerClassID == 11 then
-            local travelCb = AceGUI:Create("CheckBox")
-            travelCb:SetLabel("Treat Travel Form as Mounted")
-            travelCb:SetFullWidth(true)
-            travelCb:SetValue(container.treatTravelFormAsMounted or false)
-            travelCb:SetCallback("OnValueChanged", function(widget, event, value)
-                container.treatTravelFormAsMounted = value or nil
-            end)
-            scroll:AddChild(travelCb)
-        end
-    end
 end
 
 local function BuildContainerLayoutTab(scroll, containerId)
@@ -2025,104 +1897,130 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         end
     end
 
+    if not container.loadConditions then
+        container.loadConditions = {}
+    end
     local loadConditions = container.loadConditions
-    if not loadConditions then
-        loadConditions = {}
-        container.loadConditions = loadConditions
+
+    local function CreateLoadConditionToggle(label, key, defaultVal)
+        local cb = AceGUI:Create("CheckBox")
+        cb:SetLabel(label)
+        local val = loadConditions[key]
+        if val == nil then val = defaultVal or false end
+        cb:SetValue(val)
+        cb:SetFullWidth(true)
+        cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+            loadConditions[key] = newVal
+            RefreshPanels()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        return cb
     end
 
     local heading = AceGUI:Create("Heading")
-    heading:SetText("Show Only In")
+    heading:SetText("Do Not Load When In")
+    ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
+    local instanceCollapsed = CS.collapsedSections["container_loadconditions_instance"]
+    AttachCollapseButton(heading, instanceCollapsed, function()
+        CS.collapsedSections["container_loadconditions_instance"] = not CS.collapsedSections["container_loadconditions_instance"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not instanceCollapsed then
     local conditions = {
-        { key = "raid", label = "Raids" },
-        { key = "dungeon", label = "Dungeons" },
-        { key = "delve", label = "Delves" },
-        { key = "battleground", label = "Battlegrounds" },
-        { key = "arena", label = "Arenas" },
-        { key = "openWorld", label = "Open World" },
+        { key = "raid",          label = "Raid" },
+        { key = "dungeon",       label = "Dungeon" },
+        { key = "delve",         label = "Delve" },
+        { key = "battleground",  label = "Battleground" },
+        { key = "arena",         label = "Arena" },
+        { key = "openWorld",     label = "Open World" },
+        { key = "rested",        label = "Rested Area" },
+        { key = "petBattle",     label = "Pet Battle", default = true },
+        { key = "vehicleUI",     label = "Vehicle / Override UI", default = true },
     }
 
     for _, cond in ipairs(conditions) do
-        local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(cond.label)
-        cb:SetFullWidth(true)
-        cb:SetValue(loadConditions[cond.key] or false)
-        local condKey = cond.key
-        cb:SetCallback("OnValueChanged", function(widget, event, value)
-            loadConditions[condKey] = value or nil
-            RefreshPanels()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(cb)
+        scroll:AddChild(CreateLoadConditionToggle(cond.label, cond.key, cond.default))
     end
-
-    local hideHeading = AceGUI:Create("Heading")
-    hideHeading:SetText("Hide In")
-    hideHeading:SetFullWidth(true)
-    scroll:AddChild(hideHeading)
-
-    local hideConditions = {
-        { key = "rested", label = "Rested Areas" },
-        { key = "petBattle", label = "Pet Battles" },
-        { key = "vehicleUI", label = "Vehicle UI" },
-    }
-    for _, cond in ipairs(hideConditions) do
-        local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(cond.label)
-        cb:SetFullWidth(true)
-        cb:SetValue(loadConditions[cond.key] or false)
-        local condKey = cond.key
-        cb:SetCallback("OnValueChanged", function(widget, event, value)
-            loadConditions[condKey] = value or nil
-            RefreshPanels()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(cb)
-    end
+    end -- not instanceCollapsed
 
     -- Spec filter section
     local specHeading = AceGUI:Create("Heading")
     specHeading:SetText("Specialization Filter")
+    ColorHeading(specHeading)
     specHeading:SetFullWidth(true)
     scroll:AddChild(specHeading)
+
+    local specCollapsed = CS.collapsedSections["container_loadconditions_spec"]
+    AttachCollapseButton(specHeading, specCollapsed, function()
+        CS.collapsedSections["container_loadconditions_spec"] = not CS.collapsedSections["container_loadconditions_spec"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not specCollapsed then
+    -- Folder spec inheritance: if the parent folder has spec/hero filters,
+    -- show them as disabled (read-only) on the container.
+    local folder = container.folderId and db.folders and db.folders[container.folderId]
+    local folderHasSpecs = folder and folder.specs and next(folder.specs)
+    local folderHasHeroTalents = folder and folder.heroTalents and next(folder.heroTalents)
+    local inheritsFromFolder = folderHasSpecs or folderHasHeroTalents
+    local specsSource = inheritsFromFolder and folder.specs or container.specs
+
+    if inheritsFromFolder then
+        local inheritedLabel = AceGUI:Create("Label")
+        inheritedLabel:SetText("|cff888888Inherited from folder filter. Edit the folder to change Spec/Hero filters.|r")
+        inheritedLabel:SetFullWidth(true)
+        scroll:AddChild(inheritedLabel)
+    end
 
     local numSpecs = GetNumSpecializations()
     local configID = C_ClassTalents.GetActiveConfigID()
     for i = 1, numSpecs do
         local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-        local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(name)
-        cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
-        cb:SetFullWidth(true)
-        cb:SetValue(container.specs and container.specs[specId] or false)
-        cb:SetCallback("OnValueChanged", function(widget, event, value)
-            if value then
-                if not container.specs then container.specs = {} end
-                container.specs[specId] = true
+        if specId then
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetLabel(name)
+            if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+            cb:SetFullWidth(true)
+            cb:SetValue(specsSource and specsSource[specId] or false)
+            if inheritsFromFolder then
+                cb:SetDisabled(true)
             else
-                if container.specs then
-                    container.specs[specId] = nil
-                    if not next(container.specs) then
-                        container.specs = nil
+                cb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if value then
+                        if not container.specs then container.specs = {} end
+                        container.specs[specId] = true
+                    else
+                        if container.specs then
+                            container.specs[specId] = nil
+                            if not next(container.specs) then
+                                container.specs = nil
+                            end
+                        end
+                        CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
                     end
-                end
-                CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
+                    RefreshPanels()
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
             end
-            RefreshPanels()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(cb)
+            scroll:AddChild(cb)
 
-        -- Hero talent sub-tree checkboxes
-        if configID and container.specs and container.specs[specId] then
-            ST._BuildHeroTalentSubTreeCheckboxes(scroll, container, configID, specId, 20, containerId)
+            -- Hero talent sub-tree checkboxes
+            if configID and specsSource and specsSource[specId] then
+                ST._BuildHeroTalentSubTreeCheckboxes(scroll, container, configID, specId, 20, containerId, {
+                    specsSource = specsSource,
+                    heroTalentsSource = inheritsFromFolder and folder.heroTalents or container.heroTalents,
+                    useHeroTalentsSource = inheritsFromFolder,
+                    disableToggles = inheritsFromFolder,
+                })
+            end
         end
     end
 
-    if container.specs and next(container.specs) then
+    if not inheritsFromFolder and container.specs and next(container.specs) then
         local clearBtn = AceGUI:Create("Button")
         clearBtn:SetText("Clear All Spec Filters")
         clearBtn:SetFullWidth(true)
@@ -2134,6 +2032,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         end)
         scroll:AddChild(clearBtn)
     end
+    end -- not specCollapsed
 end
 
 -- Expose for Config.lua

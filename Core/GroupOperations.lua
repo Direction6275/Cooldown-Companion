@@ -433,13 +433,9 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    -- Panel-level load conditions (only for legacy groups without containers)
-    if not container then
-        local checkLoadConditions = opts.checkLoadConditions
-        if checkLoadConditions == nil then checkLoadConditions = true end
-        if checkLoadConditions and not self:CheckLoadConditions(group) then
-            return false
-        end
+    -- Group-level load conditions (for panels, adds to container restrictions)
+    if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(group) then
+        return false
     end
 
     return true
@@ -722,9 +718,6 @@ function CooldownCompanion:RefreshAllGroups()
             if not containers[containerId] then
                 frame:Hide()
                 self.containerFrames[containerId] = nil
-                if self.containerAlphaState then
-                    self.containerAlphaState[containerId] = nil
-                end
             end
         end
         -- Ensure all current-profile containers have frames
@@ -807,10 +800,10 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
                 if active then
                     frame:Show()
-                    -- Resolve locked/alpha from container
+                    -- Resolve locked/alpha from container (lock) and panel (alpha)
                     local container = self:GetParentContainer(group)
                     local isLocked = container and container.locked or group.locked
-                    local baseAlpha = container and container.baselineAlpha or group.baselineAlpha or 1
+                    local baseAlpha = group.baselineAlpha or 1
                     -- Force 100% alpha while unlocked for easier positioning
                     if not isLocked then
                         frame:SetAlpha(1)
