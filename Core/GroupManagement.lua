@@ -503,6 +503,48 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     return newGroupId
 end
 
+function CooldownCompanion:MovePanel(groupId, targetContainerId)
+    local db = self.db.profile
+    local group = db.groups[groupId]
+    if not group or not group.parentContainerId then return false end
+    if not db.groupContainers[targetContainerId] then return false end
+
+    local sourceContainerId = group.parentContainerId
+    if sourceContainerId == targetContainerId then return false end
+
+    -- Reassign to target container
+    group.parentContainerId = targetContainerId
+
+    -- Reset anchor to top-left of new container frame
+    local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
+    group.anchor = {
+        point = "TOPLEFT",
+        relativeTo = containerFrameName,
+        relativePoint = "TOPLEFT",
+        x = 0,
+        y = 0,
+    }
+
+    -- Put at end of target's panel list (GetPanelCount already sees the moved panel)
+    group.order = self:GetPanelCount(targetContainerId)
+
+    -- Force alpha re-evaluation with new container context
+    if self.alphaState then
+        self.alphaState[groupId] = nil
+    end
+
+    self:RefreshGroupFrame(groupId)
+
+    -- If source container is now empty, delete it
+    local sourceDeleted = false
+    if self:GetPanelCount(sourceContainerId) == 0 then
+        self:DeleteContainer(sourceContainerId)
+        sourceDeleted = true
+    end
+
+    return true, sourceDeleted
+end
+
 function CooldownCompanion:RenamePanelGroup(groupId, newName)
     local group = self.db.profile.groups[groupId]
     if group then
