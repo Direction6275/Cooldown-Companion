@@ -1743,6 +1743,8 @@ local function RefreshColumn2()
             end -- not collapsed
         end -- panel loop
 
+        CS.col2Scroll:DoLayout()
+
         return
     end
 
