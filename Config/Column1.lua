@@ -283,6 +283,7 @@ local function RefreshColumn1(preserveDrag)
 
     -- Cross-character browse mode: render browse UI instead of normal groups
     if CS.browseMode then
+        if CS.browseBadge then CS.browseBadge:Hide() end
         CancelDrag()
         RenderBrowseMode()
         return
@@ -1302,6 +1303,43 @@ local function RefreshColumn1(preserveDrag)
         if section == "char" then
             local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
             if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
+
+            -- Browse badge: inline atlas in heading text so the line breaks around it
+            local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
+            if #browseChars > 0 then
+                heading:SetText(headingText .. "  |A:BattleBar-SwapPetIcon:14:14|a")
+
+                -- Invisible clickable overlay for tooltip + click
+                if not CS.browseBadge then
+                    local badge = CreateFrame("Button", nil, UIParent)
+                    badge:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:SetText("Browse Other Characters")
+                        GameTooltip:AddLine("View and copy groups from other characters on this profile.", 1, 1, 1, true)
+                        GameTooltip:Show()
+                    end)
+                    badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                    badge:SetScript("OnClick", function()
+                        CS.browseMode = true
+                        CS.browseCharKey = nil
+                        CS.browseContainerId = nil
+                        CS.selectedContainer = nil
+                        CS.selectedGroup = nil
+                        CS.selectedButton = nil
+                        wipe(CS.selectedButtons)
+                        wipe(CS.selectedGroups)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                    CS.browseBadge = badge
+                end
+                CS.browseBadge:SetParent(heading.frame)
+                CS.browseBadge:ClearAllPoints()
+                CS.browseBadge:SetPoint("RIGHT", heading.label, "RIGHT", 0, 0)
+                CS.browseBadge:SetSize(16, heading.label:GetHeight() or 16)
+                CS.browseBadge:Show()
+            else
+                if CS.browseBadge then CS.browseBadge:Hide() end
+            end
         end
         CS.col1Scroll:AddChild(heading)
 
@@ -1403,27 +1441,6 @@ local function RefreshColumn1(preserveDrag)
     end
     if hasCharContent or CS.showPhantomSections then
         RenderSection("char", charIds, charName .. "'s Groups")
-    end
-
-    -- Browse badge: show "Browse Other Characters" link if other chars have groups
-    local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
-    if #browseChars > 0 then
-        local browseBtn = AceGUI:Create("InteractiveLabel")
-        browseBtn:SetText("|cff66aaff|A:communities-icon-searchmagnifyingglass:12:12|a Browse Other Characters|r")
-        browseBtn:SetFullWidth(true)
-        browseBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        browseBtn:SetCallback("OnClick", function()
-            CS.browseMode = true
-            CS.browseCharKey = nil
-            CS.browseContainerId = nil
-            CS.selectedContainer = nil
-            CS.selectedGroup = nil
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            wipe(CS.selectedGroups)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        CS.col1Scroll:AddChild(browseBtn)
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows
