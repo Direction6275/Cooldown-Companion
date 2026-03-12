@@ -66,8 +66,15 @@ local function RefreshColumn4(container)
         return
     end
 
-    -- Container settings mode: selectedContainer set, no panel selected
-    if CS.selectedContainer and not CS.selectedGroup then
+    -- Determine if any button is selected (for specificity cascade)
+    local anyButtonSelected = CS.selectedButton ~= nil
+    if not anyButtonSelected then
+        for _ in pairs(CS.selectedButtons) do anyButtonSelected = true; break end
+    end
+
+    -- Container settings: container selected AND NOT (panel + button both selected)
+    -- Covers: no panel selected, OR panel selected but no button → Column 3 handles panel settings
+    if CS.selectedContainer and not (CS.selectedGroup and anyButtonSelected) then
         if container.placeholderLabel then container.placeholderLabel:Hide() end
         if container.tabGroup then container.tabGroup.frame:Hide() end
 
@@ -77,12 +84,6 @@ local function RefreshColumn4(container)
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                 CS.selectedContainerTab = tab
-                for _, btn in ipairs(CS.tabInfoButtons) do
-                    btn:ClearAllPoints()
-                    btn:Hide()
-                    btn:SetParent(nil)
-                end
-                wipe(CS.tabInfoButtons)
                 widget:ReleaseChildren()
 
                 local scroll = AceGUI:Create("ScrollFrame")

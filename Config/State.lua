@@ -111,6 +111,7 @@ ST._configState = {
     selectedTab = "appearance",
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
+    panelSettingsTab = "appearance",
     newInput = "",
 
     -- Main frame reference

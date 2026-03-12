@@ -1201,6 +1201,12 @@ function CooldownCompanion:RefreshConfigPanel()
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
     end
+    -- Compute anyButtonSelected for title logic (used across both branches)
+    local anyButtonSelected = CS.selectedButton ~= nil
+    if not anyButtonSelected then
+        for _ in pairs(CS.selectedButtons) do anyButtonSelected = true; break end
+    end
+
     if CS.resourceBarPanelActive then
         CS.configFrame.col1:SetTitle("Bars & Frames")
         CS.configFrame.col2:SetTitle("Styling")
@@ -1211,11 +1217,13 @@ function CooldownCompanion:RefreshConfigPanel()
         CS.configFrame.col2:SetTitle("Spells / Items")
         if CS.autoAddFlowActive then
             CS.configFrame.col3:SetTitle("Auto Add")
+        elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+            CS.configFrame.col3:SetTitle("Panel Settings")
         else
             CS.configFrame.col3:SetTitle("Button Settings")
         end
-        -- Col 4: "Panel Settings" when a panel is selected, "Group Settings" otherwise
-        if CS.selectedContainer and CS.selectedGroup then
+        -- Col 4: "Panel Settings" when panel + button selected in container, "Group Settings" otherwise
+        if CS.selectedContainer and CS.selectedGroup and anyButtonSelected then
             CS.configFrame.col4:SetTitle("Panel Settings")
         else
             CS.configFrame.col4:SetTitle("Group Settings")
@@ -1231,6 +1239,8 @@ function CooldownCompanion:RefreshConfigPanel()
         CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
     elseif CS.autoAddFlowActive then
         CS.configFrame.col3:SetTitle("Auto Add")
+    elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+        CS.configFrame.col3:SetTitle("Panel Settings")
     else
         CS.configFrame.col3:SetTitle("Button Settings")
     end
