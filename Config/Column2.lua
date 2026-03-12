@@ -1219,11 +1219,7 @@ local function RefreshColumn2()
                                 info.notCheckable = true
                                 info.func = function()
                                     CloseDropDownMenus()
-                                    CooldownCompanion:DeletePanel(ctxContainerId, panelId)
-                                    if CS.selectedGroup == panelId then
-                                        CS.selectedGroup = nil
-                                    end
-                                    CooldownCompanion:RefreshConfigPanel()
+                                    ShowPopupAboveConfig("CDC_DELETE_PANEL", panel.name or "Panel", { containerId = ctxContainerId, panelId = panelId })
                                 end
                                 UIDropDownMenu_AddButton(info, level)
 

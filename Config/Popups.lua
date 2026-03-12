@@ -93,6 +93,24 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_DELETE_PANEL"] = {
+    text = "Are you sure you want to delete panel '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not data then return end
+        CooldownCompanion:DeletePanel(data.containerId, data.panelId)
+        if CS.selectedGroup == data.panelId then
+            CS.selectedGroup = nil
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     text = "Rename group '%s' to:",
     button1 = "Rename",
