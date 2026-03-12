@@ -1232,13 +1232,13 @@ local function RefreshColumn1(preserveDrag)
             return name
         end
 
-        -- Top row: "New Icon Group" | "New Bar Group" | "New Text Group" (thirds)
+        -- Single row: "New Group" | "New Folder" | "Import Group" (thirds)
         local barW = CS.col1ButtonBar:GetWidth() or 300
         local thirdW = (barW - 6) / 3
 
-        local newIconBtn = AceGUI:Create("Button")
-        newIconBtn:SetText("Icon Group")
-        newIconBtn:SetCallback("OnClick", function()
+        local newGroupBtn = AceGUI:Create("Button")
+        newGroupBtn:SetText("New Group")
+        newGroupBtn:SetCallback("OnClick", function()
             local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             CS.selectedContainer = containerId
             CS.selectedGroup = nil
@@ -1246,80 +1246,14 @@ local function RefreshColumn1(preserveDrag)
             wipe(CS.selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        newIconBtn.frame:SetParent(CS.col1ButtonBar)
-        newIconBtn.frame:ClearAllPoints()
-        newIconBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-        newIconBtn.frame:SetWidth(thirdW)
-        newIconBtn.frame:SetHeight(28)
-        newIconBtn.frame:Show()
-        table.insert(CS.col1BarWidgets, newIconBtn)
+        newGroupBtn.frame:SetParent(CS.col1ButtonBar)
+        newGroupBtn.frame:ClearAllPoints()
+        newGroupBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
+        newGroupBtn.frame:SetWidth(thirdW)
+        newGroupBtn.frame:SetHeight(28)
+        newGroupBtn.frame:Show()
+        table.insert(CS.col1BarWidgets, newGroupBtn)
 
-        local newBarBtn = AceGUI:Create("Button")
-        newBarBtn:SetText("Bar Group")
-        newBarBtn:SetCallback("OnClick", function()
-            local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-            local group = CooldownCompanion.db.profile.groups[groupId]
-            if group then
-                group.displayMode = "bars"
-                group.style.orientation = "vertical"
-                if group.masqueEnabled then
-                    CooldownCompanion:ToggleGroupMasque(groupId, false)
-                end
-                CooldownCompanion:RefreshGroupFrame(groupId)
-            end
-            CS.selectedContainer = containerId
-            CS.selectedGroup = nil
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        newBarBtn.frame:SetParent(CS.col1ButtonBar)
-        newBarBtn.frame:ClearAllPoints()
-        newBarBtn.frame:SetPoint("LEFT", newIconBtn.frame, "RIGHT", 3, 0)
-        newBarBtn.frame:SetWidth(thirdW)
-        newBarBtn.frame:SetHeight(28)
-        newBarBtn.frame:Show()
-        table.insert(CS.col1BarWidgets, newBarBtn)
-
-        local newTextBtn = AceGUI:Create("Button")
-        newTextBtn:SetText("Text Group")
-        newTextBtn:SetCallback("OnClick", function()
-            local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-            local group = CooldownCompanion.db.profile.groups[groupId]
-            if group then
-                group.displayMode = "text"
-                group.style.orientation = "vertical"
-                if group.masqueEnabled then
-                    CooldownCompanion:ToggleGroupMasque(groupId, false)
-                end
-                CooldownCompanion:RefreshGroupFrame(groupId)
-            end
-            CS.selectedContainer = containerId
-            CS.selectedGroup = nil
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        newTextBtn.frame:SetParent(CS.col1ButtonBar)
-        newTextBtn.frame:ClearAllPoints()
-        newTextBtn.frame:SetPoint("LEFT", newBarBtn.frame, "RIGHT", 3, 0)
-        newTextBtn.frame:SetWidth(thirdW)
-        newTextBtn.frame:SetHeight(28)
-        newTextBtn.frame:Show()
-        table.insert(CS.col1BarWidgets, newTextBtn)
-
-        -- Dynamic equal-width resize for the top row
-        CS.col1ButtonBar._topRowBtns = {newIconBtn.frame, newBarBtn.frame, newTextBtn.frame}
-        CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
-            if self._topRowBtns then
-                local tw = (w - 6) / 3
-                for _, f in ipairs(self._topRowBtns) do
-                    f:SetWidth(tw)
-                end
-            end
-        end)
-
-        -- Bottom row: "New Folder" (left) | "Import Group" (right)
         local newFolderBtn = AceGUI:Create("Button")
         newFolderBtn:SetText("New Folder")
         newFolderBtn:SetCallback("OnClick", function()
@@ -1328,8 +1262,8 @@ local function RefreshColumn1(preserveDrag)
         end)
         newFolderBtn.frame:SetParent(CS.col1ButtonBar)
         newFolderBtn.frame:ClearAllPoints()
-        newFolderBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOMLEFT", 0, 0)
-        newFolderBtn.frame:SetPoint("RIGHT", CS.col1ButtonBar, "CENTER", -1.5, 0)
+        newFolderBtn.frame:SetPoint("LEFT", newGroupBtn.frame, "RIGHT", 3, 0)
+        newFolderBtn.frame:SetWidth(thirdW)
         newFolderBtn.frame:SetHeight(28)
         newFolderBtn.frame:Show()
         table.insert(CS.col1BarWidgets, newFolderBtn)
@@ -1341,11 +1275,22 @@ local function RefreshColumn1(preserveDrag)
         end)
         importBtn.frame:SetParent(CS.col1ButtonBar)
         importBtn.frame:ClearAllPoints()
-        importBtn.frame:SetPoint("BOTTOMLEFT", CS.col1ButtonBar, "BOTTOM", 1.5, 0)
-        importBtn.frame:SetPoint("BOTTOMRIGHT", CS.col1ButtonBar, "BOTTOMRIGHT", 0, 0)
+        importBtn.frame:SetPoint("LEFT", newFolderBtn.frame, "RIGHT", 3, 0)
+        importBtn.frame:SetWidth(thirdW)
         importBtn.frame:SetHeight(28)
         importBtn.frame:Show()
         table.insert(CS.col1BarWidgets, importBtn)
+
+        -- Dynamic equal-width resize
+        CS.col1ButtonBar._topRowBtns = {newGroupBtn.frame, newFolderBtn.frame, importBtn.frame}
+        CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
+            if self._topRowBtns then
+                local tw = (w - 6) / 3
+                for _, f in ipairs(self._topRowBtns) do
+                    f:SetWidth(tw)
+                end
+            end
+        end)
     end
 end
 

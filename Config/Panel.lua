@@ -813,11 +813,11 @@ local function CreateConfigPanel()
         end
     end
 
-    -- Static button bar at bottom of column 1 (New Icon/Bar Group + New Folder)
+    -- Static button bar at bottom of column 1 (New Group + New Folder + Import)
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(60)
+    btnBar:SetHeight(30)
     CS.col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -826,7 +826,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 60)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 
@@ -835,9 +835,17 @@ local function CreateConfigPanel()
     scroll2.frame:SetParent(col2.content)
     scroll2.frame:ClearAllPoints()
     scroll2.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
-    scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+    scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 30)
     scroll2.frame:Show()
     CS.col2Scroll = scroll2
+
+    -- Static button bar at bottom of column 2 (Icon/Bar/Text Panel)
+    local btnBar2 = CreateFrame("Frame", nil, col2.content)
+    btnBar2:SetPoint("BOTTOMLEFT", col2.content, "BOTTOMLEFT", 0, 0)
+    btnBar2:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+    btnBar2:SetHeight(30)
+    btnBar2:Hide()
+    CS.col2ButtonBar = btnBar2
 
     -- Button Settings TabGroup (Settings + Sound Alerts + Overrides tabs)
     local bsTabGroup = AceGUI:Create("TabGroup")

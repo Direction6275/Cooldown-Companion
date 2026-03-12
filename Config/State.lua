@@ -121,11 +121,13 @@ ST._configState = {
     col1Scroll = nil,
     col1ButtonBar = nil,
     col2Scroll = nil,
+    col2ButtonBar = nil,
     col4Container = nil,
     col4Scroll = nil,
 
     -- AceGUI widget tracking for cleanup
     col1BarWidgets = {},
+    col2BarWidgets = {},
     profileBarAceWidgets = {},
     buttonSettingsInfoButtons = {},
 

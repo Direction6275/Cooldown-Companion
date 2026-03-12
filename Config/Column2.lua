@@ -204,11 +204,18 @@ local function RefreshColumn2()
     if not CS.col2Scroll then return end
     local col2 = CS.configFrame and CS.configFrame.col2
 
+    -- Release previous col2 bar widgets
+    for _, widget in ipairs(CS.col2BarWidgets) do
+        widget:Release()
+    end
+    wipe(CS.col2BarWidgets)
+
     -- Bars & Frames panel mode: show Styling in col2
     if CS.resourceBarPanelActive then
         CancelDrag()
         CS.HideAutocomplete()
         CS.col2Scroll.frame:Hide()
+        if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
         if col2 and col2._infoBtn then col2._infoBtn:Hide() end
         if not col2 then return end
 
@@ -325,6 +332,7 @@ local function RefreshColumn2()
         table.insert(multiContainerIds, cid)
     end
     if multiGroupCount >= 2 then
+        if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
         local db = CooldownCompanion.db.profile
         local containers = db.groupContainers or {}
 
@@ -486,11 +494,97 @@ local function RefreshColumn2()
         local profile = CooldownCompanion.db.profile
         local container = profile.groupContainers and profile.groupContainers[CS.selectedContainer]
         if not container then
+            if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
             local label = AceGUI:Create("Label")
             label:SetText("Container not found")
             label:SetFullWidth(true)
             CS.col2Scroll:AddChild(label)
             return
+        end
+
+        -- Show and populate the panel-type button bar
+        if CS.col2ButtonBar then
+            CS.col2ButtonBar:Show()
+            local barW = CS.col2ButtonBar:GetWidth() or 300
+            local thirdW = (barW - 6) / 3
+
+            local iconPanelBtn = AceGUI:Create("Button")
+            iconPanelBtn:SetText("Icon Panel")
+            iconPanelBtn:SetCallback("OnClick", function()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
+                if newPanelId then
+                    CS.selectedGroup = newPanelId
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            iconPanelBtn.frame:SetParent(CS.col2ButtonBar)
+            iconPanelBtn.frame:ClearAllPoints()
+            iconPanelBtn.frame:SetPoint("TOPLEFT", CS.col2ButtonBar, "TOPLEFT", 0, -1)
+            iconPanelBtn.frame:SetWidth(thirdW)
+            iconPanelBtn.frame:SetHeight(28)
+            iconPanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, iconPanelBtn)
+
+            local barPanelBtn = AceGUI:Create("Button")
+            barPanelBtn:SetText("Bar Panel")
+            barPanelBtn:SetCallback("OnClick", function()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "bars")
+                if newPanelId then
+                    local group = CooldownCompanion.db.profile.groups[newPanelId]
+                    if group then
+                        group.style.orientation = "vertical"
+                        if group.masqueEnabled then
+                            CooldownCompanion:ToggleGroupMasque(newPanelId, false)
+                        end
+                        CooldownCompanion:RefreshGroupFrame(newPanelId)
+                    end
+                    CS.selectedGroup = newPanelId
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            barPanelBtn.frame:SetParent(CS.col2ButtonBar)
+            barPanelBtn.frame:ClearAllPoints()
+            barPanelBtn.frame:SetPoint("LEFT", iconPanelBtn.frame, "RIGHT", 3, 0)
+            barPanelBtn.frame:SetWidth(thirdW)
+            barPanelBtn.frame:SetHeight(28)
+            barPanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, barPanelBtn)
+
+            local textPanelBtn = AceGUI:Create("Button")
+            textPanelBtn:SetText("Text Panel")
+            textPanelBtn:SetCallback("OnClick", function()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "text")
+                if newPanelId then
+                    local group = CooldownCompanion.db.profile.groups[newPanelId]
+                    if group then
+                        group.style.orientation = "vertical"
+                        if group.masqueEnabled then
+                            CooldownCompanion:ToggleGroupMasque(newPanelId, false)
+                        end
+                        CooldownCompanion:RefreshGroupFrame(newPanelId)
+                    end
+                    CS.selectedGroup = newPanelId
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            textPanelBtn.frame:SetParent(CS.col2ButtonBar)
+            textPanelBtn.frame:ClearAllPoints()
+            textPanelBtn.frame:SetPoint("LEFT", barPanelBtn.frame, "RIGHT", 3, 0)
+            textPanelBtn.frame:SetWidth(thirdW)
+            textPanelBtn.frame:SetHeight(28)
+            textPanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, textPanelBtn)
+
+            -- Dynamic equal-width resize for panel buttons
+            CS.col2ButtonBar._topRowBtns = {iconPanelBtn.frame, barPanelBtn.frame, textPanelBtn.frame}
+            CS.col2ButtonBar:SetScript("OnSizeChanged", function(self, w)
+                if self._topRowBtns then
+                    local tw = (w - 6) / 3
+                    for _, f in ipairs(self._topRowBtns) do
+                        f:SetWidth(tw)
+                    end
+                end
+            end)
         end
 
         -- Collect sorted panels
@@ -1266,23 +1360,11 @@ local function RefreshColumn2()
             end -- not collapsed
         end -- panel loop
 
-        -- "Add Panel" button
-        local addPanelBtn = AceGUI:Create("Button")
-        addPanelBtn:SetText("Add Panel")
-        addPanelBtn:SetFullWidth(true)
-        addPanelBtn:SetCallback("OnClick", function()
-            local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
-            if newPanelId then
-                CS.selectedGroup = newPanelId
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end)
-        CS.col2Scroll:AddChild(addPanelBtn)
-
         return
     end
 
     -- No container selected
+    if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
     if not CS.selectedContainer then
         local label = AceGUI:Create("Label")
         label:SetText("Select a group first")
