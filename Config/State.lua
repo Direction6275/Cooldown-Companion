@@ -162,6 +162,7 @@ ST._configState = {
     collapsedSections = {},
     collapsedFolders = {},
     collapsedPanels = {},
+    addingToPanelId = nil,
     folderAccentBars = {},
 
     -- Talent picker mode (2-column layout)
@@ -515,6 +516,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
+    if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     entry.image:SetAlpha(1)
     if entry.image and entry.image.SetDesaturated then
@@ -853,6 +855,7 @@ local function ResetConfigSelection(full)
         CS.selectedContainer = nil
         CS.selectedGroup = nil
         wipe(CS.selectedGroups)
+        CS.addingToPanelId = nil
         -- Exit browse mode on full reset
         CS.browseMode = false
         CS.browseCharKey = nil

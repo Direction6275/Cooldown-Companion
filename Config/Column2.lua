@@ -875,6 +875,15 @@ local function RefreshColumn2()
         local panels = CooldownCompanion:GetPanels(CS.selectedContainer)
         local panelCount = #panels
 
+        -- Guard: clear stale addingToPanelId if the target panel no longer exists in this container
+        if CS.addingToPanelId then
+            local found = false
+            for _, p in ipairs(panels) do
+                if p.groupId == CS.addingToPanelId then found = true; break end
+            end
+            if not found then CS.addingToPanelId = nil end
+        end
+
         if panelCount == 0 then
             local spacer = AceGUI:Create("SimpleGroup")
             spacer:SetFullWidth(true)
@@ -892,110 +901,7 @@ local function RefreshColumn2()
             return
         end
 
-        -- Search / add bar (targets CS.selectedGroup)
-        local inputBox = AceGUI:Create("EditBox")
-        if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
-        inputBox:SetLabel("")
-        inputBox:SetText(CS.newInput)
-        inputBox:DisableButton(true)
-        inputBox:SetFullWidth(true)
-        inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
-            if CS.ConsumeAutocompleteEnter() then return end
-            CS.HideAutocomplete()
-            CS.newInput = text
-            if CS.newInput ~= "" and CS.selectedGroup then
-                if TryAdd(CS.newInput) then
-                    CS.newInput = ""
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end
-        end)
-        inputBox:SetCallback("OnTextChanged", function(widget, event, text)
-            CS.newInput = text
-            if text and #text >= 1 then
-                local results = SearchAutocomplete(text)
-                CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
-            else
-                CS.HideAutocomplete()
-            end
-        end)
-        inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
-        local editboxFrame = inputBox.editbox
-        if not editboxFrame._cdcAutocompHooked then
-            editboxFrame._cdcAutocompHooked = true
-            editboxFrame:HookScript("OnKeyDown", function(self, key)
-                CS.HandleAutocompleteKeyDown(key)
-            end)
-        end
-        CS.col2Scroll:AddChild(inputBox)
-
-        if CS.pendingEditBoxFocus then
-            CS.pendingEditBoxFocus = false
-            C_Timer.After(0, function()
-                if inputBox.editbox then
-                    inputBox:SetFocus()
-                end
-            end)
-        end
-
-        local spacer = AceGUI:Create("SimpleGroup")
-        spacer:SetFullWidth(true)
-        spacer:SetHeight(2)
-        spacer.noAutoHeight = true
-        CS.col2Scroll:AddChild(spacer)
-
-        local addRow = AceGUI:Create("SimpleGroup")
-        addRow:SetFullWidth(true)
-        addRow:SetLayout("Flow")
-
-        local manualAddBtn = AceGUI:Create("Button")
-        manualAddBtn:SetText("Manual Add")
-        manualAddBtn:SetRelativeWidth(0.49)
-        manualAddBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        manualAddBtn:SetCallback("OnClick", function(_, _, mouseButton)
-            if mouseButton == "RightButton" then
-                if InCombatLockdown() then
-                    CooldownCompanion:Print("Cannot open spellbook during combat.")
-                    return
-                end
-                PlayerSpellsUtil.ToggleSpellBookFrame()
-                return
-            end
-            if CS.newInput ~= "" and CS.selectedGroup then
-                if TryAdd(CS.newInput) then
-                    CS.newInput = ""
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end
-        end)
-        addRow:AddChild(manualAddBtn)
-
-        local autoAddBtn = AceGUI:Create("Button")
-        autoAddBtn:SetText("Auto Add")
-        autoAddBtn:SetRelativeWidth(0.49)
-        autoAddBtn:SetCallback("OnClick", function()
-            OpenAutoAddFlow()
-        end)
-        autoAddBtn:SetCallback("OnEnter", function(widget)
-            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-            GameTooltip:AddLine("Auto Add")
-            GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        autoAddBtn:SetCallback("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        addRow:AddChild(autoAddBtn)
-
-        CS.col2Scroll:AddChild(addRow)
-
         local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-
-        local sep = AceGUI:Create("Heading")
-        sep:SetText("")
-        if cc then sep.label:SetTextColor(cc.r, cc.g, cc.b) end
-        sep:SetFullWidth(true)
-        CS.col2Scroll:AddChild(sep)
 
         local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
 
@@ -1098,7 +1004,17 @@ local function RefreshColumn2()
 
                 header:SetCallback("OnClick", function(widget, event, mouseButton)
                     if mouseButton == "LeftButton" then
-                        -- Left-click: select or deselect this panel
+                        local now = GetTime()
+                        local lastClick = header.frame._cdcLastClickTime or 0
+                        header.frame._cdcLastClickTime = now
+                        if (now - lastClick) < 0.3 then
+                            -- Double-click: toggle collapse/expand
+                            header.frame._cdcLastClickTime = 0
+                            CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId] or nil
+                            CooldownCompanion:RefreshConfigPanel()
+                            return
+                        end
+                        -- Single-click: select or deselect this panel
                         if CS.selectedGroup == panelId then
                             CS.selectedGroup = nil
                         else
@@ -1304,24 +1220,36 @@ local function RefreshColumn2()
                     end
                 end)
 
-                -- Collapse/expand button overlay (pooled on underlying frame)
-                local collapseBtn = header.frame._cdcCollapseBtn
-                if not collapseBtn then
-                    collapseBtn = CreateFrame("Button", nil, header.frame)
-                    collapseBtn:SetSize(10, 10)
-                    collapseBtn.icon = collapseBtn:CreateTexture(nil, "OVERLAY")
-                    collapseBtn.icon:SetAllPoints()
-                    header.frame._cdcCollapseBtn = collapseBtn
+                -- Add toggle button overlay (pooled on underlying frame)
+                local isAdding = CS.addingToPanelId == panelId
+                local addBtn = header.frame._cdcAddBtn
+                if not addBtn then
+                    addBtn = CreateFrame("Button", nil, header.frame)
+                    addBtn:SetSize(10, 10)
+                    addBtn.icon = addBtn:CreateTexture(nil, "OVERLAY")
+                    addBtn.icon:SetAllPoints()
+                    header.frame._cdcAddBtn = addBtn
                 end
-                collapseBtn:ClearAllPoints()
-                collapseBtn:SetPoint("RIGHT", header.frame, "RIGHT", -4, 0)
-                collapseBtn:SetFrameLevel(header.frame:GetFrameLevel() + 2)
-                collapseBtn.icon:SetAtlas(isCollapsed and "common-icon-plus" or "common-icon-minus", false)
-                collapseBtn:SetScript("OnClick", function()
-                    CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId]
+                addBtn:ClearAllPoints()
+                addBtn:SetPoint("RIGHT", header.frame, "RIGHT", -4, 0)
+                addBtn:SetFrameLevel(header.frame:GetFrameLevel() + 2)
+                addBtn.icon:SetAtlas(isAdding and "common-icon-minus" or "common-icon-plus", false)
+                addBtn.icon:SetVertexColor(0.3, 0.8, 0.3)
+                local addBtnPanelId = panelId
+                addBtn:SetScript("OnClick", function()
+                    if CS.addingToPanelId == addBtnPanelId then
+                        CS.addingToPanelId = nil
+                    else
+                        CS.addingToPanelId = addBtnPanelId
+                        CS.selectedGroup = addBtnPanelId
+                        CS.selectedButton = nil
+                        wipe(CS.selectedButtons)
+                        CS.collapsedPanels[addBtnPanelId] = nil
+                        CS.pendingEditBoxFocus = true
+                    end
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                collapseBtn:Show()
+                addBtn:Show()
 
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
@@ -1750,6 +1678,108 @@ local function RefreshColumn2()
                         end
                     end
                 end -- button loop
+
+                -- Inline add editbox (visible only when this panel is the active add target)
+                if CS.addingToPanelId == panelId then
+                    local inputBox = AceGUI:Create("EditBox")
+                    if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
+                    inputBox:SetLabel("")
+                    inputBox:SetText(CS.newInput)
+                    inputBox:DisableButton(true)
+                    inputBox:SetFullWidth(true)
+                    inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                        if CS.ConsumeAutocompleteEnter() then return end
+                        CS.HideAutocomplete()
+                        CS.newInput = text
+                        if CS.newInput ~= "" and CS.addingToPanelId then
+                            CS.selectedGroup = CS.addingToPanelId
+                            if TryAdd(CS.newInput) then
+                                CS.newInput = ""
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                        end
+                    end)
+                    inputBox:SetCallback("OnTextChanged", function(widget, event, text)
+                        CS.newInput = text
+                        if text and #text >= 1 then
+                            local results = SearchAutocomplete(text)
+                            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
+                        else
+                            CS.HideAutocomplete()
+                        end
+                    end)
+                    inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
+                    local editboxFrame = inputBox.editbox
+                    if not editboxFrame._cdcAutocompHooked then
+                        editboxFrame._cdcAutocompHooked = true
+                        editboxFrame:HookScript("OnKeyDown", function(self, key)
+                            CS.HandleAutocompleteKeyDown(key)
+                        end)
+                    end
+                    panelContainer:AddChild(inputBox)
+
+                    if CS.pendingEditBoxFocus then
+                        CS.pendingEditBoxFocus = false
+                        C_Timer.After(0, function()
+                            if inputBox.editbox then
+                                inputBox:SetFocus()
+                            end
+                        end)
+                    end
+
+                    local addSpacer = AceGUI:Create("SimpleGroup")
+                    addSpacer:SetFullWidth(true)
+                    addSpacer:SetHeight(2)
+                    addSpacer.noAutoHeight = true
+                    panelContainer:AddChild(addSpacer)
+
+                    local addRow = AceGUI:Create("SimpleGroup")
+                    addRow:SetFullWidth(true)
+                    addRow:SetLayout("Flow")
+
+                    local manualAddBtn = AceGUI:Create("Button")
+                    manualAddBtn:SetText("Manual Add")
+                    manualAddBtn:SetRelativeWidth(0.49)
+                    manualAddBtn.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                    manualAddBtn:SetCallback("OnClick", function(_, _, mouseButton)
+                        if mouseButton == "RightButton" then
+                            if InCombatLockdown() then
+                                CooldownCompanion:Print("Cannot open spellbook during combat.")
+                                return
+                            end
+                            PlayerSpellsUtil.ToggleSpellBookFrame()
+                            return
+                        end
+                        if CS.newInput ~= "" and CS.addingToPanelId then
+                            CS.selectedGroup = CS.addingToPanelId
+                            if TryAdd(CS.newInput) then
+                                CS.newInput = ""
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                        end
+                    end)
+                    addRow:AddChild(manualAddBtn)
+
+                    local autoAddBtn = AceGUI:Create("Button")
+                    autoAddBtn:SetText("Auto Add")
+                    autoAddBtn:SetRelativeWidth(0.49)
+                    autoAddBtn:SetCallback("OnClick", function()
+                        CS.selectedGroup = CS.addingToPanelId
+                        OpenAutoAddFlow()
+                    end)
+                    autoAddBtn:SetCallback("OnEnter", function(widget)
+                        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+                        GameTooltip:AddLine("Auto Add")
+                        GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
+                        GameTooltip:Show()
+                    end)
+                    autoAddBtn:SetCallback("OnLeave", function()
+                        GameTooltip:Hide()
+                    end)
+                    addRow:AddChild(autoAddBtn)
+
+                    panelContainer:AddChild(addRow)
+                end
             end -- not collapsed
         end -- panel loop
 
