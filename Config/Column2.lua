@@ -644,17 +644,8 @@ local function RefreshColumn2()
             CS.col2Scroll:AddChild(panelContainer)
 
             -- Panel header
-                local modeLabel
-                if panel.displayMode == "bars" then
-                    modeLabel = "|cff888888[Bars]|r "
-                elseif panel.displayMode == "text" then
-                    modeLabel = "|cff888888[Text]|r "
-                else
-                    modeLabel = "|cff888888[Icons]|r "
-                end
-
                 local btnCount = panel.buttons and #panel.buttons or 0
-                local headerText = (panel.name or ("Panel " .. panelId)) .. "  " .. modeLabel .. "|cff666666(" .. btnCount .. ")|r"
+                local headerText = (panel.name or ("Panel " .. panelId)) .. "  |cff666666(" .. btnCount .. ")|r"
 
                 local header = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(header)
@@ -687,6 +678,22 @@ local function RefreshColumn2()
                 modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
+                -- Anchor unlock badge (shown when panel is individually unlocked)
+                local anchorBadge = header.frame._cdcAnchorBadge
+                if not anchorBadge then
+                    anchorBadge = header.frame:CreateTexture(nil, "OVERLAY")
+                    header.frame._cdcAnchorBadge = anchorBadge
+                end
+                anchorBadge:SetSize(16, 16)
+                anchorBadge:ClearAllPoints()
+                anchorBadge:SetPoint("LEFT", header.label, "CENTER", (textW / 2) + 4, 0)
+                if panel.locked == false then
+                    anchorBadge:SetAtlas("ShipMissionIcon-Training-Map", false)
+                    anchorBadge:Show()
+                else
+                    anchorBadge:Hide()
+                end
+
                 -- Highlight selected panel header green
                 if CS.selectedGroup == panelId then
                     header:SetColor(0.3, 0.8, 0.3)
@@ -705,6 +712,17 @@ local function RefreshColumn2()
                         CS.selectedButton = nil
                         wipe(CS.selectedButtons)
                         CooldownCompanion:RefreshConfigPanel()
+                    elseif mouseButton == "MiddleButton" then
+                        -- Toggle panel anchor lock
+                        if panel.locked == false then
+                            panel.locked = nil
+                            CooldownCompanion:Print(panel.name .. " locked.")
+                        else
+                            panel.locked = false
+                            CooldownCompanion:Print(panel.name .. " unlocked. Drag to reposition.")
+                        end
+                        CooldownCompanion:RefreshGroupFrame(panelId)
+                        CooldownCompanion:RefreshConfigPanel()
                     elseif mouseButton == "RightButton" then
                         -- Panel context menu
                         if not CS.panelContextMenu then
@@ -718,6 +736,24 @@ local function RefreshColumn2()
                             info.func = function()
                                 CloseDropDownMenus()
                                 ShowPopupAboveConfig("CDC_RENAME_GROUP", panel.name or "Panel", { groupId = panelId })
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            -- Lock / Unlock panel anchor
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = panel.locked == false and "Lock Anchor" or "Unlock Anchor"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                if panel.locked == false then
+                                    panel.locked = nil
+                                    CooldownCompanion:Print(panel.name .. " locked.")
+                                else
+                                    panel.locked = false
+                                    CooldownCompanion:Print(panel.name .. " unlocked. Drag to reposition.")
+                                end
+                                CooldownCompanion:RefreshGroupFrame(panelId)
+                                CooldownCompanion:RefreshConfigPanel()
                             end
                             UIDropDownMenu_AddButton(info, level)
 

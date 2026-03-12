@@ -21,18 +21,20 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 
--- Resolve container-level fields for a panel group.
--- Returns locked, baselineAlpha from the parent container (or group itself for legacy).
+-- Resolve lock + alpha for a group frame.
+-- Panels use their OWN group.locked (nil = locked); alpha comes from the parent container.
+-- Legacy groups (no container) use group.locked and group.baselineAlpha directly.
 local function GetContainerState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not profile then return false, 1 end
+    if not profile then return true, 1 end
     local group = profile.groups[groupId]
-    if not group then return false, 1 end
+    if not group then return true, 1 end
 
     if group.parentContainerId then
         local container = profile.groupContainers and profile.groupContainers[group.parentContainerId]
         if container then
-            return container.locked or false, container.baselineAlpha or 1
+            -- Panel: own lock state (nil/true = locked, false = unlocked), container's alpha
+            return group.locked ~= false, container.baselineAlpha or 1
         end
     end
 
@@ -312,7 +314,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame.dragHandle:Hide()
     end
 
-    -- Drag scripts (check container locked state at drag time)
+    -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
         local locked = GetContainerState(self.groupId)
         if not locked then
@@ -1029,17 +1031,11 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
                 if btn == "MiddleButton" then
                     local g = CooldownCompanion.db.profile.groups[groupId]
                     if g then
-                        -- Lock via container if available, otherwise legacy path
-                        local container = CooldownCompanion:GetParentContainer(g)
-                        if container then
-                            container.locked = true
-                        else
-                            g.locked = true
-                        end
+                        -- Lock this specific group/panel
+                        g.locked = true
                         CooldownCompanion:RefreshGroupFrame(groupId)
                         CooldownCompanion:RefreshConfigPanel()
-                        local name = container and container.name or g.name
-                        CooldownCompanion:Print(name .. " locked.")
+                        CooldownCompanion:Print(g.name .. " locked.")
                     end
                 end
             end)

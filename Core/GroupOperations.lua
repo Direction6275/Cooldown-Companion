@@ -813,6 +813,12 @@ function CooldownCompanion:UpdateAllGroupLayouts()
 end
 
 function CooldownCompanion:LockAllFrames()
+    -- Also lock any individually-unlocked panels
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.locked == false then
+            group.locked = nil
+        end
+    end
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
@@ -832,14 +838,20 @@ function CooldownCompanion:LockAllFrames()
 end
 
 function CooldownCompanion:UnlockAllFrames()
+    -- Unlock containers only; individual panels retain their own lock state
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
+            local group = self.db.profile.groups[groupId]
+            local panelUnlocked = group and group.locked == false
             if frame.dragHandle then
-                frame.dragHandle:Show()
+                if panelUnlocked then
+                    frame.dragHandle:Show()
+                end
             end
-            -- Force 100% alpha while unlocked for easier positioning
-            frame:SetAlpha(1)
+            if panelUnlocked then
+                frame:SetAlpha(1)
+            end
         end
     end
     -- Unlock container frames

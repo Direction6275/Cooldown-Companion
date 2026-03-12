@@ -446,6 +446,14 @@ local function RefreshColumn1(preserveDrag)
                         info.func = function()
                             CloseDropDownMenus()
                             container.locked = not container.locked
+                            local cFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+                            if cFrame and cFrame.dragHandle then
+                                if container.locked then
+                                    cFrame.dragHandle:Hide()
+                                else
+                                    cFrame.dragHandle:Show()
+                                end
+                            end
                             RefreshContainerPanels(containerId)
                             CooldownCompanion:RefreshConfigPanel()
                         end
@@ -543,6 +551,15 @@ local function RefreshColumn1(preserveDrag)
                 return
             elseif button == "MiddleButton" then
                 container.locked = not container.locked
+                -- Show/hide the container parent anchor drag handle
+                local cFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+                if cFrame and cFrame.dragHandle then
+                    if container.locked then
+                        cFrame.dragHandle:Hide()
+                    else
+                        cFrame.dragHandle:Show()
+                    end
+                end
                 RefreshContainerPanels(containerId)
                 CooldownCompanion:RefreshConfigPanel()
                 return
@@ -774,6 +791,11 @@ local function RefreshColumn1(preserveDrag)
                 for cid, c in pairs(containers) do
                     if c.folderId == folderId then
                         c.locked = newState
+                        -- Show/hide container drag handle
+                        local cFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[cid]
+                        if cFrame and cFrame.dragHandle then
+                            if newState then cFrame.dragHandle:Hide() else cFrame.dragHandle:Show() end
+                        end
                         for gid, g in pairs(db.groups) do
                             if g.parentContainerId == cid then
                                 CooldownCompanion:RefreshGroupFrame(gid)
@@ -782,6 +804,7 @@ local function RefreshColumn1(preserveDrag)
                     end
                 end
                 CooldownCompanion:RefreshConfigPanel()
+                CooldownCompanion:Print("Folder " .. (folder.name or "Unknown") .. (newState and " locked." or " unlocked."))
                 return
             elseif button == "RightButton" then
                 if not CS.folderContextMenu then
@@ -858,6 +881,10 @@ local function RefreshColumn1(preserveDrag)
                         for cid, c in pairs(containers) do
                             if c.folderId == folderId then
                                 c.locked = newState
+                                local cFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[cid]
+                                if cFrame and cFrame.dragHandle then
+                                    if newState then cFrame.dragHandle:Hide() else cFrame.dragHandle:Show() end
+                                end
                                 for gid, g in pairs(db.groups) do
                                     if g.parentContainerId == cid then
                                         CooldownCompanion:RefreshGroupFrame(gid)
