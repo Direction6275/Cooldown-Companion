@@ -495,13 +495,6 @@ local function RefreshColumn2()
         -- Collect sorted panels
         local panels = CooldownCompanion:GetPanels(CS.selectedContainer)
         local panelCount = #panels
-        local isMultiPanel = panelCount > 1
-
-        -- Safety: auto-select if single panel and not selected
-        if panelCount == 1 and not CS.selectedGroup then
-            CS.selectedGroup = panels[1].groupId
-        end
-
         -- Search / add bar (targets CS.selectedGroup)
         local inputBox = AceGUI:Create("EditBox")
         if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
@@ -619,10 +612,9 @@ local function RefreshColumn2()
         for _, panelInfo in ipairs(panels) do
             local panelId = panelInfo.groupId
             local panel = panelInfo.group
-            local isCollapsed = isMultiPanel and CS.collapsedPanels[panelId]
+            local isCollapsed = CS.collapsedPanels[panelId]
 
-            -- Panel header (only for multi-panel containers)
-            if isMultiPanel then
+            -- Panel header
                 local modeLabel
                 if panel.displayMode == "bars" then
                     modeLabel = "|cff888888[Bars]|r "
@@ -779,9 +771,8 @@ local function RefreshColumn2()
                 CS.col2Scroll:AddChild(header)
                 scrollChildCount = scrollChildCount + 1
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
-            end
 
-            -- Button list for this panel (skip if collapsed in multi-panel mode)
+            -- Button list for this panel (skip if collapsed)
             if not isCollapsed then
                 local panelButtons = panel.buttons or {}
                 local numButtons = #panelButtons
@@ -1170,9 +1161,7 @@ local function RefreshColumn2()
 
                     CS.col2Scroll:AddChild(entry)
                     scrollChildCount = scrollChildCount + 1
-                    if isMultiPanel then
-                        table.insert(col2RenderedRows, { kind = "button", panelId = panelId, buttonIndex = i, widget = entry })
-                    end
+                    table.insert(col2RenderedRows, { kind = "button", panelId = panelId, buttonIndex = i, widget = entry })
 
                     entryFrame:SetScript("OnReceiveDrag", TryReceiveCursorDrop)
 
@@ -1206,10 +1195,7 @@ local function RefreshColumn2()
                                 widget = entry,
                                 startY = cursorY,
                                 -- Multi-panel: use rendered rows for cross-panel awareness
-                                col2RenderedRows = isMultiPanel and col2RenderedRows or nil,
-                                -- Single-panel fallback
-                                childOffset = not isMultiPanel and dragChildOffset or nil,
-                                totalDraggable = not isMultiPanel and dragTotal or nil,
+                                col2RenderedRows = col2RenderedRows,
                             }
                             StartDragTracking()
                         end
@@ -1218,20 +1204,18 @@ local function RefreshColumn2()
             end -- not collapsed
         end -- panel loop
 
-        -- "Add Panel" button (multi-panel only)
-        if isMultiPanel then
-            local addPanelBtn = AceGUI:Create("Button")
-            addPanelBtn:SetText("Add Panel")
-            addPanelBtn:SetFullWidth(true)
-            addPanelBtn:SetCallback("OnClick", function()
-                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
-                if newPanelId then
-                    CS.selectedGroup = newPanelId
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end)
-            CS.col2Scroll:AddChild(addPanelBtn)
-        end
+        -- "Add Panel" button
+        local addPanelBtn = AceGUI:Create("Button")
+        addPanelBtn:SetText("Add Panel")
+        addPanelBtn:SetFullWidth(true)
+        addPanelBtn:SetCallback("OnClick", function()
+            local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
+            if newPanelId then
+                CS.selectedGroup = newPanelId
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
+        CS.col2Scroll:AddChild(addPanelBtn)
 
         return
     end
