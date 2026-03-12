@@ -349,22 +349,82 @@ local function RefreshColumn2()
 
         local panels = CooldownCompanion:GetPanels(CS.browseContainerId)
 
-        for _, panelInfo in ipairs(panels) do
+        -- Class color for accent bars (from browsed character)
+        local browseCharInfo = CooldownCompanion.db.global.characterInfo
+            and CooldownCompanion.db.global.characterInfo[CS.browseCharKey]
+        local browseClassFile = browseCharInfo and browseCharInfo.classFilename
+        local browseCC = browseClassFile and C_ClassColor.GetClassColor(browseClassFile)
+
+        for panelIndex, panelInfo in ipairs(panels) do
             local panel = panelInfo.group
             local panelGroupId = panelInfo.groupId
 
-            -- Panel header
+            -- Class-colored accent separator between panels
+            if panelIndex > 1 then
+                local spacer = AceGUI:Create("Label")
+                spacer:SetText(" ")
+                spacer:SetFullWidth(true)
+                spacer:SetHeight(2)
+                local bar = spacer.frame._cdcAccentBar
+                if not bar then
+                    bar = spacer.frame:CreateTexture(nil, "ARTWORK")
+                    spacer.frame._cdcAccentBar = bar
+                end
+                bar:SetHeight(1.5)
+                bar:ClearAllPoints()
+                local barInset = math.floor(spacer.frame:GetWidth() * 0.10 + 0.5)
+                bar:SetPoint("LEFT", spacer.frame, "LEFT", barInset, 1)
+                bar:SetPoint("RIGHT", spacer.frame, "RIGHT", -barInset, 1)
+                if browseCC then
+                    bar:SetColorTexture(browseCC.r, browseCC.g, browseCC.b, 0.8)
+                else
+                    bar:SetColorTexture(1, 1, 1, 0.3)
+                end
+                bar:Show()
+                spacer:SetCallback("OnRelease", function() bar:Hide() end)
+                CS.col2Scroll:AddChild(spacer)
+            end
+
+            -- Bordered container for this panel (matches normal Column 2)
+            local panelContainer = AceGUI:Create("InlineGroup")
+            panelContainer:SetTitle("")
+            panelContainer:SetLayout("List")
+            panelContainer:SetFullWidth(true)
+            CompactUntitledInlineGroupConfig(panelContainer)
+            CS.col2Scroll:AddChild(panelContainer)
+
+            -- Panel header (same badge pattern as normal Column 2 panel headers)
             local headerText = panel.name or "Panel"
             local buttonCount = panel.buttons and #panel.buttons or 0
-            local modeTag = panel.displayMode == "bars" and " [Bars]"
-                         or panel.displayMode == "text" and " [Text]"
-                         or " [Icons]"
-            headerText = headerText .. "  |cff888888(" .. buttonCount .. " buttons)" .. modeTag .. "|r"
+            headerText = headerText .. "  |cff888888(" .. buttonCount .. " buttons)|r"
 
-            local heading = AceGUI:Create("Heading")
-            heading:SetText(headerText)
-            heading:SetFullWidth(true)
-            CS.col2Scroll:AddChild(heading)
+            local header = AceGUI:Create("InteractiveLabel")
+            CleanRecycledEntry(header)
+            header:SetText(headerText)
+            header:SetImage("Interface\\BUTTONS\\WHITE8X8")
+            header.image:SetAlpha(0)
+
+            local modeBadge = header._cdcModeBadge
+            if not modeBadge then
+                modeBadge = header.frame:CreateTexture(nil, "ARTWORK")
+                header._cdcModeBadge = modeBadge
+            end
+            modeBadge:ClearAllPoints()
+            modeBadge:SetSize(16, 16)
+            if panel.displayMode == "bars" then
+                modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
+            elseif panel.displayMode == "text" then
+                modeBadge:SetAtlas("poi-workorders", false)
+            else
+                modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
+            end
+            modeBadge:Show()
+            header:SetFullWidth(true)
+            header:SetFontObject(GameFontHighlight)
+            header:SetJustifyH("CENTER")
+            local textW = header.label:GetStringWidth()
+            modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
+            panelContainer:AddChild(header)
 
             -- Button list (read-only)
             if panel.buttons then
@@ -377,7 +437,7 @@ local function RefreshColumn2()
                     entry:SetText(buttonData.name or ("ID: " .. (buttonData.id or "?")))
                     entry:SetFullWidth(true)
                     entry:SetFontObject(GameFontHighlightSmall)
-                    CS.col2Scroll:AddChild(entry)
+                    panelContainer:AddChild(entry)
                 end
             end
 
@@ -459,7 +519,7 @@ local function RefreshColumn2()
                 CS.browseContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
                 ToggleDropDownMenu(1, nil, CS.browseContextMenu, "cursor", 0, 0)
             end)
-            CS.col2Scroll:AddChild(copyPanelBtn)
+            panelContainer:AddChild(copyPanelBtn)
         end
 
         -- "Copy Entire Group" button at the bottom
