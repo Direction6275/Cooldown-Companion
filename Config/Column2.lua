@@ -883,10 +883,10 @@ local function RefreshColumn2()
             CS.col2Scroll:AddChild(spacer)
 
             local msg = AceGUI:Create("Label")
-            msg:SetText("Click one of the buttons above to add your first panel.")
+            msg:SetText("Click one of the buttons below to add your first panel.")
             msg:SetFullWidth(true)
             msg:SetJustifyH("CENTER")
-            msg:SetFont(GameFontNormal:GetFont(), 13)
+            msg:SetFont((GameFontNormal:GetFont()), 15, "")
             CS.col2Scroll:AddChild(msg)
             CS.col2Scroll:DoLayout()
             return
@@ -1214,20 +1214,18 @@ local function RefreshColumn2()
                                     UIDropDownMenu_AddButton(info, level)
                                 end
 
-                                if panelCount > 1 then
-                                    info = UIDropDownMenu_CreateInfo()
-                                    info.text = "|cffff4444Delete|r"
-                                    info.notCheckable = true
-                                    info.func = function()
-                                        CloseDropDownMenus()
-                                        CooldownCompanion:DeletePanel(ctxContainerId, panelId)
-                                        if CS.selectedGroup == panelId then
-                                            CS.selectedGroup = nil
-                                        end
-                                        CooldownCompanion:RefreshConfigPanel()
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = "|cffff4444Delete|r"
+                                info.notCheckable = true
+                                info.func = function()
+                                    CloseDropDownMenus()
+                                    CooldownCompanion:DeletePanel(ctxContainerId, panelId)
+                                    if CS.selectedGroup == panelId then
+                                        CS.selectedGroup = nil
                                     end
-                                    UIDropDownMenu_AddButton(info, level)
+                                    CooldownCompanion:RefreshConfigPanel()
                                 end
+                                UIDropDownMenu_AddButton(info, level)
 
                             elseif menuList == "MOVE_TO_GROUP" then
                                 local db = CooldownCompanion.db.profile

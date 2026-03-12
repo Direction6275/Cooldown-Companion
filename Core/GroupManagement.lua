@@ -291,7 +291,7 @@ function CooldownCompanion:CreateContainer(name)
         createdBy = self.db.keys.char,
         isGlobal = false,
         enabled = true,
-        locked = false,
+        locked = true,
         -- Alpha fade defaults
         baselineAlpha = 1,
         forceAlphaRegularMounted = false,
@@ -468,11 +468,6 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     local db = self.db.profile
     local group = db.groups[groupId]
     if not group or group.parentContainerId ~= containerId then return false end
-
-    -- Guard: don't delete last panel — delete the container instead
-    if self:GetPanelCount(containerId) <= 1 then
-        return false
-    end
 
     self:DeleteMasqueGroup(groupId)
     if self.groupFrames[groupId] then
