@@ -1096,9 +1096,7 @@ local function RefreshColumn2()
                     header:SetColor(0.3, 0.8, 0.3)
                 end
 
-                header:SetCallback("OnClick", function() end)
-
-                header.frame:SetScript("OnMouseUp", function(self, mouseButton)
+                header:SetCallback("OnClick", function(widget, event, mouseButton)
                     if mouseButton == "LeftButton" then
                         -- Left-click: select or deselect this panel
                         if CS.selectedGroup == panelId then
