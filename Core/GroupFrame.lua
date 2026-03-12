@@ -421,16 +421,8 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
                     frame:SetPoint("TOPLEFT", containerFrame, "TOPLEFT", 0, 0)
                     frame.anchoredToParent = containerFrame
                     self:SetupAlphaSync(frame, containerFrame)
-                    local group = self.db.profile.groups[frame.groupId]
-                    if group then
-                        group.anchor = {
-                            point = "TOPLEFT",
-                            relativeTo = containerName,
-                            relativePoint = "TOPLEFT",
-                            x = 0,
-                            y = 0,
-                        }
-                    end
+                    -- Don't overwrite group.anchor — preserve custom anchor
+                    -- for re-anchor pass after all frames are created
                     UpdateCoordLabel(frame, 0, 0)
                     return
                 end

@@ -708,6 +708,22 @@ function CooldownCompanion:CreateAllGroupFrames()
             self:CreateGroupFrame(groupId)
         end
     end
+    -- Re-anchor pass: custom anchors to other group frames may have fallen
+    -- back to the container because the target wasn't created yet.
+    -- All frames now exist, so re-apply to resolve cross-group anchors.
+    for groupId, frame in pairs(self.groupFrames) do
+        local group = self.db.profile.groups[groupId]
+        if group and group.anchor then
+            local relativeTo = group.anchor.relativeTo
+            if relativeTo and relativeTo ~= "UIParent" then
+                local containerName = group.parentContainerId
+                    and ("CooldownCompanionContainer" .. group.parentContainerId)
+                if not containerName or relativeTo ~= containerName then
+                    self:AnchorGroupFrame(frame, group.anchor)
+                end
+            end
+        end
+    end
 end
 
 function CooldownCompanion:RefreshAllGroups()
