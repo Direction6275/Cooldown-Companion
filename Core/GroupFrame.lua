@@ -21,6 +21,17 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 
+-- Return the container frame name for a panel, or nil if not a panel.
+local function GetPanelContainerFrameName(groupId)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not profile then return nil end
+    local group = profile.groups[groupId]
+    if group and group.parentContainerId then
+        return "CooldownCompanionContainer" .. group.parentContainerId
+    end
+    return nil
+end
+
 -- Resolve lock + alpha for a group frame.
 -- Panels use their OWN group.locked (nil = locked); alpha comes from the panel itself.
 -- Legacy groups (no container) use group.locked and group.baselineAlpha directly.
@@ -402,7 +413,29 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             self:SetupAlphaSync(frame, relativeFrame)
             return
         else
-            -- Target frame doesn't exist - if forceCenter, reset to center
+            -- Target frame doesn't exist — panels fall back to container before UIParent
+            local containerName = GetPanelContainerFrameName(frame.groupId)
+            if containerName then
+                local containerFrame = _G[containerName]
+                if containerFrame then
+                    frame:SetPoint("TOPLEFT", containerFrame, "TOPLEFT", 0, 0)
+                    frame.anchoredToParent = containerFrame
+                    self:SetupAlphaSync(frame, containerFrame)
+                    local group = self.db.profile.groups[frame.groupId]
+                    if group then
+                        group.anchor = {
+                            point = "TOPLEFT",
+                            relativeTo = containerName,
+                            relativePoint = "TOPLEFT",
+                            x = 0,
+                            y = 0,
+                        }
+                    end
+                    UpdateCoordLabel(frame, 0, 0)
+                    return
+                end
+            end
+            -- If forceCenter, reset to center
             -- Otherwise use saved position relative to UIParent
             if forceCenter then
                 frame:SetAlpha(1)
@@ -484,8 +517,18 @@ function CooldownCompanion:SaveGroupPosition(groupId)
         relFrame = _G[relativeTo]
     end
     if not relFrame then
-        relFrame = UIParent
-        relativeTo = "UIParent"
+        -- Panels: try container frame before UIParent
+        local containerName = GetPanelContainerFrameName(groupId)
+        if containerName then
+            relFrame = _G[containerName]
+            if relFrame then
+                relativeTo = containerName
+            end
+        end
+        if not relFrame then
+            relFrame = UIParent
+            relativeTo = "UIParent"
+        end
     end
 
     local rw, rh = relFrame:GetSize()
@@ -942,6 +985,13 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         end
     end
 
+    -- Panels: redirect UIParent to their container frame
+    local containerFrameName = GetPanelContainerFrameName(groupId)
+    if containerFrameName and targetFrameName == "UIParent" then
+        targetFrameName = containerFrameName
+        forceCenter = true
+    end
+
     -- Handle UIParent (free positioning)
     if targetFrameName == "UIParent" then
         if forceCenter then
@@ -964,6 +1014,19 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     if not targetFrame then
         self:Print("Frame '" .. targetFrameName .. "' not found.")
         return false
+    end
+
+    -- Panel anchored to its own container: reset to default position
+    if containerFrameName and targetFrameName == containerFrameName then
+        group.anchor = {
+            point = "TOPLEFT",
+            relativeTo = containerFrameName,
+            relativePoint = "TOPLEFT",
+            x = 0,
+            y = 0,
+        }
+        self:AnchorGroupFrame(frame, group.anchor)
+        return true
     end
 
     group.anchor = {
