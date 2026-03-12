@@ -93,8 +93,6 @@ local function RefreshColumn4(container)
 
                 if tab == "general" then
                     ST._BuildContainerGeneralTab(scroll, CS.selectedContainer)
-                elseif tab == "layout" then
-                    ST._BuildContainerLayoutTab(scroll, CS.selectedContainer)
                 elseif tab == "loadconditions" then
                     ST._BuildContainerLoadConditionsTab(scroll, CS.selectedContainer)
                 end
@@ -108,11 +106,14 @@ local function RefreshColumn4(container)
 
         container.containerTabGroup:SetTabs({
             { value = "general",         text = "General" },
-            { value = "layout",          text = "Layout" },
             { value = "loadconditions",  text = "Load Conditions" },
         })
         container.containerTabGroup.frame:Show()
-        container.containerTabGroup:SelectTab(CS.selectedContainerTab or "general")
+        local containerTab = CS.selectedContainerTab
+        if containerTab ~= "general" and containerTab ~= "loadconditions" then
+            containerTab = "general"
+        end
+        container.containerTabGroup:SelectTab(containerTab or "general")
         return
     end
 

@@ -1841,24 +1841,35 @@ local function BuildContainerGeneralTab(scroll, containerId)
     lockedCb:SetValue(container.locked == true)
     lockedCb:SetCallback("OnValueChanged", function(widget, event, value)
         container.locked = value
+        local cFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if cFrame and cFrame.dragHandle then
+            if value then
+                cFrame.dragHandle:Hide()
+            else
+                cFrame.dragHandle:Show()
+            end
+        end
         RefreshPanels()
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(lockedCb)
-end
 
-local function BuildContainerLayoutTab(scroll, containerId)
-    local db = CooldownCompanion.db.profile
-    local container = db.groupContainers and db.groupContainers[containerId]
-    if not container then return end
+    -- ================================================================
+    -- Layout
+    -- ================================================================
+    local layoutHeading = AceGUI:Create("Heading")
+    layoutHeading:SetText("Layout")
+    ColorHeading(layoutHeading)
+    layoutHeading:SetFullWidth(true)
+    scroll:AddChild(layoutHeading)
 
-    local function RefreshPanels()
-        for gid, g in pairs(db.groups) do
-            if g.parentContainerId == containerId then
-                CooldownCompanion:RefreshGroupFrame(gid)
-            end
-        end
-    end
+    local layoutCollapsed = CS.collapsedSections["container_layout"]
+    AttachCollapseButton(layoutHeading, layoutCollapsed, function()
+        CS.collapsedSections["container_layout"] = not CS.collapsedSections["container_layout"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not layoutCollapsed then
 
     -- ================================================================
     -- Anchor to Frame (editbox + pick button row)
@@ -2025,6 +2036,8 @@ local function BuildContainerLayoutTab(scroll, containerId)
     HookSliderEditBox(ySlider)
     scroll:AddChild(ySlider)
 
+    end -- if not layoutCollapsed
+
     -- ================================================================
     -- Frame Strata
     -- ================================================================
@@ -2033,6 +2046,13 @@ local function BuildContainerLayoutTab(scroll, containerId)
     strataHeading:SetFullWidth(true)
     scroll:AddChild(strataHeading)
 
+    local strataCollapsed = CS.collapsedSections["container_strata"]
+    AttachCollapseButton(strataHeading, strataCollapsed, function()
+        CS.collapsedSections["container_strata"] = not CS.collapsedSections["container_strata"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not strataCollapsed then
     local strataOptions = {
         ["BACKGROUND"] = "Background",
         ["LOW"] = "Low",
@@ -2053,6 +2073,7 @@ local function BuildContainerLayoutTab(scroll, containerId)
         RefreshPanels()
     end)
     scroll:AddChild(strataDrop)
+    end -- if not strataCollapsed
 end
 
 local function BuildContainerLoadConditionsTab(scroll, containerId)
@@ -2211,5 +2232,4 @@ ST._BuildLayoutTab = BuildLayoutTab
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildEffectsTab = BuildEffectsTab
 ST._BuildContainerGeneralTab = BuildContainerGeneralTab
-ST._BuildContainerLayoutTab = BuildContainerLayoutTab
 ST._BuildContainerLoadConditionsTab = BuildContainerLoadConditionsTab
