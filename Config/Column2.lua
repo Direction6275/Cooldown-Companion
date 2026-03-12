@@ -660,7 +660,7 @@ local function RefreshColumn2()
                 CleanRecycledEntry(header)
                 header:SetText(headerText)
                 header:SetImage(134400) -- invisible dummy for 32px row height
-                header:SetImageSize(32, 32)
+                header:SetImageSize(1, 32)
                 header.image:SetAlpha(0)
 
                 -- Mode badge overlay (pooled on widget, same pattern as old Column 1)
@@ -671,7 +671,6 @@ local function RefreshColumn2()
                 end
                 modeBadge:ClearAllPoints()
                 modeBadge:SetSize(16, 16)
-                modeBadge:SetPoint("CENTER", header.image, "CENTER", 0, 0)
                 if panel.displayMode == "bars" then
                     modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
                 elseif panel.displayMode == "text" then
@@ -682,6 +681,10 @@ local function RefreshColumn2()
                 modeBadge:Show()
                 header:SetFullWidth(true)
                 header:SetFontObject(GameFontHighlight)
+                header:SetJustifyH("CENTER")
+                -- Position badge to the left of centered text
+                local textW = header.label:GetStringWidth()
+                modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
                 -- Highlight selected panel header green
