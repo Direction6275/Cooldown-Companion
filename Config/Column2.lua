@@ -798,6 +798,8 @@ local function RefreshColumn2()
                 local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
                 if newPanelId then
                     CS.selectedGroup = newPanelId
+                    CS.addingToPanelId = newPanelId
+                    CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
             end)
@@ -823,6 +825,8 @@ local function RefreshColumn2()
                         CooldownCompanion:RefreshGroupFrame(newPanelId)
                     end
                     CS.selectedGroup = newPanelId
+                    CS.addingToPanelId = newPanelId
+                    CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
             end)
@@ -848,6 +852,8 @@ local function RefreshColumn2()
                         CooldownCompanion:RefreshGroupFrame(newPanelId)
                     end
                     CS.selectedGroup = newPanelId
+                    CS.addingToPanelId = newPanelId
+                    CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
             end)
@@ -1034,190 +1040,196 @@ local function RefreshColumn2()
                         end
                         CooldownCompanion:RefreshGroupFrame(panelId)
                         CooldownCompanion:RefreshConfigPanel()
-                    elseif mouseButton == "RightButton" then
-                        -- Panel context menu
-                        if not CS.panelContextMenu then
-                            CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
-                        end
-                        local ctxContainerId = CS.selectedContainer
-                        UIDropDownMenu_Initialize(CS.panelContextMenu, function(self, level, menuList)
-                            level = level or 1
-                            if level == 1 then
-                                local info = UIDropDownMenu_CreateInfo()
-                                info.text = "Rename"
-                                info.notCheckable = true
-                                info.func = function()
-                                    CloseDropDownMenus()
-                                    ShowPopupAboveConfig("CDC_RENAME_GROUP", panel.name or "Panel", { groupId = panelId })
-                                end
-                                UIDropDownMenu_AddButton(info, level)
+                    end
+                end)
 
-                                -- Lock / Unlock panel anchor
-                                info = UIDropDownMenu_CreateInfo()
-                                info.text = panel.locked == false and "Lock Anchor" or "Unlock Anchor"
-                                info.notCheckable = true
-                                info.func = function()
-                                    CloseDropDownMenus()
-                                    if panel.locked == false then
-                                        panel.locked = nil
-                                        CooldownCompanion:Print(panel.name .. " locked.")
-                                    else
-                                        panel.locked = false
-                                        CooldownCompanion:Print(panel.name .. " unlocked. Drag to reposition.")
-                                    end
-                                    CooldownCompanion:RefreshGroupFrame(panelId)
-                                    CooldownCompanion:RefreshConfigPanel()
-                                end
-                                UIDropDownMenu_AddButton(info, level)
+                -- Right-click context menu on mouseup (InteractiveLabel fires OnClick
+                -- on mousedown which conflicts with UIDropDownMenu's mouseup behavior)
+                local ctxPanelId = panelId
+                local ctxPanel = panel
+                header.frame:SetScript("OnMouseUp", function(self, mouseButton)
+                    if mouseButton ~= "RightButton" then return end
+                    if not CS.panelContextMenu then
+                        CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
+                    end
+                    local ctxContainerId = CS.selectedContainer
+                    UIDropDownMenu_Initialize(CS.panelContextMenu, function(self, level, menuList)
+                        level = level or 1
+                        if level == 1 then
+                            local info = UIDropDownMenu_CreateInfo()
+                            info.text = "Rename"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                ShowPopupAboveConfig("CDC_RENAME_GROUP", ctxPanel.name or "Panel", { groupId = ctxPanelId })
+                            end
+                            UIDropDownMenu_AddButton(info, level)
 
-                                local switchModes = {
-                                    { mode = "icons", label = "Icons" },
-                                    { mode = "bars", label = "Bars" },
-                                    { mode = "text", label = "Text" },
-                                }
-                                for _, m in ipairs(switchModes) do
-                                    if panel.displayMode ~= m.mode then
-                                        info = UIDropDownMenu_CreateInfo()
-                                        info.text = "Switch to " .. m.label
-                                        info.notCheckable = true
-                                        local targetMode = m.mode
-                                        info.func = function()
-                                            CloseDropDownMenus()
-                                            panel.displayMode = targetMode
-                                            if targetMode == "bars" or targetMode == "text" then
-                                                panel.style.orientation = "vertical"
-                                            end
-                                            if targetMode ~= "icons" and panel.masqueEnabled then
-                                                CooldownCompanion:ToggleGroupMasque(panelId, false)
-                                            end
-                                            CooldownCompanion:RefreshGroupFrame(panelId)
-                                            CooldownCompanion:RefreshConfigPanel()
+                            -- Lock / Unlock panel anchor
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = ctxPanel.locked == false and "Lock Anchor" or "Unlock Anchor"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                if ctxPanel.locked == false then
+                                    ctxPanel.locked = nil
+                                    CooldownCompanion:Print(ctxPanel.name .. " locked.")
+                                else
+                                    ctxPanel.locked = false
+                                    CooldownCompanion:Print(ctxPanel.name .. " unlocked. Drag to reposition.")
+                                end
+                                CooldownCompanion:RefreshGroupFrame(ctxPanelId)
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            local switchModes = {
+                                { mode = "icons", label = "Icons" },
+                                { mode = "bars", label = "Bars" },
+                                { mode = "text", label = "Text" },
+                            }
+                            for _, m in ipairs(switchModes) do
+                                if ctxPanel.displayMode ~= m.mode then
+                                    info = UIDropDownMenu_CreateInfo()
+                                    info.text = "Switch to " .. m.label
+                                    info.notCheckable = true
+                                    local targetMode = m.mode
+                                    info.func = function()
+                                        CloseDropDownMenus()
+                                        ctxPanel.displayMode = targetMode
+                                        if targetMode == "bars" or targetMode == "text" then
+                                            ctxPanel.style.orientation = "vertical"
                                         end
-                                        UIDropDownMenu_AddButton(info, level)
-                                    end
-                                end
-
-                                info = UIDropDownMenu_CreateInfo()
-                                info.text = "Duplicate"
-                                info.notCheckable = true
-                                info.func = function()
-                                    CloseDropDownMenus()
-                                    local newPanelId = CooldownCompanion:DuplicatePanel(ctxContainerId, panelId)
-                                    if newPanelId then
-                                        CS.selectedGroup = newPanelId
+                                        if targetMode ~= "icons" and ctxPanel.masqueEnabled then
+                                            CooldownCompanion:ToggleGroupMasque(ctxPanelId, false)
+                                        end
+                                        CooldownCompanion:RefreshGroupFrame(ctxPanelId)
                                         CooldownCompanion:RefreshConfigPanel()
                                     end
-                                end
-                                UIDropDownMenu_AddButton(info, level)
-
-                                -- "Move to Group" submenu (only when other visible containers exist)
-                                local db = CooldownCompanion.db.profile
-                                local hasOtherContainer = false
-                                for cid, _ in pairs(db.groupContainers) do
-                                    if cid ~= ctxContainerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
-                                        hasOtherContainer = true
-                                        break
-                                    end
-                                end
-                                if hasOtherContainer then
-                                    info = UIDropDownMenu_CreateInfo()
-                                    info.text = "Move to Group"
-                                    info.notCheckable = true
-                                    info.hasArrow = true
-                                    info.menuList = "MOVE_TO_GROUP"
                                     UIDropDownMenu_AddButton(info, level)
                                 end
+                            end
 
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "Duplicate"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                local newPanelId = CooldownCompanion:DuplicatePanel(ctxContainerId, ctxPanelId)
+                                if newPanelId then
+                                    CS.selectedGroup = newPanelId
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            -- "Move to Group" submenu (only when other visible containers exist)
+                            local db = CooldownCompanion.db.profile
+                            local hasOtherContainer = false
+                            for cid, _ in pairs(db.groupContainers) do
+                                if cid ~= ctxContainerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                                    hasOtherContainer = true
+                                    break
+                                end
+                            end
+                            if hasOtherContainer then
                                 info = UIDropDownMenu_CreateInfo()
-                                info.text = "|cffff4444Delete|r"
+                                info.text = "Move to Group"
                                 info.notCheckable = true
-                                info.func = function()
-                                    CloseDropDownMenus()
-                                    ShowPopupAboveConfig("CDC_DELETE_PANEL", panel.name or "Panel", { containerId = ctxContainerId, panelId = panelId })
-                                end
+                                info.hasArrow = true
+                                info.menuList = "MOVE_TO_GROUP"
                                 UIDropDownMenu_AddButton(info, level)
+                            end
 
-                            elseif menuList == "MOVE_TO_GROUP" then
-                                local db = CooldownCompanion.db.profile
-                                local containers = db.groupContainers or {}
-                                local folderContainers, looseContainers = {}, {}
-                                for cid, ctr in pairs(containers) do
-                                    if cid ~= ctxContainerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
-                                        local cName = ctr.name or ("Group " .. cid)
-                                        local fid = ctr.folderId
-                                        if fid and db.folders[fid] then
-                                            folderContainers[fid] = folderContainers[fid] or {}
-                                            table.insert(folderContainers[fid], { id = cid, name = cName, order = ctr.order or cid })
-                                        else
-                                            table.insert(looseContainers, { id = cid, name = cName, order = ctr.order or cid })
-                                        end
-                                    end
-                                end
-                                local sortedFolders = {}
-                                for fid, folder in pairs(db.folders) do
-                                    if folderContainers[fid] then
-                                        table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
-                                    end
-                                end
-                                table.sort(sortedFolders, function(a, b) return a.order < b.order end)
-                                local hasFolders = #sortedFolders > 0
-                                for _, folder in ipairs(sortedFolders) do
-                                    local hdr = UIDropDownMenu_CreateInfo()
-                                    hdr.text = folder.name
-                                    hdr.isTitle = true
-                                    hdr.notCheckable = true
-                                    UIDropDownMenu_AddButton(hdr, level)
-                                    table.sort(folderContainers[folder.id], function(a, b) return a.order < b.order end)
-                                    for _, c in ipairs(folderContainers[folder.id]) do
-                                        local info = UIDropDownMenu_CreateInfo()
-                                        info.text = c.name
-                                        info.notCheckable = true
-                                        info.func = function()
-                                            CloseDropDownMenus()
-                                            local _, sourceDeleted = CooldownCompanion:MovePanel(panelId, c.id)
-                                            if sourceDeleted then
-                                                CS.selectedContainer = c.id
-                                            end
-                                            CS.selectedGroup = panelId
-                                            CS.selectedButton = nil
-                                            wipe(CS.selectedButtons)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                        end
-                                        UIDropDownMenu_AddButton(info, level)
-                                    end
-                                end
-                                if #looseContainers > 0 then
-                                    if hasFolders then
-                                        local hdr = UIDropDownMenu_CreateInfo()
-                                        hdr.text = "No Folder"
-                                        hdr.isTitle = true
-                                        hdr.notCheckable = true
-                                        UIDropDownMenu_AddButton(hdr, level)
-                                    end
-                                    table.sort(looseContainers, function(a, b) return a.order < b.order end)
-                                    for _, c in ipairs(looseContainers) do
-                                        local info = UIDropDownMenu_CreateInfo()
-                                        info.text = c.name
-                                        info.notCheckable = true
-                                        info.func = function()
-                                            CloseDropDownMenus()
-                                            local _, sourceDeleted = CooldownCompanion:MovePanel(panelId, c.id)
-                                            if sourceDeleted then
-                                                CS.selectedContainer = c.id
-                                            end
-                                            CS.selectedGroup = panelId
-                                            CS.selectedButton = nil
-                                            wipe(CS.selectedButtons)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                        end
-                                        UIDropDownMenu_AddButton(info, level)
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "|cffff4444Delete|r"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                ShowPopupAboveConfig("CDC_DELETE_PANEL", ctxPanel.name or "Panel", { containerId = ctxContainerId, panelId = ctxPanelId })
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                        elseif menuList == "MOVE_TO_GROUP" then
+                            local db = CooldownCompanion.db.profile
+                            local containers = db.groupContainers or {}
+                            local folderContainers, looseContainers = {}, {}
+                            for cid, ctr in pairs(containers) do
+                                if cid ~= ctxContainerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                                    local cName = ctr.name or ("Group " .. cid)
+                                    local fid = ctr.folderId
+                                    if fid and db.folders[fid] then
+                                        folderContainers[fid] = folderContainers[fid] or {}
+                                        table.insert(folderContainers[fid], { id = cid, name = cName, order = ctr.order or cid })
+                                    else
+                                        table.insert(looseContainers, { id = cid, name = cName, order = ctr.order or cid })
                                     end
                                 end
                             end
-                        end, "MENU")
-                        CS.panelContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-                        ToggleDropDownMenu(1, nil, CS.panelContextMenu, "cursor", 0, 0)
-                    end
+                            local sortedFolders = {}
+                            for fid, folder in pairs(db.folders) do
+                                if folderContainers[fid] then
+                                    table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                                end
+                            end
+                            table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+                            local hasFolders = #sortedFolders > 0
+                            for _, folder in ipairs(sortedFolders) do
+                                local hdr = UIDropDownMenu_CreateInfo()
+                                hdr.text = folder.name
+                                hdr.isTitle = true
+                                hdr.notCheckable = true
+                                UIDropDownMenu_AddButton(hdr, level)
+                                table.sort(folderContainers[folder.id], function(a, b) return a.order < b.order end)
+                                for _, c in ipairs(folderContainers[folder.id]) do
+                                    local info = UIDropDownMenu_CreateInfo()
+                                    info.text = c.name
+                                    info.notCheckable = true
+                                    info.func = function()
+                                        CloseDropDownMenus()
+                                        local _, sourceDeleted = CooldownCompanion:MovePanel(ctxPanelId, c.id)
+                                        if sourceDeleted then
+                                            CS.selectedContainer = c.id
+                                        end
+                                        CS.selectedGroup = ctxPanelId
+                                        CS.selectedButton = nil
+                                        wipe(CS.selectedButtons)
+                                        CooldownCompanion:RefreshConfigPanel()
+                                    end
+                                    UIDropDownMenu_AddButton(info, level)
+                                end
+                            end
+                            if #looseContainers > 0 then
+                                if hasFolders then
+                                    local hdr = UIDropDownMenu_CreateInfo()
+                                    hdr.text = "No Folder"
+                                    hdr.isTitle = true
+                                    hdr.notCheckable = true
+                                    UIDropDownMenu_AddButton(hdr, level)
+                                end
+                                table.sort(looseContainers, function(a, b) return a.order < b.order end)
+                                for _, c in ipairs(looseContainers) do
+                                    local info = UIDropDownMenu_CreateInfo()
+                                    info.text = c.name
+                                    info.notCheckable = true
+                                    info.func = function()
+                                        CloseDropDownMenus()
+                                        local _, sourceDeleted = CooldownCompanion:MovePanel(ctxPanelId, c.id)
+                                        if sourceDeleted then
+                                            CS.selectedContainer = c.id
+                                        end
+                                        CS.selectedGroup = ctxPanelId
+                                        CS.selectedButton = nil
+                                        wipe(CS.selectedButtons)
+                                        CooldownCompanion:RefreshConfigPanel()
+                                    end
+                                    UIDropDownMenu_AddButton(info, level)
+                                end
+                            end
+                        end
+                    end, "MENU")
+                    CS.panelContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                    ToggleDropDownMenu(1, nil, CS.panelContextMenu, "cursor", 0, 0)
                 end)
 
                 -- Add toggle button overlay (pooled on underlying frame)

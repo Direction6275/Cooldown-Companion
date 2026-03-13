@@ -766,6 +766,8 @@ local function RefreshColumn1(preserveDrag)
                                 if newPanelId then
                                     CS.selectedContainer = containerId
                                     CS.selectedGroup = newPanelId
+                                    CS.addingToPanelId = newPanelId
+                                    CS.pendingEditBoxFocus = true
                                     CooldownCompanion:RefreshConfigPanel()
                                 end
                             end
