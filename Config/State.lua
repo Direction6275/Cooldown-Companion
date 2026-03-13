@@ -512,6 +512,9 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcBadges then
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
     end
+    if entry.frame._cdcSpecBadges then
+        for _, sb in ipairs(entry.frame._cdcSpecBadges) do sb:Hide() end
+    end
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
     if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
@@ -852,8 +855,12 @@ local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, spec
                             end
                         end
                     end
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
+                    if opts.onChanged then
+                        opts.onChanged()
+                    else
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
                 end)
             end
             container:AddChild(htCb)

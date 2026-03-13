@@ -843,7 +843,7 @@ local function RefreshColumn1(preserveDrag)
                 cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
                 cb:SetFullWidth(true)
                 cb:SetValue(lockedByFolder or (container.specs and container.specs[specId]) or false)
-                if lockedByFolder then
+                if folderSpecs then
                     cb:SetDisabled(true)
                 else
                     cb:SetCallback("OnValueChanged", function(widget, event, value)
@@ -874,9 +874,13 @@ local function RefreshColumn1(preserveDrag)
                         disableToggles = true,
                     }
                 end
+                htOpts = htOpts or {}
                 if effectiveSpecs then
-                    htOpts = htOpts or {}
                     htOpts.specsSource = effectiveSpecs
+                end
+                htOpts.onChanged = function()
+                    RefreshContainerPanels(containerId)
+                    CooldownCompanion:RefreshConfigPanel()
                 end
                 BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId, htOpts)
             end

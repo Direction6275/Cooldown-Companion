@@ -2188,7 +2188,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
             if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
             cb:SetFullWidth(true)
             cb:SetValue(lockedByFolder or (container.specs and container.specs[specId]) or false)
-            if lockedByFolder then
+            if hasFolderSpecs then
                 cb:SetDisabled(true)
             else
                 cb:SetCallback("OnValueChanged", function(widget, event, value)
@@ -2225,6 +2225,10 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
                     htOpts = {
                         heroTalentsSource = container.heroTalents,
                         specsSource = effectiveSpecs,
+                        onChanged = function()
+                            RefreshPanels()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end,
                     }
                 end
                 ST._BuildHeroTalentSubTreeCheckboxes(scroll, container, configID, specId, 20, containerId, htOpts)

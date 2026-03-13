@@ -1311,7 +1311,11 @@ local function BuildLoadConditionsTab(container)
             cb:SetLabel(name)
             if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
             cb:SetFullWidth(true)
-            cb:SetValue(effectiveSpecs and effectiveSpecs[specId] or false)
+            if inheritedSpecFilter then
+                cb:SetValue(effectiveSpecs and effectiveSpecs[specId] or false)
+            else
+                cb:SetValue(group.specs and group.specs[specId] or false)
+            end
             if inheritedSpecFilter then
                 cb:SetDisabled(true)
             else
