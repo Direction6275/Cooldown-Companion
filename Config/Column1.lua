@@ -58,7 +58,11 @@ local function RenderBrowseMode()
     if not CS.browseCharKey then
         -- Phase A: Character list
         local backBtn = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(backBtn)
         backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to My Groups")
+        backBtn:SetImage(134400)
+        backBtn:SetImageSize(1, 32)
+        backBtn.image:SetAlpha(0)
         backBtn:SetFullWidth(true)
         backBtn:SetFontObject(GameFontHighlight)
         backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -121,7 +125,11 @@ local function RenderBrowseMode()
     else
         -- Phase B: Selected character's groups
         local backBtn = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(backBtn)
         backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to Characters")
+        backBtn:SetImage(134400)
+        backBtn:SetImageSize(1, 32)
+        backBtn.image:SetAlpha(0)
         backBtn:SetFullWidth(true)
         backBtn:SetFontObject(GameFontHighlight)
         backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
