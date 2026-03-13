@@ -825,7 +825,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                         frame:SetAlpha(1)
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.
-                    elseif baseAlpha < 1 then
+                    else
                         local alphaState = self.alphaState and self.alphaState[groupId]
                         if alphaState and alphaState.currentAlpha then
                             frame:SetAlpha(alphaState.currentAlpha)

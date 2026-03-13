@@ -381,7 +381,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         local alphaState = self.alphaState and self.alphaState[groupId]
-        if alphaState and alphaState.currentAlpha and baseAlpha < 1 then
+        if alphaState and alphaState.currentAlpha then
             frame:SetAlpha(alphaState.currentAlpha)
         end
     else
@@ -430,7 +430,6 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             -- If forceCenter, reset to center
             -- Otherwise use saved position relative to UIParent
             if forceCenter then
-                frame:SetAlpha(1)
                 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
                 -- Update the saved anchor to reflect the centered position
                 local group = self.db.profile.groups[frame.groupId]
@@ -450,7 +449,6 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     end
 
     -- Anchor to UIParent using saved position (preserves position across reloads)
-    frame:SetAlpha(1)
     frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
     UpdateCoordLabel(frame, anchor.x, anchor.y)
 end
@@ -890,7 +888,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         if not isLocked then
             frame:SetAlpha(1)
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
-        elseif baseAlpha < 1 then
+        else
             local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
             if alphaState and alphaState.currentAlpha then
                 frame:SetAlpha(alphaState.currentAlpha)
