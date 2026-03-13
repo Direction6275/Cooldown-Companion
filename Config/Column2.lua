@@ -630,13 +630,10 @@ local function RefreshColumn2()
         delBtn:SetText("Delete Selected")
         delBtn:SetFullWidth(true)
         delBtn:SetCallback("OnClick", function()
-            for _, cid in ipairs(multiContainerIds) do
-                CooldownCompanion:DeleteGroup(cid)
+            local popup = StaticPopup_Show("CDC_DELETE_SELECTED_GROUPS", #multiContainerIds)
+            if popup then
+                popup.data = { groupIds = CopyTable(multiContainerIds) }
             end
-            CS.selectedContainer = nil
-            CS.selectedGroup = nil
-            wipe(CS.selectedGroups)
-            CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col2Scroll:AddChild(delBtn)
 

@@ -592,44 +592,62 @@ local function SetupGroupRowIndicators(entry, group)
     if group.locked == false then
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
-    -- Spec filter badges (hide on child groups inheriting an active folder filter)
+    -- Look up folder data for per-badge filtering: badges that exist at the
+    -- folder level are shown on the folder row only, not on child containers.
+    local folderId = group.folderId
+    local folderSpecs, folderHeroTalents
+    if folderId then
+        local folders = CooldownCompanion.db and CooldownCompanion.db.profile
+            and CooldownCompanion.db.profile.folders
+        local folder = folders and folders[folderId]
+        if folder then
+            folderSpecs = folder.specs
+            folderHeroTalents = folder.heroTalents
+        end
+    end
+
+    -- Spec filter badges: show own specs, skip any that exist at folder level
     local SPEC_BADGE_SIZE = 16
-    local effectiveSpecs, inheritedFromFolder = CooldownCompanion:GetEffectiveSpecs(group)
-    if not inheritedFromFolder and effectiveSpecs and next(effectiveSpecs) then
-        for specId in pairs(effectiveSpecs) do
-            local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
-            if specIcon then
-                badgeIndex = badgeIndex + 1
-                local badge = AcquireBadge(frame, badgeIndex)
-                badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
-                badge.icon:SetTexture(specIcon)
-                badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                if not badge._cdcCircleMask then
-                    local mask = badge:CreateMaskTexture()
-                    mask:SetAllPoints(badge.icon)
-                    mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
-                    badge._cdcCircleMask = mask
+    local specs = group.specs
+    if specs then
+        for specId in pairs(specs) do
+            if not (folderSpecs and folderSpecs[specId]) then
+                local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
+                if specIcon then
+                    badgeIndex = badgeIndex + 1
+                    local badge = AcquireBadge(frame, badgeIndex)
+                    badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
+                    badge.icon:SetTexture(specIcon)
+                    badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                    if not badge._cdcCircleMask then
+                        local mask = badge:CreateMaskTexture()
+                        mask:SetAllPoints(badge.icon)
+                        mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
+                        badge._cdcCircleMask = mask
+                    end
+                    badge.icon:AddMaskTexture(badge._cdcCircleMask)
+                    badge:Show()
                 end
-                badge.icon:AddMaskTexture(badge._cdcCircleMask)
-                badge:Show()
             end
         end
     end
 
-    -- Hero talent filter badges
+    -- Hero talent filter badges: show own, skip any that exist at folder level
     local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    local effectiveHeroTalents, inheritedHeroTalents = CooldownCompanion:GetEffectiveHeroTalents(group)
-    if not inheritedHeroTalents and effectiveHeroTalents and next(effectiveHeroTalents) then
+    local heroTalents = group.heroTalents
+    if heroTalents then
         local configID = C_ClassTalents.GetActiveConfigID()
         if configID then
-            for subTreeID in pairs(effectiveHeroTalents) do
-                local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-                if subTreeInfo and subTreeInfo.iconElementID then
-                    badgeIndex = badgeIndex + 1
-                    local badge = AcquireBadge(frame, badgeIndex)
-                    badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
-                    badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
-                    badge:Show()
+            for subTreeID in pairs(heroTalents) do
+                if not (folderHeroTalents and folderHeroTalents[subTreeID]) then
+                    local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
+                    if subTreeInfo and subTreeInfo.iconElementID then
+                        badgeIndex = badgeIndex + 1
+                        local badge = AcquireBadge(frame, badgeIndex)
+                        badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
+                        badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
+                        badge:Show()
+                    end
                 end
             end
         end

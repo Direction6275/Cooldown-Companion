@@ -83,13 +83,27 @@ end
 function CooldownCompanion:GetEffectiveHeroTalents(group)
     if not group then return nil, false end
 
-    -- Container cascade: if the group is a panel, use the container's heroTalents
+    -- Panel cascade: folder → container → panel's own heroTalents
     local container = self:GetParentContainer(group)
     if container then
-        return container.heroTalents, container.heroTalents ~= nil
+        -- Check folder first
+        local folderId = container.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            if folder and folder.heroTalents and next(folder.heroTalents) then
+                return folder.heroTalents, true
+            end
+        end
+        -- Then container's own heroTalents
+        if container.heroTalents and next(container.heroTalents) then
+            return container.heroTalents, true
+        end
+        -- Fall through to panel's own
+        return group.heroTalents, false
     end
 
-    -- Legacy folder cascade (pre-migration or non-panel groups)
+    -- Non-panel container: check folder cascade
     local folderId = group.folderId
     if folderId then
         local folders = self.db and self.db.profile and self.db.profile.folders
@@ -293,8 +307,9 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
     return normalized, true
 end
 
--- Folder filters are authoritative. When a folder filter is active, all child
--- containers are normalized to match it.
+-- Folder spec filters are stamped onto child containers so that runtime checks
+-- (which read container.specs) pick up folder-level restrictions. Hero talents
+-- are NOT stamped — they cascade at read time via GetEffectiveHeroTalents.
 function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
     local db = self.db and self.db.profile
     local folder = db and db.folders and db.folders[folderId]
@@ -302,8 +317,6 @@ function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
 
     local folderSpecs = folder.specs
     local hasFolderSpecs = folderSpecs and next(folderSpecs)
-    local folderHeroTalents = hasFolderSpecs and folder.heroTalents
-    local hasFolderHeroTalents = folderHeroTalents and next(folderHeroTalents)
 
     -- Post-migration: folderId lives on containers, not groups
     local containers = db.groupContainers or {}
@@ -313,11 +326,6 @@ function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
                 container.specs = CopyTable(folderSpecs)
             else
                 container.specs = nil
-            end
-            if hasFolderHeroTalents then
-                container.heroTalents = CopyTable(folderHeroTalents)
-            else
-                container.heroTalents = nil
             end
         end
     end

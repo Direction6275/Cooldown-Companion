@@ -532,11 +532,6 @@ local function RefreshColumn1(preserveDrag)
                 else
                     CS.selectedContainer = containerId
                     CS.selectedGroup = nil
-                    -- Auto-select if single-panel container
-                    local panels = CooldownCompanion:GetPanels(containerId)
-                    if panels and #panels == 1 then
-                        CS.selectedGroup = panels[1].groupId
-                    end
                 end
                 CS.selectedButton = nil
                 wipe(CS.selectedButtons)
@@ -824,33 +819,49 @@ local function RefreshColumn1(preserveDrag)
             local numSpecs = GetNumSpecializations()
             local configID = C_ClassTalents.GetActiveConfigID()
             local htIndent = inFolder and 32 or 20
+            local folder = container.folderId and db.folders and db.folders[container.folderId]
+            local folderSpecs = folder and folder.specs
+            local folderHeroTalents = folder and folder.heroTalents
             for i = 1, numSpecs do
                 local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
+                local lockedByFolder = folderSpecs and folderSpecs[specId]
                 local cb = AceGUI:Create("CheckBox")
                 cb:SetLabel(name)
                 cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
                 cb:SetFullWidth(true)
-                cb:SetValue(container.specs and container.specs[specId] or false)
-                cb:SetCallback("OnValueChanged", function(widget, event, value)
-                    if value then
-                        if not container.specs then container.specs = {} end
-                        container.specs[specId] = true
-                    else
-                        if container.specs then
-                            container.specs[specId] = nil
-                            if not next(container.specs) then
-                                container.specs = nil
+                cb:SetValue(lockedByFolder or (container.specs and container.specs[specId]) or false)
+                if lockedByFolder then
+                    cb:SetDisabled(true)
+                else
+                    cb:SetCallback("OnValueChanged", function(widget, event, value)
+                        if value then
+                            if not container.specs then container.specs = {} end
+                            container.specs[specId] = true
+                        else
+                            if container.specs then
+                                container.specs[specId] = nil
+                                if not next(container.specs) then
+                                    container.specs = nil
+                                end
                             end
+                            CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
                         end
-                        CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
-                    end
-                    RefreshContainerPanels(containerId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
+                        RefreshContainerPanels(containerId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                end
                 CS.col1Scroll:AddChild(cb)
                 ApplyCheckboxIndent(cb, inFolder and 12 or 0)
 
-                BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId)
+                local htOpts = nil
+                if folderHeroTalents and next(folderHeroTalents) then
+                    htOpts = {
+                        heroTalentsSource = folderHeroTalents,
+                        useHeroTalentsSource = true,
+                        disableToggles = true,
+                    }
+                end
+                BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId, htOpts)
             end
 
             local playerSpecIds = {}
@@ -899,16 +910,18 @@ local function RefreshColumn1(preserveDrag)
                 end
             end
 
-            local clearBtn = AceGUI:Create("Button")
-            clearBtn:SetText("Clear All")
-            clearBtn:SetFullWidth(true)
-            clearBtn:SetCallback("OnClick", function()
-                container.specs = nil
-                container.heroTalents = nil
-                RefreshContainerPanels(containerId)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            CS.col1Scroll:AddChild(clearBtn)
+            if container.specs and next(container.specs) then
+                local clearBtn = AceGUI:Create("Button")
+                clearBtn:SetText("Clear All")
+                clearBtn:SetFullWidth(true)
+                clearBtn:SetCallback("OnClick", function()
+                    container.specs = nil
+                    container.heroTalents = nil
+                    RefreshContainerPanels(containerId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                CS.col1Scroll:AddChild(clearBtn)
+            end
         end
 
         -- Hold-click drag reorder via handler-table HookScript pattern

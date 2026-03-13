@@ -26,6 +26,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateAddedAsClassification()
     self:MigrateFolders()
     self:MigrateFolderSpecFilters()
+    self:MigrateContainerHeroTalentStamps()
     self:ReverseMigrateMW()
     self:MigrateCustomAuraBarsToSpecKeyed()
     self:MigrateLSMNames()
@@ -1521,4 +1522,32 @@ function CooldownCompanion:MigrateContainerAlphaToPanel()
     end
 
     profile._migratedContainerAlphaToPanel = true
+end
+
+-- Clear hero talents that were stamped onto containers by the old authoritative
+-- ApplyFolderSpecFilterToChildren.  Those values were folder copies, not
+-- user-set.  With the new cascading model, GetEffectiveHeroTalents reads the
+-- folder at runtime so the stamped copies are stale duplicates.
+function CooldownCompanion:MigrateContainerHeroTalentStamps()
+    local profile = self.db.profile
+    if profile._migratedContainerHeroTalentStamps then return end
+
+    local containers = profile.groupContainers
+    local folders = profile.folders
+    if not containers or not folders then
+        profile._migratedContainerHeroTalentStamps = true
+        return
+    end
+
+    for _, container in pairs(containers) do
+        local folderId = container.folderId
+        if folderId then
+            local folder = folders[folderId]
+            if folder and folder.heroTalents and next(folder.heroTalents) then
+                container.heroTalents = nil
+            end
+        end
+    end
+
+    profile._migratedContainerHeroTalentStamps = true
 end

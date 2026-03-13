@@ -2153,17 +2153,17 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     end)
 
     if not specCollapsed then
-    -- Folder spec inheritance: if the parent folder has spec/hero filters,
-    -- show them as disabled (read-only) on the container.
+    -- Folder spec inheritance: folder-level spec/hero filters are shown as
+    -- disabled (locked) on child containers, but children can still toggle
+    -- specs that the folder does NOT set.
     local folder = container.folderId and db.folders and db.folders[container.folderId]
-    local folderHasSpecs = folder and folder.specs and next(folder.specs)
-    local folderHasHeroTalents = folder and folder.heroTalents and next(folder.heroTalents)
-    local inheritsFromFolder = folderHasSpecs or folderHasHeroTalents
-    local specsSource = inheritsFromFolder and folder.specs or container.specs
+    local folderSpecs = folder and folder.specs
+    local folderHeroTalents = folder and folder.heroTalents
+    local hasFolderSpecs = folderSpecs and next(folderSpecs)
 
-    if inheritsFromFolder then
+    if hasFolderSpecs then
         local inheritedLabel = AceGUI:Create("Label")
-        inheritedLabel:SetText("|cff888888Inherited from folder filter. Edit the folder to change Spec/Hero filters.|r")
+        inheritedLabel:SetText("|cff888888Specs set by the parent folder cannot be changed here.|r")
         inheritedLabel:SetFullWidth(true)
         scroll:AddChild(inheritedLabel)
     end
@@ -2173,12 +2173,13 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     for i = 1, numSpecs do
         local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
         if specId then
+            local lockedByFolder = folderSpecs and folderSpecs[specId]
             local cb = AceGUI:Create("CheckBox")
             cb:SetLabel(name)
             if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
             cb:SetFullWidth(true)
-            cb:SetValue(specsSource and specsSource[specId] or false)
-            if inheritsFromFolder then
+            cb:SetValue(lockedByFolder or (container.specs and container.specs[specId]) or false)
+            if lockedByFolder then
                 cb:SetDisabled(true)
             else
                 cb:SetCallback("OnValueChanged", function(widget, event, value)
@@ -2201,18 +2202,27 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
             scroll:AddChild(cb)
 
             -- Hero talent sub-tree checkboxes
-            if configID and specsSource and specsSource[specId] then
-                ST._BuildHeroTalentSubTreeCheckboxes(scroll, container, configID, specId, 20, containerId, {
-                    specsSource = specsSource,
-                    heroTalentsSource = inheritsFromFolder and folder.heroTalents or container.heroTalents,
-                    useHeroTalentsSource = inheritsFromFolder,
-                    disableToggles = inheritsFromFolder,
-                })
+            local specActive = lockedByFolder or (container.specs and container.specs[specId])
+            if configID and specActive then
+                local htOpts
+                if folderHeroTalents and next(folderHeroTalents) then
+                    htOpts = {
+                        heroTalentsSource = folderHeroTalents,
+                        useHeroTalentsSource = true,
+                        disableToggles = true,
+                    }
+                else
+                    htOpts = {
+                        heroTalentsSource = container.heroTalents,
+                    }
+                end
+                ST._BuildHeroTalentSubTreeCheckboxes(scroll, container, configID, specId, 20, containerId, htOpts)
             end
         end
     end
 
-    if not inheritsFromFolder and container.specs and next(container.specs) then
+    local hasOwnSpecs = container.specs and next(container.specs)
+    if hasOwnSpecs then
         local clearBtn = AceGUI:Create("Button")
         clearBtn:SetText("Clear All Spec Filters")
         clearBtn:SetFullWidth(true)

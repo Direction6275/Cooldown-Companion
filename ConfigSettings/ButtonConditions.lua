@@ -1197,7 +1197,6 @@ local function BuildLoadConditionsTab(container)
     local lc = group.loadConditions
     local effectiveSpecs, inheritedSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
-    local inheritsFolderSpecOrHeroFilter = inheritedSpecFilter or inheritedHeroFilter
 
     -- Look up parent container's load conditions for inheritance
     local containerLc = nil
@@ -1295,9 +1294,9 @@ local function BuildLoadConditionsTab(container)
     end)
 
     if not specCollapsed then
-    if inheritsFolderSpecOrHeroFilter then
+    if inheritedSpecFilter or inheritedHeroFilter then
         local inheritedLabel = AceGUI:Create("Label")
-        inheritedLabel:SetText("|cff888888Inherited from folder filter. Edit the folder to change Spec/Hero filters.|r")
+        inheritedLabel:SetText("|cff888888Some filters inherited from group settings.|r")
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)
     end
@@ -1313,7 +1312,7 @@ local function BuildLoadConditionsTab(container)
             if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
             cb:SetFullWidth(true)
             cb:SetValue(effectiveSpecs and effectiveSpecs[specId] or false)
-            if inheritsFolderSpecOrHeroFilter then
+            if inheritedSpecFilter then
                 cb:SetDisabled(true)
             else
                 cb:SetCallback("OnValueChanged", function(widget, event, value)
@@ -1340,8 +1339,8 @@ local function BuildLoadConditionsTab(container)
             BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, 20, groupId, {
                 specsSource = effectiveSpecs,
                 heroTalentsSource = effectiveHeroTalents,
-                useHeroTalentsSource = true,
-                disableToggles = inheritsFolderSpecOrHeroFilter,
+                useHeroTalentsSource = inheritedHeroFilter,
+                disableToggles = inheritedHeroFilter,
             })
         end
     end
@@ -1372,7 +1371,7 @@ local function BuildLoadConditionsTab(container)
                 if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
                 fcb:SetFullWidth(true)
                 fcb:SetValue(true)
-                if inheritsFolderSpecOrHeroFilter then
+                if inheritedSpecFilter then
                     fcb:SetDisabled(true)
                 else
                     fcb:SetCallback("OnValueChanged", function(widget, event, value)
