@@ -905,6 +905,216 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     end
 end
 
+------------------------------------------------------------------------
+-- PANEL MULTI-SELECT: Batch operations UI
+------------------------------------------------------------------------
+local function RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
+    local db = CooldownCompanion.db.profile
+    local containerId = CS.selectedContainer
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(multiCount .. " Panels Selected")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    -- Helper: add a thin spacer
+    local function AddSpacer()
+        local sp = AceGUI:Create("Label")
+        sp:SetText(" ")
+        sp:SetFullWidth(true)
+        local f, _, fl = sp.label:GetFont()
+        sp:SetFont(f, 3, fl or "")
+        scroll:AddChild(sp)
+    end
+
+    -- Enable / Disable All
+    local anyDisabled = false
+    for _, pid in ipairs(multiPanelIds) do
+        local p = db.groups[pid]
+        if p and p.enabled == false then anyDisabled = true; break end
+    end
+    local enableBtn = AceGUI:Create("Button")
+    enableBtn:SetText(anyDisabled and "Enable All" or "Disable All")
+    enableBtn:SetFullWidth(true)
+    enableBtn:SetCallback("OnClick", function()
+        for _, pid in ipairs(multiPanelIds) do
+            local p = db.groups[pid]
+            if p then
+                if anyDisabled then
+                    p.enabled = nil
+                else
+                    p.enabled = false
+                end
+                CooldownCompanion:RefreshGroupFrame(pid)
+            end
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(enableBtn)
+
+    AddSpacer()
+
+    -- Lock / Unlock All
+    local anyUnlocked = false
+    for _, pid in ipairs(multiPanelIds) do
+        local p = db.groups[pid]
+        if p and p.locked == false then anyUnlocked = true; break end
+    end
+    local lockBtn = AceGUI:Create("Button")
+    lockBtn:SetText(anyUnlocked and "Lock All" or "Unlock All")
+    lockBtn:SetFullWidth(true)
+    lockBtn:SetCallback("OnClick", function()
+        if anyUnlocked then
+            -- Lock all
+            for _, pid in ipairs(multiPanelIds) do
+                local p = db.groups[pid]
+                if p then
+                    p.locked = nil
+                    CooldownCompanion:RefreshGroupFrame(pid)
+                end
+            end
+        else
+            -- Unlock all
+            for _, pid in ipairs(multiPanelIds) do
+                local p = db.groups[pid]
+                if p then
+                    p.locked = false
+                    CooldownCompanion:RefreshGroupFrame(pid)
+                end
+            end
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(lockBtn)
+
+    AddSpacer()
+
+    -- Duplicate Selected
+    local dupBtn = AceGUI:Create("Button")
+    dupBtn:SetText("Duplicate Selected")
+    dupBtn:SetFullWidth(true)
+    dupBtn:SetCallback("OnClick", function()
+        for _, pid in ipairs(multiPanelIds) do
+            CooldownCompanion:DuplicatePanel(containerId, pid)
+        end
+        wipe(CS.selectedPanels)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(dupBtn)
+
+    AddSpacer()
+
+    -- Move to Group
+    local hasOtherContainer = false
+    for cid, _ in pairs(db.groupContainers) do
+        if cid ~= containerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+            hasOtherContainer = true
+            break
+        end
+    end
+    if hasOtherContainer then
+        local moveBtn = AceGUI:Create("Button")
+        moveBtn:SetText("Move to Group")
+        moveBtn:SetFullWidth(true)
+        moveBtn:SetCallback("OnClick", function()
+            local moveMenuFrame = _G["CDCPanelMultiMoveMenu"]
+            if not moveMenuFrame then
+                moveMenuFrame = CreateFrame("Frame", "CDCPanelMultiMoveMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+            UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
+                local containers = db.groupContainers or {}
+                local folderContainers, looseContainers = {}, {}
+                for cid, ctr in pairs(containers) do
+                    if cid ~= containerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                        local cName = ctr.name or ("Group " .. cid)
+                        local fid = ctr.folderId
+                        if fid and db.folders[fid] then
+                            folderContainers[fid] = folderContainers[fid] or {}
+                            table.insert(folderContainers[fid], { id = cid, name = cName, order = ctr.order or cid })
+                        else
+                            table.insert(looseContainers, { id = cid, name = cName, order = ctr.order or cid })
+                        end
+                    end
+                end
+                local sortedFolders = {}
+                for fid, folder in pairs(db.folders) do
+                    if folderContainers[fid] then
+                        table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                    end
+                end
+                table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+                local hasFolders = #sortedFolders > 0
+                for _, folder in ipairs(sortedFolders) do
+                    local hdr = UIDropDownMenu_CreateInfo()
+                    hdr.text = folder.name
+                    hdr.isTitle = true
+                    hdr.notCheckable = true
+                    UIDropDownMenu_AddButton(hdr, level)
+                    table.sort(folderContainers[folder.id], function(a, b) return a.order < b.order end)
+                    for _, c in ipairs(folderContainers[folder.id]) do
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = c.name
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            for _, pid in ipairs(multiPanelIds) do
+                                CooldownCompanion:MovePanel(pid, c.id)
+                            end
+                            wipe(CS.selectedPanels)
+                            CS.selectedContainer = c.id
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+                if #looseContainers > 0 then
+                    if hasFolders then
+                        local hdr = UIDropDownMenu_CreateInfo()
+                        hdr.text = "No Folder"
+                        hdr.isTitle = true
+                        hdr.notCheckable = true
+                        UIDropDownMenu_AddButton(hdr, level)
+                    end
+                    table.sort(looseContainers, function(a, b) return a.order < b.order end)
+                    for _, c in ipairs(looseContainers) do
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = c.name
+                        info.notCheckable = true
+                        info.func = function()
+                            CloseDropDownMenus()
+                            for _, pid in ipairs(multiPanelIds) do
+                                CooldownCompanion:MovePanel(pid, c.id)
+                            end
+                            wipe(CS.selectedPanels)
+                            CS.selectedContainer = c.id
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+            end, "MENU")
+            moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
+        end)
+        scroll:AddChild(moveBtn)
+
+        AddSpacer()
+    end
+
+    -- Delete Selected
+    local delBtn = AceGUI:Create("Button")
+    delBtn:SetText("Delete Selected")
+    delBtn:SetFullWidth(true)
+    delBtn:SetCallback("OnClick", function()
+        local ids = {}
+        for _, pid in ipairs(multiPanelIds) do ids[#ids + 1] = pid end
+        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_PANELS", multiCount,
+            { containerId = containerId, panelIds = ids })
+    end)
+    scroll:AddChild(delBtn)
+end
+
 local function RefreshButtonSettingsColumn()
     local cf = CS.configFrame
     if not cf then return end
@@ -1365,6 +1575,7 @@ ST._BuildItemSettings = BuildItemSettings
 ST._BuildEquipItemSettings = BuildEquipItemSettings
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
 ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
+ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect
 ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildOverridesTab = BuildOverridesTab
 ST._BuildSpellSoundAlertsTab = BuildSpellSoundAlertsTab

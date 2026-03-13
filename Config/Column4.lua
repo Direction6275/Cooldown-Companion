@@ -71,6 +71,25 @@ local function RefreshColumn4(container)
         return
     end
 
+    -- Panel multi-select: show placeholder
+    local panelMultiCount = 0
+    for _ in pairs(CS.selectedPanels) do panelMultiCount = panelMultiCount + 1 end
+    if panelMultiCount >= 2 then
+        if not container.placeholderLabel then
+            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            container.placeholderLabel:SetPoint("TOPLEFT", -1, 0)
+        end
+        container.placeholderLabel:SetText("Select a single panel to configure")
+        container.placeholderLabel:Show()
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        if container.containerTabGroup then
+            container.containerTabGroup.frame:Hide()
+        end
+        return
+    end
+
     -- Determine if any button is selected (for specificity cascade)
     local anyButtonSelected = CS.selectedButton ~= nil
     if not anyButtonSelected then

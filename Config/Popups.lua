@@ -200,6 +200,26 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_DELETE_SELECTED_PANELS"] = {
+    text = "Delete %d selected panels?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.panelIds and data.containerId then
+            for _, pid in ipairs(data.panelIds) do
+                CooldownCompanion:DeletePanel(data.containerId, pid)
+            end
+            wipe(CS.selectedPanels)
+            CS.selectedGroup = nil
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
     text = "Delete profile '%s'?",
     button1 = "Delete",

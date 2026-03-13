@@ -1090,8 +1090,10 @@ local function RefreshColumn2()
                     disabledBadge:Hide()
                 end
 
-                -- Highlight selected panel header green, gray if disabled
-                if panel.enabled == false then
+                -- Highlight: blue if multi-selected (overrides all), gray if disabled, green if single-selected
+                if CS.selectedPanels[panelId] then
+                    header:SetColor(0.4, 0.7, 1.0)
+                elseif panel.enabled == false then
                     header:SetColor(0.5, 0.5, 0.5)
                 elseif CS.selectedGroup == panelId then
                     header:SetColor(0.3, 0.8, 0.3)
@@ -1109,7 +1111,25 @@ local function RefreshColumn2()
                             CooldownCompanion:RefreshConfigPanel()
                             return
                         end
-                        -- Single-click: select or deselect this panel
+                        -- Ctrl+Click: toggle panel multi-select
+                        if IsControlKeyDown() then
+                            if CS.selectedPanels[panelId] then
+                                CS.selectedPanels[panelId] = nil
+                            else
+                                CS.selectedPanels[panelId] = true
+                            end
+                            if CS.selectedGroup and not CS.selectedPanels[CS.selectedGroup] and next(CS.selectedPanels) then
+                                CS.selectedPanels[CS.selectedGroup] = true
+                            end
+                            CS.selectedGroup = nil
+                            CS.selectedButton = nil
+                            wipe(CS.selectedButtons)
+                            CS.addingToPanelId = nil
+                            CooldownCompanion:RefreshConfigPanel()
+                            return
+                        end
+                        -- Single-click: select or deselect this panel, clear multi-select
+                        wipe(CS.selectedPanels)
                         -- If a button is selected within this panel, just clear the button
                         -- selection (transition to panel settings) rather than deselecting.
                         if CS.selectedGroup == panelId and not CS.selectedButton then
@@ -1547,6 +1567,7 @@ local function RefreshColumn2()
                                 CS.selectedButton = nil
                                 wipe(CS.selectedButtons)
                             end
+                            wipe(CS.selectedPanels)
 
                             if IsControlKeyDown() then
                                 if CS.selectedButtons[btnIndex] then
@@ -1574,6 +1595,7 @@ local function RefreshColumn2()
                                 CS.selectedButton = nil
                                 wipe(CS.selectedButtons)
                             end
+                            wipe(CS.selectedPanels)
                             if not CS.buttonContextMenu then
                                 CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
                             end

@@ -107,6 +107,7 @@ ST._configState = {
     selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
     selectedButton = nil,
     selectedButtons = {},
+    selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
     selectedTab = "appearance",
     selectedContainerTab = "general",
@@ -876,6 +877,7 @@ local function ResetConfigSelection(full)
     end
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
+    wipe(CS.selectedPanels)
     if full then
         CS.selectedContainer = nil
         CS.selectedGroup = nil

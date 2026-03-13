@@ -74,6 +74,7 @@ local function RenderBrowseMode()
             CS.selectedGroup = nil
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
+            wipe(CS.selectedPanels)
             CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col1Scroll:AddChild(backBtn)
@@ -118,6 +119,7 @@ local function RenderBrowseMode()
                 CS.selectedGroup = nil
                 CS.selectedButton = nil
                 wipe(CS.selectedButtons)
+                wipe(CS.selectedPanels)
                 CooldownCompanion:RefreshConfigPanel()
             end)
             CS.col1Scroll:AddChild(entry)
@@ -140,6 +142,7 @@ local function RenderBrowseMode()
             CS.selectedGroup = nil
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
+            wipe(CS.selectedPanels)
             CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col1Scroll:AddChild(backBtn)
@@ -209,6 +212,7 @@ local function RenderBrowseMode()
                     CS.selectedGroup = nil
                     CS.selectedButton = nil
                     wipe(CS.selectedButtons)
+                    wipe(CS.selectedPanels)
                     CooldownCompanion:RefreshConfigPanel()
                 elseif button == "RightButton" then
                     -- Verify source still exists
@@ -516,6 +520,7 @@ local function RefreshColumn1(preserveDrag)
                     CS.selectedGroup = nil
                     CS.selectedButton = nil
                     wipe(CS.selectedButtons)
+                    wipe(CS.selectedPanels)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
@@ -535,6 +540,7 @@ local function RefreshColumn1(preserveDrag)
                 end
                 CS.selectedButton = nil
                 wipe(CS.selectedButtons)
+                wipe(CS.selectedPanels)
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 if not CS.groupContextMenu then

@@ -35,6 +35,7 @@ local function RefreshColumn3()
         if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._autoAddScroll then col3._autoAddScroll.frame:Hide() end
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
+        if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
 
         -- Create/show custom aura tab group
         if col3._customAuraScroll then
@@ -107,6 +108,7 @@ local function RefreshColumn3()
                 if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
                 if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
                 if col3Normal._panelTabGroup then col3Normal._panelTabGroup.frame:Hide() end
+                if col3Normal._panelMultiSelectScroll then col3Normal._panelMultiSelectScroll.frame:Hide() end
 
                 if not col3Normal._autoAddScroll then
                     local scroll = AceGUI:Create("ScrollFrame")
@@ -135,6 +137,41 @@ local function RefreshColumn3()
     -- Hide panel tab group whenever we're NOT about to show it
     if col3Normal and col3Normal._panelTabGroup then
         col3Normal._panelTabGroup.frame:Hide()
+    end
+
+    -- Panel multi-select: batch operations in Column 3
+    local panelMultiCount = 0
+    local multiPanelIds = {}
+    for pid in pairs(CS.selectedPanels) do
+        panelMultiCount = panelMultiCount + 1
+        multiPanelIds[#multiPanelIds + 1] = pid
+    end
+    if panelMultiCount >= 2 and CS.selectedContainer then
+        if col3Normal then
+            if col3Normal.bsTabGroup then col3Normal.bsTabGroup.frame:Hide() end
+            if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
+            if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
+            if col3Normal._panelTabGroup then col3Normal._panelTabGroup.frame:Hide() end
+            if col3Normal._autoAddScroll then col3Normal._autoAddScroll.frame:Hide() end
+
+            if not col3Normal._panelMultiSelectScroll then
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                scroll.frame:SetParent(col3Normal.content)
+                scroll.frame:ClearAllPoints()
+                scroll.frame:SetPoint("TOPLEFT", col3Normal.content, "TOPLEFT", 0, 0)
+                scroll.frame:SetPoint("BOTTOMRIGHT", col3Normal.content, "BOTTOMRIGHT", 0, 0)
+                col3Normal._panelMultiSelectScroll = scroll
+            end
+            col3Normal._panelMultiSelectScroll:ReleaseChildren()
+            col3Normal._panelMultiSelectScroll.frame:Show()
+            ST._RefreshPanelMultiSelect(col3Normal._panelMultiSelectScroll, panelMultiCount, multiPanelIds)
+        end
+        return
+    end
+    -- Hide panel multi-select scroll when not active
+    if col3Normal and col3Normal._panelMultiSelectScroll then
+        col3Normal._panelMultiSelectScroll.frame:Hide()
     end
 
     -- Panel settings in Column 3: container mode + panel selected + no button

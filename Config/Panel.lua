@@ -1256,7 +1256,11 @@ function CooldownCompanion:RefreshConfigPanel()
     else
         CS.configFrame.col1:SetTitle("Groups")
         CS.configFrame.col2:SetTitle("Panels")
-        if CS.autoAddFlowActive then
+        local panelMultiCount = 0
+        for _ in pairs(CS.selectedPanels) do panelMultiCount = panelMultiCount + 1 end
+        if panelMultiCount >= 2 then
+            CS.configFrame.col3:SetTitle("Panel Settings")
+        elseif CS.autoAddFlowActive then
             CS.configFrame.col3:SetTitle("Auto Add")
         elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
             CS.configFrame.col3:SetTitle("Panel Settings")
@@ -1276,20 +1280,26 @@ function CooldownCompanion:RefreshConfigPanel()
     RefreshColumn4(CS.col4Container)
 
     -- Recompute Column 3 title after RefreshColumn3(), since it may cancel Auto Add.
-    if CS.resourceBarPanelActive then
-        CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
-    elseif CS.browseMode then
-        if CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+    do
+        local pmcPost = 0
+        for _ in pairs(CS.selectedPanels) do pmcPost = pmcPost + 1 end
+        if CS.resourceBarPanelActive then
+            CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
+        elseif CS.browseMode then
+            if CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+                CS.configFrame.col3:SetTitle("Panel Settings")
+            else
+                CS.configFrame.col3:SetTitle("Button Settings")
+            end
+        elseif pmcPost >= 2 then
+            CS.configFrame.col3:SetTitle("Panel Settings")
+        elseif CS.autoAddFlowActive then
+            CS.configFrame.col3:SetTitle("Auto Add")
+        elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
             CS.configFrame.col3:SetTitle("Panel Settings")
         else
             CS.configFrame.col3:SetTitle("Button Settings")
         end
-    elseif CS.autoAddFlowActive then
-        CS.configFrame.col3:SetTitle("Auto Add")
-    elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
-        CS.configFrame.col3:SetTitle("Panel Settings")
-    else
-        CS.configFrame.col3:SetTitle("Button Settings")
     end
 
     -- Restore AceGUI scroll state.
