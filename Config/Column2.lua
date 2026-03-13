@@ -429,7 +429,26 @@ local function RefreshColumn2()
             header:SetJustifyH("CENTER")
             local textW = header.label:GetStringWidth()
             modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
-            if CS.selectedGroup == panelGroupId and not CS.selectedButton then
+
+            -- Disabled badge (shown when panel is individually disabled)
+            local disabledBadge = header.frame._cdcDisabledBadge
+            if not disabledBadge then
+                disabledBadge = header.frame:CreateTexture(nil, "OVERLAY")
+                header.frame._cdcDisabledBadge = disabledBadge
+            end
+            disabledBadge:SetSize(16, 16)
+            disabledBadge:ClearAllPoints()
+            disabledBadge:SetPoint("LEFT", header.label, "CENTER", (textW / 2) + 4, 0)
+            if panel.enabled == false then
+                disabledBadge:SetAtlas("GM-icon-visibleDis-pressed", false)
+                disabledBadge:Show()
+            else
+                disabledBadge:Hide()
+            end
+
+            if panel.enabled == false then
+                header:SetColor(0.5, 0.5, 0.5)
+            elseif CS.selectedGroup == panelGroupId and not CS.selectedButton then
                 header:SetColor(0, 1, 0)
             end
             header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -1054,8 +1073,27 @@ local function RefreshColumn2()
                     anchorBadge:Hide()
                 end
 
-                -- Highlight selected panel header green
-                if CS.selectedGroup == panelId then
+                -- Disabled badge (shown when panel is individually disabled)
+                local disabledBadge = header.frame._cdcDisabledBadge
+                if not disabledBadge then
+                    disabledBadge = header.frame:CreateTexture(nil, "OVERLAY")
+                    header.frame._cdcDisabledBadge = disabledBadge
+                end
+                disabledBadge:SetSize(16, 16)
+                disabledBadge:ClearAllPoints()
+                local disabledOffset = (panel.locked == false) and 22 or 0
+                disabledBadge:SetPoint("LEFT", header.label, "CENTER", (textW / 2) + 4 + disabledOffset, 0)
+                if panel.enabled == false then
+                    disabledBadge:SetAtlas("GM-icon-visibleDis-pressed", false)
+                    disabledBadge:Show()
+                else
+                    disabledBadge:Hide()
+                end
+
+                -- Highlight selected panel header green, gray if disabled
+                if panel.enabled == false then
+                    header:SetColor(0.5, 0.5, 0.5)
+                elseif CS.selectedGroup == panelId then
                     header:SetColor(0.3, 0.8, 0.3)
                 end
 
@@ -1115,6 +1153,18 @@ local function RefreshColumn2()
                             info.func = function()
                                 CloseDropDownMenus()
                                 ShowPopupAboveConfig("CDC_RENAME_GROUP", ctxPanel.name or "Panel", { groupId = ctxPanelId })
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            -- Disable / Enable panel
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = (ctxPanel.enabled ~= false) and "Disable" or "Enable"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                ctxPanel.enabled = not (ctxPanel.enabled ~= false)
+                                CooldownCompanion:RefreshGroupFrame(ctxPanelId)
+                                CooldownCompanion:RefreshConfigPanel()
                             end
                             UIDropDownMenu_AddButton(info, level)
 

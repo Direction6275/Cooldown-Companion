@@ -411,6 +411,7 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     local container = self:GetParentContainer(group)
     if container then
         if container.enabled == false then return false end
+        if group.enabled == false then return false end
 
         -- Container-level load conditions
         if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(container) then
