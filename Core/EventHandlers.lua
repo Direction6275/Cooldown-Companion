@@ -135,13 +135,13 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
                     -- "N" when the pool is active.
                     self._hasDisplayCountCandidates = true
-                    -- Only flag as cast-count candidate if GetSpellCastCount
-                    -- returns something meaningful. During combat it may return
-                    -- secrets for all spells; preserve existing classification
-                    -- to avoid showing stale text on non-candidate buttons.
+                    -- Promote to cast-count candidate when a readable non-zero
+                    -- count is observed.  Never clear here — SPELL_UPDATE_USES
+                    -- is the authority for identification; line 105 clears the
+                    -- flag when a spell gains real charges (chargeInfo non-nil).
                     local castCount = C_Spell.GetSpellCastCount(buttonData.id)
-                    if not issecretvalue(castCount) then
-                        buttonData._castCountCandidate = (castCount and castCount > 0) or nil
+                    if not issecretvalue(castCount) and castCount and castCount > 0 then
+                        buttonData._castCountCandidate = true
                     end
                     local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
                     if not issecretvalue(rawDisplayCount) then
