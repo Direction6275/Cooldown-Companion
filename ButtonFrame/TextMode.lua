@@ -254,7 +254,7 @@ end
 ------------------------------------------------------------------------
 -- SUBSTITUTE TOKENS
 -- Builds the final display string from pre-parsed segments.
--- Returns: displayText, secretValue (if one token resolved to a secret)
+-- Returns: displayText, secretValue, secretColorToken, secretStackValue
 ------------------------------------------------------------------------
 local function SubstituteTokens(button, segments, style, effectState)
     local buttonData = button.buttonData
