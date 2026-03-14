@@ -777,10 +777,14 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 group.buttons[buttonIndex].showChargeText = true
             end
         else
-            -- No charge data: flag as cast-count candidate so the per-tick
-            -- update can pass GetSpellCastCount through to SetText (accepts
-            -- secret values). Covers Mana Tea stacks, brez pool display, etc.
-            group.buttons[buttonIndex]._castCountCandidate = true
+            -- No charge data: check if spell actually has a meaningful cast
+            -- count (e.g. Mana Tea stacks). Only flag as candidate if
+            -- GetSpellCastCount returns non-zero or secret at add time.
+            local castCount = C_Spell.GetSpellCastCount(id)
+            if issecretvalue(castCount) or (castCount and castCount > 0) then
+                group.buttons[buttonIndex]._castCountCandidate = true
+                self._hasDisplayCountCandidates = true
+            end
         end
     end
 
