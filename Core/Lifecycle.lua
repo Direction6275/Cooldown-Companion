@@ -107,6 +107,7 @@ function CooldownCompanion:OnEnable()
 
     -- Charge change events (proc-granted charges, recharges, etc.)
     self:RegisterEvent("SPELL_UPDATE_CHARGES", "OnChargesChanged")
+    self:RegisterEvent("SPELL_UPDATE_USES", "OnChargesChanged")
 
     -- Spell activation overlay (proc glow) events
     -- Track state via events instead of polling IsSpellOverlayed

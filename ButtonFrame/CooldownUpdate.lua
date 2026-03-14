@@ -768,14 +768,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.hasCharges and buttonData.type == "spell" then
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
     elseif not buttonData.hasCharges then
-        -- hasCharges cleared (e.g. brez pool deactivated): wipe stale charge state.
-        if button._chargeText ~= nil then
-            button._chargeText = nil
-            button.count:SetText("")
-        end
+        -- hasCharges cleared: wipe stale charge state.
         button._currentReadableCharges = nil
         button._chargeCountReadable = nil
         button._zeroChargesConfirmed = nil
+        -- Cast-count pass-through for non-charge spells (e.g. Mana Tea stacks).
+        -- GetSpellCastCount may return secret values; SetText accepts them.
+        -- Secret means non-zero (plain 0 = no stacks).
+        if buttonData._castCountCandidate and buttonData.type == "spell"
+                and button.style and button.style.showChargeText then
+            button._chargeText = nil
+            local castCount = C_Spell.GetSpellCastCount(cooldownSpellId or buttonData.id)
+            if issecretvalue(castCount) or (castCount and castCount > 0) then
+                button.count:SetText(castCount)
+            else
+                button.count:SetText("")
+            end
+        elseif button._chargeText ~= nil then
+            button._chargeText = nil
+            button.count:SetText("")
+        end
     end
 
     -- Store raw GCD state for downstream display logic.
