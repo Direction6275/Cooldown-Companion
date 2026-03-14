@@ -213,7 +213,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
         end
     elseif tokenName == "stacks" then
         local stackText = button._auraStackText
-        if stackText and stackText ~= "" then return true end
+        if stackText and (issecretvalue(stackText) or stackText ~= "") then return true end
         return button._itemCount and button._itemCount > 0
     elseif tokenName == "aura" then
         return auraIsSecret or (auraRemaining and auraRemaining > 0)
@@ -261,6 +261,7 @@ local function SubstituteTokens(button, segments, style, effectState)
     local parts = {}
     local secretValue = nil
     local secretColorToken = nil
+    local secretStackValue = nil
 
     local baseColor = style.textFontColor or {1, 1, 1, 1}
     local cdColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
@@ -419,8 +420,15 @@ local function SubstituteTokens(button, segments, style, effectState)
 
             elseif token == "stacks" then
                 local stackText = button._auraStackText
-                if stackText and stackText ~= "" then
-                    parts[#parts + 1] = WrapColor(stackText, colorOverride or baseColor)
+                if stackText and (issecretvalue(stackText) or stackText ~= "") then
+                    if issecretvalue(stackText) then
+                        if not secretStackValue then
+                            secretStackValue = stackText
+                        end
+                        parts[#parts + 1] = "%STACKS%"
+                    else
+                        parts[#parts + 1] = WrapColor(stackText, colorOverride or baseColor)
+                    end
                 elseif button._itemCount and button._itemCount > 0 then
                     parts[#parts + 1] = WrapColor(tostring(button._itemCount), colorOverride or baseColor)
                 end
@@ -481,7 +489,7 @@ local function SubstituteTokens(button, segments, style, effectState)
         end
     end
 
-    return table_concat(parts), secretValue, secretColorToken
+    return table_concat(parts), secretValue, secretColorToken, secretStackValue
 end
 
 ------------------------------------------------------------------------
@@ -498,17 +506,19 @@ local function UpdateTextDisplay(button)
         es.pulseActive = false
     end
 
-    local text, secretValue, secretColorToken = SubstituteTokens(button, button._textSegments, style, es)
+    local text, secretValue, secretColorToken, secretStackValue = SubstituteTokens(button, button._textSegments, style, es)
 
-    if secretValue then
+    if secretValue or secretStackValue then
         -- Secret value pass-through: use SetFormattedText with the secret value
         -- When using secret pass-through, fall back to uniform color
         -- (per-token coloring uses escape sequences which conflict with secret SetFormattedText)
         local uniformColor
         if secretColorToken == "aura" then
             uniformColor = style.textAuraColor or {0, 0.925, 1, 1}
-        else
+        elseif secretColorToken then
             uniformColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
+        else
+            uniformColor = style.textFontColor or {1, 1, 1, 1}
         end
         button.textString:SetTextColor(uniformColor[1], uniformColor[2], uniformColor[3], uniformColor[4] or 1)
 
@@ -516,33 +526,46 @@ local function UpdateTextDisplay(button)
         local fmtStr = text:gsub("|c%x%x%x%x%x%x%x%x", "")
         fmtStr = fmtStr:gsub("|r", "")
 
-        -- Replace ALL sentinel placeholders with a unique marker before escaping %
-        -- Sentinels are literal %TIME%, %AURA%, %STATUS% in the string
-        local SENTINEL = "\001SECRET\001"
-        local secretCount = 0
-        for _, placeholder in ipairs({"%TIME%", "%AURA%", "%STATUS%"}) do
-            while true do
-                local idx = fmtStr:find(placeholder, 1, true)
-                if not idx then break end
-                fmtStr = fmtStr:sub(1, idx - 1) .. SENTINEL .. fmtStr:sub(idx + #placeholder)
-                secretCount = secretCount + 1
+        -- Sentinel placeholders and their format specifiers / secret values
+        -- Numeric secrets (cooldown/aura times) use %.1f, string secrets (stacks) use %s
+        local allPlaceholders = {
+            {text = "%TIME%",   val = secretValue,      fmt = "%.1f"},
+            {text = "%AURA%",   val = secretValue,      fmt = "%.1f"},
+            {text = "%STATUS%", val = secretValue,      fmt = "%.1f"},
+            {text = "%STACKS%", val = secretStackValue,  fmt = "%s"},
+        }
+
+        -- Single left-to-right pass: build format string and ordered args together
+        local args = {}
+        local resultParts = {}
+        local pos = 1
+        while pos <= #fmtStr do
+            local bestIdx, bestInfo
+            for _, info in ipairs(allPlaceholders) do
+                if info.val then
+                    local idx = fmtStr:find(info.text, pos, true)
+                    if idx and (not bestIdx or idx < bestIdx) then
+                        bestIdx = idx
+                        bestInfo = info
+                    end
+                end
+            end
+
+            if bestIdx then
+                if bestIdx > pos then
+                    resultParts[#resultParts + 1] = fmtStr:sub(pos, bestIdx - 1):gsub("%%", "%%%%")
+                end
+                resultParts[#resultParts + 1] = bestInfo.fmt
+                args[#args + 1] = bestInfo.val
+                pos = bestIdx + #bestInfo.text
+            else
+                resultParts[#resultParts + 1] = fmtStr:sub(pos):gsub("%%", "%%%%")
+                break
             end
         end
 
-        -- Escape all % for format string safety, then insert our format specifier
-        fmtStr = fmtStr:gsub("%%", "%%%%")
-        fmtStr = fmtStr:gsub(SENTINEL, "%%.1f")
-
-        -- Pass secretValue once per format specifier
-        if secretCount == 1 then
-            button.textString:SetFormattedText(fmtStr, secretValue)
-        elseif secretCount == 2 then
-            button.textString:SetFormattedText(fmtStr, secretValue, secretValue)
-        else
-            local args = {}
-            for i = 1, secretCount do args[i] = secretValue end
-            button.textString:SetFormattedText(fmtStr, unpack(args))
-        end
+        local finalFmt = table_concat(resultParts)
+        button.textString:SetFormattedText(finalFmt, unpack(args))
     else
         -- Normal path: full per-token coloring via escape sequences
         local baseColor = style.textFontColor or {1, 1, 1, 1}
