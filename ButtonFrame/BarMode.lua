@@ -498,20 +498,27 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local cdOffX = style.barCdTextOffsetX or 0
     local cdOffY = style.barCdTextOffsetY or 0
     local timeReverse = style.barTimeTextReverse
-    if isVertical then
-        if timeReverse then
-            button.timeText:SetPoint("BOTTOM", cdOffX, 3 + cdOffY)
-        else
-            button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
-        end
+    local customCdAnchor = style.customCdAnchor or false
+    if customCdAnchor then
+        local cdAnchor = style.barCdTextAnchor or "CENTER"
+        button.timeText:SetPoint(cdAnchor, cdOffX, cdOffY)
         button.timeText:SetJustifyH("CENTER")
     else
-        if timeReverse then
-            button.timeText:SetPoint("LEFT", 3 + cdOffX, cdOffY)
-            button.timeText:SetJustifyH("LEFT")
+        if isVertical then
+            if timeReverse then
+                button.timeText:SetPoint("BOTTOM", cdOffX, 3 + cdOffY)
+            else
+                button.timeText:SetPoint("TOP", cdOffX, -3 + cdOffY)
+            end
+            button.timeText:SetJustifyH("CENTER")
         else
-            button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
-            button.timeText:SetJustifyH("RIGHT")
+            if timeReverse then
+                button.timeText:SetPoint("LEFT", 3 + cdOffX, cdOffY)
+                button.timeText:SetJustifyH("LEFT")
+            else
+                button.timeText:SetPoint("RIGHT", -3 + cdOffX, cdOffY)
+                button.timeText:SetJustifyH("RIGHT")
+            end
         end
     end
 
