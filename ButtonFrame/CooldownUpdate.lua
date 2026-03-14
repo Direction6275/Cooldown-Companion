@@ -778,6 +778,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- GetSpellCastCount may return secret values; SetText accepts them.
         -- Gate on IsSpellUsable to suppress secret-wrapped 0 during combat.
         if buttonData._castCountCandidate and buttonData.type == "spell"
+                and not buttonData.auraTracking
                 and button.style and button.style.showChargeText then
             button._chargeText = nil
             local castCount = C_Spell.GetSpellCastCount(cooldownSpellId or buttonData.id)
@@ -787,7 +788,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             else
                 button.count:SetText("")
             end
-        elseif buttonData._castCountCandidate and buttonData.type == "spell" then
+        elseif buttonData._castCountCandidate and buttonData.type == "spell"
+                and not buttonData.auraTracking then
             -- showChargeText disabled: ensure cast-count text is cleared.
             button.count:SetText("")
         elseif button._chargeText ~= nil then
