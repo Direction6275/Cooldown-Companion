@@ -141,7 +141,7 @@ local function CreateConfigPanel()
     end
     local versionText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     versionText:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 20, 25)
-    versionText:SetText("v1.8  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default"))
+    versionText:SetText("v1.10  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default"))
     versionText:SetTextColor(1, 0.82, 0)
 
     -- Prevent AceGUI from releasing on close - just hide
@@ -1236,7 +1236,7 @@ function CooldownCompanion:RefreshConfigPanel()
     if CS.configFrame.profileBar:IsShown() then
         RefreshProfileBar(CS.configFrame.profileBar)
     end
-    CS.configFrame.versionText:SetText("v1.8  |  " .. (self.db:GetCurrentProfile() or "Default"))
+    CS.configFrame.versionText:SetText("v1.10  |  " .. (self.db:GetCurrentProfile() or "Default"))
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
     end
