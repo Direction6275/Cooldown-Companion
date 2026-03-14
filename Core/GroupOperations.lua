@@ -62,19 +62,9 @@ end
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
-    -- Panel cascade: folder → container → panel's own specs
+    -- Panel: container specs (includes stamped folder specs) → panel's own
     local container = self:GetParentContainer(group)
     if container then
-        -- Check folder first
-        local folderId = container.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            if folder and folder.specs and next(folder.specs) then
-                return folder.specs, true
-            end
-        end
-        -- Then container's own specs
         if container.specs and next(container.specs) then
             return container.specs, true
         end
@@ -322,8 +312,10 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
 end
 
 -- Folder spec filters are stamped onto child containers so that runtime checks
--- (which read container.specs) pick up folder-level restrictions. Hero talents
--- are NOT stamped — they cascade at read time via GetEffectiveHeroTalents.
+-- (which read container.specs) pick up folder-level restrictions. Stamping occurs
+-- both here (when folder specs change) and in MoveGroupToFolder (when a container
+-- joins a folder). Hero talents are NOT stamped — they cascade at read time via
+-- GetEffectiveHeroTalents.
 function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
     local db = self.db and self.db.profile
     local folder = db and db.folders and db.folders[folderId]

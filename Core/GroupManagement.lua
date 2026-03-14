@@ -705,6 +705,14 @@ function CooldownCompanion:MoveGroupToFolder(id, folderId)
 
     container.folderId = folderId  -- nil = loose (no folder)
 
+    -- Stamp folder spec filters onto this container (see ApplyFolderSpecFilterToChildren)
+    if folderId then
+        local folder = db.folders and db.folders[folderId]
+        if folder and folder.specs and next(folder.specs) then
+            container.specs = CopyTable(folder.specs)
+        end
+    end
+
     -- Refresh all panels in this container (folder change may affect visibility)
     local panels = self:GetPanels(containerId)
     for _, p in ipairs(panels) do
