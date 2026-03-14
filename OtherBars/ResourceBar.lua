@@ -56,6 +56,7 @@ local DEFAULT_CONTINUOUS_TICK_COLOR = { 1, 0.84, 0, 1 }
 local DEFAULT_CONTINUOUS_TICK_MODE = "percent"
 local DEFAULT_CONTINUOUS_TICK_PERCENT = 50
 local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = 50
+local DEFAULT_CONTINUOUS_TICK_WIDTH = 2
 local INDEPENDENT_NUDGE_BTN_SIZE = 12
 local INDEPENDENT_NUDGE_REPEAT_DELAY = 0.5
 local INDEPENDENT_NUDGE_REPEAT_INTERVAL = 0.05
@@ -1018,7 +1019,9 @@ local function GetContinuousTickConfig(powerType, settings)
     end
 
     local tickColor = GetSafeRGBAColor(resource.continuousTickColor, DEFAULT_CONTINUOUS_TICK_COLOR)
-    return true, mode, percentValue, absoluteValue, tickColor
+    local tickWidth = tonumber(resource.continuousTickWidth) or DEFAULT_CONTINUOUS_TICK_WIDTH
+    if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
+    return true, mode, percentValue, absoluteValue, tickColor, tickWidth
 end
 
 local function SupportsResourceAuraStackMode(powerType)
@@ -1319,7 +1322,7 @@ end
 local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
     if not bar or not bar.tickMarker then return end
 
-    local enabled, mode, percentValue, absoluteValue, tickColor = GetContinuousTickConfig(powerType, settings)
+    local enabled, mode, percentValue, absoluteValue, tickColor, tickWidth = GetContinuousTickConfig(powerType, settings)
     if not enabled then
         bar.tickMarker:Hide()
         return
@@ -1362,6 +1365,7 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
         return
     end
 
+    local halfTick = tickWidth / 2
     marker:ClearAllPoints()
     if bar._isVertical then
         local usableHeight = math_max(height - (borderSize * 2), 1)
@@ -1370,18 +1374,18 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
         local yMax = height - borderSize
         if y > yMax then y = yMax end
         if y < borderSize then y = borderSize end
-        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", borderSize, y - 1)
-        marker:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, y - 1)
-        marker:SetHeight(2)
+        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", borderSize, y - halfTick)
+        marker:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, y - halfTick)
+        marker:SetHeight(tickWidth)
     else
         local usableWidth = math_max(width - (borderSize * 2), 1)
         local x = borderSize + (usableWidth * ratio)
         local xMax = width - borderSize
         if x > xMax then x = xMax end
         if x < borderSize then x = borderSize end
-        marker:SetPoint("TOPLEFT", bar, "TOPLEFT", x - 1, -borderSize)
-        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x - 1, borderSize)
-        marker:SetWidth(2)
+        marker:SetPoint("TOPLEFT", bar, "TOPLEFT", x - halfTick, -borderSize)
+        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x - halfTick, borderSize)
+        marker:SetWidth(tickWidth)
     end
 
     marker:Show()
@@ -3585,8 +3589,8 @@ function CooldownCompanion:ApplyResourceBars()
             savedContainerAlpha = containerFrameAbove:GetAlpha()
         end
 
-        -- Apply alpha immediately
-        local groupAlpha = groupFrame:GetEffectiveAlpha()
+        -- Apply alpha immediately — use natural alpha to avoid config override cascade
+        local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
         containerFrameBelow:SetAlpha(groupAlpha)
 
@@ -3602,7 +3606,7 @@ function CooldownCompanion:ApplyResourceBars()
             if accumulator < SYNC_INTERVAL then return end
             accumulator = 0
             if not groupFrame then return end
-            local alpha = groupFrame:GetEffectiveAlpha()
+            local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
                 if containerFrameAbove then containerFrameAbove:SetAlpha(alpha) end

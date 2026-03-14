@@ -215,6 +215,7 @@ local DEFAULT_CONTINUOUS_TICK_COLOR_CONFIG = { 1, 0.84, 0, 1 }
 local DEFAULT_CONTINUOUS_TICK_MODE_CONFIG = "percent"
 local DEFAULT_CONTINUOUS_TICK_PERCENT_CONFIG = 50
 local DEFAULT_CONTINUOUS_TICK_ABSOLUTE_CONFIG = 50
+local DEFAULT_CONTINUOUS_TICK_WIDTH_CONFIG = 2
 
 -- Class-to-resource mapping for config UI
 local CLASS_RESOURCES_CONFIG = {
@@ -804,49 +805,7 @@ local function ClearResourceAuraEntryConfig(powerType, resource, specID)
     CooldownCompanion:RefreshConfigPanel()
 end
 
-local function CompactUntitledInlineGroupConfig(group)
-    local frame = group and group.frame
-    local content = group and group.content
-    local border = content and content:GetParent()
-    local titleText = group and group.titletext
-    if not frame or not content or not border or not titleText then
-        return
-    end
-
-    local originalLayoutFinished = group.LayoutFinished
-
-    titleText:Hide()
-    border:ClearAllPoints()
-    border:SetPoint("TOPLEFT", 0, 0)
-    border:SetPoint("BOTTOMRIGHT", -1, 3)
-    content:ClearAllPoints()
-    content:SetPoint("TOPLEFT", 10, -6)
-    content:SetPoint("BOTTOMRIGHT", -10, 6)
-    group.LayoutFinished = function(self, width, height)
-        if self.noAutoHeight then
-            return
-        end
-        self:SetHeight((height or 0) + 15)
-    end
-
-    group:SetCallback("OnRelease", function(widget)
-        local releaseTitle = widget and widget.titletext
-        local releaseContent = widget and widget.content
-        local releaseBorder = releaseContent and releaseContent:GetParent()
-        if not releaseTitle or not releaseContent or not releaseBorder then
-            return
-        end
-
-        releaseTitle:Show()
-        releaseBorder:ClearAllPoints()
-        releaseBorder:SetPoint("TOPLEFT", 0, -17)
-        releaseBorder:SetPoint("BOTTOMRIGHT", -1, 3)
-        releaseContent:ClearAllPoints()
-        releaseContent:SetPoint("TOPLEFT", 10, -10)
-        releaseContent:SetPoint("BOTTOMRIGHT", -10, 10)
-        widget.LayoutFinished = originalLayoutFinished
-    end)
-end
+local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
 
 local function AttachResourceAuraEntryToggleButton(parentWidget, isCollapsed, onClickFn)
     local frame = parentWidget and parentWidget.frame
@@ -1253,18 +1212,9 @@ local function BuildResourceBarAnchoringPanel(container)
     if not settings.resources then settings.resources = {} end
 
     -- Anchor Group dropdown
-    local groupDropValues = { [""] = "Auto (first available)" }
-    local groupDropOrder = { "" }
-    for groupId, group in pairs(db.groups) do
-        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
-            groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
-            table.insert(groupDropOrder, tostring(groupId))
-        end
-    end
-
     local anchorDrop = AceGUI:Create("Dropdown")
-    anchorDrop:SetLabel("Anchor to Group")
-    anchorDrop:SetList(groupDropValues, groupDropOrder)
+    anchorDrop:SetLabel("Anchor to Panel")
+    local eligibleCount = CooldownCompanion:PopulateAnchorDropdown(anchorDrop)
     anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
     anchorDrop:SetFullWidth(true)
     anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1307,9 +1257,9 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(fillDirDrop)
 
-    if #groupDropOrder <= 1 then
+    if eligibleCount == 0 then
         local noGroupsLabel = AceGUI:Create("Label")
-        noGroupsLabel:SetText("No eligible character icon groups are enabled for this spec. Global groups are excluded from anchoring to avoid counterintuitive targets.")
+        noGroupsLabel:SetText("No eligible character icon panels are enabled for this spec. Global panels are excluded from anchoring.")
         noGroupsLabel:SetFullWidth(true)
         container:AddChild(noGroupsLabel)
     end
@@ -2454,6 +2404,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             CooldownCompanion:ApplyResourceBars()
                         end)
                         container:AddChild(tickColorPicker)
+
+                        local tickWidthSlider = AceGUI:Create("Slider")
+                        tickWidthSlider:SetLabel(resourceName .. " Tick Width")
+                        tickWidthSlider:SetSliderValues(1, 10, 1)
+                        tickWidthSlider:SetValue(tonumber(res.continuousTickWidth) or DEFAULT_CONTINUOUS_TICK_WIDTH_CONFIG)
+                        tickWidthSlider:SetFullWidth(true)
+                        tickWidthSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                            settings.resources[capturedPt].continuousTickWidth = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(tickWidthSlider)
                     end
                 end
             end
@@ -2552,19 +2513,6 @@ local function EnsureCustomAuraIndependentConfig(cab, settings)
     cab.independentSize.height = ClampCustomAuraIndependentDimension(cab.independentSize.height, settings and (settings.barHeight or settings.barWidth or 12) or 12)
 end
 
-local function BuildCustomAuraAnchorGroupOptions()
-    local db = CooldownCompanion.db.profile
-    local groupValues = { [""] = "Auto (first available)" }
-    local groupOrder = { "" }
-    for groupId, group in pairs(db.groups) do
-        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
-            groupValues[tostring(groupId)] = group.name or ("Group " .. groupId)
-            table.insert(groupOrder, tostring(groupId))
-        end
-    end
-    return groupValues, groupOrder
-end
-
 local function BuildCustomAuraBarAnchorSettings(container, customBars, settings, capturedIdx)
     local cab = customBars[capturedIdx]
     if not cab then return end
@@ -2598,10 +2546,9 @@ local function BuildCustomAuraBarAnchorSettings(container, customBars, settings,
     container:AddChild(modeDrop)
 
     if (cab.independentAnchorTargetMode or "group") == "group" then
-        local groupValues, groupOrder = BuildCustomAuraAnchorGroupOptions()
         local groupDrop = AceGUI:Create("Dropdown")
-        groupDrop:SetLabel("Anchor to Group")
-        groupDrop:SetList(groupValues, groupOrder)
+        groupDrop:SetLabel("Anchor to Panel")
+        CooldownCompanion:PopulateAnchorDropdown(groupDrop)
         groupDrop:SetValue(cab.independentAnchorGroupId and tostring(cab.independentAnchorGroupId) or "")
         groupDrop:SetFullWidth(true)
         groupDrop:SetCallback("OnValueChanged", function(widget, event, val)

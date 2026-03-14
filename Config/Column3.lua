@@ -14,6 +14,12 @@ local RenderAutoAddFlow = ST._RenderAutoAddFlow
 -- COLUMN 3: Button Settings (normal) / Custom Aura Bars (bars mode)
 ------------------------------------------------------------------------
 local function RefreshColumn3()
+    -- Hide browse placeholder when not showing it
+    local col3BrowseClean = CS.configFrame and CS.configFrame.col3
+    if col3BrowseClean and col3BrowseClean._browsePlaceholder then
+        col3BrowseClean._browsePlaceholder:Hide()
+    end
+
     -- Bars & Frames panel mode: show Custom Aura Bars
     if CS.resourceBarPanelActive then
         if CS.autoAddFlowActive and ST._CancelAutoAddFlow then
@@ -28,6 +34,8 @@ local function RefreshColumn3()
         if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
         if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._autoAddScroll then col3._autoAddScroll.frame:Hide() end
+        if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
+        if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
 
         -- Create/show custom aura tab group
         if col3._customAuraScroll then
@@ -99,6 +107,8 @@ local function RefreshColumn3()
                 if col3Normal.bsTabGroup then col3Normal.bsTabGroup.frame:Hide() end
                 if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
                 if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
+                if col3Normal._panelTabGroup then col3Normal._panelTabGroup.frame:Hide() end
+                if col3Normal._panelMultiSelectScroll then col3Normal._panelMultiSelectScroll.frame:Hide() end
 
                 if not col3Normal._autoAddScroll then
                     local scroll = AceGUI:Create("ScrollFrame")
@@ -122,6 +132,120 @@ local function RefreshColumn3()
 
     if col3Normal and col3Normal._autoAddScroll then
         col3Normal._autoAddScroll.frame:Hide()
+    end
+
+    -- Hide panel tab group whenever we're NOT about to show it
+    if col3Normal and col3Normal._panelTabGroup then
+        col3Normal._panelTabGroup.frame:Hide()
+    end
+
+    -- Panel multi-select: batch operations in Column 3
+    local panelMultiCount = 0
+    local multiPanelIds = {}
+    for pid in pairs(CS.selectedPanels) do
+        panelMultiCount = panelMultiCount + 1
+        multiPanelIds[#multiPanelIds + 1] = pid
+    end
+    if panelMultiCount >= 2 and CS.selectedContainer then
+        if col3Normal then
+            if col3Normal.bsTabGroup then col3Normal.bsTabGroup.frame:Hide() end
+            if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
+            if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
+            if col3Normal._panelTabGroup then col3Normal._panelTabGroup.frame:Hide() end
+            if col3Normal._autoAddScroll then col3Normal._autoAddScroll.frame:Hide() end
+
+            if not col3Normal._panelMultiSelectScroll then
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                scroll.frame:SetParent(col3Normal.content)
+                scroll.frame:ClearAllPoints()
+                scroll.frame:SetPoint("TOPLEFT", col3Normal.content, "TOPLEFT", 0, 0)
+                scroll.frame:SetPoint("BOTTOMRIGHT", col3Normal.content, "BOTTOMRIGHT", 0, 0)
+                col3Normal._panelMultiSelectScroll = scroll
+            end
+            col3Normal._panelMultiSelectScroll:ReleaseChildren()
+            col3Normal._panelMultiSelectScroll.frame:Show()
+            ST._RefreshPanelMultiSelect(col3Normal._panelMultiSelectScroll, panelMultiCount, multiPanelIds)
+        end
+        return
+    end
+    -- Hide panel multi-select scroll when not active
+    if col3Normal and col3Normal._panelMultiSelectScroll then
+        col3Normal._panelMultiSelectScroll.frame:Hide()
+    end
+
+    -- Panel settings in Column 3: container mode + panel selected + no button
+    local anyButtonSelected = CS.selectedButton ~= nil
+    if not anyButtonSelected then
+        for _ in pairs(CS.selectedButtons) do anyButtonSelected = true; break end
+    end
+
+    if CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+        if col3Normal then
+            if col3Normal.bsTabGroup then col3Normal.bsTabGroup.frame:Hide() end
+            if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
+            if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
+        end
+
+        -- Create panel tab group lazily (same pattern as col3._customAuraTabGroup)
+        if not col3Normal._panelTabGroup then
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.panelSettingsTab = tab
+                for _, btn in ipairs(CS.tabInfoButtons) do
+                    btn:ClearAllPoints(); btn:Hide(); btn:SetParent(nil)
+                end
+                wipe(CS.tabInfoButtons)
+                widget:ReleaseChildren()
+
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                CS.col4Scroll = scroll
+
+                if tab == "appearance" then
+                    ST._BuildAppearanceTab(scroll)
+                elseif tab == "effects" then
+                    ST._BuildEffectsTab(scroll)
+                elseif tab == "layout" then
+                    ST._BuildLayoutTab(scroll)
+                elseif tab == "loadconditions" then
+                    ST._BuildLoadConditionsTab(scroll)
+                end
+
+                if CS.browseMode then
+                    ST._DisableAllWidgets(scroll)
+                    for _, btn in ipairs(CS.tabInfoButtons) do
+                        if btn.Disable then btn:Disable() end
+                    end
+                end
+            end)
+            tabGroup.frame:SetParent(col3Normal.content)
+            col3Normal._panelTabGroup = tabGroup
+        end
+
+        -- Position and configure tabs
+        col3Normal._panelTabGroup.frame:ClearAllPoints()
+        col3Normal._panelTabGroup.frame:SetPoint("TOPLEFT", col3Normal.content, "TOPLEFT", 0, 0)
+        col3Normal._panelTabGroup.frame:SetPoint("BOTTOMRIGHT", col3Normal.content, "BOTTOMRIGHT", 0, 0)
+
+        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        local isTextMode = group and group.displayMode == "text"
+        local tabs = { { value = "appearance", text = "Appearance" } }
+        if not isTextMode then
+            tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
+        end
+        tabs[#tabs + 1] = { value = "layout", text = "Layout" }
+        tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
+        col3Normal._panelTabGroup:SetTabs(tabs)
+
+        -- Migrate stale tab / text-mode redirect
+        if isTextMode and CS.panelSettingsTab == "effects" then CS.panelSettingsTab = "appearance" end
+
+        col3Normal._panelTabGroup.frame:Show()
+        col3Normal._panelTabGroup:SelectTab(CS.panelSettingsTab or "appearance")
+        return
     end
 
     ST._RefreshButtonSettingsColumn()

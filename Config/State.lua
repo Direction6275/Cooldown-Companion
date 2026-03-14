@@ -103,12 +103,16 @@ local PROFILE_BAR_HEIGHT = 36
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
-    selectedGroup = nil,
+    selectedContainer = nil,     -- containerId selected in Column 1
+    selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
     selectedButton = nil,
     selectedButtons = {},
-    selectedGroups = {},
+    selectedPanels = {},         -- multi-selected panel IDs (within a container)
+    selectedGroups = {},         -- multi-selected container IDs
     selectedTab = "appearance",
+    selectedContainerTab = "general",
     buttonSettingsTab = "settings",
+    panelSettingsTab = "appearance",
     newInput = "",
 
     -- Main frame reference
@@ -118,11 +122,13 @@ ST._configState = {
     col1Scroll = nil,
     col1ButtonBar = nil,
     col2Scroll = nil,
+    col2ButtonBar = nil,
     col4Container = nil,
     col4Scroll = nil,
 
     -- AceGUI widget tracking for cleanup
     col1BarWidgets = {},
+    col2BarWidgets = {},
     profileBarAceWidgets = {},
     buttonSettingsInfoButtons = {},
 
@@ -134,6 +140,13 @@ ST._configState = {
     gearDropdownFrame = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
+    panelContextMenu = nil,
+
+    -- Cross-character browse mode
+    browseMode = false,
+    browseCharKey = nil,
+    browseContainerId = nil,
+    browseContextMenu = nil,
 
     -- Drag-reorder state
     dragState = nil,
@@ -149,7 +162,11 @@ ST._configState = {
     -- Collapsed sections state
     collapsedSections = {},
     collapsedFolders = {},
+    collapsedPanels = {},
+    panelClickTimes = {},
+    addingToPanelId = nil,
     folderAccentBars = {},
+    _panelDropTargets = {},
 
     -- Talent picker mode (2-column layout)
     talentPickerMode = false,
@@ -278,6 +295,27 @@ local function GetGroupIcon(group)
 end
 
 ------------------------------------------------------------------------
+-- Helper: Get icon for a container (from its first panel's first button)
+------------------------------------------------------------------------
+local function GetContainerIcon(containerId, db)
+    if not db or not db.groups then return 134400 end
+    local firstPanel, firstOrder
+    for gid, group in pairs(db.groups) do
+        if group.parentContainerId == containerId then
+            local order = group.order or gid
+            if not firstOrder or order < firstOrder then
+                firstOrder = order
+                firstPanel = group
+            end
+        end
+    end
+    if firstPanel then
+        return GetGroupIcon(firstPanel)
+    end
+    return 134400
+end
+
+------------------------------------------------------------------------
 -- Helper: Get icon for a folder (manual override, else first child group's first button)
 ------------------------------------------------------------------------
 local function IsValidIconTexture(iconTexture)
@@ -286,20 +324,35 @@ local function IsValidIconTexture(iconTexture)
 end
 
 local function GetAutoFolderIcon(folderId, db)
-    if not db or not db.groups then
+    if not db then
         return 134400
     end
-    local children = {}
-    for gid, group in pairs(db.groups) do
-        if group.folderId == folderId then
-            table.insert(children, { id = gid, order = group.order or gid })
+    -- Post-migration: folderId lives on containers, not groups
+    local containers = db.groupContainers
+    if containers then
+        local children = {}
+        for cid, container in pairs(containers) do
+            if container.folderId == folderId then
+                table.insert(children, { id = cid, order = container.order or cid })
+            end
         end
-    end
-    table.sort(children, function(a, b) return a.order < b.order end)
-    if children[1] then
-        local group = db.groups[children[1].id]
-        if group then
-            return GetGroupIcon(group)
+        table.sort(children, function(a, b) return a.order < b.order end)
+        if children[1] and db.groups then
+            -- Find first panel of this container for its icon
+            local containerId = children[1].id
+            local firstPanel, firstOrder
+            for gid, group in pairs(db.groups) do
+                if group.parentContainerId == containerId then
+                    local order = group.order or gid
+                    if not firstOrder or order < firstOrder then
+                        firstOrder = order
+                        firstPanel = group
+                    end
+                end
+            end
+            if firstPanel then
+                return GetGroupIcon(firstPanel)
+            end
         end
     end
     return 134400
@@ -459,12 +512,23 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcBadges then
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
     end
+    if entry.frame._cdcSpecBadges then
+        for _, sb in ipairs(entry.frame._cdcSpecBadges) do sb:Hide() end
+    end
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
     if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
     if entry.frame._cdcAuraBadge then entry.frame._cdcAuraBadge:Hide() end
     if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
+    if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
+    if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
+    if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
+    if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
+    entry.frame:SetScript("OnMouseUp", nil)
+    entry.frame:SetScript("OnReceiveDrag", nil)
+    entry.frame._cdcOnMouseDown = nil
+    entry.frame._cdcLastClickTime = nil
     entry.image:SetAlpha(1)
     if entry.image and entry.image.SetDesaturated then
         entry.image:SetDesaturated(false)
@@ -533,44 +597,62 @@ local function SetupGroupRowIndicators(entry, group)
     if group.locked == false then
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
-    -- Spec filter badges (hide on child groups inheriting an active folder filter)
+    -- Look up folder data for per-badge filtering: badges that exist at the
+    -- folder level are shown on the folder row only, not on child containers.
+    local folderId = group.folderId
+    local folderSpecs, folderHeroTalents
+    if folderId then
+        local folders = CooldownCompanion.db and CooldownCompanion.db.profile
+            and CooldownCompanion.db.profile.folders
+        local folder = folders and folders[folderId]
+        if folder then
+            folderSpecs = folder.specs
+            folderHeroTalents = folder.heroTalents
+        end
+    end
+
+    -- Spec filter badges: show own specs, skip any that exist at folder level
     local SPEC_BADGE_SIZE = 16
-    local effectiveSpecs, inheritedFromFolder = CooldownCompanion:GetEffectiveSpecs(group)
-    if not inheritedFromFolder and effectiveSpecs and next(effectiveSpecs) then
-        for specId in pairs(effectiveSpecs) do
-            local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
-            if specIcon then
-                badgeIndex = badgeIndex + 1
-                local badge = AcquireBadge(frame, badgeIndex)
-                badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
-                badge.icon:SetTexture(specIcon)
-                badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                if not badge._cdcCircleMask then
-                    local mask = badge:CreateMaskTexture()
-                    mask:SetAllPoints(badge.icon)
-                    mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
-                    badge._cdcCircleMask = mask
+    local specs = group.specs
+    if specs then
+        for specId in pairs(specs) do
+            if not (folderSpecs and folderSpecs[specId]) then
+                local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
+                if specIcon then
+                    badgeIndex = badgeIndex + 1
+                    local badge = AcquireBadge(frame, badgeIndex)
+                    badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
+                    badge.icon:SetTexture(specIcon)
+                    badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                    if not badge._cdcCircleMask then
+                        local mask = badge:CreateMaskTexture()
+                        mask:SetAllPoints(badge.icon)
+                        mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
+                        badge._cdcCircleMask = mask
+                    end
+                    badge.icon:AddMaskTexture(badge._cdcCircleMask)
+                    badge:Show()
                 end
-                badge.icon:AddMaskTexture(badge._cdcCircleMask)
-                badge:Show()
             end
         end
     end
 
-    -- Hero talent filter badges
+    -- Hero talent filter badges: show own, skip any that exist at folder level
     local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    local effectiveHeroTalents, inheritedHeroTalents = CooldownCompanion:GetEffectiveHeroTalents(group)
-    if not inheritedHeroTalents and effectiveHeroTalents and next(effectiveHeroTalents) then
+    local heroTalents = group.heroTalents
+    if heroTalents then
         local configID = C_ClassTalents.GetActiveConfigID()
         if configID then
-            for subTreeID in pairs(effectiveHeroTalents) do
-                local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-                if subTreeInfo and subTreeInfo.iconElementID then
-                    badgeIndex = badgeIndex + 1
-                    local badge = AcquireBadge(frame, badgeIndex)
-                    badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
-                    badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
-                    badge:Show()
+            for subTreeID in pairs(heroTalents) do
+                if not (folderHeroTalents and folderHeroTalents[subTreeID]) then
+                    local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
+                    if subTreeInfo and subTreeInfo.iconElementID then
+                        badgeIndex = badgeIndex + 1
+                        local badge = AcquireBadge(frame, badgeIndex)
+                        badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
+                        badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
+                        badge:Show()
+                    end
                 end
             end
         end
@@ -773,8 +855,12 @@ local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, spec
                             end
                         end
                     end
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
+                    if opts.onChanged then
+                        opts.onChanged()
+                    else
+                        CooldownCompanion:RefreshGroupFrame(groupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
                 end)
             end
             container:AddChild(htCb)
@@ -798,9 +884,16 @@ local function ResetConfigSelection(full)
     end
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
+    wipe(CS.selectedPanels)
     if full then
+        CS.selectedContainer = nil
         CS.selectedGroup = nil
         wipe(CS.selectedGroups)
+        CS.addingToPanelId = nil
+        -- Exit browse mode on full reset
+        CS.browseMode = false
+        CS.browseCharKey = nil
+        CS.browseContainerId = nil
     end
 end
 
@@ -853,6 +946,25 @@ local function SpecSetHasForeignSpecs(specs, playerSpecIds)
     return false
 end
 
+local function GetEffectiveContainerSpecFilter(container, db)
+    if not container then return nil end
+    return container.specs
+end
+
+local function ContainersHaveForeignSpecs(containers, requireGlobal)
+    local playerSpecIds = BuildPlayerSpecSet()
+    for _, c in ipairs(containers) do
+        if not requireGlobal or c.isGlobal then
+            local effectiveSpecs = GetEffectiveContainerSpecFilter(c)
+            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Legacy compat: used by folder-level checks
 local function GetEffectiveGroupSpecFilter(group, db)
     if not group then return nil end
     if group.folderId and db and db.folders then
@@ -880,21 +992,20 @@ end
 
 local function FolderHasForeignSpecs(folderId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not (db and db.folders and db.groups) then return false end
+    if not (db and db.folders) then return false end
 
     local folder = db.folders[folderId]
     if not folder then return false end
 
     local playerSpecIds = BuildPlayerSpecSet()
-    if SpecSetHasForeignSpecs(folder.specs, playerSpecIds) then
-        return true
-    end
-
-    for _, group in pairs(db.groups) do
-        if group.folderId == folderId then
-            local effectiveSpecs = GetEffectiveGroupSpecFilter(group, db)
-            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
-                return true
+    -- Post-migration: specs live on containers, not folders
+    local containers = db.groupContainers
+    if containers then
+        for _, container in pairs(containers) do
+            if container.folderId == folderId then
+                if SpecSetHasForeignSpecs(container.specs, playerSpecIds) then
+                    return true
+                end
             end
         end
     end
@@ -903,9 +1014,57 @@ local function FolderHasForeignSpecs(folderId)
 end
 
 ------------------------------------------------------------------------
+-- CompactUntitledInlineGroupConfig (shared utility for bordered panels)
+------------------------------------------------------------------------
+local function CompactUntitledInlineGroupConfig(group)
+    local frame = group and group.frame
+    local content = group and group.content
+    local border = content and content:GetParent()
+    local titleText = group and group.titletext
+    if not frame or not content or not border or not titleText then
+        return
+    end
+
+    local originalLayoutFinished = group.LayoutFinished
+
+    titleText:Hide()
+    border:ClearAllPoints()
+    border:SetPoint("TOPLEFT", 0, 0)
+    border:SetPoint("BOTTOMRIGHT", -1, 3)
+    content:ClearAllPoints()
+    content:SetPoint("TOPLEFT", 10, -6)
+    content:SetPoint("BOTTOMRIGHT", -10, 6)
+    group.LayoutFinished = function(self, width, height)
+        if self.noAutoHeight then
+            return
+        end
+        self:SetHeight((height or 0) + 15)
+    end
+
+    group:SetCallback("OnRelease", function(widget)
+        local releaseTitle = widget and widget.titletext
+        local releaseContent = widget and widget.content
+        local releaseBorder = releaseContent and releaseContent:GetParent()
+        if not releaseTitle or not releaseContent or not releaseBorder then
+            return
+        end
+
+        releaseTitle:Show()
+        releaseBorder:ClearAllPoints()
+        releaseBorder:SetPoint("TOPLEFT", 0, -17)
+        releaseBorder:SetPoint("BOTTOMRIGHT", -1, 3)
+        releaseContent:ClearAllPoints()
+        releaseContent:SetPoint("TOPLEFT", 10, -10)
+        releaseContent:SetPoint("BOTTOMRIGHT", -10, 10)
+        widget.LayoutFinished = originalLayoutFinished
+    end)
+end
+
+------------------------------------------------------------------------
 -- ST._ exports (consumed by later Config/ files at load time)
 ------------------------------------------------------------------------
 CS.SetConfigPrimaryMode = SetConfigPrimaryMode
+ST._CompactUntitledInlineGroupConfig = CompactUntitledInlineGroupConfig
 ST._CDM_VIEWER_NAMES = CDM_VIEWER_NAMES
 ST._CleanRecycledEntry = CleanRecycledEntry
 ST._AcquireBadge = AcquireBadge
@@ -916,6 +1075,7 @@ ST._CreateTextButton = CreateTextButton
 ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
 ST._GetGroupIcon = GetGroupIcon
+ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
 ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._GenerateFolderName = GenerateFolderName
@@ -929,4 +1089,18 @@ ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
+ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
 ST._FolderHasForeignSpecs = FolderHasForeignSpecs
+
+------------------------------------------------------------------------
+-- Helper: Recursively disable all interactive AceGUI widgets
+------------------------------------------------------------------------
+local function DisableAllWidgets(container)
+    if container.children then
+        for _, child in ipairs(container.children) do
+            if child.SetDisabled then child:SetDisabled(true) end
+            DisableAllWidgets(child)
+        end
+    end
+end
+ST._DisableAllWidgets = DisableAllWidgets

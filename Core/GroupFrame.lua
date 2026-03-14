@@ -21,6 +21,35 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 
+-- Return the container frame name for a panel, or nil if not a panel.
+local function GetPanelContainerFrameName(groupId)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not profile then return nil end
+    local group = profile.groups[groupId]
+    if group and group.parentContainerId then
+        return "CooldownCompanionContainer" .. group.parentContainerId
+    end
+    return nil
+end
+
+-- Resolve lock + alpha for a group frame.
+-- Panels use their OWN group.locked (nil = locked); alpha comes from the panel itself.
+-- Legacy groups (no container) use group.locked and group.baselineAlpha directly.
+local function GetContainerState(groupId)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not profile then return true, 1 end
+    local group = profile.groups[groupId]
+    if not group then return true, 1 end
+
+    if group.parentContainerId then
+        -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
+        return group.locked ~= false, group.baselineAlpha or 1
+    end
+
+    -- Legacy path (no container)
+    return group.locked or false, group.baselineAlpha or 1
+end
+
 local function UpdateCoordLabel(frame, x, y)
     if frame.coordLabel then
         frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
@@ -252,11 +281,14 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Position the frame
     self:AnchorGroupFrame(frame, group.anchor)
     
+    -- Resolve locked state from container (or group for legacy)
+    local isLocked, baseAlpha = GetContainerState(groupId)
+
     -- Make it movable when unlocked
     frame:SetMovable(true)
-    frame:EnableMouse(not group.locked)
+    frame:EnableMouse(not isLocked)
     frame:RegisterForDrag("LeftButton")
-    
+
     -- Drag handle (visible when unlocked)
     frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
@@ -265,12 +297,12 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     frame.dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     CreatePixelBorders(frame.dragHandle)
-    
+
     frame.dragHandle.text = frame.dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.dragHandle.text:SetPoint("CENTER")
     frame.dragHandle.text:SetText(group.name)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
-    
+
     -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
 
@@ -286,29 +318,29 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
-    if group.locked or #group.buttons == 0 then
+    if isLocked or #group.buttons == 0 then
         frame.dragHandle:Hide()
     end
 
-    -- Drag scripts
+    -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
-        local g = CooldownCompanion.db.profile.groups[self.groupId]
-        if g and not g.locked then
+        local locked = GetContainerState(self.groupId)
+        if not locked then
             self:StartMoving()
         end
     end)
-    
+
     frame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         CooldownCompanion:SaveGroupPosition(self.groupId)
     end)
-    
+
     -- Also allow dragging from the handle
     frame.dragHandle:EnableMouse(true)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
-        local g = CooldownCompanion.db.profile.groups[groupId]
-        if g and not g.locked then
+        local locked = GetContainerState(groupId)
+        if not locked then
             frame:StartMoving()
         end
     end)
@@ -349,7 +381,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         local alphaState = self.alphaState and self.alphaState[groupId]
-        if alphaState and alphaState.currentAlpha and group.baselineAlpha < 1 then
+        if alphaState and alphaState.currentAlpha then
             frame:SetAlpha(alphaState.currentAlpha)
         end
     else
@@ -381,10 +413,23 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             self:SetupAlphaSync(frame, relativeFrame)
             return
         else
-            -- Target frame doesn't exist - if forceCenter, reset to center
+            -- Target frame doesn't exist — panels fall back to container before UIParent
+            local containerName = GetPanelContainerFrameName(frame.groupId)
+            if containerName then
+                local containerFrame = _G[containerName]
+                if containerFrame then
+                    frame:SetPoint("TOPLEFT", containerFrame, "TOPLEFT", 0, 0)
+                    frame.anchoredToParent = containerFrame
+                    self:SetupAlphaSync(frame, containerFrame)
+                    -- Don't overwrite group.anchor — preserve custom anchor
+                    -- for re-anchor pass after all frames are created
+                    UpdateCoordLabel(frame, 0, 0)
+                    return
+                end
+            end
+            -- If forceCenter, reset to center
             -- Otherwise use saved position relative to UIParent
             if forceCenter then
-                frame:SetAlpha(1)
                 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
                 -- Update the saved anchor to reflect the centered position
                 local group = self.db.profile.groups[frame.groupId]
@@ -404,7 +449,6 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     end
 
     -- Anchor to UIParent using saved position (preserves position across reloads)
-    frame:SetAlpha(1)
     frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
     UpdateCoordLabel(frame, anchor.x, anchor.y)
 end
@@ -416,14 +460,14 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     end
 
     -- If this group has baseline alpha < 1, the alpha fade system takes priority
-    local group = self.db.profile.groups[frame.groupId]
-    if group and group.baselineAlpha < 1 then
+    local _, baseAlpha = GetContainerState(frame.groupId)
+    if baseAlpha < 1 then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
         return
     end
 
-    -- Sync alpha immediately and cache for change detection
-    local lastAlpha = parentFrame:GetEffectiveAlpha()
+    -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
+    local lastAlpha = parentFrame._naturalAlpha or parentFrame:GetEffectiveAlpha()
     frame:SetAlpha(lastAlpha)
 
     -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
@@ -435,9 +479,20 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         accumulator = 0
         if frame.anchoredToParent then
             -- Skip sync if alpha system is active or group is unlocked
-            local grp = CooldownCompanion.db.profile.groups[frame.groupId]
-            if grp and (grp.baselineAlpha < 1 or not grp.locked) then return end
-            local alpha = frame.anchoredToParent:GetEffectiveAlpha()
+            local locked, bAlpha = GetContainerState(frame.groupId)
+            if bAlpha < 1 or not locked then return end
+            -- Read parent's natural alpha to avoid config override cascade
+            local alpha = frame.anchoredToParent._naturalAlpha or frame.anchoredToParent:GetEffectiveAlpha()
+            -- Config-selected: store natural alpha for further downstream chains, force own frame to full
+            if ST.IsGroupConfigSelected(frame.groupId) then
+                frame._naturalAlpha = alpha
+                if lastAlpha ~= 1 then
+                    lastAlpha = 1
+                    frame:SetAlpha(1)
+                end
+                return
+            end
+            frame._naturalAlpha = nil
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
                 frame:SetAlpha(alpha)
@@ -463,8 +518,18 @@ function CooldownCompanion:SaveGroupPosition(groupId)
         relFrame = _G[relativeTo]
     end
     if not relFrame then
-        relFrame = UIParent
-        relativeTo = "UIParent"
+        -- Panels: try container frame before UIParent
+        local containerName = GetPanelContainerFrameName(groupId)
+        if containerName then
+            relFrame = _G[containerName]
+            if relFrame then
+                relativeTo = containerName
+            end
+        end
+        if not relFrame then
+            relFrame = UIParent
+            relativeTo = "UIParent"
+        end
     end
 
     local rw, rh = relFrame:GetSize()
@@ -805,13 +870,16 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         self:PopulateGroupButtons(groupId)
     end
 
+    -- Resolve locked/alpha from container
+    local isLocked, baseAlpha = GetContainerState(groupId)
+
     -- Update drag handle text and lock state
     local hasButtons = #group.buttons > 0
     if frame.dragHandle then
         if frame.dragHandle.text then
             frame.dragHandle.text:SetText(group.name)
         end
-        if group.locked or not hasButtons then
+        if isLocked or not hasButtons then
             frame.dragHandle:Hide()
         else
             frame.dragHandle:Show()
@@ -828,10 +896,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     }) then
         frame:Show()
         -- Force 100% alpha while unlocked for easier positioning
-        if not group.locked then
+        if not isLocked then
             frame:SetAlpha(1)
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
-        elseif group.baselineAlpha < 1 then
+        else
             local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
             if alphaState and alphaState.currentAlpha then
                 frame:SetAlpha(alphaState.currentAlpha)
@@ -842,19 +910,47 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
 end
 
-function CooldownCompanion:WouldCreateCircularAnchor(sourceGroupId, targetGroupId)
+function CooldownCompanion:WouldCreateCircularAnchor(sourceGroupId, targetId, targetKind)
     local groups = self.db.profile.groups
     if not groups then return false end
+    local containers = self.db.profile.groupContainers or {}
     local visited = {}
-    local currentId = targetGroupId
+    -- Track both the kind and id to avoid conflating group/container ID spaces
+    local currentKind = targetKind or "group"
+    local currentId = targetId
     while currentId do
-        if currentId == sourceGroupId then return true end
-        if visited[currentId] then return false end
-        visited[currentId] = true
-        local g = groups[currentId]
-        if not g or not g.anchor or not g.anchor.relativeTo then break end
-        local nextId = g.anchor.relativeTo:match("^CooldownCompanionGroup(%d+)$")
-        currentId = nextId and tonumber(nextId) or nil
+        if currentKind == "group" and currentId == sourceGroupId then return true end
+        local visitKey = currentKind .. ":" .. currentId
+        if visited[visitKey] then return false end
+        visited[visitKey] = true
+        -- Look up anchor chain in the appropriate table
+        local relTo
+        if currentKind == "group" then
+            local g = groups[currentId]
+            if g and g.anchor and g.anchor.relativeTo then
+                relTo = g.anchor.relativeTo
+            end
+        else
+            local c = containers[currentId]
+            if c and c.anchor and c.anchor.relativeTo then
+                relTo = c.anchor.relativeTo
+            end
+        end
+        if not relTo then break end
+        -- Determine next node in the chain
+        local nextGroupId = relTo:match("^CooldownCompanionGroup(%d+)$")
+        if nextGroupId then
+            currentKind = "group"
+            currentId = tonumber(nextGroupId)
+        else
+            local nextContainerId = relTo:match("^CooldownCompanionContainer(%d+)$")
+            if nextContainerId then
+                currentKind = "container"
+                currentId = tonumber(nextContainerId)
+            else
+                break  -- anchored to a non-addon frame, chain ends
+            end
+        end
     end
     return false
 end
@@ -872,7 +968,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         return false
     end
 
-    -- Block circular anchor chains
+    -- Block circular anchor chains (check both group and container targets)
     local tgId = targetFrameName and targetFrameName:match("^CooldownCompanionGroup(%d+)$")
     if tgId then
         tgId = tonumber(tgId)
@@ -880,6 +976,21 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
             self:Print("Cannot anchor: would create a circular reference.")
             return false
         end
+    end
+    local tcId = targetFrameName and targetFrameName:match("^CooldownCompanionContainer(%d+)$")
+    if tcId then
+        tcId = tonumber(tcId)
+        if tcId and self:WouldCreateCircularAnchor(groupId, tcId, "container") then
+            self:Print("Cannot anchor: would create a circular reference.")
+            return false
+        end
+    end
+
+    -- Panels: redirect UIParent to their container frame
+    local containerFrameName = GetPanelContainerFrameName(groupId)
+    if containerFrameName and targetFrameName == "UIParent" then
+        targetFrameName = containerFrameName
+        forceCenter = true
     end
 
     -- Handle UIParent (free positioning)
@@ -904,6 +1015,19 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     if not targetFrame then
         self:Print("Frame '" .. targetFrameName .. "' not found.")
         return false
+    end
+
+    -- Panel anchored to its own container: reset to default position
+    if containerFrameName and targetFrameName == containerFrameName then
+        group.anchor = {
+            point = "CENTER",
+            relativeTo = containerFrameName,
+            relativePoint = "CENTER",
+            x = 0,
+            y = 0,
+        }
+        self:AnchorGroupFrame(frame, group.anchor)
+        return true
     end
 
     group.anchor = {
@@ -945,9 +1069,11 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     if not frame or not group then return end
 
+    local isLocked = GetContainerState(groupId)
+
     -- When locked: group container is always fully non-interactive
     -- When unlocked: enable everything for dragging
-    if group.locked then
+    if isLocked then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
@@ -966,7 +1092,8 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
                 if btn == "MiddleButton" then
                     local g = CooldownCompanion.db.profile.groups[groupId]
                     if g then
-                        g.locked = true
+                        -- Lock this specific group/panel
+                        g.locked = nil
                         CooldownCompanion:RefreshGroupFrame(groupId)
                         CooldownCompanion:RefreshConfigPanel()
                         CooldownCompanion:Print(g.name .. " locked.")
@@ -982,6 +1109,278 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 end
 
 ------------------------------------------------------------------------
+-- Container Frames (invisible anchor frames for the Group → Panel hierarchy)
+------------------------------------------------------------------------
+
+local function CreateContainerNudger(frame, containerId)
+    local NUDGE_GAP = 2
+
+    local nudger = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
+    nudger:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
+    nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
+    nudger:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 5)
+    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    CreatePixelBorders(nudger)
+
+    local directions = {
+        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },
+        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },
+        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },
+        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },
+    }
+
+    for _, dir in ipairs(directions) do
+        local btn = CreateFrame("Button", nil, nudger)
+        btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
+        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
+        btn:EnableMouse(true)
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetAtlas(dir.atlas)
+        arrow:SetAllPoints()
+        arrow:SetRotation(dir.rotation)
+        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        btn.arrow = arrow
+
+        btn:SetScript("OnEnter", function(self)
+            self.arrow:SetVertexColor(1, 1, 1, 1)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+            if self.nudgeDelayTimer then
+                self.nudgeDelayTimer:Cancel()
+                self.nudgeDelayTimer = nil
+            end
+            if self.nudgeTicker then
+                self.nudgeTicker:Cancel()
+                self.nudgeTicker = nil
+            end
+            CooldownCompanion:SaveContainerPosition(containerId)
+        end)
+
+        local function DoNudge()
+            local container = CooldownCompanion.db.profile.groupContainers[containerId]
+            if not container then return end
+            local cFrame = CooldownCompanion.containerFrames[containerId]
+            if cFrame then
+                cFrame:AdjustPointsOffset(dir.dx, dir.dy)
+                local _, _, _, x, y = cFrame:GetPoint()
+                container.anchor.x = math_floor(x * 10 + 0.5) / 10
+                container.anchor.y = math_floor(y * 10 + 0.5) / 10
+                UpdateCoordLabel(cFrame, x, y)
+            end
+        end
+
+        btn:SetScript("OnMouseDown", function(self)
+            DoNudge()
+            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
+                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
+                    DoNudge()
+                end)
+            end)
+        end)
+
+        btn:SetScript("OnMouseUp", function(self)
+            if self.nudgeDelayTimer then
+                self.nudgeDelayTimer:Cancel()
+                self.nudgeDelayTimer = nil
+            end
+            if self.nudgeTicker then
+                self.nudgeTicker:Cancel()
+                self.nudgeTicker = nil
+            end
+            CooldownCompanion:SaveContainerPosition(containerId)
+        end)
+    end
+
+    return nudger
+end
+
+function CooldownCompanion:CreateContainerFrame(containerId)
+    -- Prevent duplicates
+    if self.containerFrames[containerId] then
+        return self.containerFrames[containerId]
+    end
+
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+
+    local frameName = "CooldownCompanionContainer" .. containerId
+    local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
+    frame.containerId = containerId
+
+    -- Container frames are invisible — just an anchor point.
+    -- Size is minimal; panels anchor to it but define their own size.
+    frame:SetSize(1, 1)
+
+    -- Position the frame
+    self:AnchorContainerFrame(frame, container.anchor)
+
+    -- Make it movable when unlocked
+    frame:SetMovable(true)
+    frame:EnableMouse(not container.locked)
+    frame:RegisterForDrag("LeftButton")
+
+    -- Drag handle (visible when unlocked)
+    frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", -40, 2)
+    frame.dragHandle:SetSize(80, 15)
+    frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    frame.dragHandle:SetBackdropColor(0.15, 0.35, 0.55, 0.9)
+    CreatePixelBorders(frame.dragHandle)
+
+    frame.dragHandle.text = frame.dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.dragHandle.text:SetPoint("CENTER")
+    frame.dragHandle.text:SetText(container.name)
+    frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
+
+    -- Pixel nudger
+    frame.nudger = CreateContainerNudger(frame, containerId)
+
+    -- Coordinate label
+    frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    frame.coordLabel:SetHeight(15)
+    frame.coordLabel:SetPoint("TOPLEFT", frame.dragHandle, "BOTTOMLEFT", 0, -2)
+    frame.coordLabel:SetPoint("TOPRIGHT", frame.dragHandle, "BOTTOMRIGHT", 0, -2)
+    frame.coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    frame.coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    CreatePixelBorders(frame.coordLabel)
+    frame.coordLabel.text = frame.coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.coordLabel.text:SetPoint("CENTER")
+    frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
+
+    -- Start hidden (drag handle shows only when unlocked)
+    if container.locked then
+        frame.dragHandle:Hide()
+    end
+
+    -- Drag scripts
+    frame:SetScript("OnDragStart", function(self)
+        local c = CooldownCompanion.db.profile.groupContainers[self.containerId]
+        if c and not c.locked then
+            self:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        CooldownCompanion:SaveContainerPosition(self.containerId)
+    end)
+
+    frame.dragHandle:EnableMouse(true)
+    frame.dragHandle:RegisterForDrag("LeftButton")
+    frame.dragHandle:SetScript("OnDragStart", function()
+        local c = CooldownCompanion.db.profile.groupContainers[containerId]
+        if c and not c.locked then
+            frame:StartMoving()
+        end
+    end)
+    frame.dragHandle:SetScript("OnDragStop", function()
+        frame:StopMovingOrSizing()
+        CooldownCompanion:SaveContainerPosition(containerId)
+    end)
+
+    -- Middle-click to lock
+    frame.dragHandle:SetScript("OnMouseUp", function(_, btn)
+        if btn == "MiddleButton" then
+            local c = CooldownCompanion.db.profile.groupContainers[containerId]
+            if c then
+                c.locked = true
+                frame.dragHandle:Hide()
+                CooldownCompanion:RefreshConfigPanel()
+                CooldownCompanion:Print(c.name .. " locked.")
+            end
+        end
+    end)
+
+    self.containerFrames[containerId] = frame
+    frame:Show()
+    return frame
+end
+
+function CooldownCompanion:AnchorContainerFrame(frame, anchor)
+    frame:ClearAllPoints()
+
+    local relativeTo = anchor.relativeTo
+    if relativeTo and relativeTo ~= "UIParent" then
+        local relativeFrame = _G[relativeTo]
+        if relativeFrame then
+            frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
+            UpdateCoordLabel(frame, anchor.x, anchor.y)
+            return
+        end
+    end
+
+    frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+    UpdateCoordLabel(frame, anchor.x, anchor.y)
+end
+
+function CooldownCompanion:SaveContainerPosition(containerId)
+    local frame = self.containerFrames[containerId]
+    local container = self.db.profile.groupContainers[containerId]
+    if not frame or not container then return end
+
+    local cx, cy = frame:GetCenter()
+    if not cx then return end
+
+    local relativeTo = container.anchor.relativeTo
+    local relFrame
+    if relativeTo and relativeTo ~= "UIParent" then
+        relFrame = _G[relativeTo]
+    end
+    if not relFrame then
+        relFrame = UIParent
+        relativeTo = "UIParent"
+    end
+
+    local rw, rh = relFrame:GetSize()
+    local rcx, rcy = relFrame:GetCenter()
+    local fw, fh = frame:GetSize()
+
+    local desiredPoint = container.anchor.point
+    local desiredRelPoint = container.anchor.relativePoint
+
+    local fax, fay = GetAnchorOffset(desiredPoint, fw, fh)
+    local framePtX = cx + fax
+    local framePtY = cy + fay
+
+    local rax, ray = GetAnchorOffset(desiredRelPoint, rw, rh)
+    local refPtX = rcx + rax
+    local refPtY = rcy + ray
+
+    local newX = math_floor((framePtX - refPtX) * 10 + 0.5) / 10
+    local newY = math_floor((framePtY - refPtY) * 10 + 0.5) / 10
+
+    container.anchor.x = newX
+    container.anchor.y = newY
+    container.anchor.relativeTo = relativeTo
+
+    frame:ClearAllPoints()
+    frame:SetPoint(desiredPoint, relFrame, desiredRelPoint, newX, newY)
+
+    UpdateCoordLabel(frame, newX, newY)
+    self:RefreshConfigPanel()
+end
+
+function CooldownCompanion:IsContainerVisibleToCurrentChar(containerId)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return false end
+    if container.isGlobal then return true end
+    return container.createdBy == self.db.keys.char
+end
+
+function CooldownCompanion:CreateAllContainerFrames()
+    local containers = self.db.profile.groupContainers
+    if not containers then return end
+    for containerId, _ in pairs(containers) do
+        if self:IsContainerVisibleToCurrentChar(containerId) then
+            self:CreateContainerFrame(containerId)
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- Pick-mode indicators: pulsing green border + name label on eligible groups
 ------------------------------------------------------------------------
 function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
@@ -989,42 +1388,67 @@ function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
     local groups = self.db.profile.groups
     if not groups then return end
 
+    -- Helper to create/show an indicator on a frame
+    local function ShowIndicator(key, frame, labelText, sourceId, isCircular)
+        if not frame or not frame:IsShown() or isCircular then return end
+        local indicator = self._pickIndicators[key]
+        if not indicator then
+            indicator = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+            indicator:SetBackdrop({
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                edgeSize = 14,
+            })
+            indicator:SetBackdropBorderColor(0, 1, 0, 0.8)
+            indicator:EnableMouse(false)
+
+            local label = indicator:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            label:SetPoint("BOTTOM", indicator, "TOP", 0, 2)
+            label:SetTextColor(0.2, 1, 0.2, 1)
+            indicator.label = label
+
+            local ag = indicator:CreateAnimationGroup()
+            local pulse = ag:CreateAnimation("Alpha")
+            pulse:SetFromAlpha(0.4)
+            pulse:SetToAlpha(1.0)
+            pulse:SetDuration(0.6)
+            ag:SetLooping("BOUNCE")
+            indicator.pulseAnim = ag
+
+            self._pickIndicators[key] = indicator
+        end
+
+        indicator:SetFrameStrata("FULLSCREEN_DIALOG")
+        indicator:SetFrameLevel(101)
+        indicator.label:SetText(labelText)
+        indicator:SetAllPoints(frame)
+        indicator:Show()
+        indicator.pulseAnim:Play()
+    end
+
+    -- Show indicators on group frames
     for groupId, group in pairs(groups) do
-        local frame = self.groupFrames[groupId]
-        if frame and frame:IsShown() and groupId ~= sourceGroupId
-           and not self:WouldCreateCircularAnchor(sourceGroupId, groupId) then
-            local indicator = self._pickIndicators[groupId]
-            if not indicator then
-                indicator = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-                indicator:SetBackdrop({
-                    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                    edgeSize = 14,
-                })
-                indicator:SetBackdropBorderColor(0, 1, 0, 0.8)
-                indicator:EnableMouse(false)
+        if groupId ~= sourceGroupId then
+            ShowIndicator(
+                "group:" .. groupId,
+                self.groupFrames[groupId],
+                group.name or ("Group " .. groupId),
+                sourceGroupId,
+                self:WouldCreateCircularAnchor(sourceGroupId, groupId)
+            )
+        end
+    end
 
-                local label = indicator:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                label:SetPoint("BOTTOM", indicator, "TOP", 0, 2)
-                label:SetTextColor(0.2, 1, 0.2, 1)
-                indicator.label = label
-
-                local ag = indicator:CreateAnimationGroup()
-                local pulse = ag:CreateAnimation("Alpha")
-                pulse:SetFromAlpha(0.4)
-                pulse:SetToAlpha(1.0)
-                pulse:SetDuration(0.6)
-                ag:SetLooping("BOUNCE")
-                indicator.pulseAnim = ag
-
-                self._pickIndicators[groupId] = indicator
-            end
-
-            indicator:SetFrameStrata("FULLSCREEN_DIALOG")
-            indicator:SetFrameLevel(101)
-            indicator.label:SetText(group.name or ("Group " .. groupId))
-            indicator:SetAllPoints(frame)
-            indicator:Show()
-            indicator.pulseAnim:Play()
+    -- Show indicators on container frames
+    local containers = self.db.profile.groupContainers
+    if containers and self.containerFrames then
+        for containerId, container in pairs(containers) do
+            ShowIndicator(
+                "container:" .. containerId,
+                self.containerFrames[containerId],
+                container.name or ("Container " .. containerId),
+                sourceGroupId,
+                self:WouldCreateCircularAnchor(sourceGroupId, containerId, "container")
+            )
         end
     end
 end

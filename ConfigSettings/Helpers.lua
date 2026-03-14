@@ -504,18 +504,18 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     end
 
     local heading = AceGUI:Create("Heading")
-    heading:SetText(mode == "bars" and "Bar Group Preset" or "Icon Group Preset")
+    heading:SetText(mode == "bars" and "Bar Panel Preset" or "Icon Panel Preset")
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
-    local presetModeLabel = mode == "bars" and "Bar Group Presets" or "Icon Group Presets"
+    local presetModeLabel = mode == "bars" and "Bar Panel Presets" or "Icon Panel Presets"
     local modeSpecificLine = mode == "bars"
-        and "Bar presets only work on bar groups."
-        or "Icon presets only work on icon groups."
+        and "Bar presets only work on bar panels."
+        or "Icon presets only work on icon panels."
     local headingInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         presetModeLabel,
-        {"Click Save to store this group's settings as a preset.", 1, 1, 1},
+        {"Click Save to store this panel's settings as a preset.", 1, 1, 1},
         " ",
         {"Presets save appearance, indicator, and text settings.", 1, 1, 1},
         {"Load Conditions (including Spec/Hero filters) are not saved or changed.", 1, 1, 1},

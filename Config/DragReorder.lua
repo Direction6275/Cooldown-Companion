@@ -74,6 +74,111 @@ local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
     return dropIndex, anchorFrame, anchorAbove
 end
 
+------------------------------------------------------------------------
+-- Column 2 cross-panel drop target detection
+------------------------------------------------------------------------
+local function FindPreviousPanelId(renderedRows, currentIndex)
+    for i = currentIndex - 1, 1, -1 do
+        if renderedRows[i].kind == "header" then
+            return renderedRows[i].panelId
+        end
+    end
+    return nil
+end
+
+local function GetCol2DropTarget(cursorY, renderedRows)
+    if not renderedRows or #renderedRows == 0 then return nil end
+
+    for i, rowMeta in ipairs(renderedRows) do
+        local frame = rowMeta.widget and rowMeta.widget.frame
+        if frame and frame:IsShown() then
+            local top = frame:GetTop()
+            local bottom = frame:GetBottom()
+            if top and bottom and cursorY <= top and cursorY >= bottom then
+                local mid = (top + bottom) / 2
+
+                if rowMeta.kind == "button" then
+                    if cursorY > mid then
+                        return {
+                            action = "insert",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = rowMeta.buttonIndex,
+                            anchorFrame = frame,
+                            anchorAbove = true,
+                        }
+                    else
+                        return {
+                            action = "insert",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = rowMeta.buttonIndex + 1,
+                            anchorFrame = frame,
+                            anchorAbove = false,
+                        }
+                    end
+                elseif rowMeta.kind == "header" then
+                    if rowMeta.isCollapsed then
+                        -- Drop onto collapsed header = append to that panel
+                        return {
+                            action = "append-to-collapsed",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = nil, -- will resolve to #buttons+1
+                            anchorFrame = frame,
+                            anchorAbove = false,
+                        }
+                    else
+                        -- Expanded header: top half → append to previous panel, bottom half → insert at pos 1
+                        if cursorY > mid then
+                            local prevPanelId = FindPreviousPanelId(renderedRows, i)
+                            if prevPanelId then
+                                return {
+                                    action = "append",
+                                    targetPanelId = prevPanelId,
+                                    targetIndex = nil, -- will resolve to #buttons+1
+                                    anchorFrame = frame,
+                                    anchorAbove = true,
+                                }
+                            end
+                            -- No previous panel (first header) → insert at pos 1 of this panel
+                            return {
+                                action = "insert",
+                                targetPanelId = rowMeta.panelId,
+                                targetIndex = 1,
+                                anchorFrame = frame,
+                                anchorAbove = false,
+                            }
+                        else
+                            return {
+                                action = "insert",
+                                targetPanelId = rowMeta.panelId,
+                                targetIndex = 1,
+                                anchorFrame = frame,
+                                anchorAbove = false,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Below all rows: append to last panel
+    local lastRow = renderedRows[#renderedRows]
+    if lastRow then
+        local panelId = lastRow.panelId
+        local lastFrame = lastRow.widget and lastRow.widget.frame
+        if lastFrame and lastFrame:IsShown() then
+            return {
+                action = "append",
+                targetPanelId = panelId,
+                targetIndex = nil,
+                anchorFrame = lastFrame,
+                anchorAbove = false,
+            }
+        end
+    end
+    return nil
+end
+
 local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
     if not anchorFrame then
         HideDragIndicator()
@@ -92,6 +197,84 @@ local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
 end
 
 ------------------------------------------------------------------------
+-- Column 2 panel-header drop target detection
+------------------------------------------------------------------------
+local function GetCol2PanelDropTarget(cursorY, panelDropTargets)
+    if not panelDropTargets or #panelDropTargets == 0 then return nil end
+
+    for i, entry in ipairs(panelDropTargets) do
+        local frame = entry.frame
+        if frame and frame:IsShown() then
+            local top = frame:GetTop()
+            local bottom = frame:GetBottom()
+            if top and bottom then
+                local mid = (top + bottom) / 2
+                if cursorY > mid then
+                    -- Cursor is in the upper half → drop above this panel (index i)
+                    return {
+                        targetIndex = i,
+                        targetPanelId = entry.panelId,
+                        anchorFrame = frame,
+                        anchorAbove = true,
+                    }
+                elseif i == #panelDropTargets then
+                    -- Below midpoint of last panel → drop after last
+                    return {
+                        targetIndex = i + 1,
+                        targetPanelId = entry.panelId,
+                        anchorFrame = frame,
+                        anchorAbove = false,
+                    }
+                end
+            end
+        end
+    end
+
+    -- Cursor above all panels → index 1
+    local first = panelDropTargets[1]
+    if first and first.frame and first.frame:IsShown() then
+        return {
+            targetIndex = 1,
+            targetPanelId = first.panelId,
+            anchorFrame = first.frame,
+            anchorAbove = true,
+        }
+    end
+    return nil
+end
+
+------------------------------------------------------------------------
+-- Panel reorder
+------------------------------------------------------------------------
+local function PerformPanelReorder(sourcePanelId, dropIndex, panelDropTargets)
+    local db = CooldownCompanion.db.profile
+    -- Build ordered panelIds list from drop targets
+    local panelIds = {}
+    for _, entry in ipairs(panelDropTargets) do
+        table.insert(panelIds, entry.panelId)
+    end
+    -- Find source index
+    local sourceIndex
+    for i, pid in ipairs(panelIds) do
+        if pid == sourcePanelId then
+            sourceIndex = i
+            break
+        end
+    end
+    if not sourceIndex then return end
+    if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
+    if sourceIndex == dropIndex then return end
+    table.remove(panelIds, sourceIndex)
+    table.insert(panelIds, dropIndex, sourcePanelId)
+    -- Reassign .order based on new list position
+    for i, pid in ipairs(panelIds) do
+        if db.groups[pid] then
+            db.groups[pid].order = i
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- Group reorder
 ------------------------------------------------------------------------
 local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
@@ -102,7 +285,9 @@ local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
     table.insert(groupIds, dropIndex, id)
     -- Reassign .order based on new list position
     for i, gid in ipairs(groupIds) do
-        db.groups[gid].order = i
+        if db.groups[gid] then
+            db.groups[gid].order = i
+        end
     end
 end
 
@@ -195,63 +380,64 @@ local function ApplyCol1Drop(state)
     local db = CooldownCompanion.db.profile
 
     if state.kind == "group" or state.kind == "folder-group" then
-        local sourceGroupId = state.sourceGroupId
-        local group = db.groups[sourceGroupId]
-        if not group then return end
+        -- Column 1 rows are containers now (sourceGroupId holds a containerId)
+        local sourceContainerId = state.sourceGroupId
+        local container = db.groupContainers[sourceContainerId]
+        if not container then return end
 
         if dropTarget.action == "into-folder" then
-            -- Move group into the target folder
-            CooldownCompanion:MoveGroupToFolder(sourceGroupId, dropTarget.targetFolderId)
+            -- Move container into the target folder
+            CooldownCompanion:MoveGroupToFolder(sourceContainerId, dropTarget.targetFolderId)
         elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             local targetRow = dropTarget.targetRow
             if dropTarget.isBelowAll then
                 -- Dropped below all rows: always become top-level
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
-            elseif targetRow.kind == "group" and targetRow.inFolder then
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
+            elseif targetRow.kind == "container" and targetRow.inFolder then
                 -- If dropping on a row that's in a folder, join that folder
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, targetRow.inFolder)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetRow.inFolder)
             elseif targetRow.kind == "folder" then
                 -- Dropping before/after a folder header = top-level
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             elseif targetRow.kind == "phantom" then
                 -- Dropping on phantom section placeholder = top-level in that section
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             else
-                -- Dropping on a loose group = stay/become loose
-                CooldownCompanion:MoveGroupToFolder(sourceGroupId, nil)
+                -- Dropping on a loose container = stay/become loose
+                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
             end
 
             -- Cross-section move: toggle global/character status
             local targetSection = targetRow.section or state.sourceSection
             if targetSection ~= state.sourceSection then
                 if targetSection == "global" then
-                    group.isGlobal = true
+                    container.isGlobal = true
                 else
-                    group.isGlobal = false
-                    group.createdBy = CooldownCompanion.db.keys.char
+                    container.isGlobal = false
+                    container.createdBy = CooldownCompanion.db.keys.char
                 end
             end
 
             -- Reassign order values for all items in the target section
-            -- to place the dragged group at the right position
+            -- to place the dragged container at the right position
             local section = targetSection
             local renderedRows = state.col1RenderedRows
             if renderedRows then
-                -- Build ordered list of items in the same container (folder or top-level)
+                -- Build ordered list of items in the same parent (folder or top-level)
                 -- and reassign order values
-                local targetFolderId = group.folderId
+                local targetFolderId = container.folderId
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
                     if row.section == section then
                         if targetFolderId then
-                            -- Ordering within a folder: collect groups in same folder
-                            if row.kind == "group" and row.inFolder == targetFolderId and row.id ~= sourceGroupId then
+                            -- Ordering within a folder: collect containers in same folder
+                            if row.kind == "container" and row.inFolder == targetFolderId and row.id ~= sourceContainerId then
                                 table.insert(orderItems, row.id)
                             end
                         else
-                            -- Top-level ordering: collect top-level items (folders + loose groups)
-                            if (row.kind == "folder") or (row.kind == "group" and not row.inFolder) then
-                                if row.id ~= sourceGroupId then
+                            -- Top-level ordering: collect top-level items (folders + loose containers)
+                            if (row.kind == "folder") or (row.kind == "container" and not row.inFolder) then
+                                if row.id ~= sourceContainerId then
                                     table.insert(orderItems, { kind = row.kind, id = row.id })
                                 end
                             end
@@ -262,17 +448,19 @@ local function ApplyCol1Drop(state)
                 -- Find insertion position
                 local insertPos
                 if targetFolderId then
-                    -- Within folder: find target group position
+                    -- Within folder: find target container position
                     insertPos = #orderItems + 1
-                    for idx, gid in ipairs(orderItems) do
-                        if gid == dropTarget.targetRow.id then
+                    for idx, cid in ipairs(orderItems) do
+                        if cid == dropTarget.targetRow.id then
                             insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
                             break
                         end
                     end
-                    table.insert(orderItems, insertPos, sourceGroupId)
-                    for i, gid in ipairs(orderItems) do
-                        db.groups[gid].order = i
+                    table.insert(orderItems, insertPos, sourceContainerId)
+                    for i, cid in ipairs(orderItems) do
+                        if db.groupContainers[cid] then
+                            db.groupContainers[cid].order = i
+                        end
                     end
                 else
                     -- Top-level: find target position among mixed items
@@ -283,20 +471,21 @@ local function ApplyCol1Drop(state)
                             break
                         end
                     end
-                    table.insert(orderItems, insertPos, { kind = "group", id = sourceGroupId })
+                    table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
                     for i, item in ipairs(orderItems) do
-                        if item.kind == "folder" then
+                        if item.kind == "folder" and db.folders[item.id] then
                             db.folders[item.id].order = i
-                        else
-                            db.groups[item.id].order = i
+                        elseif db.groupContainers[item.id] then
+                            db.groupContainers[item.id].order = i
                         end
                     end
                 end
             end
         end
     elseif state.kind == "multi-group" then
-        local sourceGroupIds = state.sourceGroupIds
-        if not sourceGroupIds then return end
+        -- Multi-select: sourceGroupIds holds container IDs (Column 1 rows are containers)
+        local sourceContainerIds = state.sourceGroupIds
+        if not sourceContainerIds then return end
 
         local targetRow = dropTarget.targetRow
         -- Determine target folder and section
@@ -306,7 +495,7 @@ local function ApplyCol1Drop(state)
         elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             if dropTarget.isBelowAll then
                 targetFolderId = nil
-            elseif targetRow.kind == "group" and targetRow.inFolder then
+            elseif targetRow.kind == "container" and targetRow.inFolder then
                 targetFolderId = targetRow.inFolder
             else
                 targetFolderId = nil
@@ -315,67 +504,69 @@ local function ApplyCol1Drop(state)
 
         local targetSection = targetRow.section or state.sourceSection
 
-        -- Set folder and cross-section toggle for each selected group
-        for gid in pairs(sourceGroupIds) do
-            local g = db.groups[gid]
-            if g then
-                CooldownCompanion:MoveGroupToFolder(gid, targetFolderId)
-                local groupSection = g.isGlobal and "global" or "char"
-                if groupSection ~= targetSection then
+        -- Set folder and cross-section toggle for each selected container
+        for cid in pairs(sourceContainerIds) do
+            local c = db.groupContainers[cid]
+            if c then
+                CooldownCompanion:MoveGroupToFolder(cid, targetFolderId)
+                local containerSection = c.isGlobal and "global" or "char"
+                if containerSection ~= targetSection then
                     if targetSection == "global" then
-                        g.isGlobal = true
+                        c.isGlobal = true
                     else
-                        g.isGlobal = false
-                        g.createdBy = CooldownCompanion.db.keys.char
+                        c.isGlobal = false
+                        c.createdBy = CooldownCompanion.db.keys.char
                     end
                 end
             end
         end
 
-        -- Sort selected groups by current order to preserve relative ordering
+        -- Sort selected containers by current order to preserve relative ordering
         local sortedSelected = {}
-        for gid in pairs(sourceGroupIds) do
-            local g = db.groups[gid]
-            if g then
-                table.insert(sortedSelected, { id = gid, order = g.order or gid })
+        for cid in pairs(sourceContainerIds) do
+            local c = db.groupContainers[cid]
+            if c then
+                table.insert(sortedSelected, { id = cid, order = c.order or cid })
             end
         end
         table.sort(sortedSelected, function(a, b) return a.order < b.order end)
 
-        -- Rebuild order for target container
+        -- Rebuild order for target section
         local renderedRows = state.col1RenderedRows
         if renderedRows then
             if targetFolderId then
                 -- Ordering within a folder
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
-                    if row.kind == "group" and row.inFolder == targetFolderId and not sourceGroupIds[row.id] then
+                    if row.kind == "container" and row.inFolder == targetFolderId and not sourceContainerIds[row.id] then
                         table.insert(orderItems, row.id)
                     end
                 end
 
                 -- Find insertion position
                 local insertPos = #orderItems + 1
-                for idx, gid in ipairs(orderItems) do
-                    if gid == targetRow.id then
+                for idx, cid in ipairs(orderItems) do
+                    if cid == targetRow.id then
                         insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
                         break
                     end
                 end
-                -- Insert all selected groups at the position, preserving relative order
+                -- Insert all selected containers at the position, preserving relative order
                 for i, item in ipairs(sortedSelected) do
                     table.insert(orderItems, insertPos + i - 1, item.id)
                 end
-                for i, gid in ipairs(orderItems) do
-                    db.groups[gid].order = i
+                for i, cid in ipairs(orderItems) do
+                    if db.groupContainers[cid] then
+                        db.groupContainers[cid].order = i
+                    end
                 end
             else
                 -- Top-level ordering
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
                     if row.section == targetSection then
-                        if (row.kind == "folder") or (row.kind == "group" and not row.inFolder) then
-                            if not sourceGroupIds[row.id] then
+                        if (row.kind == "folder") or (row.kind == "container" and not row.inFolder) then
+                            if not sourceContainerIds[row.id] then
                                 table.insert(orderItems, { kind = row.kind, id = row.id })
                             end
                         end
@@ -389,15 +580,15 @@ local function ApplyCol1Drop(state)
                         break
                     end
                 end
-                -- Insert all selected groups at the position
+                -- Insert all selected containers at the position
                 for i, item in ipairs(sortedSelected) do
                     table.insert(orderItems, insertPos + i - 1, { kind = "group", id = item.id })
                 end
                 for i, item in ipairs(orderItems) do
-                    if item.kind == "folder" then
+                    if item.kind == "folder" and db.folders[item.id] then
                         db.folders[item.id].order = i
-                    else
-                        db.groups[item.id].order = i
+                    elseif db.groupContainers[item.id] then
+                        db.groupContainers[item.id].order = i
                     end
                 end
             end
@@ -411,19 +602,19 @@ local function ApplyCol1Drop(state)
         local targetRow = dropTarget.targetRow
         local section = targetRow.section or state.sourceSection
 
-        -- Cross-section move: toggle folder section and update all child groups
+        -- Cross-section move: toggle folder section and update all child containers
         if section ~= state.sourceSection then
             folder.section = section
             if section == "char" then
                 folder.createdBy = CooldownCompanion.db.keys.char
             end
-            for groupId, group in pairs(db.groups) do
-                if group.folderId == sourceFolderId then
+            for containerId, container in pairs(db.groupContainers) do
+                if container.folderId == sourceFolderId then
                     if section == "global" then
-                        group.isGlobal = true
+                        container.isGlobal = true
                     else
-                        group.isGlobal = false
-                        group.createdBy = CooldownCompanion.db.keys.char
+                        container.isGlobal = false
+                        container.createdBy = CooldownCompanion.db.keys.char
                     end
                 end
             end
@@ -435,7 +626,7 @@ local function ApplyCol1Drop(state)
             local orderItems = {}
             for _, row in ipairs(renderedRows) do
                 if row.section == section then
-                    if (row.kind == "folder" or (row.kind == "group" and not row.inFolder)) and row.id ~= sourceFolderId then
+                    if (row.kind == "folder" or (row.kind == "container" and not row.inFolder)) and row.id ~= sourceFolderId then
                         table.insert(orderItems, { kind = row.kind, id = row.id })
                     end
                 end
@@ -460,13 +651,13 @@ local function ApplyCol1Drop(state)
                 if item.kind == "folder" then
                     db.folders[item.id].order = i
                 else
-                    db.groups[item.id].order = i
+                    db.groupContainers[item.id].order = i
                 end
             end
         end
     end
 
-    -- Group order may have changed — re-evaluate auto-anchored bars
+    -- Container order may have changed — re-evaluate auto-anchored bars
     CooldownCompanion:EvaluateResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:EvaluateCastBar()
@@ -493,6 +684,38 @@ local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
             CS.selectedButton = CS.selectedButton + 1
         end
     end
+end
+
+------------------------------------------------------------------------
+-- Cross-panel move helpers
+------------------------------------------------------------------------
+local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, targetIndex)
+    local db = CooldownCompanion.db.profile
+    local sourceGroup = db.groups[sourcePanelId]
+    local targetGroup = db.groups[targetPanelId]
+    if not sourceGroup or not targetGroup then return nil end
+    local buttonData = table.remove(sourceGroup.buttons, sourceIndex)
+    if not buttonData then return nil end
+    -- Resolve "append" targets (nil targetIndex = after last button)
+    if not targetIndex then
+        targetIndex = #targetGroup.buttons + 1
+    end
+    local maxTarget = #targetGroup.buttons + 1
+    if targetIndex > maxTarget then targetIndex = maxTarget end
+    table.insert(targetGroup.buttons, targetIndex, buttonData)
+    return buttonData
+end
+
+local function StripButtonOverrides(buttonData)
+    buttonData.styleOverrides = nil
+    buttonData.overrideSections = nil
+    buttonData.textFormat = nil
+end
+
+local function ButtonHasOverrides(buttonData)
+    return (buttonData.styleOverrides and next(buttonData.styleOverrides))
+        or (buttonData.overrideSections and next(buttonData.overrideSections))
+        or buttonData.textFormat ~= nil
 end
 
 ------------------------------------------------------------------------
@@ -544,12 +767,12 @@ local function FinishDrag()
         local dropTarget = state.dropTarget
         if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
             local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
-            local sourceGroup = CooldownCompanion.db.profile.groups[state.sourceGroupId]
+            local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
             if targetSection and targetSection ~= state.sourceSection
                and state.sourceSection == "global"
-               and sourceGroup and sourceGroup.specs
-               and GroupsHaveForeignSpecs({sourceGroup}, false) then
-                ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceGroup.name, {
+               and sourceContainer and sourceContainer.specs
+               and GroupsHaveForeignSpecs({sourceContainer}, false) then
+                ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
                     dragState = state,
                 })
                 return
@@ -561,8 +784,8 @@ local function FinishDrag()
             if targetSection == "char" then
                 local db = CooldownCompanion.db.profile
                 local groupList = {}
-                for gid in pairs(state.sourceGroupIds) do
-                    if db.groups[gid] then groupList[#groupList + 1] = db.groups[gid] end
+                for cid in pairs(state.sourceGroupIds) do
+                    if db.groupContainers[cid] then groupList[#groupList + 1] = db.groupContainers[cid] end
                 end
                 if GroupsHaveForeignSpecs(groupList, true) then
                     ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
@@ -595,9 +818,54 @@ local function FinishDrag()
         end
         ApplyCol1Drop(state)
         CooldownCompanion:RefreshConfigPanel()
+    elseif state.kind == "panel" then
+        local dropTarget = state.dropTarget
+        if dropTarget then
+            PerformPanelReorder(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
+            -- Refresh all affected panel frames
+            for _, entry in ipairs(state.panelDropTargets) do
+                CooldownCompanion:RefreshGroupFrame(entry.panelId)
+            end
+        end
+        CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "button" then
-        PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
-        CooldownCompanion:RefreshGroupFrame(state.groupId)
+        if state.dropTarget then
+            -- Cross-panel-aware path (multi-panel containers)
+            local dt = state.dropTarget
+            -- Resolve append targets
+            local resolvedIndex = dt.targetIndex
+            if not resolvedIndex then
+                local tg = CooldownCompanion.db.profile.groups[dt.targetPanelId]
+                resolvedIndex = tg and (#tg.buttons + 1) or 1
+            end
+            if dt.targetPanelId == state.groupId then
+                -- Same panel: existing intra-panel reorder
+                PerformButtonReorder(state.groupId, state.sourceIndex, resolvedIndex)
+                CooldownCompanion:RefreshGroupFrame(state.groupId)
+            else
+                -- Cross-panel move
+                local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
+                local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
+                if buttonData and ButtonHasOverrides(buttonData) then
+                    ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
+                        sourcePanelId = state.groupId,
+                        sourceIndex = state.sourceIndex,
+                        targetPanelId = dt.targetPanelId,
+                        targetIndex = resolvedIndex,
+                    })
+                    return  -- popup handles move + refresh
+                end
+                PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
+                CooldownCompanion:RefreshGroupFrame(state.groupId)
+                CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
+            end
+        else
+            -- Legacy single-panel path (no col2RenderedRows)
+            PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
+            CooldownCompanion:RefreshGroupFrame(state.groupId)
+        end
+        CS.selectedButton = nil
+        wipe(CS.selectedButtons)
         CooldownCompanion:RefreshConfigPanel()
     end
 end
@@ -629,7 +897,7 @@ local function StartDragTracking()
                 if CS.dragState.kind == "multi-group" and CS.dragState.sourceGroupIds then
                     CS.dragState.dimmedWidgets = {}
                     for _, row in ipairs(CS.dragState.col1RenderedRows) do
-                        if row.kind == "group" and CS.dragState.sourceGroupIds[row.id] then
+                        if row.kind == "container" and CS.dragState.sourceGroupIds[row.id] then
                             row.widget.frame:SetAlpha(0.4)
                             table.insert(CS.dragState.dimmedWidgets, row.widget)
                         end
@@ -671,7 +939,7 @@ local function StartDragTracking()
                         if savedKind == "multi-group" and savedSourceGroupIds then
                             CS.dragState.dimmedWidgets = {}
                             for _, row in ipairs(CS.dragState.col1RenderedRows) do
-                                if row.kind == "group" and savedSourceGroupIds[row.id] then
+                                if row.kind == "container" and savedSourceGroupIds[row.id] then
                                     row.widget.frame:SetAlpha(0.4)
                                     table.insert(CS.dragState.dimmedWidgets, row.widget)
                                 end
@@ -682,7 +950,7 @@ local function StartDragTracking()
                                     CS.dragState.widget = row.widget
                                     row.widget.frame:SetAlpha(0.4)
                                     break
-                                elseif (savedKind == "group" or savedKind == "folder-group") and row.kind == "group" and row.id == savedSourceGroupId then
+                                elseif (savedKind == "group" or savedKind == "folder-group") and row.kind == "container" and row.id == savedSourceGroupId then
                                     CS.dragState.widget = row.widget
                                     row.widget.frame:SetAlpha(0.4)
                                     break
@@ -707,6 +975,30 @@ local function StartDragTracking()
                         ShowDragIndicator(dropTarget.anchorFrame, true, CS.dragState.scrollWidget)
                     else
                         ShowDragIndicator(dropTarget.anchorFrame, false, CS.dragState.scrollWidget)
+                    end
+                else
+                    HideDragIndicator()
+                end
+            elseif CS.dragState.panelDropTargets then
+                -- Panel reorder detection
+                local dropTarget = GetCol2PanelDropTarget(cursorY, CS.dragState.panelDropTargets)
+                CS.dragState.dropTarget = dropTarget
+                if dropTarget then
+                    ResetDragIndicatorStyle()
+                    ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
+                else
+                    HideDragIndicator()
+                end
+            elseif CS.dragState.col2RenderedRows then
+                -- Column 2 cross-panel drop detection
+                local dropTarget = GetCol2DropTarget(cursorY, CS.dragState.col2RenderedRows)
+                CS.dragState.dropTarget = dropTarget
+                if dropTarget then
+                    ResetDragIndicatorStyle()
+                    if dropTarget.action == "append-to-collapsed" then
+                        ShowFolderDropOverlay(dropTarget.anchorFrame, CS.dragState.scrollWidget)
+                    else
+                        ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
                     end
                 else
                     HideDragIndicator()
@@ -741,3 +1033,5 @@ ST._ShowDragIndicator = ShowDragIndicator
 ST._GetCol1DropTarget = GetCol1DropTarget
 ST._ShowFolderDropOverlay = ShowFolderDropOverlay
 ST._ResetDragIndicatorStyle = ResetDragIndicatorStyle
+ST._PerformCrossPanelMove = PerformCrossPanelMove
+ST._StripButtonOverrides = StripButtonOverrides

@@ -49,11 +49,12 @@ local function ClearFolderFiltersForUnglobal(folderId)
         return
     end
 
-    if db.groups then
-        for _, group in pairs(db.groups) do
-            if group.folderId == folderId and (group.specs or group.heroTalents) then
-                group.specs = nil
-                group.heroTalents = nil
+    -- Fallback: clear specs on child containers (folderId lives on containers post-migration)
+    if db.groupContainers then
+        for _, container in pairs(db.groupContainers) do
+            if container.folderId == folderId and (container.specs or container.heroTalents) then
+                container.specs = nil
+                container.heroTalents = nil
             end
         end
     end
@@ -64,16 +65,48 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if data and data.groupId then
-            CooldownCompanion:DeleteGroup(data.groupId)
-            if CS.selectedGroup == data.groupId then
-                CS.selectedGroup = nil
-                CS.selectedButton = nil
-                wipe(CS.selectedButtons)
+        if not data then return end
+        local id = data.containerId or data.groupId
+        if id then
+            CooldownCompanion:DeleteGroup(id)
+            if data.containerId then
+                if CS.selectedContainer == id then
+                    CS.selectedContainer = nil
+                    CS.selectedGroup = nil
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
+                end
+            else
+                if CS.selectedGroup == id then
+                    CS.selectedGroup = nil
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
+                end
             end
-            CS.selectedGroups[data.groupId] = nil
+            CS.selectedGroups[id] = nil
             CooldownCompanion:RefreshConfigPanel()
         end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_PANEL"] = {
+    text = "Are you sure you want to delete panel '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not data then return end
+        CooldownCompanion:DeletePanel(data.containerId, data.panelId)
+        if CS.selectedGroup == data.panelId then
+            CS.selectedGroup = nil
+        end
+        if CS.addingToPanelId == data.panelId then
+            CS.addingToPanelId = nil
+        end
+        CooldownCompanion:RefreshConfigPanel()
     end,
     timeout = 0,
     whileDead = true,
@@ -88,12 +121,26 @@ StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     hasEditBox = true,
     OnAccept = function(self, data)
         local newName = self.EditBox:GetText()
-        if newName and newName ~= "" and data and data.groupId then
-            local group = CooldownCompanion.db.profile.groups[data.groupId]
-            if group then
-                group.name = newName
-                CooldownCompanion:RefreshGroupFrame(data.groupId)
-                CooldownCompanion:RefreshConfigPanel()
+        if newName and newName ~= "" and data then
+            if data.containerId then
+                local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
+                if container then
+                    container.name = newName
+                    -- Refresh all panels in this container
+                    for gid, g in pairs(CooldownCompanion.db.profile.groups) do
+                        if g.parentContainerId == data.containerId then
+                            CooldownCompanion:RefreshGroupFrame(gid)
+                        end
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            elseif data.groupId then
+                local group = CooldownCompanion.db.profile.groups[data.groupId]
+                if group then
+                    group.name = newName
+                    CooldownCompanion:RefreshGroupFrame(data.groupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
             end
         end
     end,
@@ -144,6 +191,26 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
                 CooldownCompanion:RefreshGroupFrame(data.groupId)
             end
             ResetConfigSelection(false)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_SELECTED_PANELS"] = {
+    text = "Delete %d selected panels?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.panelIds and data.containerId then
+            for _, pid in ipairs(data.panelIds) do
+                CooldownCompanion:DeletePanel(data.containerId, pid)
+            end
+            wipe(CS.selectedPanels)
+            CS.selectedGroup = nil
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
@@ -389,6 +456,14 @@ StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
                         end
                     end
                 end
+                if db.profile.groupContainers then
+                    local charKey = db.keys.char
+                    for _, container in pairs(db.profile.groupContainers) do
+                        if not container.isGlobal then
+                            container.createdBy = charKey
+                        end
+                    end
+                end
                 if db.profile.folders then
                     local charKey = db.keys.char
                     for _, folder in pairs(db.profile.folders) do
@@ -425,7 +500,16 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if data and data.groupId then
+        if not data then return end
+        if data.containerId then
+            local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
+            if container then
+                container.specs = nil
+                container.heroTalents = nil
+                CooldownCompanion:ToggleGroupGlobal(data.containerId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        elseif data.groupId then
             local group = CooldownCompanion.db.profile.groups[data.groupId]
             if group then
                 group.specs = nil
@@ -448,13 +532,38 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
     OnAccept = function(self, data)
         if data and data.dragState then
             local db = CooldownCompanion.db.profile
-            local group = db.groups[data.dragState.sourceGroupId]
-            if group then
-                group.specs = nil
-                group.heroTalents = nil
+            local container = db.groupContainers[data.dragState.sourceGroupId]
+            if container then
+                container.specs = nil
+                container.heroTalents = nil
                 ST._ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
+    text = "Moving '%s' to a different panel will remove its appearance overrides. Continue?",
+    button1 = "Move",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not data then return end
+        local buttonData = ST._PerformCrossPanelMove(
+            data.sourcePanelId, data.sourceIndex,
+            data.targetPanelId, data.targetIndex
+        )
+        if buttonData then
+            ST._StripButtonOverrides(buttonData)
+            CooldownCompanion:RefreshGroupFrame(data.sourcePanelId)
+            CooldownCompanion:RefreshGroupFrame(data.targetPanelId)
+            CS.selectedButton = nil
+            wipe(CS.selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
         end
     end,
     timeout = 0,
@@ -524,7 +633,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.callback then
-            -- Strip foreign specs from affected groups before executing the operation
+            -- Strip foreign specs from affected containers before executing the operation
             if data.groupIds then
                 local db = CooldownCompanion.db.profile
                 local numSpecs = GetNumSpecializations()
@@ -533,13 +642,13 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
                     local specId = C_SpecializationInfo.GetSpecializationInfo(i)
                     if specId then playerSpecIds[specId] = true end
                 end
-                for _, gid in ipairs(data.groupIds) do
-                    local group = db.groups[gid]
-                    if group and group.specs then
-                        for specId in pairs(group.specs) do
+                for _, cid in ipairs(data.groupIds) do
+                    local container = db.groupContainers[cid]
+                    if container and container.specs then
+                        for specId in pairs(container.specs) do
                             if not playerSpecIds[specId] then
-                                group.specs = nil
-                                group.heroTalents = nil
+                                container.specs = nil
+                                container.heroTalents = nil
                                 break
                             end
                         end
@@ -755,6 +864,57 @@ local function ImportGroupData(text)
         end
         CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
 
+    elseif data.type == "container" and data.container and data.panels then
+        -- Import container + all child panels
+        local containerId = db.nextContainerId
+        db.nextContainerId = containerId + 1
+        local container = CopyTable(data.container)
+        container.createdBy = charKey
+        container.isGlobal = false
+        container.order = containerId
+        container.folderId = nil
+        db.groupContainers[containerId] = container
+        CooldownCompanion:CreateContainerFrame(containerId)
+
+        local count = 0
+        for _, srcPanel in ipairs(data.panels) do
+            local groupId = db.nextGroupId
+            db.nextGroupId = groupId + 1
+            local panel = CopyTable(srcPanel)
+            panel.parentContainerId = containerId
+            panel.anchor = {
+                point = "CENTER",
+                relativeTo = "CooldownCompanionContainer" .. containerId,
+                relativePoint = "CENTER",
+                x = 0,
+                y = 0,
+            }
+            db.groups[groupId] = panel
+            CooldownCompanion:CreateGroupFrame(groupId)
+            count = count + 1
+        end
+        -- Ensure at least one panel exists
+        if count == 0 then
+            local groupId = db.nextGroupId
+            db.nextGroupId = groupId + 1
+            db.groups[groupId] = {
+                name = "Panel 1",
+                order = 1,
+                parentContainerId = containerId,
+                displayMode = "icons",
+                buttons = {},
+                anchor = {
+                    point = "CENTER",
+                    relativeTo = "CooldownCompanionContainer" .. containerId,
+                    relativePoint = "CENTER",
+                    x = 0,
+                    y = 0,
+                },
+            }
+            CooldownCompanion:CreateGroupFrame(groupId)
+        end
+        CooldownCompanion:Print("Imported group: " .. (container.name or "Unnamed") .. " (" .. count .. " panels)")
+
     else
         CooldownCompanion:Print("Import failed: unrecognized export type.")
         return false
@@ -788,7 +948,7 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
-    text = "Paste group import string:",
+    text = "Paste import string (Ctrl+V to paste):",
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)

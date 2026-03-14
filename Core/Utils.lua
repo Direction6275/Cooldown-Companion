@@ -280,36 +280,83 @@ end
 -- Config Selection Helpers
 --------------------------------------------------------------------------------
 
--- Returns true when this runtime button is selected in Config Column 2.
--- Selection override is active only while the config panel is visible.
-function ST.IsConfigButtonForceVisible(button)
-    if not button then return false end
-
+-- Returns true when a group/panel frame should be at full alpha because it
+-- (or its parent container) is selected in the Config panel.
+-- Used by: alpha fade system, alpha sync ticker, button force-visible.
+function ST.IsGroupConfigSelected(groupId)
     local CS = ST._configState
-    if not CS or not CS.selectedGroup then
-        return false
-    end
-
+    if not CS then return false end
     local configFrame = CS.configFrame
     if not configFrame or not configFrame.frame or not configFrame.frame:IsShown() then
         return false
     end
 
-    if button._groupId ~= CS.selectedGroup then
-        return false
+    -- Direct panel/group selection
+    if CS.selectedGroup == groupId then return true end
+
+    -- Multi-panel selection
+    if CS.selectedPanels and CS.selectedPanels[groupId] then return true end
+
+    -- Container selected, no specific panel → all panels in that container
+    if CS.selectedContainer and not CS.selectedGroup then
+        local db = ST.Addon.db
+        local group = db and db.profile.groups[groupId]
+        if group and group.parentContainerId == CS.selectedContainer then
+            return true
+        end
     end
 
+    return false
+end
+
+-- Returns true when this runtime button should be force-visible because its
+-- group/panel is selected in the Config panel.  Active only while the config
+-- frame is shown.
+--
+-- Force-visible rules:
+--   1. Container selected, no panel/button selected → ALL buttons in ALL panels
+--   2. Panel header selected, no button selected → ALL buttons in that panel
+--   3. Individual button(s) selected within panel → only those buttons
+--   4. Multi-selected panels (Ctrl+click) → ALL buttons in each panel
+function ST.IsConfigButtonForceVisible(button)
+    if not button then return false end
+
+    local groupId = button._groupId
+    if not groupId then return false end
     local index = button.index
-    if not index then
+    if not index then return false end
+
+    local CS = ST._configState
+    if not CS then return false end
+    local configFrame = CS.configFrame
+    if not configFrame or not configFrame.frame or not configFrame.frame:IsShown() then
         return false
     end
 
-    if CS.selectedButton == index then
+    -- Single-selected panel: check for individual button selection
+    if CS.selectedGroup == groupId then
+        if CS.selectedButton then
+            return CS.selectedButton == index
+        end
+        if next(CS.selectedButtons) then
+            return CS.selectedButtons[index] or false
+        end
+        -- No button selected → header-only, force-show ALL buttons
         return true
     end
 
-    if CS.selectedButtons[index] then
+    -- Multi-selected panels → all buttons
+    if CS.selectedPanels and CS.selectedPanels[groupId] then
         return true
+    end
+
+    -- Container selected, no specific panel → all buttons in all panels
+    if CS.selectedContainer and not CS.selectedGroup then
+        local db = ST.Addon.db
+        local group = db and db.profile.groups[groupId]
+        if group and group.parentContainerId == CS.selectedContainer then
+            return true
+        end
     end
 
     return false

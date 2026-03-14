@@ -72,15 +72,19 @@ local function BuildLayoutTab(container)
 
     local anchorBox = AceGUI:Create("EditBox")
     if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
+    local isPanel = group.parentContainerId ~= nil
+    local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
     anchorBox:SetLabel("Anchor to Frame")
     local currentAnchor = group.anchor.relativeTo
     if currentAnchor == "UIParent" then currentAnchor = "" end
+    if isPanel and currentAnchor == panelContainerFrame then currentAnchor = "" end
     anchorBox:SetText(currentAnchor)
     anchorBox:SetRelativeWidth(0.68)
     anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= "UIParent"
+        local defaultFrame = isPanel and panelContainerFrame or "UIParent"
+        local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
         if text == "" then
-            CooldownCompanion:SetGroupAnchor(CS.selectedGroup, "UIParent", wasAnchored)
+            CooldownCompanion:SetGroupAnchor(CS.selectedGroup, isPanel and panelContainerFrame or "UIParent", wasAnchored)
         else
             CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
         end
@@ -1801,7 +1805,457 @@ local function BuildAppearanceTab(container)
     end
 end
 
+------------------------------------------------------------------------
+-- CONTAINER TAB BUILDERS (for groupContainers settings in Column 4)
+------------------------------------------------------------------------
+
+local function BuildContainerGeneralTab(scroll, containerId)
+    local db = CooldownCompanion.db.profile
+    local container = db.groupContainers and db.groupContainers[containerId]
+    if not container then return end
+
+    local function RefreshPanels()
+        CooldownCompanion:RefreshContainerPanels(containerId)
+    end
+
+    -- Enabled
+    local enabledCb = AceGUI:Create("CheckBox")
+    enabledCb:SetLabel("Enabled")
+    enabledCb:SetFullWidth(true)
+    enabledCb:SetValue(container.enabled ~= false)
+    enabledCb:SetCallback("OnValueChanged", function(widget, event, value)
+        container.enabled = value
+        RefreshPanels()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(enabledCb)
+
+    -- Locked
+    local lockedCb = AceGUI:Create("CheckBox")
+    lockedCb:SetLabel("Locked")
+    lockedCb:SetFullWidth(true)
+    lockedCb:SetValue(container.locked == true)
+    lockedCb:SetCallback("OnValueChanged", function(widget, event, value)
+        container.locked = value
+        CooldownCompanion:UpdateContainerDragHandle(containerId, value)
+        RefreshPanels()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(lockedCb)
+
+    -- ================================================================
+    -- Layout
+    -- ================================================================
+    local layoutHeading = AceGUI:Create("Heading")
+    layoutHeading:SetText("Layout")
+    ColorHeading(layoutHeading)
+    layoutHeading:SetFullWidth(true)
+    scroll:AddChild(layoutHeading)
+
+    local layoutCollapsed = CS.collapsedSections["container_layout"]
+    AttachCollapseButton(layoutHeading, layoutCollapsed, function()
+        CS.collapsedSections["container_layout"] = not CS.collapsedSections["container_layout"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not layoutCollapsed then
+
+    -- ================================================================
+    -- Anchor to Frame (editbox + pick button row)
+    -- ================================================================
+    local anchorRow = AceGUI:Create("SimpleGroup")
+    anchorRow:SetFullWidth(true)
+    anchorRow:SetLayout("Flow")
+
+    local anchorBox = AceGUI:Create("EditBox")
+    if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
+    anchorBox:SetLabel("Anchor to Frame")
+    local currentAnchor = container.anchor.relativeTo
+    if currentAnchor == "UIParent" then currentAnchor = "" end
+    anchorBox:SetText(currentAnchor)
+    anchorBox:SetRelativeWidth(0.68)
+    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        if text == "" then
+            local wasAnchored = container.anchor.relativeTo and container.anchor.relativeTo ~= "UIParent"
+            if wasAnchored then
+                container.anchor = {
+                    point = "CENTER",
+                    relativeTo = "UIParent",
+                    relativePoint = "CENTER",
+                    x = 0,
+                    y = 0,
+                }
+            else
+                container.anchor.relativeTo = "UIParent"
+            end
+        else
+            local targetFrame = _G[text]
+            if not targetFrame then
+                CooldownCompanion:Print("Frame '" .. text .. "' not found.")
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
+            container.anchor.relativeTo = text
+        end
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+        end
+        RefreshPanels()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    anchorRow:AddChild(anchorBox)
+
+    local pickBtn = AceGUI:Create("Button")
+    pickBtn:SetText("Pick")
+    pickBtn:SetRelativeWidth(0.24)
+    pickBtn:SetCallback("OnClick", function()
+        CS.StartPickFrame(function(name)
+            if CS.configFrame then
+                CS.configFrame.frame:Show()
+            end
+            if name then
+                container.anchor = {
+                    point = "TOPLEFT",
+                    relativeTo = name,
+                    relativePoint = "BOTTOMLEFT",
+                    x = 0,
+                    y = -5,
+                }
+                local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+                if containerFrame then
+                    CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+                end
+                RefreshPanels()
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end)
+    anchorRow:AddChild(pickBtn)
+
+    scroll:AddChild(anchorRow)
+    pickBtn.frame:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", nil)
+        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+        if yOfs then
+            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+        end
+    end)
+
+    -- Anchor Point dropdown
+    local pointValues = {}
+    for _, pt in ipairs(CS.anchorPoints) do
+        pointValues[pt] = CS.anchorPointLabels[pt]
+    end
+
+    local anchorPt = AceGUI:Create("Dropdown")
+    anchorPt:SetLabel("Anchor Point")
+    anchorPt:SetList(pointValues)
+    anchorPt:SetValue(container.anchor.point or "CENTER")
+    anchorPt:SetFullWidth(true)
+    anchorPt:SetCallback("OnValueChanged", function(widget, event, val)
+        container.anchor.point = val
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+        end
+    end)
+    scroll:AddChild(anchorPt)
+
+    -- Relative Point dropdown
+    local relPt = AceGUI:Create("Dropdown")
+    relPt:SetLabel("Relative Point")
+    relPt:SetList(pointValues)
+    relPt:SetValue(container.anchor.relativePoint or "CENTER")
+    relPt:SetFullWidth(true)
+    relPt:SetCallback("OnValueChanged", function(widget, event, val)
+        container.anchor.relativePoint = val
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+        end
+    end)
+    scroll:AddChild(relPt)
+
+    -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
+    local function HookSliderEditBox(sliderWidget)
+        sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
+            local widget = editbox.obj
+            local value = tonumber(editbox:GetText())
+            if value then
+                value = math.floor(value * 10 + 0.5) / 10
+                value = math.max(widget.min, math.min(widget.max, value))
+                PlaySound(856)
+                widget:SetValue(value)
+                widget:Fire("OnValueChanged", value)
+                widget:Fire("OnMouseUp", value)
+            end
+        end)
+    end
+
+    -- X Offset
+    local xSlider = AceGUI:Create("Slider")
+    xSlider:SetLabel("X Offset")
+    xSlider:SetSliderValues(-2000, 2000, 0.1)
+    xSlider:SetValue(container.anchor.x or 0)
+    xSlider:SetFullWidth(true)
+    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        container.anchor.x = val
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+        end
+    end)
+    HookSliderEditBox(xSlider)
+    scroll:AddChild(xSlider)
+
+    -- Y Offset
+    local ySlider = AceGUI:Create("Slider")
+    ySlider:SetLabel("Y Offset")
+    ySlider:SetSliderValues(-2000, 2000, 0.1)
+    ySlider:SetValue(container.anchor.y or 0)
+    ySlider:SetFullWidth(true)
+    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+        container.anchor.y = val
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+        end
+    end)
+    HookSliderEditBox(ySlider)
+    scroll:AddChild(ySlider)
+
+    end -- if not layoutCollapsed
+
+    -- ================================================================
+    -- Frame Strata
+    -- ================================================================
+    local strataHeading = AceGUI:Create("Heading")
+    strataHeading:SetText("Frame Strata")
+    strataHeading:SetFullWidth(true)
+    scroll:AddChild(strataHeading)
+
+    local strataCollapsed = CS.collapsedSections["container_strata"]
+    AttachCollapseButton(strataHeading, strataCollapsed, function()
+        CS.collapsedSections["container_strata"] = not CS.collapsedSections["container_strata"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not strataCollapsed then
+    local strataOptions = {
+        ["BACKGROUND"] = "Background",
+        ["LOW"] = "Low",
+        ["MEDIUM"] = "Medium (Default)",
+        ["HIGH"] = "High",
+    }
+    local strataDrop = AceGUI:Create("Dropdown")
+    strataDrop:SetLabel("Container Frame Strata")
+    strataDrop:SetList(strataOptions)
+    strataDrop:SetValue(container.frameStrata or "MEDIUM")
+    strataDrop:SetFullWidth(true)
+    strataDrop:SetCallback("OnValueChanged", function(widget, event, value)
+        container.frameStrata = value
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            containerFrame:SetFrameStrata(value)
+        end
+        RefreshPanels()
+    end)
+    scroll:AddChild(strataDrop)
+    end -- if not strataCollapsed
+end
+
+local function BuildContainerLoadConditionsTab(scroll, containerId)
+    local db = CooldownCompanion.db.profile
+    local container = db.groupContainers and db.groupContainers[containerId]
+    if not container then return end
+
+    local function RefreshPanels()
+        CooldownCompanion:RefreshContainerPanels(containerId)
+    end
+
+    if not container.loadConditions then
+        container.loadConditions = {}
+    end
+    local loadConditions = container.loadConditions
+
+    local function CreateLoadConditionToggle(label, key, defaultVal)
+        local cb = AceGUI:Create("CheckBox")
+        cb:SetLabel(label)
+        local val = loadConditions[key]
+        if val == nil then val = defaultVal or false end
+        cb:SetValue(val)
+        cb:SetFullWidth(true)
+        cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+            loadConditions[key] = newVal
+            RefreshPanels()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        return cb
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Do Not Load When In")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local instanceCollapsed = CS.collapsedSections["container_loadconditions_instance"]
+    AttachCollapseButton(heading, instanceCollapsed, function()
+        CS.collapsedSections["container_loadconditions_instance"] = not CS.collapsedSections["container_loadconditions_instance"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not instanceCollapsed then
+    local conditions = {
+        { key = "raid",          label = "Raid" },
+        { key = "dungeon",       label = "Dungeon" },
+        { key = "delve",         label = "Delve" },
+        { key = "battleground",  label = "Battleground" },
+        { key = "arena",         label = "Arena" },
+        { key = "openWorld",     label = "Open World" },
+        { key = "rested",        label = "Rested Area" },
+        { key = "petBattle",     label = "Pet Battle", default = true },
+        { key = "vehicleUI",     label = "Vehicle / Override UI", default = true },
+    }
+
+    for _, cond in ipairs(conditions) do
+        scroll:AddChild(CreateLoadConditionToggle(cond.label, cond.key, cond.default))
+    end
+    end -- not instanceCollapsed
+
+    -- Spec filter section
+    local specHeading = AceGUI:Create("Heading")
+    specHeading:SetText("Specialization Filter")
+    ColorHeading(specHeading)
+    specHeading:SetFullWidth(true)
+    scroll:AddChild(specHeading)
+
+    local specCollapsed = CS.collapsedSections["container_loadconditions_spec"]
+    AttachCollapseButton(specHeading, specCollapsed, function()
+        CS.collapsedSections["container_loadconditions_spec"] = not CS.collapsedSections["container_loadconditions_spec"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not specCollapsed then
+    -- Folder spec inheritance: folder-level spec/hero filters are shown as
+    -- disabled (locked) on child containers, but children can still toggle
+    -- specs that the folder does NOT set.
+    local folder = container.folderId and db.folders and db.folders[container.folderId]
+    local folderSpecs = folder and folder.specs
+    local folderHeroTalents = folder and folder.heroTalents
+    local hasFolderSpecs = folderSpecs and next(folderSpecs)
+
+    -- Effective specs for hero talent rendering (union of folder + container specs)
+    local effectiveSpecs
+    if folderSpecs or container.specs then
+        effectiveSpecs = {}
+        if folderSpecs then for k in pairs(folderSpecs) do effectiveSpecs[k] = true end end
+        if container.specs then for k in pairs(container.specs) do effectiveSpecs[k] = true end end
+        if not next(effectiveSpecs) then effectiveSpecs = nil end
+    end
+
+    if hasFolderSpecs then
+        local inheritedLabel = AceGUI:Create("Label")
+        inheritedLabel:SetText("|cff888888Specs set by the parent folder cannot be changed here.|r")
+        inheritedLabel:SetFullWidth(true)
+        scroll:AddChild(inheritedLabel)
+    end
+
+    local numSpecs = GetNumSpecializations()
+    local configID = C_ClassTalents.GetActiveConfigID()
+    for i = 1, numSpecs do
+        local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
+        if specId then
+            local lockedByFolder = folderSpecs and folderSpecs[specId]
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetLabel(name)
+            if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+            cb:SetFullWidth(true)
+            cb:SetValue(lockedByFolder or (container.specs and container.specs[specId]) or false)
+            if hasFolderSpecs then
+                cb:SetDisabled(true)
+            else
+                cb:SetCallback("OnValueChanged", function(widget, event, value)
+                    if value then
+                        if not container.specs then container.specs = {} end
+                        container.specs[specId] = true
+                    else
+                        if container.specs then
+                            container.specs[specId] = nil
+                            if not next(container.specs) then
+                                container.specs = nil
+                            end
+                        end
+                        CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
+                    end
+                    RefreshPanels()
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+            end
+            scroll:AddChild(cb)
+
+            -- Hero talent sub-tree checkboxes
+            local specActive = lockedByFolder or (container.specs and container.specs[specId])
+            if configID and specActive then
+                local htOpts
+                if folderHeroTalents and next(folderHeroTalents) then
+                    htOpts = {
+                        heroTalentsSource = folderHeroTalents,
+                        useHeroTalentsSource = true,
+                        disableToggles = true,
+                        specsSource = effectiveSpecs,
+                    }
+                else
+                    htOpts = {
+                        heroTalentsSource = container.heroTalents,
+                        specsSource = effectiveSpecs,
+                        onChanged = function()
+                            RefreshPanels()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end,
+                    }
+                end
+                ST._BuildHeroTalentSubTreeCheckboxes(scroll, container, configID, specId, 20, containerId, htOpts)
+            end
+        end
+    end
+
+    -- Only show Clear All when container has specs/hero-talents beyond folder cascade
+    local hasOwnSpecs = false
+    if container.specs then
+        for specId in pairs(container.specs) do
+            if not (folderSpecs and folderSpecs[specId]) then
+                hasOwnSpecs = true
+                break
+            end
+        end
+    end
+    if not hasOwnSpecs and container.heroTalents and next(container.heroTalents) then
+        hasOwnSpecs = true
+    end
+    if hasOwnSpecs then
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear All Spec Filters")
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            if folderSpecs then
+                container.specs = CopyTable(folderSpecs)
+            else
+                container.specs = nil
+            end
+            container.heroTalents = nil
+            RefreshPanels()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(clearBtn)
+    end
+    end -- not specCollapsed
+end
+
 -- Expose for Config.lua
 ST._BuildLayoutTab = BuildLayoutTab
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildEffectsTab = BuildEffectsTab
+ST._BuildContainerGeneralTab = BuildContainerGeneralTab
+ST._BuildContainerLoadConditionsTab = BuildContainerLoadConditionsTab

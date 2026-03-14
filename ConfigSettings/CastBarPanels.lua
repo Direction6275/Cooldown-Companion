@@ -39,18 +39,9 @@ local function BuildCastBarAnchoringPanel(container)
     if not settings.enabled then return end
 
     -- Anchor Group dropdown
-    local groupDropValues = { [""] = "Auto (first available)" }
-    local groupDropOrder = { "" }
-    for groupId, group in pairs(db.groups) do
-        if CooldownCompanion:IsGroupAvailableForAnchoring(groupId) then
-            groupDropValues[tostring(groupId)] = group.name or ("Group " .. groupId)
-            table.insert(groupDropOrder, tostring(groupId))
-        end
-    end
-
     local anchorDrop = AceGUI:Create("Dropdown")
-    anchorDrop:SetLabel("Anchor to Group")
-    anchorDrop:SetList(groupDropValues, groupDropOrder)
+    anchorDrop:SetLabel("Anchor to Panel")
+    local eligibleCount = CooldownCompanion:PopulateAnchorDropdown(anchorDrop)
     anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
     anchorDrop:SetFullWidth(true)
     anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
@@ -60,9 +51,9 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(anchorDrop)
 
-    if #groupDropOrder <= 1 then
+    if eligibleCount == 0 then
         local noGroupsLabel = AceGUI:Create("Label")
-        noGroupsLabel:SetText("No eligible character icon groups are enabled for this spec. Global groups are excluded from anchoring to avoid counterintuitive targets.")
+        noGroupsLabel:SetText("No eligible character icon panels are enabled for this spec. Global panels are excluded from anchoring.")
         noGroupsLabel:SetFullWidth(true)
         container:AddChild(noGroupsLabel)
     end

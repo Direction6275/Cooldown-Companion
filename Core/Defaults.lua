@@ -6,6 +6,9 @@ local ADDON_NAME, ST = ...
 
 -- Default database structure
 local defaults = {
+    global = {
+        characterInfo = {},  -- [charKey] = { classFilename, classID }
+    },
     profile = {
         minimap = {
             hide = false,
@@ -182,6 +185,8 @@ local defaults = {
             ]]
         },
         nextGroupId = 1,
+        groupContainers = {},  -- [containerId] = { name, order, folderId, enabled, locked, specs, heroTalents, loadConditions, alpha/fade, anchor, ... }
+        nextContainerId = 1,
         folders = {},       -- [folderId] = { name, order, section, manualIcon?, specs?, heroTalents? }
         nextFolderId = 1,
         globalStyle = {

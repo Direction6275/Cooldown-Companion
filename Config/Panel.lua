@@ -15,7 +15,6 @@ local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local ResetConfigSelection = ST._ResetConfigSelection
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local COLUMN_PADDING = ST._COLUMN_PADDING
-local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 local BuildAutocompleteCache = ST._BuildAutocompleteCache
 local RefreshColumn1 = ST._RefreshColumn1
 local RefreshColumn2 = ST._RefreshColumn2
@@ -66,6 +65,7 @@ end
 local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
+    wipe(CS.collapsedPanels)
     wipe(CS.customAuraBarSubTabs)
     wipe(CS.resourceAuraOverlayDrafts)
     if CS.characterScopedCopySelection then
@@ -674,33 +674,43 @@ local function CreateConfigPanel()
     groupInfoIcon:SetAtlas("QuestRepeatableTurnin")
     groupInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Groups")
-        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
-        GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
-        GameTooltip:AddLine("Right-click for options.", 1, 1, 1, true)
-        GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Shift+Left-click group to set spec filter.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Left-click folder to set folder-wide filters.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click folder to expand/collapse.", 1, 1, 1, true)
-        GameTooltip:AddLine("Middle-click folder to lock/unlock all children.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
+        if CS.resourceBarPanelActive then
+            GameTooltip:AddLine("Bars & Frames")
+            GameTooltip:AddLine("Use the tabs to switch between Resources, Cast Bar, and Unit Frames.", 1, 1, 1, true)
+            GameTooltip:AddLine("Each tab configures anchoring and display options for that element.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Groups")
+            GameTooltip:AddLine("A group contains one or more panels.", 1, 1, 1)
+            GameTooltip:AddLine("Folders are optional organizers for multiple groups.", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Right-click for options.", 1, 1, 1)
+            GameTooltip:AddLine("Hold left-click and drag to reorder.", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Group Rows", 1, 0.82, 0)
+            GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
+            GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
+            GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
+            GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Folders", 1, 0.82, 0)
+            GameTooltip:AddLine("Left-click to expand/collapse.", 1, 1, 1)
+            GameTooltip:AddLine("Middle-click to lock/unlock all children.", 1, 1, 1, true)
+            GameTooltip:AddLine("Shift+Left-click to set folder-wide filters.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
 
-    -- Column 2: Spells/Items (AceGUI InlineGroup)
+    -- Column 2: Panels (AceGUI InlineGroup)
     local col2 = AceGUI:Create("InlineGroup")
-    col2:SetTitle("Spells / Items")
+    col2:SetTitle("Panels")
     col2:SetLayout("None")
     col2.frame:SetParent(colParent)
     col2.frame:Show()
 
-    -- Info button next to Spells / Items title
+    -- Info button next to Panels title
     local infoBtn = CreateFrame("Button", nil, col2.frame)
     infoBtn:SetSize(16, 16)
     infoBtn:SetPoint("LEFT", col2.titletext, "RIGHT", -2, 0)
@@ -710,19 +720,23 @@ local function CreateConfigPanel()
     infoIcon:SetAtlas("QuestRepeatableTurnin")
     infoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Spells / Items")
-        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
-        GameTooltip:AddLine("Right-click for options.", 1, 1, 1, true)
-        GameTooltip:AddLine("Middle-click to move to another group.", 1, 1, 1, true)
+        GameTooltip:AddLine("Panels")
+        GameTooltip:AddLine("Panels hold your buttons and added entries.", 1, 1, 1)
         GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1)
+        GameTooltip:AddLine("Right-click for options.", 1, 1, 1)
+        GameTooltip:AddLine("Hold left-click and drag to reorder.", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Panel Headers", 1, 0.82, 0)
+        GameTooltip:AddLine("Double-click to collapse/expand.", 1, 1, 1, true)
         GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to toggle anchor lock.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Hold left-click and move to reorder.", 1, 1, 1, true)
+        GameTooltip:AddLine("Buttons", 1, 0.82, 0)
+        GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to move to another panel.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Drag spells/items from your spellbook or inventory into this column to add it.", 1, 1, 1, true)
-        GameTooltip:AddLine("Use PICK CDM in Button Settings to add CDM auras.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Right-click the Add button to toggle the spellbook.", 1, 1, 1, true)
+        GameTooltip:AddLine("Drag spells/items from your spellbook or inventory onto a panel to add.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     infoBtn:SetScript("OnLeave", function()
@@ -737,7 +751,7 @@ local function CreateConfigPanel()
     col3.frame:SetParent(colParent)
     col3.frame:Show()
 
-    -- Info button next to Button Settings title
+    -- Info button next to Button/Panel Settings title
     local bsInfoBtn = CreateFrame("Button", nil, col3.frame)
     bsInfoBtn:SetSize(16, 16)
     bsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
@@ -749,13 +763,23 @@ local function CreateConfigPanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.resourceBarPanelActive then
             GameTooltip:AddLine("Custom Aura Bars")
-            GameTooltip:AddLine("Configure per-spec custom aura bar tracking slots.", 1, 1, 1, true)
+            GameTooltip:AddLine("Track any buff or debuff as a resource-style bar.", 1, 1, 1, true)
+            GameTooltip:AddLine("Each slot is configured per-spec and supports autocomplete by name or spell ID.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Tracking Modes", 1, 0.82, 0)
+            GameTooltip:AddLine("Stack Count: fills the bar based on current stacks (e.g. 3/5 = 60%).", 1, 1, 1, true)
+            GameTooltip:AddLine("Active: shows a full bar that drains as the aura expires.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Both modes support optional duration and stack text overlays.", 1, 1, 1, true)
         elseif CS.autoAddFlowActive then
             GameTooltip:AddLine("Auto Add")
             GameTooltip:AddLine("Guided import flow for Action Bars, Spellbook, and CDM Auras.", 1, 1, 1, true)
         else
-            GameTooltip:AddLine("Button Settings")
-            GameTooltip:AddLine("These settings apply to the selected spell or item.", 1, 1, 1, true)
+            GameTooltip:AddLine("Button / Panel Settings")
+            GameTooltip:AddLine("Select a button to configure that button.", 1, 1, 1)
+            GameTooltip:AddLine("Select a panel header to configure that panel.", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Panel settings apply to all buttons in that panel.", 1, 1, 1)
         end
         GameTooltip:Show()
     end)
@@ -770,7 +794,7 @@ local function CreateConfigPanel()
     col4.frame:SetParent(colParent)
     col4.frame:Show()
 
-    -- Info button next to Group Settings title
+    -- Info button next to Panel/Group Settings title
     local settingsInfoBtn = CreateFrame("Button", nil, col4.frame)
     settingsInfoBtn:SetSize(16, 16)
     settingsInfoBtn:SetPoint("LEFT", col4.titletext, "RIGHT", -2, 0)
@@ -781,18 +805,18 @@ local function CreateConfigPanel()
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Custom Aura Bars")
-            GameTooltip:AddLine("Track any buff or bar aura from the Cooldown Manager as a resource-style bar.", 1, 1, 1, true)
+            GameTooltip:AddLine("Layout & Order")
+            GameTooltip:AddLine("Control the stacking position and order of all active bars.", 1, 1, 1, true)
+            GameTooltip:AddLine("Resource bars, custom aura bars, and cast bars are ordered together.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Tracking Modes", 1, 0.82, 0)
-            GameTooltip:AddLine("Stack Count: fills the bar based on the aura's current stack count (e.g. 3/5 stacks = 60%).", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Active: shows a full bar when the aura is present, draining as the aura expires.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Both modes support optional duration and stack text overlays.", 1, 1, 1, true)
+            GameTooltip:AddLine("Bars can be placed above or below the icon row, and reordered within each side.", 1, 1, 1, true)
         else
-            GameTooltip:AddLine("Group Settings")
-            GameTooltip:AddLine("These settings apply to all icons in the selected group.", 1, 1, 1, true)
+            GameTooltip:AddLine("Panel / Group Settings")
+            GameTooltip:AddLine("Select a button to configure its panel.", 1, 1, 1)
+            GameTooltip:AddLine("Select a group or panel header to configure the group.", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Panel settings apply to all buttons in that panel.", 1, 1, 1)
+            GameTooltip:AddLine("Group settings apply to all panels in the group.", 1, 1, 1)
         end
         GameTooltip:Show()
     end)
@@ -812,11 +836,11 @@ local function CreateConfigPanel()
         end
     end
 
-    -- Static button bar at bottom of column 1 (New Icon/Bar Group + New Folder)
+    -- Static button bar at bottom of column 1 (New Group + New Folder + Import)
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(60)
+    btnBar:SetHeight(30)
     CS.col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -825,7 +849,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 60)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 
@@ -834,9 +858,17 @@ local function CreateConfigPanel()
     scroll2.frame:SetParent(col2.content)
     scroll2.frame:ClearAllPoints()
     scroll2.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
-    scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+    scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 30)
     scroll2.frame:Show()
     CS.col2Scroll = scroll2
+
+    -- Static button bar at bottom of column 2 (Icon/Bar/Text Panel)
+    local btnBar2 = CreateFrame("Frame", nil, col2.content)
+    btnBar2:SetPoint("BOTTOMLEFT", col2.content, "BOTTOMLEFT", 0, 0)
+    btnBar2:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+    btnBar2:SetHeight(30)
+    btnBar2:Hide()
+    CS.col2ButtonBar = btnBar2
 
     -- Button Settings TabGroup (Settings + Sound Alerts + Overrides tabs)
     local bsTabGroup = AceGUI:Create("TabGroup")
@@ -891,6 +923,13 @@ local function CreateConfigPanel()
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
 
+        if CS.browseMode then
+            ST._DisableAllWidgets(scroll)
+            for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
+                if btn.Disable then btn:Disable() end
+            end
+        end
+
         -- Apply hideInfoButtons setting
         if CooldownCompanion.db.profile.hideInfoButtons then
             for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
@@ -920,65 +959,66 @@ local function CreateConfigPanel()
     buttonSettingsScroll = bsScroll
     CS.buttonSettingsScroll = bsScroll
 
-    -- Drop hint overlay for column 2
-    local dropOverlay = CreateFrame("Frame", nil, col2.frame, "BackdropTemplate")
-    dropOverlay:SetAllPoints(col2.frame)
-    dropOverlay:SetFrameLevel(col2.frame:GetFrameLevel() + 20)
-    dropOverlay:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
-    dropOverlay:SetBackdropColor(0.15, 0.55, 0.85, 0.25)
-    dropOverlay:EnableMouse(true)
-    dropOverlay:Hide()
-
-    local dropBorder = dropOverlay:CreateTexture(nil, "BORDER")
-    dropBorder:SetAllPoints()
-    dropBorder:SetColorTexture(0.3, 0.7, 1.0, 0.35)
-
-    local dropInner = dropOverlay:CreateTexture(nil, "ARTWORK")
-    dropInner:SetPoint("TOPLEFT", 2, -2)
-    dropInner:SetPoint("BOTTOMRIGHT", -2, 2)
-    dropInner:SetColorTexture(0.05, 0.15, 0.25, 0.6)
-
-    local dropText = dropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    dropText:SetPoint("CENTER", 0, 0)
-    dropText:SetText("|cffAADDFFDrop spell or item here to track|r")
-
+    -- Per-panel drop highlight system
     local function IsCursorDropPayload(cursorType)
         return cursorType == "spell" or cursorType == "item" or cursorType == "petaction"
     end
 
-    local function UpdateDropOverlayVisibility()
-        local cursorType = GetCursorInfo()
-        if IsCursorDropPayload(cursorType)
-            and CS.selectedGroup
-            and col2.frame:IsShown() then
-            dropOverlay:Show()
-        else
-            dropOverlay:Hide()
+    CS._panelDropTargets = {}
+
+    -- Throttled OnUpdate scanner: shows/hides per-panel overlays based on cursor position
+    local DROP_SCAN_INTERVAL = 1 / 20  -- 20 Hz
+    local dropScanElapsed = 0
+    local dropScanFrame = CreateFrame("Frame")
+
+    dropScanFrame:SetScript("OnUpdate", function(self, dt)
+        dropScanElapsed = dropScanElapsed + dt
+        if dropScanElapsed < DROP_SCAN_INTERVAL then return end
+        dropScanElapsed = 0
+
+        local targets = CS._panelDropTargets
+        if not targets or #targets == 0 then
+            self:Hide()
+            return
         end
-    end
 
-    local function TryReceiveAnyDrop()
-        local added = TryReceiveCursorDrop()
-        UpdateDropOverlayVisibility()
-        return added
-    end
-
-    -- Accept spell/item drops anywhere on the column 2 scroll area
-    scroll2.frame:EnableMouse(true)
-    scroll2.frame:SetScript("OnReceiveDrag", TryReceiveAnyDrop)
-    scroll2.content:EnableMouse(true)
-    scroll2.content:SetScript("OnReceiveDrag", TryReceiveAnyDrop)
-
-    dropOverlay:SetScript("OnReceiveDrag", TryReceiveAnyDrop)
-    dropOverlay:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and GetCursorInfo() then
-            TryReceiveAnyDrop()
+        for _, entry in ipairs(targets) do
+            if entry.frame:IsMouseOver() then
+                entry.overlay:Show()
+            else
+                entry.overlay:Hide()
+            end
         end
     end)
+    dropScanFrame:Hide()
 
-    dropOverlay:RegisterEvent("CURSOR_CHANGED")
-    dropOverlay:SetScript("OnEvent", function()
-        UpdateDropOverlayVisibility()
+    local function HideAllPanelDropOverlays()
+        local targets = CS._panelDropTargets
+        if targets then
+            for _, entry in ipairs(targets) do
+                entry.overlay:Hide()
+            end
+        end
+    end
+
+    local function UpdatePanelDropScan()
+        local cursorType = GetCursorInfo()
+        local targets = CS._panelDropTargets
+        if IsCursorDropPayload(cursorType)
+            and targets and #targets > 0
+            and col2.frame:IsShown() then
+            dropScanElapsed = DROP_SCAN_INTERVAL  -- scan immediately on first tick
+            dropScanFrame:Show()
+        else
+            dropScanFrame:Hide()
+            HideAllPanelDropOverlays()
+        end
+    end
+
+    local dropEventFrame = CreateFrame("Frame")
+    dropEventFrame:RegisterEvent("CURSOR_CHANGED")
+    dropEventFrame:SetScript("OnEvent", function()
+        UpdatePanelDropScan()
     end)
 
     -- Column 4 content area (use InlineGroup's content directly)
@@ -1200,20 +1240,50 @@ function CooldownCompanion:RefreshConfigPanel()
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
     end
+    -- Compute anyButtonSelected for title logic (used across both branches)
+    local anyButtonSelected = CS.selectedButton ~= nil
+    if not anyButtonSelected then
+        for _ in pairs(CS.selectedButtons) do anyButtonSelected = true; break end
+    end
+
     if CS.resourceBarPanelActive then
         CS.configFrame.col1:SetTitle("Bars & Frames")
         CS.configFrame.col2:SetTitle("Styling")
         CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
         CS.configFrame.col4:SetTitle("Layout & Order")
-    else
-        CS.configFrame.col1:SetTitle("Groups")
-        CS.configFrame.col2:SetTitle("Spells / Items")
-        if CS.autoAddFlowActive then
-            CS.configFrame.col3:SetTitle("Auto Add")
+    elseif CS.browseMode then
+        CS.configFrame.col1:SetTitle("Browse Characters")
+        CS.configFrame.col2:SetTitle("Preview")
+        if CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+            CS.configFrame.col3:SetTitle("Panel Settings")
         else
             CS.configFrame.col3:SetTitle("Button Settings")
         end
-        CS.configFrame.col4:SetTitle("Group Settings")
+        if CS.selectedContainer and CS.selectedGroup and anyButtonSelected then
+            CS.configFrame.col4:SetTitle("Panel Settings")
+        else
+            CS.configFrame.col4:SetTitle("Group Settings")
+        end
+    else
+        CS.configFrame.col1:SetTitle("Groups")
+        CS.configFrame.col2:SetTitle("Panels")
+        local panelMultiCount = 0
+        for _ in pairs(CS.selectedPanels) do panelMultiCount = panelMultiCount + 1 end
+        if panelMultiCount >= 2 then
+            CS.configFrame.col3:SetTitle("Panel Settings")
+        elseif CS.autoAddFlowActive then
+            CS.configFrame.col3:SetTitle("Auto Add")
+        elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+            CS.configFrame.col3:SetTitle("Panel Settings")
+        else
+            CS.configFrame.col3:SetTitle("Button Settings")
+        end
+        -- Col 4: "Panel Settings" when panel + button selected in container, "Group Settings" otherwise
+        if CS.selectedContainer and CS.selectedGroup and anyButtonSelected then
+            CS.configFrame.col4:SetTitle("Panel Settings")
+        else
+            CS.configFrame.col4:SetTitle("Group Settings")
+        end
     end
     RefreshColumn1()
     RefreshColumn2()
@@ -1221,12 +1291,26 @@ function CooldownCompanion:RefreshConfigPanel()
     RefreshColumn4(CS.col4Container)
 
     -- Recompute Column 3 title after RefreshColumn3(), since it may cancel Auto Add.
-    if CS.resourceBarPanelActive then
-        CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
-    elseif CS.autoAddFlowActive then
-        CS.configFrame.col3:SetTitle("Auto Add")
-    else
-        CS.configFrame.col3:SetTitle("Button Settings")
+    do
+        local pmcPost = 0
+        for _ in pairs(CS.selectedPanels) do pmcPost = pmcPost + 1 end
+        if CS.resourceBarPanelActive then
+            CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
+        elseif CS.browseMode then
+            if CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+                CS.configFrame.col3:SetTitle("Panel Settings")
+            else
+                CS.configFrame.col3:SetTitle("Button Settings")
+            end
+        elseif pmcPost >= 2 then
+            CS.configFrame.col3:SetTitle("Panel Settings")
+        elseif CS.autoAddFlowActive then
+            CS.configFrame.col3:SetTitle("Auto Add")
+        elseif CS.selectedContainer and CS.selectedGroup and not anyButtonSelected then
+            CS.configFrame.col3:SetTitle("Panel Settings")
+        else
+            CS.configFrame.col3:SetTitle("Button Settings")
+        end
     end
 
     -- Restore AceGUI scroll state.
@@ -1358,6 +1442,13 @@ function CooldownCompanion:SetupConfig()
                 for _, group in pairs(CooldownCompanion.db.profile.groups) do
                     if not group.isGlobal then
                         group.createdBy = charKey
+                    end
+                end
+            end
+            if CooldownCompanion.db.profile.groupContainers then
+                for _, container in pairs(CooldownCompanion.db.profile.groupContainers) do
+                    if not container.isGlobal then
+                        container.createdBy = charKey
                     end
                 end
             end

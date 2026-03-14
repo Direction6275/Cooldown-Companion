@@ -37,12 +37,38 @@ end
 function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
+
+    -- For panels, delegate visibility to the parent container
+    if group.parentContainerId then
+        return self:IsContainerVisibleToCurrentChar(group.parentContainerId)
+    end
+
+    -- Legacy path (no container)
     if group.isGlobal then return true end
     return group.createdBy == self.db.keys.char
 end
 
+-- Resolve the container for a panel group, or nil if the group has no container.
+function CooldownCompanion:GetParentContainer(groupOrGroupId)
+    local group = groupOrGroupId
+    if type(groupOrGroupId) == "number" then
+        group = self.db.profile.groups[groupOrGroupId]
+    end
+    if not group or not group.parentContainerId then return nil end
+    local containers = self.db.profile.groupContainers
+    return containers and containers[group.parentContainerId]
+end
+
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
+
+    -- Container cascade: if the group is a panel, use the container's specs
+    local container = self:GetParentContainer(group)
+    if container then
+        return container.specs, container.specs ~= nil
+    end
+
+    -- Legacy folder cascade (pre-migration or non-panel groups)
     local folderId = group.folderId
     if folderId then
         local folders = self.db and self.db.profile and self.db.profile.folders
@@ -56,6 +82,28 @@ end
 
 function CooldownCompanion:GetEffectiveHeroTalents(group)
     if not group then return nil, false end
+
+    -- Panel cascade: folder → container → panel's own heroTalents
+    local container = self:GetParentContainer(group)
+    if container then
+        -- Check folder first
+        local folderId = container.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            if folder and folder.heroTalents and next(folder.heroTalents) then
+                return folder.heroTalents, true
+            end
+        end
+        -- Then container's own heroTalents
+        if container.heroTalents and next(container.heroTalents) then
+            return container.heroTalents, true
+        end
+        -- Fall through to panel's own
+        return group.heroTalents, false
+    end
+
+    -- Non-panel container: check folder cascade
     local folderId = group.folderId
     if folderId then
         local folders = self.db and self.db.profile and self.db.profile.folders
@@ -259,8 +307,9 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
     return normalized, true
 end
 
--- Folder filters are authoritative. When a folder filter is active, all child
--- groups are normalized to match it.
+-- Folder spec filters are stamped onto child containers so that runtime checks
+-- (which read container.specs) pick up folder-level restrictions. Hero talents
+-- are NOT stamped — they cascade at read time via GetEffectiveHeroTalents.
 function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
     local db = self.db and self.db.profile
     local folder = db and db.folders and db.folders[folderId]
@@ -268,20 +317,15 @@ function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
 
     local folderSpecs = folder.specs
     local hasFolderSpecs = folderSpecs and next(folderSpecs)
-    local folderHeroTalents = hasFolderSpecs and folder.heroTalents
-    local hasFolderHeroTalents = folderHeroTalents and next(folderHeroTalents)
 
-    for _, group in pairs(db.groups) do
-        if group.folderId == folderId then
+    -- Post-migration: folderId lives on containers, not groups
+    local containers = db.groupContainers or {}
+    for _, container in pairs(containers) do
+        if container.folderId == folderId then
             if hasFolderSpecs then
-                group.specs = CopyTable(folderSpecs)
+                container.specs = CopyTable(folderSpecs)
             else
-                group.specs = nil
-            end
-            if hasFolderHeroTalents then
-                group.heroTalents = CopyTable(folderHeroTalents)
-            else
-                group.heroTalents = nil
+                container.specs = nil
             end
         end
     end
@@ -363,12 +407,26 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     local group = opts.group or self.db.profile.groups[groupId]
     if not group then return false end
 
-    if group.enabled == false then return false end
+    -- If this panel has a parent container, check container-level state first
+    local container = self:GetParentContainer(group)
+    if container then
+        if container.enabled == false then return false end
+        if group.enabled == false then return false end
+
+        -- Container-level load conditions
+        if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(container) then
+            return false
+        end
+    else
+        -- Legacy path: enabled lives on the group
+        if group.enabled == false then return false end
+    end
 
     if opts.requireButtons and (not group.buttons or #group.buttons == 0) then
         return false
     end
 
+    -- Spec and hero talent filtering (GetEffectiveSpecs already delegates to container)
     local effectiveSpecs = self:GetEffectiveSpecs(group)
     if effectiveSpecs and next(effectiveSpecs) then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
@@ -384,9 +442,8 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    local checkLoadConditions = opts.checkLoadConditions
-    if checkLoadConditions == nil then checkLoadConditions = true end
-    if checkLoadConditions and not self:CheckLoadConditions(group) then
+    -- Group-level load conditions (for panels, adds to container restrictions)
+    if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(group) then
         return false
     end
 
@@ -408,8 +465,10 @@ end
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
+    if not group.parentContainerId then return false end
     if group.displayMode ~= "icons" then return false end
-    if group.isGlobal then return false end
+    local container = self:GetParentContainer(group)
+    if container and container.isGlobal then return false end
     if not self:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
@@ -439,6 +498,80 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
         return orderA < orderB
     end)
     return candidates[1]
+end
+
+function CooldownCompanion:PopulateAnchorDropdown(dropdown)
+    local db = self.db.profile
+    local containers = db.groupContainers or {}
+    local folders = db.folders or {}
+    local folderPanels = {}
+    local loosePanels = {}
+    local eligibleCount = 0
+
+    for groupId, group in pairs(db.groups) do
+        if self:IsGroupAvailableForAnchoring(groupId) then
+            eligibleCount = eligibleCount + 1
+            local cid = group.parentContainerId
+            local ctr = cid and containers[cid]
+            local fid = ctr and ctr.folderId
+            local contName = ctr and ctr.name or "Group"
+            local panelName = group.name or ("Panel " .. groupId)
+            local entry = { id = groupId, name = panelName, contName = contName }
+            if fid and folders[fid] then
+                folderPanels[fid] = folderPanels[fid] or {}
+                table.insert(folderPanels[fid], entry)
+            else
+                table.insert(loosePanels, entry)
+            end
+        end
+    end
+
+    dropdown:SetList({ [""] = "Auto (first available)" }, { "" })
+
+    local sortedFolders = {}
+    for fid, folder in pairs(folders) do
+        if folderPanels[fid] then
+            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+        end
+    end
+    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+
+    local hasHeaders = #sortedFolders > 0
+
+    for _, folder in ipairs(sortedFolders) do
+        local hdrKey = "_hdr_" .. folder.id
+        dropdown:AddItem(hdrKey, "|cffffd100" .. folder.name .. "|r")
+        dropdown:SetItemDisabled(hdrKey, true)
+
+        table.sort(folderPanels[folder.id], function(a, b)
+            if a.contName ~= b.contName then return a.contName < b.contName end
+            return a.name < b.name
+        end)
+        for _, panel in ipairs(folderPanels[folder.id]) do
+            local key = tostring(panel.id)
+            dropdown:AddItem(key, "   " .. panel.name)
+            dropdown.list[key] = panel.contName .. " > " .. panel.name
+        end
+    end
+
+    if #loosePanels > 0 then
+        if hasHeaders then
+            dropdown:AddItem("_hdr_none", "|cffffd100No Folder|r")
+            dropdown:SetItemDisabled("_hdr_none", true)
+        end
+        table.sort(loosePanels, function(a, b)
+            if a.contName ~= b.contName then return a.contName < b.contName end
+            return a.name < b.name
+        end)
+        for _, panel in ipairs(loosePanels) do
+            local key = tostring(panel.id)
+            local prefix = hasHeaders and "   " or ""
+            dropdown:AddItem(key, prefix .. panel.name)
+            dropdown.list[key] = panel.contName .. " > " .. panel.name
+        end
+    end
+
+    return eligibleCount
 end
 
 function CooldownCompanion:CheckLoadConditions(group)
@@ -482,17 +615,7 @@ function CooldownCompanion:CheckLoadConditions(group)
 end
 
 
-function CooldownCompanion:ToggleGroupGlobal(groupId)
-    local group = self.db.profile.groups[groupId]
-    if not group then return end
-    group.isGlobal = not group.isGlobal
-    if not group.isGlobal then
-        group.createdBy = self.db.keys.char
-    end
-    -- Clear folder assignment — the folder belongs to the old section
-    group.folderId = nil
-    self:RefreshAllGroups()
-end
+-- ToggleGroupGlobal is defined in GroupManagement.lua (container-aware version)
 
 function CooldownCompanion:GroupHasPetSpells(groupId)
     local group = self.db.profile.groups[groupId]
@@ -594,9 +717,48 @@ function CooldownCompanion:CreateAllGroupFrames()
             self:CreateGroupFrame(groupId)
         end
     end
+    -- Re-anchor pass: custom anchors to other group frames may have fallen
+    -- back to the container because the target wasn't created yet.
+    -- All frames now exist, so re-apply to resolve cross-group anchors.
+    for groupId, frame in pairs(self.groupFrames) do
+        local group = self.db.profile.groups[groupId]
+        if group and group.anchor then
+            local relativeTo = group.anchor.relativeTo
+            if relativeTo and relativeTo ~= "UIParent" then
+                local containerName = group.parentContainerId
+                    and ("CooldownCompanionContainer" .. group.parentContainerId)
+                if not containerName or relativeTo ~= containerName then
+                    self:AnchorGroupFrame(frame, group.anchor)
+                end
+            end
+        end
+    end
 end
 
 function CooldownCompanion:RefreshAllGroups()
+    -- Clean up stale container frames (e.g. after profile switch)
+    if self.containerFrames then
+        local containers = self.db.profile.groupContainers or {}
+        for containerId, frame in pairs(self.containerFrames) do
+            if not containers[containerId] then
+                frame:Hide()
+                self.containerFrames[containerId] = nil
+            end
+        end
+        -- Ensure all current-profile containers have frames
+        for containerId, _ in pairs(containers) do
+            if self:IsContainerVisibleToCurrentChar(containerId) then
+                if not self.containerFrames[containerId] then
+                    self:CreateContainerFrame(containerId)
+                end
+            else
+                if self.containerFrames[containerId] then
+                    self.containerFrames[containerId]:Hide()
+                end
+            end
+        end
+    end
+
     -- Fully deactivate frames for groups not in the current profile
     -- (e.g. after a profile switch). Removes from groupFrames so
     -- ForEachButton / event handlers skip them entirely.
@@ -663,12 +825,21 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
                 if active then
                     frame:Show()
+                    -- Resolve locked from container (panels defer to container lock)
+                    local container = self:GetParentContainer(group)
+                    local isLocked
+                    if container then
+                        isLocked = container.locked ~= false
+                    else
+                        isLocked = group.locked
+                    end
+                    local baseAlpha = group.baselineAlpha or 1
                     -- Force 100% alpha while unlocked for easier positioning
-                    if not group.locked then
+                    if not isLocked then
                         frame:SetAlpha(1)
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.
-                    elseif group.baselineAlpha < 1 then
+                    else
                         local alphaState = self.alphaState and self.alphaState[groupId]
                         if alphaState and alphaState.currentAlpha then
                             frame:SetAlpha(alphaState.currentAlpha)
@@ -737,7 +908,30 @@ function CooldownCompanion:UpdateAllGroupLayouts()
     end
 end
 
+-- Refresh all panel frames belonging to a container.
+function CooldownCompanion:RefreshContainerPanels(containerId)
+    for gid, group in pairs(self.db.profile.groups) do
+        if group.parentContainerId == containerId then
+            self:RefreshGroupFrame(gid)
+        end
+    end
+end
+
+-- Show or hide the drag handle on a container frame to match its lock state.
+function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
+    local cFrame = self.containerFrames and self.containerFrames[containerId]
+    if cFrame and cFrame.dragHandle then
+        cFrame.dragHandle:SetShown(not locked)
+    end
+end
+
 function CooldownCompanion:LockAllFrames()
+    -- Also lock any individually-unlocked panels
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.locked == false then
+            group.locked = nil
+        end
+    end
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
@@ -746,17 +940,36 @@ function CooldownCompanion:LockAllFrames()
             end
         end
     end
+    -- Lock container frames
+    if self.containerFrames then
+        for containerId in pairs(self.containerFrames) do
+            self:UpdateContainerDragHandle(containerId, true)
+        end
+    end
 end
 
 function CooldownCompanion:UnlockAllFrames()
+    -- Unlock containers only; individual panels retain their own lock state
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
+            local group = self.db.profile.groups[groupId]
+            local panelUnlocked = group and group.locked == false
             if frame.dragHandle then
-                frame.dragHandle:Show()
+                if panelUnlocked then
+                    frame.dragHandle:Show()
+                end
             end
-            -- Force 100% alpha while unlocked for easier positioning
-            frame:SetAlpha(1)
+            if panelUnlocked then
+                frame:SetAlpha(1)
+            end
+        end
+    end
+    -- Unlock container frames
+    if self.containerFrames then
+        for containerId in pairs(self.containerFrames) do
+            local container = self.db.profile.groupContainers[containerId]
+            self:UpdateContainerDragHandle(containerId, not container or container.locked)
         end
     end
 end

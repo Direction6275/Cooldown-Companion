@@ -16,6 +16,11 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 -- COLUMN 4: Group Settings / Tab Column
 ------------------------------------------------------------------------
 local function RefreshColumn4(container)
+    -- Hide browse placeholder
+    if container._browsePlaceholder then
+        container._browsePlaceholder:Hide()
+    end
+
     -- Resource Bar panel mode: show Layout & Order panel instead of group settings
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
@@ -66,6 +71,85 @@ local function RefreshColumn4(container)
         return
     end
 
+    -- Panel multi-select: show placeholder
+    local panelMultiCount = 0
+    for _ in pairs(CS.selectedPanels) do panelMultiCount = panelMultiCount + 1 end
+    if panelMultiCount >= 2 then
+        if not container.placeholderLabel then
+            container.placeholderLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            container.placeholderLabel:SetPoint("TOPLEFT", -1, 0)
+        end
+        container.placeholderLabel:SetText("Select a single panel to configure")
+        container.placeholderLabel:Show()
+        if container.tabGroup then
+            container.tabGroup.frame:Hide()
+        end
+        if container.containerTabGroup then
+            container.containerTabGroup.frame:Hide()
+        end
+        return
+    end
+
+    -- Determine if any button is selected (for specificity cascade)
+    local anyButtonSelected = CS.selectedButton ~= nil
+    if not anyButtonSelected then
+        for _ in pairs(CS.selectedButtons) do anyButtonSelected = true; break end
+    end
+
+    -- Container settings: container selected AND NOT (panel + button both selected)
+    -- Covers: no panel selected, OR panel selected but no button → Column 3 handles panel settings
+    if CS.selectedContainer and not (CS.selectedGroup and anyButtonSelected) then
+        if container.placeholderLabel then container.placeholderLabel:Hide() end
+        if container.tabGroup then container.tabGroup.frame:Hide() end
+
+        -- Create or reuse container settings tab group
+        if not container.containerTabGroup then
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.selectedContainerTab = tab
+                widget:ReleaseChildren()
+
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                CS.col4Scroll = scroll
+
+                if tab == "general" then
+                    ST._BuildContainerGeneralTab(scroll, CS.selectedContainer)
+                elseif tab == "loadconditions" then
+                    ST._BuildContainerLoadConditionsTab(scroll, CS.selectedContainer)
+                end
+
+                if CS.browseMode then
+                    ST._DisableAllWidgets(scroll)
+                end
+            end)
+            tabGroup.frame:SetParent(container)
+            tabGroup.frame:ClearAllPoints()
+            tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.containerTabGroup = tabGroup
+        end
+
+        container.containerTabGroup:SetTabs({
+            { value = "general",         text = "General" },
+            { value = "loadconditions",  text = "Load Conditions" },
+        })
+        container.containerTabGroup.frame:Show()
+        local containerTab = CS.selectedContainerTab
+        if containerTab ~= "general" and containerTab ~= "loadconditions" then
+            containerTab = "general"
+        end
+        container.containerTabGroup:SelectTab(containerTab or "general")
+        return
+    end
+
+    -- Hide container tab group when not in container mode
+    if container.containerTabGroup then
+        container.containerTabGroup.frame:Hide()
+    end
+
     if not CS.selectedGroup then
         -- Show placeholder, hide tab group
         if not container.placeholderLabel then
@@ -114,6 +198,13 @@ local function RefreshColumn4(container)
                 ST._BuildEffectsTab(scroll)
             elseif tab == "loadconditions" then
                 ST._BuildLoadConditionsTab(scroll)
+            end
+
+            if CS.browseMode then
+                ST._DisableAllWidgets(scroll)
+                for _, btn in ipairs(CS.tabInfoButtons) do
+                    if btn.Disable then btn:Disable() end
+                end
             end
         end)
 
@@ -196,10 +287,15 @@ local function RefreshProfileBar(bar)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
         db:SetProfile(val)
+        CS.selectedContainer = nil
         CS.selectedGroup = nil
         CS.selectedButton = nil
         wipe(CS.selectedButtons)
         wipe(CS.selectedGroups)
+        -- Exit browse mode on profile switch
+        CS.browseMode = false
+        CS.browseCharKey = nil
+        CS.browseContainerId = nil
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:RefreshAllGroups()
     end)

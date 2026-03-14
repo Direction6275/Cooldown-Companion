@@ -164,7 +164,7 @@ function CooldownCompanion:InvalidateMountAlphaCache()
     self._mountAlphaDirty = true
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
@@ -172,7 +172,8 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
     end
 
     -- Force 100% alpha while group is unlocked for easier positioning
-    if not group.locked then
+    if not locked then
+        frame._naturalAlpha = nil
         if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 then
             frame:SetAlpha(1)
             state.currentAlpha = 1
@@ -183,16 +184,27 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         return
     end
 
+    local configSelected = ST.IsGroupConfigSelected(groupId)
+
     -- Skip processing when feature is entirely unused (baseline=1, no forceHide toggles)
     local hasForceHide = group.forceHideInCombat or group.forceHideOutOfCombat
         or group.forceHideRegularMounted or group.forceHideDragonriding
     if group.baselineAlpha == 1 and not hasForceHide then
+        -- Natural alpha is 1 — store for downstream consumers if config-selected
+        if configSelected then
+            frame._naturalAlpha = 1
+        else
+            frame._naturalAlpha = nil
+        end
         -- Reset state so it doesn't carry stale values if settings change later
         if state.currentAlpha and state.currentAlpha ~= 1 then
             frame:SetAlpha(1)
             state.currentAlpha = 1
             state.desiredAlpha = 1
             state.fadeDuration = 0
+        end
+        if configSelected then
+            state.lastAlpha = 1
         end
         return
     end
@@ -236,15 +248,31 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         local isHovering = frame:IsMouseOver()
         if isHovering then
             forceFull = true
-            state.hoverExpire = now + (group.customFade and group.fadeDelay or 1)
+            state.hoverExpire = now + (group.fadeDelay or 1)
         elseif state.hoverExpire and now < state.hoverExpire then
             forceFull = true
         end
     end
 
     local desired = forceFull and 1 or (forceHidden and 0 or group.baselineAlpha)
-    local fadeIn = group.customFade and group.fadeInDuration or 0.2
-    local fadeOut = group.customFade and group.fadeOutDuration or 0.2
+
+    -- Config-selected override: store the natural alpha for downstream consumers,
+    -- then force the frame itself to full alpha for config visibility.
+    if configSelected then
+        frame._naturalAlpha = desired
+        if state.lastAlpha ~= 1 then
+            frame:SetAlpha(1)
+            state.currentAlpha = 1
+            state.desiredAlpha = 1
+            state.fadeDuration = 0
+            state.lastAlpha = 1
+        end
+        return
+    end
+
+    frame._naturalAlpha = nil
+    local fadeIn = group.fadeInDuration or 0.2
+    local fadeOut = group.fadeOutDuration or 0.2
     local alpha = UpdateFadedAlpha(state, desired, now, fadeIn, fadeOut)
 
     -- Only call SetAlpha when value actually changes
@@ -263,8 +291,9 @@ function CooldownCompanion:InitAlphaUpdateFrame()
     local accumulator = 0
     local UPDATE_INTERVAL = 1 / 30 -- ~30Hz for smooth fading
 
-    local function GroupNeedsAlphaUpdate(group)
-        if group.baselineAlpha < 1 then return true end
+    local function GroupNeedsAlphaUpdate(group, groupId)
+        if ST.IsGroupConfigSelected(groupId) then return true end
+        if (group.baselineAlpha or 1) < 1 then return true end
         return group.forceHideInCombat or group.forceHideOutOfCombat
             or group.forceHideRegularMounted or group.forceHideDragonriding
     end
@@ -289,10 +318,11 @@ function CooldownCompanion:InitAlphaUpdateFrame()
             end
         end
 
+        local containers = self.db.profile.groupContainers or {}
         for groupId, group in pairs(self.db.profile.groups) do
             local frame = self.groupFrames[groupId]
             if frame and frame:IsShown() then
-                local needsUpdate = GroupNeedsAlphaUpdate(group)
+                local needsUpdate = GroupNeedsAlphaUpdate(group, groupId)
                 -- Also process if the group has stale alpha state that needs cleanup
                 if not needsUpdate then
                     local state = self.alphaState[groupId]
@@ -301,7 +331,15 @@ function CooldownCompanion:InitAlphaUpdateFrame()
                     end
                 end
                 if needsUpdate then
-                    self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
+                    -- Resolve locked from the container for alpha fade processing
+                    local locked = true
+                    if group.parentContainerId then
+                        local c = containers[group.parentContainerId]
+                        if c then locked = c.locked ~= false end
+                    else
+                        locked = group.locked
+                    end
+                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
                 end
             end
         end

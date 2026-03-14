@@ -237,12 +237,72 @@ function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
     return true
 end
 
-function CooldownCompanion:CreateGroup(name)
-    local groupId = self.db.profile.nextGroupId
-    self.db.profile.nextGroupId = groupId + 1
+------------------------------------------------------------------------
+-- Container & Panel Helpers
+------------------------------------------------------------------------
 
-    self.db.profile.groups[groupId] = {
+-- Returns a sorted array of { groupId = id, group = groupData } for all panels
+-- belonging to the given container, ordered by panel.order.
+function CooldownCompanion:GetPanels(containerId)
+    local panels = {}
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.parentContainerId == containerId then
+            panels[#panels + 1] = { groupId = groupId, group = group }
+        end
+    end
+    table_sort(panels, function(a, b)
+        return (a.group.order or 0) < (b.group.order or 0)
+    end)
+    return panels
+end
+
+function CooldownCompanion:GetPanelCount(containerId)
+    local count = 0
+    for _, group in pairs(self.db.profile.groups) do
+        if group.parentContainerId == containerId then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+function CooldownCompanion:GetParentContainerId(groupId)
+    local group = self.db.profile.groups[groupId]
+    return group and group.parentContainerId
+end
+
+function CooldownCompanion:IsPanelGroup(groupId)
+    local group = self.db.profile.groups[groupId]
+    return group ~= nil and group.parentContainerId ~= nil
+end
+
+------------------------------------------------------------------------
+-- Container CRUD
+------------------------------------------------------------------------
+
+function CooldownCompanion:CreateContainer(name)
+    local db = self.db.profile
+    local containerId = db.nextContainerId
+    db.nextContainerId = containerId + 1
+
+    db.groupContainers[containerId] = {
         name = name or "New Group",
+        order = containerId,
+        createdBy = self.db.keys.char,
+        isGlobal = false,
+        enabled = true,
+        locked = true,
+        -- Alpha fade defaults
+        baselineAlpha = 1,
+        forceAlphaRegularMounted = false,
+        forceAlphaDragonriding = false,
+        forceHideRegularMounted = false,
+        forceHideDragonriding = false,
+        treatTravelFormAsMounted = false,
+        fadeDelay = 1,
+        fadeInDuration = 0.2,
+        fadeOutDuration = 0.2,
+        -- Anchor (invisible container frame)
         anchor = {
             point = "CENTER",
             relativeTo = "UIParent",
@@ -250,21 +310,155 @@ function CooldownCompanion:CreateGroup(name)
             x = 0,
             y = 0,
         },
-        buttons = {},
-        style = CopyTable(self.db.profile.globalStyle),
-        enabled = true,
-        locked = false,
-        order = groupId,
-        createdBy = self.db.keys.char,
-        isGlobal = false,
     }
 
-    self.db.profile.groups[groupId].style.orientation = "horizontal"
-    self.db.profile.groups[groupId].style.buttonsPerRow = 12
-    self.db.profile.groups[groupId].style.showCooldownText = true
+    return containerId
+end
 
-    -- Indicator defaults for new groups (nil-guard respects user-customized globalStyle)
-    local style = self.db.profile.groups[groupId].style
+function CooldownCompanion:DeleteContainer(containerId)
+    local db = self.db.profile
+    if not db.groupContainers[containerId] then return end
+
+    -- Delete all child panels first
+    local panelIds = {}
+    for groupId, group in pairs(db.groups) do
+        if group.parentContainerId == containerId then
+            panelIds[#panelIds + 1] = groupId
+        end
+    end
+    for _, groupId in ipairs(panelIds) do
+        self:DeleteMasqueGroup(groupId)
+        if self.groupFrames[groupId] then
+            self.groupFrames[groupId]:Hide()
+            self.groupFrames[groupId] = nil
+        end
+        if self.alphaState then
+            self.alphaState[groupId] = nil
+        end
+        db.groups[groupId] = nil
+    end
+
+    -- Clean up container frame and alpha state
+    if self.containerFrames and self.containerFrames[containerId] then
+        self.containerFrames[containerId]:Hide()
+        self.containerFrames[containerId] = nil
+    end
+
+    db.groupContainers[containerId] = nil
+end
+
+function CooldownCompanion:DuplicateContainer(containerId)
+    local db = self.db.profile
+    local sourceContainer = db.groupContainers[containerId]
+    if not sourceContainer then return nil end
+
+    local newContainerId = db.nextContainerId
+    db.nextContainerId = newContainerId + 1
+
+    local newContainer = CopyTable(sourceContainer)
+    newContainer.name = sourceContainer.name .. " (Copy)"
+    newContainer.order = newContainerId
+    newContainer.createdBy = self.db.keys.char
+    newContainer.isGlobal = false
+
+    -- If source was global, clear folderId on the copy
+    if sourceContainer.isGlobal and newContainer.folderId then
+        newContainer.folderId = nil
+    end
+
+    db.groupContainers[newContainerId] = newContainer
+
+    -- Collect source panel IDs first (avoid modifying db.groups during pairs iteration)
+    local sourcePanelIds = {}
+    for groupId, group in pairs(db.groups) do
+        if group.parentContainerId == containerId then
+            sourcePanelIds[#sourcePanelIds + 1] = groupId
+        end
+    end
+
+    -- Deep copy all child panels, re-anchoring to new container
+    local containerFrameName = "CooldownCompanionContainer" .. newContainerId
+    for _, groupId in ipairs(sourcePanelIds) do
+        local group = db.groups[groupId]
+        if group then
+            local newGroupId = db.nextGroupId
+            db.nextGroupId = newGroupId + 1
+
+            local newPanel = CopyTable(group)
+            newPanel.parentContainerId = newContainerId
+            newPanel.anchor = {
+                point = "CENTER",
+                relativeTo = containerFrameName,
+                relativePoint = "CENTER",
+                x = group.anchor and group.anchor.x or 0,
+                y = group.anchor and group.anchor.y or 0,
+            }
+
+            db.groups[newGroupId] = newPanel
+            self:CreateGroupFrame(newGroupId)
+        end
+    end
+
+    -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)
+    if self.CreateContainerFrame then
+        self:CreateContainerFrame(newContainerId)
+    end
+
+    return newContainerId
+end
+
+function CooldownCompanion:RenameContainer(containerId, newName)
+    local container = self.db.profile.groupContainers[containerId]
+    if container then
+        container.name = newName
+    end
+end
+
+------------------------------------------------------------------------
+-- Panel CRUD (within containers)
+------------------------------------------------------------------------
+
+function CooldownCompanion:CreatePanel(containerId, displayMode)
+    local db = self.db.profile
+    local container = db.groupContainers[containerId]
+    if not container then return nil end
+
+    local groupId = db.nextGroupId
+    db.nextGroupId = groupId + 1
+
+    local panelOrder = self:GetPanelCount(containerId) + 1
+    local containerFrameName = "CooldownCompanionContainer" .. containerId
+
+    db.groups[groupId] = {
+        name = "Panel " .. panelOrder,
+        parentContainerId = containerId,
+        order = panelOrder,
+        anchor = {
+            point = "CENTER",
+            relativeTo = containerFrameName,
+            relativePoint = "CENTER",
+            x = 0,
+            y = 0,
+        },
+        buttons = {},
+        style = CopyTable(db.globalStyle),
+        displayMode = displayMode or "icons",
+        masqueEnabled = false,
+        compactLayout = false,
+        maxVisibleButtons = 0,
+        compactGrowthDirection = "center",
+        -- Alpha fade defaults (panels own their own alpha)
+        baselineAlpha = 1,
+        fadeDelay = 1,
+        fadeInDuration = 0.2,
+        fadeOutDuration = 0.2,
+    }
+
+    -- Style defaults (nil-guard respects user-customized globalStyle)
+    local style = db.groups[groupId].style
+    style.orientation = "horizontal"
+    style.buttonsPerRow = 12
+    style.showCooldownText = true
     if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
     if style.showOutOfRange == nil then style.showOutOfRange = true end
     if style.showGCDSwipe == nil then style.showGCDSwipe = false end
@@ -273,45 +467,18 @@ function CooldownCompanion:CreateGroup(name)
     if style.showUnusable == nil then style.showUnusable = true end
     if style.showCooldownSwipe == nil then style.showCooldownSwipe = true end
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
-    -- Bar mode indicator defaults
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
 
-    -- Alpha fade defaults
-    self.db.profile.groups[groupId].baselineAlpha = 1
-    self.db.profile.groups[groupId].forceAlphaRegularMounted = false
-    self.db.profile.groups[groupId].forceAlphaDragonriding = false
-    self.db.profile.groups[groupId].forceHideRegularMounted = false
-    self.db.profile.groups[groupId].forceHideDragonriding = false
-    self.db.profile.groups[groupId].treatTravelFormAsMounted = false
-    self.db.profile.groups[groupId].fadeDelay = 1
-    self.db.profile.groups[groupId].fadeInDuration = 0.2
-    self.db.profile.groups[groupId].fadeOutDuration = 0.2
-
-    -- Display mode default
-    self.db.profile.groups[groupId].displayMode = "icons"
-
-    -- Masque defaults
-    self.db.profile.groups[groupId].masqueEnabled = false
-
-    -- Compact layout default (per-button visibility feature)
-    self.db.profile.groups[groupId].compactLayout = false
-
-    -- Max visible buttons cap (0 = no cap, use total button count)
-    self.db.profile.groups[groupId].maxVisibleButtons = 0
-
-    -- Compact growth direction (start/center/end; default center)
-    self.db.profile.groups[groupId].compactGrowthDirection = "center"
-
-    -- Create the frame for this group
     self:CreateGroupFrame(groupId)
-
     return groupId
 end
 
-function CooldownCompanion:DeleteGroup(groupId)
-    -- Clean up Masque group before deleting
-    self:DeleteMasqueGroup(groupId)
+function CooldownCompanion:DeletePanel(containerId, groupId)
+    local db = self.db.profile
+    local group = db.groups[groupId]
+    if not group or group.parentContainerId ~= containerId then return false end
 
+    self:DeleteMasqueGroup(groupId)
     if self.groupFrames[groupId] then
         self.groupFrames[groupId]:Hide()
         self.groupFrames[groupId] = nil
@@ -319,40 +486,157 @@ function CooldownCompanion:DeleteGroup(groupId)
     if self.alphaState then
         self.alphaState[groupId] = nil
     end
-    self.db.profile.groups[groupId] = nil
+    db.groups[groupId] = nil
+    return true
 end
 
-function CooldownCompanion:DuplicateGroup(groupId)
-    local sourceGroup = self.db.profile.groups[groupId]
+function CooldownCompanion:DuplicatePanel(containerId, groupId)
+    local db = self.db.profile
+    local sourcePanel = db.groups[groupId]
+    if not sourcePanel or sourcePanel.parentContainerId ~= containerId then return nil end
+
+    local newGroupId = db.nextGroupId
+    db.nextGroupId = newGroupId + 1
+
+    local newPanel = CopyTable(sourcePanel)
+    newPanel.name = sourcePanel.name .. " (Copy)"
+    newPanel.order = self:GetPanelCount(containerId) + 1
+
+    db.groups[newGroupId] = newPanel
+    self:CreateGroupFrame(newGroupId)
+    return newGroupId
+end
+
+function CooldownCompanion:MovePanel(groupId, targetContainerId)
+    local db = self.db.profile
+    local group = db.groups[groupId]
+    if not group or not group.parentContainerId then return false end
+    if not db.groupContainers[targetContainerId] then return false end
+
+    local sourceContainerId = group.parentContainerId
+    if sourceContainerId == targetContainerId then return false end
+
+    -- Reassign to target container
+    group.parentContainerId = targetContainerId
+
+    -- Reset anchor to center of new container frame
+    local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
+    group.anchor = {
+        point = "CENTER",
+        relativeTo = containerFrameName,
+        relativePoint = "CENTER",
+        x = 0,
+        y = 0,
+    }
+
+    -- Put at end of target's panel list (GetPanelCount already sees the moved panel)
+    group.order = self:GetPanelCount(targetContainerId)
+
+    -- Force alpha re-evaluation with new container context
+    if self.alphaState then
+        self.alphaState[groupId] = nil
+    end
+
+    self:RefreshGroupFrame(groupId)
+
+    -- If source container is now empty, delete it
+    local sourceDeleted = false
+    if self:GetPanelCount(sourceContainerId) == 0 then
+        self:DeleteContainer(sourceContainerId)
+        sourceDeleted = true
+    end
+
+    return true, sourceDeleted
+end
+
+function CooldownCompanion:RenamePanelGroup(groupId, newName)
+    local group = self.db.profile.groups[groupId]
+    if group then
+        group.name = newName
+    end
+end
+
+function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+    group.displayMode = newMode
+    self:RefreshGroupFrame(groupId)
+end
+
+------------------------------------------------------------------------
+-- Public Group API (container + panel combo operations)
+------------------------------------------------------------------------
+
+function CooldownCompanion:CreateGroup(name)
+    local containerId = self:CreateContainer(name)
+
+    -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)
+    if self.CreateContainerFrame then
+        self:CreateContainerFrame(containerId)
+    end
+
+    return containerId
+end
+
+function CooldownCompanion:DeleteGroup(id)
+    -- If this is a containerId, delete the container and all its panels
+    if self.db.profile.groupContainers[id] then
+        self:DeleteContainer(id)
+        return
+    end
+
+    -- Otherwise treat as a panel groupId
+    local group = self.db.profile.groups[id]
+    if not group then return end
+
+    local parentId = group.parentContainerId
+
+    self:DeleteMasqueGroup(id)
+    if self.groupFrames[id] then
+        self.groupFrames[id]:Hide()
+        self.groupFrames[id] = nil
+    end
+    if self.alphaState then
+        self.alphaState[id] = nil
+    end
+    self.db.profile.groups[id] = nil
+
+    -- If this was the last panel, delete the parent container too
+    if parentId and self:GetPanelCount(parentId) == 0 then
+        self:DeleteContainer(parentId)
+    end
+end
+
+function CooldownCompanion:DuplicateGroup(id)
+    -- If this is a containerId, duplicate the container and all panels
+    if self.db.profile.groupContainers[id] then
+        return self:DuplicateContainer(id)
+    end
+
+    -- Otherwise treat as a panel groupId
+    local sourceGroup = self.db.profile.groups[id]
     if not sourceGroup then return nil end
 
+    -- If the panel belongs to a container, duplicate within it
+    if sourceGroup.parentContainerId then
+        return self:DuplicatePanel(sourceGroup.parentContainerId, id)
+    end
+
+    -- Legacy path (no container) — should not happen post-migration
     local newGroupId = self.db.profile.nextGroupId
     self.db.profile.nextGroupId = newGroupId + 1
 
-    -- Deep copy the entire group
     local newGroup = CopyTable(sourceGroup)
-
-    -- Change the name
     newGroup.name = sourceGroup.name .. " (Copy)"
-
-    -- Assign new order (place after source group)
     newGroup.order = newGroupId
-
-    -- Set ownership to current character
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
-
-    -- If source was global but duplicate becomes character-owned, clear folderId
-    -- (folder belongs to the global section)
     if sourceGroup.isGlobal and newGroup.folderId then
         newGroup.folderId = nil
     end
 
     self.db.profile.groups[newGroupId] = newGroup
-
-    -- Create the frame for the new group
     self:CreateGroupFrame(newGroupId)
-
     return newGroupId
 end
 
@@ -372,15 +656,15 @@ end
 function CooldownCompanion:DeleteFolder(folderId)
     local db = self.db.profile
     if not db.folders[folderId] then return end
-    -- Collect child IDs first (avoid modifying table during pairs iteration)
+    -- Collect child container IDs first (avoid modifying table during pairs iteration)
     local childIds = {}
-    for groupId, group in pairs(db.groups) do
-        if group.folderId == folderId then
-            childIds[#childIds + 1] = groupId
+    for containerId, container in pairs(db.groupContainers) do
+        if container.folderId == folderId then
+            childIds[#childIds + 1] = containerId
         end
     end
-    for _, groupId in ipairs(childIds) do
-        self:DeleteGroup(groupId)
+    for _, containerId in ipairs(childIds) do
+        self:DeleteContainer(containerId)
     end
     db.folders[folderId] = nil
 end
@@ -392,23 +676,28 @@ function CooldownCompanion:RenameFolder(folderId, newName)
     end
 end
 
-function CooldownCompanion:MoveGroupToFolder(groupId, folderId)
-    local group = self.db.profile.groups[groupId]
-    if not group then return end
-    group.folderId = folderId  -- nil = loose (no folder)
-    if folderId then
-        local folder = self.db.profile.folders and self.db.profile.folders[folderId]
-        if folder and folder.specs and next(folder.specs) then
-            group.specs = CopyTable(folder.specs)
-            if folder.heroTalents and next(folder.heroTalents) then
-                group.heroTalents = CopyTable(folder.heroTalents)
-            else
-                group.heroTalents = nil
-            end
+function CooldownCompanion:MoveGroupToFolder(id, folderId)
+    local db = self.db.profile
+
+    -- Resolve to container (id may be containerId or panel groupId)
+    local containerId = id
+    local container = db.groupContainers[id]
+    if not container then
+        local group = db.groups[id]
+        if group and group.parentContainerId then
+            containerId = group.parentContainerId
+            container = db.groupContainers[containerId]
         end
     end
-    -- Folder moves can change effective spec/hero filters; refresh visibility now.
-    self:RefreshGroupFrame(groupId)
+    if not container then return end
+
+    container.folderId = folderId  -- nil = loose (no folder)
+
+    -- Refresh all panels in this container (folder change may affect visibility)
+    local panels = self:GetPanels(containerId)
+    for _, p in ipairs(panels) do
+        self:RefreshGroupFrame(p.groupId)
+    end
 end
 
 function CooldownCompanion:ToggleFolderGlobal(folderId)
@@ -420,17 +709,31 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
     if newSection == "char" then
         folder.createdBy = self.db.keys.char
     end
-    -- Move all child groups to the new section
-    for groupId, group in pairs(db.groups) do
-        if group.folderId == folderId then
+    -- Move all child containers to the new section
+    for _, container in pairs(db.groupContainers) do
+        if container.folderId == folderId then
             if newSection == "global" then
-                group.isGlobal = true
+                container.isGlobal = true
             else
-                group.isGlobal = false
-                group.createdBy = self.db.keys.char
+                container.isGlobal = false
+                container.createdBy = self.db.keys.char
             end
         end
     end
+    self:RefreshAllGroups()
+end
+
+function CooldownCompanion:ToggleGroupGlobal(containerId)
+    local db = self.db.profile
+    local container = db.groupContainers[containerId]
+    if not container then return end
+
+    local newGlobal = not container.isGlobal
+    container.isGlobal = newGlobal
+    if not newGlobal then
+        container.createdBy = self.db.keys.char
+    end
+
     self:RefreshAllGroups()
 end
 
@@ -662,4 +965,140 @@ function CooldownCompanion:FindTalentSpellByName(name)
     if spellID and spellName then return spellID, spellName end
 
     return nil
+end
+
+------------------------------------------------------------------------
+-- Cross-Character Browse Helpers
+------------------------------------------------------------------------
+
+--- Scan profile containers for unique createdBy values other than current char.
+--- Returns sorted array of { charKey, classFilename, classID }.
+function CooldownCompanion:EnumerateBrowseCharacters()
+    local db = self.db.profile
+    local currentChar = self.db.keys.char
+    local seen = {}
+    local result = {}
+
+    for _, container in pairs(db.groupContainers) do
+        local key = container.createdBy
+        if key and key ~= currentChar and not container.isGlobal and not seen[key] then
+            seen[key] = true
+            local info = self.db.global.characterInfo and self.db.global.characterInfo[key]
+            result[#result + 1] = {
+                charKey = key,
+                classFilename = info and info.classFilename or nil,
+                classID = info and info.classID or nil,
+            }
+        end
+    end
+
+    table_sort(result, function(a, b) return a.charKey < b.charKey end)
+    return result
+end
+
+--- Return sorted array of { containerId, container } for a given character key.
+function CooldownCompanion:GetCharacterContainers(charKey)
+    local db = self.db.profile
+    local result = {}
+
+    for containerId, container in pairs(db.groupContainers) do
+        if container.createdBy == charKey and not container.isGlobal then
+            -- Skip empty containers (no panels with buttons)
+            local hasButtons = false
+            for _, group in pairs(db.groups) do
+                if group.parentContainerId == containerId and group.buttons and #group.buttons > 0 then
+                    hasButtons = true
+                    break
+                end
+            end
+            if hasButtons then
+                result[#result + 1] = { containerId = containerId, container = container }
+            end
+        end
+    end
+
+    table_sort(result, function(a, b)
+        return (a.container.order or a.containerId) < (b.container.order or b.containerId)
+    end)
+    return result
+end
+
+--- Copy a container from browse mode. Reuses DuplicateContainer, renames to original name.
+function CooldownCompanion:CopyContainerFromBrowse(sourceContainerId)
+    local sourceContainer = self.db.profile.groupContainers[sourceContainerId]
+    if not sourceContainer then return nil end
+
+    local originalName = sourceContainer.name
+    local newContainerId = self:DuplicateContainer(sourceContainerId)
+    if newContainerId then
+        -- Rename from "X (Copy)" back to original name
+        self.db.profile.groupContainers[newContainerId].name = originalName
+    end
+    return newContainerId
+end
+
+--- Copy a panel into an existing container owned by the current character.
+function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId)
+    local db = self.db.profile
+    local sourcePanel = db.groups[sourceGroupId]
+    if not sourcePanel then return nil end
+    if not db.groupContainers[targetContainerId] then return nil end
+
+    local newGroupId = db.nextGroupId
+    db.nextGroupId = newGroupId + 1
+
+    local newPanel = CopyTable(sourcePanel)
+    newPanel.parentContainerId = targetContainerId
+    newPanel.order = self:GetPanelCount(targetContainerId) + 1
+
+    local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
+    newPanel.anchor = {
+        point = "CENTER",
+        relativeTo = containerFrameName,
+        relativePoint = "CENTER",
+        x = 0,
+        y = 0,
+    }
+
+    db.groups[newGroupId] = newPanel
+    self:CreateGroupFrame(newGroupId)
+    return newGroupId
+end
+
+--- Copy a panel as a brand new standalone group (container + panel).
+function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
+    local db = self.db.profile
+    local sourcePanel = db.groups[sourceGroupId]
+    if not sourcePanel then return nil, nil end
+
+    -- Create a new container
+    local containerId = self:CreateContainer(sourceName or "Copied Group")
+
+    -- Create container frame
+    if self.CreateContainerFrame then
+        self:CreateContainerFrame(containerId)
+    end
+
+    -- Deep-copy the source panel into the new container
+    local newGroupId = db.nextGroupId
+    db.nextGroupId = newGroupId + 1
+
+    local newPanel = CopyTable(sourcePanel)
+    newPanel.parentContainerId = containerId
+    newPanel.order = 1
+    newPanel.name = "Panel 1"
+
+    local containerFrameName = "CooldownCompanionContainer" .. containerId
+    newPanel.anchor = {
+        point = "CENTER",
+        relativeTo = containerFrameName,
+        relativePoint = "CENTER",
+        x = 0,
+        y = 0,
+    }
+
+    db.groups[newGroupId] = newPanel
+    self:CreateGroupFrame(newGroupId)
+
+    return containerId, newGroupId
 end

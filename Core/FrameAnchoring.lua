@@ -219,8 +219,8 @@ function CooldownCompanion:ApplyFrameAnchoring()
             savedTargetAlpha = targetFrame:GetAlpha()
         end
 
-        -- Apply alpha immediately
-        local groupAlpha = groupFrame:GetEffectiveAlpha()
+        -- Apply alpha immediately — use natural alpha to avoid config override cascade
+        local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         if playerFrame then playerFrame:SetAlpha(groupAlpha) end
         if targetFrame then targetFrame:SetAlpha(groupAlpha) end
 
@@ -236,7 +236,7 @@ function CooldownCompanion:ApplyFrameAnchoring()
             if accumulator < SYNC_INTERVAL then return end
             accumulator = 0
             if not groupFrame then return end
-            local alpha = groupFrame:GetEffectiveAlpha()
+            local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
                 if playerFrameRef then playerFrameRef:SetAlpha(alpha) end
