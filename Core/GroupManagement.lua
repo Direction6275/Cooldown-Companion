@@ -776,6 +776,17 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 group.buttons[buttonIndex].hasCharges = true
                 group.buttons[buttonIndex].showChargeText = true
             end
+        else
+            -- No charge data: check if spell has a readable non-zero cast
+            -- count right now (e.g. Mana Tea with existing stacks).  If not,
+            -- SPELL_UPDATE_USES will flag it when stacks first appear.
+            local castCount = C_Spell.GetSpellCastCount(id)
+            if not issecretvalue(castCount) and castCount and castCount > 0 then
+                group.buttons[buttonIndex]._castCountCandidate = true
+            end
+            -- Ensure RefreshChargeFlags evaluates this spell on charge events
+            -- even if it has 0 stacks right now.
+            self._hasDisplayCountCandidates = true
         end
     end
 

@@ -102,6 +102,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                 local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
                 local hasRealCharges = buttonData.hasCharges and true or nil
                 if chargeInfo then
+                    buttonData._castCountCandidate = nil
                     local mc = chargeInfo.maxCharges
                     if mc and not issecretvalue(mc) then
                         if mc > 1 then
@@ -134,6 +135,14 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
                     -- "N" when the pool is active.
                     self._hasDisplayCountCandidates = true
+                    -- Promote to cast-count candidate when a readable non-zero
+                    -- count is observed.  Never clear here — SPELL_UPDATE_USES
+                    -- is the authority for identification; line 105 clears the
+                    -- flag when a spell gains real charges (chargeInfo non-nil).
+                    local castCount = C_Spell.GetSpellCastCount(buttonData.id)
+                    if not issecretvalue(castCount) and castCount and castCount > 0 then
+                        buttonData._castCountCandidate = true
+                    end
                     local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
                     if not issecretvalue(rawDisplayCount) then
                         local displayCount = tonumber(rawDisplayCount)
@@ -150,6 +159,10 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             -- tonumber("") => nil: pool truly inactive.
                             hasRealCharges = nil
                         end
+                    end
+                    -- Auto-enable charge text when first detected as display-count.
+                    if hasRealCharges and buttonData.showChargeText == nil then
+                        buttonData.showChargeText = true
                     end
                 end
                 buttonData.hasCharges = hasRealCharges

@@ -107,6 +107,7 @@ function CooldownCompanion:OnEnable()
 
     -- Charge change events (proc-granted charges, recharges, etc.)
     self:RegisterEvent("SPELL_UPDATE_CHARGES", "OnChargesChanged")
+    self:RegisterEvent("SPELL_UPDATE_USES", "OnChargesChanged")
 
     -- Spell activation overlay (proc glow) events
     -- Track state via events instead of polling IsSpellOverlayed
@@ -314,7 +315,23 @@ function CooldownCompanion:OnDisable()
     end
 end
 
-function CooldownCompanion:OnChargesChanged()
+function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
+    -- SPELL_UPDATE_USES only fires for spells with actual use counts
+    -- (Mana Tea stacks, brez pool, etc.).  Use its payload to flag the
+    -- specific spell as a cast-count candidate — this is more reliable
+    -- than probing GetSpellCastCount, which may return 0 at rest or
+    -- secrets during combat for unrelated spells.
+    if event == "SPELL_UPDATE_USES" and spellID then
+        for _, group in pairs(self.db.profile.groups) do
+            for _, bd in ipairs(group.buttons) do
+                if bd.type == "spell" and not bd.hasCharges
+                        and (bd.id == spellID or bd.id == baseSpellID) then
+                    bd._castCountCandidate = true
+                end
+            end
+        end
+        self._hasDisplayCountCandidates = true
+    end
     if self._hasDisplayCountCandidates then
         self:RefreshChargeFlags("spell")
     end

@@ -125,6 +125,7 @@ end
 -- Bear Form) correctly return false here — their toggle remains visible.
 local function IsNeverUnusableButton(bd)
     if not bd or bd.type ~= "spell" then return false end
+    if bd._castCountCandidate then return false end
     local costs = C_Spell.GetSpellPowerCost(bd.id)
     if costs and #costs > 0 then return false end
     return not HasUsageRequirement(bd.id)
