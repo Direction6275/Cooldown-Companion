@@ -135,13 +135,18 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
                     -- "N" when the pool is active.
                     self._hasDisplayCountCandidates = true
-                    -- Promote to cast-count candidate when a readable non-zero
-                    -- count is observed.  Never clear here — SPELL_UPDATE_USES
-                    -- is the authority for identification; line 105 clears the
-                    -- flag when a spell gains real charges (chargeInfo non-nil).
+                    -- Promote or demote cast-count candidate based on readable
+                    -- cast count.  SPELL_UPDATE_USES is the primary authority
+                    -- for identification (Lifecycle.lua), but we clear stale
+                    -- flags here when a readable zero is observed.  Clearing is
+                    -- safe: at 0 stacks the display is suppressed anyway (gated
+                    -- by IsSpellUsable), and SPELL_UPDATE_USES will re-flag
+                    -- the spell when stacks return.
                     local castCount = C_Spell.GetSpellCastCount(buttonData.id)
                     if not issecretvalue(castCount) and castCount and castCount > 0 then
                         buttonData._castCountCandidate = true
+                    elseif not issecretvalue(castCount) then
+                        buttonData._castCountCandidate = nil
                     end
                     local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
                     if not issecretvalue(rawDisplayCount) then
