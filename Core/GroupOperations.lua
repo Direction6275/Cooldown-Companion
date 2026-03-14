@@ -62,13 +62,27 @@ end
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
-    -- Container cascade: if the group is a panel, use the container's specs
+    -- Panel cascade: folder → container → panel's own specs
     local container = self:GetParentContainer(group)
     if container then
-        return container.specs, container.specs ~= nil
+        -- Check folder first
+        local folderId = container.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            if folder and folder.specs and next(folder.specs) then
+                return folder.specs, true
+            end
+        end
+        -- Then container's own specs
+        if container.specs and next(container.specs) then
+            return container.specs, true
+        end
+        -- Fall through to panel's own
+        return group.specs, false
     end
 
-    -- Legacy folder cascade (pre-migration or non-panel groups)
+    -- Non-panel group: check folder cascade
     local folderId = group.folderId
     if folderId then
         local folders = self.db and self.db.profile and self.db.profile.folders
