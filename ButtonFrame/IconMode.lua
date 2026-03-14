@@ -124,14 +124,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Ready glow elements (glow while off cooldown)
     button.readyGlow = CreateGlowContainer(button, 32)
 
-    -- Frame levels: just above cooldown
-    local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
-    button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
-    button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
-    button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
-    button.readyGlow.solidFrame:SetFrameLevel(auraGlowLevel)
-    button.readyGlow.procFrame:SetFrameLevel(auraGlowLevel)
-    button.readyGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
+    -- Aura/ready glow frame levels are now managed by ApplyStrataOrder (called below)
 
     -- Apply custom cooldown text font settings
     local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")

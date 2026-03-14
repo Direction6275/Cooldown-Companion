@@ -46,6 +46,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateCharacterScopedBarSettings()
     self:MigrateGroupsToContainers()
     self:MigrateContainerAlphaToPanel()
+    self:MigrateStrataOrderExpansion()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -67,6 +68,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedContainersV1 = nil
     profile._migratedContainerAlphaToPanel = nil
     profile._migratedContainerHeroTalentStamps = nil
+    profile._migratedStrataOrder6 = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1578,5 +1580,53 @@ function CooldownCompanion:MigrateContainerHeroTalentStamps()
     end
 
     profile._migratedContainerHeroTalentStamps = true
+end
+
+-- Expand 4-element strataOrder arrays to 6-element by inserting auraGlow and readyGlow.
+-- These were previously hardcoded at cooldown:GetFrameLevel() + 1 (just above cooldown),
+-- so we insert them immediately after the "cooldown" entry to preserve that visual position.
+function CooldownCompanion:MigrateStrataOrderExpansion()
+    local profile = self.db.profile
+    if profile._migratedStrataOrder6 then return end
+
+    local function ExpandStrataOrder(order)
+        if not order or type(order) ~= "table" or #order ~= 4 then return end
+        -- Find where "cooldown" sits in the old array
+        local cooldownPos
+        for i = 1, 4 do
+            if order[i] == "cooldown" then
+                cooldownPos = i
+                break
+            end
+        end
+        -- Insert auraGlow and readyGlow right after cooldown (or at the start if not found)
+        local insertAt = (cooldownPos or 0) + 1
+        table.insert(order, insertAt, "auraGlow")
+        table.insert(order, insertAt + 1, "readyGlow")
+    end
+
+    -- Migrate per-group style.strataOrder
+    for _, group in pairs(profile.groups) do
+        if group.style then
+            ExpandStrataOrder(group.style.strataOrder)
+        end
+    end
+
+    -- Migrate globalStyle.strataOrder
+    if profile.globalStyle then
+        ExpandStrataOrder(profile.globalStyle.strataOrder)
+    end
+
+    -- Migrate saved icon presets
+    local presets = profile.groupSettingPresets and profile.groupSettingPresets.icons
+    if presets then
+        for _, preset in pairs(presets) do
+            if preset.style then
+                ExpandStrataOrder(preset.style.strataOrder)
+            end
+        end
+    end
+
+    profile._migratedStrataOrder6 = true
 end
 

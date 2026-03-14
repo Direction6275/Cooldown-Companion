@@ -98,6 +98,18 @@ local function ApplyGroupSettingPresetData(profile, group, mode, presetData)
             group.style[key] = CopyPresetValue(value)
         end
     end
+
+    -- Expand legacy 4-element strataOrder from older presets
+    local so = group.style.strataOrder
+    if type(so) == "table" and #so == 4 then
+        local cooldownPos
+        for i = 1, 4 do
+            if so[i] == "cooldown" then cooldownPos = i; break end
+        end
+        local insertAt = (cooldownPos or 0) + 1
+        table.insert(so, insertAt, "auraGlow")
+        table.insert(so, insertAt + 1, "readyGlow")
+    end
 end
 
 -- Group Management Functions

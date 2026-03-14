@@ -34,7 +34,7 @@ CooldownCompanion._isResting = false
 ST.BUTTON_SIZE = 36
 ST.BUTTON_SPACING = 2
 ST.DEFAULT_BORDER_SIZE = 1
-ST.DEFAULT_STRATA_ORDER = {"cooldown", "assistedHighlight", "chargeText", "procGlow"}
+ST.DEFAULT_STRATA_ORDER = {"cooldown", "auraGlow", "readyGlow", "chargeText", "assistedHighlight", "procGlow"}
 
 -- Minimap icon setup using LibDataBroker and LibDBIcon
 local LDB = LibStub("LibDataBroker-1.1")

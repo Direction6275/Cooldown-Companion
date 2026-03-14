@@ -67,11 +67,13 @@ local outlineOptions = {
 -- Strata ordering element definitions
 local strataElementLabels = {
     cooldown = "Cooldown Swipe",
-    chargeText = "Charge Text",
+    auraGlow = "Aura / Pandemic Glow",
+    readyGlow = "Ready Glow",
+    chargeText = "Text Overlay",
     procGlow = "Proc Glow",
     assistedHighlight = "Assisted Highlight",
 }
-local strataElementKeys = {"cooldown", "chargeText", "procGlow", "assistedHighlight"}
+local strataElementKeys = {"cooldown", "auraGlow", "readyGlow", "chargeText", "assistedHighlight", "procGlow"}
 
 -- Anchor point options
 local anchorPoints = {
@@ -229,9 +231,11 @@ local CS = ST._configState
 ------------------------------------------------------------------------
 -- Strata order helpers
 ------------------------------------------------------------------------
+local STRATA_ELEMENT_COUNT = #ST.DEFAULT_STRATA_ORDER
+
 local function IsStrataOrderComplete(order)
     if not order then return false end
-    for i = 1, 4 do
+    for i = 1, STRATA_ELEMENT_COUNT do
         if not order[i] then return false end
     end
     return true
@@ -245,12 +249,12 @@ local function InitPendingStrataOrder(groupId)
     local saved = group and group.style and group.style.strataOrder
     if saved and IsStrataOrderComplete(saved) then
         CS.pendingStrataOrder = {}
-        for i = 1, 4 do
+        for i = 1, STRATA_ELEMENT_COUNT do
             CS.pendingStrataOrder[i] = saved[i]
         end
     else
         CS.pendingStrataOrder = {}
-        for i = 1, 4 do
+        for i = 1, STRATA_ELEMENT_COUNT do
             CS.pendingStrataOrder[i] = ST.DEFAULT_STRATA_ORDER[i]
         end
     end

@@ -82,11 +82,11 @@ end
 CooldownCompanion.IsItemEquippable = IsItemEquippable
 
 -- Apply configurable strata (frame level) ordering to button sub-elements.
--- order: array of 4 keys {"cooldown","chargeText","procGlow","assistedHighlight"} or nil for default.
--- Index 1 = lowest layer (baseLevel+1), index 4 = highest (baseLevel+4).
--- Loss of Control is always baseLevel+5 (above all configurable elements).
+-- order: array of 6 keys or nil for default.
+-- Index 1 = lowest layer (baseLevel+1), index 6 = highest (baseLevel+6).
+-- Loss of Control is always baseLevel+7 (above all configurable elements).
 local function ApplyStrataOrder(button, order)
-    if not order or #order ~= 4 then
+    if not order or #order ~= #ST.DEFAULT_STRATA_ORDER then
         order = ST.DEFAULT_STRATA_ORDER
     end
     local baseLevel = button:GetFrameLevel()
@@ -99,6 +99,16 @@ local function ApplyStrataOrder(button, order)
             button.procGlow and button.procGlow.solidFrame,
             button.procGlow and button.procGlow.procFrame,
             button.procGlow and button.procGlow.pixelFrame,
+        },
+        auraGlow = {
+            button.auraGlow and button.auraGlow.solidFrame,
+            button.auraGlow and button.auraGlow.procFrame,
+            button.auraGlow and button.auraGlow.pixelFrame,
+        },
+        readyGlow = {
+            button.readyGlow and button.readyGlow.solidFrame,
+            button.readyGlow and button.readyGlow.procFrame,
+            button.readyGlow and button.readyGlow.pixelFrame,
         },
         assistedHighlight = {
             button.assistedHighlight and button.assistedHighlight.solidFrame,
@@ -120,7 +130,7 @@ local function ApplyStrataOrder(button, order)
 
     -- LoC always on top
     if button.locCooldown then
-        button.locCooldown:SetFrameLevel(baseLevel + 5)
+        button.locCooldown:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 1)
     end
 end
 
