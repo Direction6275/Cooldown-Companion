@@ -3,9 +3,11 @@
     Anchors player and target unit frames (Blizzard, ElvUI, UnhaltedUnitFrames,
     or custom) to icon groups.
 
-    No taint concerns — unit frames are either addon-owned (ElvUI/UUF) or
-    Blizzard frames that tolerate SetPoint from addon code (PlayerFrame/
-    TargetFrame are not secure-protected for positioning).
+    Some unit frame addons (e.g., UnhaltedUnitFrames) use secure templates,
+    making their frames protected during combat. All positioning (SetPoint/
+    ClearAllPoints) is guarded by InCombatLockdown() and deferred to
+    PLAYER_REGEN_ENABLED. Alpha sync continues during combat (SetAlpha is
+    not a protected operation).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -24,6 +26,24 @@ local savedTargetAlpha = nil
 local playerFrameRef = nil
 local targetFrameRef = nil
 local alphaSyncFrame = nil
+local pendingReevaluate = false
+
+-- Combat deferral: any positioning attempt during combat is coalesced into a
+-- single full re-evaluation once PLAYER_REGEN_ENABLED fires.
+local combatDeferFrame = CreateFrame("Frame")
+combatDeferFrame:SetScript("OnEvent", function(self, event)
+    -- Clean up BEFORE evaluating so an error doesn't leave the event
+    -- registered or the flag stuck.
+    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    pendingReevaluate = false
+    CooldownCompanion:EvaluateFrameAnchoring()
+end)
+
+local function DeferForCombat()
+    if pendingReevaluate then return end
+    pendingReevaluate = true
+    combatDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
 
 ------------------------------------------------------------------------
 -- Constants
@@ -137,6 +157,11 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:ApplyFrameAnchoring()
+    if InCombatLockdown() then
+        DeferForCombat()
+        return
+    end
+
     local settings = GetFrameAnchoringSettings()
     if not settings or not settings.enabled then
         self:RevertFrameAnchoring()
@@ -235,7 +260,7 @@ function CooldownCompanion:ApplyFrameAnchoring()
             accumulator = accumulator + dt
             if accumulator < SYNC_INTERVAL then return end
             accumulator = 0
-            if not groupFrame then return end
+            if not groupFrame or not groupFrame:IsShown() then return end
             local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
@@ -265,6 +290,12 @@ end
 
 function CooldownCompanion:RevertFrameAnchoring()
     if not isApplied then return end
+
+    if InCombatLockdown() then
+        DeferForCombat()
+        return
+    end
+
     isApplied = false
 
     -- Stop alpha sync and restore alpha
@@ -301,6 +332,11 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:EvaluateFrameAnchoring()
+    if InCombatLockdown() then
+        DeferForCombat()
+        return
+    end
+
     local settings = GetFrameAnchoringSettings()
     if not settings or not settings.enabled then
         self:RevertFrameAnchoring()
