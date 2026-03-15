@@ -2530,12 +2530,12 @@ local function UpdateCustomAuraBar(barInfo)
                 local remaining = durationObj:GetRemainingDuration()
                 if not durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        bar.text:SetText(FormatBarTime(remaining))
+                        bar.text:SetText(FormatBarTime(remaining, cabConfig.decimalTimers))
                     else
                         bar.text:SetText("")
                     end
                 else
-                    bar.text:SetFormattedText("%.1f", remaining)
+                    bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
                 end
             else
                 bar.text:SetText("")
@@ -3927,7 +3927,7 @@ ApplyPreviewData = function()
                     end
                 end
                 if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    barInfo.frame.text:SetText(FormatBarTime(12.3))
+                    barInfo.frame.text:SetText(FormatBarTime(12.3, cabConfig and cabConfig.decimalTimers))
                 end
                 if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
                     if isActive then

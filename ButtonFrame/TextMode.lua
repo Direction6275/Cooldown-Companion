@@ -147,15 +147,13 @@ end
 ------------------------------------------------------------------------
 -- TIME FORMATTING
 ------------------------------------------------------------------------
-local function FormatTextTime(seconds)
+local function FormatTextTime(seconds, decimal)
     if seconds >= 3600 then
         return string_format("%d:%02d:%02d", math_floor(seconds / 3600), math_floor(seconds / 60) % 60, math_floor(seconds % 60))
     elseif seconds >= 60 then
         return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
-    elseif seconds >= 10 then
-        return string_format("%d", math_floor(seconds))
     elseif seconds > 0 then
-        return string_format("%.1f", seconds)
+        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
     end
     return ""
 end
@@ -395,9 +393,9 @@ local function SubstituteTokens(button, segments, style, effectState)
                         secretValue = timeRemaining
                         secretColorToken = "cd"
                     end
-                    parts[#parts + 1] = "%TIME%"
+                    parts[#parts + 1] = WrapColor("%TIME%", colorOverride or cdColor)
                 elseif timeRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
                 end
 
             elseif token == "charges" then
@@ -425,7 +423,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                         if not secretStackValue then
                             secretStackValue = stackText
                         end
-                        parts[#parts + 1] = "%STACKS%"
+                        parts[#parts + 1] = WrapColor("%STACKS%", colorOverride or baseColor)
                     else
                         parts[#parts + 1] = WrapColor(stackText, colorOverride or baseColor)
                     end
@@ -439,9 +437,9 @@ local function SubstituteTokens(button, segments, style, effectState)
                         secretValue = auraRemaining
                         secretColorToken = "aura"
                     end
-                    parts[#parts + 1] = "%AURA%"
+                    parts[#parts + 1] = WrapColor("%AURA%", colorOverride or auraColor)
                 elseif auraRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), colorOverride or auraColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                 end
 
             elseif token == "keybind" then
@@ -457,9 +455,9 @@ local function SubstituteTokens(button, segments, style, effectState)
                             secretValue = auraRemaining
                             secretColorToken = "aura"
                         end
-                        parts[#parts + 1] = "%STATUS%"
+                        parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or auraColor)
                     elseif auraRemaining then
-                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), colorOverride or auraColor)
+                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                     else
                         parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
@@ -468,9 +466,9 @@ local function SubstituteTokens(button, segments, style, effectState)
                         secretValue = timeRemaining
                         secretColorToken = "cd"
                     end
-                    parts[#parts + 1] = "%STATUS%"
+                    parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or cdColor)
                 elseif timeRemaining and timeRemaining > 0 then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
                 else
                     parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end
@@ -510,28 +508,20 @@ local function UpdateTextDisplay(button)
 
     if secretValue or secretStackValue then
         -- Secret value pass-through: use SetFormattedText with the secret value
-        -- When using secret pass-through, fall back to uniform color
-        -- (per-token coloring uses escape sequences which conflict with secret SetFormattedText)
-        local uniformColor
-        if secretColorToken == "aura" then
-            uniformColor = style.textAuraColor or {0, 0.925, 1, 1}
-        elseif secretColorToken then
-            uniformColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
-        else
-            uniformColor = style.textFontColor or {1, 1, 1, 1}
-        end
-        button.textString:SetTextColor(uniformColor[1], uniformColor[2], uniformColor[3], uniformColor[4] or 1)
+        -- Per-token coloring via |c..|r escape sequences works alongside % format specifiers
+        -- (they operate at different layers: WoW text rendering vs C sprintf)
+        local baseColor = style.textFontColor or {1, 1, 1, 1}
+        button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
 
-        -- Strip all color escape sequences for clean SetFormattedText
-        local fmtStr = text:gsub("|c%x%x%x%x%x%x%x%x", "")
-        fmtStr = fmtStr:gsub("|r", "")
+        local fmtStr = text
 
         -- Sentinel placeholders and their format specifiers / secret values
-        -- Numeric secrets (cooldown/aura times) use %.1f, string secrets (stacks) use %s
+        -- Numeric secrets (cooldown/aura times) use %.1f or %.0f, string secrets (stacks) use %s
+        local timeFmt = style.decimalTimers and "%.1f" or "%.0f"
         local allPlaceholders = {
-            {text = "%TIME%",   val = secretValue,      fmt = "%.1f"},
-            {text = "%AURA%",   val = secretValue,      fmt = "%.1f"},
-            {text = "%STATUS%", val = secretValue,      fmt = "%.1f"},
+            {text = "%TIME%",   val = secretValue,      fmt = timeFmt},
+            {text = "%AURA%",   val = secretValue,      fmt = timeFmt},
+            {text = "%STATUS%", val = secretValue,      fmt = timeFmt},
             {text = "%STACKS%", val = secretStackValue,  fmt = "%s"},
         }
 
