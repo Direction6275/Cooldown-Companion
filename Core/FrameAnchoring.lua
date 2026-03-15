@@ -3,9 +3,9 @@
     Anchors player and target unit frames (Blizzard, ElvUI, UnhaltedUnitFrames,
     or custom) to icon groups.
 
-    No taint concerns — unit frames are either addon-owned (ElvUI/UUF) or
-    Blizzard frames that tolerate SetPoint from addon code (PlayerFrame/
-    TargetFrame are not secure-protected for positioning).
+    Some unit frame addons (e.g., UnhaltedUnitFrames) use secure templates,
+    making their frames protected during combat. All frame manipulation is
+    guarded by InCombatLockdown() and deferred to PLAYER_REGEN_ENABLED.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -24,6 +24,20 @@ local savedTargetAlpha = nil
 local playerFrameRef = nil
 local targetFrameRef = nil
 local alphaSyncFrame = nil
+local pendingReevaluate = false
+
+local combatDeferFrame = CreateFrame("Frame")
+combatDeferFrame:SetScript("OnEvent", function(self, event)
+    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    pendingReevaluate = false
+    CooldownCompanion:EvaluateFrameAnchoring()
+end)
+
+local function DeferForCombat()
+    if pendingReevaluate then return end
+    pendingReevaluate = true
+    combatDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
 
 ------------------------------------------------------------------------
 -- Constants
@@ -137,6 +151,11 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:ApplyFrameAnchoring()
+    if InCombatLockdown() then
+        DeferForCombat()
+        return
+    end
+
     local settings = GetFrameAnchoringSettings()
     if not settings or not settings.enabled then
         self:RevertFrameAnchoring()
@@ -265,6 +284,12 @@ end
 
 function CooldownCompanion:RevertFrameAnchoring()
     if not isApplied then return end
+
+    if InCombatLockdown() then
+        DeferForCombat()
+        return
+    end
+
     isApplied = false
 
     -- Stop alpha sync and restore alpha
@@ -301,6 +326,11 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:EvaluateFrameAnchoring()
+    if InCombatLockdown() then
+        DeferForCombat()
+        return
+    end
+
     local settings = GetFrameAnchoringSettings()
     if not settings or not settings.enabled then
         self:RevertFrameAnchoring()
