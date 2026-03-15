@@ -1181,8 +1181,8 @@ local function RefreshColumn2()
                     header:SetColor(0.4, 0.7, 1.0)
                 elseif panel.enabled == false then
                     header:SetColor(0.5, 0.5, 0.5)
-                elseif CS.selectedGroup == panelId then
-                    header:SetColor(0.3, 0.8, 0.3)
+                elseif CS.selectedGroup == panelId and not CS.selectedButton then
+                    header:SetColor(0, 1, 0)
                 end
 
                 header:SetCallback("OnClick", function(widget, event, mouseButton)
