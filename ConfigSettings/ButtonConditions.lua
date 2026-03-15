@@ -488,10 +488,34 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         ApplyToSelected("hideWhileOnCooldown", val or nil)
         if val then
             ApplyToSelected("hideWhileNotOnCooldown", nil)
+            ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
+        else
+            ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideCDCb)
+
+    -- Baseline Alpha Fallback (nested under hideWhileOnCooldown)
+    local showFallbackOnCooldown
+    if isBatch then showFallbackOnCooldown = AnySelectedHas(group, "hideWhileOnCooldown")
+    else showFallbackOnCooldown = buttonData.hideWhileOnCooldown end
+    if showFallbackOnCooldown then
+        local fallbackOnCDCb = AceGUI:Create("CheckBox")
+        fallbackOnCDCb:SetLabel("Use Baseline Alpha Fallback")
+        SetCheckboxValue(fallbackOnCDCb, "useBaselineAlphaFallbackOnCooldown")
+        fallbackOnCDCb:SetFullWidth(true)
+        ApplyCheckboxIndent(fallbackOnCDCb, 20)
+        WrapBatchCallback(fallbackOnCDCb, function(widget, event, val)
+            ApplyToSelected("useBaselineAlphaFallbackOnCooldown", val or nil)
+        end)
+        scroll:AddChild(fallbackOnCDCb)
+
+        CreateInfoButton(fallbackOnCDCb.frame, fallbackOnCDCb.checkbg, "LEFT", "RIGHT", fallbackOnCDCb.text:GetStringWidth() + 4, 0, {
+            "Use Baseline Alpha Fallback",
+            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+        }, infoButtons)
+    end
 
     -- Hide While Not On Cooldown
     local hideNotCDCb = AceGUI:Create("CheckBox")
@@ -502,10 +526,34 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         ApplyToSelected("hideWhileNotOnCooldown", val or nil)
         if val then
             ApplyToSelected("hideWhileOnCooldown", nil)
+            ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
+        else
+            ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideNotCDCb)
+
+    -- Baseline Alpha Fallback (nested under hideWhileNotOnCooldown)
+    local showFallbackNotOnCooldown
+    if isBatch then showFallbackNotOnCooldown = AnySelectedHas(group, "hideWhileNotOnCooldown")
+    else showFallbackNotOnCooldown = buttonData.hideWhileNotOnCooldown end
+    if showFallbackNotOnCooldown then
+        local fallbackNotOnCDCb = AceGUI:Create("CheckBox")
+        fallbackNotOnCDCb:SetLabel("Use Baseline Alpha Fallback")
+        SetCheckboxValue(fallbackNotOnCDCb, "useBaselineAlphaFallbackNotOnCooldown")
+        fallbackNotOnCDCb:SetFullWidth(true)
+        ApplyCheckboxIndent(fallbackNotOnCDCb, 20)
+        WrapBatchCallback(fallbackNotOnCDCb, function(widget, event, val)
+            ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
+        end)
+        scroll:AddChild(fallbackNotOnCDCb)
+
+        CreateInfoButton(fallbackNotOnCDCb.frame, fallbackNotOnCDCb.checkbg, "LEFT", "RIGHT", fallbackNotOnCDCb.text:GetStringWidth() + 4, 0, {
+            "Use Baseline Alpha Fallback",
+            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+        }, infoButtons)
+    end
 
     end -- not allPassive and not allNoCooldown
 
@@ -518,6 +566,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     hideUnusableCb:SetFullWidth(true)
     WrapBatchCallback(hideUnusableCb, function(widget, event, val)
         ApplyToSelected("hideWhileUnusable", val or nil)
+        if not val then
+            ApplyToSelected("useBaselineAlphaFallbackUnusable", nil)
+        end
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideUnusableCb)
@@ -527,6 +578,27 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         "Hide While Unusable",
         {"Uses the same logic as unusable dimming, but completely hides the button instead of dimming it.", 1, 1, 1, true},
     }, infoButtons)
+
+    -- Baseline Alpha Fallback (nested under hideWhileUnusable)
+    local showFallbackUnusable
+    if isBatch then showFallbackUnusable = AnySelectedHas(group, "hideWhileUnusable")
+    else showFallbackUnusable = buttonData.hideWhileUnusable end
+    if showFallbackUnusable then
+        local fallbackUnusableCb = AceGUI:Create("CheckBox")
+        fallbackUnusableCb:SetLabel("Use Baseline Alpha Fallback")
+        SetCheckboxValue(fallbackUnusableCb, "useBaselineAlphaFallbackUnusable")
+        fallbackUnusableCb:SetFullWidth(true)
+        ApplyCheckboxIndent(fallbackUnusableCb, 20)
+        WrapBatchCallback(fallbackUnusableCb, function(widget, event, val)
+            ApplyToSelected("useBaselineAlphaFallbackUnusable", val or nil)
+        end)
+        scroll:AddChild(fallbackUnusableCb)
+
+        CreateInfoButton(fallbackUnusableCb.frame, fallbackUnusableCb.checkbg, "LEFT", "RIGHT", fallbackUnusableCb.text:GetStringWidth() + 4, 0, {
+            "Use Baseline Alpha Fallback",
+            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+        }, infoButtons)
+    end
     end -- not allNeverUnusable
 
     -- Hide While No Proc (spell entries only, not aura entries)
@@ -543,8 +615,33 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         hideNoProcCb:SetFullWidth(true)
         WrapBatchCallback(hideNoProcCb, function(widget, event, val)
             ApplyToSelected("hideWhileNoProc", val or nil)
+            if not val then
+                ApplyToSelected("useBaselineAlphaFallbackNoProc", nil)
+            end
+            CooldownCompanion:RefreshConfigPanel()
         end)
         scroll:AddChild(hideNoProcCb)
+
+        -- Baseline Alpha Fallback (nested under hideWhileNoProc)
+        local showFallbackNoProc
+        if isBatch then showFallbackNoProc = AnySelectedHas(group, "hideWhileNoProc")
+        else showFallbackNoProc = buttonData.hideWhileNoProc end
+        if showFallbackNoProc then
+            local fallbackNoProcCb = AceGUI:Create("CheckBox")
+            fallbackNoProcCb:SetLabel("Use Baseline Alpha Fallback")
+            SetCheckboxValue(fallbackNoProcCb, "useBaselineAlphaFallbackNoProc")
+            fallbackNoProcCb:SetFullWidth(true)
+            ApplyCheckboxIndent(fallbackNoProcCb, 20)
+            WrapBatchCallback(fallbackNoProcCb, function(widget, event, val)
+                ApplyToSelected("useBaselineAlphaFallbackNoProc", val or nil)
+            end)
+            scroll:AddChild(fallbackNoProcCb)
+
+            CreateInfoButton(fallbackNoProcCb.frame, fallbackNoProcCb.checkbg, "LEFT", "RIGHT", fallbackNoProcCb.text:GetStringWidth() + 4, 0, {
+                "Use Baseline Alpha Fallback",
+                {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+            }, infoButtons)
+        end
     end
 
     end -- not allPassive (unusable + no proc)
