@@ -607,18 +607,25 @@ local function RefreshColumn1(preserveDrag)
                             info.notCheckable = true
                             info.func = function()
                                 CloseDropDownMenus()
-                                local exportContainers = {}
+                                -- Sort selected containers by order to preserve visual layout
+                                local orderedCids = {}
                                 for cid in pairs(CS.selectedGroups) do
                                     local c = db.groupContainers[cid]
                                     if c then
-                                        local containerData = BuildContainerExportData(c)
-                                        local sortedPanels = CooldownCompanion:GetPanels(cid)
-                                        local panels = {}
-                                        for _, entry in ipairs(sortedPanels) do
-                                            panels[#panels + 1] = BuildGroupExportData(entry.group)
-                                        end
-                                        exportContainers[#exportContainers + 1] = { container = containerData, panels = panels }
+                                        orderedCids[#orderedCids + 1] = { cid = cid, order = c.order or cid }
                                     end
+                                end
+                                table.sort(orderedCids, function(a, b) return a.order < b.order end)
+                                local exportContainers = {}
+                                for _, item in ipairs(orderedCids) do
+                                    local c = db.groupContainers[item.cid]
+                                    local containerData = BuildContainerExportData(c)
+                                    local sortedPanels = CooldownCompanion:GetPanels(item.cid)
+                                    local panels = {}
+                                    for _, entry in ipairs(sortedPanels) do
+                                        panels[#panels + 1] = BuildGroupExportData(entry.group)
+                                    end
+                                    exportContainers[#exportContainers + 1] = { container = containerData, panels = panels }
                                 end
                                 local payload = { type = "containers", version = 1, containers = exportContainers }
                                 local exportString = EncodeExportData(payload)

@@ -890,6 +890,7 @@ local function ImportGroupData(text)
     end
 
     if not success or type(data) ~= "table" then
+        CooldownCompanion:Print("Import failed: invalid data.")
         return false
     end
 
@@ -901,6 +902,7 @@ local function ImportGroupData(text)
 
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
+    local v1FolderImportId  -- set by v1 folder branch for post-migration spec cascade
 
     if data.type == "group" and data.group then
         local groupId = db.nextGroupId
@@ -1088,7 +1090,9 @@ local function ImportGroupData(text)
             end
 
         elseif data.groups then
-            -- v1 format: flat groups (migration wraps each in a container)
+            -- v1 format: flat groups (migration wraps each in a container).
+            -- Flag for post-migration spec cascade (see below).
+            v1FolderImportId = folderId
             for _, srcGroup in ipairs(data.groups) do
                 local groupId = db.nextGroupId
                 db.nextGroupId = groupId + 1
@@ -1164,6 +1168,16 @@ local function ImportGroupData(text)
 
     CooldownCompanion:ClearMigrationSentinels()
     CooldownCompanion:RunAllMigrations()
+
+    -- v1 folder imports rely on MigrateGroupsToContainers to wrap flat groups
+    -- into containers, but ClearMigrationSentinels forces
+    -- _migratedFolderSpecsToContainers = true (to protect existing data),
+    -- so the one-time folder→container spec cascade is skipped.
+    -- Cascade manually now that migration has created the containers.
+    if v1FolderImportId then
+        CooldownCompanion:ApplyFolderSpecFilterToChildren(v1FolderImportId)
+    end
+
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
     return true
