@@ -1154,7 +1154,7 @@ local function BuildAppearanceTab(container)
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Button Spacing")
-        spacingSlider:SetSliderValues(0, 10, 0.1)
+        spacingSlider:SetSliderValues(0, 30, 0.1)
         spacingSlider:SetValue(style.buttonSpacing or ST.BUTTON_SPACING)
         spacingSlider:SetFullWidth(true)
         spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)

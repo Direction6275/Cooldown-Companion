@@ -65,7 +65,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local heightSlider = AceGUI:Create("Slider")
     heightSlider:SetLabel("Bar Height")
-    heightSlider:SetSliderValues(5, 50, 0.1)
+    heightSlider:SetSliderValues(5, 100, 0.1)
     heightSlider:SetValue(style.barHeight or 20)
     heightSlider:SetFullWidth(true)
     heightSlider:SetCallback("OnValueChanged", function(widget, event, val)
