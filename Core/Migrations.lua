@@ -47,6 +47,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateGroupsToContainers()
     self:MigrateContainerAlphaToPanel()
     self:MigrateStrataOrderExpansion()
+    self:MigrateCustomAuraBarSlots5()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -69,6 +70,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedContainerAlphaToPanel = nil
     profile._migratedContainerHeroTalentStamps = nil
     profile._migratedStrataOrder6 = nil
+    profile._migratedCustomAuraSlots5 = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1066,7 +1068,7 @@ function CooldownCompanion:MigrateBarOrdering()
     if not rb.customAuraBarSlots then
         rb.customAuraBarSlots = {}
     end
-    for i = 1, 3 do
+    for i = 1, 5 do
         if not rb.customAuraBarSlots[i] then
             rb.customAuraBarSlots[i] = {}
         end
@@ -1628,5 +1630,36 @@ function CooldownCompanion:MigrateStrataOrderExpansion()
     end
 
     profile._migratedStrataOrder6 = true
+end
+
+function CooldownCompanion:MigrateCustomAuraBarSlots5()
+    local profile = self.db.profile
+    if profile._migratedCustomAuraSlots5 then return end
+
+    local rb = profile.resourceBars
+    if rb then
+        if not rb.customAuraBarSlots then
+            rb.customAuraBarSlots = {}
+        end
+        for i = 4, 5 do
+            if not rb.customAuraBarSlots[i] then
+                rb.customAuraBarSlots[i] = { position = "below", order = 1000 + i }
+            end
+        end
+
+        if rb.customAuraBars then
+            for _, specBars in pairs(rb.customAuraBars) do
+                if type(specBars) == "table" then
+                    for i = 4, 5 do
+                        if not specBars[i] then
+                            specBars[i] = { enabled = false }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    profile._migratedCustomAuraSlots5 = true
 end
 

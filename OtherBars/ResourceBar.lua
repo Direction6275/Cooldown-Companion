@@ -35,8 +35,8 @@ PERCENT_SCALE_CURVE:SetType(Enum.LuaCurveType.Linear)
 PERCENT_SCALE_CURVE:AddPoint(0.0, 0)
 PERCENT_SCALE_CURVE:AddPoint(1.0, 100)
 
-local CUSTOM_AURA_BAR_BASE = 201  -- 201, 202, 203 for slots 1-3
-local MAX_CUSTOM_AURA_BARS = 3
+local CUSTOM_AURA_BAR_BASE = 201  -- 201-205 for slots 1-5
+local MAX_CUSTOM_AURA_BARS = 5
 local MW_SPELL_ID = 187880
 local RAGING_MAELSTROM_SPELL_ID = 384143
 local RESOURCE_MAELSTROM_WEAPON = 100
@@ -303,11 +303,11 @@ local function GetSpecCustomAuraBars(settings)
         settings.customAuraBars = {}
     end
     if not settings.customAuraBars[specID] then
-        settings.customAuraBars[specID] = {
-            { enabled = false },
-            { enabled = false },
-            { enabled = false },
-        }
+        local newBars = {}
+        for i = 1, MAX_CUSTOM_AURA_BARS do
+            newBars[i] = { enabled = false }
+        end
+        settings.customAuraBars[specID] = newBars
     end
     return settings.customAuraBars[specID]
 end

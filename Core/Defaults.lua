@@ -370,6 +370,8 @@ local defaults = {
                 [1] = { position = "below", order = 1001 },
                 [2] = { position = "below", order = 1002 },
                 [3] = { position = "below", order = 1003 },
+                [4] = { position = "below", order = 1004 },
+                [5] = { position = "below", order = 1005 },
             },
             customAuraBars = {},
             textFont = "Friz Quadrata TT",

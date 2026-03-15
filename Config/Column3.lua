@@ -46,7 +46,7 @@ local function RefreshColumn3()
             for slotIdx = 1, maxCustomAuraTabs do
                 customAuraTabs[#customAuraTabs + 1] = {
                     value = "bar_" .. slotIdx,
-                    text = "Bar " .. slotIdx,
+                    text = slotIdx,
                 }
             end
             local tabGroup = AceGUI:Create("TabGroup")
