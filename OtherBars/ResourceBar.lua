@@ -273,7 +273,13 @@ end
 
 local function GetEffectiveAnchorGroupId(settings)
     if not settings then return nil end
-    return settings.anchorGroupId or CooldownCompanion:GetFirstAvailableAnchorGroup()
+    if settings.anchorGroupId then
+        if CooldownCompanion:IsGroupAvailableForAnchoring(settings.anchorGroupId) then
+            return settings.anchorGroupId
+        end
+        return CooldownCompanion:GetFirstAvailableAnchorGroup()
+    end
+    return CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
 local function GetAnchorGroupFrame(settings)

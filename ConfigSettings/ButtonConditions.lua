@@ -1503,6 +1503,114 @@ local function BuildLoadConditionsTab(container)
         end
     end
     end -- not specCollapsed
+
+    -- Form / Stance Filter section (classes with meaningful forms, or orphaned filter data)
+    local numForms = GetNumShapeshiftForms()
+    local hasExistingFormFilter = group.formFilter and next(group.formFilter)
+    if (numForms > 0 and CooldownCompanion._playerClassID ~= 2) or hasExistingFormFilter then -- skip Paladins unless orphaned data
+    local formHeading = AceGUI:Create("Heading")
+    formHeading:SetText("Form / Stance Filter")
+    ColorHeading(formHeading)
+    formHeading:SetFullWidth(true)
+    container:AddChild(formHeading)
+
+    local formCollapsed = CS.collapsedSections["loadconditions_form"]
+    local formCollapseBtn = AttachCollapseButton(formHeading, formCollapsed, function()
+        CS.collapsedSections["loadconditions_form"] = not CS.collapsedSections["loadconditions_form"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    local formInfoBtn = CreateInfoButton(formHeading.frame, formCollapseBtn, "LEFT", "RIGHT", 2, 0, {
+        "Form / Stance Filter",
+        {"Click to cycle: |cff00ff00Show|r, |cffff0000Hide|r, or empty.\n\n|cff00ff00Show|r: visible in these, hidden otherwise.\n|cffff0000Hide|r: hidden in these, visible otherwise.\n\nMixed: Show takes priority. All empty = always visible.", 1, 1, 1, true},
+    }, tabInfoButtons)
+    formHeading.right:ClearAllPoints()
+    formHeading.right:SetPoint("RIGHT", formHeading.frame, "RIGHT", -3, 0)
+    formHeading.right:SetPoint("LEFT", formInfoBtn, "RIGHT", 4, 0)
+
+    if not formCollapsed then
+
+    -- Tristate helpers
+    local function FormFilterTriStateLabel(base, key)
+        local v = group.formFilter and group.formFilter[key]
+        if v == true then return base .. " - |cff00ff00Show|r" end
+        if v == false then return base .. " - |cffff0000Hide|r" end
+        return base
+    end
+
+    local function FormFilterDataToAce(key)
+        local v = group.formFilter and group.formFilter[key]
+        if v == true then return true end    -- "Show" → colored ✓
+        if v == false then return nil end    -- "Hide" → gray ✓
+        return false                         -- agnostic → empty
+    end
+
+    local function FormFilterOnChanged(key, aceValue)
+        if aceValue == true then
+            if not group.formFilter then group.formFilter = {} end
+            group.formFilter[key] = true
+        elseif aceValue == nil then
+            if not group.formFilter then group.formFilter = {} end
+            group.formFilter[key] = false
+        else
+            if group.formFilter then
+                group.formFilter[key] = nil
+                if not next(group.formFilter) then group.formFilter = nil end
+            end
+        end
+        CooldownCompanion:RefreshGroupFrame(groupId)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    -- Caster Form checkbox (form index 0, no spellID) — Druids only
+    local classID = CooldownCompanion._playerClassID
+    if classID == 11 then -- Druid only
+    local casterCb = AceGUI:Create("CheckBox")
+    casterCb:SetTriState(true)
+    casterCb:SetLabel(FormFilterTriStateLabel("Caster Form (No Form)", 0))
+    casterCb:SetFullWidth(true)
+    casterCb:SetValue(FormFilterDataToAce(0))
+    casterCb:SetCallback("OnValueChanged", function(widget, event, value)
+        FormFilterOnChanged(0, value)
+    end)
+    container:AddChild(casterCb)
+    ApplyCheckboxIndent(casterCb, 0)
+    end
+
+    -- Dynamic form checkboxes from GetShapeshiftFormInfo
+    local TREANT_FORM_SPELL_ID = 114282
+    for i = 1, numForms do
+        local icon, _, _, spellID = GetShapeshiftFormInfo(i)
+        if spellID and spellID ~= TREANT_FORM_SPELL_ID then
+            local name = C_Spell.GetSpellName(spellID) or ("Form " .. i)
+            local formCb = AceGUI:Create("CheckBox")
+            formCb:SetTriState(true)
+            formCb:SetLabel(FormFilterTriStateLabel(name, spellID))
+            if icon then formCb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+            formCb:SetFullWidth(true)
+            formCb:SetValue(FormFilterDataToAce(spellID))
+            formCb:SetCallback("OnValueChanged", function(widget, event, value)
+                FormFilterOnChanged(spellID, value)
+            end)
+            container:AddChild(formCb)
+            ApplyCheckboxIndent(formCb, 0)
+        end
+    end
+
+    -- Clear All button (only when formFilter has entries)
+    if group.formFilter and next(group.formFilter) then
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear All Form Filters")
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            group.formFilter = nil
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(clearBtn)
+    end
+    end -- not formCollapsed
+    end -- form filter section
 end
 
 
