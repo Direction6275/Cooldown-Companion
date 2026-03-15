@@ -451,6 +451,33 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(cdFontColor)
 
+        local cdCustomAnchorToggle = AceGUI:Create("CheckBox")
+        cdCustomAnchorToggle:SetLabel("Use Custom Anchor")
+        cdCustomAnchorToggle:SetValue(style.customCdAnchor or false)
+        cdCustomAnchorToggle:SetFullWidth(true)
+        cdCustomAnchorToggle:SetCallback("OnValueChanged", function(widget, event, val)
+            style.customCdAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(cdCustomAnchorToggle)
+
+        local cdAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            cdAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        local cdAnchorDrop = AceGUI:Create("Dropdown")
+        cdAnchorDrop:SetLabel("Anchor")
+        cdAnchorDrop:SetList(cdAnchorValues, CS.anchorPoints)
+        cdAnchorDrop:SetValue(style.barCdTextAnchor or "CENTER")
+        cdAnchorDrop:SetFullWidth(true)
+        cdAnchorDrop:SetDisabled(not (style.customCdAnchor or false))
+        cdAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barCdTextAnchor = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(cdAnchorDrop)
+
         local cdOffXSlider = AceGUI:Create("Slider")
         cdOffXSlider:SetLabel("X Offset")
         cdOffXSlider:SetSliderValues(-50, 50, 0.1)
