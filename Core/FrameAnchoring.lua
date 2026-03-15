@@ -4,8 +4,10 @@
     or custom) to icon groups.
 
     Some unit frame addons (e.g., UnhaltedUnitFrames) use secure templates,
-    making their frames protected during combat. All frame manipulation is
-    guarded by InCombatLockdown() and deferred to PLAYER_REGEN_ENABLED.
+    making their frames protected during combat. All positioning (SetPoint/
+    ClearAllPoints) is guarded by InCombatLockdown() and deferred to
+    PLAYER_REGEN_ENABLED. Alpha sync continues during combat (SetAlpha is
+    not a protected operation).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -26,8 +28,12 @@ local targetFrameRef = nil
 local alphaSyncFrame = nil
 local pendingReevaluate = false
 
+-- Combat deferral: any positioning attempt during combat is coalesced into a
+-- single full re-evaluation once PLAYER_REGEN_ENABLED fires.
 local combatDeferFrame = CreateFrame("Frame")
 combatDeferFrame:SetScript("OnEvent", function(self, event)
+    -- Clean up BEFORE evaluating so an error doesn't leave the event
+    -- registered or the flag stuck.
     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
     pendingReevaluate = false
     CooldownCompanion:EvaluateFrameAnchoring()
@@ -254,7 +260,7 @@ function CooldownCompanion:ApplyFrameAnchoring()
             accumulator = accumulator + dt
             if accumulator < SYNC_INTERVAL then return end
             accumulator = 0
-            if not groupFrame then return end
+            if not groupFrame or not groupFrame:IsShown() then return end
             local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
