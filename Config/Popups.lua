@@ -906,7 +906,6 @@ local function ImportGroupData(text)
     end
 
     if not success or type(data) ~= "table" then
-        CooldownCompanion:Print("Import failed: invalid data.")
         return false
     end
 

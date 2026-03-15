@@ -631,8 +631,13 @@ local function RefreshColumn2()
     local multiContainerIds = {}
     for cid in pairs(CS.selectedGroups) do
         multiGroupCount = multiGroupCount + 1
-        table.insert(multiContainerIds, cid)
+        multiContainerIds[#multiContainerIds + 1] = cid
     end
+    -- Sort by container order so exports and bulk operations preserve visual layout
+    local containers = CooldownCompanion.db.profile.groupContainers or {}
+    table.sort(multiContainerIds, function(a, b)
+        return (containers[a] and containers[a].order or a) < (containers[b] and containers[b].order or b)
+    end)
     if multiGroupCount >= 2 then
         if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
         local db = CooldownCompanion.db.profile
