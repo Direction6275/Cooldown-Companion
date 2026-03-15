@@ -179,7 +179,9 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraActive and auraOverrideActive then
-            otherHide = true
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
         end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
@@ -255,7 +257,11 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
-        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
@@ -288,7 +294,11 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
-        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
@@ -317,7 +327,11 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
-        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
