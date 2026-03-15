@@ -441,6 +441,7 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     end
 
     if not self:IsHeroTalentAllowed(group) then return false end
+    if not self:IsFormFilterAllowed(group) then return false end
 
     local checkCharVisibility = opts.checkCharVisibility
     if checkCharVisibility == nil then checkCharVisibility = true end
@@ -466,6 +467,24 @@ function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
     if not next(group.heroTalents) then
         group.heroTalents = nil
     end
+end
+
+local TREANT_FORM_SPELL_ID = 114282
+
+function CooldownCompanion:IsFormFilterAllowed(group)
+    local formFilter = group.formFilter
+    if not formFilter or not next(formFilter) then return true end
+    local currentForm = self._currentShapeshiftForm
+    if currentForm == nil then return true end
+    if currentForm == 0 then
+        return formFilter[0] == true
+    end
+    local _, _, _, spellID = GetShapeshiftFormInfo(currentForm)
+    if not spellID then return true end
+    if spellID == TREANT_FORM_SPELL_ID then
+        return formFilter[0] == true
+    end
+    return formFilter[spellID] == true
 end
 
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)

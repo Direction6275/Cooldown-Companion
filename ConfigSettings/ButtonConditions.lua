@@ -1503,6 +1503,99 @@ local function BuildLoadConditionsTab(container)
         end
     end
     end -- not specCollapsed
+
+    -- Form / Stance Filter section (only for classes with meaningful forms)
+    local numForms = GetNumShapeshiftForms()
+    if numForms > 0 and CooldownCompanion._playerClassID ~= 2 then -- skip Paladins
+    local formHeading = AceGUI:Create("Heading")
+    formHeading:SetText("Form / Stance Filter")
+    ColorHeading(formHeading)
+    formHeading:SetFullWidth(true)
+    container:AddChild(formHeading)
+
+    local formCollapsed = CS.collapsedSections["loadconditions_form"]
+    AttachCollapseButton(formHeading, formCollapsed, function()
+        CS.collapsedSections["loadconditions_form"] = not CS.collapsedSections["loadconditions_form"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not formCollapsed then
+    local formDesc = AceGUI:Create("Label")
+    formDesc:SetText("|cff888888Show only in selected forms. Leave all unchecked to always show.|r")
+    formDesc:SetFullWidth(true)
+    container:AddChild(formDesc)
+
+    -- Caster Form checkbox (form index 0, no spellID) — skip for Warriors/Rogues
+    local classID = CooldownCompanion._playerClassID
+    if classID == 11 then -- Druid only
+    local casterCb = AceGUI:Create("CheckBox")
+    casterCb:SetLabel("Caster Form (No Form)")
+    casterCb:SetFullWidth(true)
+    casterCb:SetValue(group.formFilter and group.formFilter[0] or false)
+    casterCb:SetCallback("OnValueChanged", function(widget, event, value)
+        if value then
+            if not group.formFilter then group.formFilter = {} end
+            group.formFilter[0] = true
+        else
+            if group.formFilter then
+                group.formFilter[0] = nil
+                if not next(group.formFilter) then
+                    group.formFilter = nil
+                end
+            end
+        end
+        CooldownCompanion:RefreshGroupFrame(groupId)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(casterCb)
+    ApplyCheckboxIndent(casterCb, 0)
+    end
+
+    -- Dynamic form checkboxes from GetShapeshiftFormInfo
+    local TREANT_FORM_SPELL_ID = 114282
+    for i = 1, numForms do
+        local icon, _, _, spellID = GetShapeshiftFormInfo(i)
+        if spellID and spellID ~= TREANT_FORM_SPELL_ID then
+            local name = C_Spell.GetSpellName(spellID) or ("Form " .. i)
+            local formCb = AceGUI:Create("CheckBox")
+            formCb:SetLabel(name)
+            if icon then formCb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
+            formCb:SetFullWidth(true)
+            formCb:SetValue(group.formFilter and group.formFilter[spellID] or false)
+            formCb:SetCallback("OnValueChanged", function(widget, event, value)
+                if value then
+                    if not group.formFilter then group.formFilter = {} end
+                    group.formFilter[spellID] = true
+                else
+                    if group.formFilter then
+                        group.formFilter[spellID] = nil
+                        if not next(group.formFilter) then
+                            group.formFilter = nil
+                        end
+                    end
+                end
+                CooldownCompanion:RefreshGroupFrame(groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(formCb)
+            ApplyCheckboxIndent(formCb, 0)
+        end
+    end
+
+    -- Clear All button (only when formFilter has entries)
+    if group.formFilter and next(group.formFilter) then
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear All Form Filters")
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            group.formFilter = nil
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(clearBtn)
+    end
+    end -- not formCollapsed
+    end -- numForms > 0
 end
 
 
