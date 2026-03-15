@@ -175,7 +175,7 @@ local function UpdateBarFill(button)
                 -- secure code sets it, so the widget reports plain — but the actual
                 -- number returned by GetValue() is a secret wrapper).
                 -- Always use SetFormattedText for secret-safe pass-through.
-                button.timeText:SetFormattedText("%.0f", button._viewerBar:GetValue())
+                button.timeText:SetFormattedText(decimal and "%.1f" or "%.0f", button._viewerBar:GetValue())
             else
                 if itemRemaining > 0 then
                     button.timeText:SetText(FormatBarTime(itemRemaining, decimal))
