@@ -30,9 +30,12 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     end
 
     local shouldHide = false
+    local hidReasonOnCooldown = false
+    local hidReasonNotOnCooldown = false
     local hidReasonAuraNotActive = false
     local hidReasonAuraActive = false
     local hidReasonNoProc = false
+    local hidReasonUnusable = false
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
     if buttonData.hideWhileOnCooldown and not button._noCooldown then
@@ -40,16 +43,19 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             -- Charged spells: hide when recharging or all charges consumed
             if button._mainCDShown or button._chargeRecharging then
                 shouldHide = true
+                hidReasonOnCooldown = true
             end
         elseif buttonData.type == "item" then
             -- Items: check stored cooldown values (no GCD concept)
             if button._itemCdDuration and button._itemCdDuration > 0 then
                 shouldHide = true
+                hidReasonOnCooldown = true
             end
         else
             -- Non-charged spells: _durationObj non-nil means active CD (secret-safe nil check)
             if button._durationObj and not isGCDOnly and not auraOverrideActive then
                 shouldHide = true
+                hidReasonOnCooldown = true
             end
         end
     end
@@ -60,15 +66,18 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             -- Charged spells: hide only at max charges
             if not button._mainCDShown and not button._chargeRecharging then
                 shouldHide = true
+                hidReasonNotOnCooldown = true
             end
         elseif buttonData.type == "item" then
             if not button._itemCdDuration or button._itemCdDuration == 0 then
                 shouldHide = true
+                hidReasonNotOnCooldown = true
             end
         else
             -- Non-charged spells: not on cooldown (or only on GCD)
             if (not button._durationObj or isGCDOnly) and not auraOverrideActive then
                 shouldHide = true
+                hidReasonNotOnCooldown = true
             end
         end
     end
@@ -133,11 +142,13 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             local isUsable = C_Spell_IsSpellUsable(buttonData.id)
             if not isUsable then
                 shouldHide = true
+                hidReasonUnusable = true
             end
         elseif buttonData.type == "item" then
             local usable = IsUsableItem(buttonData.id)
             if not usable then
                 shouldHide = true
+                hidReasonUnusable = true
             end
         end
     end
@@ -168,12 +179,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraActive and auraOverrideActive then
-            otherHide = true
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
         end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -214,6 +228,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -242,10 +257,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
-        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -274,10 +294,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
-        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -302,10 +327,149 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
             end
         end
         if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
-        if buttonData.hideWhileAuraActive and auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
         if hidReasonNoProc then otherHide = true end
         if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
         if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is on-cooldown
+    -- and useBaselineAlphaFallbackOnCooldown is enabled, dim instead of hiding
+    if shouldHide and hidReasonOnCooldown and buttonData.useBaselineAlphaFallbackOnCooldown then
+        local otherHide = false
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
+        if hidReasonNoProc then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is not-on-cooldown
+    -- and useBaselineAlphaFallbackNotOnCooldown is enabled, dim instead of hiding
+    if shouldHide and hidReasonNotOnCooldown and buttonData.useBaselineAlphaFallbackNotOnCooldown then
+        local otherHide = false
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
+        if hidReasonNoProc then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is no-proc
+    -- and useBaselineAlphaFallbackNoProc is enabled, dim instead of hiding
+    if shouldHide and hidReasonNoProc and buttonData.useBaselineAlphaFallbackNoProc then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown and not button._noCooldown then
+            if buttonData.hasCharges then
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            else
+                if button._durationObj and not isGCDOnly and not auraOverrideActive then
+                    otherHide = true
+                end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown and not button._noCooldown then
+            if buttonData.hasCharges then
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            else
+                if (not button._durationObj or isGCDOnly) and not auraOverrideActive then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
+        if hidReasonUnusable then otherHide = true end
+        if not otherHide then
+            local groupId = button._groupId
+            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+            button._visibilityHidden = false
+            button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+            return
+        end
+    end
+
+    -- Baseline alpha fallback: if the ONLY reason we're hiding is unusable
+    -- and useBaselineAlphaFallbackUnusable is enabled, dim instead of hiding
+    if shouldHide and hidReasonUnusable and buttonData.useBaselineAlphaFallbackUnusable then
+        local otherHide = false
+        if buttonData.hideWhileOnCooldown and not button._noCooldown then
+            if buttonData.hasCharges then
+                if button._mainCDShown or button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if button._itemCdDuration and button._itemCdDuration > 0 then otherHide = true end
+            else
+                if button._durationObj and not isGCDOnly and not auraOverrideActive then
+                    otherHide = true
+                end
+            end
+        end
+        if buttonData.hideWhileNotOnCooldown and not button._noCooldown then
+            if buttonData.hasCharges then
+                if not button._mainCDShown and not button._chargeRecharging then otherHide = true end
+            elseif buttonData.type == "item" then
+                if not button._itemCdDuration or button._itemCdDuration == 0 then otherHide = true end
+            else
+                if (not button._durationObj or isGCDOnly) and not auraOverrideActive then otherHide = true end
+            end
+        end
+        if buttonData.hideWhileAuraNotActive and not auraOverrideActive then otherHide = true end
+        if buttonData.hideWhileAuraActive and auraOverrideActive then
+            if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
+                otherHide = true
+            end
+        end
+        if hidReasonNoProc then otherHide = true end
+        if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then otherHide = true end
+        if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then otherHide = true end
+        if buttonData.hideWhileNotEquipped and button._isEquippableNotEquipped then otherHide = true end
         if not otherHide then
             local groupId = button._groupId
             local group = groupId and CooldownCompanion.db.profile.groups[groupId]
