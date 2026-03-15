@@ -147,15 +147,13 @@ end
 ------------------------------------------------------------------------
 -- TIME FORMATTING
 ------------------------------------------------------------------------
-local function FormatTextTime(seconds)
+local function FormatTextTime(seconds, decimal)
     if seconds >= 3600 then
         return string_format("%d:%02d:%02d", math_floor(seconds / 3600), math_floor(seconds / 60) % 60, math_floor(seconds % 60))
     elseif seconds >= 60 then
         return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
-    elseif seconds >= 10 then
-        return string_format("%d", math_floor(seconds))
     elseif seconds > 0 then
-        return string_format("%.1f", seconds)
+        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
     end
     return ""
 end
@@ -397,7 +395,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = "%TIME%"
                 elseif timeRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
                 end
 
             elseif token == "charges" then
@@ -441,7 +439,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = "%AURA%"
                 elseif auraRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), colorOverride or auraColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                 end
 
             elseif token == "keybind" then
@@ -459,7 +457,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                         end
                         parts[#parts + 1] = "%STATUS%"
                     elseif auraRemaining then
-                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining), colorOverride or auraColor)
+                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                     else
                         parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
@@ -470,7 +468,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = "%STATUS%"
                 elseif timeRemaining and timeRemaining > 0 then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
                 else
                     parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end
@@ -527,11 +525,12 @@ local function UpdateTextDisplay(button)
         fmtStr = fmtStr:gsub("|r", "")
 
         -- Sentinel placeholders and their format specifiers / secret values
-        -- Numeric secrets (cooldown/aura times) use %.1f, string secrets (stacks) use %s
+        -- Numeric secrets (cooldown/aura times) use %.1f or %.0f, string secrets (stacks) use %s
+        local timeFmt = style.decimalTimers and "%.1f" or "%.0f"
         local allPlaceholders = {
-            {text = "%TIME%",   val = secretValue,      fmt = "%.1f"},
-            {text = "%AURA%",   val = secretValue,      fmt = "%.1f"},
-            {text = "%STATUS%", val = secretValue,      fmt = "%.1f"},
+            {text = "%TIME%",   val = secretValue,      fmt = timeFmt},
+            {text = "%AURA%",   val = secretValue,      fmt = timeFmt},
+            {text = "%STATUS%", val = secretValue,      fmt = timeFmt},
             {text = "%STACKS%", val = secretStackValue,  fmt = "%s"},
         }
 

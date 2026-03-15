@@ -85,6 +85,24 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
         end)
         container:AddChild(cdFontColor)
 
+        local decimalCheck = AceGUI:Create("CheckBox")
+        decimalCheck:SetLabel("Show Decimal Point")
+        decimalCheck:SetValue(styleTable.decimalTimers or false)
+        decimalCheck:SetFullWidth(true)
+        decimalCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.decimalTimers = val or nil
+            refreshCallback()
+        end)
+        container:AddChild(decimalCheck)
+
+        CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+            "Show Decimal Point",
+            {"Shows one decimal place on duration text", 1, 1, 1, true},
+            {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
+            " ",
+            {"Bar and text mode only.", 0.7, 0.7, 0.7, true},
+        }, decimalCheck)
+
         local cdAnchorValues = {}
         for _, pt in ipairs(CS.anchorPoints) do
             cdAnchorValues[pt] = CS.anchorPointLabels[pt]

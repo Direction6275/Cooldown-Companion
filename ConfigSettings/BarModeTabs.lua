@@ -859,6 +859,23 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(readyOutlineDrop)
     end
 
+    -- Show Decimal Point toggle (affects both cooldown and aura duration text)
+    local decimalCheck = AceGUI:Create("CheckBox")
+    decimalCheck:SetLabel("Show Decimal Point")
+    decimalCheck:SetValue(style.decimalTimers or false)
+    decimalCheck:SetFullWidth(true)
+    decimalCheck:SetCallback("OnValueChanged", function(widget, event, val)
+        style.decimalTimers = val or nil
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(decimalCheck)
+
+    CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+        "Show Decimal Point",
+        {"Shows one decimal place on duration text", 1, 1, 1, true},
+        {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
+    }, decimalCheck)
+
     -- Compact Mode toggle + Max Visible Buttons slider
     BuildCompactModeControls(container, group, tabInfoButtons)
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)

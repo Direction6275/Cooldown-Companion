@@ -152,6 +152,22 @@ local function BuildTextAppearanceTab(container, group, style)
         container:AddChild(spacingSlider)
     end
 
+    local decimalCheck = AceGUI:Create("CheckBox")
+    decimalCheck:SetLabel("Show Decimal Point")
+    decimalCheck:SetValue(style.decimalTimers or false)
+    decimalCheck:SetFullWidth(true)
+    decimalCheck:SetCallback("OnValueChanged", function(widget, event, val)
+        style.decimalTimers = val or nil
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(decimalCheck)
+
+    CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+        "Show Decimal Point",
+        {"Shows one decimal place on duration text", 1, 1, 1, true},
+        {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
+    }, decimalCheck)
+
     local headerCb = AceGUI:Create("CheckBox")
     headerCb:SetLabel("Show Group Header")
     headerCb:SetValue(style.showTextGroupHeader == true)
