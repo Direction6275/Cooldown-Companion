@@ -809,9 +809,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- ContextuallySecret spells report isOnGCD=true during any active GCD,
     -- not just this spell's own cast.  If the previous tick confirmed a real
-    -- (non-GCD) cooldown and the current tick still has cooldown data,
-    -- keep treating it as non-GCD-only.  Self-terminates when GCD ends
-    -- (isOnGCD becomes false).
+    -- (non-GCD) cooldown and the spell is still unusable (real CD active),
+    -- keep treating it as non-GCD-only.  Terminates when the real CD
+    -- expires (IsSpellUsable becomes true) or the GCD ends.
     if buttonData.type == "spell"
        and not buttonData.hasCharges
        and not auraOverrideActive
@@ -821,7 +821,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
        and desatWasActive
        and not wasAuraActive
        and button._durationObj
-       and actionSlotCooldownShown == true then
+       and actionSlotCooldownShown == true
+       and not C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id) then
         isGCDOnly = false
     end
 
