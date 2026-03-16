@@ -468,11 +468,6 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"borderSize", "borderColor"},
         modes = {icons = true, bars = true},
     },
-    backgroundColor = {
-        label = "Background Color",
-        keys = {"backgroundColor"},
-        modes = {icons = true},
-    },
     cooldownText = {
         label = "Cooldown Text",
         keys = {"showCooldownText", "decimalTimers", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
@@ -536,7 +531,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     iconTint = {
         label = "Icon Tint",
-        keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor"},
+        keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "backgroundColor"},
         modes = {icons = true, bars = true},
     },
     assistedHighlight = {
