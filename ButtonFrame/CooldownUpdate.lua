@@ -807,15 +807,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- ContextuallySecret spells can transiently report isOnGCD=true while a real
-    -- short cooldown is already active. If we were already showing cooldown and
-    -- still have active cooldown data, keep treating it as non-GCD-only.
-    -- Scope this to the cast-start GCD for this spell only.
+    -- ContextuallySecret spells report isOnGCD=true during any active GCD,
+    -- not just this spell's own cast.  If the previous tick confirmed a real
+    -- (non-GCD) cooldown and the current tick still has cooldown data,
+    -- keep treating it as non-GCD-only.  Self-terminates when GCD ends
+    -- (isOnGCD becomes false).
     if buttonData.type == "spell"
        and not buttonData.hasCharges
        and not auraOverrideActive
        and buttonData._cooldownSecrecy ~= 0
-       and button._postCastGCDHold
        and isOnGCD
        and isGCDOnly
        and desatWasActive
@@ -967,9 +967,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if isEnabled ~= nil and not issecretvalue(isEnabled) then
             -- Out of combat: precise signal
             deferred = (isEnabled == false)
-        else
-            -- Combat: isEnabled is secret, fall back to IsSpellUsable
-            deferred = not C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id)
+        -- else: during combat isEnabled is secret; skip deferred detection
+        -- to avoid false positives from IsSpellUsable (resource/form/range
+        -- conditions).  Phantom-cooldown spells (Nature's Swiftness etc.)
+        -- may briefly flicker their swipe during combat, but this is
+        -- preferable to clearing cooldown display for all secret spells.
         end
         button._deferredCDWait = deferred or nil
     elseif button._deferredCDWait then
