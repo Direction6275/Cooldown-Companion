@@ -936,7 +936,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._zeroChargesConfirmed = false
     end
 
-    -- Canonical desaturation signal:
+    -- Canonical desaturation signal (must run before deferred-wait detection,
+    -- which clears _durationObj — desaturation needs the phantom CD data):
     -- For non-charge spells, use action-slot cooldown state when spell cooldown
     -- info is unavailable (ContextuallySecret fallback). Otherwise use addon state.
     if buttonData.type == "item" then
@@ -952,10 +953,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Deferred cooldown stabilization: spells like Nature's Swiftness, Stasis,
-    -- Tip the Scales report a phantom 0.001s cooldown (with isEnabled=false)
-    -- during their "wait" state, causing the swipe to restart every tick.
-    -- Detect via: spell reports active cooldown but IsSpellUsable returns false
-    -- (buff must be consumed first).  Suppress the phantom cooldown data below.
+    -- Tip the Scales report a phantom 0.001s cooldown (isEnabled=false in
+    -- SpellCooldownInfo) during their "wait" state, causing the swipe to
+    -- restart every tick.  Detected indirectly: _desatCooldownActive is true
+    -- (phantom CD keeps _durationObj non-nil) but IsSpellUsable returns false
+    -- (buff must be consumed first).  Suppress the phantom data below.
     if buttonData.type == "spell" and not buttonData.isPassive
        and not buttonData.hasCharges and not auraOverrideActive
        and button._desatCooldownActive then
@@ -978,9 +980,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._readyGlowStartTime = nil
     end
 
-    -- During deferred wait, suppress the oscillating cooldown data so
-    -- downstream systems (bar fill, visibility, swipe, time text) see
-    -- a clean "no active cooldown" state while desaturation stays held.
+    -- During deferred wait, suppress the per-tick-restarting phantom cooldown
+    -- so downstream systems (bar fill, swipe, time text) see a clean state
+    -- while desaturation stays held.  Visibility checks _deferredCDWait
+    -- directly to preserve on-cooldown semantics.
     if button._deferredCDWait then
         button._durationObj = nil
         button.cooldown:SetCooldown(0, 0)
