@@ -268,6 +268,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         end
+        local configUnit = buttonData.auraUnit or "player"
         if not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
@@ -278,7 +279,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._viewerBar = nil  -- primary path: DurationObject available
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
                     button._auraInstanceID = viewerInstId
-                    button._auraUnit = unit
+                    -- Only update _auraUnit if viewer unit is compatible with config.
+                    -- Prevents stale CDM auraDataUnit from corrupting target-debuff buttons on login.
+                    if unit == configUnit or configUnit == "player" then
+                        button._auraUnit = unit
+                    end
                     auraOverrideActive = true
                     fetchOk = true
                 end
@@ -295,7 +300,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
                             auraOverrideActive = true
                             fetchOk = true
-                            button._auraUnit = viewerFrame.auraDataUnit or auraUnit
+                            local vUnit = viewerFrame.auraDataUnit or auraUnit
+                            if vUnit == configUnit or configUnit == "player" then
+                                button._auraUnit = vUnit
+                            end
                         end
                     else
                         -- Secret values: can't convert ms->s. Mark aura active;
@@ -305,7 +313,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         -- value directly with issecretvalue() instead.)
                         auraOverrideActive = true
                         fetchOk = true
-                        button._auraUnit = viewerFrame.auraDataUnit or auraUnit
+                        local vUnit = viewerFrame.auraDataUnit or auraUnit
+                        if vUnit == configUnit or configUnit == "player" then
+                            button._auraUnit = vUnit
+                        end
                     end
                     if button._auraInstanceID then
                         button._auraInstanceID = nil
@@ -370,7 +381,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
                         button._auraInstanceID = instId
-                        button._auraUnit = "player"
+                        if configUnit == "player" then
+                            button._auraUnit = "player"
+                        end
                         auraOverrideActive = true
                         fetchOk = true
                     end

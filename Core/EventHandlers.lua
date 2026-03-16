@@ -296,6 +296,38 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
             self:OnKeybindsChanged()
         end
     end)
+    -- Post-login sweep: clear buttons falsely stuck as aura-active from stale
+    -- CDM viewer data during the first seconds after login/reload.
+    if isFullInit then
+        C_Timer.After(2, function()
+            self:ForEachButton(function(button, bd)
+                if bd.auraTracking and button._auraActive and not bd.isPassive then
+                    local vf = button._auraSpellID
+                        and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
+                    local viewerConfirms = vf and (vf.auraInstanceID ~= nil)
+                    if not viewerConfirms then
+                        local unit = button._auraUnit or "player"
+                        local apiConfirms = false
+                        if unit == "player" and button._auraSpellID then
+                            apiConfirms = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
+                        elseif unit == "target" and UnitExists("target") and button._auraInstanceID then
+                            apiConfirms = C_UnitAuras.GetAuraDuration("target", button._auraInstanceID) ~= nil
+                        end
+                        if not apiConfirms then
+                            button._auraActive = false
+                            button._auraInstanceID = nil
+                            button._auraUnit = bd.auraUnit or "player"
+                            button._inPandemic = false
+                            button._durationObj = nil
+                            button.cooldown:SetCooldown(0, 0)
+                            button.cooldown:Hide()
+                        end
+                    end
+                end
+            end)
+            self._cooldownsDirty = true
+        end)
+    end
 end
 
 function CooldownCompanion:OnBindingsChanged()
