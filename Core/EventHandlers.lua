@@ -226,7 +226,6 @@ function CooldownCompanion:CachePlayerState()
     self._inVehicleUI = UnitHasVehicleUI("player")
         or C_ActionBar.HasVehicleActionBar()
         or C_ActionBar.HasOverrideActionBar()
-    self._currentShapeshiftForm = GetShapeshiftForm()
 end
 
 function CooldownCompanion:OnZoneChanged()
@@ -328,13 +327,6 @@ function CooldownCompanion:OnActionBarLayoutChanged()
     if self._inVehicleUI ~= wasInVehicleUI then
         self:RefreshAllGroupsVisibilityOnly()
     end
-end
-
-function CooldownCompanion:OnShapeshiftFormChanged()
-    self._currentShapeshiftForm = GetShapeshiftForm()
-    self:OnActionBarLayoutChanged()
-    self:RefreshAllGroupsVisibilityOnly()
-    self:UpdateAnchorStacking()
 end
 
 ------------------------------------------------------------------------

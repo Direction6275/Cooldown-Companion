@@ -221,7 +221,7 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("UPDATE_BONUS_ACTIONBAR", "OnActionBarLayoutChanged")
     self:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR", "OnActionBarLayoutChanged")
     self:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR", "OnActionBarLayoutChanged")
-    self:RegisterEvent("UPDATE_SHAPESHIFT_FORM", "OnShapeshiftFormChanged")
+    self:RegisterEvent("UPDATE_SHAPESHIFT_FORM", "OnActionBarLayoutChanged")
     self:RegisterEvent("PET_BAR_UPDATE", "OnActionBarLayoutChanged")
 
     -- Cache player identity for class/race-specific checks.
