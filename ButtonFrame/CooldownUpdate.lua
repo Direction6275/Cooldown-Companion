@@ -957,8 +957,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- SpellCooldownInfo) during their "wait" state, causing the swipe to
     -- restart every tick.  Primary signal: isEnabled == false (precise, only
     -- true for deferred-hold cooldowns).  During combat isEnabled is secret,
-    -- so fall back to IsSpellUsable (may false-positive on OOM/form, but
-    -- self-corrects when usability is restored).
+    -- so fall back to IsSpellUsable with insufficientPower filtering to
+    -- distinguish resource-blocked from deferred-hold spells.
     if buttonData.type == "spell" and not buttonData.isPassive
        and not buttonData.hasCharges and not auraOverrideActive
        and button._desatCooldownActive and spellCooldownInfo then
@@ -967,11 +967,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if isEnabled ~= nil and not issecretvalue(isEnabled) then
             -- Out of combat: precise signal
             deferred = (isEnabled == false)
-        -- else: during combat isEnabled is secret; skip deferred detection
-        -- to avoid false positives from IsSpellUsable (resource/form/range
-        -- conditions).  Phantom-cooldown spells (Nature's Swiftness etc.)
-        -- may briefly flicker their swipe during combat, but this is
-        -- preferable to clearing cooldown display for all secret spells.
+        else
+            -- Combat: isEnabled is secret.  Fall back to IsSpellUsable;
+            -- filter out resource-blocked (insufficientPower) to avoid
+            -- false positives on low-resource spells like Boomstick.
+            local usable, insufficientPower = C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id)
+            deferred = not usable and not insufficientPower
         end
         button._deferredCDWait = deferred or nil
     elseif button._deferredCDWait then
