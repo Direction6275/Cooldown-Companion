@@ -971,13 +971,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Combat: isEnabled is secret, fall back to IsSpellUsable
             deferred = not C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id)
         end
-        if deferred then
-            button._deferredCDWait = true
-        else
-            button._deferredCDWait = nil
-        end
-    else
-        if button._deferredCDWait then button._deferredCDWait = nil end
+        button._deferredCDWait = deferred or nil
+    elseif button._deferredCDWait then
+        button._deferredCDWait = nil
     end
 
     -- Track on-CD → off-CD transition for ready glow duration timer.
