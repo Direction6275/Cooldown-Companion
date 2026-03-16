@@ -936,7 +936,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._zeroChargesConfirmed = false
     end
 
-    -- Canonical desaturation signal:
+    -- Canonical desaturation signal (must run before deferred-wait detection,
+    -- which clears _durationObj — desaturation needs the phantom CD data):
     -- For non-charge spells, use action-slot cooldown state when spell cooldown
     -- info is unavailable (ContextuallySecret fallback). Otherwise use addon state.
     if buttonData.type == "item" then
@@ -951,6 +952,30 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
+    -- Deferred cooldown stabilization: spells like Nature's Swiftness, Stasis,
+    -- Tip the Scales report a phantom 0.001s cooldown (isEnabled=false in
+    -- SpellCooldownInfo) during their "wait" state, causing the swipe to
+    -- restart every tick.  Primary signal: isEnabled == false (precise, only
+    -- true for deferred-hold cooldowns).  During combat isEnabled is secret,
+    -- so fall back to IsSpellUsable (may false-positive on OOM/form, but
+    -- self-corrects when usability is restored).
+    if buttonData.type == "spell" and not buttonData.isPassive
+       and not buttonData.hasCharges and not auraOverrideActive
+       and button._desatCooldownActive and spellCooldownInfo then
+        local isEnabled = spellCooldownInfo.isEnabled
+        local deferred = false
+        if isEnabled ~= nil and not issecretvalue(isEnabled) then
+            -- Out of combat: precise signal
+            deferred = (isEnabled == false)
+        else
+            -- Combat: isEnabled is secret, fall back to IsSpellUsable
+            deferred = not C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id)
+        end
+        button._deferredCDWait = deferred or nil
+    elseif button._deferredCDWait then
+        button._deferredCDWait = nil
+    end
+
     -- Track on-CD → off-CD transition for ready glow duration timer.
     -- desatWasActive is true only when the previous tick had an active cooldown,
     -- so nil → false (initial load) does NOT set a start time.
@@ -958,6 +983,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._readyGlowStartTime = GetTime()
     elseif button._desatCooldownActive == true then
         button._readyGlowStartTime = nil
+    end
+
+    -- During deferred wait, suppress the per-tick-restarting phantom cooldown
+    -- so downstream systems (bar fill, swipe, time text) see a clean state
+    -- while desaturation stays held.  Visibility checks _deferredCDWait
+    -- directly to preserve on-cooldown semantics.
+    if button._deferredCDWait then
+        button._durationObj = nil
+        button.cooldown:SetCooldown(0, 0)
     end
 
     if not button._isBar and not button._isText then
@@ -1150,6 +1184,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     scratchCooldown:Hide()
                 else
                     cooldownActive = false
+                end
+                -- Suppress false "ready" sound during deferred CD wait
+                if button._deferredCDWait then
+                    cooldownActive = true
                 end
             end
 

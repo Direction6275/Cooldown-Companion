@@ -513,8 +513,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         -- Suppress only for GCD-only state; keep the cooldown swipe visible
         -- when a real cooldown is active during an overlapping GCD.
         local suppressGCD = not style.showGCDSwipe and isGCDOnly
+        local suppressDeferred = button._deferredCDWait
 
-        if suppressGCD then
+        if suppressGCD or suppressDeferred then
             button.cooldown:Hide()
         else
             if not button.cooldown:IsShown() then
@@ -779,6 +780,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._desatCooldownActive = nil
+    button._deferredCDWait = nil
     button._readyGlowStartTime = nil
     button._noCooldown = nil
     button._vertexR = nil
