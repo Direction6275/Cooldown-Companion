@@ -955,14 +955,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Deferred cooldown stabilization: spells like Nature's Swiftness, Stasis,
     -- Tip the Scales report a phantom 0.001s cooldown (isEnabled=false in
     -- SpellCooldownInfo) during their "wait" state, causing the swipe to
-    -- restart every tick.  Detected indirectly: _desatCooldownActive is true
-    -- (phantom CD keeps _durationObj non-nil) but IsSpellUsable returns false
-    -- (buff must be consumed first).  Suppress the phantom data below.
+    -- restart every tick.  Primary signal: isEnabled == false (precise, only
+    -- true for deferred-hold cooldowns).  During combat isEnabled is secret,
+    -- so fall back to IsSpellUsable (may false-positive on OOM/form, but
+    -- self-corrects when usability is restored).
     if buttonData.type == "spell" and not buttonData.isPassive
        and not buttonData.hasCharges and not auraOverrideActive
-       and button._desatCooldownActive then
-        local isUsable = C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id)
-        if not isUsable then
+       and button._desatCooldownActive and spellCooldownInfo then
+        local isEnabled = spellCooldownInfo.isEnabled
+        local deferred = false
+        if isEnabled ~= nil and not issecretvalue(isEnabled) then
+            -- Out of combat: precise signal
+            deferred = (isEnabled == false)
+        else
+            -- Combat: isEnabled is secret, fall back to IsSpellUsable
+            deferred = not C_Spell_IsSpellUsable(cooldownSpellId or buttonData.id)
+        end
+        if deferred then
             button._deferredCDWait = true
         else
             button._deferredCDWait = nil
