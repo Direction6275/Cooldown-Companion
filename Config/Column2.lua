@@ -767,9 +767,11 @@ local function RefreshColumn2()
                     local sortedPanels = CooldownCompanion:GetPanels(cid)
                     local panels = {}
                     for _, entry in ipairs(sortedPanels) do
-                        panels[#panels + 1] = BuildGroupExportData(entry.group)
+                        local panelData = BuildGroupExportData(entry.group)
+                        panelData._originalGroupId = entry.groupId
+                        panels[#panels + 1] = panelData
                     end
-                    exportContainers[#exportContainers + 1] = { container = containerData, panels = panels }
+                    exportContainers[#exportContainers + 1] = { container = containerData, panels = panels, _originalContainerId = cid }
                 end
             end
             local payload = { type = "containers", version = 1, containers = exportContainers }

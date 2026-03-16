@@ -623,9 +623,11 @@ local function RefreshColumn1(preserveDrag)
                                     local sortedPanels = CooldownCompanion:GetPanels(item.cid)
                                     local panels = {}
                                     for _, entry in ipairs(sortedPanels) do
-                                        panels[#panels + 1] = BuildGroupExportData(entry.group)
+                                        local panelData = BuildGroupExportData(entry.group)
+                                        panelData._originalGroupId = entry.groupId
+                                        panels[#panels + 1] = panelData
                                     end
-                                    exportContainers[#exportContainers + 1] = { container = containerData, panels = panels }
+                                    exportContainers[#exportContainers + 1] = { container = containerData, panels = panels, _originalContainerId = item.cid }
                                 end
                                 local payload = { type = "containers", version = 1, containers = exportContainers }
                                 local exportString = EncodeExportData(payload)
@@ -640,7 +642,9 @@ local function RefreshColumn1(preserveDrag)
                                 local sortedPanels = CooldownCompanion:GetPanels(containerId)
                                 local panels = {}
                                 for _, entry in ipairs(sortedPanels) do
-                                    panels[#panels + 1] = BuildGroupExportData(entry.group)
+                                    local panelData = BuildGroupExportData(entry.group)
+                                    panelData._originalGroupId = entry.groupId
+                                    panels[#panels + 1] = panelData
                                 end
                                 local containerData = BuildContainerExportData(container)
                                 local payload = { type = "container", version = 1, container = containerData, panels = panels }
@@ -1179,9 +1183,11 @@ local function RefreshColumn1(preserveDrag)
                             local sortedPanels = CooldownCompanion:GetPanels(item.cid)
                             local panels = {}
                             for _, entry in ipairs(sortedPanels) do
-                                panels[#panels + 1] = BuildGroupExportData(entry.group)
+                                local panelData = BuildGroupExportData(entry.group)
+                                panelData._originalGroupId = entry.groupId
+                                panels[#panels + 1] = panelData
                             end
-                            exportContainers[#exportContainers + 1] = { container = containerData, panels = panels }
+                            exportContainers[#exportContainers + 1] = { container = containerData, panels = panels, _originalContainerId = item.cid }
                         end
                         local payload = { type = "folder", version = 2, folder = folderData, containers = exportContainers }
                         local exportString = EncodeExportData(payload)
