@@ -950,14 +950,23 @@ local function ImportGroupData(text)
     elseif data.type == "containers" and data.containers then
         -- Import multiple containers with their panels
         local containerCount = 0
+        local containerIdMap = {}
+        local importedContainerIds = {}
+        local groupIdMap = {}
+        local importedGroupIds = {}
         for _, entry in ipairs(data.containers) do
             local containerId = db.nextContainerId
             db.nextContainerId = containerId + 1
+            importedContainerIds[#importedContainerIds + 1] = containerId
+            if entry._originalContainerId then
+                containerIdMap[entry._originalContainerId] = containerId
+            end
             local container = CopyTable(entry.container)
             container.createdBy = charKey
             container.isGlobal = false
             container.order = containerId
             container.folderId = nil
+            container.locked = true
             db.groupContainers[containerId] = container
             CooldownCompanion:CreateContainerFrame(containerId)
 
@@ -965,16 +974,23 @@ local function ImportGroupData(text)
             for panelIndex, srcPanel in ipairs(panels) do
                 local groupId = db.nextGroupId
                 db.nextGroupId = groupId + 1
+                importedGroupIds[#importedGroupIds + 1] = groupId
+                if srcPanel._originalGroupId then
+                    groupIdMap[srcPanel._originalGroupId] = groupId
+                end
                 local panel = CopyTable(srcPanel)
+                panel._originalGroupId = nil
                 panel.parentContainerId = containerId
                 panel.order = panelIndex
-                panel.anchor = {
-                    point = "CENTER",
-                    relativeTo = "CooldownCompanionContainer" .. containerId,
-                    relativePoint = "CENTER",
-                    x = 0,
-                    y = 0,
-                }
+                if not panel.anchor then
+                    panel.anchor = {
+                        point = "CENTER",
+                        relativeTo = "CooldownCompanionContainer" .. containerId,
+                        relativePoint = "CENTER",
+                        x = 0,
+                        y = 0,
+                    }
+                end
                 db.groups[groupId] = panel
                 CooldownCompanion:CreateGroupFrame(groupId)
             end
@@ -999,6 +1015,91 @@ local function ImportGroupData(text)
                 CooldownCompanion:CreateGroupFrame(groupId)
             end
             containerCount = containerCount + 1
+        end
+        -- Remap container anchor cross-references and clean up stale references
+        for _, newId in ipairs(importedContainerIds) do
+            local container = db.groupContainers[newId]
+            if container and container.anchor then
+                local rt = container.anchor.relativeTo
+                if rt then
+                    local refOldId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                    if refOldId then
+                        local changed = false
+                        if containerIdMap[refOldId] then
+                            container.anchor.relativeTo = "CooldownCompanionContainer" .. containerIdMap[refOldId]
+                            changed = true
+                        else
+                            container.anchor = {
+                                point = "CENTER",
+                                relativeTo = "UIParent",
+                                relativePoint = "CENTER",
+                                x = 0,
+                                y = 0,
+                            }
+                            changed = true
+                        end
+                        if changed then
+                            local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[newId]
+                            if cf then CooldownCompanion:AnchorContainerFrame(cf, container.anchor) end
+                        end
+                    else
+                        local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                        if groupRef then
+                            if groupIdMap[groupRef] then
+                                container.anchor.relativeTo = "CooldownCompanionGroup" .. groupIdMap[groupRef]
+                            else
+                                container.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "UIParent",
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                            end
+                            local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[newId]
+                            if cf then CooldownCompanion:AnchorContainerFrame(cf, container.anchor) end
+                        end
+                    end
+                end
+            end
+        end
+        -- Remap panel anchor cross-references (group-to-group and group-to-container)
+        for _, newGid in ipairs(importedGroupIds) do
+            local panel = db.groups[newGid]
+            if panel and panel.anchor then
+                local rt = panel.anchor.relativeTo
+                if rt then
+                    local containerRef = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                    if containerRef then
+                        if containerIdMap[containerRef] then
+                            panel.anchor.relativeTo = "CooldownCompanionContainer" .. containerIdMap[containerRef]
+                        else
+                            panel.anchor = {
+                                point = "CENTER",
+                                relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId,
+                                relativePoint = "CENTER",
+                                x = 0,
+                                y = 0,
+                            }
+                        end
+                    else
+                        local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                        if groupRef then
+                            if groupIdMap[groupRef] then
+                                panel.anchor.relativeTo = "CooldownCompanionGroup" .. groupIdMap[groupRef]
+                            else
+                                panel.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId,
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                            end
+                        end
+                    end
+                end
+            end
         end
         CooldownCompanion:Print("Imported " .. containerCount .. " groups.")
 
@@ -1052,14 +1153,23 @@ local function ImportGroupData(text)
             -- v2 format: containers with panels (preserves structure)
             -- Containers keep their own exported spec filters; folder specs
             -- are preserved separately as the cascade source.
+            local containerIdMap = {}
+            local importedContainerIds = {}
+            local groupIdMap = {}
+            local importedGroupIds = {}
             for _, entry in ipairs(data.containers) do
                 local containerId = db.nextContainerId
                 db.nextContainerId = containerId + 1
+                importedContainerIds[#importedContainerIds + 1] = containerId
+                if entry._originalContainerId then
+                    containerIdMap[entry._originalContainerId] = containerId
+                end
                 local container = CopyTable(entry.container)
                 container.createdBy = charKey
                 container.isGlobal = false
                 container.order = containerId
                 container.folderId = folderId
+                container.locked = true
                 db.groupContainers[containerId] = container
                 CooldownCompanion:CreateContainerFrame(containerId)
 
@@ -1067,16 +1177,23 @@ local function ImportGroupData(text)
                 for panelIndex, srcPanel in ipairs(panels) do
                     local groupId = db.nextGroupId
                     db.nextGroupId = groupId + 1
+                    importedGroupIds[#importedGroupIds + 1] = groupId
+                    if srcPanel._originalGroupId then
+                        groupIdMap[srcPanel._originalGroupId] = groupId
+                    end
                     local panel = CopyTable(srcPanel)
+                    panel._originalGroupId = nil
                     panel.parentContainerId = containerId
                     panel.order = panelIndex
-                    panel.anchor = {
-                        point = "CENTER",
-                        relativeTo = "CooldownCompanionContainer" .. containerId,
-                        relativePoint = "CENTER",
-                        x = 0,
-                        y = 0,
-                    }
+                    if not panel.anchor then
+                        panel.anchor = {
+                            point = "CENTER",
+                            relativeTo = "CooldownCompanionContainer" .. containerId,
+                            relativePoint = "CENTER",
+                            x = 0,
+                            y = 0,
+                        }
+                    end
                     db.groups[groupId] = panel
                     CooldownCompanion:CreateGroupFrame(groupId)
                     count = count + 1
@@ -1101,6 +1218,91 @@ local function ImportGroupData(text)
                     }
                     CooldownCompanion:CreateGroupFrame(groupId)
                     count = count + 1
+                end
+            end
+            -- Remap container anchor cross-references and clean up stale references
+            for _, newId in ipairs(importedContainerIds) do
+                local container = db.groupContainers[newId]
+                if container and container.anchor then
+                    local rt = container.anchor.relativeTo
+                    if rt then
+                        local refOldId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                        if refOldId then
+                            local changed = false
+                            if containerIdMap[refOldId] then
+                                container.anchor.relativeTo = "CooldownCompanionContainer" .. containerIdMap[refOldId]
+                                changed = true
+                            else
+                                container.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "UIParent",
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                                changed = true
+                            end
+                            if changed then
+                                local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[newId]
+                                if cf then CooldownCompanion:AnchorContainerFrame(cf, container.anchor) end
+                            end
+                        else
+                            local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                            if groupRef then
+                                if groupIdMap[groupRef] then
+                                    container.anchor.relativeTo = "CooldownCompanionGroup" .. groupIdMap[groupRef]
+                                else
+                                    container.anchor = {
+                                        point = "CENTER",
+                                        relativeTo = "UIParent",
+                                        relativePoint = "CENTER",
+                                        x = 0,
+                                        y = 0,
+                                    }
+                                end
+                                local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[newId]
+                                if cf then CooldownCompanion:AnchorContainerFrame(cf, container.anchor) end
+                            end
+                        end
+                    end
+                end
+            end
+            -- Remap panel anchor cross-references (group-to-group and group-to-container)
+            for _, newGid in ipairs(importedGroupIds) do
+                local panel = db.groups[newGid]
+                if panel and panel.anchor then
+                    local rt = panel.anchor.relativeTo
+                    if rt then
+                        local containerRef = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                        if containerRef then
+                            if containerIdMap[containerRef] then
+                                panel.anchor.relativeTo = "CooldownCompanionContainer" .. containerIdMap[containerRef]
+                            else
+                                panel.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId,
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                            end
+                        else
+                            local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                            if groupRef then
+                                if groupIdMap[groupRef] then
+                                    panel.anchor.relativeTo = "CooldownCompanionGroup" .. groupIdMap[groupRef]
+                                else
+                                    panel.anchor = {
+                                        point = "CENTER",
+                                        relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId,
+                                        relativePoint = "CENTER",
+                                        x = 0,
+                                        y = 0,
+                                    }
+                                end
+                            end
+                        end
+                    end
                 end
             end
 
@@ -1132,26 +1334,101 @@ local function ImportGroupData(text)
         container.isGlobal = false
         container.order = containerId
         container.folderId = nil
+        container.locked = true
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
 
         local count = 0
+        local groupIdMap = {}
+        local importedGroupIds = {}
         for panelIndex, srcPanel in ipairs(data.panels) do
             local groupId = db.nextGroupId
             db.nextGroupId = groupId + 1
+            importedGroupIds[#importedGroupIds + 1] = groupId
+            if srcPanel._originalGroupId then
+                groupIdMap[srcPanel._originalGroupId] = groupId
+            end
             local panel = CopyTable(srcPanel)
+            panel._originalGroupId = nil
             panel.parentContainerId = containerId
             panel.order = panelIndex
-            panel.anchor = {
-                point = "CENTER",
-                relativeTo = "CooldownCompanionContainer" .. containerId,
-                relativePoint = "CENTER",
-                x = 0,
-                y = 0,
-            }
+            if not panel.anchor then
+                panel.anchor = {
+                    point = "CENTER",
+                    relativeTo = "CooldownCompanionContainer" .. containerId,
+                    relativePoint = "CENTER",
+                    x = 0,
+                    y = 0,
+                }
+            end
             db.groups[groupId] = panel
             CooldownCompanion:CreateGroupFrame(groupId)
             count = count + 1
+        end
+        -- Remap container anchor cross-references (container-to-container and container-to-group)
+        if container.anchor then
+            local rt = container.anchor.relativeTo
+            if rt then
+                local refId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                if refId then
+                    container.anchor = {
+                        point = "CENTER",
+                        relativeTo = "UIParent",
+                        relativePoint = "CENTER",
+                        x = 0,
+                        y = 0,
+                    }
+                    local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+                    if cf then CooldownCompanion:AnchorContainerFrame(cf, container.anchor) end
+                else
+                    local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                    if groupRef then
+                        if groupIdMap[groupRef] then
+                            container.anchor.relativeTo = "CooldownCompanionGroup" .. groupIdMap[groupRef]
+                        else
+                            container.anchor = {
+                                point = "CENTER",
+                                relativeTo = "UIParent",
+                                relativePoint = "CENTER",
+                                x = 0,
+                                y = 0,
+                            }
+                        end
+                        local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+                        if cf then CooldownCompanion:AnchorContainerFrame(cf, container.anchor) end
+                    end
+                end
+            end
+        end
+        -- Remap panel anchor cross-references (group-to-group)
+        for _, newGid in ipairs(importedGroupIds) do
+            local panel = db.groups[newGid]
+            if panel and panel.anchor then
+                local rt = panel.anchor.relativeTo
+                if rt then
+                    local containerRef = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                    if containerRef then
+                        if containerRef ~= containerId then
+                            panel.anchor.relativeTo = "CooldownCompanionContainer" .. containerId
+                        end
+                    else
+                        local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                        if groupRef then
+                            if groupIdMap[groupRef] then
+                                panel.anchor.relativeTo = "CooldownCompanionGroup" .. groupIdMap[groupRef]
+                            else
+                                panel.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "CooldownCompanionContainer" .. containerId,
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                            end
+                        end
+                    end
+                end
+            end
         end
         -- Ensure at least one panel exists
         if count == 0 then
@@ -1189,8 +1466,49 @@ local function ImportGroupData(text)
     -- _migratedFolderSpecsToContainers = true (to protect existing data),
     -- so the one-time folder→container spec cascade is skipped.
     -- Cascade manually now that migration has created the containers.
+    -- Also lock the migration-created containers and clean up stale anchor
+    -- references (the groups' old relativeTo values point to containers that
+    -- existed on the source character but not here).
     if v1FolderImportId then
         CooldownCompanion:ApplyFolderSpecFilterToChildren(v1FolderImportId)
+        for cid, ctr in pairs(db.groupContainers) do
+            if ctr.folderId == v1FolderImportId then
+                ctr.locked = true
+                if ctr.anchor then
+                    local rt = ctr.anchor.relativeTo
+                    if rt then
+                        local refId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                        if refId then
+                            local ref = db.groupContainers[refId]
+                            if not ref or ref.folderId ~= v1FolderImportId then
+                                ctr.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "UIParent",
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                                local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[cid]
+                                if cf then CooldownCompanion:AnchorContainerFrame(cf, ctr.anchor) end
+                            end
+                        else
+                            local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                            if groupRef then
+                                ctr.anchor = {
+                                    point = "CENTER",
+                                    relativeTo = "UIParent",
+                                    relativePoint = "CENTER",
+                                    x = 0,
+                                    y = 0,
+                                }
+                                local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[cid]
+                                if cf then CooldownCompanion:AnchorContainerFrame(cf, ctr.anchor) end
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 
     CooldownCompanion:RefreshConfigPanel()

@@ -1115,7 +1115,11 @@ local function RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         local exportPanels = {}
         for _, pid in ipairs(multiPanelIds) do
             local p = db.groups[pid]
-            if p then exportPanels[#exportPanels + 1] = BuildGroupExportData(p) end
+            if p then
+                local panelData = BuildGroupExportData(p)
+                panelData._originalGroupId = pid
+                exportPanels[#exportPanels + 1] = panelData
+            end
         end
         local payload = { type = "container", version = 1, container = containerData, panels = exportPanels }
         local exportString = EncodeExportData(payload)
