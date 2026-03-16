@@ -99,7 +99,7 @@ local function UpdateItemChargeTracking(button, buttonData)
     end
 end
 
--- Icon tinting: out-of-range red > unusable dimming > cooldown tint > base tint.
+-- Icon tinting: out-of-range red > unusable dimming > aura tint > cooldown tint > base tint.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
     if buttonData.isPassive then
@@ -111,7 +111,8 @@ local function UpdateIconTint(button, buttonData, style)
         end
         return
     end
-    local r, g, b, a = 1, 1, 1, 1
+    local bc = style.iconTintColor
+    local r, g, b, a = 1, 1, 1, bc and bc[4] or 1
     local stateOverride = false
     if style.showOutOfRange then
         if buttonData.type == "spell" then
@@ -151,17 +152,16 @@ local function UpdateIconTint(button, buttonData, style)
         if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive then
             local c = style.iconAuraTintColor
             if c then
-                r, g, b, a = c[1], c[2], c[3], c[4]
+                r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
             end
         elseif style.iconCooldownTintEnabled and button._desatCooldownActive then
             local c = style.iconCooldownTintColor
             if c then
-                r, g, b, a = c[1], c[2], c[3], c[4]
+                r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
             end
         else
-            local c = style.iconTintColor
-            if c then
-                r, g, b, a = c[1], c[2], c[3], c[4]
+            if bc then
+                r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4] or 1
             end
         end
     end
