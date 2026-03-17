@@ -483,7 +483,8 @@ local function GetPreviewName()
             local bd = group.buttons[CS.selectedButton]
             local name = bd.customName or bd.name
             if not bd.customName and bd.type == "spell" then
-                local spellName = C_Spell.GetSpellName(bd.id)
+                local displayId = C_Spell.GetOverrideSpell(bd.id) or bd.id
+                local spellName = C_Spell.GetSpellName(displayId)
                 if spellName then name = spellName end
             elseif not bd.customName and bd.type == "item" then
                 local itemName = C_Item.GetItemNameByID(bd.id)

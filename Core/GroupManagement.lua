@@ -762,6 +762,30 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
+    -- Resolve spell transforms to base spell ID so the override chain can
+    -- freely reach all variant forms at runtime.  Skip for items (no spell
+    -- transform system), pet spells (may not resolve through GetBaseSpell),
+    -- and CDM child-slot buttons (viewer-frame mapping uses specific IDs).
+    if buttonType == "spell" and not isPetSpell and not cdmChildSlot then
+        local baseID = ST.ResolveToBaseSpell(id)
+        if baseID ~= id then
+            id = baseID
+            name = C_Spell.GetSpellName(baseID) or name
+        end
+        -- Notify the user when the spell has an active talent transform so
+        -- they understand why the panel may show a different name/icon.
+        local overrideID = C_Spell.GetOverrideSpell(id)
+        if overrideID and overrideID ~= id then
+            local baseName = C_Spell.GetSpellName(id) or name
+            local overrideName = C_Spell.GetSpellName(overrideID)
+            if overrideName and overrideName ~= baseName then
+                print("|cff00ccffCooldown Companion:|r Added " .. baseName
+                    .. " (currently showing as " .. overrideName
+                    .. ") - tracks all spell variants.")
+            end
+        end
+    end
+
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = {
         type = buttonType,

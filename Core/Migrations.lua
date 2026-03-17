@@ -48,6 +48,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateContainerAlphaToPanel()
     self:MigrateStrataOrderExpansion()
     self:MigrateCustomAuraBarSlots5()
+    self:MigrateBaseSpellResolution()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -72,6 +73,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedStrataOrder6 = nil
     profile._migratedCustomAuraSlots5 = nil
     profile._migratedCustomAuraSlots5v2 = nil
+    profile._migratedBaseSpells = nil
     -- Folder-spec-to-container clearing is a one-time historical migration
     -- that must never re-run on imported data — always mark as complete.
     profile._migratedFolderSpecsToContainers = true
@@ -1693,5 +1695,28 @@ function CooldownCompanion:MigrateCustomAuraBarSlots5()
     end
 
     profile._migratedCustomAuraSlots5v2 = true
+end
+
+-- Resolve stored spell IDs to their base form so the override chain can
+-- freely transform to any variant at runtime.
+function CooldownCompanion:MigrateBaseSpellResolution()
+    local profile = self.db.profile
+    if profile._migratedBaseSpells then return end
+
+    for _, group in pairs(profile.groups or {}) do
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.type == "spell" and not bd.isPetSpell and not bd.cdmChildSlot then
+                    local baseID = ST.ResolveToBaseSpell(bd.id)
+                    if baseID ~= bd.id then
+                        bd.id = baseID
+                        bd.name = C_Spell.GetSpellName(baseID) or bd.name
+                    end
+                end
+            end
+        end
+    end
+
+    profile._migratedBaseSpells = true
 end
 

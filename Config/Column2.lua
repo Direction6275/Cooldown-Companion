@@ -1554,7 +1554,10 @@ local function RefreshColumn2()
                             local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
                             if spellName then entryName = spellName end
                         else
-                            local spellName = C_Spell.GetSpellName(buttonData.id)
+                            -- Resolve through GetOverrideSpell so base-stored
+                            -- IDs display the current transform name.
+                            local displayId = C_Spell.GetOverrideSpell(buttonData.id) or buttonData.id
+                            local spellName = C_Spell.GetSpellName(displayId)
                             if spellName then entryName = spellName end
                         end
                         if buttonData.cdmChildSlot then

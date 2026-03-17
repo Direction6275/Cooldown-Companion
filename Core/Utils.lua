@@ -126,6 +126,19 @@ function ST.SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
 end
 
 --------------------------------------------------------------------------------
+-- Spell Resolution Helpers
+--------------------------------------------------------------------------------
+
+-- Resolve a spell ID to its base form via C_Spell.GetBaseSpell.
+-- Used at entry time so buttons always store the root of a transform chain,
+-- enabling C_Spell.GetOverrideSpell to freely resolve to any current variant.
+function ST.ResolveToBaseSpell(spellID)
+    if not spellID then return spellID end
+    local baseID = C_Spell.GetBaseSpell(spellID)
+    return (baseID and baseID ~= 0) and baseID or spellID
+end
+
+--------------------------------------------------------------------------------
 -- Spellbook Helpers
 --------------------------------------------------------------------------------
 
