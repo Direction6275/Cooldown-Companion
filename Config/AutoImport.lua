@@ -157,7 +157,7 @@ local function TryAddEntry(result, seen, bucketKey, entry, sourceLabel)
     else
         -- Resolve spell ID to base form for dedup so that variant transforms
         -- (e.g. Raze and Maul) share a single key and don't double-add.
-        local resolvedId = ST.ResolveToBaseSpell(entry.id) or entry.id
+        local resolvedId = ST.ResolveToBaseSpell(entry.id)
         if bucketKey == "auras" then
             dedupeKey = "spell:" .. tostring(resolvedId) .. ":aura"
         else

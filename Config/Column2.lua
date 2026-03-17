@@ -1556,7 +1556,8 @@ local function RefreshColumn2()
                         else
                             -- Resolve through GetOverrideSpell so base-stored
                             -- IDs display the current transform name.
-                            local displayId = C_Spell.GetOverrideSpell(buttonData.id) or buttonData.id
+                            local raw = C_Spell.GetOverrideSpell(buttonData.id)
+                            local displayId = (raw and raw ~= 0) and raw or buttonData.id
                             local spellName = C_Spell.GetSpellName(displayId)
                             if spellName then entryName = spellName end
                         end

@@ -92,8 +92,10 @@ local function TryAddSpell(input, isPetSpell, forceAura)
                 return true
             end
         end
-        CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
-        CooldownCompanion:Print("Added spell: " .. spellName)
+        local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
+        if not notified then
+            CooldownCompanion:Print("Added spell: " .. spellName)
+        end
         return true
     else
         CooldownCompanion:Print("Spell not found: " .. input .. ". Try using the spell ID or drag from spellbook.")
@@ -191,8 +193,10 @@ local function TryAdd(input)
         -- Passive/proc spell: require CDM presence
         if spellFound and passiveOrProc then
             if IsSpellInCDMBuffBar(id) then
-                CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, true)
-                CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+                local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, true)
+                if not notified then
+                    CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+                end
                 return true
             end
             -- Not in CDM — fall through to try as item, then report error
@@ -204,8 +208,10 @@ local function TryAdd(input)
             if IsSpellInCDMCooldown(id) and IsSpellInCDMBuffBar(id) then
                 forceAura = false  -- dual-CDM: default to cooldown mode
             end
-            CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
-            CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+            local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
+            if not notified then
+                CooldownCompanion:Print("Added spell: " .. spellInfo.name)
+            end
             return true
         end
 
@@ -281,14 +287,18 @@ local function TryAdd(input)
             local passiveOrProc = IsPassiveOrProc(spellId)
             if passiveOrProc then
                 if IsSpellInCDMBuffBar(spellId) then
-                    CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, nil, true)
-                    CooldownCompanion:Print("Added spell: " .. spellName)
+                    local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, nil, true)
+                    if not notified then
+                        CooldownCompanion:Print("Added spell: " .. spellName)
+                    end
                     return true
                 end
                 -- Not in CDM — fall through to try as item, then report error
             else
-                CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
-                CooldownCompanion:Print("Added spell: " .. spellName)
+                local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
+                if not notified then
+                    CooldownCompanion:Print("Added spell: " .. spellName)
+                end
                 return true
             end
         end
