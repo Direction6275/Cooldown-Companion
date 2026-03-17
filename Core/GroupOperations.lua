@@ -806,28 +806,27 @@ function CooldownCompanion:RefreshAllGroups()
         end
     end
 
-    -- Fully deactivate frames for groups not in the current profile
-    -- (e.g. after a profile switch). Removes from groupFrames so
-    -- ForEachButton / event handlers skip them entirely.
+    -- Fully unload frames for groups not in the current profile
+    -- (e.g. after a profile switch).
     for groupId, frame in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
-            self:DeleteMasqueGroup(groupId)
-            frame:Hide()
-            self.groupFrames[groupId] = nil
-            if self.alphaState then
-                self.alphaState[groupId] = nil
-            end
+            self:UnloadGroup(groupId)
         end
     end
 
-    -- Refresh current profile's groups
-    for groupId, _ in pairs(self.db.profile.groups) do
-        if self:IsGroupVisibleToCurrentChar(groupId) then
+    -- Refresh current profile's groups: load active ones, unload inactive ones
+    for groupId, group in pairs(self.db.profile.groups) do
+        if not self:IsGroupVisibleToCurrentChar(groupId) then
+            self:UnloadGroup(groupId)
+        elseif self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = false,
+            checkLoadConditions = true,
+            requireButtons = false,
+        }) then
             self:RefreshGroupFrame(groupId)
         else
-            if self.groupFrames[groupId] then
-                self.groupFrames[groupId]:Hide()
-            end
+            self:UnloadGroup(groupId)
         end
     end
 end
@@ -836,41 +835,34 @@ end
 -- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
 -- caused by full button repopulation.
 function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-    -- Fully deactivate frames for groups not in the current profile
-    -- (e.g. after a profile switch). Removes from groupFrames so
-    -- ForEachButton / event handlers skip them entirely.
+    -- Fully unload frames for groups not in the current profile
     for groupId, frame in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
-            self:DeleteMasqueGroup(groupId)
-            frame:Hide()
-            self.groupFrames[groupId] = nil
-            if self.alphaState then
-                self.alphaState[groupId] = nil
-            end
+            self:UnloadGroup(groupId)
         end
     end
 
     for groupId, group in pairs(self.db.profile.groups) do
         if not self:IsGroupVisibleToCurrentChar(groupId) then
-            if self.groupFrames[groupId] then
-                self.groupFrames[groupId]:Hide()
-            end
+            self:UnloadGroup(groupId)
         else
-            local frame = self.groupFrames[groupId]
-            if not frame then
-                frame = self:CreateGroupFrame(groupId)
-            end
+            local active = self:IsGroupActive(groupId, {
+                group = group,
+                checkCharVisibility = true,
+                checkLoadConditions = true,
+                requireButtons = true,
+            })
 
-            if frame then
-                local wasShown = frame:IsShown()
-                local active = self:IsGroupActive(groupId, {
-                    group = group,
-                    checkCharVisibility = true,
-                    checkLoadConditions = true,
-                    requireButtons = true,
-                })
+            if not active then
+                self:UnloadGroup(groupId)
+            else
+                local frame = self.groupFrames[groupId]
+                if not frame then
+                    frame = self:CreateGroupFrame(groupId)
+                end
 
-                if active then
+                if frame then
+                    local wasShown = frame:IsShown()
                     frame:Show()
                     -- Resolve locked from container (panels defer to container lock)
                     local container = self:GetParentContainer(group)
@@ -880,7 +872,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     else
                         isLocked = group.locked
                     end
-                    local baseAlpha = group.baselineAlpha or 1
                     -- Force 100% alpha while unlocked for easier positioning
                     if not isLocked then
                         frame:SetAlpha(1)
@@ -904,12 +895,46 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                             self:UpdateGroupLayout(groupId)
                         end
                     end
-                else
-                    frame:Hide()
                 end
             end
         end
     end
+end
+
+-- Fully unload a group: strip buttons, delete Masque, clear runtime state,
+-- remove from groupFrames. Config data (db.profile.groups) is preserved
+-- so the group can reload when load conditions change.
+function CooldownCompanion:UnloadGroup(groupId)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+
+    -- Strip buttons: remove from Masque, stop OnUpdate, hide, detach
+    if frame.buttons then
+        for _, button in ipairs(frame.buttons) do
+            self:RemoveButtonFromMasque(groupId, button)
+            button:SetScript("OnUpdate", nil)
+            button:Hide()
+            button:SetParent(nil)
+        end
+        wipe(frame.buttons)
+    end
+
+    -- Delete Masque group
+    self:DeleteMasqueGroup(groupId)
+
+    -- Clear alpha fade state
+    if self.alphaState then
+        self.alphaState[groupId] = nil
+    end
+
+    -- Stop alphaSyncFrame OnUpdate
+    if frame.alphaSyncFrame then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+
+    -- Hide and remove from active tracking
+    frame:Hide()
+    self.groupFrames[groupId] = nil
 end
 
 function CooldownCompanion:UpdateAllCooldowns()

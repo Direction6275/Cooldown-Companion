@@ -872,9 +872,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     local group = self.db.profile.groups[groupId]
     
     if not group then
-        if frame then
-            frame:Hide()
-        end
+        self:UnloadGroup(groupId)
         return
     end
     
@@ -931,7 +929,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             end
         end
     else
-        frame:Hide()
+        self:UnloadGroup(groupId)
     end
 end
 

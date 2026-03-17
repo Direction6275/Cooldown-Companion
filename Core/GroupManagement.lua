@@ -339,14 +339,7 @@ function CooldownCompanion:DeleteContainer(containerId)
         end
     end
     for _, groupId in ipairs(panelIds) do
-        self:DeleteMasqueGroup(groupId)
-        if self.groupFrames[groupId] then
-            self.groupFrames[groupId]:Hide()
-            self.groupFrames[groupId] = nil
-        end
-        if self.alphaState then
-            self.alphaState[groupId] = nil
-        end
+        self:UnloadGroup(groupId)
         db.groups[groupId] = nil
     end
 
@@ -604,14 +597,7 @@ function CooldownCompanion:DeleteGroup(id)
 
     local parentId = group.parentContainerId
 
-    self:DeleteMasqueGroup(id)
-    if self.groupFrames[id] then
-        self.groupFrames[id]:Hide()
-        self.groupFrames[id] = nil
-    end
-    if self.alphaState then
-        self.alphaState[id] = nil
-    end
+    self:UnloadGroup(id)
     self.db.profile.groups[id] = nil
 
     -- If this was the last panel, delete the parent container too
