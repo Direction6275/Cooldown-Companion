@@ -374,6 +374,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             for token in text:gmatch("[^,]+") do
                 if not tonumber(token) then
                     CooldownCompanion:Print("Invalid spell ID: " .. token)
+                    widget:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
                     return
                 end
             end

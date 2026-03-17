@@ -894,6 +894,7 @@ ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
 
 local function ImportGroupData(text)
+    if not text or text == "" then return false end
     if #text > MAX_IMPORT_LENGTH then
         CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
         return false

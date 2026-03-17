@@ -233,6 +233,7 @@ ST._configState = {
     SearchAutocompleteInCache = nil,
     HandleAutocompleteKeyDown = nil,
     ConsumeAutocompleteEnter = nil,
+    SetupAutocompleteKeyHandler = nil,
 }
 local CS = ST._configState
 
