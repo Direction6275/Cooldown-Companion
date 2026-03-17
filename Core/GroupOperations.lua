@@ -806,28 +806,36 @@ function CooldownCompanion:RefreshAllGroups()
         end
     end
 
-    -- Fully deactivate frames for groups not in the current profile
-    -- (e.g. after a profile switch). Removes from groupFrames so
-    -- ForEachButton / event handlers skip them entirely.
-    for groupId, frame in pairs(self.groupFrames) do
+    -- Fully unload frames for groups not in the current profile
+    -- (e.g. after a profile switch).
+    for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
-            self:DeleteMasqueGroup(groupId)
-            frame:Hide()
-            self.groupFrames[groupId] = nil
-            if self.alphaState then
-                self.alphaState[groupId] = nil
+            self:UnloadGroup(groupId)
+            self:DiscardDormantFrame(groupId)
+        end
+    end
+    -- Also discard dormant frames for deleted groups
+    if self._dormantFrames then
+        for groupId, _ in pairs(self._dormantFrames) do
+            if not self.db.profile.groups[groupId] then
+                self._dormantFrames[groupId] = nil
             end
         end
     end
 
-    -- Refresh current profile's groups
-    for groupId, _ in pairs(self.db.profile.groups) do
-        if self:IsGroupVisibleToCurrentChar(groupId) then
+    -- Refresh current profile's groups: load active ones, unload inactive ones
+    for groupId, group in pairs(self.db.profile.groups) do
+        if not self:IsGroupVisibleToCurrentChar(groupId) then
+            self:UnloadGroup(groupId)
+        elseif self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = false,
+            checkLoadConditions = true,
+            requireButtons = false,
+        }) then
             self:RefreshGroupFrame(groupId)
         else
-            if self.groupFrames[groupId] then
-                self.groupFrames[groupId]:Hide()
-            end
+            self:UnloadGroup(groupId)
         end
     end
 end
@@ -836,41 +844,47 @@ end
 -- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
 -- caused by full button repopulation.
 function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-    -- Fully deactivate frames for groups not in the current profile
-    -- (e.g. after a profile switch). Removes from groupFrames so
-    -- ForEachButton / event handlers skip them entirely.
-    for groupId, frame in pairs(self.groupFrames) do
+    -- Fully unload frames for groups not in the current profile
+    for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
-            self:DeleteMasqueGroup(groupId)
-            frame:Hide()
-            self.groupFrames[groupId] = nil
-            if self.alphaState then
-                self.alphaState[groupId] = nil
+            self:UnloadGroup(groupId)
+            self:DiscardDormantFrame(groupId)
+        end
+    end
+    -- Also discard dormant frames for deleted groups
+    if self._dormantFrames then
+        for groupId, _ in pairs(self._dormantFrames) do
+            if not self.db.profile.groups[groupId] then
+                self._dormantFrames[groupId] = nil
             end
         end
     end
 
     for groupId, group in pairs(self.db.profile.groups) do
         if not self:IsGroupVisibleToCurrentChar(groupId) then
-            if self.groupFrames[groupId] then
-                self.groupFrames[groupId]:Hide()
-            end
+            self:UnloadGroup(groupId)
         else
-            local frame = self.groupFrames[groupId]
-            if not frame then
-                frame = self:CreateGroupFrame(groupId)
-            end
+            local active = self:IsGroupActive(groupId, {
+                group = group,
+                checkCharVisibility = true,
+                checkLoadConditions = true,
+                requireButtons = true,
+            })
 
-            if frame then
-                local wasShown = frame:IsShown()
-                local active = self:IsGroupActive(groupId, {
-                    group = group,
-                    checkCharVisibility = true,
-                    checkLoadConditions = true,
-                    requireButtons = true,
-                })
+            if not active then
+                self:UnloadGroup(groupId)
+            else
+                local frame = self.groupFrames[groupId]
+                if not frame then
+                    -- Recover dormant frame with buttons intact (no repopulation needed)
+                    frame = self:RecoverDormantFrame(groupId)
+                end
+                if not frame then
+                    frame = self:CreateGroupFrame(groupId)
+                end
 
-                if active then
+                if frame then
+                    local wasShown = frame:IsShown()
                     frame:Show()
                     -- Resolve locked from container (panels defer to container lock)
                     local container = self:GetParentContainer(group)
@@ -880,7 +894,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     else
                         isLocked = group.locked
                     end
-                    local baseAlpha = group.baselineAlpha or 1
                     -- Force 100% alpha while unlocked for easier positioning
                     if not isLocked then
                         frame:SetAlpha(1)
@@ -904,11 +917,97 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                             self:UpdateGroupLayout(groupId)
                         end
                     end
-                else
-                    frame:Hide()
                 end
             end
         end
+    end
+end
+
+-- Fully unload a group: save/clear button OnUpdate scripts, remove from
+-- Masque, clear runtime state, hide the frame, and move it to a dormant
+-- cache for reuse. Config data (db.profile.groups) is preserved so the
+-- group can reload when load conditions change. Buttons remain attached
+-- to the frame so visibility-only transitions can reuse them without
+-- creating new C-side frame objects.
+function CooldownCompanion:UnloadGroup(groupId)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+
+    -- Save and clear button OnUpdate scripts, remove from Masque.
+    -- Buttons stay attached to the frame for potential reuse.
+    if frame.buttons then
+        for _, button in ipairs(frame.buttons) do
+            self:RemoveButtonFromMasque(groupId, button)
+            local onUpdate = button:GetScript("OnUpdate")
+            if onUpdate then
+                button._savedOnUpdate = onUpdate
+                button:SetScript("OnUpdate", nil)
+            end
+        end
+    end
+
+    -- Delete Masque group
+    self:DeleteMasqueGroup(groupId)
+
+    -- Clear alpha fade state
+    if self.alphaState then
+        self.alphaState[groupId] = nil
+    end
+
+    -- Stop alphaSyncFrame OnUpdate
+    if frame.alphaSyncFrame then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+
+    -- Hide and move to dormant cache for reuse
+    frame:Hide()
+    self._dormantFrames = self._dormantFrames or {}
+    self._dormantFrames[groupId] = frame
+    self.groupFrames[groupId] = nil
+end
+
+-- Recover a dormant frame: restore it to groupFrames, re-enable button
+-- OnUpdate scripts, and recreate Masque group. Used by visibility-only
+-- transitions to avoid recreating buttons.
+function CooldownCompanion:RecoverDormantFrame(groupId)
+    if not self._dormantFrames then return nil end
+    local frame = self._dormantFrames[groupId]
+    if not frame then return nil end
+
+    self._dormantFrames[groupId] = nil
+    self.groupFrames[groupId] = frame
+
+    -- Restore button OnUpdate scripts
+    if frame.buttons then
+        for _, button in ipairs(frame.buttons) do
+            if button._savedOnUpdate then
+                button:SetScript("OnUpdate", button._savedOnUpdate)
+                button._savedOnUpdate = nil
+            end
+        end
+    end
+
+    -- Recreate Masque group and re-add buttons
+    local group = self.db.profile.groups[groupId]
+    if group and group.masqueEnabled and self.Masque then
+        self:CreateMasqueGroup(groupId)
+        for _, button in ipairs(frame.buttons) do
+            self:AddButtonToMasque(groupId, button)
+        end
+    end
+
+    -- Restore alpha sync if this frame inherits alpha from a parent frame
+    if frame.anchoredToParent then
+        self:SetupAlphaSync(frame, frame.anchoredToParent)
+    end
+
+    return frame
+end
+
+-- Discard a dormant frame permanently (used by delete operations).
+function CooldownCompanion:DiscardDormantFrame(groupId)
+    if self._dormantFrames then
+        self._dormantFrames[groupId] = nil
     end
 end
 

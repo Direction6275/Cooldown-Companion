@@ -872,12 +872,18 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     local group = self.db.profile.groups[groupId]
     
     if not group then
-        if frame then
-            frame:Hide()
-        end
+        self:UnloadGroup(groupId)
+        self:DiscardDormantFrame(groupId)
         return
     end
     
+    -- Recover dormant frame shell if available (buttons will be repopulated below)
+    if not frame and self._dormantFrames and self._dormantFrames[groupId] then
+        frame = self._dormantFrames[groupId]
+        self._dormantFrames[groupId] = nil
+        self.groupFrames[groupId] = frame
+    end
+
     if not frame then
         frame = self:CreateGroupFrame(groupId)
     else
@@ -892,6 +898,12 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         end
 
         self:AnchorGroupFrame(frame, group.anchor)
+
+        -- Recreate Masque group if it was deleted during unload
+        if group.masqueEnabled and self.Masque and not self.MasqueGroups[groupId] then
+            self:CreateMasqueGroup(groupId)
+        end
+
         self:PopulateGroupButtons(groupId)
     end
 
@@ -912,7 +924,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — hide if disabled, no buttons, wrong spec/hero, wrong character, or load conditions
+    -- Update visibility — unload if disabled, no buttons, wrong spec/hero, wrong character, or load conditions
     if CooldownCompanion:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
@@ -931,7 +943,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             end
         end
     else
-        frame:Hide()
+        self:UnloadGroup(groupId)
     end
 end
 
