@@ -404,9 +404,16 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
 -- Decodes and validates a profile import string. Returns the decoded data
 -- table on success, or nil on failure (prints error to chat).
 local pendingProfileImport = nil
+local MAX_IMPORT_LENGTH = 500000
+
 local function DecodeProfileImport(popup)
     local text = popup.EditBox:GetText()
     if not text or text == "" then return nil end
+
+    if #text > MAX_IMPORT_LENGTH then
+        CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
+        return nil
+    end
 
     if text:sub(1, 8) == "CDCdiag:" then
         CooldownCompanion:Print("This is a bug report string, not a profile export.")
@@ -887,6 +894,11 @@ ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
 
 local function ImportGroupData(text)
+    if #text > MAX_IMPORT_LENGTH then
+        CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
+        return false
+    end
+
     if text:sub(1, 8) == "CDCdiag:" then
         CooldownCompanion:Print("This is a bug report string, not a group export.")
         return false

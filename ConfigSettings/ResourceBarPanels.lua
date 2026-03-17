@@ -557,13 +557,7 @@ local function AttachAuraAutocompleteHandlers(editBoxWidget, onAuraSelect)
         end
     end)
 
-    local editboxFrame = editBoxWidget.editbox
-    if not editboxFrame._cdcAutocompHooked then
-        editboxFrame._cdcAutocompHooked = true
-        editboxFrame:HookScript("OnKeyDown", function(self, key)
-            CS.HandleAutocompleteKeyDown(key)
-        end)
-    end
+    CS.SetupAutocompleteKeyHandler(editBoxWidget)
 end
 
 local function AddResourceAuraEntryFields(container, powerType, resourceName, entry, options)
@@ -2903,13 +2897,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 end
             end)
 
-            local editboxFrame = spellEdit.editbox
-            if not editboxFrame._cdcAutocompHooked then
-                editboxFrame._cdcAutocompHooked = true
-                editboxFrame:HookScript("OnKeyDown", function(self, key)
-                    CS.HandleAutocompleteKeyDown(key)
-                end)
-            end
+            CS.SetupAutocompleteKeyHandler(spellEdit)
 
             container:AddChild(spellEdit)
 

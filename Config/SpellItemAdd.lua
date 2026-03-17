@@ -814,6 +814,18 @@ CS.SearchAutocompleteInCache = SearchAutocompleteInCache
 CS.HandleAutocompleteKeyDown = HandleAutocompleteKeyDown
 CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 
+-- Install autocomplete keyboard navigation on an AceGUI EditBox widget.
+-- Uses SetScript (not HookScript) so the handler is replaced cleanly if the
+-- widget is recycled by AceGUI and reused for a different editbox.
+function CS.SetupAutocompleteKeyHandler(editBoxWidget)
+    local editbox = editBoxWidget.editbox
+    local prevOnKeyDown = editbox:GetScript("OnKeyDown")
+    editbox:SetScript("OnKeyDown", function(self, key)
+        if CS.HandleAutocompleteKeyDown(key) then return end
+        if prevOnKeyDown then prevOnKeyDown(self, key) end
+    end)
+end
+
 ------------------------------------------------------------------------
 -- ST._ exports (consumed by later Config/ files)
 ------------------------------------------------------------------------
