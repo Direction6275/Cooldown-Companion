@@ -873,6 +873,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     
     if not group then
         self:UnloadGroup(groupId)
+        self:DiscardDormantFrame(groupId)
         return
     end
     

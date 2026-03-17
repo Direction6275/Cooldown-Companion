@@ -996,6 +996,11 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
         end
     end
 
+    -- Restore alpha sync if this frame inherits alpha from a parent frame
+    if frame.anchoredToParent then
+        self:SetupAlphaSync(frame, frame.anchoredToParent)
+    end
+
     return frame
 end
 
