@@ -141,12 +141,6 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             hasRealCharges = true
                         end
                     end
-                elseif (buttonData.maxCharges or 0) > 1 and buttonData.hasCharges then
-                    -- Previously classified as a standard charge spell (via
-                    -- chargeInfo path).  chargeInfo nil means the spell isn't
-                    -- known on this character/spec.  Preserve classification —
-                    -- the correct character will re-evaluate via the chargeInfo
-                    -- path above.
                 else
                     -- chargeInfo nil: check if spell has "use count" (brez shared
                     -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
@@ -313,7 +307,11 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
         -- Delayed second pass: talent-dependent charge data (e.g. Hover,
         -- Keg Smash) may not be resolved when RefreshChargeFlags runs
         -- above.  A coalesced recheck catches late-loading talent state.
-        QueueTalentChargeRefresh(self)
+        -- Only on full init — zone transitions use the visibility-only
+        -- fast path and must not schedule a full button repopulation.
+        if isFullInit then
+            QueueTalentChargeRefresh(self)
+        end
     end)
     -- Post-login sweep: clear buttons falsely stuck as aura-active from stale
     -- CDM viewer data during the first seconds after login/reload.
