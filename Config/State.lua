@@ -31,14 +31,22 @@ local CDM_VIEWER_NAMES = {
     "BuffBarCooldownViewer",
 }
 
--- Font options for dropdown (LSM-backed, returns fresh table each call)
+-- Font options for dropdown (LSM-backed, cached and invalidated on new font registration)
+local fontOptionsCache
 local function GetFontOptions()
+    if fontOptionsCache then return fontOptionsCache end
     local t = {}
     for _, name in ipairs(LSM:List("font")) do
         t[name] = name
     end
+    fontOptionsCache = t
     return t
 end
+
+local function InvalidateFontCache()
+    fontOptionsCache = nil
+end
+ST._InvalidateFontCache = InvalidateFontCache
 
 -- Sets up a font dropdown with correct name→name list and per-item font preview
 local function SetupFontDropdown(dropdown)
@@ -225,6 +233,7 @@ ST._configState = {
     SearchAutocompleteInCache = nil,
     HandleAutocompleteKeyDown = nil,
     ConsumeAutocompleteEnter = nil,
+    SetupAutocompleteKeyHandler = nil,
 }
 local CS = ST._configState
 

@@ -1993,13 +1993,7 @@ local function RefreshColumn2()
                         end
                     end)
                     inputBox.editbox:SetPoint("BOTTOMRIGHT", 1, 0)
-                    local editboxFrame = inputBox.editbox
-                    if not editboxFrame._cdcAutocompHooked then
-                        editboxFrame._cdcAutocompHooked = true
-                        editboxFrame:HookScript("OnKeyDown", function(self, key)
-                            CS.HandleAutocompleteKeyDown(key)
-                        end)
-                    end
+                    CS.SetupAutocompleteKeyHandler(inputBox)
                     panelContainer:AddChild(inputBox)
 
                     if CS.pendingEditBoxFocus then

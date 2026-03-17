@@ -370,6 +370,15 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraEditBox:SetRelativeWidth(0.70)
     auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
         text = text:gsub("%s", "")
+        if text ~= "" then
+            for token in text:gmatch("[^,]+") do
+                if not tonumber(token) then
+                    CooldownCompanion:Print("Invalid spell ID: " .. token)
+                    widget:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
+                    return
+                end
+            end
+        end
         buttonData.auraSpellID = text ~= "" and text or nil
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()

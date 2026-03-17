@@ -87,6 +87,12 @@ local function BuildLayoutTab(container)
         if text == "" then
             CooldownCompanion:SetGroupAnchor(CS.selectedGroup, isPanel and panelContainerFrame or "UIParent", wasAnchored)
         else
+            local target = _G[text]
+            if not target or type(target) ~= "table" or not target.GetObjectType then
+                CooldownCompanion:Print("Frame not found: " .. text)
+                widget:SetText(currentAnchor)
+                return
+            end
             CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
         end
         CooldownCompanion:RefreshConfigPanel()
