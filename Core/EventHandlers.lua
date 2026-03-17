@@ -112,6 +112,10 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             if mc > (buttonData.maxCharges or 0) then
                                 buttonData.maxCharges = mc
                             end
+                            -- Auto-enable charge text when first promoted to charge-based.
+                            if buttonData.showChargeText == nil then
+                                buttonData.showChargeText = true
+                            end
 
                             -- Secondary source: display count
                             local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
@@ -124,14 +128,25 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         else
                             hasRealCharges = nil
                         end
-                    elseif issecretvalue(mc) then
-                        -- maxCharges is secret: can't distinguish mc=1 (not charge-based)
-                        -- from mc>1 (charge-based). Preserve existing classification from
-                        -- the DB (line 102 initializes hasRealCharges from buttonData.hasCharges).
+                    elseif issecretvalue(mc) or mc == nil then
+                        -- maxCharges unreadable (secret or nil): can't classify
+                        -- from current API data alone.  Trust stored maxCharges
+                        -- if a readable value > 1 was previously observed
+                        -- (set by AddButtonToGroup or a prior readable pass);
+                        -- otherwise preserve existing classification.
                         -- A later re-evaluation when values become readable
-                        -- (OnTalentsChanged, OnSpecChanged, QueueTalentChargeRefresh)
-                        -- will resolve this correctly.
+                        -- (QueueTalentChargeRefresh, OnTalentsChanged, OnSpecChanged)
+                        -- will confirm with readable data.
+                        if (buttonData.maxCharges or 0) > 1 then
+                            hasRealCharges = true
+                        end
                     end
+                elseif (buttonData.maxCharges or 0) > 1 and buttonData.hasCharges then
+                    -- Previously classified as a standard charge spell (via
+                    -- chargeInfo path).  chargeInfo nil means the spell isn't
+                    -- known on this character/spec.  Preserve classification —
+                    -- the correct character will re-evaluate via the chargeInfo
+                    -- path above.
                 else
                     -- chargeInfo nil: check if spell has "use count" (brez shared
                     -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
@@ -295,6 +310,10 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
             self:RebuildItemSlotCache()
             self:OnKeybindsChanged()
         end
+        -- Delayed second pass: talent-dependent charge data (e.g. Hover,
+        -- Keg Smash) may not be resolved when RefreshChargeFlags runs
+        -- above.  A coalesced recheck catches late-loading talent state.
+        QueueTalentChargeRefresh(self)
     end)
     -- Post-login sweep: clear buttons falsely stuck as aura-active from stale
     -- CDM viewer data during the first seconds after login/reload.
