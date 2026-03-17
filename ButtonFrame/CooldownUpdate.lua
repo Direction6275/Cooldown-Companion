@@ -181,6 +181,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         cooldownSpellId = button._displaySpellId or buttonData.id
     end
 
+    -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's Fury
+    -- changing Rake/Rip icons). GetSpellTexture dynamically resolves the current
+    -- visual, but no event fires for these transforms. cdmChildSlot buttons
+    -- already have their own per-tick viewer-based icon re-sync.
+    if buttonData.type == "spell" and not buttonData.cdmChildSlot then
+        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
+        if freshIcon and freshIcon ~= button._lastSpellTexture then
+            button._lastSpellTexture = freshIcon
+            CooldownCompanion:UpdateButtonIcon(button)
+            cooldownSpellId = button._displaySpellId or buttonData.id
+        end
+    end
+
     -- Proc state: event-driven table lookup (base spell + current displayed override).
     -- Keeps visibility and glow checks aligned without polling overlay APIs.
     local procOverlayActive = false

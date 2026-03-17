@@ -117,6 +117,9 @@ function CooldownCompanion:OnEnable()
 
     -- Spell override icon changes (talents, procs morphing spells)
     self:RegisterEvent("SPELL_UPDATE_ICON", "OnSpellUpdateIcon")
+    -- Spellbook rebuild — catches always-on talent transforms that resolve
+    -- after init without firing SPELL_UPDATE_ICON (e.g. hero talent icon swaps).
+    self:RegisterEvent("SPELLS_CHANGED", "OnSpellUpdateIcon")
 
     -- Event-driven range checking (replaces per-tick IsSpellInRange polling)
     self:RegisterEvent("SPELL_RANGE_CHECK_UPDATE", "OnSpellRangeCheckUpdate")
