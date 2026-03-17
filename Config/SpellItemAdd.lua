@@ -817,12 +817,10 @@ CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 -- Install autocomplete keyboard navigation on an AceGUI EditBox widget.
 -- Uses SetScript (not HookScript) so the handler is replaced cleanly if the
 -- widget is recycled by AceGUI and reused for a different editbox.
+-- AceGUI EditBox does not set OnKeyDown, so there is no handler to preserve.
 function CS.SetupAutocompleteKeyHandler(editBoxWidget)
-    local editbox = editBoxWidget.editbox
-    local prevOnKeyDown = editbox:GetScript("OnKeyDown")
-    editbox:SetScript("OnKeyDown", function(self, key)
-        if CS.HandleAutocompleteKeyDown(key) then return end
-        if prevOnKeyDown then prevOnKeyDown(self, key) end
+    editBoxWidget.editbox:SetScript("OnKeyDown", function(self, key)
+        CS.HandleAutocompleteKeyDown(key)
     end)
 end
 
