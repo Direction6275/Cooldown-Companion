@@ -365,6 +365,50 @@ local function UpdateBarDisplay(button)
     end
 end
 
+-- Shared OnUpdate for bar-mode buttons: aura expiry detection + throttled bar fill.
+-- Reads interval from self._barUpdateInterval so it can be updated without re-installing.
+local function BarModeOnUpdate(self, elapsed)
+    -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
+    -- Non-secret (out of combat): instant expiry detection.
+    -- Secret (in combat): skip; UpdateButtonCooldown handles expiry next tick.
+    -- Skip when cooldowns are dirty (target switch / UNIT_AURA just fired,
+    -- ticker hasn't processed yet — old DurationObject may be invalidated)
+    -- or grace period active (holdover DurationObject from previous target).
+    if self._auraActive and self._durationObj
+       and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
+        if not self._durationObj:HasSecretValues() then
+            if self._durationObj:GetRemainingDuration() <= 0 then
+                self._durationObj = nil
+                self._auraActive = false
+                self._inPandemic = false
+                self._barAuraColor = nil
+                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                SetBarAuraEffect(self, false)
+            end
+        end
+    end
+    -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
+    if self._auraActive and self._viewerBar
+       and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
+        if not self._viewerBar:IsVisible() then
+            self._viewerBar = nil
+            self._auraActive = false
+            self._inPandemic = false
+            self._barAuraColor = nil
+            local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+            self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
+            self.statusBar:SetMinMaxValues(0, 1)
+            SetBarAuraEffect(self, false)
+        end
+    end
+    self._barFillElapsed = self._barFillElapsed + elapsed
+    if self._barFillElapsed >= self._barUpdateInterval then
+        self._barFillElapsed = 0
+        UpdateBarFill(self)
+    end
+end
+
 function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local barLength = style.barLength or 180
     local barHeight = style.barHeight or 20
@@ -641,48 +685,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Bar fill interpolation OnUpdate
     button._barFillElapsed = 0
-    local barInterval = style.barUpdateInterval or 0.025
-    button:SetScript("OnUpdate", function(self, elapsed)
-        -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
-        -- Non-secret (out of combat): instant expiry detection.
-        -- Secret (in combat): skip; UpdateButtonCooldown handles expiry next tick.
-        -- Skip when cooldowns are dirty (target switch / UNIT_AURA just fired,
-        -- ticker hasn't processed yet — old DurationObject may be invalidated)
-        -- or grace period active (holdover DurationObject from previous target).
-        if self._auraActive and self._durationObj
-           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
-            if not self._durationObj:HasSecretValues() then
-                if self._durationObj:GetRemainingDuration() <= 0 then
-                    self._durationObj = nil
-                    self._auraActive = false
-                    self._inPandemic = false
-                    self._barAuraColor = nil
-                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-                    SetBarAuraEffect(self, false)
-                end
-            end
-        end
-        -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
-        if self._auraActive and self._viewerBar
-           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
-            if not self._viewerBar:IsVisible() then
-                self._viewerBar = nil
-                self._auraActive = false
-                self._inPandemic = false
-                self._barAuraColor = nil
-                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-                self.statusBar:SetMinMaxValues(0, 1)
-                SetBarAuraEffect(self, false)
-            end
-        end
-        self._barFillElapsed = self._barFillElapsed + elapsed
-        if self._barFillElapsed >= barInterval then
-            self._barFillElapsed = 0
-            UpdateBarFill(self)
-        end
-    end)
+    button._barUpdateInterval = style.barUpdateInterval or 0.025
+    button:SetScript("OnUpdate", BarModeOnUpdate)
 
     -- Aura tracking runtime state
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
@@ -783,44 +787,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._isVertical = isVertical
 
     -- Update bar fill OnUpdate interval
-    local barInterval = newStyle.barUpdateInterval or 0.025
     button._barFillElapsed = 0
-    button:SetScript("OnUpdate", function(self, elapsed)
-        if self._auraActive and self._durationObj
-           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
-            if not self._durationObj:HasSecretValues() then
-                if self._durationObj:GetRemainingDuration() <= 0 then
-                    self._durationObj = nil
-
-                    self._auraActive = false
-                    self._inPandemic = false
-                    self._barAuraColor = nil
-                    local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                    self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-                    SetBarAuraEffect(self, false)
-                end
-            end
-        end
-        -- Viewer bar expiry (totem/guardian): bar hidden = totem despawned
-        if self._auraActive and self._viewerBar
-           and not self._auraGraceTicks and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
-            if not self._viewerBar:IsVisible() then
-                self._viewerBar = nil
-                self._auraActive = false
-                self._inPandemic = false
-                self._barAuraColor = nil
-                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
-                self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-                self.statusBar:SetMinMaxValues(0, 1)
-                SetBarAuraEffect(self, false)
-            end
-        end
-        self._barFillElapsed = self._barFillElapsed + elapsed
-        if self._barFillElapsed >= barInterval then
-            self._barFillElapsed = 0
-            UpdateBarFill(self)
-        end
-    end)
+    button._barUpdateInterval = newStyle.barUpdateInterval or 0.025
+    button:SetScript("OnUpdate", BarModeOnUpdate)
 
     -- Invalidate cached state
     button._desaturated = nil
