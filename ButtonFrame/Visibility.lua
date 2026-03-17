@@ -27,6 +27,10 @@ local HIDE_UNUSABLE         = 0x100
 -- Baseline alpha fallback descriptors: each entry maps a hide reason bit
 -- to the buttonData config key that enables "dim instead of hide" when
 -- that reason is the ONLY active hide reason.
+-- IMPORTANT: Every HIDE_* constant that supports a fallback MUST have an
+-- entry here. A missing entry will silently cause full hide instead of dim.
+-- Fallbacks do not compose: multiple active reasons = full hide even if
+-- each individually has its fallback enabled.
 local BASELINE_FALLBACKS = {
     { bit = HIDE_AURA_NOT_ACTIVE, key = "useBaselineAlphaFallback" },
     { bit = HIDE_AURA_ACTIVE,     key = "useBaselineAlphaFallbackAuraActive" },
