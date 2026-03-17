@@ -29,6 +29,9 @@ local function RefreshColumn4(container)
         if container.tabGroup then
             container.tabGroup.frame:Hide()
         end
+        if container.containerTabGroup then
+            container.containerTabGroup.frame:Hide()
+        end
         if container.customAuraScroll then
             container.customAuraScroll.frame:Hide()
         end
@@ -67,6 +70,9 @@ local function RefreshColumn4(container)
         container.placeholderLabel:Show()
         if container.tabGroup then
             container.tabGroup.frame:Hide()
+        end
+        if container.containerTabGroup then
+            container.containerTabGroup.frame:Hide()
         end
         return
     end
