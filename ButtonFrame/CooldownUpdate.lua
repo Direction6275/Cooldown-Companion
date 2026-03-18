@@ -578,12 +578,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- shows/hides PandemicIcon accordingly.  Use IsVisible() so that a
         -- PandemicIcon whose parent viewer item was hidden (e.g. aura expired
         -- before OnUpdate could clean it up) is not treated as active.
-        -- Grace counter: PandemicIcon is a pool-managed frame that Blizzard
-        -- destroys (nils) during CDM internal refreshes (RefreshLayout item
-        -- recycling, viewer data churn).  Hold pandemic state for up to 3
-        -- ticks after PandemicIcon disappears to absorb brief dropouts.
-        -- Genuine pandemic end is handled by event-driven _inPandemic clears
-        -- (Aura.lua aura removal / target switch) which bypass this grace.
+        -- Grace counter: PandemicIcon lives on a pool-managed CDM child frame.
+        -- During RefreshLayout, child frames are recycled and re-acquired,
+        -- which briefly invalidates the viewerFrame reference resolved from
+        -- the aura map.  During this window viewerFrame.PandemicIcon may be
+        -- nil or stale, so hold pandemic state for a few ticks to absorb
+        -- brief dropouts.  Genuine pandemic end sets _inPandemic = false via
+        -- event handlers (Aura.lua aura removal / target switch), causing
+        -- the grace guard to fail on the next tick.
         local inPandemic = false
         if button._pandemicPreview then
             inPandemic = true
@@ -594,8 +596,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 inPandemic = true
                 button._pandemicGraceTicks = nil
             elseif button._inPandemic then
-                -- PandemicIcon briefly unavailable (CDM pool churn / viewer
-                -- refresh); hold pandemic state to prevent glow flicker.
+                -- Grace hold — see block comment above.
                 button._pandemicGraceTicks = (button._pandemicGraceTicks or 0) + 1
                 if button._pandemicGraceTicks <= 3 then
                     inPandemic = true
