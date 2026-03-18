@@ -418,6 +418,12 @@ end
 
 
 function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
+    -- Deferred during combat — ClearAllPoints/SetPoint are protected.
+    if InCombatLockdown() and frame:IsProtected() then
+        frame._anchorDirty = true
+        return
+    end
+    frame._anchorDirty = nil
     frame:ClearAllPoints()
 
     -- Stop any existing alpha sync
@@ -1351,6 +1357,12 @@ function CooldownCompanion:CreateContainerFrame(containerId)
 end
 
 function CooldownCompanion:AnchorContainerFrame(frame, anchor)
+    -- Deferred during combat — ClearAllPoints/SetPoint are protected.
+    if InCombatLockdown() and frame:IsProtected() then
+        frame._anchorDirty = true
+        return
+    end
+    frame._anchorDirty = nil
     frame:ClearAllPoints()
 
     local relativeTo = anchor.relativeTo

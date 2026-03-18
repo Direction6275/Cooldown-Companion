@@ -1005,8 +1005,10 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
         end
     end
 
-    -- Restore alpha sync if this frame inherits alpha from a parent frame
-    if frame.anchoredToParent then
+    -- Restore alpha sync if this frame inherits alpha from a parent frame.
+    -- Skip if anchor is pending re-evaluation — anchoredToParent may be stale
+    -- and will be corrected when AnchorGroupFrame runs from the layout ticker.
+    if frame.anchoredToParent and not frame._anchorDirty then
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
 
@@ -1053,7 +1055,8 @@ end
 function CooldownCompanion:UpdateAllGroupLayouts()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame:IsShown() then
-            if frame._strataDirty then
+            local protected = InCombatLockdown() and frame:IsProtected()
+            if frame._strataDirty and not protected then
                 self:RefreshGroupFrame(groupId)
             end
             if frame._sizeDirty then
@@ -1061,6 +1064,25 @@ function CooldownCompanion:UpdateAllGroupLayouts()
             end
             if frame._layoutDirty then
                 self:UpdateGroupLayout(groupId)
+            end
+            if frame._anchorDirty and not protected then
+                local group = self.db.profile.groups[groupId]
+                if group then
+                    self:AnchorGroupFrame(frame, group.anchor)
+                end
+            end
+        end
+    end
+    -- Recover deferred container anchors
+    if self.containerFrames then
+        for containerId, frame in pairs(self.containerFrames) do
+            if frame and frame:IsShown() and frame._anchorDirty then
+                if not (InCombatLockdown() and frame:IsProtected()) then
+                    local container = self.db.profile.groupContainers[containerId]
+                    if container then
+                        self:AnchorContainerFrame(frame, container.anchor)
+                    end
+                end
             end
         end
     end
