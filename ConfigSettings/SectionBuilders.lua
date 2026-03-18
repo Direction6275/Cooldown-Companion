@@ -1008,6 +1008,19 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
             refreshCallback()
         end)
         container:AddChild(speedSlider)
+
+        if keys.lines then
+            local linesSlider = AceGUI:Create("Slider")
+            linesSlider:SetLabel("Number of Lines")
+            linesSlider:SetSliderValues(1, 16, 1)
+            linesSlider:SetValue(styleTable[keys.lines] or 8)
+            linesSlider:SetFullWidth(true)
+            linesSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[keys.lines] = val
+                refreshCallback()
+            end)
+            container:AddChild(linesSlider)
+        end
     elseif currentStyle == "glow" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
@@ -1169,7 +1182,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     container:AddChild(colorPicker)
 
     BuildGlowSliders(container, styleTable, currentStyle, {
-        size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey,
+        size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
     }, refreshCallback, 1)
 end
 
@@ -1267,7 +1280,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         container:AddChild(effectColorPicker)
 
         BuildGlowSliders(container, styleTable, currentEffect, {
-            size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey,
+            size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey, lines = cfg.effectLinesKey,
         }, refreshCallback, 2)
     end
 end
@@ -1278,7 +1291,7 @@ end
 local function BuildProcGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "procGlowStyle", colorKey = "procGlowColor", colorLabel = "Glow Color",
-        sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed",
+        sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
         enableLabel = "Show Proc Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1289,7 +1302,7 @@ end
 local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Glow Color",
-        sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed",
+        sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
         defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
         enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1300,7 +1313,7 @@ end
 local function BuildAuraIndicatorControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
-        sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed",
+        sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed", linesKey = "auraGlowLines",
         defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
         enableLabel = "Show Aura Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1311,7 +1324,7 @@ end
 local function BuildReadyGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "readyGlowStyle", colorKey = "readyGlowColor", colorLabel = "Glow Color",
-        sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed",
+        sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed", linesKey = "readyGlowLines",
         defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
         enableLabel = "Show Ready Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1328,7 +1341,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback, 
         effectColorKey = "pandemicBarEffectColor", effectColorLabel = "Pandemic Effect Color",
         defaultEffectColor = {1, 0.5, 0, 1},
         effectSizeKey = "pandemicBarEffectSize", effectThicknessKey = "pandemicBarEffectThickness",
-        effectSpeedKey = "pandemicBarEffectSpeed",
+        effectSpeedKey = "pandemicBarEffectSpeed", effectLinesKey = "pandemicBarEffectLines",
     }, opts)
 end
 
@@ -1340,7 +1353,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         effectColorKey = "barAuraEffectColor", effectColorLabel = "Effect Color",
         defaultEffectColor = {1, 0.84, 0, 0.9},
         effectSizeKey = "barAuraEffectSize", effectThicknessKey = "barAuraEffectThickness",
-        effectSpeedKey = "barAuraEffectSpeed",
+        effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
     }, opts)
 end
 

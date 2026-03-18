@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - ButtonFrame/Glows
     Glow systems: proc glow, aura glow, assisted highlight, bar aura effect,
-    pixel glow animation, and shared glow container creation
+    and shared glow container creation
 ]]
 
 local ADDON_NAME, ST = ...
@@ -34,6 +34,8 @@ local PROC_GLOW_LCG_KEY = "CooldownCompanionProc"
 local AURA_GLOW_LCG_KEY = "CooldownCompanionAura"
 local PANDEMIC_GLOW_LCG_KEY = "CooldownCompanionPandemic"
 local READY_GLOW_LCG_KEY = "CooldownCompanionReady"
+local BAR_AURA_EFFECT_LCG_KEY = "CooldownCompanionBarAura"
+local PANDEMIC_BAR_EFFECT_LCG_KEY = "CooldownCompanionPandemicBar"
 
 local function IsLibCustomGlowStyle(style)
     return style == PROC_STYLE_LCG_BUTTON or style == PROC_STYLE_LCG_AUTOCAST
@@ -66,6 +68,10 @@ end
 
 local function SpeedToGlowFrequency(speed)
     return math_max(speed or 60, 1) / 480
+end
+
+local function SpeedToPixelFrequency(speed)
+    return math_max(speed or 60, 1) / 120
 end
 
 local function UsesGlowSpeed(glowStyle)
@@ -114,6 +120,13 @@ end
 
 local function StopLibCustomGlow(container)
     if not container then return end
+
+    -- Stop LCG pixel glow (tracked separately from _lcgStyle)
+    if container._pixelTarget and LCG and LCG.PixelGlow_Stop then
+        LCG.PixelGlow_Stop(container._pixelTarget, container._pixelKey or "")
+        container._pixelTarget = nil
+        container._pixelKey = nil
+    end
 
     local lcgStyle = container._lcgStyle
     local lcgTarget = container._lcgTarget
@@ -180,10 +193,9 @@ local function TintProcGlowFrame(frame, color)
     end
 end
 
-local PixelGlowOnUpdate
-
--- Hide all glow sub-styles in a container table (solidTextures, procFrame, pixelFrame).
+-- Hide all glow sub-styles in a container table (solidTextures, procFrame).
 -- Works for procGlow, auraGlow, barAuraEffect, and assistedHighlight containers.
+-- LCG pixel glow is stopped via StopLibCustomGlow.
 local function HideGlowStyles(container)
     StopLibCustomGlow(container)
     if container.solidTextures then
@@ -193,10 +205,6 @@ local function HideGlowStyles(container)
         if container.procFrame.ProcStartAnim then container.procFrame.ProcStartAnim:Stop() end
         if container.procFrame.ProcLoop then container.procFrame.ProcLoop:Stop() end
         container.procFrame:Hide()
-    end
-    if container.pixelFrame then
-        container.pixelFrame:SetScript("OnUpdate", nil)
-        container.pixelFrame:Hide()
     end
     -- Assisted highlight blizzard flipbook frame
     if container.blizzardFrame then
@@ -230,19 +238,21 @@ local function ShowGlowStyle(container, style, button, color, params)
             tex:Show()
         end
     elseif style == "pixel" then
-        local pf = container.pixelFrame
-        local r, g, b, a = color[1], color[2], color[3], color[4] or defaultAlpha
-        for _, px in ipairs(pf.particles) do
-            px[1]:SetColorTexture(r, g, b, a)
-            px[2]:SetColorTexture(r, g, b, a)
+        if LCG and LCG.PixelGlow_Start then
+            local key = params.key or ""
+            local frequency = SpeedToPixelFrequency(params.speed)
+            LCG.PixelGlow_Start(button, color, params.lines or 8, frequency,
+                size or 4, params.thickness or 2, 0, 0, false, key, 8)
+            container._pixelTarget = button
+            container._pixelKey = key
+        else
+            -- Fallback to solid border if LCG unavailable
+            ApplyEdgePositions(container.solidTextures, button, size or 2)
+            for _, tex in ipairs(container.solidTextures) do
+                tex:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
+                tex:Show()
+            end
         end
-        pf._elapsed = 0
-        pf._speed = params.speed or 60
-        pf._lineLength = size or 4
-        pf._lineThickness = params.thickness or 2
-        pf._parentButton = button
-        pf:SetScript("OnUpdate", PixelGlowOnUpdate)
-        pf:Show()
     elseif style == "glow" then
         FitHighlightFrame(container.procFrame, button, size or 32)
         TintProcGlowFrame(container.procFrame, color)
@@ -307,112 +317,6 @@ local function SetAssistedHighlight(button, show)
     end
 end
 
--- Shared pixel glow OnUpdate animation (used by icon proc glow and bar aura effect)
-PixelGlowOnUpdate = function(self, elapsed)
-    self._elapsed = self._elapsed + elapsed
-    local btn = self._parentButton
-    local w, h = btn:GetSize()
-    local perimeter = 2 * (w + h)
-    local numParticles = #self.particles
-    local spacing = perimeter / numParticles
-    local offset = (self._elapsed * self._speed) % perimeter
-    local ll = self._lineLength
-    local lt = self._lineThickness
-
-    -- Edge boundaries: top=0..w, right=w..w+h, bottom=w+h..2w+h, left=2w+h..perimeter
-    local wh = w + h
-    local ww = 2 * w + h
-    local edgeBounds = {w, wh, ww, perimeter}
-    local edgeStarts = {0, w, wh, ww}
-
-    for i, px in ipairs(self.particles) do
-        local center = (offset + (i - 1) * spacing) % perimeter
-        local sPos = (center - ll / 2) % perimeter
-        local ePos = sPos + ll
-
-        -- Find which edge sPos is on
-        local sEdge
-        if sPos < w then sEdge = 0
-        elseif sPos < wh then sEdge = 1
-        elseif sPos < ww then sEdge = 2
-        else sEdge = 3 end
-
-        local sLocal = sPos - edgeStarts[sEdge + 1]
-        local sEdgeBound = edgeBounds[sEdge + 1]
-
-        if ePos <= sEdgeBound then
-            -- Entirely on one edge
-            local eLocal = ePos - edgeStarts[sEdge + 1]
-            local segLen = eLocal - sLocal
-            px[1]:ClearAllPoints()
-            if sEdge == 0 then
-                px[1]:SetSize(segLen, lt)
-                px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", sLocal, 0)
-            elseif sEdge == 1 then
-                px[1]:SetSize(lt, segLen)
-                px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, -sLocal)
-            elseif sEdge == 2 then
-                px[1]:SetSize(segLen, lt)
-                px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -sLocal, 0)
-            else
-                px[1]:SetSize(lt, segLen)
-                px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, sLocal)
-            end
-            px[1]:Show()
-            px[2]:Hide()
-        else
-            -- Crosses a corner: split into two segments
-            local edgeLen = sEdgeBound - edgeStarts[sEdge + 1]
-            local firstLen = edgeLen - sLocal
-            local nextEdge = (sEdge + 1) % 4
-            local secondLen = ePos - sEdgeBound
-            if secondLen > perimeter then secondLen = secondLen - perimeter end
-
-            -- First segment: from sLocal to end of current edge
-            px[1]:ClearAllPoints()
-            if firstLen > 0 then
-                if sEdge == 0 then
-                    px[1]:SetSize(firstLen, lt)
-                    px[1]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
-                elseif sEdge == 1 then
-                    px[1]:SetSize(lt, firstLen)
-                    px[1]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-                elseif sEdge == 2 then
-                    px[1]:SetSize(firstLen, lt)
-                    px[1]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-                else
-                    px[1]:SetSize(lt, firstLen)
-                    px[1]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-                end
-                px[1]:Show()
-            else
-                px[1]:Hide()
-            end
-
-            -- Second segment: from start of next edge
-            px[2]:ClearAllPoints()
-            if secondLen > 0 then
-                if nextEdge == 0 then
-                    px[2]:SetSize(secondLen, lt)
-                    px[2]:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-                elseif nextEdge == 1 then
-                    px[2]:SetSize(lt, secondLen)
-                    px[2]:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0)
-                elseif nextEdge == 2 then
-                    px[2]:SetSize(secondLen, lt)
-                    px[2]:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-                else
-                    px[2]:SetSize(lt, secondLen)
-                    px[2]:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-                end
-                px[2]:Show()
-            else
-                px[2]:Hide()
-            end
-        end
-    end
-end
-
 -- Show or hide proc glow on a button.
 -- Supports built-in styles and LibCustomGlow styles.
 -- Tracks state (style + color + size) to avoid restarting animations every tick.
@@ -433,7 +337,8 @@ local function SetProcGlow(button, show)
         local usesSpeed = UsesGlowSpeed(glowStyle)
         th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
         local spd = usesSpeed and ((style and style.procGlowSpeed) or 60) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
+        local ln = (glowStyle == "pixel") and ((style and style.procGlowLines) or 8) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
     end
     if button._procGlowActive == desiredState then return end
     button._procGlowActive = desiredState
@@ -451,10 +356,12 @@ local function SetProcGlow(button, show)
     local usesSpeed = UsesGlowSpeed(glowStyle)
     local procThickness = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
     local procSpeed = usesSpeed and ((style and style.procGlowSpeed) or 60) or 0
+    local procLines = (glowStyle == "pixel") and ((style and style.procGlowLines) or 8) or nil
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
         thickness = procThickness,
         speed = procSpeed,
+        lines = procLines,
         frequency = usesSpeed and SpeedToGlowFrequency(procSpeed) or nil,
         scale = math_min(math_max(sz, 0.2), 3),
         key = PROC_GLOW_LCG_KEY,
@@ -483,22 +390,25 @@ local function SetAuraGlow(button, show, pandemicOverride)
             c = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
         end
         if glowStyle ~= "none" then
-            local sizeKey, thicknessKey, speedKey
+            local sizeKey, thicknessKey, speedKey, linesKey
             if pandemicOverride then
                 sizeKey = "pandemicGlowSize"
                 thicknessKey = "pandemicGlowThickness"
                 speedKey = "pandemicGlowSpeed"
+                linesKey = "pandemicGlowLines"
             else
                 sizeKey = "auraGlowSize"
                 thicknessKey = "auraGlowThickness"
                 speedKey = "auraGlowSpeed"
+                linesKey = "auraGlowLines"
             end
             local sz = GetGlowSize(btnStyle, sizeKey, glowStyle, {
                 solid = 2, pixel = 4, glow = 32, autocast = 1,
             })
             local th = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 2) or 0
             local spd = UsesGlowSpeed(glowStyle) and ((btnStyle and btnStyle[speedKey]) or 60) or 0
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, pandemicOverride and "P" or "")
+            local ln = (glowStyle == "pixel") and ((btnStyle and btnStyle[linesKey]) or 8) or 0
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, ln, pandemicOverride and "P" or "")
         end
     end
 
@@ -519,16 +429,18 @@ local function SetAuraGlow(button, show, pandemicOverride)
         glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.auraGlowStyle) or "pixel")
         color = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
     end
-    local sizeKey, thicknessKey, speedKey, glowKey
+    local sizeKey, thicknessKey, speedKey, linesKey, glowKey
     if pandemicOverride then
         sizeKey = "pandemicGlowSize"
         thicknessKey = "pandemicGlowThickness"
         speedKey = "pandemicGlowSpeed"
+        linesKey = "pandemicGlowLines"
         glowKey = PANDEMIC_GLOW_LCG_KEY
     else
         sizeKey = "auraGlowSize"
         thicknessKey = "auraGlowThickness"
         speedKey = "auraGlowSpeed"
+        linesKey = "auraGlowLines"
         glowKey = AURA_GLOW_LCG_KEY
     end
     local size = GetGlowSize(btnStyle, sizeKey, glowStyle, {
@@ -537,10 +449,12 @@ local function SetAuraGlow(button, show, pandemicOverride)
     local thickness = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 2) or 0
     local usesSpeed = UsesGlowSpeed(glowStyle)
     local speed = usesSpeed and ((btnStyle and btnStyle[speedKey]) or 60) or 0
+    local lines = (glowStyle == "pixel") and ((btnStyle and btnStyle[linesKey]) or 8) or nil
     ShowGlowStyle(ag, glowStyle, button, color, {
         size = size,
         thickness = thickness,
         speed = speed,
+        lines = lines,
         frequency = usesSpeed and SpeedToGlowFrequency(speed) or nil,
         scale = math_min(math_max(size, 0.2), 3),
         key = glowKey,
@@ -565,7 +479,8 @@ local function SetReadyGlow(button, show)
         local th = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 2) or 0
         local usesSpeed = UsesGlowSpeed(glowStyle)
         local spd = usesSpeed and ((style and style.readyGlowSpeed) or 60) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd)
+        local ln = (glowStyle == "pixel") and ((style and style.readyGlowLines) or 8) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
     end
     if button._readyGlowActive == desiredState then return end
     button._readyGlowActive = desiredState
@@ -583,43 +498,23 @@ local function SetReadyGlow(button, show)
     local usesSpeed = UsesGlowSpeed(glowStyle)
     local readyThickness = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 2) or 0
     local readySpeed = usesSpeed and ((style and style.readyGlowSpeed) or 60) or 0
+    local readyLines = (glowStyle == "pixel") and ((style and style.readyGlowLines) or 8) or nil
     ShowGlowStyle(rg, glowStyle, button, color, {
         size = sz,
         thickness = readyThickness,
         speed = readySpeed,
+        lines = readyLines,
         frequency = usesSpeed and SpeedToGlowFrequency(readySpeed) or nil,
         scale = math_min(math_max(sz, 0.2), 3),
         key = READY_GLOW_LCG_KEY,
     })
 end
 
--- Create a pixel glow frame with particle pairs for animated border effect.
--- parent: parent frame to attach to
--- numParticles: number of particle pairs (default ST.PARTICLE_COUNT = 12)
-local function CreatePixelGlowFrame(parent, numParticles)
-    numParticles = numParticles or ST.PARTICLE_COUNT
-    local pf = CreateFrame("Frame", nil, parent)
-    pf:SetAllPoints()
-    pf:EnableMouse(false)
-    pf:Hide()
-    pf.particles = {}
-    for i = 1, numParticles do
-        local t1 = pf:CreateTexture(nil, "OVERLAY", nil, 3)
-        t1:SetColorTexture(1, 1, 1, 1)
-        local t2 = pf:CreateTexture(nil, "OVERLAY", nil, 3)
-        t2:SetColorTexture(1, 1, 1, 1)
-        t2:Hide()
-        pf.particles[i] = {t1, t2}
-    end
-    pf._elapsed = 0
-    SetFrameClickThroughRecursive(pf, true, true)
-    return pf
-end
-
--- Create a complete glow container with solid border, proc glow, and pixel glow sub-frames.
+-- Create a complete glow container with solid border and proc glow sub-frames.
+-- Pixel glow is handled by LibCustomGlow (frames created/pooled by the library).
 -- parent: parent button frame
 -- overhang: overhang percentage for the proc glow frame (default 32)
--- Returns table {solidFrame, solidTextures, procFrame, pixelFrame}
+-- Returns table {solidFrame, solidTextures, procFrame}
 local function CreateGlowContainer(parent, overhang)
     local container = {}
 
@@ -640,9 +535,6 @@ local function CreateGlowContainer(parent, overhang)
     SetFrameClickThroughRecursive(procFrame, true, true)
     procFrame:Hide()
     container.procFrame = procFrame
-
-    -- Pixel glow
-    container.pixelFrame = CreatePixelGlowFrame(parent)
 
     -- Ensure solid frame is also non-interactive
     SetFrameClickThroughRecursive(container.solidFrame, true, true)
@@ -742,15 +634,17 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
             else
                 c = (btnStyle and btnStyle.barAuraEffectColor) or {1, 0.84, 0, 0.9}
             end
-            local sz, th
+            local sz, th, ln
             if pandemicOverride then
                 sz = (btnStyle and btnStyle.pandemicBarEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
                 th = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or 0
+                ln = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectLines) or 8) or 0
             else
                 sz = (btnStyle and btnStyle.barAuraEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
                 th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 2) or 0
+                ln = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectLines) or 8) or 0
             end
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, pandemicOverride and "P" or "")
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, ln, pandemicOverride and "P" or "")
         end
     end
 
@@ -787,10 +681,13 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
     end
     local thickness = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or (btnStyle and btnStyle.barAuraEffectThickness)) or 2
     local speed = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 60) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 60
+    local lines = (effect == "pixel") and ((pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectLines) or 8) or (btnStyle and btnStyle.barAuraEffectLines)) or 8) or nil
     ShowGlowStyle(ae, effect, button, color, {
         size = size,
         thickness = thickness,
         speed = speed,
+        lines = lines,
+        key = pandemicOverride and PANDEMIC_BAR_EFFECT_LCG_KEY or BAR_AURA_EFFECT_LCG_KEY,
         defaultAlpha = 0.9,
     })
 end

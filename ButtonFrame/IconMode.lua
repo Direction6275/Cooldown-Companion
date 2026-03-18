@@ -305,9 +305,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
         SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
-        if button.procGlow.pixelFrame then
-            SetFrameClickThroughRecursive(button.procGlow.pixelFrame, true, true)
-        end
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
@@ -330,9 +327,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         if button.auraGlow.procFrame then
             SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
         end
-        if button.auraGlow.pixelFrame then
-            SetFrameClickThroughRecursive(button.auraGlow.pixelFrame, true, true)
-        end
     end
     if button.readyGlow then
         if button.readyGlow.solidFrame then
@@ -340,9 +334,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         end
         if button.readyGlow.procFrame then
             SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
-        end
-        if button.readyGlow.pixelFrame then
-            SetFrameClickThroughRecursive(button.readyGlow.pixelFrame, true, true)
         end
     end
     if button.secondaryCooldown then
@@ -969,9 +960,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.procGlow.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.procGlow.solidTextures, button, style.procGlowSize or 2)
         FitHighlightFrame(button.procGlow.procFrame, button, style.procGlowSize or 32)
-        if button.procGlow.pixelFrame then
-            button.procGlow.pixelFrame:SetAllPoints()
-        end
         SetProcGlow(button, false)
     end
 
@@ -980,9 +968,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.auraGlow.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.auraGlow.solidTextures, button, button.style.auraGlowSize or 2)
         FitHighlightFrame(button.auraGlow.procFrame, button, button.style.auraGlowSize or 32)
-        if button.auraGlow.pixelFrame then
-            button.auraGlow.pixelFrame:SetAllPoints()
-        end
         SetAuraGlow(button, false)
     end
 
@@ -991,9 +976,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.readyGlow.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.readyGlow.solidTextures, button, button.style.readyGlowSize or 2)
         FitHighlightFrame(button.readyGlow.procFrame, button, button.style.readyGlowSize or 32)
-        if button.readyGlow.pixelFrame then
-            button.readyGlow.pixelFrame:SetAllPoints()
-        end
         SetReadyGlow(button, false)
     end
 
@@ -1015,9 +997,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
         SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
-        if button.procGlow.pixelFrame then
-            SetFrameClickThroughRecursive(button.procGlow.pixelFrame, true, true)
-        end
     end
     if button.overlayFrame then
         SetFrameClickThroughRecursive(button.overlayFrame, true, true)
@@ -1040,9 +1019,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         if button.auraGlow.procFrame then
             SetFrameClickThroughRecursive(button.auraGlow.procFrame, true, true)
         end
-        if button.auraGlow.pixelFrame then
-            SetFrameClickThroughRecursive(button.auraGlow.pixelFrame, true, true)
-        end
     end
     if button.readyGlow then
         if button.readyGlow.solidFrame then
@@ -1051,9 +1027,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         if button.readyGlow.procFrame then
             SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
         end
-        if button.readyGlow.pixelFrame then
-            SetFrameClickThroughRecursive(button.readyGlow.pixelFrame, true, true)
-        end
     end
 
     -- Re-set aura/ready glow frame levels after strata order
@@ -1061,13 +1034,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local auraGlowLevel = button.cooldown:GetFrameLevel() + 1
         button.auraGlow.solidFrame:SetFrameLevel(auraGlowLevel)
         button.auraGlow.procFrame:SetFrameLevel(auraGlowLevel)
-        button.auraGlow.pixelFrame:SetFrameLevel(auraGlowLevel)
     end
     if button.readyGlow then
         local readyGlowLevel = button.cooldown:GetFrameLevel() + 1
         button.readyGlow.solidFrame:SetFrameLevel(readyGlowLevel)
         button.readyGlow.procFrame:SetFrameLevel(readyGlowLevel)
-        button.readyGlow.pixelFrame:SetFrameLevel(readyGlowLevel)
     end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
