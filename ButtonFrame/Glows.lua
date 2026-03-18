@@ -66,10 +66,12 @@ local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
     return size or defaults.glow
 end
 
+-- Convert user-facing speed (10..200) to LCG AutoCast/ButtonGlow frequency.
 local function SpeedToGlowFrequency(speed)
     return math_max(speed or 60, 1) / 480
 end
 
+-- Convert user-facing speed to LCG PixelGlow frequency (4x faster than AutoCast).
 local function SpeedToPixelFrequency(speed)
     return math_max(speed or 60, 1) / 120
 end
@@ -221,7 +223,7 @@ end
 -- style: "solid", "pixel", "glow", "blizzard", or one of the LibCustomGlow proc styles
 -- button: the parent button frame (for positioning)
 -- color: {r, g, b, a} color table
--- params: {size, thickness, speed, lines, frequency, scale, key, defaultAlpha} — style-specific parameters
+-- params: {size, thickness, speed, lines, frequency, scale, key, frameLevel, defaultAlpha} — style-specific parameters
 local function ShowGlowStyle(container, style, button, color, params)
     local size = params.size
     local defaultAlpha = params.defaultAlpha or 1
@@ -244,7 +246,7 @@ local function ShowGlowStyle(container, style, button, color, params)
             local key = params.key or ""
             local frequency = SpeedToPixelFrequency(params.speed)
             LCG.PixelGlow_Start(button, color, params.lines or 8, frequency,
-                size or 4, params.thickness or 2, 0, 0, false, key, 1)
+                size or 4, params.thickness or 2, 0, 0, false, key, 1) -- frameLevel 1: stay below LoC overlay
             container._pixelTarget = button
             container._pixelKey = key
         else
