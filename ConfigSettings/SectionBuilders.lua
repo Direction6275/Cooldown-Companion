@@ -968,7 +968,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Border Size")
         sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 2)
+        sizeSlider:SetValue(styleTable[keys.size] or 5)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
@@ -979,7 +979,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Line Length")
         sizeSlider:SetSliderValues(pixelSizeMin, 12, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 4)
+        sizeSlider:SetValue(styleTable[keys.size] or 8)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
@@ -990,7 +990,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local thicknessSlider = AceGUI:Create("Slider")
         thicknessSlider:SetLabel("Line Thickness")
         thicknessSlider:SetSliderValues(1, 6, 0.1)
-        thicknessSlider:SetValue(styleTable[keys.thickness] or 2)
+        thicknessSlider:SetValue(styleTable[keys.thickness] or 4)
         thicknessSlider:SetFullWidth(true)
         thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.thickness] = val
@@ -1001,7 +1001,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Speed")
         speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetValue(styleTable[keys.speed] or 50)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.speed] = val
@@ -1025,7 +1025,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
         sizeSlider:SetSliderValues(0, 60, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 32)
+        sizeSlider:SetValue(styleTable[keys.size] or 30)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
@@ -1036,7 +1036,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Frequency")
         speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetValue(styleTable[keys.speed] or 50)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.speed] = val
@@ -1049,7 +1049,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         sizeSlider:SetSliderValues(0.2, 3, 0.05)
         local currentScale = styleTable[keys.size]
         if not currentScale or currentScale < 0.2 or currentScale > 3 then
-            currentScale = 1
+            currentScale = 2
         end
         sizeSlider:SetValue(currentScale)
         sizeSlider:SetFullWidth(true)
@@ -1062,7 +1062,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Frequency")
         speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetValue(styleTable[keys.speed] or 50)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.speed] = val

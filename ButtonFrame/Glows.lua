@@ -148,7 +148,7 @@ local function StopLibCustomGlow(container)
             LCG.ButtonGlow_Start(
                 lcgTarget,
                 fallbackOwner.color,
-                fallbackOwner.frequency or 0.125,
+                fallbackOwner.frequency or 0.25,
                 fallbackOwner.frameLevel or 8
             )
         else
@@ -168,11 +168,11 @@ local function StartLibCustomGlow(container, style, button, color, params)
     local frameLevel = params.frameLevel or 8
 
     if style == PROC_STYLE_LCG_BUTTON and LCG.ButtonGlow_Start then
-        local frequency = params.frequency or 0.125
+        local frequency = params.frequency or 0.25
         LCG.ButtonGlow_Start(button, color, frequency, frameLevel)
         AcquireLCGButtonOwner(button, container, color, frequency, frameLevel)
     elseif style == PROC_STYLE_LCG_AUTOCAST and LCG.AutoCastGlow_Start then
-        LCG.AutoCastGlow_Start(button, color, 4, params.frequency or 0.125, params.scale or 1, 0, 0, key, frameLevel)
+        LCG.AutoCastGlow_Start(button, color, 4, params.frequency or 0.25, params.scale or 2, 0, 0, key, frameLevel)
     else
         return false
     end
@@ -245,13 +245,20 @@ local function ShowGlowStyle(container, style, button, color, params)
         if LCG and LCG.PixelGlow_Start then
             local key = params.key or ""
             local frequency = SpeedToPixelFrequency(params.speed)
+            -- Derive frame level from the container's solidFrame so pixel glow
+            -- respects ApplyStrataOrder positioning (icon mode) while staying
+            -- reasonable in bar mode where no strata ordering is applied.
+            local relativeLevel = 1
+            if container.solidFrame then
+                relativeLevel = math_max(container.solidFrame:GetFrameLevel() - button:GetFrameLevel(), 1)
+            end
             LCG.PixelGlow_Start(button, color, params.lines or 8, frequency,
-                size or 4, params.thickness or 2, 0, 0, false, key, 1) -- frameLevel 1: stay below LoC overlay
+                size or 8, params.thickness or 4, 0, 0, false, key, relativeLevel)
             container._pixelTarget = button
             container._pixelKey = key
         else
             -- Fallback to solid border if LCG unavailable
-            ApplyEdgePositions(container.solidTextures, button, size or 4)
+            ApplyEdgePositions(container.solidTextures, button, size or 8)
             for _, tex in ipairs(container.solidTextures) do
                 tex:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
                 tex:Show()
@@ -335,12 +342,12 @@ local function SetProcGlow(button, show)
         local glowStyle = NormalizeGlowStyle((style and style.procGlowStyle) or "glow")
         local c = (style and style.procGlowColor) or {1, 1, 1, 1}
         local sz = GetGlowSize(style, "procGlowSize", glowStyle, {
-            solid = 2, pixel = 4, glow = 32, autocast = 1,
+            solid = 5, pixel = 8, glow = 30, autocast = 2,
         })
         local th
         local usesSpeed = UsesGlowSpeed(glowStyle)
-        th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
-        local spd = usesSpeed and ((style and style.procGlowSpeed) or 60) or 0
+        th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 4) or 0
+        local spd = usesSpeed and ((style and style.procGlowSpeed) or 50) or 0
         local ln = (glowStyle == "pixel") and ((style and style.procGlowLines) or 8) or 0
         desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
     end
@@ -355,11 +362,11 @@ local function SetProcGlow(button, show)
     local glowStyle = NormalizeGlowStyle((style and style.procGlowStyle) or "glow")
     local color = (style and style.procGlowColor) or {1, 1, 1, 1}
     local sz = GetGlowSize(style, "procGlowSize", glowStyle, {
-        solid = 2, pixel = 4, glow = 32, autocast = 1,
+        solid = 5, pixel = 8, glow = 30, autocast = 2,
     })
     local usesSpeed = UsesGlowSpeed(glowStyle)
-    local procThickness = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 2) or 0
-    local procSpeed = usesSpeed and ((style and style.procGlowSpeed) or 60) or 0
+    local procThickness = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 4) or 0
+    local procSpeed = usesSpeed and ((style and style.procGlowSpeed) or 50) or 0
     local procLines = (glowStyle == "pixel") and ((style and style.procGlowLines) or 8) or nil
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
@@ -407,10 +414,10 @@ local function SetAuraGlow(button, show, pandemicOverride)
                 linesKey = "auraGlowLines"
             end
             local sz = GetGlowSize(btnStyle, sizeKey, glowStyle, {
-                solid = 2, pixel = 4, glow = 32, autocast = 1,
+                solid = 5, pixel = 8, glow = 30, autocast = 2,
             })
-            local th = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 2) or 0
-            local spd = UsesGlowSpeed(glowStyle) and ((btnStyle and btnStyle[speedKey]) or 60) or 0
+            local th = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 4) or 0
+            local spd = UsesGlowSpeed(glowStyle) and ((btnStyle and btnStyle[speedKey]) or 50) or 0
             local ln = (glowStyle == "pixel") and ((btnStyle and btnStyle[linesKey]) or 8) or 0
             desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d%s", glowStyle, c[1], c[2], c[3], c[4] or 0.9, sz, th, spd, ln, pandemicOverride and "P" or "")
         end
@@ -448,11 +455,11 @@ local function SetAuraGlow(button, show, pandemicOverride)
         glowKey = AURA_GLOW_LCG_KEY
     end
     local size = GetGlowSize(btnStyle, sizeKey, glowStyle, {
-        solid = 2, pixel = 4, glow = 32, autocast = 1,
+        solid = 5, pixel = 8, glow = 30, autocast = 2,
     })
-    local thickness = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 2) or 0
+    local thickness = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 4) or 0
     local usesSpeed = UsesGlowSpeed(glowStyle)
-    local speed = usesSpeed and ((btnStyle and btnStyle[speedKey]) or 60) or 0
+    local speed = usesSpeed and ((btnStyle and btnStyle[speedKey]) or 50) or 0
     local lines = (glowStyle == "pixel") and ((btnStyle and btnStyle[linesKey]) or 8) or nil
     ShowGlowStyle(ag, glowStyle, button, color, {
         size = size,
@@ -478,11 +485,11 @@ local function SetReadyGlow(button, show)
         local glowStyle = NormalizeGlowStyle((style and style.readyGlowStyle) or "solid")
         local c = (style and style.readyGlowColor) or {0.2, 1.0, 0.2, 1}
         local sz = GetGlowSize(style, "readyGlowSize", glowStyle, {
-            solid = 2, pixel = 4, glow = 32, autocast = 1,
+            solid = 5, pixel = 8, glow = 30, autocast = 2,
         })
-        local th = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 2) or 0
+        local th = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 4) or 0
         local usesSpeed = UsesGlowSpeed(glowStyle)
-        local spd = usesSpeed and ((style and style.readyGlowSpeed) or 60) or 0
+        local spd = usesSpeed and ((style and style.readyGlowSpeed) or 50) or 0
         local ln = (glowStyle == "pixel") and ((style and style.readyGlowLines) or 8) or 0
         desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
     end
@@ -497,11 +504,11 @@ local function SetReadyGlow(button, show)
     local glowStyle = NormalizeGlowStyle((style and style.readyGlowStyle) or "solid")
     local color = (style and style.readyGlowColor) or {0.2, 1.0, 0.2, 1}
     local sz = GetGlowSize(style, "readyGlowSize", glowStyle, {
-        solid = 2, pixel = 4, glow = 32, autocast = 1,
+        solid = 5, pixel = 8, glow = 30, autocast = 2,
     })
     local usesSpeed = UsesGlowSpeed(glowStyle)
-    local readyThickness = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 2) or 0
-    local readySpeed = usesSpeed and ((style and style.readyGlowSpeed) or 60) or 0
+    local readyThickness = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 4) or 0
+    local readySpeed = usesSpeed and ((style and style.readyGlowSpeed) or 50) or 0
     local readyLines = (glowStyle == "pixel") and ((style and style.readyGlowLines) or 8) or nil
     ShowGlowStyle(rg, glowStyle, button, color, {
         size = sz,
@@ -640,15 +647,15 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
             end
             local sz, th, ln
             if pandemicOverride then
-                sz = (btnStyle and btnStyle.pandemicBarEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
-                th = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or 0
+                sz = (btnStyle and btnStyle.pandemicBarEffectSize) or (effect == "solid" and 5 or effect == "pixel" and 8 or 30)
+                th = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 4) or 0
                 ln = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectLines) or 8) or 0
             else
-                sz = (btnStyle and btnStyle.barAuraEffectSize) or (effect == "solid" and 2 or effect == "pixel" and 4 or 32)
-                th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 2) or 0
+                sz = (btnStyle and btnStyle.barAuraEffectSize) or (effect == "solid" and 5 or effect == "pixel" and 8 or 30)
+                th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 4) or 0
                 ln = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectLines) or 8) or 0
             end
-            local spd = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 60) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 60
+            local spd = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 50) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 50
             desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%.2f%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, ln, spd, pandemicOverride and "P" or "")
         end
     end
@@ -682,10 +689,10 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
     end
     -- Default size depends on effect style
     if not size then
-        size = (effect == "solid" and 2) or (effect == "pixel" and 4) or 32
+        size = (effect == "solid" and 5) or (effect == "pixel" and 8) or 30
     end
-    local thickness = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 2) or (btnStyle and btnStyle.barAuraEffectThickness)) or 2
-    local speed = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 60) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 60
+    local thickness = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 4) or (btnStyle and btnStyle.barAuraEffectThickness)) or 4
+    local speed = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 50) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 50
     local lines = (effect == "pixel") and ((pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectLines) or 8) or (btnStyle and btnStyle.barAuraEffectLines)) or 8) or nil
     ShowGlowStyle(ae, effect, button, color, {
         size = size,
