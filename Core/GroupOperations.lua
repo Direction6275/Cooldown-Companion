@@ -1024,6 +1024,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- Widget-level GCD activity signal (secret-safe, plain boolean)
     local gcdDuration = C_Spell.GetSpellCooldownDuration(61304)
+    self._gcdDurationObj = gcdDuration
     if gcdDuration then
         self._gcdScratch:Hide()
         self._gcdScratch:SetCooldownFromDurationObject(gcdDuration)
