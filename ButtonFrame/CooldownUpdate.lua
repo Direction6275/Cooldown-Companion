@@ -664,7 +664,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         elseif buttonData.type == "item" then
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+            local probeIsGCDOnly = false
             if cdDuration and cdDuration > 0 then
+                local gcdInfo = CooldownCompanion._gcdInfo
+                if gcdInfo and cdStart == gcdInfo.startTime
+                        and cdDuration == gcdInfo.duration then
+                    probeIsGCDOnly = true
+                end
+            end
+            if cdDuration and cdDuration > 0 and not probeIsGCDOnly then
                 button.secondaryCooldown:SetCooldown(cdStart, cdDuration)
                 button._secondaryCdActive = true
             else
@@ -782,6 +790,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.cooldown:SetCooldown(cdStart, cdDuration)
                 button._itemCdStart = cdStart
                 button._itemCdDuration = cdDuration
+                -- GCD-only detection for items: C_Item.GetItemCooldown returns
+                -- GCD values when the item is on GCD but has no real cooldown.
+                -- Item cooldown values are never secret; direct comparison is safe
+                -- (same pattern as NeverSecret spells above).
+                if cdDuration > 0 then
+                    local gcdInfo = CooldownCompanion._gcdInfo
+                    if gcdInfo and cdStart == gcdInfo.startTime
+                            and cdDuration == gcdInfo.duration then
+                        isGCDOnly = true
+                    end
+                end
             end
             fetchOk = true
         end
@@ -966,7 +985,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- For non-charge spells, use action-slot cooldown state when spell cooldown
     -- info is unavailable (ContextuallySecret fallback). Otherwise use addon state.
     if buttonData.type == "item" then
-        button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0) or false
+        button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly) or false
     elseif buttonData.hasCharges then
         button._desatCooldownActive = (button._zeroChargesConfirmed == true)
     else
@@ -1050,7 +1069,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateItemChargeTracking(button, buttonData)
 
         -- Detect recharging via stored item cooldown values
-        button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0) or false
+        button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly) or false
       end
     end
 
