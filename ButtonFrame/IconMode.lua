@@ -115,10 +115,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawBling(false)
     button.locCooldown:SetDrawBling(false)
 
-    -- Proc glow elements (solid border + animated glow + pixel glow)
+    -- Proc glow elements (solid border + animated glow; pixel glow via LCG)
     button.procGlow = CreateGlowContainer(button, style.procGlowSize or 32)
 
-    -- Aura active glow elements (solid border + animated glow + pixel glow)
+    -- Aura active glow elements (solid border + animated glow; pixel glow via LCG)
     button.auraGlow = CreateGlowContainer(button, 32)
 
     -- Ready glow elements (glow while off cooldown)

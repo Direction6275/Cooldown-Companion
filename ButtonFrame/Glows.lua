@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - ButtonFrame/Glows
-    Glow systems: proc glow, aura glow, assisted highlight, bar aura effect,
-    and shared glow container creation
+    Glow systems: proc glow, aura glow, pixel glow (via LCG), assisted highlight,
+    bar aura effect, and shared glow container creation
 ]]
 
 local ADDON_NAME, ST = ...
@@ -26,7 +26,7 @@ local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
--- Optional external glow library used for extra proc glow styles.
+-- Optional external glow library used for pixel glow and extra proc glow styles.
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 local PROC_STYLE_LCG_BUTTON = "lcgButton"
 local PROC_STYLE_LCG_AUTOCAST = "lcgAutoCast"
@@ -122,8 +122,10 @@ local function StopLibCustomGlow(container)
     if not container then return end
 
     -- Stop LCG pixel glow (tracked separately from _lcgStyle)
-    if container._pixelTarget and LCG and LCG.PixelGlow_Stop then
-        LCG.PixelGlow_Stop(container._pixelTarget, container._pixelKey or "")
+    if container._pixelTarget then
+        if LCG and LCG.PixelGlow_Stop then
+            LCG.PixelGlow_Stop(container._pixelTarget, container._pixelKey or "")
+        end
         container._pixelTarget = nil
         container._pixelKey = nil
     end
@@ -219,7 +221,7 @@ end
 -- style: "solid", "pixel", "glow", "blizzard", or one of the LibCustomGlow proc styles
 -- button: the parent button frame (for positioning)
 -- color: {r, g, b, a} color table
--- params: {size, thickness, speed, frequency, scale, duration, key} — style-specific parameters
+-- params: {size, thickness, speed, lines, frequency, scale, key, defaultAlpha} — style-specific parameters
 local function ShowGlowStyle(container, style, button, color, params)
     local size = params.size
     local defaultAlpha = params.defaultAlpha or 1
@@ -247,7 +249,7 @@ local function ShowGlowStyle(container, style, button, color, params)
             container._pixelKey = key
         else
             -- Fallback to solid border if LCG unavailable
-            ApplyEdgePositions(container.solidTextures, button, size or 2)
+            ApplyEdgePositions(container.solidTextures, button, size or 4)
             for _, tex in ipairs(container.solidTextures) do
                 tex:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
                 tex:Show()
@@ -644,7 +646,8 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
                 th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 2) or 0
                 ln = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectLines) or 8) or 0
             end
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, ln, pandemicOverride and "P" or "")
+            local spd = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 60) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 60
+            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%.2f%s", effect, c[1], c[2], c[3], c[4] or 0.9, sz, th, ln, spd, pandemicOverride and "P" or "")
         end
     end
 

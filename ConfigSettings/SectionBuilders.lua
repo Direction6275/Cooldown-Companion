@@ -960,7 +960,7 @@ end
 -- controls. Builds conditional size/thickness/speed sliders based on
 -- the current glow style.
 --
--- keys = { size = "...", thickness = "...", speed = "..." }
+-- keys = { size = "...", thickness = "...", speed = "...", lines = "..." }
 -- pixelSizeMin: minimum for the pixel "Line Length" slider (1 for glow
 --   style controls, 2 for bar effect controls)
 local function BuildGlowSliders(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin)
@@ -1094,7 +1094,7 @@ local LCG_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "lcgButton", "lcgAutoCas
 -- BuildPandemicGlowControls, BuildAuraIndicatorControls.
 --
 -- cfg = { styleKey, colorKey, colorLabel, sizeKey, thicknessKey,
---         speedKey, defaultStyle, defaultColor }
+--         speedKey, linesKey, defaultStyle, defaultColor }
 local function BuildGlowStyleControls(container, styleTable, refreshCallback, cfg, opts)
     local isOverrideMode = opts and opts.isOverride == true
     local isEnabled
@@ -1193,7 +1193,7 @@ end
 --
 -- cfg = { colorKey, colorLabel, defaultColor, effectKey, effectLabel,
 --         effectColorKey, effectColorLabel, defaultEffectColor,
---         effectSizeKey, effectThicknessKey, effectSpeedKey }
+--         effectSizeKey, effectThicknessKey, effectSpeedKey, effectLinesKey }
 local function BuildBarEffectControls(container, styleTable, refreshCallback, cfg, opts)
     local isOverrideMode = opts and opts.isOverride == true
     local isEnabled
