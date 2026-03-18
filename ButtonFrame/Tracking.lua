@@ -8,6 +8,8 @@ local CooldownCompanion = ST.Addon
 
 -- Localize frequently-used globals
 local issecretvalue = issecretvalue
+local InCombatLockdown = InCombatLockdown
+local UnitCanAttack = UnitCanAttack
 local IsItemInRange = C_Item.IsItemInRange
 local IsUsableItem = C_Item.IsUsableItem
 
@@ -124,11 +126,15 @@ local function UpdateIconTint(button, buttonData, style)
                 stateOverride = true
             end
         elseif buttonData.type == "item" then
-            local inRange = IsItemInRange(buttonData.id, "target")
-            -- inRange is nil when no target or item has no range; only tint on explicit false
-            if inRange == false then
-                r, g, b = 1, 0.2, 0.2
-                stateOverride = true
+            -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0);
+            -- only call when out of combat or target is attackable.
+            if not InCombatLockdown() or UnitCanAttack("player", "target") then
+                local inRange = IsItemInRange(buttonData.id, "target")
+                -- inRange is nil when no target or item has no range; only tint on explicit false
+                if inRange == false then
+                    r, g, b = 1, 0.2, 0.2
+                    stateOverride = true
+                end
             end
         end
     end

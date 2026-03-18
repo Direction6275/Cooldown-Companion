@@ -28,6 +28,8 @@ local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
 local IsItemInRange = C_Item.IsItemInRange
+local InCombatLockdown = InCombatLockdown
+local UnitCanAttack = UnitCanAttack
 
 -- Imports from Utils
 local HasTooltipCooldown = ST.HasTooltipCooldown
@@ -1309,8 +1311,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if buttonData.type == "spell" then
             button._isOutOfRange = button._spellOutOfRange or false
         elseif buttonData.type == "item" or buttonData.type == "equipitem" then
-            local inRange = IsItemInRange(buttonData.id, "target")
-            button._isOutOfRange = (inRange == false)
+            -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0)
+            if not InCombatLockdown() or UnitCanAttack("player", "target") then
+                local inRange = IsItemInRange(buttonData.id, "target")
+                button._isOutOfRange = (inRange == false)
+            else
+                button._isOutOfRange = false
+            end
         else
             button._isOutOfRange = false
         end
