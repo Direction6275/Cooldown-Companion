@@ -17,7 +17,6 @@ local string_format = string.format
 ST.DEFAULT_OVERHANG_PCT = 32
 ST.DEFAULT_GLOW_COLOR = {1, 1, 1, 1}
 ST.DEFAULT_BG_COLOR = {0.2, 0.2, 0.2, 0.8}
-ST.PARTICLE_COUNT = 12
 ST.NUM_GLOW_STYLES = 3
 
 -- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}

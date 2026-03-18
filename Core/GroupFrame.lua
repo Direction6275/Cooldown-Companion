@@ -149,6 +149,9 @@ local function ResetButtonGlowTransitionState(button)
         if button.auraGlow then
             HideGlowStyles(button.auraGlow)
         end
+        if button.readyGlow then
+            HideGlowStyles(button.readyGlow)
+        end
         if button.assistedHighlight then
             HideGlowStyles(button.assistedHighlight)
         end
@@ -159,6 +162,7 @@ local function ResetButtonGlowTransitionState(button)
 
     button._procGlowActive = nil
     button._auraGlowActive = nil
+    button._readyGlowActive = nil
     button._barAuraEffectActive = nil
     if button.assistedHighlight then
         button.assistedHighlight.currentState = nil

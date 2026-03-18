@@ -98,17 +98,14 @@ local function ApplyStrataOrder(button, order)
         procGlow = {
             button.procGlow and button.procGlow.solidFrame,
             button.procGlow and button.procGlow.procFrame,
-            button.procGlow and button.procGlow.pixelFrame,
         },
         auraGlow = {
             button.auraGlow and button.auraGlow.solidFrame,
             button.auraGlow and button.auraGlow.procFrame,
-            button.auraGlow and button.auraGlow.pixelFrame,
         },
         readyGlow = {
             button.readyGlow and button.readyGlow.solidFrame,
             button.readyGlow and button.readyGlow.procFrame,
-            button.readyGlow and button.readyGlow.pixelFrame,
         },
         assistedHighlight = {
             button.assistedHighlight and button.assistedHighlight.solidFrame,

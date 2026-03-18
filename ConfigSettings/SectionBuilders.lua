@@ -960,7 +960,7 @@ end
 -- controls. Builds conditional size/thickness/speed sliders based on
 -- the current glow style.
 --
--- keys = { size = "...", thickness = "...", speed = "..." }
+-- keys = { size = "...", thickness = "...", speed = "...", lines = "..." }
 -- pixelSizeMin: minimum for the pixel "Line Length" slider (1 for glow
 --   style controls, 2 for bar effect controls)
 local function BuildGlowSliders(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin)
@@ -968,7 +968,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Border Size")
         sizeSlider:SetSliderValues(1, 8, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 2)
+        sizeSlider:SetValue(styleTable[keys.size] or 5)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
@@ -979,7 +979,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Line Length")
         sizeSlider:SetSliderValues(pixelSizeMin, 12, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 4)
+        sizeSlider:SetValue(styleTable[keys.size] or 8)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
@@ -990,7 +990,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local thicknessSlider = AceGUI:Create("Slider")
         thicknessSlider:SetLabel("Line Thickness")
         thicknessSlider:SetSliderValues(1, 6, 0.1)
-        thicknessSlider:SetValue(styleTable[keys.thickness] or 2)
+        thicknessSlider:SetValue(styleTable[keys.thickness] or 4)
         thicknessSlider:SetFullWidth(true)
         thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.thickness] = val
@@ -1001,18 +1001,31 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Speed")
         speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetValue(styleTable[keys.speed] or 50)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.speed] = val
             refreshCallback()
         end)
         container:AddChild(speedSlider)
+
+        if keys.lines then
+            local linesSlider = AceGUI:Create("Slider")
+            linesSlider:SetLabel("Number of Lines")
+            linesSlider:SetSliderValues(1, 16, 1)
+            linesSlider:SetValue(styleTable[keys.lines] or 8)
+            linesSlider:SetFullWidth(true)
+            linesSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[keys.lines] = val
+                refreshCallback()
+            end)
+            container:AddChild(linesSlider)
+        end
     elseif currentStyle == "glow" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
         sizeSlider:SetSliderValues(0, 60, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 32)
+        sizeSlider:SetValue(styleTable[keys.size] or 30)
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
@@ -1023,7 +1036,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Frequency")
         speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetValue(styleTable[keys.speed] or 50)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.speed] = val
@@ -1036,7 +1049,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         sizeSlider:SetSliderValues(0.2, 3, 0.05)
         local currentScale = styleTable[keys.size]
         if not currentScale or currentScale < 0.2 or currentScale > 3 then
-            currentScale = 1
+            currentScale = 2
         end
         sizeSlider:SetValue(currentScale)
         sizeSlider:SetFullWidth(true)
@@ -1049,7 +1062,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Frequency")
         speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 60)
+        speedSlider:SetValue(styleTable[keys.speed] or 50)
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.speed] = val
@@ -1081,7 +1094,7 @@ local LCG_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "lcgButton", "lcgAutoCas
 -- BuildPandemicGlowControls, BuildAuraIndicatorControls.
 --
 -- cfg = { styleKey, colorKey, colorLabel, sizeKey, thicknessKey,
---         speedKey, defaultStyle, defaultColor }
+--         speedKey, linesKey, defaultStyle, defaultColor }
 local function BuildGlowStyleControls(container, styleTable, refreshCallback, cfg, opts)
     local isOverrideMode = opts and opts.isOverride == true
     local isEnabled
@@ -1169,7 +1182,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     container:AddChild(colorPicker)
 
     BuildGlowSliders(container, styleTable, currentStyle, {
-        size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey,
+        size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
     }, refreshCallback, 1)
 end
 
@@ -1180,7 +1193,7 @@ end
 --
 -- cfg = { colorKey, colorLabel, defaultColor, effectKey, effectLabel,
 --         effectColorKey, effectColorLabel, defaultEffectColor,
---         effectSizeKey, effectThicknessKey, effectSpeedKey }
+--         effectSizeKey, effectThicknessKey, effectSpeedKey, effectLinesKey }
 local function BuildBarEffectControls(container, styleTable, refreshCallback, cfg, opts)
     local isOverrideMode = opts and opts.isOverride == true
     local isEnabled
@@ -1267,7 +1280,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         container:AddChild(effectColorPicker)
 
         BuildGlowSliders(container, styleTable, currentEffect, {
-            size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey,
+            size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey, lines = cfg.effectLinesKey,
         }, refreshCallback, 2)
     end
 end
@@ -1278,7 +1291,7 @@ end
 local function BuildProcGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "procGlowStyle", colorKey = "procGlowColor", colorLabel = "Glow Color",
-        sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed",
+        sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
         enableLabel = "Show Proc Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1289,7 +1302,7 @@ end
 local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Glow Color",
-        sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed",
+        sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
         defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
         enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1300,7 +1313,7 @@ end
 local function BuildAuraIndicatorControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
-        sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed",
+        sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed", linesKey = "auraGlowLines",
         defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
         enableLabel = "Show Aura Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1311,7 +1324,7 @@ end
 local function BuildReadyGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "readyGlowStyle", colorKey = "readyGlowColor", colorLabel = "Glow Color",
-        sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed",
+        sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed", linesKey = "readyGlowLines",
         defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
         enableLabel = "Show Ready Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
@@ -1328,7 +1341,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback, 
         effectColorKey = "pandemicBarEffectColor", effectColorLabel = "Pandemic Effect Color",
         defaultEffectColor = {1, 0.5, 0, 1},
         effectSizeKey = "pandemicBarEffectSize", effectThicknessKey = "pandemicBarEffectThickness",
-        effectSpeedKey = "pandemicBarEffectSpeed",
+        effectSpeedKey = "pandemicBarEffectSpeed", effectLinesKey = "pandemicBarEffectLines",
     }, opts)
 end
 
@@ -1340,7 +1353,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         effectColorKey = "barAuraEffectColor", effectColorLabel = "Effect Color",
         defaultEffectColor = {1, 0.84, 0, 0.9},
         effectSizeKey = "barAuraEffectSize", effectThicknessKey = "barAuraEffectThickness",
-        effectSpeedKey = "barAuraEffectSpeed",
+        effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
     }, opts)
 end
 
