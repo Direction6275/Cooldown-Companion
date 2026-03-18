@@ -72,7 +72,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif buttonData.type == "item" then
-            if button._itemCdDuration and button._itemCdDuration > 0 then
+            if button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         else
@@ -89,7 +89,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif buttonData.type == "item" then
-            if not button._itemCdDuration or button._itemCdDuration == 0 then
+            if not button._itemCdDuration or button._itemCdDuration == 0 or isGCDOnly then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         else
