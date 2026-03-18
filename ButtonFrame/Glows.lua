@@ -244,7 +244,7 @@ local function ShowGlowStyle(container, style, button, color, params)
             local key = params.key or ""
             local frequency = SpeedToPixelFrequency(params.speed)
             LCG.PixelGlow_Start(button, color, params.lines or 8, frequency,
-                size or 4, params.thickness or 2, 0, 0, false, key, 8)
+                size or 4, params.thickness or 2, 0, 0, false, key, 1)
             container._pixelTarget = button
             container._pixelKey = key
         else
