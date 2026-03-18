@@ -887,14 +887,20 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     if not frame then
         frame = self:CreateGroupFrame(groupId)
     else
-        -- Apply per-group frame strata before populating buttons
-        local strata = group.frameStrata
-        if strata then
-            frame:SetFrameStrata(strata)
-            frame:SetFixedFrameStrata(true)
+        -- Apply per-group frame strata before populating buttons.
+        -- Deferred during combat — protected frame restriction.
+        if InCombatLockdown() and frame:IsProtected() then
+            frame._strataDirty = true
         else
-            frame:SetFrameStrata("MEDIUM")
-            frame:SetFixedFrameStrata(false)
+            local strata = group.frameStrata
+            if strata then
+                frame:SetFrameStrata(strata)
+                frame:SetFixedFrameStrata(true)
+            else
+                frame:SetFrameStrata("MEDIUM")
+                frame:SetFixedFrameStrata(false)
+            end
+            frame._strataDirty = nil
         end
 
         self:AnchorGroupFrame(frame, group.anchor)
@@ -931,7 +937,11 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         checkLoadConditions = true,
         requireButtons = true,
     }) then
-        frame:Show()
+        if InCombatLockdown() and frame:IsProtected() and not frame:IsShown() then
+            self._pendingVisibilityRefresh = true
+        else
+            frame:Show()
+        end
         -- Force 100% alpha while unlocked for easier positioning
         if not isLocked then
             frame:SetAlpha(1)

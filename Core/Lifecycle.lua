@@ -407,6 +407,11 @@ end
 function CooldownCompanion:OnCombatEnd()
     self:UpdateAllCooldowns()
     self:ApplyCdmAlpha()
+    -- Apply deferred visibility changes (Show/Hide blocked on protected frames)
+    if self._pendingVisibilityRefresh then
+        self._pendingVisibilityRefresh = nil
+        self:RefreshAllGroupsVisibilityOnly()
+    end
     -- Reopen config panel if it was open before combat
     if self._configWasOpen then
         self._configWasOpen = false

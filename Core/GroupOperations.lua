@@ -15,6 +15,7 @@ local next = next
 local type = type
 local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
+local InCombatLockdown = InCombatLockdown
 
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
@@ -885,7 +886,11 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
                 if frame then
                     local wasShown = frame:IsShown()
-                    frame:Show()
+                    if InCombatLockdown() and frame:IsProtected() and not wasShown then
+                        self._pendingVisibilityRefresh = true
+                    else
+                        frame:Show()
+                    end
                     -- Resolve locked from container (panels defer to container lock)
                     local container = self:GetParentContainer(group)
                     local isLocked
@@ -960,7 +965,11 @@ function CooldownCompanion:UnloadGroup(groupId)
     end
 
     -- Hide and move to dormant cache for reuse
-    frame:Hide()
+    if InCombatLockdown() and frame:IsProtected() and frame:IsShown() then
+        self._pendingVisibilityRefresh = true
+    else
+        frame:Hide()
+    end
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil
@@ -1044,6 +1053,9 @@ end
 function CooldownCompanion:UpdateAllGroupLayouts()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame:IsShown() then
+            if frame._strataDirty then
+                self:RefreshGroupFrame(groupId)
+            end
             if frame._sizeDirty then
                 self:ResizeGroupFrame(groupId)
             end
