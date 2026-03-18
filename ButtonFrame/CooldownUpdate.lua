@@ -578,6 +578,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- shows/hides PandemicIcon accordingly.  Use IsVisible() so that a
         -- PandemicIcon whose parent viewer item was hidden (e.g. aura expired
         -- before OnUpdate could clean it up) is not treated as active.
+        -- Grace counter: PandemicIcon is a pool-managed frame that Blizzard
+        -- destroys (nils) during CDM internal refreshes (RefreshLayout item
+        -- recycling, viewer data churn).  Hold pandemic state for up to 3
+        -- ticks after PandemicIcon disappears to absorb brief dropouts.
+        -- Genuine pandemic end is handled by event-driven _inPandemic clears
+        -- (Aura.lua aura removal / target switch) which bypass this grace.
         local inPandemic = false
         if button._pandemicPreview then
             inPandemic = true
@@ -586,6 +592,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local pi = viewerFrame.PandemicIcon
             if pi and pi:IsVisible() then
                 inPandemic = true
+                button._pandemicGraceTicks = nil
+            elseif button._inPandemic then
+                -- PandemicIcon briefly unavailable (CDM pool churn / viewer
+                -- refresh); hold pandemic state to prevent glow flicker.
+                button._pandemicGraceTicks = (button._pandemicGraceTicks or 0) + 1
+                if button._pandemicGraceTicks <= 3 then
+                    inPandemic = true
+                else
+                    button._pandemicGraceTicks = nil
+                end
             end
         end
         button._inPandemic = inPandemic
