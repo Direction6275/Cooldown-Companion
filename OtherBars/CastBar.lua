@@ -442,8 +442,10 @@ local function ApplyPosition(cb, s, height)
     UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
 
     cb:ClearAllPoints()
-    local cbPosition = s.position or "below"
-    local cbOrder = s.order or 2000
+    local specLayout = CooldownCompanion:GetSpecLayoutOrder()
+    local cbLayout = specLayout and specLayout.castBar
+    local cbPosition = (cbLayout and cbLayout.position) or "below"
+    local cbOrder = (cbLayout and cbLayout.order) or 2000
     local predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local gap = rbSettings and (rbSettings.yOffset or 3) or 3

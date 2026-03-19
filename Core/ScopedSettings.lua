@@ -450,7 +450,7 @@ local function ComposeCopiedResourceBarSettings(source, target)
 
     if type(source) == "table" then
         for key, value in pairs(source) do
-            if key ~= "resources" and key ~= "customAuraBars" and key ~= "customAuraBarSlots" then
+            if key ~= "resources" and key ~= "customAuraBars" and key ~= "customAuraBarSlots" and key ~= "layoutOrder" then
                 copied[key] = CloneSettingValue(value)
             end
         end
@@ -458,6 +458,10 @@ local function ComposeCopiedResourceBarSettings(source, target)
 
     if type(source) == "table" and type(source.customAuraBarSlots) == "table" then
         copied.customAuraBarSlots = CopyTable(source.customAuraBarSlots)
+    end
+
+    if type(source) == "table" and type(source.layoutOrder) == "table" then
+        copied.layoutOrder = CopyTable(source.layoutOrder)
     end
 
     if type(copied.resources) ~= "table" then
