@@ -880,7 +880,14 @@ end
 function CooldownCompanion:RefreshGroupFrame(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
+    -- Defer during combat when the frame is protected or would need creation.
+    -- Unprotected frames can safely refresh during combat.
+    if InCombatLockdown() and (not frame or frame:IsProtected()) then
+        self._pendingFullRefresh = true
+        return
+    end
+
     if not group then
         self:UnloadGroup(groupId)
         self:DiscardDormantFrame(groupId)
@@ -947,8 +954,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         checkLoadConditions = true,
         requireButtons = true,
     }) then
-        if InCombatLockdown() and frame:IsProtected() and not frame:IsShown() then
-            self._pendingVisibilityRefresh = true
+        if InCombatLockdown() and frame:IsProtected() then
+            if not frame:IsShown() then
+                self._pendingVisibilityRefresh = true
+            end
         else
             frame:Show()
         end

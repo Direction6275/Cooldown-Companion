@@ -407,8 +407,12 @@ end
 function CooldownCompanion:OnCombatEnd()
     self:UpdateAllCooldowns()
     self:ApplyCdmAlpha()
-    -- Apply deferred visibility changes (Show/Hide blocked on protected frames)
-    if self._pendingVisibilityRefresh then
+    -- Full refresh supersedes visibility-only refresh
+    if self._pendingFullRefresh then
+        self._pendingFullRefresh = nil
+        self._pendingVisibilityRefresh = nil
+        self:RefreshAllGroups()
+    elseif self._pendingVisibilityRefresh then
         self._pendingVisibilityRefresh = nil
         self:RefreshAllGroupsVisibilityOnly()
     end
