@@ -211,6 +211,9 @@ local DEFAULT_RESOURCE_TEXT_FONT_CONFIG = "Friz Quadrata TT"
 local DEFAULT_RESOURCE_TEXT_SIZE_CONFIG = 10
 local DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG = "OUTLINE"
 local DEFAULT_RESOURCE_TEXT_COLOR_CONFIG = { 1, 1, 1, 1 }
+local DEFAULT_RESOURCE_TEXT_ANCHOR_CONFIG = "CENTER"
+local DEFAULT_RESOURCE_TEXT_X_OFFSET_CONFIG = 0
+local DEFAULT_RESOURCE_TEXT_Y_OFFSET_CONFIG = 0
 local DEFAULT_SEG_THRESHOLD_COLOR_CONFIG = { 1, 0.84, 0 }
 local DEFAULT_CONTINUOUS_TICK_COLOR_CONFIG = { 1, 0.84, 0, 1 }
 local DEFAULT_CONTINUOUS_TICK_MODE_CONFIG = "percent"
@@ -1753,6 +1756,43 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(textColorPicker)
+
+                local textAnchorDrop = AceGUI:Create("Dropdown")
+                textAnchorDrop:SetLabel("Text Anchor")
+                local textAnchorValues = {}
+                for _, pt in ipairs(CS.anchorPoints) do
+                    textAnchorValues[pt] = CS.anchorPointLabels[pt]
+                end
+                textAnchorDrop:SetList(textAnchorValues, CS.anchorPoints)
+                textAnchorDrop:SetValue(resSettings.textAnchor or DEFAULT_RESOURCE_TEXT_ANCHOR_CONFIG)
+                textAnchorDrop:SetFullWidth(true)
+                textAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.resources[capturedPt].textAnchor = val
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(textAnchorDrop)
+
+                local textXSlider = AceGUI:Create("Slider")
+                textXSlider:SetLabel("Text X Offset")
+                textXSlider:SetSliderValues(-50, 50, 0.1)
+                textXSlider:SetValue(resSettings.textXOffset or DEFAULT_RESOURCE_TEXT_X_OFFSET_CONFIG)
+                textXSlider:SetFullWidth(true)
+                textXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.resources[capturedPt].textXOffset = val
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(textXSlider)
+
+                local textYSlider = AceGUI:Create("Slider")
+                textYSlider:SetLabel("Text Y Offset")
+                textYSlider:SetSliderValues(-50, 50, 0.1)
+                textYSlider:SetValue(resSettings.textYOffset or DEFAULT_RESOURCE_TEXT_Y_OFFSET_CONFIG)
+                textYSlider:SetFullWidth(true)
+                textYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.resources[capturedPt].textYOffset = val
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(textYSlider)
 
                 if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
                     local hideAtZeroCb = AceGUI:Create("CheckBox")
