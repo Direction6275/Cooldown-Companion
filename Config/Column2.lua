@@ -230,11 +230,6 @@ local function RefreshColumn2()
 
             if not col2._resourceStylingTabGroup then
                 local tabGroup = AceGUI:Create("TabGroup")
-                tabGroup:SetTabs({
-                    { value = "bar_text", text = "Bar/Text Styling" },
-                    { value = "colors", text = "Colors" },
-                    { value = "aura_overlays", text = "Aura Overlays" },
-                })
                 tabGroup:SetLayout("Fill")
                 tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                     CS.resourceStylingTab = tab
@@ -248,12 +243,6 @@ local function RefreshColumn2()
                             ST._BuildResourceBarColorsStylingPanel(scroll)
                         else
                             ST._BuildResourceBarStylingPanel(scroll, "colors")
-                        end
-                    elseif tab == "aura_overlays" then
-                        if ST._BuildResourceBarAuraOverlaysStylingPanel then
-                            ST._BuildResourceBarAuraOverlaysStylingPanel(scroll)
-                        else
-                            ST._BuildResourceBarStylingPanel(scroll, "aura_overlays")
                         end
                     else
                         if ST._BuildResourceBarBarTextStylingPanel then
@@ -270,9 +259,22 @@ local function RefreshColumn2()
                 col2._resourceStylingTabGroup = tabGroup
             end
 
+            -- Build dynamic "Colors: SpecName" tab text (updates on spec change)
+            local colorsTabText = "Colors"
+            local specIdx = C_SpecializationInfo.GetSpecialization()
+            if specIdx then
+                local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+                if specName and specName ~= "" then
+                    colorsTabText = "Colors: " .. ST._GetClassColoredText(specName)
+                end
+            end
+            col2._resourceStylingTabGroup:SetTabs({
+                { value = "bar_text", text = "Bar/Text Styling" },
+                { value = "colors", text = colorsTabText },
+            })
+
             if CS.resourceStylingTab ~= "bar_text"
                 and CS.resourceStylingTab ~= "colors"
-                and CS.resourceStylingTab ~= "aura_overlays"
             then
                 CS.resourceStylingTab = "bar_text"
             end

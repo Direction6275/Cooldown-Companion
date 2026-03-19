@@ -319,6 +319,31 @@ local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
     end
 end
 
+local function NormalizeResourceSpecColorsForCurrentClass(settings)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return
+    end
+
+    local allowedSpecIDs = GetCurrentClassSpecInfo()
+    if type(allowedSpecIDs) ~= "table" then
+        return
+    end
+
+    for _, resource in pairs(settings.resources) do
+        if type(resource) == "table" and type(resource.specColors) == "table" then
+            for specID in pairs(resource.specColors) do
+                local numericSpecID = tonumber(specID)
+                if not numericSpecID or not allowedSpecIDs[numericSpecID] then
+                    resource.specColors[specID] = nil
+                end
+            end
+            if not next(resource.specColors) then
+                resource.specColors = nil
+            end
+        end
+    end
+end
+
 local function NormalizeCustomAuraBarsForCurrentClass(settings)
     if type(settings) ~= "table" or type(settings.customAuraBars) ~= "table" then
         return
@@ -413,6 +438,7 @@ local function CopyPreservedResourceAuraOverlayState(targetResource, copiedResou
 
     copiedResource.auraOverlayEnabled = nil
     copiedResource.auraOverlayEntries = nil
+    copiedResource.specColors = nil
     copiedResource.auraColorSpellID = nil
     copiedResource.auraActiveColor = nil
     copiedResource.auraColorTrackingMode = nil
@@ -427,6 +453,9 @@ local function CopyPreservedResourceAuraOverlayState(targetResource, copiedResou
     end
     if type(targetResource.auraOverlayEntries) == "table" then
         copiedResource.auraOverlayEntries = CopyTable(targetResource.auraOverlayEntries)
+    end
+    if type(targetResource.specColors) == "table" then
+        copiedResource.specColors = CopyTable(targetResource.specColors)
     end
     if targetResource.auraColorSpellID ~= nil then
         copiedResource.auraColorSpellID = targetResource.auraColorSpellID
@@ -489,6 +518,7 @@ local function NormalizeScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
         NormalizeCustomAuraBarsForCurrentClass(settings)
         NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
+        NormalizeResourceSpecColorsForCurrentClass(settings)
     end
 end
 
