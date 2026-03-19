@@ -3252,6 +3252,13 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar.text:SetFont(textFont, textSize, textOutline)
     bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
 
+    bar.text:ClearAllPoints()
+    bar.text:SetPoint(
+        resourceConfig and resourceConfig.textAnchor or "CENTER",
+        resourceConfig and resourceConfig.textXOffset or 0,
+        resourceConfig and resourceConfig.textYOffset or 0
+    )
+
     -- Continuous bars show text by default
     local showText = true
     if resourceConfig and resourceConfig.showText == false then
@@ -3293,6 +3300,13 @@ local function StyleSegmentedText(holder, powerType, settings)
     local textFont = CooldownCompanion:FetchFont(textFontName)
     holder.text:SetFont(textFont, textSize, textOutline)
     holder.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
+
+    holder.text:ClearAllPoints()
+    holder.text:SetPoint(
+        resourceConfig and resourceConfig.textAnchor or "CENTER",
+        resourceConfig and resourceConfig.textXOffset or 0,
+        resourceConfig and resourceConfig.textYOffset or 0
+    )
 
     -- Segmented resources are off by default unless explicitly enabled.
     local showText = resourceConfig and resourceConfig.showText == true
