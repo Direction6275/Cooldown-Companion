@@ -878,14 +878,15 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
-    -- Defer during combat — touches many protected frame properties.
-    if InCombatLockdown() then
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+
+    -- Defer during combat when the frame is protected or would need creation.
+    -- Unprotected frames can safely refresh during combat.
+    if InCombatLockdown() and (not frame or frame:IsProtected()) then
         self._pendingFullRefresh = true
         return
     end
-
-    local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
 
     if not group then
         self:UnloadGroup(groupId)
