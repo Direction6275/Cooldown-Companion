@@ -878,9 +878,15 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
+    -- Defer during combat — touches many protected frame properties.
+    if InCombatLockdown() then
+        self._pendingFullRefresh = true
+        return
+    end
+
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
-    
+
     if not group then
         self:UnloadGroup(groupId)
         self:DiscardDormantFrame(groupId)
@@ -947,8 +953,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         checkLoadConditions = true,
         requireButtons = true,
     }) then
-        if InCombatLockdown() and frame:IsProtected() and not frame:IsShown() then
-            self._pendingVisibilityRefresh = true
+        if InCombatLockdown() and frame:IsProtected() then
+            if not frame:IsShown() then
+                self._pendingVisibilityRefresh = true
+            end
         else
             frame:Show()
         end

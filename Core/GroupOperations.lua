@@ -784,6 +784,13 @@ function CooldownCompanion:CreateAllGroupFrames()
 end
 
 function CooldownCompanion:RefreshAllGroups()
+    -- Defer entire refresh during combat — protected frame operations
+    -- (Show/Hide/SetSize/SetPoint/SetFrameStrata/RegisterForDrag/EnableMouse)
+    -- are all blocked. Per-tick cooldown updates continue independently.
+    if InCombatLockdown() then
+        self._pendingFullRefresh = true
+        return
+    end
     -- Clean up stale container frames (e.g. after profile switch)
     if self.containerFrames then
         local containers = self.db.profile.groupContainers or {}
@@ -886,8 +893,10 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
                 if frame then
                     local wasShown = frame:IsShown()
-                    if InCombatLockdown() and frame:IsProtected() and not wasShown then
-                        self._pendingVisibilityRefresh = true
+                    if InCombatLockdown() and frame:IsProtected() then
+                        if not wasShown then
+                            self._pendingVisibilityRefresh = true
+                        end
                     else
                         frame:Show()
                     end
@@ -965,8 +974,10 @@ function CooldownCompanion:UnloadGroup(groupId)
     end
 
     -- Hide and move to dormant cache for reuse
-    if InCombatLockdown() and frame:IsProtected() and frame:IsShown() then
-        self._pendingVisibilityRefresh = true
+    if InCombatLockdown() and frame:IsProtected() then
+        if frame:IsShown() then
+            self._pendingVisibilityRefresh = true
+        end
     else
         frame:Hide()
     end
