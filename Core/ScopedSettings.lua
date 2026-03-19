@@ -446,6 +446,10 @@ local function SanitizeFrameAnchoringAnchors(settings)
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
 end
 
+-- Preserves per-spec state (aura overlay entries, spec overrides) from targetResource
+-- when composing a copy. Strips these fields from copiedResource first, then re-applies
+-- targetResource's values to prevent copy/seed operations from overwriting per-character
+-- spec customizations.
 local function CopyPreservedResourcePerSpecState(targetResource, copiedResource)
     if type(copiedResource) ~= "table" then
         return copiedResource
