@@ -126,6 +126,10 @@ local function CreateConfigPanel()
         frame.sizer_e:Hide()
     end
 
+    -- Track full dimensions for minimize/expand restore
+    local fullHeight = 700
+    local fullWidth = 1384
+
     -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 993px)
     content:SetResizable(true)
     content:SetResizeBounds(993, 400)
@@ -144,6 +148,8 @@ local function CreateConfigPanel()
     end)
     resizeGrip:SetScript("OnMouseUp", function(self)
         content:StopMovingOrSizing()
+        fullWidth = content:GetWidth()
+        fullHeight = content:GetHeight()
     end)
 
     -- Hide the AceGUI status bar and add version text at bottom-right
@@ -218,7 +224,6 @@ local function CreateConfigPanel()
     end
 
     local isMinimized = false
-    local fullHeight = 700
     local savedFrameRight, savedFrameTop
     local savedOffsetRight, savedOffsetTop
 
@@ -554,7 +559,7 @@ local function CreateConfigPanel()
             content:ClearAllPoints()
             content:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", expandRight, expandTop)
             content:SetHeight(fullHeight)
-            content:SetWidth(1150)
+            content:SetWidth(fullWidth)
             content:Show()
             CooldownCompanion:RefreshConfigPanel()
         else
