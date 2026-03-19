@@ -236,7 +236,6 @@ function CooldownCompanion:ApplyCdmAlpha()
             viewer:SetAlpha(alpha)
             cdmAlphaGuard[viewer] = nil
             if not InCombatLockdown() then
-                viewer:EnableMouse(not hidden)
                 if hidden then
                     for _, child in pairs({viewer:GetChildren()}) do
                         child:SetMouseMotionEnabled(false)
