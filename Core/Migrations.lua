@@ -50,6 +50,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateCustomAuraBarSlots5()
     self:MigrateLayoutOrderToSpecKeyed()
     self:MigrateBaseSpellResolution()
+    self:MigrateSpecColorsToSpecOverrides()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -1840,5 +1841,33 @@ function CooldownCompanion:MigrateBaseSpellResolution()
     end
 
     profile._migratedBaseSpells = true
+end
+
+-- Rename resource specColors -> specOverrides in all scoped bar settings.
+function CooldownCompanion:MigrateSpecColorsToSpecOverrides()
+    local profile = self.db and self.db.profile
+    if not profile then return end
+
+    local function migrateSettings(settings)
+        if type(settings) ~= "table" or type(settings.resources) ~= "table" then return end
+        for _, resource in pairs(settings.resources) do
+            if type(resource) == "table" and resource.specColors ~= nil then
+                resource.specOverrides = resource.specColors
+                resource.specColors = nil
+            end
+        end
+    end
+
+    -- Migrate all scoped bar settings (resourceBars can exist at profile level
+    -- and inside characterScopedBarSettings per-character entries).
+    migrateSettings(profile.resourceBars)
+
+    if type(profile.characterScopedBarSettings) == "table" then
+        for _, charData in pairs(profile.characterScopedBarSettings) do
+            if type(charData) == "table" and type(charData.resourceBars) == "table" then
+                migrateSettings(charData.resourceBars)
+            end
+        end
+    end
 end
 
