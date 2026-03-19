@@ -3809,10 +3809,16 @@ local function BuildLayoutOrderPanel(container)
             table.insert(castSlots, {
                 label = "Cast Bar",
                 color = cbColor,
-                getPos = function() return layout.castBar.position or "below" end,
-                getOrder = function() return layout.castBar.order or 2000 end,
-                setPos = function(v) layout.castBar.position = v end,
-                setOrder = function(v) layout.castBar.order = v end,
+                getPos = function() return (layout.castBar and layout.castBar.position) or "below" end,
+                getOrder = function() return (layout.castBar and layout.castBar.order) or 2000 end,
+                setPos = function(v)
+                    if not layout.castBar then layout.castBar = { position = "below", order = 2000 } end
+                    layout.castBar.position = v
+                end,
+                setOrder = function(v)
+                    if not layout.castBar then layout.castBar = { position = "below", order = 2000 } end
+                    layout.castBar.order = v
+                end,
             })
         end
     end

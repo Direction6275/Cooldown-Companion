@@ -75,6 +75,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedCustomAuraSlots5 = nil
     profile._migratedCustomAuraSlots5v2 = nil
     profile._migratedBaseSpells = nil
+    profile._migratedLayoutOrder = nil
     -- Folder-spec-to-container clearing is a one-time historical migration
     -- that must never re-run on imported data — always mark as complete.
     profile._migratedFolderSpecsToContainers = true
@@ -1703,6 +1704,7 @@ end
 -- the current character's class so every spec starts with the previous layout.
 function CooldownCompanion:MigrateLayoutOrderToSpecKeyed()
     local profile = self.db.profile
+    if profile._migratedLayoutOrder then return end
 
     local _, _, classID = UnitClass("player")
     if not classID then return end
@@ -1801,6 +1803,8 @@ function CooldownCompanion:MigrateLayoutOrderToSpecKeyed()
         local layout = ExtractLayout(seed, cbSeed)
         ApplyLayoutToAllSpecs(seed, layout)
     end
+
+    profile._migratedLayoutOrder = true
 end
 
 -- Resolve stored spell IDs to their base form so the override chain can
