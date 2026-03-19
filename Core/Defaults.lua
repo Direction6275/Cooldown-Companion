@@ -387,6 +387,7 @@ local defaults = {
                     continuousTickPercent = 50,
                     continuousTickAbsolute = 50,
                     continuousTickColor = nil,
+                    continuousTickCombatOnly = false,
                 },
             },
             customAuraBarSlots = {

@@ -1039,7 +1039,8 @@ local function GetContinuousTickConfig(powerType, settings)
     local tickColor = GetSafeRGBAColor(resource.continuousTickColor, DEFAULT_CONTINUOUS_TICK_COLOR)
     local tickWidth = tonumber(resource.continuousTickWidth) or DEFAULT_CONTINUOUS_TICK_WIDTH
     if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
-    return true, mode, percentValue, absoluteValue, tickColor, tickWidth
+    local combatOnly = resource.continuousTickCombatOnly or false
+    return true, mode, percentValue, absoluteValue, tickColor, tickWidth, combatOnly
 end
 
 local function SupportsResourceAuraStackMode(powerType)
@@ -1340,8 +1341,13 @@ end
 local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
     if not bar or not bar.tickMarker then return end
 
-    local enabled, mode, percentValue, absoluteValue, tickColor, tickWidth = GetContinuousTickConfig(powerType, settings)
+    local enabled, mode, percentValue, absoluteValue, tickColor, tickWidth, combatOnly = GetContinuousTickConfig(powerType, settings)
     if not enabled then
+        bar.tickMarker:Hide()
+        return
+    end
+
+    if combatOnly and not InCombatLockdown() then
         bar.tickMarker:Hide()
         return
     end
