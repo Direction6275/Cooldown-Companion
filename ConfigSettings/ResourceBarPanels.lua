@@ -9,6 +9,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local CreateInfoButton = ST._CreateInfoButton
+local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local tabInfoButtons = CS.tabInfoButtons
 
 ------------------------------------------------------------------------
@@ -2322,6 +2323,20 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
                     end)
                     container:AddChild(tickEnableCb)
+
+                    if res.continuousTickEnabled == true then
+                        local tickCombatCb = AceGUI:Create("CheckBox")
+                        tickCombatCb:SetLabel("Show Only In Combat")
+                        tickCombatCb:SetValue(res.continuousTickCombatOnly or false)
+                        tickCombatCb:SetFullWidth(true)
+                        tickCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+                            if not settings.resources[capturedPt] then settings.resources[capturedPt] = {} end
+                            settings.resources[capturedPt].continuousTickCombatOnly = val
+                            CooldownCompanion:ApplyResourceBars()
+                        end)
+                        container:AddChild(tickCombatCb)
+                        ApplyCheckboxIndent(tickCombatCb, 20)
+                    end
 
                     local tickAdvExpanded = AddAdvancedToggle(
                         tickEnableCb,
