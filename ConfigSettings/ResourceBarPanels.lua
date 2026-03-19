@@ -2351,7 +2351,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     thresholdEnableCb:SetFullWidth(true)
                     thresholdEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
                         local wasEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true
-                        WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", val and true or nil)
+                        WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", val == true)
                         if val and not wasEnabled then
                             if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
                                 CooldownCompanion.db.profile.showAdvanced = {}
@@ -2422,7 +2422,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     tickEnableCb:SetFullWidth(true)
                     tickEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
                         local wasEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", false) == true
-                        WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", val and true or nil)
+                        WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", val == true)
                         if val and not wasEnabled then
                             if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
                                 CooldownCompanion.db.profile.showAdvanced = {}

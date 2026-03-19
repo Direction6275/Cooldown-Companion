@@ -77,6 +77,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedCustomAuraSlots5v2 = nil
     profile._migratedBaseSpells = nil
     profile._migratedLayoutOrder = nil
+    profile._migratedSpecOverrides = nil
     -- Folder-spec-to-container clearing is a one-time historical migration
     -- that must never re-run on imported data — always mark as complete.
     profile._migratedFolderSpecsToContainers = true
@@ -1847,6 +1848,7 @@ end
 function CooldownCompanion:MigrateSpecColorsToSpecOverrides()
     local profile = self.db and self.db.profile
     if not profile then return end
+    if profile._migratedSpecOverrides then return end
 
     local function migrateSettings(settings)
         if type(settings) ~= "table" or type(settings.resources) ~= "table" then return end
@@ -1858,16 +1860,18 @@ function CooldownCompanion:MigrateSpecColorsToSpecOverrides()
         end
     end
 
-    -- Migrate all scoped bar settings (resourceBars can exist at profile level
-    -- and inside characterScopedBarSettings per-character entries).
-    migrateSettings(profile.resourceBars)
+    -- Legacy / seed resource bar settings
+    migrateSettings(rawget(profile, "resourceBars"))
+    migrateSettings(rawget(profile, "legacyResourceBarsSeed"))
 
-    if type(profile.characterScopedBarSettings) == "table" then
-        for _, charData in pairs(profile.characterScopedBarSettings) do
-            if type(charData) == "table" and type(charData.resourceBars) == "table" then
-                migrateSettings(charData.resourceBars)
-            end
+    -- Character-scoped buckets
+    local store = rawget(profile, "resourceBarsByChar")
+    if type(store) == "table" then
+        for _, charSettings in pairs(store) do
+            migrateSettings(charSettings)
         end
     end
+
+    profile._migratedSpecOverrides = true
 end
 
