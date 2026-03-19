@@ -903,8 +903,10 @@ local function ResolveSpecColorKey(resource, specID, key)
     return type(resource) == "table" and resource[key] or nil
 end
 
---- Generic color resolver. Returns one color per key defined in RESOURCE_COLOR_DEFS.
---- For power types without an entry (generic continuous), returns the single power color.
+--- Generic color resolver. Resolves per-spec overrides first, falling back to
+--- resource-level values and then hardcoded defaults. Returns one color per key
+--- defined in RESOURCE_COLOR_DEFS. For power types without an entry (generic
+--- continuous), returns the single power color.
 local function GetResourceColors(powerType, settings)
     local def = RESOURCE_COLOR_DEFS[powerType]
     local specID = GetCurrentSpecID()

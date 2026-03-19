@@ -279,6 +279,9 @@ local function GetCurrentConfigSpecID()
 end
 
 local function GetSpecColorTable(settings, powerType, specID, create)
+    if not settings.resources then
+        if create then settings.resources = {} else return nil end
+    end
     if not settings.resources[powerType] then
         if create then settings.resources[powerType] = {} else return nil end
     end
@@ -309,8 +312,13 @@ end
 
 local function WriteSpecColorKey(settings, powerType, specID, key, value)
     if not specID then return end
-    local specTable = GetSpecColorTable(settings, powerType, specID, true)
-    specTable[key] = value
+    if value == nil then
+        local specTable = GetSpecColorTable(settings, powerType, specID, false)
+        if specTable then specTable[key] = nil end
+    else
+        local specTable = GetSpecColorTable(settings, powerType, specID, true)
+        specTable[key] = value
+    end
 end
 
 local function GetPlayerSpecOptionsConfig()
@@ -1112,7 +1120,13 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
 
     -- Simplified: show fields for current spec only (no multi-spec card system)
     local currentSpecID = GetCurrentConfigSpecID()
-    if not currentSpecID then return end
+    if not currentSpecID then
+        local specUnavailLabel = AceGUI:Create("Label")
+        specUnavailLabel:SetText("Specialization data not yet available.")
+        specUnavailLabel:SetFullWidth(true)
+        container:AddChild(specUnavailLabel)
+        return
+    end
 
     local entry = GetResourceAuraEntryConfig(res, currentSpecID)
 
@@ -1899,7 +1913,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         "Per-Resource Colors",
         {"These color settings are per-specialization. Switch specs to configure different colors.", 1, 1, 1, true},
         " ",
-        {"Specs without custom colors inherit character defaults.", 1, 1, 1, true},
+        {"Specs without custom colors use the built-in defaults.", 1, 1, 1, true},
     }, colorHeading)
 
     colorHeading.right:ClearAllPoints()
@@ -1908,7 +1922,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     local _colorSpecID = GetCurrentConfigSpecID()
 
-    if not colorCollapsed then
+    if not _colorSpecID and not colorCollapsed then
+        local specUnavailLabel = AceGUI:Create("Label")
+        specUnavailLabel:SetText("Specialization data not yet available.")
+        specUnavailLabel:SetFullWidth(true)
+        container:AddChild(specUnavailLabel)
+    end
+
+    if not colorCollapsed and _colorSpecID then
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
             if not settings.resources[pt] then
@@ -3650,18 +3671,18 @@ local function BuildLayoutOrderPanel(container)
     local MAX_SLOTS = ST.MAX_CUSTOM_AURA_BARS or 3
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
 
-    -- Resolve the display color for a power type
+    -- Resolve the display color for a power type (respects per-spec overrides)
+    local layoutSpecID = GetCurrentConfigSpecID()
     local function GetResourceColor(pt)
-        local res = rbSettings.resources and rbSettings.resources[pt]
-        if pt == 4 then return res and res.comboColor or DEFAULT_COMBO_COLOR_CONFIG
-        elseif pt == 5 then return res and res.runeReadyColor or DEFAULT_RUNE_READY_COLOR_CONFIG
-        elseif pt == 7 then return res and res.shardReadyColor or DEFAULT_SHARD_READY_COLOR_CONFIG
-        elseif pt == 9 then return res and res.holyColor or DEFAULT_HOLY_COLOR_CONFIG
-        elseif pt == 12 then return res and res.chiColor or DEFAULT_CHI_COLOR_CONFIG
-        elseif pt == 16 then return res and res.arcaneColor or DEFAULT_ARCANE_COLOR_CONFIG
-        elseif pt == 19 then return res and res.essenceReadyColor or DEFAULT_ESSENCE_READY_COLOR_CONFIG
-        elseif pt == 100 then return res and res.mwBaseColor or DEFAULT_MW_BASE_COLOR_CONFIG
-        else return res and res.color or DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 }
+        if pt == 4 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "comboColor", DEFAULT_COMBO_COLOR_CONFIG)
+        elseif pt == 5 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR_CONFIG)
+        elseif pt == 7 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR_CONFIG)
+        elseif pt == 9 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "holyColor", DEFAULT_HOLY_COLOR_CONFIG)
+        elseif pt == 12 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "chiColor", DEFAULT_CHI_COLOR_CONFIG)
+        elseif pt == 16 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR_CONFIG)
+        elseif pt == 19 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR_CONFIG)
+        elseif pt == 100 then return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR_CONFIG)
+        else return ReadSpecColorKey(rbSettings, pt, layoutSpecID, "color", DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 })
         end
     end
 
