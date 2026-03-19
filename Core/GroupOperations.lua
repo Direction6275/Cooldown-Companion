@@ -888,7 +888,11 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     frame = self:RecoverDormantFrame(groupId)
                 end
                 if not frame then
-                    frame = self:CreateGroupFrame(groupId)
+                    if InCombatLockdown() then
+                        self._pendingVisibilityRefresh = true
+                    else
+                        frame = self:CreateGroupFrame(groupId)
+                    end
                 end
 
                 if frame then
