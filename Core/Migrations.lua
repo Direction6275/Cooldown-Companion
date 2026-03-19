@@ -50,6 +50,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateCustomAuraBarSlots5()
     self:MigrateLayoutOrderToSpecKeyed()
     self:MigrateBaseSpellResolution()
+    self:MigrateSpecColorsToSpecOverrides()
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -76,6 +77,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedCustomAuraSlots5v2 = nil
     profile._migratedBaseSpells = nil
     profile._migratedLayoutOrder = nil
+    profile._migratedSpecOverrides = nil
     -- Folder-spec-to-container clearing is a one-time historical migration
     -- that must never re-run on imported data — always mark as complete.
     profile._migratedFolderSpecsToContainers = true
@@ -1840,5 +1842,38 @@ function CooldownCompanion:MigrateBaseSpellResolution()
     end
 
     profile._migratedBaseSpells = true
+end
+
+-- Rename resource specColors -> specOverrides in all scoped bar settings.
+function CooldownCompanion:MigrateSpecColorsToSpecOverrides()
+    local profile = self.db and self.db.profile
+    if not profile then return end
+    if profile._migratedSpecOverrides then return end
+
+    local function migrateSettings(settings)
+        if type(settings) ~= "table" or type(settings.resources) ~= "table" then return end
+        for _, resource in pairs(settings.resources) do
+            if type(resource) == "table" and type(resource.specColors) == "table" then
+                resource.specOverrides = resource.specColors
+                resource.specColors = nil
+            elseif type(resource) == "table" and resource.specColors ~= nil then
+                resource.specColors = nil
+            end
+        end
+    end
+
+    -- Legacy / seed resource bar settings
+    migrateSettings(rawget(profile, "resourceBars"))
+    migrateSettings(rawget(profile, "legacyResourceBarsSeed"))
+
+    -- Character-scoped buckets
+    local store = rawget(profile, "resourceBarsByChar")
+    if type(store) == "table" then
+        for _, charSettings in pairs(store) do
+            migrateSettings(charSettings)
+        end
+    end
+
+    profile._migratedSpecOverrides = true
 end
 

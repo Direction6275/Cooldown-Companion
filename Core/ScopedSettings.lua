@@ -319,6 +319,46 @@ local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
     end
 end
 
+-- Resolves a per-spec override key: specOverrides[specID][key] -> resource[key] -> nil.
+local function ResolveSpecOverrideKey(resource, specID, key)
+    if specID and type(resource) == "table" then
+        local specOverrides = resource.specOverrides
+        if type(specOverrides) == "table" then
+            local specData = specOverrides[specID]
+            if type(specData) == "table" and specData[key] ~= nil then
+                return specData[key]
+            end
+        end
+    end
+    return type(resource) == "table" and resource[key] or nil
+end
+ST._ResolveSpecOverrideKey = ResolveSpecOverrideKey
+
+local function NormalizeResourceSpecOverridesForCurrentClass(settings)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return
+    end
+
+    local allowedSpecIDs = GetCurrentClassSpecInfo()
+    if type(allowedSpecIDs) ~= "table" then
+        return
+    end
+
+    for _, resource in pairs(settings.resources) do
+        if type(resource) == "table" and type(resource.specOverrides) == "table" then
+            for specID in pairs(resource.specOverrides) do
+                local numericSpecID = tonumber(specID)
+                if not numericSpecID or not allowedSpecIDs[numericSpecID] then
+                    resource.specOverrides[specID] = nil
+                end
+            end
+            if not next(resource.specOverrides) then
+                resource.specOverrides = nil
+            end
+        end
+    end
+end
+
 local function NormalizeCustomAuraBarsForCurrentClass(settings)
     if type(settings) ~= "table" or type(settings.customAuraBars) ~= "table" then
         return
@@ -406,13 +446,18 @@ local function SanitizeFrameAnchoringAnchors(settings)
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
 end
 
-local function CopyPreservedResourceAuraOverlayState(targetResource, copiedResource)
+-- Preserves per-spec state (aura overlay entries, spec overrides) from targetResource
+-- when composing a copy. Strips these fields from copiedResource first, then re-applies
+-- targetResource's values to prevent copy/seed operations from overwriting per-character
+-- spec customizations.
+local function CopyPreservedResourcePerSpecState(targetResource, copiedResource)
     if type(copiedResource) ~= "table" then
         return copiedResource
     end
 
     copiedResource.auraOverlayEnabled = nil
     copiedResource.auraOverlayEntries = nil
+    copiedResource.specOverrides = nil
     copiedResource.auraColorSpellID = nil
     copiedResource.auraActiveColor = nil
     copiedResource.auraColorTrackingMode = nil
@@ -427,6 +472,9 @@ local function CopyPreservedResourceAuraOverlayState(targetResource, copiedResou
     end
     if type(targetResource.auraOverlayEntries) == "table" then
         copiedResource.auraOverlayEntries = CopyTable(targetResource.auraOverlayEntries)
+    end
+    if type(targetResource.specOverrides) == "table" then
+        copiedResource.specOverrides = CopyTable(targetResource.specOverrides)
     end
     if targetResource.auraColorSpellID ~= nil then
         copiedResource.auraColorSpellID = targetResource.auraColorSpellID
@@ -475,7 +523,7 @@ local function ComposeCopiedResourceBarSettings(source, target)
             local sourceResource = sourceResources[powerType]
             if type(sourceResource) == "table" then
                 local targetResource = type(targetResources) == "table" and targetResources[powerType] or nil
-                copied.resources[powerType] = CopyPreservedResourceAuraOverlayState(targetResource, CopyTable(sourceResource))
+                copied.resources[powerType] = CopyPreservedResourcePerSpecState(targetResource, CopyTable(sourceResource))
             end
         end
     end
@@ -489,6 +537,7 @@ local function NormalizeScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
         NormalizeCustomAuraBarsForCurrentClass(settings)
         NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
+        NormalizeResourceSpecOverridesForCurrentClass(settings)
     end
 end
 

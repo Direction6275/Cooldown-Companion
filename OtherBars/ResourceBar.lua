@@ -890,16 +890,22 @@ local RESOURCE_COLOR_DEFS = {
               defaults = { DEFAULT_MW_BASE_COLOR, DEFAULT_MW_OVERLAY_COLOR, DEFAULT_MW_MAX_COLOR } },
 }
 
---- Generic color resolver. Returns one color per key defined in RESOURCE_COLOR_DEFS.
---- For power types without an entry (generic continuous), returns the single power color.
+local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
+
+--- Generic color resolver. Resolves per-spec overrides first, falling back to
+--- resource-level values and then hardcoded defaults. Returns one color per key
+--- defined in RESOURCE_COLOR_DEFS. For power types without an entry (generic
+--- continuous), returns the single power color.
 local function GetResourceColors(powerType, settings)
     local def = RESOURCE_COLOR_DEFS[powerType]
+    local specID = GetCurrentSpecID()
     if not def then
         -- Generic single-color fallback (continuous resources)
         if settings and settings.resources then
             local override = settings.resources[powerType]
-            if override and override.color then
-                return override.color
+            if override then
+                local resolved = ResolveSpecOverrideKey(override, specID, "color")
+                if resolved then return resolved end
             end
         end
         return DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }
@@ -909,12 +915,12 @@ local function GetResourceColors(powerType, settings)
     local keys, defaults = def.keys, def.defaults
     local n = #keys
     if n == 2 then
-        return (override and override[keys[1]]) or defaults[1],
-               (override and override[keys[2]]) or defaults[2]
+        return ResolveSpecOverrideKey(override, specID, keys[1]) or defaults[1],
+               ResolveSpecOverrideKey(override, specID, keys[2]) or defaults[2]
     elseif n == 3 then
-        return (override and override[keys[1]]) or defaults[1],
-               (override and override[keys[2]]) or defaults[2],
-               (override and override[keys[3]]) or defaults[3]
+        return ResolveSpecOverrideKey(override, specID, keys[1]) or defaults[1],
+               ResolveSpecOverrideKey(override, specID, keys[2]) or defaults[2],
+               ResolveSpecOverrideKey(override, specID, keys[3]) or defaults[3]
     end
     -- Shouldn't happen, but safe fallback
     return defaults[1]
@@ -981,11 +987,17 @@ local function GetSegmentedThresholdConfig(powerType, settings)
     end
 
     local resource = settings.resources[powerType]
-    if type(resource) ~= "table" or resource.segThresholdEnabled ~= true then
+    if type(resource) ~= "table" then
         return false, nil, nil
     end
 
-    local threshold = tonumber(resource.segThresholdValue)
+    local specID = GetCurrentSpecID()
+    local enabled = ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled")
+    if enabled ~= true then
+        return false, nil, nil
+    end
+
+    local threshold = tonumber(ResolveSpecOverrideKey(resource, specID, "segThresholdValue"))
     if not threshold then
         threshold = 1
     end
@@ -996,7 +1008,7 @@ local function GetSegmentedThresholdConfig(powerType, settings)
         threshold = 99
     end
 
-    local thresholdColor = GetSafeRGBColor(resource.segThresholdColor, DEFAULT_SEG_THRESHOLD_COLOR)
+    local thresholdColor = GetSafeRGBColor(ResolveSpecOverrideKey(resource, specID, "segThresholdColor"), DEFAULT_SEG_THRESHOLD_COLOR)
     return true, threshold, thresholdColor
 end
 
@@ -1009,16 +1021,22 @@ local function GetContinuousTickConfig(powerType, settings)
     end
 
     local resource = settings.resources[powerType]
-    if type(resource) ~= "table" or resource.continuousTickEnabled ~= true then
+    if type(resource) ~= "table" then
         return false, nil, nil, nil, nil
     end
 
-    local mode = resource.continuousTickMode
+    local specID = GetCurrentSpecID()
+    local enabled = ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled")
+    if enabled ~= true then
+        return false, nil, nil, nil, nil
+    end
+
+    local mode = ResolveSpecOverrideKey(resource, specID, "continuousTickMode")
     if mode ~= "percent" and mode ~= "absolute" then
         mode = DEFAULT_CONTINUOUS_TICK_MODE
     end
 
-    local percentValue = tonumber(resource.continuousTickPercent)
+    local percentValue = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickPercent"))
     if not percentValue then
         percentValue = DEFAULT_CONTINUOUS_TICK_PERCENT
     end
@@ -1028,7 +1046,7 @@ local function GetContinuousTickConfig(powerType, settings)
         percentValue = 100
     end
 
-    local absoluteValue = tonumber(resource.continuousTickAbsolute)
+    local absoluteValue = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickAbsolute"))
     if not absoluteValue then
         absoluteValue = DEFAULT_CONTINUOUS_TICK_ABSOLUTE
     end
@@ -1036,10 +1054,10 @@ local function GetContinuousTickConfig(powerType, settings)
         absoluteValue = 0
     end
 
-    local tickColor = GetSafeRGBAColor(resource.continuousTickColor, DEFAULT_CONTINUOUS_TICK_COLOR)
-    local tickWidth = tonumber(resource.continuousTickWidth) or DEFAULT_CONTINUOUS_TICK_WIDTH
+    local tickColor = GetSafeRGBAColor(ResolveSpecOverrideKey(resource, specID, "continuousTickColor"), DEFAULT_CONTINUOUS_TICK_COLOR)
+    local tickWidth = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickWidth")) or DEFAULT_CONTINUOUS_TICK_WIDTH
     if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
-    local combatOnly = resource.continuousTickCombatOnly or false
+    local combatOnly = ResolveSpecOverrideKey(resource, specID, "continuousTickCombatOnly") or false
     return true, mode, percentValue, absoluteValue, tickColor, tickWidth, combatOnly
 end
 

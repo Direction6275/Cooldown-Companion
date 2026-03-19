@@ -1116,4 +1116,24 @@ local function DisableAllWidgets(container)
         end
     end
 end
+
+------------------------------------------------------------------------
+-- Helper: Get class-colored text for current player
+------------------------------------------------------------------------
+local function GetClassColoredText(text)
+    local safeText = tostring(text or "")
+    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if classColor then
+        if classColor.WrapTextInColorCode then
+            return classColor:WrapTextInColorCode(safeText)
+        end
+        local r = math.floor(((classColor.r or 1) * 255) + 0.5)
+        local g = math.floor(((classColor.g or 1) * 255) + 0.5)
+        local b = math.floor(((classColor.b or 1) * 255) + 0.5)
+        return string.format("|cff%02x%02x%02x%s|r", r, g, b, safeText)
+    end
+    return safeText
+end
+ST._GetClassColoredText = GetClassColoredText
+
 ST._DisableAllWidgets = DisableAllWidgets
