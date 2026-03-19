@@ -280,6 +280,7 @@ local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 -- Returns specOverrides[specID] table, auto-vivifying intermediate tables when
 -- create is true. Returns nil if any level is missing and create is false.
 local function GetSpecOverrideTable(settings, powerType, specID, create)
+    if not specID then return nil end
     if not settings.resources then
         if create then settings.resources = {} else return nil end
     end
@@ -2030,7 +2031,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         tickCombatCb:SetValue(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false))
                         tickCombatCb:SetFullWidth(true)
                         tickCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val)
+                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true or nil)
                             CooldownCompanion:ApplyResourceBars()
                         end)
                         container:AddChild(tickCombatCb)

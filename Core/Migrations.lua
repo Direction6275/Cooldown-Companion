@@ -1853,8 +1853,10 @@ function CooldownCompanion:MigrateSpecColorsToSpecOverrides()
     local function migrateSettings(settings)
         if type(settings) ~= "table" or type(settings.resources) ~= "table" then return end
         for _, resource in pairs(settings.resources) do
-            if type(resource) == "table" and resource.specColors ~= nil then
+            if type(resource) == "table" and type(resource.specColors) == "table" then
                 resource.specOverrides = resource.specColors
+                resource.specColors = nil
+            elseif type(resource) == "table" and resource.specColors ~= nil then
                 resource.specColors = nil
             end
         end
