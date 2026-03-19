@@ -397,6 +397,7 @@ local defaults = {
                 [5] = { position = "below", order = 1005 },
             },
             customAuraBars = {},
+            layoutOrder = {},
             textFont = "Friz Quadrata TT",
             textFontSize = 10,
             textFontOutline = "OUTLINE",

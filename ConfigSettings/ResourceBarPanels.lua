@@ -3544,6 +3544,15 @@ local function BuildLayoutOrderPanel(container)
         return
     end
 
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    if not layout then
+        local label = AceGUI:Create("Label")
+        label:SetText("Specialization data loading...")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
     -- Build the ordered list of all active bar slots
     local activeResources = GetConfigActiveResources()
     local MAX_SLOTS = ST.MAX_CUSTOM_AURA_BARS or 3
@@ -3698,29 +3707,41 @@ local function BuildLayoutOrderPanel(container)
         end
         if showResource then
             local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            local function ensureLayoutRes()
+                if not layout.resources[pt] then layout.resources[pt] = {} end
+                return layout.resources[pt]
+            end
             if isVerticalLayout then
                 table.insert(resourceSlots, {
                     label = name,
                     color = GetResourceColor(pt),
                     getPos = function()
-                        local pos = rbSettings.resources[pt].verticalPosition
+                        local lr = layout.resources[pt]
+                        local pos = lr and lr.verticalPosition
                         if pos == "left" or pos == "right" then return pos end
-                        return (rbSettings.resources[pt].position == "above") and "left" or "right"
+                        return (lr and lr.position == "above") and "left" or "right"
                     end,
                     getOrder = function()
-                        return rbSettings.resources[pt].verticalOrder or rbSettings.resources[pt].order or 1
+                        local lr = layout.resources[pt]
+                        return (lr and lr.verticalOrder) or (lr and lr.order) or (900 + pt)
                     end,
-                    setPos = function(v) rbSettings.resources[pt].verticalPosition = v end,
-                    setOrder = function(v) rbSettings.resources[pt].verticalOrder = v end,
+                    setPos = function(v) ensureLayoutRes().verticalPosition = v end,
+                    setOrder = function(v) ensureLayoutRes().verticalOrder = v end,
                 })
             else
                 table.insert(resourceSlots, {
                     label = name,
                     color = GetResourceColor(pt),
-                    getPos = function() return rbSettings.resources[pt].position or "below" end,
-                    getOrder = function() return rbSettings.resources[pt].order or 1 end,
-                    setPos = function(v) rbSettings.resources[pt].position = v end,
-                    setOrder = function(v) rbSettings.resources[pt].order = v end,
+                    getPos = function()
+                        local lr = layout.resources[pt]
+                        return (lr and lr.position) or "below"
+                    end,
+                    getOrder = function()
+                        local lr = layout.resources[pt]
+                        return (lr and lr.order) or (900 + pt)
+                    end,
+                    setPos = function(v) ensureLayoutRes().position = v end,
+                    setOrder = function(v) ensureLayoutRes().order = v end,
                 })
             end
         end
@@ -3730,41 +3751,49 @@ local function BuildLayoutOrderPanel(container)
     for slotIdx = 1, MAX_SLOTS do
         local cab = customBars and customBars[slotIdx]
         if cab and cab.enabled and cab.spellID and not IsTruthyConfigFlag(cab.independentAnchorEnabled) then
-            if not rbSettings.customAuraBarSlots then rbSettings.customAuraBarSlots = {} end
-            if not rbSettings.customAuraBarSlots[slotIdx] then
-                rbSettings.customAuraBarSlots[slotIdx] = { position = "below", order = 1000 + slotIdx }
-            end
             local spellInfo = C_Spell.GetSpellInfo(cab.spellID)
             local slotName = "Custom Aura " .. slotIdx
             if spellInfo and spellInfo.name then
                 slotName = slotName .. ": " .. spellInfo.name
             end
             local captured = slotIdx
+            local function ensureLayoutSlot()
+                if not layout.customAuraBarSlots[captured] then
+                    layout.customAuraBarSlots[captured] = { position = "below", order = 1000 + captured }
+                end
+                return layout.customAuraBarSlots[captured]
+            end
             if isVerticalLayout then
                 table.insert(resourceSlots, {
                     label = slotName,
                     color = cab.barColor or {0.5, 0.5, 1},
                     getPos = function()
-                        local slot = rbSettings.customAuraBarSlots[captured]
+                        local slot = layout.customAuraBarSlots[captured]
                         local pos = slot and slot.verticalPosition
                         if pos == "left" or pos == "right" then return pos end
                         return (slot and slot.position == "above") and "left" or "right"
                     end,
                     getOrder = function()
-                        local slot = rbSettings.customAuraBarSlots[captured]
+                        local slot = layout.customAuraBarSlots[captured]
                         return (slot and slot.verticalOrder) or (slot and slot.order) or (1000 + captured)
                     end,
-                    setPos = function(v) rbSettings.customAuraBarSlots[captured].verticalPosition = v end,
-                    setOrder = function(v) rbSettings.customAuraBarSlots[captured].verticalOrder = v end,
+                    setPos = function(v) ensureLayoutSlot().verticalPosition = v end,
+                    setOrder = function(v) ensureLayoutSlot().verticalOrder = v end,
                 })
             else
                 table.insert(resourceSlots, {
                     label = slotName,
                     color = cab.barColor or {0.5, 0.5, 1},
-                    getPos = function() return rbSettings.customAuraBarSlots[captured].position or "below" end,
-                    getOrder = function() return rbSettings.customAuraBarSlots[captured].order or (1000 + captured) end,
-                    setPos = function(v) rbSettings.customAuraBarSlots[captured].position = v end,
-                    setOrder = function(v) rbSettings.customAuraBarSlots[captured].order = v end,
+                    getPos = function()
+                        local slot = layout.customAuraBarSlots[captured]
+                        return (slot and slot.position) or "below"
+                    end,
+                    getOrder = function()
+                        local slot = layout.customAuraBarSlots[captured]
+                        return (slot and slot.order) or (1000 + captured)
+                    end,
+                    setPos = function(v) ensureLayoutSlot().position = v end,
+                    setOrder = function(v) ensureLayoutSlot().order = v end,
                 })
             end
         end
@@ -3780,10 +3809,16 @@ local function BuildLayoutOrderPanel(container)
             table.insert(castSlots, {
                 label = "Cast Bar",
                 color = cbColor,
-                getPos = function() return cbSettings.position or "below" end,
-                getOrder = function() return cbSettings.order or 2000 end,
-                setPos = function(v) cbSettings.position = v end,
-                setOrder = function(v) cbSettings.order = v end,
+                getPos = function() return (layout.castBar and layout.castBar.position) or "below" end,
+                getOrder = function() return (layout.castBar and layout.castBar.order) or 2000 end,
+                setPos = function(v)
+                    if not layout.castBar then layout.castBar = { position = "below", order = 2000 } end
+                    layout.castBar.position = v
+                end,
+                setOrder = function(v)
+                    if not layout.castBar then layout.castBar = { position = "below", order = 2000 } end
+                    layout.castBar.order = v
+                end,
             })
         end
     end

@@ -49,6 +49,18 @@ local function GetClassColoredText(text)
     return safeText
 end
 
+local function GetLayoutOrderColumnTitle()
+    local specIdx = C_SpecializationInfo.GetSpecialization()
+    if not specIdx then
+        return "Layout & Order"
+    end
+    local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+    if not specName or specName == "" then
+        return "Layout & Order"
+    end
+    return "Layout & Order: " .. GetClassColoredText(specName)
+end
+
 local function GetCustomAuraBarsColumnTitle()
     local specIdx = C_SpecializationInfo.GetSpecialization()
     if not specIdx then
@@ -813,6 +825,8 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Resource bars, custom aura bars, and cast bars are ordered together.", 1, 1, 1)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Bars can be placed above or below the icon row, and reordered within each side.", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Layout is saved per specialization and swaps automatically.", 1, 1, 1)
         else
             GameTooltip:AddLine("Panel / Group Settings")
             GameTooltip:AddLine("Select a button to configure its panel.", 1, 1, 1)
@@ -1253,7 +1267,7 @@ function CooldownCompanion:RefreshConfigPanel()
         CS.configFrame.col1:SetTitle("Bars & Frames")
         CS.configFrame.col2:SetTitle("Styling")
         CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
-        CS.configFrame.col4:SetTitle("Layout & Order")
+        CS.configFrame.col4:SetTitle(GetLayoutOrderColumnTitle())
     elseif CS.browseMode then
         CS.configFrame.col1:SetTitle("Browse Characters")
         CS.configFrame.col2:SetTitle("Preview")

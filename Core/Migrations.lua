@@ -48,6 +48,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateContainerAlphaToPanel()
     self:MigrateStrataOrderExpansion()
     self:MigrateCustomAuraBarSlots5()
+    self:MigrateLayoutOrderToSpecKeyed()
     self:MigrateBaseSpellResolution()
 end
 
@@ -74,6 +75,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedCustomAuraSlots5 = nil
     profile._migratedCustomAuraSlots5v2 = nil
     profile._migratedBaseSpells = nil
+    profile._migratedLayoutOrder = nil
     -- Folder-spec-to-container clearing is a one-time historical migration
     -- that must never re-run on imported data — always mark as complete.
     profile._migratedFolderSpecsToContainers = true
@@ -1695,6 +1697,114 @@ function CooldownCompanion:MigrateCustomAuraBarSlots5()
     end
 
     profile._migratedCustomAuraSlots5v2 = true
+end
+
+-- Migrate flat per-character layout position/order fields into the new
+-- per-spec layoutOrder table.  Copies existing arrangement to ALL specs of
+-- the current character's class so every spec starts with the previous layout.
+function CooldownCompanion:MigrateLayoutOrderToSpecKeyed()
+    local profile = self.db.profile
+    if profile._migratedLayoutOrder then return end
+
+    local _, _, classID = UnitClass("player")
+    if not classID then return end
+
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    if numSpecs == 0 then return end
+
+    local specIDs = {}
+    for i = 1, numSpecs do
+        local specID = GetSpecializationInfoForClassID(classID, i)
+        if specID then
+            specIDs[#specIDs + 1] = specID
+        end
+    end
+    if #specIDs == 0 then return end
+
+    -- Extract layout fields from a resource bar settings table + optional cast bar table
+    local function ExtractLayout(rbSettings, cbSettings)
+        local layout = {
+            resources = {},
+            customAuraBarSlots = {},
+            castBar = { position = "below", order = 2000 },
+        }
+
+        if type(rbSettings) == "table" and type(rbSettings.resources) == "table" then
+            for pt, res in pairs(rbSettings.resources) do
+                if type(res) == "table" and (res.position or res.order or res.verticalPosition or res.verticalOrder) then
+                    layout.resources[pt] = {
+                        position = res.position,
+                        order = res.order,
+                        verticalPosition = res.verticalPosition,
+                        verticalOrder = res.verticalOrder,
+                    }
+                end
+            end
+        end
+
+        if type(rbSettings) == "table" and type(rbSettings.customAuraBarSlots) == "table" then
+            for slotIdx, slot in pairs(rbSettings.customAuraBarSlots) do
+                if type(slot) == "table" and (slot.position or slot.order or slot.verticalPosition or slot.verticalOrder) then
+                    layout.customAuraBarSlots[slotIdx] = {
+                        position = slot.position,
+                        order = slot.order,
+                        verticalPosition = slot.verticalPosition,
+                        verticalOrder = slot.verticalOrder,
+                    }
+                end
+            end
+        end
+
+        if type(cbSettings) == "table" then
+            if cbSettings.position or cbSettings.order then
+                layout.castBar = {
+                    position = cbSettings.position or "below",
+                    order = cbSettings.order or 2000,
+                }
+            end
+        end
+
+        return layout
+    end
+
+    -- Copy layout to all specs (only for specs not already present)
+    local function ApplyLayoutToAllSpecs(rbSettings, layout)
+        if not rbSettings.layoutOrder then rbSettings.layoutOrder = {} end
+        local allPresent = true
+        for _, specID in ipairs(specIDs) do
+            if not rbSettings.layoutOrder[specID] then allPresent = false; break end
+        end
+        if allPresent then return end
+
+        for _, specID in ipairs(specIDs) do
+            if not rbSettings.layoutOrder[specID] then
+                rbSettings.layoutOrder[specID] = CopyTable(layout)
+            end
+        end
+    end
+
+    -- Migrate character-scoped buckets
+    local rbStore = rawget(profile, "resourceBarsByChar")
+    local cbStore = rawget(profile, "castBarByChar")
+    if type(rbStore) == "table" then
+        for charKey, rbSettings in pairs(rbStore) do
+            if type(rbSettings) == "table" then
+                local cbSettings = type(cbStore) == "table" and cbStore[charKey] or nil
+                local layout = ExtractLayout(rbSettings, cbSettings)
+                ApplyLayoutToAllSpecs(rbSettings, layout)
+            end
+        end
+    end
+
+    -- Migrate legacy seed
+    local seed = rawget(profile, "legacyResourceBarsSeed")
+    if type(seed) == "table" then
+        local cbSeed = rawget(profile, "legacyCastBarSeed")
+        local layout = ExtractLayout(seed, cbSeed)
+        ApplyLayoutToAllSpecs(seed, layout)
+    end
+
+    profile._migratedLayoutOrder = true
 end
 
 -- Resolve stored spell IDs to their base form so the override chain can

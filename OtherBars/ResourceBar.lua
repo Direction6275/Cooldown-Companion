@@ -312,6 +312,24 @@ local function GetSpecCustomAuraBars(settings)
     return settings.customAuraBars[specID]
 end
 
+local function CreateDefaultLayoutOrder()
+    return {
+        resources = {},
+        customAuraBarSlots = {},
+        castBar = { position = "below", order = 2000 },
+    }
+end
+
+local function GetSpecLayoutOrder(settings)
+    local specID = GetCurrentSpecID()
+    if not specID then return nil end
+    if not settings.layoutOrder then settings.layoutOrder = {} end
+    if not settings.layoutOrder[specID] then
+        settings.layoutOrder[specID] = CreateDefaultLayoutOrder()
+    end
+    return settings.layoutOrder[specID]
+end
+
 local function GetAnchorOffset(point, width, height)
     if point == "TOPLEFT" then
         return -width / 2, height / 2
@@ -3360,7 +3378,8 @@ function CooldownCompanion:ApplyResourceBars()
     local segmentGap = settings.segmentGap or 4
     local totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
 
-    -- Determine side/order for each bar (for per-element positioning)
+    -- Determine side/order for each bar (per-spec layout)
+    local layout = GetSpecLayoutOrder(settings)
     local sideList = {}
     local orderList = {}
     local fallbackOrder = 900
@@ -3370,7 +3389,7 @@ function CooldownCompanion:ApplyResourceBars()
             local slotIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
             local cabConfig = customBars and customBars[slotIdx]
             if not IsCustomAuraBarIndependent(cabConfig) then
-                local slotCfg = settings.customAuraBarSlots and settings.customAuraBarSlots[slotIdx]
+                local slotCfg = layout and layout.customAuraBarSlots and layout.customAuraBarSlots[slotIdx]
                 if isVerticalLayout then
                     local storedHorizontalSide = (slotCfg and slotCfg.position) or "below"
                     side = (slotCfg and slotCfg.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
@@ -3381,7 +3400,7 @@ function CooldownCompanion:ApplyResourceBars()
                 end
             end
         else
-            local res = settings.resources and settings.resources[powerType]
+            local res = layout and layout.resources and layout.resources[powerType]
             if isVerticalLayout then
                 local storedHorizontalSide = (res and res.position) or "below"
                 side = (res and res.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
@@ -3688,6 +3707,12 @@ function CooldownCompanion:GetSpecCustomAuraBars()
     local settings = GetResourceBarSettings()
     if not settings then return {} end
     return GetSpecCustomAuraBars(settings)
+end
+
+function CooldownCompanion:GetSpecLayoutOrder()
+    local settings = GetResourceBarSettings()
+    if not settings then return nil end
+    return GetSpecLayoutOrder(settings)
 end
 
 function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
