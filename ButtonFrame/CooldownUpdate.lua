@@ -424,7 +424,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Restoring _durationObj preserves bar fill, color, and time text.
         -- Target-switch path: holds until UNIT_AURA confirms data received
         -- (debuff absent on new target) or primary path provides fresh data.
-        -- Player path: DurationObject expiry + 3-tick counter.
+        -- Player path: DurationObject expiry + time-based grace window.
         if not auraOverrideActive and button._auraActive
            and prevAuraDurationObj and not buttonData.isPassive then
             local expired = false
@@ -449,20 +449,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 expired = prevAuraDurationObj:GetRemainingDuration() <= 0
             end
             if not expired then
-                button._auraGraceTicks = (button._auraGraceTicks or 0) + 1
-                if button._auraGraceTicks <= 3 or button._targetSwitchAt then
+                if not button._auraGraceStart then
+                    button._auraGraceStart = GetTime()
+                end
+                if GetTime() - button._auraGraceStart <= 0.3 or button._targetSwitchAt then
                     button._durationObj = prevAuraDurationObj
                     auraOverrideActive = true
                 else
-                    button._auraGraceTicks = nil
+                    button._auraGraceStart = nil
                 end
             else
-                button._auraGraceTicks = nil
+                button._auraGraceStart = nil
                 button._targetSwitchAt = nil
                 button._targetSwitchDataReceived = nil
             end
         else
-            button._auraGraceTicks = nil
+            button._auraGraceStart = nil
             if button._targetSwitchAt then
                 if auraOverrideActive and button._durationObj then
                     -- Primary path provided fresh DurationObject: hold complete
