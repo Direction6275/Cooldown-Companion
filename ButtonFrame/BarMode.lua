@@ -815,6 +815,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._viewerBar = nil
     button._inPandemic = nil
     button._pandemicGraceStart = nil
+    button._pandemicGraceSuppressed = nil
     button._viewerAuraVisualsActive = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"

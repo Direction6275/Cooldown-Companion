@@ -592,7 +592,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- heavy combat don't burn through the grace window prematurely.
         -- Genuine pandemic end sets _inPandemic = false via event handlers
         -- (Aura.lua aura removal / target switch), causing the grace guard
-        -- to fail on the next evaluation.
+        -- to fail on the next evaluation.  Aura reapplication (pandemic
+        -- refresh) sets _pandemicGraceSuppressed, bypassing the grace hold
+        -- entirely so pandemic clears immediately on refresh.
         local inPandemic = false
         if button._pandemicPreview then
             inPandemic = true
@@ -602,15 +604,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if pi and pi:IsVisible() then
                 inPandemic = true
                 button._pandemicGraceStart = nil
+                button._pandemicGraceSuppressed = nil
             elseif button._inPandemic then
-                -- Grace hold — see block comment above.
-                if not button._pandemicGraceStart then
-                    button._pandemicGraceStart = GetTime()
-                end
-                if GetTime() - button._pandemicGraceStart <= 0.3 then
-                    inPandemic = true
-                else
+                if button._pandemicGraceSuppressed then
+                    -- Aura was just reapplied — skip grace hold so pandemic
+                    -- clears immediately instead of lingering 0.3s.
+                    button._pandemicGraceSuppressed = nil
                     button._pandemicGraceStart = nil
+                else
+                    -- Grace hold — see block comment above.
+                    if not button._pandemicGraceStart then
+                        button._pandemicGraceStart = GetTime()
+                    end
+                    if GetTime() - button._pandemicGraceStart <= 0.3 then
+                        inPandemic = true
+                    else
+                        button._pandemicGraceStart = nil
+                    end
                 end
             end
         end
