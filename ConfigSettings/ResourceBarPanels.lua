@@ -12,862 +12,88 @@ local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local tabInfoButtons = CS.tabInfoButtons
 
-------------------------------------------------------------------------
--- Aura bar autocomplete cache (TrackedBuff + TrackedBar spells only)
-------------------------------------------------------------------------
-local auraBarAutocompleteCache = nil
+-- Shared constants from ResourceBarConstants
+local RB = ST._RB
+local POWER_NAMES = RB.POWER_NAMES
+local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
+local HIDE_AT_ZERO_ELIGIBLE = RB.HIDE_AT_ZERO_ELIGIBLE
+local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
+local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
+local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
+local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
+local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
+local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
+local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
+local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
+local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
+local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
+local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
+local DEFAULT_RESOURCE_TEXT_ANCHOR = RB.DEFAULT_RESOURCE_TEXT_ANCHOR
+local DEFAULT_RESOURCE_TEXT_X_OFFSET = RB.DEFAULT_RESOURCE_TEXT_X_OFFSET
+local DEFAULT_RESOURCE_TEXT_Y_OFFSET = RB.DEFAULT_RESOURCE_TEXT_Y_OFFSET
+local DEFAULT_SEG_THRESHOLD_COLOR = RB.DEFAULT_SEG_THRESHOLD_COLOR
+local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
+local DEFAULT_CONTINUOUS_TICK_MODE = RB.DEFAULT_CONTINUOUS_TICK_MODE
+local DEFAULT_CONTINUOUS_TICK_PERCENT = RB.DEFAULT_CONTINUOUS_TICK_PERCENT
+local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
+local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
+local DEFAULT_COMBO_COLOR = RB.DEFAULT_COMBO_COLOR
+local DEFAULT_COMBO_MAX_COLOR = RB.DEFAULT_COMBO_MAX_COLOR
+local DEFAULT_COMBO_CHARGED_COLOR = RB.DEFAULT_COMBO_CHARGED_COLOR
+local DEFAULT_RUNE_READY_COLOR = RB.DEFAULT_RUNE_READY_COLOR
+local DEFAULT_RUNE_RECHARGING_COLOR = RB.DEFAULT_RUNE_RECHARGING_COLOR
+local DEFAULT_RUNE_MAX_COLOR = RB.DEFAULT_RUNE_MAX_COLOR
+local DEFAULT_SHARD_READY_COLOR = RB.DEFAULT_SHARD_READY_COLOR
+local DEFAULT_SHARD_RECHARGING_COLOR = RB.DEFAULT_SHARD_RECHARGING_COLOR
+local DEFAULT_SHARD_MAX_COLOR = RB.DEFAULT_SHARD_MAX_COLOR
+local DEFAULT_HOLY_COLOR = RB.DEFAULT_HOLY_COLOR
+local DEFAULT_HOLY_MAX_COLOR = RB.DEFAULT_HOLY_MAX_COLOR
+local DEFAULT_CHI_COLOR = RB.DEFAULT_CHI_COLOR
+local DEFAULT_CHI_MAX_COLOR = RB.DEFAULT_CHI_MAX_COLOR
+local DEFAULT_ARCANE_COLOR = RB.DEFAULT_ARCANE_COLOR
+local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
+local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
+local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
+local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 
-local function BuildAuraBarAutocompleteCache()
-    local cache = {}
-    local seen = {}
-    for _, cat in ipairs({
-        Enum.CooldownViewerCategory.TrackedBuff,
-        Enum.CooldownViewerCategory.TrackedBar,
-    }) do
-        local catLabel = (cat == Enum.CooldownViewerCategory.TrackedBuff)
-            and "Tracked Buff" or "Tracked Bar"
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.spellID and not seen[info.spellID] then
-                    seen[info.spellID] = true
-                    local name = C_Spell.GetSpellName(info.spellID)
-                    local icon = C_Spell.GetSpellTexture(info.spellID)
-                    if name then
-                        cache[#cache + 1] = {
-                            id = info.spellID,
-                            name = name,
-                            nameLower = name:lower(),
-                            icon = icon or 134400,
-                            category = catLabel,
-                        }
-                    end
-                end
-            end
-        end
-    end
-    auraBarAutocompleteCache = cache
-    return cache
-end
-
-------------------------------------------------------------------------
--- CDM Aura Readiness Warning (shared by Resource Aura Overlays & Custom Aura Bars)
-------------------------------------------------------------------------
-local function AddCdmAuraReadinessWarning(container, spellID)
-    if not spellID then return end
-
-    local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
-    local hasViewerFrame = false
-    if cdmEnabled then
-        local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
-        if viewerFrame then
-            local parent = viewerFrame:GetParent()
-            local parentName = parent and parent:GetName()
-            hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
-        end
-    end
-
-    if hasViewerFrame then return end
-
-    local statusLabel = AceGUI:Create("Label")
-    statusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
-    statusLabel:SetFullWidth(true)
-    statusLabel:SetJustifyH("CENTER")
-    container:AddChild(statusLabel)
-
-    local explainLabel = AceGUI:Create("Label")
-    if not cdmEnabled then
-        explainLabel:SetText("|cff888888The Cooldown Manager (CDM) is currently disabled. Enable it in Options > Gameplay > Combat > Cooldown Manager to allow reliable aura tracking in combat.|r")
-    else
-        local canTrack = false
-        for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-            local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-            if ids then
-                for _, cdID in ipairs(ids) do
-                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                    if info and (info.spellID == spellID or info.overrideSpellID == spellID or info.overrideTooltipSpellID == spellID) then
-                        canTrack = true
-                        break
-                    end
-                end
-            end
-            if canTrack then break end
-        end
-
-        if canTrack then
-            explainLabel:SetText("|cff888888This spell has a trackable aura in the Cooldown Manager, but it has not been added as a tracked buff or debuff yet. Add it in the CDM to enable aura tracking.|r")
-        else
-            explainLabel:SetText("|cff888888This spell was not found in the Cooldown Manager's tracked buff or tracked bar categories. Without CDM tracking, aura data may be unreliable during combat.|r")
-        end
-    end
-    explainLabel:SetFullWidth(true)
-    container:AddChild(explainLabel)
-
-    local spacer = AceGUI:Create("Label")
-    spacer:SetText(" ")
-    spacer:SetFullWidth(true)
-    container:AddChild(spacer)
-end
-
-------------------------------------------------------------------------
--- RESOURCE BAR: Anchoring Panel
-------------------------------------------------------------------------
-
-local resourceBarCollapsedSections = {}
-
--- Power names + segmented check for config UI (mirrors ResourceBar.lua constants)
-local POWER_NAMES_CONFIG = {
-    [0]  = "Mana",
-    [1]  = "Rage",
-    [2]  = "Focus",
-    [3]  = "Energy",
-    [4]  = "Combo Points",
-    [5]  = "Runes",
-    [6]  = "Runic Power",
-    [7]  = "Soul Shards",
-    [8]  = "Astral Power",
-    [9]  = "Holy Power",
-    [11] = "Maelstrom",
-    [12] = "Chi",
-    [13] = "Insanity",
-    [16] = "Arcane Charges",
-    [17] = "Fury",
-    [18] = "Pain",
-    [19] = "Essence",
-    [100] = "Maelstrom Weapon",
-    [101] = "Stagger",
-}
-
-local DEFAULT_MW_BASE_COLOR_CONFIG = { 0, 0.5, 1 }
-local DEFAULT_MW_OVERLAY_COLOR_CONFIG = { 1, 0.84, 0 }
-local DEFAULT_MW_MAX_COLOR_CONFIG = { 0.5, 0.8, 1 }
--- Stagger default colors inlined at usage sites (Lua 60-upvalue limit)
-local DEFAULT_CUSTOM_AURA_MAX_COLOR_CONFIG = { 1, 0.84, 0 }
-
-local SEGMENTED_TYPES_CONFIG = {
-    [4]  = true, [5]  = true, [7]  = true, [9]  = true,
-    [12] = true, [16] = true, [19] = true,
-}
-
-local HIDE_AT_ZERO_ELIGIBLE = {
-    [4]  = true, [7]  = true, [9]  = true,
-    [12] = true, [16] = true, [100] = true,
-}
-
-local function SupportsResourceAuraStackModeConfig(powerType)
-    return powerType == 100 or SEGMENTED_TYPES_CONFIG[powerType] == true
-end
-
-local DEFAULT_POWER_COLORS_CONFIG = {
-    [0]  = { 0, 0, 1 },
-    [1]  = { 1, 0, 0 },
-    [2]  = { 1, 0.5, 0.25 },
-    [3]  = { 1, 1, 0 },
-    [4]  = { 1, 0.96, 0.41 },
-    [5]  = { 0.5, 0.5, 0.5 },
-    [6]  = { 0, 0.82, 1 },
-    [7]  = { 0.5, 0.32, 0.55 },
-    [8]  = { 0.3, 0.52, 0.9 },
-    [9]  = { 0.95, 0.9, 0.6 },
-    [11] = { 0, 0.5, 1 },
-    [12] = { 0.71, 1, 0.92 },
-    [13] = { 0.4, 0, 0.8 },
-    [16] = { 0.1, 0.1, 0.98 },
-    [17] = { 0.788, 0.259, 0.992 },
-    [18] = { 1, 0.612, 0 },
-    [19] = { 0.286, 0.773, 0.541 },
-}
-
-local DEFAULT_COMBO_COLOR_CONFIG = { 1, 0.96, 0.41 }
-local DEFAULT_COMBO_MAX_COLOR_CONFIG = { 1, 0.96, 0.41 }
-local DEFAULT_COMBO_CHARGED_COLOR_CONFIG = { 0.24, 0.65, 1.0 }
-
-local DEFAULT_RUNE_READY_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
-local DEFAULT_RUNE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
-local DEFAULT_RUNE_MAX_COLOR_CONFIG = { 0.8, 0.8, 0.8 }
-
-local DEFAULT_SHARD_READY_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
-local DEFAULT_SHARD_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
-local DEFAULT_SHARD_MAX_COLOR_CONFIG = { 0.5, 0.32, 0.55 }
-
-local DEFAULT_HOLY_COLOR_CONFIG = { 0.95, 0.9, 0.6 }
-local DEFAULT_HOLY_MAX_COLOR_CONFIG = { 0.95, 0.9, 0.6 }
-
-local DEFAULT_CHI_COLOR_CONFIG = { 0.71, 1, 0.92 }
-local DEFAULT_CHI_MAX_COLOR_CONFIG = { 0.71, 1, 0.92 }
-
-local DEFAULT_ARCANE_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
-local DEFAULT_ARCANE_MAX_COLOR_CONFIG = { 0.1, 0.1, 0.98 }
-
-local DEFAULT_ESSENCE_READY_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
-local DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG = { 0.490, 0.490, 0.490 }
-local DEFAULT_ESSENCE_MAX_COLOR_CONFIG = { 0.851, 0.482, 0.780 }
-local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR_CONFIG = { 1, 0.84, 0 }
-local DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG = "current"
-local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT_CONFIG = "current_max"
-local DEFAULT_RESOURCE_TEXT_FONT_CONFIG = "Friz Quadrata TT"
-local DEFAULT_RESOURCE_TEXT_SIZE_CONFIG = 10
-local DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG = "OUTLINE"
-local DEFAULT_RESOURCE_TEXT_COLOR_CONFIG = { 1, 1, 1, 1 }
-local DEFAULT_RESOURCE_TEXT_ANCHOR_CONFIG = "CENTER"
-local DEFAULT_RESOURCE_TEXT_X_OFFSET_CONFIG = 0
-local DEFAULT_RESOURCE_TEXT_Y_OFFSET_CONFIG = 0
-local DEFAULT_SEG_THRESHOLD_COLOR_CONFIG = { 1, 0.84, 0 }
-local DEFAULT_CONTINUOUS_TICK_COLOR_CONFIG = { 1, 0.84, 0, 1 }
-local DEFAULT_CONTINUOUS_TICK_MODE_CONFIG = "percent"
-local DEFAULT_CONTINUOUS_TICK_PERCENT_CONFIG = 50
-local DEFAULT_CONTINUOUS_TICK_ABSOLUTE_CONFIG = 50
-local DEFAULT_CONTINUOUS_TICK_WIDTH_CONFIG = 2
-
--- Class-to-resource mapping for config UI
-local CLASS_RESOURCES_CONFIG = {
-    [1]  = { 1 },
-    [2]  = { 9, 0 },
-    [3]  = { 2 },
-    [4]  = { 4, 3 },
-    [5]  = { 0 },
-    [6]  = { 5, 6 },
-    [7]  = { 0 },
-    [8]  = { 0 },
-    [9]  = { 7, 0 },
-    [10] = { 0 },
-    [11] = { 1, 4, 3, 8, 0 },  -- All possible druid resources
-    [12] = { 17 },
-    [13] = { 19, 0 },
-}
-
-local SPEC_RESOURCES_CONFIG = {
-    [258] = { 13, 0 },
-    [262] = { 11, 0 },
-    [263] = { 100, 0 },
-    [62]  = { 16, 0 },
-    [269] = { 12, 3 },
-    [268] = { 101, 3 },  -- Brewmaster: Stagger, Energy
-    [581] = { 17 },
-}
-
-local function GetConfigActiveResources()
-    local _, _, classID = UnitClass("player")
-    if not classID then return {} end
-
-    local specID = nil
-    local specIdx = C_SpecializationInfo.GetSpecialization()
-    if specIdx then
-        specID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
-    end
-
-    -- For Druid, show all possible resources (user can toggle each)
-    if classID == 11 then
-        return CLASS_RESOURCES_CONFIG[11]
-    end
-
-    if specID and SPEC_RESOURCES_CONFIG[specID] then
-        return SPEC_RESOURCES_CONFIG[specID]
-    end
-
-    return CLASS_RESOURCES_CONFIG[classID] or {}
-end
-
-local function GetCurrentConfigSpecID()
-    local specIdx = C_SpecializationInfo.GetSpecialization()
-    if specIdx then
-        return C_SpecializationInfo.GetSpecializationInfo(specIdx)
-    end
-    return nil
-end
+-- Imports from ResourceBarPanelsHelpers
+local RBP = ST._RBP
+local resourceBarCollapsedSections = RBP.collapsedSections
+local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
+local GetConfigActiveResources = RBP.GetConfigActiveResources
+local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
+local GetSpecOverrideTable = RBP.GetSpecOverrideTable
+local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
+local WriteSpecOverrideKey = RBP.WriteSpecOverrideKey
+local GetPlayerSpecOptionsConfig = RBP.GetPlayerSpecOptionsConfig
+local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
+local GetResourceAuraEntryConfig = RBP.GetResourceAuraEntryConfig
+local IsResourceAuraOverlayEnabledConfig = RBP.IsResourceAuraOverlayEnabledConfig
+local GetResourceAuraTrackingModeConfig = RBP.GetResourceAuraTrackingModeConfig
+local GetSafeRGBConfig = RBP.GetSafeRGBConfig
+local GetSafeRGBAConfig = RBP.GetSafeRGBAConfig
+local CopyRGBConfig = RBP.CopyRGBConfig
+local GetSegmentedThresholdValueConfig = RBP.GetSegmentedThresholdValueConfig
+local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
+local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
+local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
+local AttachAuraAutocompleteHandlers = RBP.AttachAuraAutocompleteHandlers
+local AddResourceAuraEntryFields = RBP.AddResourceAuraEntryFields
+local ClearLegacyResourceAuraFieldsConfig = RBP.ClearLegacyResourceAuraFieldsConfig
+local ClearResourceAuraEntryConfig = RBP.ClearResourceAuraEntryConfig
+local AddCdmAuraReadinessWarning = RBP.AddCdmAuraReadinessWarning
+local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
+local SupportsResourceAuraStackModeConfig = RBP.SupportsResourceAuraStackModeConfig
+local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
+local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
+local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 
--- Returns specOverrides[specID] table, auto-vivifying intermediate tables when
--- create is true. Returns nil if any level is missing and create is false.
-local function GetSpecOverrideTable(settings, powerType, specID, create)
-    if not specID then return nil end
-    if not settings.resources then
-        if create then settings.resources = {} else return nil end
-    end
-    if not settings.resources[powerType] then
-        if create then settings.resources[powerType] = {} else return nil end
-    end
-    local resource = settings.resources[powerType]
-    if not resource.specOverrides then
-        if create then resource.specOverrides = {} else return nil end
-    end
-    if not resource.specOverrides[specID] then
-        if create then resource.specOverrides[specID] = {} else return nil end
-    end
-    return resource.specOverrides[specID]
-end
-
--- Resolves a per-spec override key with a caller-supplied default.
--- Uses the shared resolver: specOverrides[specID][key] -> resource[key] -> default.
-local function ReadSpecOverrideKey(settings, powerType, specID, key, default)
-    local resource = settings.resources and settings.resources[powerType]
-    if not resource then return default end
-    local resolved = ResolveSpecOverrideKey(resource, specID, key)
-    if resolved ~= nil then return resolved end
-    return default
-end
-
--- Writes a key into specOverrides[specID]. Passing value=nil clears the key and
--- prunes empty tables to keep SavedVariables clean.
-local function WriteSpecOverrideKey(settings, powerType, specID, key, value)
-    if not specID then
-        geterrorhandler()("WriteSpecOverrideKey: nil specID for key " .. tostring(key))
-        return
-    end
-    if value == nil then
-        local specTable = GetSpecOverrideTable(settings, powerType, specID, false)
-        if specTable then
-            specTable[key] = nil
-            if not next(specTable) then
-                local resource = settings.resources and settings.resources[powerType]
-                if resource and resource.specOverrides then
-                    resource.specOverrides[specID] = nil
-                    if not next(resource.specOverrides) then
-                        resource.specOverrides = nil
-                    end
-                end
-            end
-        end
-    else
-        local specTable = GetSpecOverrideTable(settings, powerType, specID, true)
-        specTable[key] = value
-    end
-end
-
-local function GetPlayerSpecOptionsConfig()
-    local specList = {}
-    local specOrder = {}
-    local specInfoByID = {}
-
-    for i = 1, (GetNumSpecializations() or 0) do
-        local specID, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-        if specID and name then
-            specList[specID] = name
-            specOrder[#specOrder + 1] = specID
-            specInfoByID[specID] = {
-                specID = specID,
-                name = name,
-                icon = icon,
-                order = i,
-            }
-        end
-    end
-
-    return specList, specOrder, specInfoByID
-end
-
-local function ResolveAuraColorSpellIDFromText(text)
-    if not text then return nil, false end
-    local cleaned = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if cleaned == "" then
-        return nil, true
-    end
-
-    local numeric = tonumber(cleaned)
-    if numeric and numeric > 0 then
-        return numeric, false
-    end
-
-    local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
-    local lookup = cleaned:lower()
-    for _, entry in ipairs(cache) do
-        if entry.nameLower == lookup then
-            return entry.id, false
-        end
-    end
-
-    return nil, false
-end
-
-local function GetResourceAuraEntryCountConfig(resource)
-    if type(resource) ~= "table" or type(resource.auraOverlayEntries) ~= "table" then
-        return 0
-    end
-
-    local count = 0
-    for _, entry in pairs(resource.auraOverlayEntries) do
-        if type(entry) == "table" then
-            count = count + 1
-        end
-    end
-    return count
-end
-
-local function GetResourceAuraEntryConfig(resource, specID)
-    if type(resource) ~= "table" or not specID then
-        return nil
-    end
-
-    local entries = resource.auraOverlayEntries
-    if type(entries) ~= "table" then
-        return nil
-    end
-
-    local direct = entries[specID]
-    if type(direct) == "table" then
-        return direct
-    end
-
-    local alternate = entries[tostring(specID)]
-    if type(alternate) == "table" then
-        return alternate
-    end
-
-    return nil
-end
-
-local function IsResourceAuraOverlayEnabledConfig(resource)
-    if type(resource) ~= "table" then
-        return false
-    end
-    if type(resource.auraOverlayEnabled) == "boolean" then
-        return resource.auraOverlayEnabled
-    end
-    if GetResourceAuraEntryCountConfig(resource) > 0 then
-        return true
-    end
-    local auraSpellID = tonumber(resource.auraColorSpellID)
-    return auraSpellID and auraSpellID > 0 or false
-end
-
-local function GetResourceAuraTrackingModeConfig(resource)
-    if type(resource) ~= "table" then
-        return "active"
-    end
-    if resource.auraColorTrackingMode == "stacks" or resource.auraColorTrackingMode == "active" then
-        return resource.auraColorTrackingMode
-    end
-    local configured = tonumber(resource.auraColorMaxStacks)
-    if configured and configured >= 2 then
-        return "stacks"
-    end
-    return "active"
-end
-
-local function GetSafeRGBConfig(color, fallback)
-    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
-        return color
-    end
-    return fallback
-end
-
-local function GetSafeRGBAConfig(color, fallback)
-    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
-        return color
-    end
-    return fallback
-end
-
-local function CopyRGBConfig(color)
-    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
-        return nil
-    end
-    return { color[1], color[2], color[3] }
-end
-
-local function GetSegmentedThresholdValueConfig(resource)
-    local value = tonumber(resource and resource.segThresholdValue)
-    if not value then
-        return 1
-    end
-    value = math.floor(value)
-    if value < 1 then
-        value = 1
-    elseif value > 99 then
-        value = 99
-    end
-    return value
-end
-
-local function GetContinuousTickModeConfig(resource)
-    local mode = resource and resource.continuousTickMode
-    if mode == "percent" or mode == "absolute" then
-        return mode
-    end
-    return DEFAULT_CONTINUOUS_TICK_MODE_CONFIG
-end
-
-local function GetContinuousTickPercentConfig(resource)
-    local value = tonumber(resource and resource.continuousTickPercent)
-    if not value then
-        return DEFAULT_CONTINUOUS_TICK_PERCENT_CONFIG
-    end
-    if value < 0 then
-        value = 0
-    elseif value > 100 then
-        value = 100
-    end
-    return value
-end
-
-local function GetContinuousTickAbsoluteConfig(resource)
-    local value = tonumber(resource and resource.continuousTickAbsolute)
-    if not value then
-        return DEFAULT_CONTINUOUS_TICK_ABSOLUTE_CONFIG
-    end
-    if value < 0 then
-        value = 0
-    end
-    return value
-end
-
-local function AttachAuraAutocompleteHandlers(editBoxWidget, onAuraSelect)
-    editBoxWidget:SetCallback("OnTextChanged", function(widget, event, text)
-        if text and #text >= 1 then
-            local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
-            local results = CS.SearchAutocompleteInCache(text, cache)
-            CS.ShowAutocompleteResults(results, widget, onAuraSelect)
-        else
-            CS.HideAutocomplete()
-        end
-    end)
-
-    CS.SetupAutocompleteKeyHandler(editBoxWidget)
-end
-
-local function AddResourceAuraEntryFields(container, powerType, resourceName, entry, options)
-    options = options or {}
-
-    if options.specList and options.specOrder and options.onSpecChanged then
-        local specDrop = AceGUI:Create("Dropdown")
-        specDrop:SetLabel("Specialization")
-        specDrop:SetList(options.specList, options.specOrder)
-        specDrop:SetValue(options.specID)
-        specDrop:SetFullWidth(true)
-        specDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            options.onSpecChanged(tonumber(val) or val)
-        end)
-        container:AddChild(specDrop)
-    end
-
-    local spellID = tonumber(entry and entry.auraColorSpellID) or nil
-    local spellEdit = AceGUI:Create("EditBox")
-    if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
-    spellEdit:SetLabel(resourceName .. " Aura (Spell ID or Name)")
-    spellEdit:SetText(spellID and tostring(spellID) or "")
-    spellEdit:SetFullWidth(true)
-    spellEdit:DisableButton(true)
-
-    local function CommitSpellID(id)
-        CS.HideAutocomplete()
-        if options.onSpellChanged then
-            options.onSpellChanged(id)
-        end
-    end
-
-    spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-        if CS.ConsumeAutocompleteEnter() then return end
-        CS.HideAutocomplete()
-
-        local id, explicitClear = ResolveAuraColorSpellIDFromText(text)
-        if not id and not explicitClear then
-            return
-        end
-
-        CommitSpellID(id)
-    end)
-
-    AttachAuraAutocompleteHandlers(spellEdit, function(selectedEntry)
-        CommitSpellID(selectedEntry.id)
-    end)
-
-    container:AddChild(spellEdit)
-
-    if spellID then
-        local auraName = C_Spell.GetSpellName(spellID)
-        if auraName then
-            local auraLabel = AceGUI:Create("Label")
-            auraLabel:SetText("|cff888888" .. auraName .. "|r")
-            auraLabel:SetFullWidth(true)
-            container:AddChild(auraLabel)
-        end
-    end
-
-    AddCdmAuraReadinessWarning(container, spellID)
-
-    local auraColorPicker = AceGUI:Create("ColorPicker")
-    auraColorPicker:SetLabel(resourceName .. " Aura Active Color")
-    local auraColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR_CONFIG)
-    auraColorPicker:SetColor(auraColor[1], auraColor[2], auraColor[3])
-    auraColorPicker:SetHasAlpha(false)
-    auraColorPicker:SetFullWidth(true)
-    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-        if options.onColorChanged then
-            options.onColorChanged(r, g, b)
-        end
-    end)
-    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-        if options.onColorConfirmed then
-            options.onColorConfirmed(r, g, b)
-        end
-    end)
-    container:AddChild(auraColorPicker)
-
-    if SupportsResourceAuraStackModeConfig(powerType) then
-        local trackingMode = GetResourceAuraTrackingModeConfig(entry)
-        local trackDrop = AceGUI:Create("Dropdown")
-        trackDrop:SetLabel("Tracking Mode")
-        trackDrop:SetList({
-            stacks = "Stack Count",
-            active = "Active (On/Off)",
-        }, { "stacks", "active" })
-        trackDrop:SetValue(trackingMode)
-        trackDrop:SetFullWidth(true)
-        trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            if options.onTrackingChanged then
-                options.onTrackingChanged(val)
-            end
-        end)
-        container:AddChild(trackDrop)
-
-        if trackingMode ~= "active" then
-            local auraStackEdit = AceGUI:Create("EditBox")
-            if auraStackEdit.editbox.Instructions then auraStackEdit.editbox.Instructions:Hide() end
-            auraStackEdit:SetLabel(resourceName .. " Aura Max Stacks")
-            auraStackEdit:SetText(entry and entry.auraColorMaxStacks and tostring(entry.auraColorMaxStacks) or "")
-            auraStackEdit:SetFullWidth(true)
-            auraStackEdit:DisableButton(true)
-            auraStackEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-                local cleaned = text and text:gsub("%s", "") or ""
-                local parsed = nil
-                if cleaned ~= "" then
-                    local num = tonumber(cleaned)
-                    if num then
-                        num = math.floor(num)
-                        if num >= 2 then
-                            if num > 99 then num = 99 end
-                            parsed = num
-                        end
-                    end
-                    if not parsed then
-                        local current = entry and entry.auraColorMaxStacks
-                        widget:SetText(current and tostring(current) or "")
-                        return
-                    end
-                end
-
-                if options.onMaxStacksChanged then
-                    options.onMaxStacksChanged(parsed)
-                end
-                widget:SetText(parsed and tostring(parsed) or "")
-            end)
-            container:AddChild(auraStackEdit)
-
-            local auraStackHint = AceGUI:Create("Label")
-            auraStackHint:SetText("|cff888888Stack mode maps aura stacks to a bar proportion (e.g. 1/2 = half bar). Applies only to segmented/overlay resources.|r")
-            auraStackHint:SetFullWidth(true)
-            container:AddChild(auraStackHint)
-        end
-    end
-end
-
-local function ClearLegacyResourceAuraFieldsConfig(resource)
-    if type(resource) ~= "table" then
-        return
-    end
-    resource.auraColorSpellID = nil
-    resource.auraActiveColor = nil
-    resource.auraColorTrackingMode = nil
-    resource.auraColorMaxStacks = nil
-end
-
-local function ClearResourceAuraEntryConfig(powerType, resource, specID)
-    if type(resource.auraOverlayEntries) ~= "table" then
-        return
-    end
-
-    resource.auraOverlayEntries[specID] = nil
-    resource.auraOverlayEntries[tostring(specID)] = nil
-    if not next(resource.auraOverlayEntries) then
-        resource.auraOverlayEntries = nil
-    end
-
-    CooldownCompanion:ApplyResourceBars()
-    CooldownCompanion:RefreshConfigPanel()
-end
-
-
-local function AddResourceAuraOverrideControls(container, settings, powerType, resourceName, auraAdvButtons)
-    if not settings.resources[powerType] then
-        settings.resources[powerType] = {}
-    end
-    local res = settings.resources[powerType]
-    local auraAdvKey = "rbAuraOverlay_" .. powerType
-
-    local enableAuraOverlayCb = AceGUI:Create("CheckBox")
-    enableAuraOverlayCb:SetLabel("Enable " .. resourceName .. " Aura Overlay")
-    enableAuraOverlayCb:SetValue(IsResourceAuraOverlayEnabledConfig(res))
-    enableAuraOverlayCb:SetFullWidth(true)
-    enableAuraOverlayCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if not settings.resources[powerType] then settings.resources[powerType] = {} end
-        settings.resources[powerType].auraOverlayEnabled = (val == true)
-
-        if val then
-            if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
-                CooldownCompanion.db.profile.showAdvanced = {}
-            end
-            CooldownCompanion.db.profile.showAdvanced[auraAdvKey] = true
-        end
-        CooldownCompanion:ApplyResourceBars()
-        C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
-    end)
-    container:AddChild(enableAuraOverlayCb)
-
-    local auraAdvExpanded = AddAdvancedToggle(
-        enableAuraOverlayCb,
-        auraAdvKey,
-        auraAdvButtons or tabInfoButtons,
-        IsResourceAuraOverlayEnabledConfig(res)
-    )
-
-    if not IsResourceAuraOverlayEnabledConfig(res) or not auraAdvExpanded then
-        return
-    end
-
-    -- Aura overlay fields are shown for the current spec only; switching specs reconfigures the fields
-    local currentSpecID = GetCurrentConfigSpecID()
-    if not currentSpecID then
-        local specUnavailLabel = AceGUI:Create("Label")
-        specUnavailLabel:SetText("Specialization data not yet available.")
-        specUnavailLabel:SetFullWidth(true)
-        container:AddChild(specUnavailLabel)
-        return
-    end
-
-    local entry = GetResourceAuraEntryConfig(res, currentSpecID)
-
-    AddResourceAuraEntryFields(container, powerType, resourceName, entry, {
-        onSpellChanged = function(id)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
-            end
-            res.auraOverlayEntries[currentSpecID].auraColorSpellID = id
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-        onColorChanged = function(r, g, b)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
-            end
-            res.auraOverlayEntries[currentSpecID].auraActiveColor = { r, g, b }
-        end,
-        onColorConfirmed = function(r, g, b)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
-            end
-            res.auraOverlayEntries[currentSpecID].auraActiveColor = { r, g, b }
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-        end,
-        onTrackingChanged = function(val)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
-            end
-            res.auraOverlayEntries[currentSpecID].auraColorTrackingMode = val
-            if val == "stacks" then
-                local current = tonumber(res.auraOverlayEntries[currentSpecID].auraColorMaxStacks)
-                if not current or current < 2 then
-                    res.auraOverlayEntries[currentSpecID].auraColorMaxStacks = 2
-                end
-            end
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-        onMaxStacksChanged = function(parsed)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
-            end
-            res.auraOverlayEntries[currentSpecID].auraColorMaxStacks = parsed
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
-
-    -- Clear Overlay button (only if entry exists)
-    if type(entry) == "table" then
-        local clearSpacer = AceGUI:Create("Label")
-        clearSpacer:SetText(" ")
-        clearSpacer:SetFullWidth(true)
-        container:AddChild(clearSpacer)
-
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Overlay")
-        clearBtn:SetFullWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            ClearResourceAuraEntryConfig(powerType, res, currentSpecID)
-        end)
-        container:AddChild(clearBtn)
-    end
-end
-
-local function BuildResourceAuraOverlaySection(container, settings)
-    local auraHeading = AceGUI:Create("Heading")
-    auraHeading:SetText("Resource Aura Overlays")
-    ColorHeading(auraHeading)
-    auraHeading:SetFullWidth(true)
-    container:AddChild(auraHeading)
-
-    local auraKey = "rb_resource_aura_overlays"
-    local auraCollapsed = resourceBarCollapsedSections[auraKey]
-
-    local auraCollapseBtn = AttachCollapseButton(auraHeading, auraCollapsed, function()
-        resourceBarCollapsedSections[auraKey] = not resourceBarCollapsedSections[auraKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    local auraInfoBtn = CreateInfoButton(auraHeading.frame, auraCollapseBtn, "LEFT", "RIGHT", 4, 0, {
-        "Resource Aura Overlays",
-        {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
-        " ",
-        {"These settings are per-specialization. Switch specs to configure different aura overlays.", 1, 1, 1, true},
-    }, auraHeading)
-
-    auraHeading.right:ClearAllPoints()
-    auraHeading.right:SetPoint("RIGHT", auraHeading.frame, "RIGHT", -3, 0)
-    auraHeading.right:SetPoint("LEFT", auraInfoBtn, "RIGHT", 4, 0)
-
-    if not auraCollapsed then
-        local rbAuraOverlayAdvBtns = {}
-        local resources = GetConfigActiveResources()
-        for _, pt in ipairs(resources) do
-            if not settings.resources[pt] then
-                settings.resources[pt] = {}
-            end
-            if settings.resources[pt].enabled ~= false then
-                local resourceName = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
-                AddResourceAuraOverrideControls(container, settings, pt, resourceName, rbAuraOverlayAdvBtns)
-            end
-        end
-    end
-end
-
-local function IsResourceBarVerticalConfig(settings)
-    return settings and settings.orientation == "vertical"
-end
-
-local function GetResourceThicknessFieldConfig(settings)
-    if IsResourceBarVerticalConfig(settings) then
-        return "barWidth", "Bar Width", "Custom Resource Bar Widths"
-    end
-    return "barHeight", "Bar Height", "Custom Resource Bar Heights"
-end
-
-local function GetResourceGapFieldConfig(settings)
-    if IsResourceBarVerticalConfig(settings) then
-        return "verticalXOffset", "X Offset"
-    end
-    return "yOffset", "Y Offset"
-end
+-- Local cache reference for aura bar autocomplete (built in ResourceBarPanelsHelpers,
+-- cleared per-session in BuildCustomAuraBarPanel)
+local auraBarAutocompleteCache = nil
 
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
@@ -1100,7 +326,7 @@ local function BuildResourceBarAnchoringPanel(container)
         local rbHeightAdvBtns = {}
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
-            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            local name = POWER_NAMES[pt] or ("Power " .. pt)
             if not settings.resources[pt] then
                 settings.resources[pt] = {}
             end
@@ -1312,12 +538,12 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
             local capturedPt = pt
-            local isSegmentedResource = (SEGMENTED_TYPES_CONFIG[capturedPt] == true) or (capturedPt == 100)
+            local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100)
             if not settings.resources[capturedPt] then
                 settings.resources[capturedPt] = {}
             end
             local resSettings = settings.resources[capturedPt]
-            local name = POWER_NAMES_CONFIG[capturedPt] or ("Power " .. capturedPt)
+            local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
 
             local showTextEnabled
             if isSegmentedResource then
@@ -1368,14 +594,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     textFormatOrder = { "current", "current_max", "percent" }
                 end
                 textFormatDrop:SetList(textFormatOptions, textFormatOrder)
-                local textFormatValue = resSettings.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                local textFormatValue = resSettings.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
                 if isSegmentedResource then
                     if textFormatValue ~= "current" and textFormatValue ~= "current_max" then
-                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
                     end
                 else
                     if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
-                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
                     end
                 end
                 textFormatDrop:SetValue(textFormatValue)
@@ -1385,13 +611,13 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         if val == "current" or val == "current_max" then
                             settings.resources[capturedPt].textFormat = val
                         else
-                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
                         end
                     else
                         if val == "current" or val == "current_max" or val == "percent" then
                             settings.resources[capturedPt].textFormat = val
                         else
-                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT_CONFIG
+                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
                         end
                     end
                     CooldownCompanion:ApplyResourceBars()
@@ -1401,7 +627,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local fontDrop = AceGUI:Create("Dropdown")
                 fontDrop:SetLabel("Font")
                 CS.SetupFontDropdown(fontDrop)
-                fontDrop:SetValue(resSettings.textFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                fontDrop:SetValue(resSettings.textFont or DEFAULT_RESOURCE_TEXT_FONT)
                 fontDrop:SetFullWidth(true)
                 fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
                     settings.resources[capturedPt].textFont = val
@@ -1412,7 +638,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local sizeDrop = AceGUI:Create("Slider")
                 sizeDrop:SetLabel("Font Size")
                 sizeDrop:SetSliderValues(6, 24, 1)
-                sizeDrop:SetValue(resSettings.textFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                sizeDrop:SetValue(resSettings.textFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
                 sizeDrop:SetFullWidth(true)
                 sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
                     settings.resources[capturedPt].textFontSize = val
@@ -1423,7 +649,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local outlineDrop = AceGUI:Create("Dropdown")
                 outlineDrop:SetLabel("Outline")
                 outlineDrop:SetList(CS.outlineOptions)
-                outlineDrop:SetValue(resSettings.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                outlineDrop:SetValue(resSettings.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
                 outlineDrop:SetFullWidth(true)
                 outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
                     settings.resources[capturedPt].textFontOutline = val
@@ -1433,7 +659,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
                 local textColorPicker = AceGUI:Create("ColorPicker")
                 textColorPicker:SetLabel("Text Color")
-                local tc = resSettings.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                local tc = resSettings.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
                 textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
                 textColorPicker:SetHasAlpha(true)
                 textColorPicker:SetFullWidth(true)
@@ -1453,7 +679,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     textAnchorValues[pt] = CS.anchorPointLabels[pt]
                 end
                 textAnchorDrop:SetList(textAnchorValues, CS.anchorPoints)
-                textAnchorDrop:SetValue(resSettings.textAnchor or DEFAULT_RESOURCE_TEXT_ANCHOR_CONFIG)
+                textAnchorDrop:SetValue(resSettings.textAnchor or DEFAULT_RESOURCE_TEXT_ANCHOR)
                 textAnchorDrop:SetFullWidth(true)
                 textAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
                     settings.resources[capturedPt].textAnchor = val
@@ -1464,7 +690,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local textXSlider = AceGUI:Create("Slider")
                 textXSlider:SetLabel("Text X Offset")
                 textXSlider:SetSliderValues(-50, 50, 0.1)
-                textXSlider:SetValue(resSettings.textXOffset or DEFAULT_RESOURCE_TEXT_X_OFFSET_CONFIG)
+                textXSlider:SetValue(resSettings.textXOffset or DEFAULT_RESOURCE_TEXT_X_OFFSET)
                 textXSlider:SetFullWidth(true)
                 textXSlider:SetCallback("OnValueChanged", function(widget, event, val)
                     settings.resources[capturedPt].textXOffset = val
@@ -1475,7 +701,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local textYSlider = AceGUI:Create("Slider")
                 textYSlider:SetLabel("Text Y Offset")
                 textYSlider:SetSliderValues(-50, 50, 0.1)
-                textYSlider:SetValue(resSettings.textYOffset or DEFAULT_RESOURCE_TEXT_Y_OFFSET_CONFIG)
+                textYSlider:SetValue(resSettings.textYOffset or DEFAULT_RESOURCE_TEXT_Y_OFFSET)
                 textYSlider:SetFullWidth(true)
                 textYSlider:SetCallback("OnValueChanged", function(widget, event, val)
                     settings.resources[capturedPt].textYOffset = val
@@ -1544,7 +770,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
             if pt == 4 then
                 -- Combo Points: two color pickers (normal vs at max)
-                local normalColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", DEFAULT_COMBO_COLOR_CONFIG)
+                local normalColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", DEFAULT_COMBO_COLOR)
                 local cpNormal = AceGUI:Create("ColorPicker")
                 cpNormal:SetLabel("Combo Points")
                 cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
@@ -1559,7 +785,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpNormal)
 
-                local maxColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", DEFAULT_COMBO_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", DEFAULT_COMBO_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Combo Points (Max)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1577,7 +803,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 -- Charged combo point color (Rogue only)
                 local _, _, classID = UnitClass("player")
                 if classID == 4 then
-                    local chargedColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", DEFAULT_COMBO_CHARGED_COLOR_CONFIG)
+                    local chargedColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", DEFAULT_COMBO_CHARGED_COLOR)
                     local cpCharged = AceGUI:Create("ColorPicker")
                     cpCharged:SetLabel("Combo Points (Charged)")
                     cpCharged:SetColor(chargedColor[1], chargedColor[2], chargedColor[3])
@@ -1594,7 +820,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end
             elseif pt == 5 then
                 -- Runes: three color pickers (ready, recharging, max)
-                local readyColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR_CONFIG)
+                local readyColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR)
                 local cpReady = AceGUI:Create("ColorPicker")
                 cpReady:SetLabel("Runes (Ready)")
                 cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
@@ -1609,7 +835,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpReady)
 
-                local rechargingColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", DEFAULT_RUNE_RECHARGING_COLOR_CONFIG)
+                local rechargingColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", DEFAULT_RUNE_RECHARGING_COLOR)
                 local cpRecharging = AceGUI:Create("ColorPicker")
                 cpRecharging:SetLabel("Runes (Recharging)")
                 cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
@@ -1624,7 +850,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpRecharging)
 
-                local maxColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", DEFAULT_RUNE_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", DEFAULT_RUNE_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Runes (All Ready)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1640,7 +866,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(cpMax)
             elseif pt == 7 then
                 -- Soul Shards: three color pickers (ready, recharging, max)
-                local readyColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR_CONFIG)
+                local readyColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR)
                 local cpReady = AceGUI:Create("ColorPicker")
                 cpReady:SetLabel("Soul Shards (Ready)")
                 cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
@@ -1655,7 +881,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpReady)
 
-                local rechargingColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", DEFAULT_SHARD_RECHARGING_COLOR_CONFIG)
+                local rechargingColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", DEFAULT_SHARD_RECHARGING_COLOR)
                 local cpRecharging = AceGUI:Create("ColorPicker")
                 cpRecharging:SetLabel("Soul Shards (Recharging)")
                 cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
@@ -1670,7 +896,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpRecharging)
 
-                local maxColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", DEFAULT_SHARD_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", DEFAULT_SHARD_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Soul Shards (Max)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1686,7 +912,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(cpMax)
             elseif pt == 9 then
                 -- Holy Power: two color pickers (normal vs max)
-                local normalColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", DEFAULT_HOLY_COLOR_CONFIG)
+                local normalColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", DEFAULT_HOLY_COLOR)
                 local cpNormal = AceGUI:Create("ColorPicker")
                 cpNormal:SetLabel("Holy Power")
                 cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
@@ -1701,7 +927,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpNormal)
 
-                local maxColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", DEFAULT_HOLY_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", DEFAULT_HOLY_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Holy Power (Max)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1717,7 +943,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(cpMax)
             elseif pt == 12 then
                 -- Chi: two color pickers (normal vs max)
-                local normalColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", DEFAULT_CHI_COLOR_CONFIG)
+                local normalColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", DEFAULT_CHI_COLOR)
                 local cpNormal = AceGUI:Create("ColorPicker")
                 cpNormal:SetLabel("Chi")
                 cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
@@ -1732,7 +958,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpNormal)
 
-                local maxColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", DEFAULT_CHI_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", DEFAULT_CHI_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Chi (Max)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1748,7 +974,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(cpMax)
             elseif pt == 16 then
                 -- Arcane Charges: two color pickers (normal vs max)
-                local normalColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR_CONFIG)
+                local normalColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR)
                 local cpNormal = AceGUI:Create("ColorPicker")
                 cpNormal:SetLabel("Arcane Charges")
                 cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
@@ -1763,7 +989,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpNormal)
 
-                local maxColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", DEFAULT_ARCANE_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", DEFAULT_ARCANE_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Arcane Charges (Max)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1779,7 +1005,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(cpMax)
             elseif pt == 19 then
                 -- Essence: three color pickers (ready, recharging, max)
-                local readyColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR_CONFIG)
+                local readyColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR)
                 local cpReady = AceGUI:Create("ColorPicker")
                 cpReady:SetLabel("Essence (Ready)")
                 cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
@@ -1794,7 +1020,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpReady)
 
-                local rechargingColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", DEFAULT_ESSENCE_RECHARGING_COLOR_CONFIG)
+                local rechargingColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", DEFAULT_ESSENCE_RECHARGING_COLOR)
                 local cpRecharging = AceGUI:Create("ColorPicker")
                 cpRecharging:SetLabel("Essence (Recharging)")
                 cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
@@ -1809,7 +1035,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpRecharging)
 
-                local maxColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", DEFAULT_ESSENCE_MAX_COLOR_CONFIG)
+                local maxColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", DEFAULT_ESSENCE_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("Essence (Max)")
                 cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
@@ -1825,7 +1051,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(cpMax)
             elseif pt == 100 then
                 -- Maelstrom Weapon: three color pickers (base, overlay, max)
-                local baseColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR_CONFIG)
+                local baseColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR)
                 local cpBase = AceGUI:Create("ColorPicker")
                 cpBase:SetLabel("MW (Base)")
                 cpBase:SetColor(baseColor[1], baseColor[2], baseColor[3])
@@ -1840,7 +1066,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpBase)
 
-                local overlayColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", DEFAULT_MW_OVERLAY_COLOR_CONFIG)
+                local overlayColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", DEFAULT_MW_OVERLAY_COLOR)
                 local cpOverlay = AceGUI:Create("ColorPicker")
                 cpOverlay:SetLabel("MW (Overlay)")
                 cpOverlay:SetColor(overlayColor[1], overlayColor[2], overlayColor[3])
@@ -1855,7 +1081,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpOverlay)
 
-                local mwMaxColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", DEFAULT_MW_MAX_COLOR_CONFIG)
+                local mwMaxColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", DEFAULT_MW_MAX_COLOR)
                 local cpMax = AceGUI:Create("ColorPicker")
                 cpMax:SetLabel("MW (Max)")
                 cpMax:SetColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3])
@@ -1916,12 +1142,12 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(cpRed)
             else
-                local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+                local name = POWER_NAMES[pt] or ("Power " .. pt)
 
                 if settings.barTexture == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
                     -- Atlas-backed type; color picker not applicable
                 else
-                    local currentColor = ReadSpecOverrideKey(settings, pt, _colorSpecID, "color", DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 })
+                    local currentColor = ReadSpecOverrideKey(settings, pt, _colorSpecID, "color", DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 })
                     local capturedGenericPt = pt
 
                     local cp = AceGUI:Create("ColorPicker")
@@ -1977,10 +1203,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 settings.resources[pt] = {}
             end
             if settings.resources[pt].enabled ~= false then
-                local resourceName = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+                local resourceName = POWER_NAMES[pt] or ("Power " .. pt)
                 local capturedPt = pt
                 local res = settings.resources[capturedPt]
-                local isSegmented = SEGMENTED_TYPES_CONFIG[capturedPt] == true or capturedPt == 100
+                local isSegmented = SEGMENTED_TYPES[capturedPt] == true or capturedPt == 100
 
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt
@@ -2037,7 +1263,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         container:AddChild(thresholdEdit)
 
                         local _segColor = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", nil)
-                        local thresholdColor = GetSafeRGBConfig(_segColor, DEFAULT_SEG_THRESHOLD_COLOR_CONFIG)
+                        local thresholdColor = GetSafeRGBConfig(_segColor, DEFAULT_SEG_THRESHOLD_COLOR)
                         local thresholdColorPicker = AceGUI:Create("ColorPicker")
                         thresholdColorPicker:SetLabel(resourceName .. " Threshold Color")
                         thresholdColorPicker:SetColor(thresholdColor[1], thresholdColor[2], thresholdColor[3])
@@ -2106,7 +1332,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         modeDrop:SetFullWidth(true)
                         modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             if val ~= "percent" and val ~= "absolute" then
-                                val = DEFAULT_CONTINUOUS_TICK_MODE_CONFIG
+                                val = DEFAULT_CONTINUOUS_TICK_MODE
                             end
                             WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
                             CooldownCompanion:ApplyResourceBars()
@@ -2153,7 +1379,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         end
 
                         local _tickColorVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", nil)
-                        local tickColor = GetSafeRGBAConfig(_tickColorVal, DEFAULT_CONTINUOUS_TICK_COLOR_CONFIG)
+                        local tickColor = GetSafeRGBAConfig(_tickColorVal, DEFAULT_CONTINUOUS_TICK_COLOR)
                         local tickColorPicker = AceGUI:Create("ColorPicker")
                         tickColorPicker:SetLabel(resourceName .. " Tick Color")
                         tickColorPicker:SetColor(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
@@ -2172,7 +1398,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         local tickWidthSlider = AceGUI:Create("Slider")
                         tickWidthSlider:SetLabel(resourceName .. " Tick Width")
                         tickWidthSlider:SetSliderValues(1, 10, 1)
-                        tickWidthSlider:SetValue(tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH_CONFIG)
+                        tickWidthSlider:SetValue(tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH)
                         tickWidthSlider:SetFullWidth(true)
                         tickWidthSlider:SetCallback("OnValueChanged", function(widget, event, val)
                             WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
@@ -2785,7 +2011,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     container:AddChild(thresholdCb)
 
                     if cab.thresholdColorEnabled == true then
-                        local maxThresholdColor = cab.thresholdMaxColor or DEFAULT_CUSTOM_AURA_MAX_COLOR_CONFIG
+                        local maxThresholdColor = cab.thresholdMaxColor or DEFAULT_CUSTOM_AURA_MAX_COLOR
                         local cpThreshold = AceGUI:Create("ColorPicker")
                         cpThreshold:SetLabel("Max Stack Color")
                         cpThreshold:SetColor(maxThresholdColor[1], maxThresholdColor[2], maxThresholdColor[3])
@@ -2996,7 +2222,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         local fontDrop = AceGUI:Create("Dropdown")
                         fontDrop:SetLabel("Duration Font")
                         CS.SetupFontDropdown(fontDrop)
-                        fontDrop:SetValue(cab.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                        fontDrop:SetValue(cab.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT)
                         fontDrop:SetFullWidth(true)
                         fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             customBars[cabIdx].durationTextFont = val
@@ -3007,7 +2233,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         local sizeDrop = AceGUI:Create("Slider")
                         sizeDrop:SetLabel("Duration Font Size")
                         sizeDrop:SetSliderValues(6, 24, 1)
-                        sizeDrop:SetValue(cab.durationTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                        sizeDrop:SetValue(cab.durationTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
                         sizeDrop:SetFullWidth(true)
                         sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             customBars[cabIdx].durationTextFontSize = val
@@ -3018,7 +2244,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         local outlineDrop = AceGUI:Create("Dropdown")
                         outlineDrop:SetLabel("Duration Outline")
                         outlineDrop:SetList(CS.outlineOptions)
-                        outlineDrop:SetValue(cab.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                        outlineDrop:SetValue(cab.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
                         outlineDrop:SetFullWidth(true)
                         outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             customBars[cabIdx].durationTextFontOutline = val
@@ -3028,7 +2254,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
                         local textColorPicker = AceGUI:Create("ColorPicker")
                         textColorPicker:SetLabel("Duration Text Color")
-                        local tc = cab.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                        local tc = cab.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
                         textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
                         textColorPicker:SetHasAlpha(true)
                         textColorPicker:SetFullWidth(true)
@@ -3069,9 +2295,9 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                             }
                             local stackTextFormatOrder = { "current", "current_max" }
                             stackTextFormatDrop:SetList(stackTextFormatOptions, stackTextFormatOrder)
-                            local stackTextFormatValue = cab.stackTextFormat or DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT_CONFIG
+                            local stackTextFormatValue = cab.stackTextFormat or DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
                             if stackTextFormatValue ~= "current" and stackTextFormatValue ~= "current_max" then
-                                stackTextFormatValue = DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT_CONFIG
+                                stackTextFormatValue = DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
                             end
                             stackTextFormatDrop:SetValue(stackTextFormatValue)
                             stackTextFormatDrop:SetFullWidth(true)
@@ -3079,7 +2305,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                                 if val == "current" or val == "current_max" then
                                     customBars[cabIdx].stackTextFormat = val
                                 else
-                                    customBars[cabIdx].stackTextFormat = DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT_CONFIG
+                                    customBars[cabIdx].stackTextFormat = DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
                                 end
                                 CooldownCompanion:ApplyResourceBars()
                             end)
@@ -3089,7 +2315,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         local fontDrop = AceGUI:Create("Dropdown")
                         fontDrop:SetLabel("Stack Font")
                         CS.SetupFontDropdown(fontDrop)
-                        fontDrop:SetValue(cab.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT_CONFIG)
+                        fontDrop:SetValue(cab.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT)
                         fontDrop:SetFullWidth(true)
                         fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             customBars[cabIdx].stackTextFont = val
@@ -3100,7 +2326,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         local sizeDrop = AceGUI:Create("Slider")
                         sizeDrop:SetLabel("Stack Font Size")
                         sizeDrop:SetSliderValues(6, 24, 1)
-                        sizeDrop:SetValue(cab.stackTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE_CONFIG)
+                        sizeDrop:SetValue(cab.stackTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
                         sizeDrop:SetFullWidth(true)
                         sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             customBars[cabIdx].stackTextFontSize = val
@@ -3111,7 +2337,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         local outlineDrop = AceGUI:Create("Dropdown")
                         outlineDrop:SetLabel("Stack Outline")
                         outlineDrop:SetList(CS.outlineOptions)
-                        outlineDrop:SetValue(cab.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE_CONFIG)
+                        outlineDrop:SetValue(cab.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
                         outlineDrop:SetFullWidth(true)
                         outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
                             customBars[cabIdx].stackTextFontOutline = val
@@ -3121,7 +2347,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
                         local textColorPicker = AceGUI:Create("ColorPicker")
                         textColorPicker:SetLabel("Stack Text Color")
-                        local tc = cab.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR_CONFIG
+                        local tc = cab.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
                         textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
                         textColorPicker:SetHasAlpha(true)
                         textColorPicker:SetFullWidth(true)
@@ -3334,16 +2560,16 @@ local function BuildLayoutOrderPanel(container)
         return
     end
     local function GetResourceColor(pt)
-        if pt == 4 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "comboColor", DEFAULT_COMBO_COLOR_CONFIG)
-        elseif pt == 5 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR_CONFIG)
-        elseif pt == 7 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR_CONFIG)
-        elseif pt == 9 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "holyColor", DEFAULT_HOLY_COLOR_CONFIG)
-        elseif pt == 12 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "chiColor", DEFAULT_CHI_COLOR_CONFIG)
-        elseif pt == 16 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR_CONFIG)
-        elseif pt == 19 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR_CONFIG)
-        elseif pt == 100 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR_CONFIG)
+        if pt == 4 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "comboColor", DEFAULT_COMBO_COLOR)
+        elseif pt == 5 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR)
+        elseif pt == 7 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR)
+        elseif pt == 9 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "holyColor", DEFAULT_HOLY_COLOR)
+        elseif pt == 12 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "chiColor", DEFAULT_CHI_COLOR)
+        elseif pt == 16 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR)
+        elseif pt == 19 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR)
+        elseif pt == 100 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR)
         elseif pt == 101 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "staggerGreenColor", { 0.52, 0.90, 0.52 })
-        else return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "color", DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 })
+        else return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "color", DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 })
         end
     end
 
@@ -3480,7 +2706,7 @@ local function BuildLayoutOrderPanel(container)
             end
         end
         if showResource then
-            local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
+            local name = POWER_NAMES[pt] or ("Power " .. pt)
             local function ensureLayoutRes()
                 if not layout.resources[pt] then layout.resources[pt] = {} end
                 return layout.resources[pt]
