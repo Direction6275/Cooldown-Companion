@@ -32,8 +32,6 @@ local GetContinuousTickConfig = RB.GetContinuousTickConfig
 local GetSafeRGBColor = RB.GetSafeRGBColor
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 
-local FormatBarTime = ST._FormatBarTime
-
 ------------------------------------------------------------------------
 -- Resource Aura Overlay
 ------------------------------------------------------------------------

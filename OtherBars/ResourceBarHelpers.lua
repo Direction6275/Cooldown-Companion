@@ -1,8 +1,8 @@
 --[[
     CooldownCompanion - ResourceBarHelpers
     Pure query/helper functions with no mutable state writes (aside from
-    auto-vivification of config tables). Used by both ResourceBar.lua and
-    ResourceBarVisuals.lua at runtime.
+    auto-vivification of config tables and a power-type secrecy memoization
+    cache). Used by both ResourceBar.lua and ResourceBarVisuals.lua at runtime.
 
     All functions are added to ST._RB so consuming files can alias them to
     locals at load time.
@@ -13,7 +13,6 @@ local CooldownCompanion = ST.Addon
 
 local math_floor = math.floor
 local string_format = string.format
-local issecretvalue = issecretvalue
 local SecretsAPI = C_Secrets
 
 -- Import constants from ResourceBarConstants
@@ -356,12 +355,8 @@ local function GetSafeRGBColor(color, fallback)
     return fallback
 end
 
-local function GetSafeRGBAColor(color, fallback)
-    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
-        return color
-    end
-    return fallback
-end
+-- Identical to GetSafeRGBColor; alias kept for call-site clarity (RGB vs RGBA intent)
+local GetSafeRGBAColor = GetSafeRGBColor
 
 local function GetSegmentedThresholdConfig(powerType, settings)
     if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true then

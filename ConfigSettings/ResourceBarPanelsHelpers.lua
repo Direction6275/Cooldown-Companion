@@ -391,12 +391,8 @@ local function GetSafeRGBConfig(color, fallback)
     return fallback
 end
 
-local function GetSafeRGBAConfig(color, fallback)
-    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
-        return color
-    end
-    return fallback
-end
+-- Identical to GetSafeRGBConfig; alias kept for call-site clarity (RGB vs RGBA intent)
+local GetSafeRGBAConfig = GetSafeRGBConfig
 
 local function CopyRGBConfig(color)
     if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then

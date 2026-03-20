@@ -1,3 +1,10 @@
+--[[
+    CooldownCompanion - ResourceBarPanels
+    Config panel builders for resource bar settings: anchoring, appearance,
+    per-resource styling, custom aura bar panels, and layout order.
+    Query helpers and shared builders live in ResourceBarPanelsHelpers.lua.
+]]
+
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
@@ -22,7 +29,6 @@ local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
 local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
 local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
 local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
-local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
@@ -35,8 +41,6 @@ local DEFAULT_RESOURCE_TEXT_Y_OFFSET = RB.DEFAULT_RESOURCE_TEXT_Y_OFFSET
 local DEFAULT_SEG_THRESHOLD_COLOR = RB.DEFAULT_SEG_THRESHOLD_COLOR
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local DEFAULT_CONTINUOUS_TICK_MODE = RB.DEFAULT_CONTINUOUS_TICK_MODE
-local DEFAULT_CONTINUOUS_TICK_PERCENT = RB.DEFAULT_CONTINUOUS_TICK_PERCENT
-local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
 local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
 local DEFAULT_COMBO_COLOR = RB.DEFAULT_COMBO_COLOR
 local DEFAULT_COMBO_MAX_COLOR = RB.DEFAULT_COMBO_MAX_COLOR
@@ -63,37 +67,21 @@ local resourceBarCollapsedSections = RBP.collapsedSections
 local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
-local GetSpecOverrideTable = RBP.GetSpecOverrideTable
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
 local WriteSpecOverrideKey = RBP.WriteSpecOverrideKey
-local GetPlayerSpecOptionsConfig = RBP.GetPlayerSpecOptionsConfig
-local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
-local GetResourceAuraEntryConfig = RBP.GetResourceAuraEntryConfig
-local IsResourceAuraOverlayEnabledConfig = RBP.IsResourceAuraOverlayEnabledConfig
-local GetResourceAuraTrackingModeConfig = RBP.GetResourceAuraTrackingModeConfig
 local GetSafeRGBConfig = RBP.GetSafeRGBConfig
 local GetSafeRGBAConfig = RBP.GetSafeRGBAConfig
-local CopyRGBConfig = RBP.CopyRGBConfig
 local GetSegmentedThresholdValueConfig = RBP.GetSegmentedThresholdValueConfig
 local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
 local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
 local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
-local AttachAuraAutocompleteHandlers = RBP.AttachAuraAutocompleteHandlers
-local AddResourceAuraEntryFields = RBP.AddResourceAuraEntryFields
-local ClearLegacyResourceAuraFieldsConfig = RBP.ClearLegacyResourceAuraFieldsConfig
-local ClearResourceAuraEntryConfig = RBP.ClearResourceAuraEntryConfig
 local AddCdmAuraReadinessWarning = RBP.AddCdmAuraReadinessWarning
 local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
-local SupportsResourceAuraStackModeConfig = RBP.SupportsResourceAuraStackModeConfig
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
-
--- Local cache reference for aura bar autocomplete (built in ResourceBarPanelsHelpers,
--- cleared per-session in BuildCustomAuraBarPanel)
-local auraBarAutocompleteCache = nil
 
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
@@ -1689,7 +1677,6 @@ local function BuildCustomAuraBarAnchorSettings(container, customBars, settings,
 end
 
 local function BuildCustomAuraBarPanel(container, slotIdx)
-    auraBarAutocompleteCache = nil
     local settings = CooldownCompanion:GetResourceBarSettings()
     local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings)
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
@@ -1881,7 +1868,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             end)
             spellEdit:SetCallback("OnTextChanged", function(widget, event, text)
                 if text and #text >= 1 then
-                    local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
+                    local cache = BuildAuraBarAutocompleteCache()
                     local results = CS.SearchAutocompleteInCache(text, cache)
                     CS.ShowAutocompleteResults(results, widget, onAuraBarSelect)
                 else

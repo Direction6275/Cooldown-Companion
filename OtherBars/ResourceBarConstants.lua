@@ -1,7 +1,8 @@
 --[[
     CooldownCompanion - ResourceBarConstants
-    Shared constant tables, color defaults, and power mappings used by both
-    ResourceBar.lua (runtime) and ResourceBarPanels.lua (config UI).
+    Shared constant tables, color defaults, and power mappings used by the
+    runtime modules (ResourceBarHelpers, ResourceBarVisuals, ResourceBar)
+    and the config panel modules (ResourceBarPanelsHelpers, ResourceBarPanels).
 
     Exported via ST._RB table. Consuming files alias to locals at load time
     so there is no runtime lookup cost.
@@ -335,7 +336,6 @@ ST._RB = {
     DEFAULT_RESOURCE_TEXT_Y_OFFSET = DEFAULT_RESOURCE_TEXT_Y_OFFSET,
 }
 
--- Existing individual exports (used directly by ConfigSettings before _RB existed)
+-- Direct ST exports for files that import individual constants rather than the _RB table
 ST.POWER_ATLAS_TYPES = { [8] = true, [11] = true, [13] = true, [17] = true, [18] = true }
-ST.CUSTOM_AURA_BAR_BASE = CUSTOM_AURA_BAR_BASE
 ST.MAX_CUSTOM_AURA_BARS = MAX_CUSTOM_AURA_BARS
