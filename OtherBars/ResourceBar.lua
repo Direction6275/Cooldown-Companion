@@ -2121,8 +2121,7 @@ end
 ------------------------------------------------------------------------
 -- Update logic: Stagger bar (Brewmaster Monk)
 -- Uses UnitStagger for bar fill (ConditionalSecret — pass-through safe)
--- and C_PaperDollInfo.GetStaggerPercentage for color thresholds
--- (avoids arithmetic on potentially secret UnitStagger value).
+-- and UnitStagger/UnitHealthMax for color thresholds + percent text.
 ------------------------------------------------------------------------
 
 local function UpdateStaggerBar(bar, settings)
@@ -2138,13 +2137,16 @@ local function UpdateStaggerBar(bar, settings)
     bar:SetMinMaxValues(0, maxHealth)
     bar:SetValue(staggerAmount)
 
-    -- Color threshold: use GetStaggerPercentage to avoid arithmetic on secret UnitStagger
-    -- Thresholds: 30% yellow, 60% red (Blizzard's MonkStaggerBar values)
-    local greenColor, yellowColor, redColor = GetResourceColors(101, settings)
-    local percent = C_PaperDollInfo.GetStaggerPercentage("player") or 0
+    -- Compute pool percent for color + text (only when stagger is not secret)
+    local percent
+    local isSecret = issecretvalue and issecretvalue(staggerAmount)
+    if not isSecret then
+        percent = (maxHealth > 0) and (staggerAmount / maxHealth * 100) or 0
+    end
 
-    -- Guard: if percent is secret, fall back to green
-    if issecretvalue and issecretvalue(percent) then
+    -- Color thresholds: 30% yellow, 60% red (Blizzard's MonkStaggerBar values)
+    local greenColor, yellowColor, redColor = GetResourceColors(101, settings)
+    if isSecret or not percent then
         bar:SetStatusBarColor(greenColor[1], greenColor[2], greenColor[3], 1)
     elseif percent >= 60 then
         bar:SetStatusBarColor(redColor[1], redColor[2], redColor[3], 1)
@@ -2161,7 +2163,7 @@ local function UpdateStaggerBar(bar, settings)
         if textFormat == "current" then
             bar.text:SetFormattedText("%d", staggerAmount)
         elseif textFormat == "percent" then
-            if issecretvalue and issecretvalue(percent) then
+            if isSecret or not percent then
                 bar.text:SetText("")
             else
                 bar.text:SetFormattedText("%.0f%%", percent)
