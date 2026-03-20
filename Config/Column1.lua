@@ -970,6 +970,25 @@ local function RefreshColumn1(preserveDrag)
         return entry
     end
 
+    -- Helper: generate a unique group name with the given base
+    local function GenerateGroupName(base)
+        local profile = CooldownCompanion.db.profile
+        local existing = {}
+        -- Check container names (groups are now "panels" under containers)
+        for _, c in pairs(profile.groupContainers or {}) do
+            existing[c.name] = true
+        end
+        local name = base
+        if existing[name] then
+            local n = 1
+            while existing[name .. " " .. n] do
+                n = n + 1
+            end
+            name = name .. " " .. n
+        end
+        return name
+    end
+
     -- Helper: render a folder header row
     local function RenderFolderRow(folderId, sectionTag, childContainerIds)
         local folder = db.folders[folderId]
@@ -1065,6 +1084,22 @@ local function RefreshColumn1(preserveDrag)
                     info.func = function()
                         CloseDropDownMenus()
                         ShowPopupAboveConfig("CDC_RENAME_FOLDER", folder.name, { folderId = folderId })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    -- Add Group to folder
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Add Group"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+                        CooldownCompanion:MoveGroupToFolder(containerId, folderId)
+                        CS.selectedContainer = containerId
+                        CS.selectedGroup = nil
+                        CS.selectedButton = nil
+                        wipe(CS.selectedButtons)
+                        CooldownCompanion:RefreshConfigPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
 
@@ -1527,25 +1562,6 @@ local function RefreshColumn1(preserveDrag)
             widget:Release()
         end
         wipe(CS.col1BarWidgets)
-
-        -- Helper: generate a unique group name with the given base
-        local function GenerateGroupName(base)
-            local profile = CooldownCompanion.db.profile
-            local existing = {}
-            -- Check container names (groups are now "panels" under containers)
-            for _, c in pairs(profile.groupContainers or {}) do
-                existing[c.name] = true
-            end
-            local name = base
-            if existing[name] then
-                local n = 1
-                while existing[name .. " " .. n] do
-                    n = n + 1
-                end
-                name = name .. " " .. n
-            end
-            return name
-        end
 
         -- Single row: "New Group" | "New Folder" | "Import Group" (thirds)
         local barW = CS.col1ButtonBar:GetWidth() or 300
