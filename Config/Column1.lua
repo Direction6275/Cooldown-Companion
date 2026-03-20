@@ -430,6 +430,16 @@ local function RefreshColumn1(preserveDrag)
         return true
     end
 
+    local function IsFolderFullyInactive(folderId, childContainerIds)
+        if not childContainerIds or #childContainerIds == 0 then return true end
+        for _, cid in ipairs(childContainerIds) do
+            if not IsContainerInactive(cid, db.groupContainers[cid]) then
+                return false
+            end
+        end
+        return true
+    end
+
     -- Helper: render a single container row (reused by both sections)
     local function RenderContainerRow(containerId, inFolder, sectionTag)
         local container = db.groupContainers[containerId]
@@ -1341,7 +1351,25 @@ local function RefreshColumn1(preserveDrag)
     -- Render a section (global or character)
     local function RenderSection(section, sectionGroupIds, headingText)
         local items, folderChildContainers = BuildSectionItems(section, sectionGroupIds)
-        local isEmpty = #items == 0 and not next(folderChildContainers)
+
+        -- Partition into loaded (active) and unloaded (inactive)
+        local loadedItems = {}
+        local unloadedItems = {}
+        for _, item in ipairs(items) do
+            local isInactive
+            if item.kind == "folder" then
+                isInactive = IsFolderFullyInactive(item.id, folderChildContainers[item.id])
+            else
+                isInactive = IsContainerInactive(item.id, db.groupContainers[item.id])
+            end
+            if isInactive then
+                table.insert(unloadedItems, item)
+            else
+                table.insert(loadedItems, item)
+            end
+        end
+
+        local isEmpty = #loadedItems == 0 and #unloadedItems == 0
         if isEmpty and not CS.showPhantomSections then return end
 
         local heading = AceGUI:Create("Heading")
@@ -1405,45 +1433,58 @@ local function RefreshColumn1(preserveDrag)
         -- Class color for accent bars
         local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
-        for _, item in ipairs(items) do
-            if item.kind == "folder" then
-                RenderFolderRow(item.id, section, folderChildContainers[item.id])
-                if CS.specExpandedFolderId == item.id then
-                    RenderFolderSpecPanel(item.id)
-                end
-                -- If expanded, render children with accent bar
-                if not CS.collapsedFolders[item.id] then
-                    local children = folderChildContainers[item.id]
-                    if children and #children > 0 then
-                        local firstEntry, lastEntry
-                        for _, cid in ipairs(children) do
-                            local entry = RenderContainerRow(cid, true, section)
-                            if entry then
-                                if not firstEntry then firstEntry = entry end
-                                lastEntry = entry
+        local function RenderItems(itemList)
+            for _, item in ipairs(itemList) do
+                if item.kind == "folder" then
+                    RenderFolderRow(item.id, section, folderChildContainers[item.id])
+                    if CS.specExpandedFolderId == item.id then
+                        RenderFolderSpecPanel(item.id)
+                    end
+                    -- If expanded, render children with accent bar
+                    if not CS.collapsedFolders[item.id] then
+                        local children = folderChildContainers[item.id]
+                        if children and #children > 0 then
+                            local firstEntry, lastEntry
+                            for _, cid in ipairs(children) do
+                                local entry = RenderContainerRow(cid, true, section)
+                                if entry then
+                                    if not firstEntry then firstEntry = entry end
+                                    lastEntry = entry
+                                end
                             end
-                        end
-                        -- Create accent bar spanning all child rows
-                        if firstEntry and lastEntry and classColor then
-                            accentBarIndex = accentBarIndex + 1
-                            local bar = CS.folderAccentBars[accentBarIndex]
-                            if not bar then
-                                bar = CS.col1Scroll.content:CreateTexture(nil, "ARTWORK")
-                                CS.folderAccentBars[accentBarIndex] = bar
+                            -- Create accent bar spanning all child rows
+                            if firstEntry and lastEntry and classColor then
+                                accentBarIndex = accentBarIndex + 1
+                                local bar = CS.folderAccentBars[accentBarIndex]
+                                if not bar then
+                                    bar = CS.col1Scroll.content:CreateTexture(nil, "ARTWORK")
+                                    CS.folderAccentBars[accentBarIndex] = bar
+                                end
+                                bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
+                                bar:SetWidth(3)
+                                bar:ClearAllPoints()
+                                bar:SetPoint("TOPLEFT", firstEntry.frame, "TOPLEFT", 0, 0)
+                                bar:SetPoint("BOTTOMLEFT", lastEntry.frame, "BOTTOMLEFT", 0, 0)
+                                bar:Show()
                             end
-                            bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
-                            bar:SetWidth(3)
-                            bar:ClearAllPoints()
-                            bar:SetPoint("TOPLEFT", firstEntry.frame, "TOPLEFT", 0, 0)
-                            bar:SetPoint("BOTTOMLEFT", lastEntry.frame, "BOTTOMLEFT", 0, 0)
-                            bar:Show()
                         end
                     end
+                elseif item.kind == "container" then
+                    RenderContainerRow(item.id, false, section)
                 end
-            elseif item.kind == "container" then
-                RenderContainerRow(item.id, false, section)
             end
         end
+
+        RenderItems(loadedItems)
+
+        if #loadedItems > 0 and #unloadedItems > 0 then
+            local sep = AceGUI:Create("Heading")
+            sep:SetText("")
+            sep:SetFullWidth(true)
+            CS.col1Scroll:AddChild(sep)
+        end
+
+        RenderItems(unloadedItems)
     end
 
     -- Split containers into global and character-owned

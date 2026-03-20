@@ -240,11 +240,13 @@ end
 function CooldownCompanion:OnZoneChanged()
     self:CachePlayerState()
     self:RefreshAllGroupsVisibilityOnly()
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnRestingChanged()
     self._isResting = IsResting()
     self:RefreshAllGroupsVisibilityOnly()
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnMountDisplayChanged()
@@ -258,11 +260,13 @@ end
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
     self:RefreshAllGroupsVisibilityOnly()
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
     self:RefreshAllGroupsVisibilityOnly()
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnVehicleUIChanged(event, unit)
@@ -271,6 +275,7 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
         or C_ActionBar.HasVehicleActionBar()
         or C_ActionBar.HasOverrideActionBar()
     self:RefreshAllGroupsVisibilityOnly()
+    self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnHeroTalentChanged()
