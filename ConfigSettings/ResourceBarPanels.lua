@@ -136,11 +136,13 @@ local POWER_NAMES_CONFIG = {
     [18] = "Pain",
     [19] = "Essence",
     [100] = "Maelstrom Weapon",
+    [101] = "Stagger",
 }
 
 local DEFAULT_MW_BASE_COLOR_CONFIG = { 0, 0.5, 1 }
 local DEFAULT_MW_OVERLAY_COLOR_CONFIG = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR_CONFIG = { 0.5, 0.8, 1 }
+-- Stagger default colors inlined at usage sites (Lua 60-upvalue limit)
 local DEFAULT_CUSTOM_AURA_MAX_COLOR_CONFIG = { 1, 0.84, 0 }
 
 local SEGMENTED_TYPES_CONFIG = {
@@ -241,7 +243,7 @@ local SPEC_RESOURCES_CONFIG = {
     [263] = { 100, 0 },
     [62]  = { 16, 0 },
     [269] = { 12, 3 },
-    [268] = { 3 },
+    [268] = { 101, 3 },  -- Brewmaster: Stagger, Energy
     [581] = { 17 },
 }
 
@@ -1867,6 +1869,52 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(cpMax)
+            elseif pt == 101 then
+                -- Stagger: three color pickers (green/yellow/red thresholds)
+                local stGreenColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", { 0.52, 0.90, 0.52 })
+                local cpGreen = AceGUI:Create("ColorPicker")
+                cpGreen:SetLabel("Stagger (Low)")
+                cpGreen:SetColor(stGreenColor[1], stGreenColor[2], stGreenColor[3])
+                cpGreen:SetHasAlpha(false)
+                cpGreen:SetFullWidth(true)
+                cpGreen:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", {r, g, b})
+                end)
+                cpGreen:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", {r, g, b})
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpGreen)
+
+                local stYellowColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", { 1.0, 0.85, 0.36 })
+                local cpYellow = AceGUI:Create("ColorPicker")
+                cpYellow:SetLabel("Stagger (Medium)")
+                cpYellow:SetColor(stYellowColor[1], stYellowColor[2], stYellowColor[3])
+                cpYellow:SetHasAlpha(false)
+                cpYellow:SetFullWidth(true)
+                cpYellow:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", {r, g, b})
+                end)
+                cpYellow:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", {r, g, b})
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpYellow)
+
+                local stRedColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", { 1.0, 0.42, 0.42 })
+                local cpRed = AceGUI:Create("ColorPicker")
+                cpRed:SetLabel("Stagger (High)")
+                cpRed:SetColor(stRedColor[1], stRedColor[2], stRedColor[3])
+                cpRed:SetHasAlpha(false)
+                cpRed:SetFullWidth(true)
+                cpRed:SetCallback("OnValueChanged", function(widget, event, r, g, b)
+                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", {r, g, b})
+                end)
+                cpRed:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
+                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", {r, g, b})
+                    CooldownCompanion:ApplyResourceBars()
+                end)
+                container:AddChild(cpRed)
             else
                 local name = POWER_NAMES_CONFIG[pt] or ("Power " .. pt)
 
@@ -2004,7 +2052,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         end)
                         container:AddChild(thresholdColorPicker)
                     end
-                else
+                elseif capturedPt ~= 101 then
+                    -- Stagger (101) has built-in threshold coloring; tick markers not applicable
                     local tickAdvKey = "rbTickMarker_" .. capturedPt
                     local _tickEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", false) == true
                     local tickEnableCb = AceGUI:Create("CheckBox")
@@ -3293,6 +3342,7 @@ local function BuildLayoutOrderPanel(container)
         elseif pt == 16 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR_CONFIG)
         elseif pt == 19 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR_CONFIG)
         elseif pt == 100 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR_CONFIG)
+        elseif pt == 101 then return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "staggerGreenColor", { 0.52, 0.90, 0.52 })
         else return ReadSpecOverrideKey(rbSettings, pt, layoutSpecID, "color", DEFAULT_POWER_COLORS_CONFIG[pt] or { 1, 1, 1 })
         end
     end

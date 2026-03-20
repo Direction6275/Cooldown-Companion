@@ -40,6 +40,7 @@ local MAX_CUSTOM_AURA_BARS = 5
 local MW_SPELL_ID = 187880
 local RAGING_MAELSTROM_SPELL_ID = 384143
 local RESOURCE_MAELSTROM_WEAPON = 100
+-- Stagger power type ID: 101 (used inline to stay under Lua 200-local limit)
 local DEFAULT_MW_BASE_COLOR = { 0, 0.5, 1 }
 local DEFAULT_MW_OVERLAY_COLOR = { 1, 0.84, 0 }
 local DEFAULT_MW_MAX_COLOR = { 0.5, 0.8, 1 }
@@ -98,6 +99,7 @@ local POWER_NAMES = {
     [16] = "Arcane Charges",
     [17] = "Fury",
     [100] = "Maelstrom Weapon",
+    [101] = "Stagger",
     [18] = "Pain",
     [19] = "Essence",
 }
@@ -185,7 +187,7 @@ local SPEC_RESOURCES = {
     [263] = { 100, 0 },      -- Enhancement Shaman: MW, Mana
     [62]  = { 16, 0 },      -- Arcane Mage: ArcaneCharges, Mana
     [269] = { 12, 3 },      -- Windwalker Monk: Chi, Energy
-    [268] = { 3 },          -- Brewmaster Monk: Energy
+    [268] = { 101, 3 },        -- Brewmaster Monk: Stagger, Energy
     [581] = { 17 },         -- Vengeance DH: Fury
 }
 
@@ -888,6 +890,8 @@ local RESOURCE_COLOR_DEFS = {
               defaults = { DEFAULT_ESSENCE_READY_COLOR, DEFAULT_ESSENCE_RECHARGING_COLOR, DEFAULT_ESSENCE_MAX_COLOR } },
     [100] = { keys = { "mwBaseColor", "mwOverlayColor", "mwMaxColor" },
               defaults = { DEFAULT_MW_BASE_COLOR, DEFAULT_MW_OVERLAY_COLOR, DEFAULT_MW_MAX_COLOR } },
+    [101] = { keys = { "staggerGreenColor", "staggerYellowColor", "staggerRedColor" },
+              defaults = { { 0.52, 0.90, 0.52 }, { 1.0, 0.85, 0.36 }, { 1.0, 0.42, 0.42 } } },
 }
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
@@ -2115,6 +2119,64 @@ local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
 end
 
 ------------------------------------------------------------------------
+-- Update logic: Stagger bar (Brewmaster Monk)
+-- Uses UnitStagger for bar fill (ConditionalSecret — pass-through safe)
+-- and UnitStagger/UnitHealthMax for color thresholds + percent text.
+------------------------------------------------------------------------
+
+local function UpdateStaggerBar(bar, settings)
+    if not settings then
+        settings = GetResourceBarSettings()
+    end
+
+    local staggerAmount = UnitStagger("player") or 0
+    local maxHealth = UnitHealthMax("player")
+
+    local isSecret = issecretvalue
+        and (issecretvalue(staggerAmount) or issecretvalue(maxHealth))
+    if not isSecret and maxHealth < 1 then maxHealth = 1 end
+
+    -- Pass-through to C-level widget APIs (secret-safe)
+    bar:SetMinMaxValues(0, maxHealth)
+    bar:SetValue(staggerAmount)
+
+    -- Compute pool percent for color + text (only when neither value is secret)
+    local percent
+    if not isSecret then
+        percent = staggerAmount / maxHealth * 100
+    end
+
+    -- Color thresholds: 30% yellow, 60% red (Blizzard's MonkStaggerBar values)
+    local greenColor, yellowColor, redColor = GetResourceColors(101, settings)
+    local barColor = greenColor
+    if not isSecret then
+        if percent >= 60 then
+            barColor = redColor
+        elseif percent >= 30 then
+            barColor = yellowColor
+        end
+    end
+    bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
+    bar.brightnessOverlay:Hide()
+
+    -- Text display
+    if bar.text and bar.text:IsShown() then
+        if isSecret then
+            bar.text:SetText("")
+        else
+            local textFormat = bar._textFormat
+            if textFormat == "current" then
+                bar.text:SetFormattedText("%d", staggerAmount)
+            elseif textFormat == "percent" then
+                bar.text:SetFormattedText("%.0f%%", percent)
+            else
+                bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- Update logic: Segmented resources (NOT secret — full Lua logic)
 ------------------------------------------------------------------------
 
@@ -3122,6 +3184,8 @@ local function OnUpdate(self, elapsed)
                 UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
             elseif barInfo.barType == "mw_segmented" then
                 UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache)
+            elseif barInfo.barType == "stagger_continuous" then
+                UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_continuous"
                 or barInfo.barType == "custom_segmented"
                 or barInfo.barType == "custom_overlay" then
@@ -3193,7 +3257,7 @@ local function EnableEventFrame()
     if not eventFrame then
         eventFrame = CreateFrame("Frame")
         eventFrame:SetScript("OnEvent", function(self, event, ...)
-            if event == "UNIT_MAXPOWER" then
+            if event == "UNIT_MAXPOWER" or event == "UNIT_MAXHEALTH" then
                 local unit = ...
                 if unit == "player" then
                     CooldownCompanion:ApplyResourceBars()
@@ -3202,6 +3266,9 @@ local function EnableEventFrame()
         end)
     end
     eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+    -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
+    -- but RegisterUnitEvent with "player" filter has negligible overhead for others
+    eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
 end
 
 local function DisableEventFrame()
@@ -3285,12 +3352,15 @@ local function StyleContinuousBar(bar, powerType, settings)
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
 
-    local maxPower = UnitPowerMax("player", powerType)
-    local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
-    if issecretvalue and issecretvalue(maxPower) then
-        maxPowerIsSecret = true
+    -- Stagger (101) uses UnitHealthMax, not UnitPowerMax; tick markers not applicable
+    if powerType ~= 101 then
+        local maxPower = UnitPowerMax("player", powerType)
+        local maxPowerIsSecret = IsUnitPowerMaxSecret("player", powerType)
+        if issecretvalue and issecretvalue(maxPower) then
+            maxPowerIsSecret = true
+        end
+        UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
     end
-    UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 end
 
 local function StyleSegmentedText(holder, powerType, settings)
@@ -3496,7 +3566,24 @@ function CooldownCompanion:ApplyResourceBars()
         local effectiveWidth = isVerticalLayout and effectiveThickness or totalPrimaryLength
         local effectiveHeight = isVerticalLayout and totalPrimaryLength or effectiveThickness
 
-        if powerType == RESOURCE_MAELSTROM_WEAPON then
+        if powerType == 101 then  -- Stagger
+            -- Stagger: continuous bar with dedicated update (health-based max, threshold colors)
+            if not barInfo or barInfo.barType ~= "stagger_continuous" then
+                if barInfo and barInfo.frame then
+                    ClearResourceAuraVisuals(barInfo.frame)
+                    barInfo.frame:Hide()
+                end
+                local bar = CreateContinuousBar(targetContainer)
+                barInfo = { frame = bar, barType = "stagger_continuous", powerType = powerType }
+                resourceBarFrames[idx] = barInfo
+            else
+                barInfo.powerType = powerType
+            end
+
+            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+            StyleContinuousBar(barInfo.frame, powerType, settings)
+
+        elseif powerType == RESOURCE_MAELSTROM_WEAPON then
             -- Maelstrom Weapon: overlay bar with dedicated update
             local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
 
@@ -3949,6 +4036,23 @@ ApplyPreviewData = function()
                 end
                 ApplyResourceAuraLanePreview(barInfo, 0.5)
                 SetSegmentedText(barInfo.frame, filled + 0.5, n)
+            elseif barInfo.barType == "stagger_continuous" then
+                -- Preview at 45% stagger (yellow zone)
+                barInfo.frame:SetMinMaxValues(0, 100)
+                barInfo.frame:SetValue(45)
+                local _, yellowColor = GetResourceColors(101, settings)
+                barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
+                barInfo.frame.brightnessOverlay:Hide()
+                if barInfo.frame.text and barInfo.frame.text:IsShown() then
+                    local textFormat = barInfo.frame._textFormat
+                    if textFormat == "current" then
+                        barInfo.frame.text:SetText("45")
+                    elseif textFormat == "percent" then
+                        barInfo.frame.text:SetText("45%")
+                    else
+                        barInfo.frame.text:SetText("45 / 100")
+                    end
+                end
             elseif barInfo.barType == "mw_segmented" then
                 -- Preview at 7 stacks (all 5 base full, 2 overlay full)
                 local half = #barInfo.frame.segments
