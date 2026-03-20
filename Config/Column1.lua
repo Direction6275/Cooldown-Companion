@@ -989,17 +989,7 @@ local function RefreshColumn1(preserveDrag)
         entry:SetImageSize(32, 32)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
-        local allChildrenInactive = false
-        if childContainerIds and #childContainerIds > 0 then
-            allChildrenInactive = true
-            for _, cid in ipairs(childContainerIds) do
-                local childContainer = db.groupContainers[cid]
-                if childContainer and not IsContainerInactive(cid, childContainer) then
-                    allChildrenInactive = false
-                    break
-                end
-            end
-        end
+        local allChildrenInactive = IsFolderFullyInactive(folderId, childContainerIds)
         if allChildrenInactive then
             entry:SetColor(0.5, 0.5, 0.5)
         else
