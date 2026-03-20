@@ -50,6 +50,7 @@ ST._cdmAlphaGuard = cdmAlphaGuard
 function CooldownCompanion:OnInitialize()
     -- Initialize database
     self.db = LibStub("AceDB-3.0"):New("CooldownCompanionDB", defaults, true)
+    wipe(self.db.profile.showAdvanced)
 
     -- Initialize storage tables
     self.groupFrames = {}
