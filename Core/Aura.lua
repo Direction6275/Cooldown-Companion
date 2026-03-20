@@ -58,7 +58,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- Aura reapplication (pandemic refresh) arrives as an update, not a
     -- removal + add.  Clear pandemic grace state so the synchronous
     -- UpdateAllCooldowns() below reads PandemicIcon fresh instead of
-    -- holding stale pandemic state via the 3-tick grace counter.
+    -- holding stale pandemic state via the grace window.
     if updateInfo.updatedAuraInstanceIDs then
         local updatedIDs = updateInfo.updatedAuraInstanceIDs
         self:ForEachButton(function(button)
@@ -66,7 +66,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                 for _, instId in ipairs(updatedIDs) do
                     if button._auraInstanceID == instId then
                         button._inPandemic = false
-                        button._pandemicGraceTicks = nil
+                        button._pandemicGraceStart = nil
                         break
                     end
                 end
