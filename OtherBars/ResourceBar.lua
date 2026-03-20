@@ -2131,45 +2131,47 @@ local function UpdateStaggerBar(bar, settings)
 
     local staggerAmount = UnitStagger("player") or 0
     local maxHealth = UnitHealthMax("player")
-    if maxHealth < 1 then maxHealth = 1 end
+
+    local isSecret = issecretvalue
+        and (issecretvalue(staggerAmount) or issecretvalue(maxHealth))
+    if not isSecret and maxHealth < 1 then maxHealth = 1 end
 
     -- Pass-through to C-level widget APIs (secret-safe)
     bar:SetMinMaxValues(0, maxHealth)
     bar:SetValue(staggerAmount)
 
-    -- Compute pool percent for color + text (only when stagger is not secret)
+    -- Compute pool percent for color + text (only when neither value is secret)
     local percent
-    local isSecret = issecretvalue and issecretvalue(staggerAmount)
     if not isSecret then
-        percent = (maxHealth > 0) and (staggerAmount / maxHealth * 100) or 0
+        percent = staggerAmount / maxHealth * 100
     end
 
     -- Color thresholds: 30% yellow, 60% red (Blizzard's MonkStaggerBar values)
     local greenColor, yellowColor, redColor = GetResourceColors(101, settings)
-    if isSecret or not percent then
-        bar:SetStatusBarColor(greenColor[1], greenColor[2], greenColor[3], 1)
-    elseif percent >= 60 then
-        bar:SetStatusBarColor(redColor[1], redColor[2], redColor[3], 1)
-    elseif percent >= 30 then
-        bar:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
-    else
-        bar:SetStatusBarColor(greenColor[1], greenColor[2], greenColor[3], 1)
+    local barColor = greenColor
+    if not isSecret then
+        if percent >= 60 then
+            barColor = redColor
+        elseif percent >= 30 then
+            barColor = yellowColor
+        end
     end
+    bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
     bar.brightnessOverlay:Hide()
 
     -- Text display
     if bar.text and bar.text:IsShown() then
-        local textFormat = bar._textFormat
-        if textFormat == "current" then
-            bar.text:SetFormattedText("%d", staggerAmount)
-        elseif textFormat == "percent" then
-            if isSecret or not percent then
-                bar.text:SetText("")
-            else
-                bar.text:SetFormattedText("%.0f%%", percent)
-            end
+        if isSecret then
+            bar.text:SetText("")
         else
-            bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
+            local textFormat = bar._textFormat
+            if textFormat == "current" then
+                bar.text:SetFormattedText("%d", staggerAmount)
+            elseif textFormat == "percent" then
+                bar.text:SetFormattedText("%.0f%%", percent)
+            else
+                bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
+            end
         end
     end
 end
@@ -4039,9 +4041,7 @@ ApplyPreviewData = function()
                 barInfo.frame:SetMinMaxValues(0, 100)
                 barInfo.frame:SetValue(45)
                 local _, yellowColor = GetResourceColors(101, settings)
-                if yellowColor then
-                    barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
-                end
+                barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
                 barInfo.frame.brightnessOverlay:Hide()
                 if barInfo.frame.text and barInfo.frame.text:IsShown() then
                     local textFormat = barInfo.frame._textFormat
