@@ -389,6 +389,14 @@ local defaults = {
                     continuousTickColor = nil,
                     continuousTickCombatOnly = false,
                 },
+                [101] = {
+                    enabled = true,
+                    staggerGreenColor = nil,
+                    staggerYellowColor = nil,
+                    staggerRedColor = nil,
+                    showText = false,
+                    textFormat = "percent",
+                },
             },
             customAuraBarSlots = {
                 [1] = { position = "below", order = 1001 },
