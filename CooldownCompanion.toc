@@ -67,6 +67,9 @@ ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
 Core\GroupFrame.lua
 OtherBars\CastBar.lua
+OtherBars\ResourceBarConstants.lua
+OtherBars\ResourceBarHelpers.lua
+OtherBars\ResourceBarVisuals.lua
 OtherBars\ResourceBar.lua
 Core\FrameAnchoring.lua
 Config\State.lua
@@ -85,6 +88,7 @@ Config\Panel.lua
 ConfigSettings\Helpers.lua
 ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
+ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\ButtonSettings.lua
