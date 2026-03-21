@@ -1,12 +1,9 @@
 CLAUDE.md
 AGENTS.md
-GEMINI.md
 .claude
 .codex
-.gemini
-.cursor
 .agents
-nul
 .mcp.json
 .vscode
 Libs/
+nul
