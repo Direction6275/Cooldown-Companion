@@ -35,6 +35,11 @@ local slotToButtonInfo = {}
 -- Item ID → action bar slot reverse lookup cache
 CooldownCompanion._itemSlotCache = {}
 
+-- Addon bar CLICK binding fallback: slot → abbreviated key text.
+-- Covers action bar addons (ElvUI, Bartender4, Dominos, etc.) that register
+-- their own CLICK bindings instead of reusing Blizzard binding commands.
+local addonSlotBindings = {}
+
 -- Rebuild the slot → button info mapping by reading .action from actual frames.
 -- This correctly handles page-based slot numbering without hardcoded ranges.
 function CooldownCompanion:RebuildSlotMapping()
@@ -96,16 +101,19 @@ local function AbbreviateKeybind(text)
 end
 
 -- Return the formatted keybind string for a given action bar slot, or nil.
--- Uses both the named binding AND the CLICK fallback (matching Blizzard logic).
+-- Uses both the named binding AND the CLICK fallback (matching Blizzard logic),
+-- then falls back to addon bar CLICK bindings for ElvUI/Bartender4/Dominos/etc.
 local function GetKeybindForSlot(slot)
     local info = slotToButtonInfo[slot]
-    if not info then return nil end
-    local key = GetBindingKey(info.bindingAction) or
-                GetBindingKey("CLICK " .. info.frameName .. ":LeftButton")
-    if key then
-        return AbbreviateKeybind(GetBindingText(key, 1))
+    if info then
+        local key = GetBindingKey(info.bindingAction) or
+                    GetBindingKey("CLICK " .. info.frameName .. ":LeftButton")
+        if key then
+            return AbbreviateKeybind(GetBindingText(key, 1))
+        end
     end
-    return nil
+    -- Fallback: addon bar CLICK bindings (e.g. "CLICK ElvUI_Bar2Button7:LeftButton")
+    return addonSlotBindings[slot]
 end
 
 -- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.
@@ -138,6 +146,64 @@ function CooldownCompanion:UpdateItemSlotCache(slot)
         if actionType == "item" and id then
             if not self._itemSlotCache[id] then
                 self._itemSlotCache[id] = slot
+            end
+        end
+    end
+end
+
+-- Resolve the action bar slot from an addon button frame, or nil.
+local function GetFrameActionSlot(frame)
+    local action = frame.action
+    if not action and frame.GetAttribute then
+        action = frame:GetAttribute("action")
+    end
+    if action and type(action) == "number" then return action end
+    return nil
+end
+
+-- Cache the abbreviated keybind text for a given slot, if not already cached.
+local function CacheAddonBinding(slot, key)
+    if not addonSlotBindings[slot] then
+        addonSlotBindings[slot] = AbbreviateKeybind(GetBindingText(key, 1))
+    end
+end
+
+-- Scan addon action bar frames and WoW's binding table to find keybinds that
+-- the Blizzard binding-name lookup in GetKeybindForSlot cannot discover.
+-- Handles ElvUI (custom ELVUIBAR commands), Bartender4 / Dominos (CLICK commands),
+-- and any other addon that registers CLICK bindings for action button frames.
+function CooldownCompanion:RebuildAddonSlotBindings()
+    wipe(addonSlotBindings)
+
+    -- Strategy 1: Scan GetBinding() for CLICK commands.
+    -- Covers Bartender4, Dominos, and any addon using CLICK binding format.
+    for i = 1, GetNumBindings() do
+        local command, category, key1 = GetBinding(i)
+        if key1 and command then
+            local frameName = command:match("^CLICK (.+):LeftButton$")
+            if frameName then
+                local frame = _G[frameName]
+                if frame then
+                    local slot = GetFrameActionSlot(frame)
+                    if slot then CacheAddonBinding(slot, key1) end
+                end
+            end
+        end
+    end
+
+    -- Strategy 2: ElvUI uses non-CLICK binding commands (ELVUIBAR{n}BUTTON{m}).
+    -- Scan its frames directly and query the binding by constructed command name.
+    if _G["ElvUI_Bar1Button1"] then
+        for bar = 1, 15 do
+            for btn = 1, 12 do
+                local frame = _G["ElvUI_Bar" .. bar .. "Button" .. btn]
+                if frame then
+                    local slot = GetFrameActionSlot(frame)
+                    if slot and not addonSlotBindings[slot] then
+                        local key = GetBindingKey("ELVUIBAR" .. bar .. "BUTTON" .. btn)
+                        if key then CacheAddonBinding(slot, key) end
+                    end
+                end
             end
         end
     end
