@@ -288,6 +288,39 @@ local function ShowGlowStyle(container, style, button, color, params)
     end
 end
 
+-- Check whether the underlying animation for the active glow sub-style is still
+-- alive.  Used as a cache-match safety net: if the cache says a glow is active
+-- but the animation died (e.g. parent frame hide/show killed it, or LCG released
+-- the glow frame), this returns false so the caller can restart.
+local function IsGlowAnimationAlive(container)
+    -- LCG pixel glow: verify LCG still owns the frame on the target
+    if container._pixelTarget then
+        return container._pixelTarget["_PixelGlow" .. (container._pixelKey or "")] ~= nil
+    end
+    -- LCG button / autocast glow: verify LCG frame reference on the target
+    if container._lcgStyle and container._lcgTarget then
+        if container._lcgStyle == PROC_STYLE_LCG_BUTTON then
+            return container._lcgTarget._ButtonGlow ~= nil
+        elseif container._lcgStyle == PROC_STYLE_LCG_AUTOCAST then
+            return container._lcgTarget["_AutoCastGlow" .. (container._lcgKey or "")] ~= nil
+        end
+    end
+    -- CC proc flipbook: check ProcLoop is still playing (visible frames only;
+    -- hidden frames have their AnimationGroup auto-paused by WoW and will resume)
+    if container.procFrame and container.procFrame:IsShown() then
+        if not container.procFrame:IsVisible() then return true end
+        return not container.procFrame.ProcLoop or container.procFrame.ProcLoop:IsPlaying()
+    end
+    -- Blizzard flipbook (assisted highlight): same visible-only check
+    if container.blizzardFrame and container.blizzardFrame:IsShown() then
+        if not container.blizzardFrame:IsVisible() then return true end
+        return not (container.blizzardFrame.Flipbook and container.blizzardFrame.Flipbook.Anim)
+            or container.blizzardFrame.Flipbook.Anim:IsPlaying()
+    end
+    -- Solid border or no active animated glow — always considered alive
+    return true
+end
+
 -- Show or hide assisted highlight on a button based on the selected style.
 -- Tracks current state to avoid restarting animations every tick.
 local function SetAssistedHighlight(button, show)
@@ -307,8 +340,12 @@ local function SetAssistedHighlight(button, show)
     end
     local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
 
-    -- Skip show/hide if state hasn't changed (prevents animation restarts)
-    if hl.currentState == desiredState then return end
+    -- Skip show/hide if state hasn't changed (prevents animation restarts).
+    -- Safety net: if the cache says active but the animation died, fall through
+    -- to restart instead of returning early.
+    if hl.currentState == desiredState then
+        if not desiredState or IsGlowAnimationAlive(hl) then return end
+    end
     hl.currentState = desiredState
 
     HideGlowStyles(hl)
@@ -351,7 +388,9 @@ local function SetProcGlow(button, show)
         local ln = (glowStyle == "pixel") and ((style and style.procGlowLines) or 8) or 0
         desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
     end
-    if button._procGlowActive == desiredState then return end
+    if button._procGlowActive == desiredState then
+        if not desiredState or IsGlowAnimationAlive(pg) then return end
+    end
     button._procGlowActive = desiredState
 
     HideGlowStyles(pg)
@@ -423,7 +462,9 @@ local function SetAuraGlow(button, show, pandemicOverride)
         end
     end
 
-    if button._auraGlowActive == desiredState then return end
+    if button._auraGlowActive == desiredState then
+        if not desiredState or IsGlowAnimationAlive(ag) then return end
+    end
     button._auraGlowActive = desiredState
 
     HideGlowStyles(ag)
@@ -493,7 +534,9 @@ local function SetReadyGlow(button, show)
         local ln = (glowStyle == "pixel") and ((style and style.readyGlowLines) or 8) or 0
         desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
     end
-    if button._readyGlowActive == desiredState then return end
+    if button._readyGlowActive == desiredState then
+        if not desiredState or IsGlowAnimationAlive(rg) then return end
+    end
     button._readyGlowActive = desiredState
 
     HideGlowStyles(rg)
@@ -544,6 +587,10 @@ local function CreateGlowContainer(parent, overhang)
     local procFrame = CreateFrame("Frame", nil, parent, "ActionButtonSpellAlertTemplate")
     FitHighlightFrame(procFrame, parent, overhang or 32)
     SetFrameClickThroughRecursive(procFrame, true, true)
+    -- Clear the template's OnHide which explicitly Stop()s ProcLoop.  Without it,
+    -- WoW's frame system will auto-pause/resume the AnimationGroup across parent
+    -- hide/show cycles.  CC already stops ProcLoop in HideGlowStyles when needed.
+    procFrame:SetScript("OnHide", nil)
     procFrame:Hide()
     container.procFrame = procFrame
 
@@ -617,6 +664,7 @@ local function CreateAssistedHighlight(button, style)
     local procFrame = CreateFrame("Frame", nil, button, "ActionButtonSpellAlertTemplate")
     FitHighlightFrame(procFrame, button, style.assistedHighlightProcOverhang)
     SetFrameClickThroughRecursive(procFrame, true, true)
+    procFrame:SetScript("OnHide", nil)
     procFrame:Hide()
     hl.procFrame = procFrame
 
@@ -660,7 +708,9 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
         end
     end
 
-    if button._barAuraEffectActive == desiredState then return end
+    if button._barAuraEffectActive == desiredState then
+        if not desiredState or IsGlowAnimationAlive(ae) then return end
+    end
     button._barAuraEffectActive = desiredState
 
     HideGlowStyles(ae)
