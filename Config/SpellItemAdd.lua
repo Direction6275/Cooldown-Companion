@@ -16,8 +16,10 @@ local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local GetButtonIcon = ST._GetButtonIcon
 local CDM_VIEWER_NAMES = ST._CDM_VIEWER_NAMES
 
--- After a successful add, auto-select the new button so Column 3
--- immediately shows its settings.
+-- After a successful add, set selection state to the new button so the
+-- next RefreshConfigPanel shows its settings in Column 3.
+-- Precondition: CS.selectedContainer is already set by the caller's
+-- panel/container selection flow.
 local function SelectNewButton(panelId, buttonIndex)
     if not buttonIndex then return end
     CS.selectedGroup = panelId
@@ -119,7 +121,7 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add item to selected group
 ------------------------------------------------------------------------
-local function FinalizeAddItem(itemId, groupId)
+local function FinalizeAddItem(itemId, groupId, autoSelect)
     local itemName = C_Item.GetItemNameByID(itemId) or "Unknown Item"
     local spellName = C_Item.GetItemSpell(itemId)
     if not spellName then
@@ -127,7 +129,9 @@ local function FinalizeAddItem(itemId, groupId)
         return false
     end
     local idx = CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName)
-    SelectNewButton(groupId, idx)
+    if autoSelect ~= false then
+        SelectNewButton(groupId, idx)
+    end
     CooldownCompanion:Print("Added item: " .. itemName)
     return true
 end
@@ -179,7 +183,9 @@ local function TryAddItem(input)
             CooldownCompanion:Print("Item not found: " .. input)
             return
         end
-        if FinalizeAddItem(itemId, capturedGroup) then
+        -- Skip auto-select if the user navigated away during async load
+        local stillOnGroup = CS.selectedGroup == capturedGroup
+        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
@@ -267,7 +273,9 @@ local function TryAdd(input)
                     end
                     return
                 end
-                if FinalizeAddItem(itemId, capturedGroup) then
+                -- Skip auto-select if the user navigated away during async load
+                local stillOnGroup = CS.selectedGroup == capturedGroup
+                if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
                     CooldownCompanion:RefreshConfigPanel()
                 elseif passiveOrProc then
                     CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")

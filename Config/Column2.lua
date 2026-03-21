@@ -1981,7 +1981,7 @@ local function RefreshColumn2()
                             CS.selectedGroup = CS.addingToPanelId
                             if TryAdd(CS.newInput) then
                                 CS.newInput = ""
-                                CS.pendingEditBoxFocus = true
+                                CS.pendingEditBoxFocus = true  -- re-focus for rapid successive adds
                                 CooldownCompanion:RefreshConfigPanel()
                             end
                         end
@@ -2026,7 +2026,7 @@ local function RefreshColumn2()
                             CS.selectedGroup = CS.addingToPanelId
                             if TryAdd(CS.newInput) then
                                 CS.newInput = ""
-                                CS.pendingEditBoxFocus = true
+                                CS.pendingEditBoxFocus = true  -- re-focus for rapid successive adds
                                 CooldownCompanion:RefreshConfigPanel()
                             end
                         end
