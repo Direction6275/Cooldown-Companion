@@ -35,9 +35,9 @@ local slotToButtonInfo = {}
 -- Item ID → action bar slot reverse lookup cache
 CooldownCompanion._itemSlotCache = {}
 
--- Addon bar CLICK binding fallback: slot → abbreviated key text.
--- Covers action bar addons (ElvUI, Bartender4, Dominos, etc.) that register
--- their own CLICK bindings instead of reusing Blizzard binding commands.
+-- Addon action bar binding fallback: slot → abbreviated key text.
+-- Covers action bar addons (ElvUI, Bartender4, Dominos, etc.) whose keybinds
+-- are not discoverable through Blizzard's standard binding-name lookup.
 local addonSlotBindings = {}
 
 -- Rebuild the slot → button info mapping by reading .action from actual frames.
@@ -101,8 +101,7 @@ local function AbbreviateKeybind(text)
 end
 
 -- Return the formatted keybind string for a given action bar slot, or nil.
--- Uses both the named binding AND the CLICK fallback (matching Blizzard logic),
--- then falls back to addon bar CLICK bindings for ElvUI/Bartender4/Dominos/etc.
+-- Tries Blizzard binding names and CLICK fallback first, then addon bar bindings.
 local function GetKeybindForSlot(slot)
     local info = slotToButtonInfo[slot]
     if info then
@@ -112,7 +111,7 @@ local function GetKeybindForSlot(slot)
             return AbbreviateKeybind(GetBindingText(key, 1))
         end
     end
-    -- Fallback: addon bar CLICK bindings (e.g. "CLICK ElvUI_Bar2Button7:LeftButton")
+    -- Fallback: addon bar bindings (e.g. Bartender4, Dominos, ElvUI)
     return addonSlotBindings[slot]
 end
 
@@ -151,11 +150,11 @@ function CooldownCompanion:UpdateItemSlotCache(slot)
     end
 end
 
--- Resolve the action bar slot from an addon button frame, or nil.
+-- Resolve the action bar slot from a button frame, or nil.
 local function GetFrameActionSlot(frame)
     local action = frame.action
     if not action and frame.GetAttribute then
-        action = frame:GetAttribute("action")
+        action = tonumber(frame:GetAttribute("action"))
     end
     if action and type(action) == "number" then return action end
     return nil
