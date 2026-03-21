@@ -372,6 +372,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
 end
 
 function CooldownCompanion:OnBindingsChanged()
+    self:RebuildAddonSlotBindings()
     self:OnKeybindsChanged()
 end
 
@@ -383,12 +384,14 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     else
         self:RebuildItemSlotCache()
     end
+    self:RebuildAddonSlotBindings()
     self:OnKeybindsChanged()
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged()
     self:RebuildSlotMapping()
     self:RebuildItemSlotCache()
+    self:RebuildAddonSlotBindings()
     self:OnKeybindsChanged()
     -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
