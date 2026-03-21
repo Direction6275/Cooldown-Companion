@@ -16,6 +16,17 @@ local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local GetButtonIcon = ST._GetButtonIcon
 local CDM_VIEWER_NAMES = ST._CDM_VIEWER_NAMES
 
+-- After a successful add, set selection state to the new button so the
+-- next RefreshConfigPanel shows its settings in Column 3.
+-- Precondition: CS.selectedContainer is already set by the caller's
+-- panel/container selection flow.
+local function SelectNewButton(panelId, buttonIndex)
+    if not buttonIndex then return end
+    CS.selectedGroup = panelId
+    CS.selectedButton = buttonIndex
+    wipe(CS.selectedButtons)
+end
+
 -- File-local state
 local autocompleteDropdown
 
@@ -81,18 +92,22 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             local allChildren = CooldownCompanion.viewerAuraAllChildren[spellId]
             if allChildren and #allChildren > 1 then
                 local count = #allChildren
+                local firstIdx
                 for i = 1, count do
-                    CooldownCompanion:AddButtonToGroup(
+                    local idx = CooldownCompanion:AddButtonToGroup(
                         CS.selectedGroup, "spell", spellId, spellName,
                         isPetSpell, true, forceAura, i)
+                    if i == 1 then firstIdx = idx end
                 end
+                SelectNewButton(CS.selectedGroup, firstIdx)
                 CooldownCompanion:Print("Added " .. count .. " buttons for "
                     .. spellName .. " (one per CDM entry). Their icons will "
                     .. "update during combat to show the active variant.")
                 return true
             end
         end
-        local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
+        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
+        SelectNewButton(CS.selectedGroup, idx)
         if not notified then
             CooldownCompanion:Print("Added spell: " .. spellName)
         end
@@ -106,14 +121,17 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add item to selected group
 ------------------------------------------------------------------------
-local function FinalizeAddItem(itemId, groupId)
+local function FinalizeAddItem(itemId, groupId, autoSelect)
     local itemName = C_Item.GetItemNameByID(itemId) or "Unknown Item"
     local spellName = C_Item.GetItemSpell(itemId)
     if not spellName then
         CooldownCompanion:Print("Item has no usable effect: " .. itemName)
         return false
     end
-    CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName)
+    local idx = CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName)
+    if autoSelect ~= false then
+        SelectNewButton(groupId, idx)
+    end
     CooldownCompanion:Print("Added item: " .. itemName)
     return true
 end
@@ -165,7 +183,9 @@ local function TryAddItem(input)
             CooldownCompanion:Print("Item not found: " .. input)
             return
         end
-        if FinalizeAddItem(itemId, capturedGroup) then
+        -- Skip auto-select if the user navigated away during async load
+        local stillOnGroup = CS.selectedGroup == capturedGroup
+        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
@@ -193,7 +213,8 @@ local function TryAdd(input)
         -- Passive/proc spell: require CDM presence
         if spellFound and passiveOrProc then
             if IsSpellInCDMBuffBar(id) then
-                local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, true)
+                local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, true)
+                SelectNewButton(CS.selectedGroup, idx)
                 if not notified then
                     CooldownCompanion:Print("Added spell: " .. spellInfo.name)
                 end
@@ -208,7 +229,8 @@ local function TryAdd(input)
             if IsSpellInCDMCooldown(id) and IsSpellInCDMBuffBar(id) then
                 forceAura = false  -- dual-CDM: default to cooldown mode
             end
-            local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
+            local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
+            SelectNewButton(CS.selectedGroup, idx)
             if not notified then
                 CooldownCompanion:Print("Added spell: " .. spellInfo.name)
             end
@@ -251,7 +273,9 @@ local function TryAdd(input)
                     end
                     return
                 end
-                if FinalizeAddItem(itemId, capturedGroup) then
+                -- Skip auto-select if the user navigated away during async load
+                local stillOnGroup = CS.selectedGroup == capturedGroup
+                if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
                     CooldownCompanion:RefreshConfigPanel()
                 elseif passiveOrProc then
                     CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
@@ -287,7 +311,8 @@ local function TryAdd(input)
             local passiveOrProc = IsPassiveOrProc(spellId)
             if passiveOrProc then
                 if IsSpellInCDMBuffBar(spellId) then
-                    local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, nil, true)
+                    local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, nil, true)
+                    SelectNewButton(CS.selectedGroup, idx)
                     if not notified then
                         CooldownCompanion:Print("Added spell: " .. spellName)
                     end
@@ -295,7 +320,8 @@ local function TryAdd(input)
                 end
                 -- Not in CDM — fall through to try as item, then report error
             else
-                local _, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
+                local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
+                SelectNewButton(CS.selectedGroup, idx)
                 if not notified then
                     CooldownCompanion:Print("Added spell: " .. spellName)
                 end
