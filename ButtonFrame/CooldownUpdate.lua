@@ -855,6 +855,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._zeroChargesConfirmed = nil
         button._chargeRecharging = nil
         button._chargeDurationObj = nil
+        button._chargesSpent = nil
+        button._mainCDProbed = nil
+        button._chargeText = nil
+        button.count:SetText("")
         -- Cast-count display for non-charge spells (e.g. Mana Tea stacks).
         -- Secret cast counts are only passed through when an active spell
         -- override is providing them (e.g. Thunderblast stacks on Thunderclap).
@@ -957,6 +961,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.hasCharges then
         -- Default to non-zero each tick; set true only when a current probe confirms zero.
         button._mainCDShown = false
+        button._mainCDProbed = false
         if buttonData.type == "item" then
             -- Items: 0 charges = on cooldown. No GCD to filter.
             local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
@@ -975,6 +980,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local slotShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             if slotShown ~= nil then
                 button._mainCDShown = slotShown and not isGCDOnly
+                button._mainCDProbed = true
             elseif not auraOverrideActive and (button._isBar or button._isText) then
                 button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
             elseif not auraOverrideActive then
@@ -1009,7 +1015,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
            and buttonData.type == "spell"
-           and button._chargeCountReadable ~= true then
+           and button._chargeCountReadable ~= true
+           and not button._mainCDProbed then
+            -- Heuristic: suppress zero-charge when cast history says charges remain.
+            -- Only applies when _mainCDShown was determined by non-charge-aware
+            -- fallbacks (cooldown:IsShown / scratchCooldown). Skip when the action
+            -- bar probe was used — it is already charge-aware and authoritative.
             local maxCharges = buttonData.maxCharges
             local spent = button._chargesSpent
             if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
