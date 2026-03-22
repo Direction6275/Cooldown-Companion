@@ -115,6 +115,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                 local hasRealCharges = buttonData.hasCharges and true or nil
                 if chargeInfo then
                     buttonData._castCountCandidate = nil
+                    buttonData._castCountSelf = nil
                     local mc = chargeInfo.maxCharges
                     if mc and not issecretvalue(mc) then
                         if mc > 1 then

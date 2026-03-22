@@ -822,6 +822,9 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             local castCount = C_Spell.GetSpellCastCount(chargeQueryID)
             if not issecretvalue(castCount) and castCount and castCount > 0 then
                 group.buttons[buttonIndex]._castCountCandidate = true
+                if chargeQueryID == id then
+                    group.buttons[buttonIndex]._castCountSelf = true
+                end
             end
             -- Ensure RefreshChargeFlags evaluates this spell on charge events
             -- even if it has 0 stacks right now.
