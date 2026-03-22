@@ -129,7 +129,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.readyGlow = CreateGlowContainer(button, 32)
 
     -- Key press highlight elements (glow while keybind is held)
-    button.keyPressHighlight = CreateGlowContainer(button, 32)
+    button.keyPressHighlight = CreateGlowContainer(button, 32, true)
 
     -- Aura/ready glow frame levels are now managed by ApplyStrataOrder (called below)
 
@@ -963,9 +963,12 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update key press highlight frames
     if button.keyPressHighlight then
         button.keyPressHighlight.solidFrame:SetAllPoints()
-        ApplyEdgePositions(button.keyPressHighlight.solidTextures, button, button.style.keyPressHighlightSize or 2)
-        FitHighlightFrame(button.keyPressHighlight.procFrame, button, button.style.keyPressHighlightSize or 32)
-        SetKeyPressHighlight(button, false)
+        ApplyEdgePositions(button.keyPressHighlight.solidTextures, button, button.style.keyPressHighlightSize or 5)
+        -- Only reset the glow if not in preview mode; force cache re-evaluation on next frame
+        if not button._keyPressHighlightPreview then
+            SetKeyPressHighlight(button, false)
+        end
+        button._keyPressHighlightActive = nil
     end
 
     -- Apply configurable strata ordering (LoC always on top)

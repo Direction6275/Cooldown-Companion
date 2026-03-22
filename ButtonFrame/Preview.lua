@@ -436,6 +436,8 @@ function CooldownCompanion:InvalidateReadyGlow(groupId, buttonIndex)
 end
 
 -- Set or clear key press highlight preview for every button in a group.
+-- Key press highlight is rendered by the per-frame kphUpdateFrame OnUpdate handler,
+-- not by UpdateCooldown — setting the flag and invalidating the cache is sufficient.
 function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
     if not show then
         kphPreviewTokens[groupId] = (kphPreviewTokens[groupId] or 0) + 1
@@ -445,9 +447,6 @@ function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
     for _, button in ipairs(frame.buttons) do
         button._keyPressHighlightPreview = show or nil
         button._keyPressHighlightActive = nil
-        if button.UpdateCooldown then
-            button:UpdateCooldown()
-        end
     end
 end
 
@@ -476,9 +475,6 @@ function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         for _, button in ipairs(frame.buttons) do
             button._keyPressHighlightPreview = nil
             button._keyPressHighlightActive = nil
-            if button.UpdateCooldown then
-                button:UpdateCooldown()
-            end
         end
     end
 end

@@ -763,14 +763,17 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
     }, opts)
 end
 
+local KPH_STYLE_OPTIONS = {["solid"] = "Solid Border", ["overlay"] = "Overlay"}
+local KPH_STYLE_ORDER = {"solid", "overlay"}
+
 local function BuildKeyPressHighlightControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "keyPressHighlightStyle", colorKey = "keyPressHighlightColor", colorLabel = "Highlight Color",
-        sizeKey = "keyPressHighlightSize", thicknessKey = "keyPressHighlightThickness", speedKey = "keyPressHighlightSpeed", linesKey = "keyPressHighlightLines",
+        sizeKey = "keyPressHighlightSize",
         defaultStyle = "solid", defaultColor = {1, 1, 1, 0.4},
         enableLabel = "Show Key Press Highlight",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
+        styleOptions = KPH_STYLE_OPTIONS,
+        styleOrder = KPH_STYLE_ORDER,
     }, opts)
 end
 

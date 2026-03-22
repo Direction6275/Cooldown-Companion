@@ -36,7 +36,6 @@ local PANDEMIC_GLOW_LCG_KEY = "CooldownCompanionPandemic"
 local READY_GLOW_LCG_KEY = "CooldownCompanionReady"
 local BAR_AURA_EFFECT_LCG_KEY = "CooldownCompanionBarAura"
 local PANDEMIC_BAR_EFFECT_LCG_KEY = "CooldownCompanionPandemicBar"
-local KEY_PRESS_HIGHLIGHT_LCG_KEY = "CooldownCompanionKeyPress"
 
 local function IsLibCustomGlowStyle(style)
     return style == PROC_STYLE_LCG_BUTTON or style == PROC_STYLE_LCG_AUTOCAST
@@ -211,6 +210,7 @@ local function HideGlowStyles(container)
         if container.procFrame.ProcLoop then container.procFrame.ProcLoop:Stop() end
         container.procFrame:Hide()
     end
+    if container.overlayTexture then container.overlayTexture:Hide() end
     -- Assisted highlight blizzard flipbook frame
     if container.blizzardFrame then
         if container.blizzardFrame.Flipbook and container.blizzardFrame.Flipbook.Anim then
@@ -279,6 +279,11 @@ local function ShowGlowStyle(container, style, button, color, params)
         if container.procFrame.ProcLoop then
             container.procFrame.ProcLoop:Play()
         end
+    elseif style == "overlay" then
+        if container.overlayTexture then
+            container.overlayTexture:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
+            container.overlayTexture:Show()
+        end
     elseif style == "blizzard" then
         if container.blizzardFrame then
             container.blizzardFrame:Show()
@@ -323,6 +328,11 @@ local function IsGlowAnimationAlive(container)
         local anim = container.blizzardFrame.Flipbook and container.blizzardFrame.Flipbook.Anim
         if not anim then return true end
         return anim:IsPlaying()
+    end
+    -- Overlay is static — without this check, the cache safety net would treat it
+    -- as "dead" and restart ShowGlowStyle every tick.
+    if container.overlayTexture and container.overlayTexture:IsShown() then
+        return true
     end
     -- Solid border: not animated, cannot die.  Positively identify it via
     -- visible solidTextures rather than relying on "nothing else matched."
@@ -567,7 +577,15 @@ local function SetReadyGlow(button, show)
     })
 end
 
+-- Normalize key press highlight style: only "solid" and "overlay" are valid.
+-- Legacy profiles with pixel/glow/lcgButton/lcgAutoCast fall back to "solid".
+local function NormalizeKPHStyle(style)
+    if style == "solid" or style == "overlay" then return style end
+    return "solid"
+end
+
 -- Show or hide key press highlight on a button (glow while keybind is held).
+-- Only supports "solid" (border) and "overlay" (full-button wash) styles.
 -- Follows the same caching pattern as SetProcGlow / SetReadyGlow.
 local function SetKeyPressHighlight(button, show)
     local kph = button.keyPressHighlight
@@ -576,16 +594,10 @@ local function SetKeyPressHighlight(button, show)
     local desiredState
     if show then
         local style = button.style
-        local glowStyle = NormalizeGlowStyle((style and style.keyPressHighlightStyle) or "solid")
+        local glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
         local c = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
-        local sz = GetGlowSize(style, "keyPressHighlightSize", glowStyle, {
-            solid = 5, pixel = 8, glow = 30, autocast = 2,
-        })
-        local th = (glowStyle == "pixel") and ((style and style.keyPressHighlightThickness) or 4) or 0
-        local usesSpeed = UsesGlowSpeed(glowStyle)
-        local spd = usesSpeed and ((style and style.keyPressHighlightSpeed) or 50) or 0
-        local ln = (glowStyle == "pixel") and ((style and style.keyPressHighlightLines) or 8) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
+        local sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f", glowStyle, c[1], c[2], c[3], c[4] or 1, sz)
     end
     if button._keyPressHighlightActive == desiredState and (not desiredState or IsGlowAnimationAlive(kph)) then return end
     button._keyPressHighlightActive = desiredState
@@ -595,32 +607,18 @@ local function SetKeyPressHighlight(button, show)
     if not desiredState then return end
 
     local style = button.style
-    local glowStyle = NormalizeGlowStyle((style and style.keyPressHighlightStyle) or "solid")
+    local glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
     local color = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
-    local sz = GetGlowSize(style, "keyPressHighlightSize", glowStyle, {
-        solid = 5, pixel = 8, glow = 30, autocast = 2,
-    })
-    local usesSpeed = UsesGlowSpeed(glowStyle)
-    local kphThickness = (glowStyle == "pixel") and ((style and style.keyPressHighlightThickness) or 4) or 0
-    local kphSpeed = usesSpeed and ((style and style.keyPressHighlightSpeed) or 50) or 0
-    local kphLines = (glowStyle == "pixel") and ((style and style.keyPressHighlightLines) or 8) or nil
-    ShowGlowStyle(kph, glowStyle, button, color, {
-        size = sz,
-        thickness = kphThickness,
-        speed = kphSpeed,
-        lines = kphLines,
-        frequency = usesSpeed and SpeedToGlowFrequency(kphSpeed) or nil,
-        scale = math_min(math_max(sz, 0.2), 3),
-        key = KEY_PRESS_HIGHLIGHT_LCG_KEY,
-    })
+    local sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
+    ShowGlowStyle(kph, glowStyle, button, color, {size = sz})
 end
 
 -- Create a complete glow container with solid border and proc glow sub-frames.
 -- Pixel glow is handled by LibCustomGlow (frames created/pooled by the library).
 -- parent: parent button frame
 -- overhang: overhang percentage for the proc glow frame (default 32)
--- Returns table {solidFrame, solidTextures, procFrame}
-local function CreateGlowContainer(parent, overhang)
+-- withOverlay: if true, also create a full-button overlay texture (only KPH needs this)
+local function CreateGlowContainer(parent, overhang, withOverlay)
     local container = {}
 
     -- Solid border: 4 edge textures
@@ -644,6 +642,13 @@ local function CreateGlowContainer(parent, overhang)
     procFrame:SetScript("OnHide", nil)
     procFrame:Hide()
     container.procFrame = procFrame
+
+    -- Full-button overlay texture (only needed by key press highlight)
+    if withOverlay then
+        container.overlayTexture = container.solidFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        container.overlayTexture:SetAllPoints(container.solidFrame)
+        container.overlayTexture:Hide()
+    end
 
     -- Ensure solid frame is also non-interactive
     SetFrameClickThroughRecursive(container.solidFrame, true, true)
