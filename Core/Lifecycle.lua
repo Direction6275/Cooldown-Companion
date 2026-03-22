@@ -334,6 +334,9 @@ function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
                 if bd.type == "spell" and not bd.hasCharges
                         and (bd.id == spellID or bd.id == baseSpellID) then
                     bd._castCountCandidate = true
+                    if bd.id == spellID then
+                        bd._castCountSelf = true
+                    end
                 end
             end
         end

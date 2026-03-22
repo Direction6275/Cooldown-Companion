@@ -862,17 +862,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button.count:SetText("")
         end
         -- Cast-count display for non-charge spells (e.g. Mana Tea stacks).
-        -- Secret cast counts are only passed through when an active spell
-        -- override is providing them (e.g. Thunderblast stacks on Thunderclap).
-        -- For the base spell, only readable non-zero counts are shown to
-        -- prevent a stuck "0" after the override fades in combat.
+        -- Secret cast counts are passed through when an active spell override
+        -- is providing them (isOverride) OR the spell itself has genuine cast
+        -- counts (_castCountSelf).  Base spells flagged only via an override's
+        -- baseSpellID suppress secrets to prevent a stuck "0" after the
+        -- override fades in combat.
         if buttonData._castCountCandidate and buttonData.type == "spell"
                 and not (buttonData.auraTracking and button.style and button.style.showAuraStackText ~= false)
                 and button.style and button.style.showChargeText then
             button._chargeText = nil
             local castCount = C_Spell.GetSpellCastCount(cooldownSpellId or buttonData.id)
             local isOverride = cooldownSpellId and cooldownSpellId ~= buttonData.id
-            if isOverride and issecretvalue(castCount) then
+            if issecretvalue(castCount) and (isOverride or buttonData._castCountSelf) then
                 button.count:SetText(castCount)
             elseif not issecretvalue(castCount) and castCount and castCount > 0 then
                 button.count:SetText(castCount)

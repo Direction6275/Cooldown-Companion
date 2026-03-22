@@ -164,14 +164,16 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     -- cast count.  SPELL_UPDATE_USES is the primary authority
                     -- for identification (Lifecycle.lua), but we clear stale
                     -- flags here when a readable zero is observed.  Clearing is
-                    -- safe: at 0 stacks the display is suppressed anyway (gated
-                    -- by IsSpellUsable), and SPELL_UPDATE_USES will re-flag
-                    -- the spell when stacks return.
+                    -- safe: at 0 stacks the display is suppressed anyway, and
+                    -- SPELL_UPDATE_USES will re-flag the spell when stacks
+                    -- return.
                     local castCount = C_Spell.GetSpellCastCount(buttonData.id)
                     if not issecretvalue(castCount) and castCount and castCount > 0 then
                         buttonData._castCountCandidate = true
+                        buttonData._castCountSelf = true
                     elseif not issecretvalue(castCount) then
                         buttonData._castCountCandidate = nil
+                        buttonData._castCountSelf = nil
                     end
                     local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
                     if not issecretvalue(rawDisplayCount) then
