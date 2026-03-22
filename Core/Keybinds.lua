@@ -40,6 +40,10 @@ CooldownCompanion._itemSlotCache = {}
 -- are not discoverable through Blizzard's standard binding-name lookup.
 local addonSlotBindings = {}
 
+-- Parallel raw key cache for addon bars: slot → raw key string from GetBindingKey.
+-- Used by key press highlight detection (IsKeyDown needs raw key names, not display text).
+local addonSlotRawBindings = {}
+
 -- Rebuild the slot → button info mapping by reading .action from actual frames.
 -- This correctly handles page-based slot numbering without hardcoded ranges.
 function CooldownCompanion:RebuildSlotMapping()
@@ -115,6 +119,99 @@ local function GetKeybindForSlot(slot)
     return addonSlotBindings[slot]
 end
 
+------------------------------------------------------------------------
+-- KEY PRESS HIGHLIGHT SUPPORT
+------------------------------------------------------------------------
+
+local strsplit = strsplit
+
+-- Parse a raw binding key string into a structured table for efficient per-tick checks.
+-- "ALT-CTRL-SHIFT-F" → {mainKey="F", shift=true, ctrl=true, alt=true}
+-- Handles the "-" key correctly: "CTRL--" → {mainKey="-", ctrl=true}, "-" → {mainKey="-"}.
+-- Returns nil for nil input.
+local function ParseBindingKey(rawKey)
+    if not rawKey then return nil end
+    local parts = {strsplit("-", rawKey)}
+    -- Trailing "-" from strsplit means the key itself is "-" (e.g. "CTRL--" or bare "-")
+    local mainKey = parts[#parts]
+    if mainKey == "" then mainKey = "-" end
+    local info = {mainKey = mainKey, shift = false, ctrl = false, alt = false}
+    for i = 1, #parts - 1 do
+        local mod = parts[i]
+        if mod == "SHIFT" then info.shift = true
+        elseif mod == "CTRL" then info.ctrl = true
+        elseif mod == "ALT" then info.alt = true
+        end
+    end
+    return info
+end
+
+-- Check if a parsed binding key is currently pressed (main key + exact modifier match).
+local function IsBindingKeyPressed(info)
+    if not info then return false end
+    if not IsKeyDown(info.mainKey) then return false end
+    -- Exact modifier match: prevent "1" from triggering when Shift+1 is held.
+    -- "not not" normalizes to strict booleans for == comparison against info.shift/ctrl/alt,
+    -- since Lua 5.1 equality does not coerce truthy values (1 ~= true, nil ~= false).
+    if (not not IsShiftKeyDown()) ~= info.shift then return false end
+    if (not not IsControlKeyDown()) ~= info.ctrl then return false end
+    if (not not IsAltKeyDown()) ~= info.alt then return false end
+    return true
+end
+
+-- Return an array of raw binding key strings for a slot (may be multiple per slot).
+-- Falls back to addon bar raw key cache for third-party bar addons.
+local function GetRawBindingKeysForSlot(slot)
+    local keys = {}
+    local info = slotToButtonInfo[slot]
+    if info then
+        local key1, key2 = GetBindingKey(info.bindingAction)
+        if not key1 then
+            key1, key2 = GetBindingKey("CLICK " .. info.frameName .. ":LeftButton")
+        end
+        if key1 then keys[#keys + 1] = key1 end
+        if key2 then keys[#keys + 1] = key2 end
+    end
+    -- Fallback: addon bar raw bindings
+    if #keys == 0 and addonSlotRawBindings[slot] then
+        keys[#keys + 1] = addonSlotRawBindings[slot]
+    end
+    return keys
+end
+
+-- Resolve and cache parsed binding key info for a CC button.
+-- Stores result as button._bindingKeyInfos (array of parsed structs, or empty table).
+local function CacheButtonBindingKeys(button, buttonData)
+    local infos = {}
+    if not buttonData then
+        button._bindingKeyInfos = infos
+        return
+    end
+    local slots
+    if buttonData.type == "spell" then
+        slots = C_ActionBar.FindSpellActionButtons(buttonData.id)
+    elseif buttonData.type == "item" then
+        local slot = CooldownCompanion._itemSlotCache[buttonData.id]
+        if slot then slots = {slot} end
+    end
+    if slots then
+        local seen = {}
+        for _, slot in ipairs(slots) do
+            local rawKeys = GetRawBindingKeysForSlot(slot)
+            for _, rawKey in ipairs(rawKeys) do
+                if not seen[rawKey] then
+                    seen[rawKey] = true
+                    local parsed = ParseBindingKey(rawKey)
+                    if parsed then
+                        infos[#infos + 1] = parsed
+                    end
+                end
+            end
+        end
+    end
+    button._bindingKeyInfos = infos
+end
+
 -- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.
 function CooldownCompanion:RebuildItemSlotCache()
     wipe(self._itemSlotCache)
@@ -160,10 +257,11 @@ local function GetFrameActionSlot(frame)
     return nil
 end
 
--- Cache the abbreviated keybind text for a given slot, if not already cached.
+-- Cache the abbreviated keybind text and raw key for a given slot, if not already cached.
 local function CacheAddonBinding(slot, key)
     if not addonSlotBindings[slot] then
         addonSlotBindings[slot] = AbbreviateKeybind(GetBindingText(key, 1))
+        addonSlotRawBindings[slot] = key
     end
 end
 
@@ -173,6 +271,7 @@ end
 -- and any other addon that registers CLICK bindings for action button frames.
 function CooldownCompanion:RebuildAddonSlotBindings()
     wipe(addonSlotBindings)
+    wipe(addonSlotRawBindings)
 
     -- Strategy 1: Scan GetBinding() for CLICK commands.
     -- Covers Bartender4, Dominos, and any addon using CLICK binding format.
@@ -232,7 +331,7 @@ function CooldownCompanion:GetKeybindText(buttonData)
     return nil
 end
 
--- Refresh keybind text on all icon-mode buttons.
+-- Refresh keybind text and binding key caches on all buttons.
 function CooldownCompanion:OnKeybindsChanged()
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
@@ -240,5 +339,11 @@ function CooldownCompanion:OnKeybindsChanged()
             button.keybindText:SetText(text or "")
             button.keybindText:SetShown(button.style.showKeybindText and text ~= nil)
         end
+        -- Rebuild key press highlight binding cache
+        CacheButtonBindingKeys(button, buttonData)
     end)
 end
+
+-- Exports for key press highlight
+ST._IsBindingKeyPressed = IsBindingKeyPressed
+ST._CacheButtonBindingKeys = CacheButtonBindingKeys

@@ -135,6 +135,10 @@ local defaults = {
                         readyGlowLines = 8,
                         readyGlowCombatOnly = false,
                         readyGlowDuration = 0,
+                        keyPressHighlightStyle = "none",
+                        keyPressHighlightColor = {1, 1, 1, 0.4},
+                        keyPressHighlightSize = 5,
+                        keyPressHighlightCombatOnly = false,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
                         barAuraEffect = "color",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -280,6 +284,10 @@ local defaults = {
             readyGlowLines = 8,
             readyGlowCombatOnly = false,
             readyGlowDuration = 0,
+            keyPressHighlightStyle = "none",
+            keyPressHighlightColor = {1, 1, 1, 0.4},
+            keyPressHighlightSize = 5,
+            keyPressHighlightCombatOnly = false,
             barAuraColor = {0.2, 1.0, 0.2, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -579,6 +587,11 @@ ST.OVERRIDE_SECTIONS = {
     readyGlow = {
         label = "Ready Glow",
         keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowDuration"},
+        modes = {icons = true},
+    },
+    keyPressHighlight = {
+        label = "Key Press Highlight",
+        keys = {"keyPressHighlightStyle", "keyPressHighlightColor", "keyPressHighlightSize", "keyPressHighlightCombatOnly"},
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab

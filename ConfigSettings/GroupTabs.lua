@@ -40,6 +40,7 @@ local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
+local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
@@ -675,6 +676,7 @@ local function BuildEffectsTab(container)
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
         BuildBarEffectsTab(container, group, style)
         return
     end
@@ -898,6 +900,54 @@ local function BuildEffectsTab(container)
     else
     CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
     end -- readyAdvExpanded
+
+    -- ================================================================
+    -- Key Press Highlight (glow while keybind is held)
+    -- ================================================================
+    local kphEnableCb = AceGUI:Create("CheckBox")
+    kphEnableCb:SetLabel("Show Key Press Highlight")
+    kphEnableCb:SetValue(style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none")
+    kphEnableCb:SetFullWidth(true)
+    kphEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.keyPressHighlightStyle = val and "solid" or "none"
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(kphEnableCb)
+
+    local kphAdvExpanded, kphAdvBtn = AddAdvancedToggle(kphEnableCb, "keyPressHighlight", tabInfoButtons, style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none")
+    local kphPromoteBtn = CreateCheckboxPromoteButton(kphEnableCb, kphAdvBtn, "keyPressHighlight", group, style)
+    CreateInfoButton(kphEnableCb.frame, kphPromoteBtn, "LEFT", "RIGHT", 4, 0, {
+        "Key Press Highlight",
+        {"Shows a glow overlay on buttons while their action bar keybind is physically held down.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
+    if kphAdvExpanded and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none" then
+    local kphCombatCb = AceGUI:Create("CheckBox")
+    kphCombatCb:SetLabel("Show Only In Combat")
+    kphCombatCb:SetValue(style.keyPressHighlightCombatOnly or false)
+    kphCombatCb:SetFullWidth(true)
+    kphCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.keyPressHighlightCombatOnly = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(kphCombatCb)
+    ApplyCheckboxIndent(kphCombatCb, 20)
+
+    BuildKeyPressHighlightControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
+    local kphPreviewBtn = AceGUI:Create("Button")
+    kphPreviewBtn:SetText("Preview Key Press Highlight (3s)")
+    kphPreviewBtn:SetFullWidth(true)
+    kphPreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupKeyPressHighlightPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(kphPreviewBtn)
+    else
+    CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+    end -- kphAdvExpanded
 
     -- ================================================================
     -- Desaturate on Cooldown

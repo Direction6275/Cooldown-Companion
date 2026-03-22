@@ -763,6 +763,20 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
     }, opts)
 end
 
+local KPH_STYLE_OPTIONS = {["solid"] = "Solid Border", ["overlay"] = "Overlay"}
+local KPH_STYLE_ORDER = {"solid", "overlay"}
+
+local function BuildKeyPressHighlightControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "keyPressHighlightStyle", colorKey = "keyPressHighlightColor", colorLabel = "Highlight Color",
+        sizeKey = "keyPressHighlightSize",
+        defaultStyle = "solid", defaultColor = {1, 1, 1, 0.4},
+        enableLabel = "Show Key Press Highlight",
+        styleOptions = KPH_STYLE_OPTIONS,
+        styleOrder = KPH_STYLE_ORDER,
+    }, opts)
+end
+
 local function BuildPandemicBarControls(container, styleTable, refreshCallback, opts)
     BuildBarEffectControls(container, styleTable, refreshCallback, {
         colorKey = "barPandemicColor", colorLabel = "Pandemic Bar Color",
@@ -946,6 +960,7 @@ ST._BuildPandemicGlowControls = BuildPandemicGlowControls
 ST._BuildPandemicBarControls = BuildPandemicBarControls
 ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
+ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls

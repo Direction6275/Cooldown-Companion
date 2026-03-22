@@ -24,6 +24,7 @@ local pandemicPreviewTokens = {}
 local pandemicButtonPreviewTokens = {}
 local readyPreviewTokens = {}
 local readyButtonPreviewTokens = {}
+local kphPreviewTokens = {}
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
@@ -430,6 +431,50 @@ function CooldownCompanion:InvalidateReadyGlow(groupId, buttonIndex)
         if button.index == buttonIndex then
             button._readyGlowActive = nil
             return
+        end
+    end
+end
+
+-- Set or clear key press highlight preview for every button in a group.
+-- Key press highlight is rendered by the per-frame kphUpdateFrame OnUpdate handler,
+-- not by UpdateCooldown — setting the flag and invalidating the cache is sufficient.
+function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
+    if not show then
+        kphPreviewTokens[groupId] = (kphPreviewTokens[groupId] or 0) + 1
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        button._keyPressHighlightPreview = show or nil
+        button._keyPressHighlightActive = nil
+    end
+end
+
+-- Trigger a timed key press highlight preview for a whole group (default: 3 seconds).
+function CooldownCompanion:PlayGroupKeyPressHighlightPreview(groupId, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then
+        duration = 3
+    end
+
+    local token = (kphPreviewTokens[groupId] or 0) + 1
+    kphPreviewTokens[groupId] = token
+
+    self:SetGroupKeyPressHighlightPreview(groupId, true)
+
+    C_Timer_After(duration, function()
+        if kphPreviewTokens[groupId] ~= token then return end
+        self:SetGroupKeyPressHighlightPreview(groupId, false)
+    end)
+end
+
+-- Clear all key press highlight previews across every group.
+function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
+    kphPreviewTokens = {}
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            button._keyPressHighlightPreview = nil
+            button._keyPressHighlightActive = nil
         end
     end
 end
