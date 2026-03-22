@@ -28,6 +28,7 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 -- IsItemEquippable from Helpers (exported on CooldownCompanion)
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
+local FormatTime = CooldownCompanion.FormatTime
 
 ------------------------------------------------------------------------
 -- FORMAT STRING PARSER
@@ -145,18 +146,8 @@ local function ComputePulse(now)
 end
 
 ------------------------------------------------------------------------
--- TIME FORMATTING
+-- TIME FORMATTING (shared via ButtonFrame/Helpers.lua FormatTime)
 ------------------------------------------------------------------------
-local function FormatTextTime(seconds, decimal)
-    if seconds >= 3600 then
-        return string_format("%d:%02d:%02d", math_floor(seconds / 3600), math_floor(seconds / 60) % 60, math_floor(seconds % 60))
-    elseif seconds >= 60 then
-        return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
-    elseif seconds > 0 then
-        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
-    end
-    return ""
-end
 
 ------------------------------------------------------------------------
 -- COLOR WRAPPING
@@ -395,7 +386,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = WrapColor("%TIME%", colorOverride or cdColor)
                 elseif timeRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
                 end
 
             elseif token == "charges" then
@@ -439,7 +430,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = WrapColor("%AURA%", colorOverride or auraColor)
                 elseif auraRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
+                    parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                 end
 
             elseif token == "keybind" then
@@ -457,7 +448,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                         end
                         parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or auraColor)
                     elseif auraRemaining then
-                        parts[#parts + 1] = WrapColor(FormatTextTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
+                        parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                     else
                         parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
@@ -468,7 +459,7 @@ local function SubstituteTokens(button, segments, style, effectState)
                     end
                     parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or cdColor)
                 elseif timeRemaining and timeRemaining > 0 then
-                    parts[#parts + 1] = WrapColor(FormatTextTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
                 else
                     parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end

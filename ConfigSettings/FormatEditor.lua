@@ -11,6 +11,7 @@ local CS = ST._configState
 local ParseFormatString = ST._ParseFormatString
 local HasAnyEffects = ST._HasAnyEffects
 local CreateInfoButton = ST._CreateInfoButton
+local FormatTime = CooldownCompanion.FormatTime
 
 -- Module-level reference for lifecycle management
 local formatEditorFrame = nil
@@ -298,16 +299,6 @@ end
 -- PREVIEW SUBSTITUTION
 -- Simplified substitution that uses mock data instead of a real button.
 ------------------------------------------------------------------------
-local function FormatPreviewTime(seconds, decimal)
-    if seconds >= 3600 then
-        return string.format("%d:%02d:%02d", math.floor(seconds / 3600), math.floor(seconds / 60) % 60, math.floor(seconds % 60))
-    elseif seconds >= 60 then
-        return string.format("%d:%02d", math.floor(seconds / 60), math.floor(seconds % 60))
-    elseif seconds > 0 then
-        return string.format(decimal and "%.1f" or "%d", decimal and seconds or math.floor(seconds))
-    end
-    return ""
-end
 
 local function WrapPreviewColor(text, color)
     if not text or text == "" then return "" end
@@ -420,7 +411,7 @@ local function PreviewSubstitute(segments, style, mockState)
                 parts[#parts + 1] = WrapPreviewColor(mockState.name or "Fireball", colorOverride or baseColor)
             elseif token == "time" then
                 if timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(timeVal, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style.decimalTimers), colorOverride or cdColor)
                 end
             elseif token == "charges" then
                 if mockState.charges then
@@ -440,7 +431,7 @@ local function PreviewSubstitute(segments, style, mockState)
                 end
             elseif token == "aura" then
                 if auraVal and auraVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(auraVal, style.decimalTimers), colorOverride or auraColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style.decimalTimers), colorOverride or auraColor)
                 end
             elseif token == "keybind" then
                 if mockState.keybind and mockState.keybind ~= "" then
@@ -449,12 +440,12 @@ local function PreviewSubstitute(segments, style, mockState)
             elseif token == "status" then
                 if auraActive then
                     if auraVal and auraVal > 0 then
-                        parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(auraVal, style.decimalTimers), colorOverride or auraColor)
+                        parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style.decimalTimers), colorOverride or auraColor)
                     else
                         parts[#parts + 1] = WrapPreviewColor("Active", colorOverride or auraColor)
                     end
                 elseif timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatPreviewTime(timeVal, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style.decimalTimers), colorOverride or cdColor)
                 else
                     parts[#parts + 1] = WrapPreviewColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end

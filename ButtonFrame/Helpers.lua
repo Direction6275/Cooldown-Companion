@@ -8,11 +8,26 @@ local CooldownCompanion = ST.Addon
 
 -- Localize frequently-used globals
 local ipairs = ipairs
+local math_floor = math.floor
+local string_format = string.format
 
 -- Color constants
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
+
+-- Format remaining seconds for time display (shared across bar, text, and preview modes).
+local function FormatTime(seconds, decimal)
+    if seconds >= 3600 then
+        return string_format("%d:%02d:%02d", math_floor(seconds / 3600), math_floor(seconds / 60) % 60, math_floor(seconds % 60))
+    elseif seconds >= 60 then
+        return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
+    elseif seconds > 0 then
+        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
+    end
+    return ""
+end
+CooldownCompanion.FormatTime = FormatTime
 
 -- Scratch cooldown (legacy; kept for potential fallback use).
 local scratchParent = CreateFrame("Frame")

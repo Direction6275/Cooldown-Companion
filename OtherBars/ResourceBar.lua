@@ -111,7 +111,7 @@ local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 
 -- Other ST imports
-local FormatBarTime = ST._FormatBarTime
+local FormatTime = CooldownCompanion.FormatTime
 local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles
@@ -1133,7 +1133,7 @@ local function UpdateCustomAuraBar(barInfo)
                 local remaining = durationObj:GetRemainingDuration()
                 if not durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        bar.text:SetText(FormatBarTime(remaining, cabConfig.decimalTimers))
+                        bar.text:SetText(FormatTime(remaining, cabConfig.decimalTimers))
                     else
                         bar.text:SetText("")
                     end
@@ -2594,7 +2594,7 @@ ApplyPreviewData = function()
                     end
                 end
                 if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    barInfo.frame.text:SetText(FormatBarTime(12.3, cabConfig and cabConfig.decimalTimers))
+                    barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
                 end
                 if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
                     if isActive then

@@ -40,16 +40,7 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 -- IsItemEquippable from Helpers (exported on CooldownCompanion)
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
-
--- Format remaining seconds for bar time text display
-local function FormatBarTime(seconds, decimal)
-    if seconds >= 60 then
-        return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
-    elseif seconds > 0 then
-        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
-    end
-    return ""
-end
+local FormatTime = CooldownCompanion.FormatTime
 
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
 local function SetBarIconTooltipScripts(button, enable)
@@ -155,14 +146,14 @@ local function UpdateBarFill(button)
                 or (button.style.cooldownFontColor or {1, 1, 1, 1})
             button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             -- Time text: HasSecretValues() returns a non-secret boolean.
-            -- Non-secret: full FormatBarTime formatting ("1:30", "45", etc.)
+            -- Non-secret: full FormatTime formatting ("1:30", "45", etc.)
             -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
             local decimal = button.style.decimalTimers
             if button._durationObj then
                 local remaining = button._durationObj:GetRemainingDuration()
                 if not button._durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        button.timeText:SetText(FormatBarTime(remaining, decimal))
+                        button.timeText:SetText(FormatTime(remaining, decimal))
                     else
                         button.timeText:SetText("")
                     end
@@ -178,7 +169,7 @@ local function UpdateBarFill(button)
                 button.timeText:SetFormattedText(decimal and "%.1f" or "%.0f", button._viewerBar:GetValue())
             else
                 if itemRemaining > 0 then
-                    button.timeText:SetText(FormatBarTime(itemRemaining, decimal))
+                    button.timeText:SetText(FormatTime(itemRemaining, decimal))
                 else
                     button.timeText:SetText("")
                 end
@@ -1105,4 +1096,3 @@ end
 
 -- Exports
 ST._UpdateBarDisplay = UpdateBarDisplay
-ST._FormatBarTime = FormatBarTime
