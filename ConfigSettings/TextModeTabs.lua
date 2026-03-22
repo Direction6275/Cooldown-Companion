@@ -16,7 +16,7 @@ local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local CreatePromoteButton = ST._CreatePromoteButton
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local OpenFormatEditor = ST._OpenFormatEditor
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
 local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
 
@@ -195,14 +195,7 @@ local function BuildTextAppearanceTab(container, group, style)
         end)
         container:AddChild(headerSizeSlider)
 
-        local headerColorPicker = AceGUI:Create("ColorPicker")
-        headerColorPicker:SetLabel("Header Color")
-        headerColorPicker:SetHasAlpha(true)
-        local hc = style.textHeaderFontColor or {1, 1, 1, 1}
-        headerColorPicker:SetColor(hc[1], hc[2], hc[3], hc[4])
-        headerColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(headerColorPicker, style, "textHeaderFontColor", refreshFrame, refreshFrame)
-        container:AddChild(headerColorPicker)
+        AddColorPicker(container, style, "textHeaderFontColor", "Header Color", {1, 1, 1, 1}, true, refreshFrame, refreshFrame)
     end
     end -- not textSettingsCollapsed
 
@@ -400,14 +393,7 @@ local function BuildTextAppearanceTab(container, group, style)
     CreatePromoteButton(bgHeading, "textBackground", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not bgCollapsed then
-    local bgColorPicker = AceGUI:Create("ColorPicker")
-    bgColorPicker:SetLabel("Background Color")
-    bgColorPicker:SetHasAlpha(true)
-    local bg = style.textBgColor or {0, 0, 0, 0}
-    bgColorPicker:SetColor(bg[1], bg[2], bg[3], bg[4])
-    bgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(bgColorPicker, style, "textBgColor", refreshStyle, refreshStyle)
-    container:AddChild(bgColorPicker)
+    AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle)
 
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")
@@ -420,14 +406,7 @@ local function BuildTextAppearanceTab(container, group, style)
     end)
     container:AddChild(borderSlider)
 
-    local borderColorPicker = AceGUI:Create("ColorPicker")
-    borderColorPicker:SetLabel("Border Color")
-    borderColorPicker:SetHasAlpha(true)
-    local bc = style.textBorderColor or {0, 0, 0, 1}
-    borderColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(borderColorPicker, style, "textBorderColor", refreshStyle, refreshStyle)
-    container:AddChild(borderColorPicker)
+    AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
 
     end -- not bgCollapsed
 

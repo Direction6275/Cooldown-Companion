@@ -13,7 +13,8 @@ local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local HasTooltipCooldown = ST.HasTooltipCooldown
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
+local AddAnchorDropdown = ST._AddAnchorDropdown
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
@@ -639,14 +640,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(itemOutlineDrop)
 
     -- Item count font color
-    local itemFontColor = AceGUI:Create("ColorPicker")
-    itemFontColor:SetLabel("Font Color")
-    itemFontColor:SetHasAlpha(true)
-    local icc = buttonData.itemCountFontColor or {1, 1, 1, 1}
-    itemFontColor:SetColor(icc[1], icc[2], icc[3], icc[4])
-    itemFontColor:SetFullWidth(true)
-    SetupColorCallbacks(itemFontColor, buttonData, "itemCountFontColor", function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end)
-    scroll:AddChild(itemFontColor)
+    local refreshGroup = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
+    AddColorPicker(scroll, buttonData, "itemCountFontColor", "Font Color", {1, 1, 1, 1}, true, refreshGroup)
 
     -- Item count anchor point
     local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
@@ -654,20 +649,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local defItemX = barNoIcon and 0 or -2
     local defItemY = 2
 
-    local itemAnchorValues = {}
-    for _, pt in ipairs(CS.anchorPoints) do
-        itemAnchorValues[pt] = CS.anchorPointLabels[pt]
-    end
-    local itemAnchorDrop = AceGUI:Create("Dropdown")
-    itemAnchorDrop:SetLabel("Anchor Point")
-    itemAnchorDrop:SetList(itemAnchorValues)
-    itemAnchorDrop:SetValue(buttonData.itemCountAnchor or defItemAnchor)
-    itemAnchorDrop:SetFullWidth(true)
-    itemAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        buttonData.itemCountAnchor = val
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
-    scroll:AddChild(itemAnchorDrop)
+    AddAnchorDropdown(scroll, buttonData, "itemCountAnchor", defItemAnchor, refreshGroup, "Anchor Point")
 
     -- Item count X offset
     local itemXSlider = AceGUI:Create("Slider")

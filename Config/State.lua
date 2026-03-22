@@ -102,6 +102,12 @@ local anchorPointLabels = {
     BOTTOMRIGHT = "Bottom Right",
 }
 
+-- Pre-built anchor dropdown list (avoids rebuilding per-widget)
+local anchorDropdownList = {}
+for _, pt in ipairs(anchorPoints) do
+    anchorDropdownList[pt] = anchorPointLabels[pt]
+end
+
 -- Layout constants
 local COLUMN_PADDING = 8
 local BUTTON_HEIGHT = 24
@@ -220,6 +226,7 @@ ST._configState = {
     strataElementKeys = strataElementKeys,
     anchorPoints = anchorPoints,
     anchorPointLabels = anchorPointLabels,
+    anchorDropdownList = anchorDropdownList,
 
     -- CS.* function forward declarations (set by later files)
     IsStrataOrderComplete = nil,
