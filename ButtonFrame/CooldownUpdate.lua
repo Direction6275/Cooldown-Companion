@@ -858,7 +858,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargesSpent = nil
         button._mainCDProbed = nil
         button._chargeText = nil
-        button.count:SetText("")
+        if buttonData.type == "spell" then
+            button.count:SetText("")
+        end
         -- Cast-count display for non-charge spells (e.g. Mana Tea stacks).
         -- Secret cast counts are only passed through when an active spell
         -- override is providing them (e.g. Thunderblast stacks on Thunderclap).
