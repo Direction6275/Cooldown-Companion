@@ -127,6 +127,10 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             end
                         else
                             hasRealCharges = nil
+                            -- Reset stored maxCharges so the secret-value fallback
+                            -- won't re-promote from a stale inflated value
+                            -- (e.g. Strafing Run temporarily granting 2).
+                            buttonData.maxCharges = mc
                         end
                     elseif issecretvalue(mc) or mc == nil then
                         -- maxCharges unreadable (secret or nil): can't classify

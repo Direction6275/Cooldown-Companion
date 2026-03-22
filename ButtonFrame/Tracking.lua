@@ -40,6 +40,20 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         end
     end
 
+    -- Demote if readable maxCharges confirms this is no longer multi-charge.
+    -- Conditional talents (e.g. Strafing Run) can temporarily inflate maxCharges
+    -- to 2; when the buff fades and the API returns 1, immediately clear charge
+    -- classification so the normal cooldown/desaturation path applies.
+    -- Safe for real charge spells: they always return maxCharges >= 2.
+    if charges and charges.maxCharges ~= nil and not issecretvalue(charges.maxCharges)
+       and charges.maxCharges <= 1 then
+        buttonData.hasCharges = nil
+        buttonData.maxCharges = charges.maxCharges
+        button.count:SetText("")
+        button._chargeText = nil
+        return nil
+    end
+
     -- Fallback: if API maxCharges is unavailable (nil/secret), keep upward-only
     -- observed max from readable charge count.
     if cur and cur > persistedMax then
