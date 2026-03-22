@@ -102,6 +102,9 @@ local function BuildFormatSummary(formatString)
 end
 
 local function BuildTextAppearanceTab(container, group, style)
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local refreshFrame = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
+
     -- ================================================================
     -- Text Settings (width, height, spacing)
     -- ================================================================
@@ -198,7 +201,7 @@ local function BuildTextAppearanceTab(container, group, style)
         local hc = style.textHeaderFontColor or {1, 1, 1, 1}
         headerColorPicker:SetColor(hc[1], hc[2], hc[3], hc[4])
         headerColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(headerColorPicker, style, "textHeaderFontColor", function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end, function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end)
+        SetupColorCallbacks(headerColorPicker, style, "textHeaderFontColor", refreshFrame, refreshFrame)
         container:AddChild(headerColorPicker)
     end
     end -- not textSettingsCollapsed
@@ -403,7 +406,7 @@ local function BuildTextAppearanceTab(container, group, style)
     local bg = style.textBgColor or {0, 0, 0, 0}
     bgColorPicker:SetColor(bg[1], bg[2], bg[3], bg[4])
     bgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(bgColorPicker, style, "textBgColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(bgColorPicker, style, "textBgColor", refreshStyle, refreshStyle)
     container:AddChild(bgColorPicker)
 
     local borderSlider = AceGUI:Create("Slider")
@@ -423,7 +426,7 @@ local function BuildTextAppearanceTab(container, group, style)
     local bc = style.textBorderColor or {0, 0, 0, 1}
     borderColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(borderColorPicker, style, "textBorderColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(borderColorPicker, style, "textBorderColor", refreshStyle, refreshStyle)
     container:AddChild(borderColorPicker)
 
     end -- not bgCollapsed

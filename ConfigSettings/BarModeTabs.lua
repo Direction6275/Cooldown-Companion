@@ -31,6 +31,8 @@ local appearanceTabElements = CS.appearanceTabElements
 
 
 local function BuildBarAppearanceTab(container, group, style)
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+
     -- ================================================================
     -- Bar Settings (length, height, spacing, bar color)
     -- ================================================================
@@ -118,7 +120,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local brc = style.barColor or {0.2, 0.6, 1.0, 1.0}
     barColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
     barColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barColorPicker, style, "barColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(barColorPicker, style, "barColor", refreshStyle, refreshStyle)
     container:AddChild(barColorPicker)
 
     if barAdvExpanded then
@@ -143,7 +145,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local bcc = style.barCooldownColor or {0.6, 0.6, 0.6, 1.0}
     barCdColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
     barCdColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barCdColorPicker, style, "barCooldownColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(barCdColorPicker, style, "barCooldownColor", refreshStyle, refreshStyle)
     container:AddChild(barCdColorPicker)
 
     local barChargeColorPicker = AceGUI:Create("ColorPicker")
@@ -152,7 +154,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local bchc = style.barChargeColor or {1.0, 0.82, 0.0, 1.0}
     barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
     barChargeColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barChargeColorPicker, style, "barChargeColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(barChargeColorPicker, style, "barChargeColor", refreshStyle, refreshStyle)
     container:AddChild(barChargeColorPicker)
 
     local barBgColorPicker = AceGUI:Create("ColorPicker")
@@ -161,7 +163,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local bbg = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
     barBgColorPicker:SetColor(bbg[1], bbg[2], bbg[3], bbg[4])
     barBgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barBgColorPicker, style, "barBgColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(barBgColorPicker, style, "barBgColor", refreshStyle, refreshStyle)
     container:AddChild(barBgColorPicker)
 
     local borderColor = AceGUI:Create("ColorPicker")
@@ -170,7 +172,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local bc = style.borderColor or {0, 0, 0, 1}
     borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColor:SetFullWidth(true)
-    SetupColorCallbacks(borderColor, style, "borderColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(borderColor, style, "borderColor", refreshStyle, refreshStyle)
     container:AddChild(borderColor)
 
     -- ================================================================
@@ -303,7 +305,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local nfc = style.barNameFontColor or {1, 1, 1, 1}
         nameFontColor:SetColor(nfc[1], nfc[2], nfc[3], nfc[4])
         nameFontColor:SetFullWidth(true)
-        SetupColorCallbacks(nameFontColor, style, "barNameFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(nameFontColor, style, "barNameFontColor", refreshStyle, refreshStyle)
         container:AddChild(nameFontColor)
 
         local nameOffXSlider = AceGUI:Create("Slider")
@@ -400,7 +402,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local cdc = style.cooldownFontColor or {1, 1, 1, 1}
         cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
         cdFontColor:SetFullWidth(true)
-        SetupColorCallbacks(cdFontColor, style, "cooldownFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(cdFontColor, style, "cooldownFontColor", refreshStyle, refreshStyle)
         container:AddChild(cdFontColor)
 
         local cdOffXSlider = AceGUI:Create("Slider")
@@ -481,7 +483,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local cfc = style.chargeFontColor or {1, 1, 1, 1}
         chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
         chargeFontColor:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColor, style, "chargeFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(chargeFontColor, style, "chargeFontColor", refreshStyle, refreshStyle)
         container:AddChild(chargeFontColor)
 
         local chargeFontColorMissing = AceGUI:Create("ColorPicker")
@@ -490,7 +492,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local cfcm = style.chargeFontColorMissing or {1, 1, 1, 1}
         chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
         chargeFontColorMissing:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorMissing, style, "chargeFontColorMissing", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(chargeFontColorMissing, style, "chargeFontColorMissing", refreshStyle, refreshStyle)
         container:AddChild(chargeFontColorMissing)
 
         local chargeFontColorZero = AceGUI:Create("ColorPicker")
@@ -499,7 +501,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local cfcz = style.chargeFontColorZero or {1, 1, 1, 1}
         chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
         chargeFontColorZero:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorZero, style, "chargeFontColorZero", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(chargeFontColorZero, style, "chargeFontColorZero", refreshStyle, refreshStyle)
         container:AddChild(chargeFontColorZero)
 
         local chargeAnchorValues = {}
@@ -597,7 +599,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
         auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
         auraFontColor:SetFullWidth(true)
-        SetupColorCallbacks(auraFontColor, style, "auraTextFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(auraFontColor, style, "auraTextFontColor", refreshStyle, refreshStyle)
         container:AddChild(auraFontColor)
     end -- barAuraTextAdvExpanded
 
@@ -658,7 +660,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local asc = style.auraStackFontColor or {1, 1, 1, 1}
         asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
         asFontColor:SetFullWidth(true)
-        SetupColorCallbacks(asFontColor, style, "auraStackFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(asFontColor, style, "auraStackFontColor", refreshStyle, refreshStyle)
         container:AddChild(asFontColor)
 
         local asAnchorValues = {}
@@ -732,7 +734,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local rtc = style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
         readyColorPicker:SetColor(rtc[1], rtc[2], rtc[3], rtc[4])
         readyColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(readyColorPicker, style, "barReadyTextColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(readyColorPicker, style, "barReadyTextColor", refreshStyle, refreshStyle)
         container:AddChild(readyColorPicker)
 
         local readyFontSizeSlider = AceGUI:Create("Slider")
