@@ -1055,7 +1055,9 @@ end
 -- Exports
 -- Per-frame key press highlight updater.
 -- Runs every frame for instant visual feedback (the 0.1s ticker is too slow for
--- a "key held" indicator). Cost is trivial: ~4 C API calls per button per frame.
+-- a "key held" indicator). Cost is low: 1-4 C API calls per binding per button
+-- per frame (IsKeyDown + modifier checks), plus a lazy InCombatLockdown shared
+-- across all buttons.
 local kphUpdateFrame = CreateFrame("Frame")
 kphUpdateFrame:SetScript("OnUpdate", function()
     local groupFrames = CooldownCompanion.groupFrames
@@ -1066,7 +1068,8 @@ kphUpdateFrame:SetScript("OnUpdate", function()
     local inCombat
     for groupId, groupFrame in pairs(groupFrames) do
         local group = groups[groupId]
-        if group and group.displayMode ~= "bars" and group.displayMode ~= "text" then
+        if group and group.displayMode ~= "bars" and group.displayMode ~= "text"
+               and groupFrame.buttons then
             for _, button in ipairs(groupFrame.buttons) do
                 if button.keyPressHighlight then
                     local style = button.style

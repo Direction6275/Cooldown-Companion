@@ -197,8 +197,8 @@ local function TintProcGlowFrame(frame, color)
     end
 end
 
--- Hide all glow sub-styles in a container table (solidTextures, procFrame).
--- Works for procGlow, auraGlow, barAuraEffect, and assistedHighlight containers.
+-- Hide all glow sub-styles in a container table (solidTextures, procFrame, overlayTexture).
+-- Works for procGlow, auraGlow, barAuraEffect, assistedHighlight, and keyPressHighlight containers.
 -- LCG pixel glow is stopped via StopLibCustomGlow.
 local function HideGlowStyles(container)
     StopLibCustomGlow(container)
@@ -221,7 +221,7 @@ local function HideGlowStyles(container)
 end
 
 -- Show the selected glow style on a container.
--- style: "solid", "pixel", "glow", "blizzard", or one of the LibCustomGlow proc styles
+-- style: "solid", "overlay", "pixel", "glow", "blizzard", or one of the LibCustomGlow proc styles
 -- button: the parent button frame (for positioning)
 -- color: {r, g, b, a} color table
 -- params: {size, thickness, speed, lines, frequency, scale, key, frameLevel, defaultAlpha} — style-specific parameters
@@ -591,13 +591,13 @@ local function SetKeyPressHighlight(button, show)
     local kph = button.keyPressHighlight
     if not kph then return end
 
-    local desiredState
+    local desiredState, glowStyle, color, sz
     if show then
         local style = button.style
-        local glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
-        local c = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
-        local sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f", glowStyle, c[1], c[2], c[3], c[4] or 1, sz)
+        glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
+        color = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
+        sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f", glowStyle, color[1], color[2], color[3], color[4] or 1, sz)
     end
     if button._keyPressHighlightActive == desiredState and (not desiredState or IsGlowAnimationAlive(kph)) then return end
     button._keyPressHighlightActive = desiredState
@@ -606,10 +606,6 @@ local function SetKeyPressHighlight(button, show)
 
     if not desiredState then return end
 
-    local style = button.style
-    local glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
-    local color = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
-    local sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
     ShowGlowStyle(kph, glowStyle, button, color, {size = sz})
 end
 
@@ -618,6 +614,7 @@ end
 -- parent: parent button frame
 -- overhang: overhang percentage for the proc glow frame (default 32)
 -- withOverlay: if true, also create a full-button overlay texture (only KPH needs this)
+-- Returns table {solidFrame, solidTextures, procFrame[, overlayTexture]}
 local function CreateGlowContainer(parent, overhang, withOverlay)
     local container = {}
 

@@ -127,11 +127,15 @@ local strsplit = strsplit
 
 -- Parse a raw binding key string into a structured table for efficient per-tick checks.
 -- "ALT-CTRL-SHIFT-F" → {mainKey="F", shift=true, ctrl=true, alt=true}
+-- Handles the "-" key correctly: "CTRL--" → {mainKey="-", ctrl=true}, "-" → {mainKey="-"}.
 -- Returns nil for nil input.
 local function ParseBindingKey(rawKey)
     if not rawKey then return nil end
     local parts = {strsplit("-", rawKey)}
-    local info = {mainKey = parts[#parts], shift = false, ctrl = false, alt = false}
+    -- Trailing "-" from strsplit means the key itself is "-" (e.g. "CTRL--" or bare "-")
+    local mainKey = parts[#parts]
+    if mainKey == "" then mainKey = "-" end
+    local info = {mainKey = mainKey, shift = false, ctrl = false, alt = false}
     for i = 1, #parts - 1 do
         local mod = parts[i]
         if mod == "SHIFT" then info.shift = true
@@ -147,8 +151,8 @@ local function IsBindingKeyPressed(info)
     if not info then return false end
     if not IsKeyDown(info.mainKey) then return false end
     -- Exact modifier match: prevent "1" from triggering when Shift+1 is held.
-    -- Use "not not" to coerce WoW's potential 1/nil returns to actual booleans,
-    -- since Lua 5.1 treats (1 == true) as false.
+    -- "not not" normalizes to strict booleans for == comparison against info.shift/ctrl/alt,
+    -- since Lua 5.1 equality does not coerce truthy values (1 ~= true, nil ~= false).
     if (not not IsShiftKeyDown()) ~= info.shift then return false end
     if (not not IsControlKeyDown()) ~= info.ctrl then return false end
     if (not not IsAltKeyDown()) ~= info.alt then return false end
