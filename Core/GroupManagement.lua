@@ -784,6 +784,16 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Treat as charge-based only when max charges is greater than 1.
     if buttonType == "spell" and not isPassive then
         local chargeInfo = C_Spell.GetSpellCharges(id)
+        -- Base spell may not have charges when the override form does
+        -- (e.g. Primal Strike → Stormstrike). Try the current override.
+        local chargeQueryID = id
+        if not chargeInfo then
+            local overrideID = C_Spell.GetOverrideSpell(id)
+            if overrideID and overrideID ~= 0 and overrideID ~= id then
+                chargeInfo = C_Spell.GetSpellCharges(overrideID)
+                chargeQueryID = overrideID
+            end
+        end
         if chargeInfo then
             local mc = chargeInfo.maxCharges
             if mc and not issecretvalue(mc) and mc > 1 then
@@ -792,7 +802,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 group.buttons[buttonIndex].maxCharges = mc
 
                 -- Secondary: display count
-                local rawDisplayCount = C_Spell.GetSpellDisplayCount(id)
+                local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
                 if not issecretvalue(rawDisplayCount) then
                     local displayCount = tonumber(rawDisplayCount)
                     if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
@@ -809,7 +819,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             -- No charge data: check if spell has a readable non-zero cast
             -- count right now (e.g. Mana Tea with existing stacks).  If not,
             -- SPELL_UPDATE_USES will flag it when stacks first appear.
-            local castCount = C_Spell.GetSpellCastCount(id)
+            local castCount = C_Spell.GetSpellCastCount(chargeQueryID)
             if not issecretvalue(castCount) and castCount and castCount > 0 then
                 group.buttons[buttonIndex]._castCountCandidate = true
             end
