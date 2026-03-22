@@ -13,7 +13,10 @@ local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
+local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddFontControls = ST._AddFontControls
+local AddOffsetSliders = ST._AddOffsetSliders
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -136,40 +139,16 @@ local function BuildLayoutTab(container)
         end
     end)
 
-    -- Anchor Point dropdown
-    local pointValues = {}
-    for _, pt in ipairs(CS.anchorPoints) do
-        pointValues[pt] = CS.anchorPointLabels[pt]
+    -- Anchor Point / Relative Point dropdowns
+    local function refreshGroupAnchor()
+        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+        if frame then
+            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+        end
     end
 
-    local anchorPt = AceGUI:Create("Dropdown")
-    anchorPt:SetLabel("Anchor Point")
-    anchorPt:SetList(pointValues)
-    anchorPt:SetValue(group.anchor.point or "CENTER")
-    anchorPt:SetFullWidth(true)
-    anchorPt:SetCallback("OnValueChanged", function(widget, event, val)
-        group.anchor.point = val
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then
-            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-        end
-    end)
-    container:AddChild(anchorPt)
-
-    -- Relative Point dropdown
-    local relPt = AceGUI:Create("Dropdown")
-    relPt:SetLabel("Relative Point")
-    relPt:SetList(pointValues)
-    relPt:SetValue(group.anchor.relativePoint or "CENTER")
-    relPt:SetFullWidth(true)
-    relPt:SetCallback("OnValueChanged", function(widget, event, val)
-        group.anchor.relativePoint = val
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then
-            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-        end
-    end)
-    container:AddChild(relPt)
+    AddAnchorDropdown(container, group.anchor, "point", "CENTER", refreshGroupAnchor, "Anchor Point")
+    AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point")
 
     -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
     local function HookSliderEditBox(sliderWidget)
@@ -1215,62 +1194,10 @@ local function BuildAppearanceTab(container)
     CreateCheckboxPromoteButton(cdTextCb, cdTextAdvBtn, "cooldownText", group, style)
 
     if cdTextAdvExpanded and style.showCooldownText then
-        local fontSizeSlider = AceGUI:Create("Slider")
-        fontSizeSlider:SetLabel("Font Size")
-        fontSizeSlider:SetSliderValues(8, 32, 1)
-        fontSizeSlider:SetValue(style.cooldownFontSize or 12)
-        fontSizeSlider:SetFullWidth(true)
-        fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(fontSizeSlider)
+        AddFontControls(container, style, "cooldown", { size = 12 }, refreshStyle)
+        AddColorPicker(container, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
 
-        local fontDrop = AceGUI:Create("Dropdown")
-        fontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(fontDrop)
-        fontDrop:SetValue(style.cooldownFont or "Friz Quadrata TT")
-        fontDrop:SetFullWidth(true)
-        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(fontDrop)
-
-        local outlineDrop = AceGUI:Create("Dropdown")
-        outlineDrop:SetLabel("Font Outline")
-        outlineDrop:SetList(CS.outlineOptions)
-        outlineDrop:SetValue(style.cooldownFontOutline or "OUTLINE")
-        outlineDrop:SetFullWidth(true)
-        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(outlineDrop)
-
-        local cdFontColor = AceGUI:Create("ColorPicker")
-        cdFontColor:SetLabel("Font Color")
-        cdFontColor:SetHasAlpha(false)
-        local cdc = style.cooldownFontColor or {1, 1, 1, 1}
-        cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
-        cdFontColor:SetFullWidth(true)
-        SetupColorCallbacks(cdFontColor, style, "cooldownFontColor", refreshStyle, refreshStyle)
-        container:AddChild(cdFontColor)
-
-        local cdAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            cdAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local cdAnchorDrop = AceGUI:Create("Dropdown")
-        cdAnchorDrop:SetLabel("Anchor")
-        cdAnchorDrop:SetList(cdAnchorValues, CS.anchorPoints)
-        cdAnchorDrop:SetValue(style.cooldownTextAnchor or "CENTER")
-        cdAnchorDrop:SetFullWidth(true)
-        cdAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownTextAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(cdAnchorDrop)
+        local cdAnchorDrop = AddAnchorDropdown(container, style, "cooldownTextAnchor", "CENTER", refreshStyle)
 
         -- (?) tooltip for shared positioning
         CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
@@ -1278,27 +1205,7 @@ local function BuildAppearanceTab(container)
             {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
         }, cdAnchorDrop)
 
-        local cdXSlider = AceGUI:Create("Slider")
-        cdXSlider:SetLabel("X Offset")
-        cdXSlider:SetSliderValues(-20, 20, 0.1)
-        cdXSlider:SetValue(style.cooldownTextXOffset or 0)
-        cdXSlider:SetFullWidth(true)
-        cdXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownTextXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(cdXSlider)
-
-        local cdYSlider = AceGUI:Create("Slider")
-        cdYSlider:SetLabel("Y Offset")
-        cdYSlider:SetSliderValues(-20, 20, 0.1)
-        cdYSlider:SetValue(style.cooldownTextYOffset or 0)
-        cdYSlider:SetFullWidth(true)
-        cdYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownTextYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(cdYSlider)
+        AddOffsetSliders(container, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle)
 
     end -- cdTextAdvExpanded + showCooldownText
 
@@ -1318,102 +1225,12 @@ local function BuildAppearanceTab(container)
     CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
 
     if chargeAdvExpanded and style.showChargeText ~= false then
-        local chargeFontSizeSlider = AceGUI:Create("Slider")
-        chargeFontSizeSlider:SetLabel("Font Size")
-        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-        chargeFontSizeSlider:SetValue(style.chargeFontSize or 12)
-        chargeFontSizeSlider:SetFullWidth(true)
-        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeFontSizeSlider)
-
-        local chargeFontDrop = AceGUI:Create("Dropdown")
-        chargeFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(chargeFontDrop)
-        chargeFontDrop:SetValue(style.chargeFont or "Friz Quadrata TT")
-        chargeFontDrop:SetFullWidth(true)
-        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeFontDrop)
-
-        local chargeOutlineDrop = AceGUI:Create("Dropdown")
-        chargeOutlineDrop:SetLabel("Font Outline")
-        chargeOutlineDrop:SetList(CS.outlineOptions)
-        chargeOutlineDrop:SetValue(style.chargeFontOutline or "OUTLINE")
-        chargeOutlineDrop:SetFullWidth(true)
-        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeOutlineDrop)
-
-        local chargeFontColor = AceGUI:Create("ColorPicker")
-        chargeFontColor:SetLabel("Font Color (Max Charges)")
-        chargeFontColor:SetHasAlpha(true)
-        local cfc = style.chargeFontColor or {1, 1, 1, 1}
-        chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
-        chargeFontColor:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColor, style, "chargeFontColor", refreshStyle, refreshStyle)
-        container:AddChild(chargeFontColor)
-
-        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-        chargeFontColorMissing:SetHasAlpha(true)
-        local cfcm = style.chargeFontColorMissing or {1, 1, 1, 1}
-        chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
-        chargeFontColorMissing:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorMissing, style, "chargeFontColorMissing", refreshStyle, refreshStyle)
-        container:AddChild(chargeFontColorMissing)
-
-        local chargeFontColorZero = AceGUI:Create("ColorPicker")
-        chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
-        chargeFontColorZero:SetHasAlpha(true)
-        local cfcz = style.chargeFontColorZero or {1, 1, 1, 1}
-        chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
-        chargeFontColorZero:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorZero, style, "chargeFontColorZero", refreshStyle, refreshStyle)
-        container:AddChild(chargeFontColorZero)
-
-        local chargeAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local chargeAnchorDrop = AceGUI:Create("Dropdown")
-        chargeAnchorDrop:SetLabel("Anchor")
-        chargeAnchorDrop:SetList(chargeAnchorValues, CS.anchorPoints)
-        chargeAnchorDrop:SetValue(style.chargeAnchor or "BOTTOMRIGHT")
-        chargeAnchorDrop:SetFullWidth(true)
-        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeAnchorDrop)
-
-        local chargeXSlider = AceGUI:Create("Slider")
-        chargeXSlider:SetLabel("X Offset")
-        chargeXSlider:SetSliderValues(-20, 20, 0.1)
-        chargeXSlider:SetValue(style.chargeXOffset or -2)
-        chargeXSlider:SetFullWidth(true)
-        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeXSlider)
-
-        local chargeYSlider = AceGUI:Create("Slider")
-        chargeYSlider:SetLabel("Y Offset")
-        chargeYSlider:SetSliderValues(-20, 20, 0.1)
-        chargeYSlider:SetValue(style.chargeYOffset or 2)
-        chargeYSlider:SetFullWidth(true)
-        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeYSlider)
+        AddFontControls(container, style, "charge", { size = 12 }, refreshStyle)
+        AddColorPicker(container, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddColorPicker(container, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddColorPicker(container, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddAnchorDropdown(container, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
+        AddOffsetSliders(container, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle)
     end -- chargeAdvExpanded + showChargeText
 
     -- Show Aura Duration Text toggle
@@ -1440,47 +1257,8 @@ local function BuildAppearanceTab(container)
     end
 
     if style.showAuraText ~= false and auraTextAdvExpanded then
-        local auraFontSizeSlider = AceGUI:Create("Slider")
-        auraFontSizeSlider:SetLabel("Font Size")
-        auraFontSizeSlider:SetSliderValues(8, 32, 1)
-        auraFontSizeSlider:SetValue(style.auraTextFontSize or 12)
-        auraFontSizeSlider:SetFullWidth(true)
-        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontSizeSlider)
-
-        local auraFontDrop = AceGUI:Create("Dropdown")
-        auraFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(auraFontDrop)
-        auraFontDrop:SetValue(style.auraTextFont or "Friz Quadrata TT")
-        auraFontDrop:SetFullWidth(true)
-        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontDrop)
-
-        local auraOutlineDrop = AceGUI:Create("Dropdown")
-        auraOutlineDrop:SetLabel("Font Outline")
-        auraOutlineDrop:SetList(CS.outlineOptions)
-        auraOutlineDrop:SetValue(style.auraTextFontOutline or "OUTLINE")
-        auraOutlineDrop:SetFullWidth(true)
-        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraOutlineDrop)
-
-        local auraFontColor = AceGUI:Create("ColorPicker")
-        auraFontColor:SetLabel("Font Color")
-        auraFontColor:SetHasAlpha(false)
-        local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
-        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
-        auraFontColor:SetFullWidth(true)
-        SetupColorCallbacks(auraFontColor, style, "auraTextFontColor", refreshStyle, refreshStyle)
-        container:AddChild(auraFontColor)
+        AddFontControls(container, style, "auraText", { size = 12 }, refreshStyle)
+        AddColorPicker(container, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
 
         local sepPosCb = AceGUI:Create("CheckBox")
         sepPosCb:SetLabel("Separate Text Positions")
@@ -1499,42 +1277,8 @@ local function BuildAppearanceTab(container)
         }, sepPosCb)
 
         if style.separateTextPositions then
-            local atAnchorValues = {}
-            for _, pt in ipairs(CS.anchorPoints) do
-                atAnchorValues[pt] = CS.anchorPointLabels[pt]
-            end
-            local atAnchorDrop = AceGUI:Create("Dropdown")
-            atAnchorDrop:SetLabel("Anchor")
-            atAnchorDrop:SetList(atAnchorValues, CS.anchorPoints)
-            atAnchorDrop:SetValue(style.auraTextAnchor or "TOPLEFT")
-            atAnchorDrop:SetFullWidth(true)
-            atAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                style.auraTextAnchor = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            container:AddChild(atAnchorDrop)
-
-            local atXSlider = AceGUI:Create("Slider")
-            atXSlider:SetLabel("X Offset")
-            atXSlider:SetSliderValues(-20, 20, 0.1)
-            atXSlider:SetValue(style.auraTextXOffset or 2)
-            atXSlider:SetFullWidth(true)
-            atXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.auraTextXOffset = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            container:AddChild(atXSlider)
-
-            local atYSlider = AceGUI:Create("Slider")
-            atYSlider:SetLabel("Y Offset")
-            atYSlider:SetSliderValues(-20, 20, 0.1)
-            atYSlider:SetValue(style.auraTextYOffset or -2)
-            atYSlider:SetFullWidth(true)
-            atYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                style.auraTextYOffset = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end)
-            container:AddChild(atYSlider)
+            AddAnchorDropdown(container, style, "auraTextAnchor", "TOPLEFT", refreshStyle)
+            AddOffsetSliders(container, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle)
         end
     end -- auraTextAdvExpanded + showAuraText
 
@@ -1554,84 +1298,10 @@ local function BuildAppearanceTab(container)
     CreateCheckboxPromoteButton(auraStackCb, auraStackAdvBtn, "auraStackText", group, style)
 
     if style.showAuraStackText ~= false and auraStackAdvExpanded then
-        local asFontSizeSlider = AceGUI:Create("Slider")
-        asFontSizeSlider:SetLabel("Font Size")
-        asFontSizeSlider:SetSliderValues(8, 32, 1)
-        asFontSizeSlider:SetValue(style.auraStackFontSize or 12)
-        asFontSizeSlider:SetFullWidth(true)
-        asFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asFontSizeSlider)
-
-        local asFontDrop = AceGUI:Create("Dropdown")
-        asFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(asFontDrop)
-        asFontDrop:SetValue(style.auraStackFont or "Friz Quadrata TT")
-        asFontDrop:SetFullWidth(true)
-        asFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asFontDrop)
-
-        local asOutlineDrop = AceGUI:Create("Dropdown")
-        asOutlineDrop:SetLabel("Font Outline")
-        asOutlineDrop:SetList(CS.outlineOptions)
-        asOutlineDrop:SetValue(style.auraStackFontOutline or "OUTLINE")
-        asOutlineDrop:SetFullWidth(true)
-        asOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asOutlineDrop)
-
-        local asFontColor = AceGUI:Create("ColorPicker")
-        asFontColor:SetLabel("Font Color")
-        asFontColor:SetHasAlpha(true)
-        local asc = style.auraStackFontColor or {1, 1, 1, 1}
-        asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
-        asFontColor:SetFullWidth(true)
-        SetupColorCallbacks(asFontColor, style, "auraStackFontColor", refreshStyle, refreshStyle)
-        container:AddChild(asFontColor)
-
-        local asAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            asAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local asAnchorDrop = AceGUI:Create("Dropdown")
-        asAnchorDrop:SetLabel("Anchor")
-        asAnchorDrop:SetList(asAnchorValues, CS.anchorPoints)
-        asAnchorDrop:SetValue(style.auraStackAnchor or "BOTTOMLEFT")
-        asAnchorDrop:SetFullWidth(true)
-        asAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asAnchorDrop)
-
-        local asXSlider = AceGUI:Create("Slider")
-        asXSlider:SetLabel("X Offset")
-        asXSlider:SetSliderValues(-20, 20, 0.1)
-        asXSlider:SetValue(style.auraStackXOffset or 2)
-        asXSlider:SetFullWidth(true)
-        asXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asXSlider)
-
-        local asYSlider = AceGUI:Create("Slider")
-        asYSlider:SetLabel("Y Offset")
-        asYSlider:SetSliderValues(-20, 20, 0.1)
-        asYSlider:SetValue(style.auraStackYOffset or 2)
-        asYSlider:SetFullWidth(true)
-        asYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asYSlider)
+        AddFontControls(container, style, "auraStack", { size = 12 }, refreshStyle)
+        AddColorPicker(container, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddAnchorDropdown(container, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
+        AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
     end -- auraStackAdvExpanded + showAuraStackText
 
     -- Show Keybind Text toggle
@@ -1650,6 +1320,7 @@ local function BuildAppearanceTab(container)
     CreateCheckboxPromoteButton(kbCb, kbAdvBtn, "keybindText", group, style)
 
     if style.showKeybindText and kbAdvExpanded then
+        -- Keybind uses a hardcoded 4-point anchor (not the full 9-point list)
         local kbAnchorDrop = AceGUI:Create("Dropdown")
         kbAnchorDrop:SetLabel("Anchor")
         kbAnchorDrop:SetList({
@@ -1666,69 +1337,9 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(kbAnchorDrop)
 
-        local kbXSlider = AceGUI:Create("Slider")
-        kbXSlider:SetLabel("X Offset")
-        kbXSlider:SetSliderValues(-20, 20, 0.1)
-        kbXSlider:SetValue(style.keybindXOffset or -2)
-        kbXSlider:SetFullWidth(true)
-        kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbXSlider)
-
-        local kbYSlider = AceGUI:Create("Slider")
-        kbYSlider:SetLabel("Y Offset")
-        kbYSlider:SetSliderValues(-20, 20, 0.1)
-        kbYSlider:SetValue(style.keybindYOffset or -2)
-        kbYSlider:SetFullWidth(true)
-        kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbYSlider)
-
-        local kbFontSizeSlider = AceGUI:Create("Slider")
-        kbFontSizeSlider:SetLabel("Font Size")
-        kbFontSizeSlider:SetSliderValues(6, 24, 1)
-        kbFontSizeSlider:SetValue(style.keybindFontSize or 10)
-        kbFontSizeSlider:SetFullWidth(true)
-        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbFontSizeSlider)
-
-        local kbFontDrop = AceGUI:Create("Dropdown")
-        kbFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(kbFontDrop)
-        kbFontDrop:SetValue(style.keybindFont or "Friz Quadrata TT")
-        kbFontDrop:SetFullWidth(true)
-        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbFontDrop)
-
-        local kbOutlineDrop = AceGUI:Create("Dropdown")
-        kbOutlineDrop:SetLabel("Font Outline")
-        kbOutlineDrop:SetList(CS.outlineOptions)
-        kbOutlineDrop:SetValue(style.keybindFontOutline or "OUTLINE")
-        kbOutlineDrop:SetFullWidth(true)
-        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.keybindFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(kbOutlineDrop)
-
-        local kbFontColor = AceGUI:Create("ColorPicker")
-        kbFontColor:SetLabel("Font Color")
-        kbFontColor:SetHasAlpha(true)
-        local kbc = style.keybindFontColor or {1, 1, 1, 1}
-        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
-        kbFontColor:SetFullWidth(true)
-        SetupColorCallbacks(kbFontColor, style, "keybindFontColor", refreshStyle, refreshStyle)
-        container:AddChild(kbFontColor)
+        AddOffsetSliders(container, style, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle)
+        AddFontControls(container, style, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle)
+        AddColorPicker(container, style, "keybindFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
     end -- showKeybindText + kbAdvExpanded
 
     -- Compact Mode toggle + Max Visible Buttons slider
@@ -1749,17 +1360,10 @@ local function BuildAppearanceTab(container)
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not borderCollapsed then
-    local borderColor = AceGUI:Create("ColorPicker")
-    borderColor:SetLabel("Border Color")
-    borderColor:SetHasAlpha(true)
-    local bc = style.borderColor or {0, 0, 0, 1}
-    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColor:SetFullWidth(true)
+    local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
     if group.masqueEnabled then
         borderColor:SetDisabled(true)
     end
-    SetupColorCallbacks(borderColor, style, "borderColor", refreshStyle, refreshStyle)
-    container:AddChild(borderColor)
     end -- not borderCollapsed
 
     -- Icon Tint
@@ -1998,40 +1602,16 @@ local function BuildContainerGeneralTab(scroll, containerId)
         end
     end)
 
-    -- Anchor Point dropdown
-    local pointValues = {}
-    for _, pt in ipairs(CS.anchorPoints) do
-        pointValues[pt] = CS.anchorPointLabels[pt]
+    -- Anchor Point / Relative Point dropdowns
+    local function refreshContainerAnchor()
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame then
+            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+        end
     end
 
-    local anchorPt = AceGUI:Create("Dropdown")
-    anchorPt:SetLabel("Anchor Point")
-    anchorPt:SetList(pointValues)
-    anchorPt:SetValue(container.anchor.point or "CENTER")
-    anchorPt:SetFullWidth(true)
-    anchorPt:SetCallback("OnValueChanged", function(widget, event, val)
-        container.anchor.point = val
-        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-        if containerFrame then
-            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-        end
-    end)
-    scroll:AddChild(anchorPt)
-
-    -- Relative Point dropdown
-    local relPt = AceGUI:Create("Dropdown")
-    relPt:SetLabel("Relative Point")
-    relPt:SetList(pointValues)
-    relPt:SetValue(container.anchor.relativePoint or "CENTER")
-    relPt:SetFullWidth(true)
-    relPt:SetCallback("OnValueChanged", function(widget, event, val)
-        container.anchor.relativePoint = val
-        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-        if containerFrame then
-            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-        end
-    end)
-    scroll:AddChild(relPt)
+    AddAnchorDropdown(scroll, container.anchor, "point", "CENTER", refreshContainerAnchor, "Anchor Point")
+    AddAnchorDropdown(scroll, container.anchor, "relativePoint", "CENTER", refreshContainerAnchor, "Relative Point")
 
     -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
     local function HookSliderEditBox(sliderWidget)

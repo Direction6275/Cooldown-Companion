@@ -17,6 +17,7 @@ local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
+local AddColorPicker = ST._AddColorPicker
 local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants (eliminates _CONFIG duplicates)
@@ -529,23 +530,20 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
 
     AddCdmAuraReadinessWarning(container, spellID)
 
-    local auraColorPicker = AceGUI:Create("ColorPicker")
-    auraColorPicker:SetLabel(resourceName .. " Aura Active Color")
-    local auraColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR)
-    auraColorPicker:SetColor(auraColor[1], auraColor[2], auraColor[3])
-    auraColorPicker:SetHasAlpha(false)
-    auraColorPicker:SetFullWidth(true)
-    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-        if options.onColorChanged then
-            options.onColorChanged(r, g, b)
-        end
-    end)
-    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-        if options.onColorConfirmed then
-            options.onColorConfirmed(r, g, b)
-        end
-    end)
-    container:AddChild(auraColorPicker)
+    local _auraProxy = { auraActiveColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR) }
+    AddColorPicker(container, _auraProxy, "auraActiveColor", resourceName .. " Aura Active Color", DEFAULT_RESOURCE_AURA_ACTIVE_COLOR, false,
+        function()
+            if options.onColorConfirmed then
+                local c = _auraProxy.auraActiveColor
+                options.onColorConfirmed(c[1], c[2], c[3])
+            end
+        end,
+        function()
+            if options.onColorChanged then
+                local c = _auraProxy.auraActiveColor
+                options.onColorChanged(c[1], c[2], c[3])
+            end
+        end)
 
     if SupportsResourceAuraStackModeConfig(powerType) then
         local trackingMode = GetResourceAuraTrackingModeConfig(entry)

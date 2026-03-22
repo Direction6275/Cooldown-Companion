@@ -713,6 +713,113 @@ local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn)
     end)
 end
 
+------------------------------------------------------------------------
+-- WIDGET FACTORIES
+-- Composable builders that replace repeated AceGUI boilerplate.
+-- Each creates, configures, and adds to container; single-widget factories return the widget.
+------------------------------------------------------------------------
+
+-- Create a ColorPicker, configure it, wire callbacks, add to container.
+-- onConfirmFn fires on mouse release; onChangeFn (optional) fires during drag.
+local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn)
+    local picker = AceGUI:Create("ColorPicker")
+    picker:SetLabel(label)
+    picker:SetHasAlpha(hasAlpha)
+    local c = tbl[key] or default
+    picker:SetColor(c[1], c[2], c[3], c[4])
+    picker:SetFullWidth(true)
+    SetupColorCallbacks(picker, tbl, key, onConfirmFn, onChangeFn)
+    container:AddChild(picker)
+    return picker
+end
+
+-- Create an anchor-point Dropdown using the pre-built list from State.lua.
+-- Optional label param overrides the default "Anchor" label.
+local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label)
+    local drop = AceGUI:Create("Dropdown")
+    drop:SetLabel(label or "Anchor")
+    drop:SetList(CS.anchorDropdownList, CS.anchorPoints)
+    drop:SetValue(tbl[key] or default)
+    drop:SetFullWidth(true)
+    drop:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[key] = val
+        refreshFn()
+    end)
+    container:AddChild(drop)
+    return drop
+end
+
+-- Create Font Size slider + Font dropdown + Font Outline dropdown.
+-- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
+-- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} — all optional with sane fallbacks.
+local function AddFontControls(container, tbl, prefix, defaults, refreshFn)
+    local fontKey = prefix .. "Font"
+    local sizeKey = prefix .. "FontSize"
+    local outlineKey = prefix .. "FontOutline"
+
+    local fontSizeSlider = AceGUI:Create("Slider")
+    fontSizeSlider:SetLabel("Font Size")
+    fontSizeSlider:SetSliderValues(defaults.sizeMin or 8, defaults.sizeMax or 32, defaults.sizeStep or 1)
+    fontSizeSlider:SetValue(tbl[sizeKey] or defaults.size or 12)
+    fontSizeSlider:SetFullWidth(true)
+    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[sizeKey] = val
+        refreshFn()
+    end)
+    container:AddChild(fontSizeSlider)
+
+    local fontDrop = AceGUI:Create("Dropdown")
+    fontDrop:SetLabel("Font")
+    CS.SetupFontDropdown(fontDrop)
+    fontDrop:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
+    fontDrop:SetFullWidth(true)
+    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[fontKey] = val
+        refreshFn()
+    end)
+    container:AddChild(fontDrop)
+
+    local outlineDrop = AceGUI:Create("Dropdown")
+    outlineDrop:SetLabel("Font Outline")
+    outlineDrop:SetList(CS.outlineOptions)
+    outlineDrop:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
+    outlineDrop:SetFullWidth(true)
+    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[outlineKey] = val
+        refreshFn()
+    end)
+    container:AddChild(outlineDrop)
+end
+
+-- Create X Offset + Y Offset slider pair.
+-- defaults: {x, y, range (default 20), step (default 0.1)}
+local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn)
+    local range = defaults.range or 20
+    local step = defaults.step or 0.1
+
+    local xSlider = AceGUI:Create("Slider")
+    xSlider:SetLabel("X Offset")
+    xSlider:SetSliderValues(-range, range, step)
+    xSlider:SetValue(tbl[xKey] or defaults.x or 0)
+    xSlider:SetFullWidth(true)
+    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[xKey] = val
+        refreshFn()
+    end)
+    container:AddChild(xSlider)
+
+    local ySlider = AceGUI:Create("Slider")
+    ySlider:SetLabel("Y Offset")
+    ySlider:SetSliderValues(-range, range, step)
+    ySlider:SetValue(tbl[yKey] or defaults.y or 0)
+    ySlider:SetFullWidth(true)
+    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[yKey] = val
+        refreshFn()
+    end)
+    container:AddChild(ySlider)
+end
+
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
@@ -725,4 +832,7 @@ ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
 ST._GetBarTextureOptions = GetBarTextureOptions
-ST._SetupColorCallbacks = SetupColorCallbacks
+ST._AddColorPicker = AddColorPicker
+ST._AddAnchorDropdown = AddAnchorDropdown
+ST._AddFontControls = AddFontControls
+ST._AddOffsetSliders = AddOffsetSliders

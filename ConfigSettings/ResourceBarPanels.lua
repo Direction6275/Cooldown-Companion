@@ -17,6 +17,7 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
+local AddColorPicker = ST._AddColorPicker
 local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants
@@ -398,6 +399,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local showColors = (mode == "all" or mode == "colors")
     local showAuraOverlays = (mode == "all" or mode == "colors") -- aura overlays merged into Colors tab
 
+    local applyBars = function() CooldownCompanion:ApplyResourceBars() end
+
     if showBarText then
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
@@ -428,20 +431,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     end
 
     -- Background Color
-    local bgColorPicker = AceGUI:Create("ColorPicker")
-    bgColorPicker:SetLabel("Background Color")
-    local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
-    bgColorPicker:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
-    bgColorPicker:SetHasAlpha(true)
-    bgColorPicker:SetFullWidth(true)
-    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        settings.backgroundColor = {r, g, b, a}
-    end)
-    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        settings.backgroundColor = {r, g, b, a}
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(bgColorPicker)
+    AddColorPicker(container, settings, "backgroundColor", "Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
 
     -- Border Style
     local borderDrop = AceGUI:Create("Dropdown")
@@ -460,20 +450,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     container:AddChild(borderDrop)
 
     if settings.borderStyle == "pixel" then
-        local borderColorPicker = AceGUI:Create("ColorPicker")
-        borderColorPicker:SetLabel("Border Color")
-        local brc = settings.borderColor or { 0, 0, 0, 1 }
-        borderColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
-        borderColorPicker:SetHasAlpha(true)
-        borderColorPicker:SetFullWidth(true)
-        borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            settings.borderColor = {r, g, b, a}
-        end)
-        borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            settings.borderColor = {r, g, b, a}
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        container:AddChild(borderColorPicker)
+        AddColorPicker(container, settings, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, applyBars)
 
         local borderSizeSlider = AceGUI:Create("Slider")
         borderSizeSlider:SetLabel("Border Size")
@@ -645,20 +622,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end)
                 container:AddChild(outlineDrop)
 
-                local textColorPicker = AceGUI:Create("ColorPicker")
-                textColorPicker:SetLabel("Text Color")
-                local tc = resSettings.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-                textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-                textColorPicker:SetHasAlpha(true)
-                textColorPicker:SetFullWidth(true)
-                textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                    settings.resources[capturedPt].textFontColor = {r, g, b, a}
-                end)
-                textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                    settings.resources[capturedPt].textFontColor = {r, g, b, a}
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(textColorPicker)
+                AddColorPicker(container, settings.resources[capturedPt], "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
 
                 local textAnchorDrop = AceGUI:Create("Dropdown")
                 textAnchorDrop:SetLabel("Text Anchor")
@@ -758,399 +722,148 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
             if pt == 4 then
                 -- Combo Points: two color pickers (normal vs at max)
-                local normalColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", DEFAULT_COMBO_COLOR)
-                local cpNormal = AceGUI:Create("ColorPicker")
-                cpNormal:SetLabel("Combo Points")
-                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
-                cpNormal:SetHasAlpha(false)
-                cpNormal:SetFullWidth(true)
-                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", {r, g, b})
-                end)
-                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpNormal)
+                local _p4n = { comboColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", DEFAULT_COMBO_COLOR) }
+                AddColorPicker(container, _p4n, "comboColor", "Combo Points", DEFAULT_COMBO_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", _p4n.comboColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", _p4n.comboColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", DEFAULT_COMBO_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Combo Points (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p4m = { comboMaxColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", DEFAULT_COMBO_MAX_COLOR) }
+                AddColorPicker(container, _p4m, "comboMaxColor", "Combo Points (Max)", DEFAULT_COMBO_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", _p4m.comboMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", _p4m.comboMaxColor) end)
 
                 -- Charged combo point color (Rogue only)
                 local _, _, classID = UnitClass("player")
                 if classID == 4 then
-                    local chargedColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", DEFAULT_COMBO_CHARGED_COLOR)
-                    local cpCharged = AceGUI:Create("ColorPicker")
-                    cpCharged:SetLabel("Combo Points (Charged)")
-                    cpCharged:SetColor(chargedColor[1], chargedColor[2], chargedColor[3])
-                    cpCharged:SetHasAlpha(false)
-                    cpCharged:SetFullWidth(true)
-                    cpCharged:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                        WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", {r, g, b})
-                    end)
-                    cpCharged:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                        WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", {r, g, b})
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(cpCharged)
+                    local _p4c = { comboChargedColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", DEFAULT_COMBO_CHARGED_COLOR) }
+                    AddColorPicker(container, _p4c, "comboChargedColor", "Combo Points (Charged)", DEFAULT_COMBO_CHARGED_COLOR, false,
+                        function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", _p4c.comboChargedColor); applyBars() end,
+                        function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", _p4c.comboChargedColor) end)
                 end
             elseif pt == 5 then
                 -- Runes: three color pickers (ready, recharging, max)
-                local readyColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR)
-                local cpReady = AceGUI:Create("ColorPicker")
-                cpReady:SetLabel("Runes (Ready)")
-                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
-                cpReady:SetHasAlpha(false)
-                cpReady:SetFullWidth(true)
-                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", {r, g, b})
-                end)
-                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpReady)
+                local _p5r = { runeReadyColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR) }
+                AddColorPicker(container, _p5r, "runeReadyColor", "Runes (Ready)", DEFAULT_RUNE_READY_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", _p5r.runeReadyColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", _p5r.runeReadyColor) end)
 
-                local rechargingColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", DEFAULT_RUNE_RECHARGING_COLOR)
-                local cpRecharging = AceGUI:Create("ColorPicker")
-                cpRecharging:SetLabel("Runes (Recharging)")
-                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
-                cpRecharging:SetHasAlpha(false)
-                cpRecharging:SetFullWidth(true)
-                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", {r, g, b})
-                end)
-                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpRecharging)
+                local _p5c = { runeRechargingColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", DEFAULT_RUNE_RECHARGING_COLOR) }
+                AddColorPicker(container, _p5c, "runeRechargingColor", "Runes (Recharging)", DEFAULT_RUNE_RECHARGING_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", _p5c.runeRechargingColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", _p5c.runeRechargingColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", DEFAULT_RUNE_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Runes (All Ready)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p5m = { runeMaxColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", DEFAULT_RUNE_MAX_COLOR) }
+                AddColorPicker(container, _p5m, "runeMaxColor", "Runes (All Ready)", DEFAULT_RUNE_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", _p5m.runeMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", _p5m.runeMaxColor) end)
             elseif pt == 7 then
                 -- Soul Shards: three color pickers (ready, recharging, max)
-                local readyColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR)
-                local cpReady = AceGUI:Create("ColorPicker")
-                cpReady:SetLabel("Soul Shards (Ready)")
-                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
-                cpReady:SetHasAlpha(false)
-                cpReady:SetFullWidth(true)
-                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", {r, g, b})
-                end)
-                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpReady)
+                local _p7r = { shardReadyColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR) }
+                AddColorPicker(container, _p7r, "shardReadyColor", "Soul Shards (Ready)", DEFAULT_SHARD_READY_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", _p7r.shardReadyColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", _p7r.shardReadyColor) end)
 
-                local rechargingColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", DEFAULT_SHARD_RECHARGING_COLOR)
-                local cpRecharging = AceGUI:Create("ColorPicker")
-                cpRecharging:SetLabel("Soul Shards (Recharging)")
-                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
-                cpRecharging:SetHasAlpha(false)
-                cpRecharging:SetFullWidth(true)
-                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", {r, g, b})
-                end)
-                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpRecharging)
+                local _p7c = { shardRechargingColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", DEFAULT_SHARD_RECHARGING_COLOR) }
+                AddColorPicker(container, _p7c, "shardRechargingColor", "Soul Shards (Recharging)", DEFAULT_SHARD_RECHARGING_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", _p7c.shardRechargingColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", _p7c.shardRechargingColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", DEFAULT_SHARD_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Soul Shards (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p7m = { shardMaxColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", DEFAULT_SHARD_MAX_COLOR) }
+                AddColorPicker(container, _p7m, "shardMaxColor", "Soul Shards (Max)", DEFAULT_SHARD_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", _p7m.shardMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", _p7m.shardMaxColor) end)
             elseif pt == 9 then
                 -- Holy Power: two color pickers (normal vs max)
-                local normalColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", DEFAULT_HOLY_COLOR)
-                local cpNormal = AceGUI:Create("ColorPicker")
-                cpNormal:SetLabel("Holy Power")
-                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
-                cpNormal:SetHasAlpha(false)
-                cpNormal:SetFullWidth(true)
-                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", {r, g, b})
-                end)
-                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpNormal)
+                local _p9n = { holyColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", DEFAULT_HOLY_COLOR) }
+                AddColorPicker(container, _p9n, "holyColor", "Holy Power", DEFAULT_HOLY_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", _p9n.holyColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", _p9n.holyColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", DEFAULT_HOLY_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Holy Power (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p9m = { holyMaxColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", DEFAULT_HOLY_MAX_COLOR) }
+                AddColorPicker(container, _p9m, "holyMaxColor", "Holy Power (Max)", DEFAULT_HOLY_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", _p9m.holyMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", _p9m.holyMaxColor) end)
             elseif pt == 12 then
                 -- Chi: two color pickers (normal vs max)
-                local normalColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", DEFAULT_CHI_COLOR)
-                local cpNormal = AceGUI:Create("ColorPicker")
-                cpNormal:SetLabel("Chi")
-                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
-                cpNormal:SetHasAlpha(false)
-                cpNormal:SetFullWidth(true)
-                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", {r, g, b})
-                end)
-                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpNormal)
+                local _p12n = { chiColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", DEFAULT_CHI_COLOR) }
+                AddColorPicker(container, _p12n, "chiColor", "Chi", DEFAULT_CHI_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", _p12n.chiColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", _p12n.chiColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", DEFAULT_CHI_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Chi (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p12m = { chiMaxColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", DEFAULT_CHI_MAX_COLOR) }
+                AddColorPicker(container, _p12m, "chiMaxColor", "Chi (Max)", DEFAULT_CHI_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", _p12m.chiMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", _p12m.chiMaxColor) end)
             elseif pt == 16 then
                 -- Arcane Charges: two color pickers (normal vs max)
-                local normalColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR)
-                local cpNormal = AceGUI:Create("ColorPicker")
-                cpNormal:SetLabel("Arcane Charges")
-                cpNormal:SetColor(normalColor[1], normalColor[2], normalColor[3])
-                cpNormal:SetHasAlpha(false)
-                cpNormal:SetFullWidth(true)
-                cpNormal:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", {r, g, b})
-                end)
-                cpNormal:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpNormal)
+                local _p16n = { arcaneColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR) }
+                AddColorPicker(container, _p16n, "arcaneColor", "Arcane Charges", DEFAULT_ARCANE_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", _p16n.arcaneColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", _p16n.arcaneColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", DEFAULT_ARCANE_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Arcane Charges (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p16m = { arcaneMaxColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", DEFAULT_ARCANE_MAX_COLOR) }
+                AddColorPicker(container, _p16m, "arcaneMaxColor", "Arcane Charges (Max)", DEFAULT_ARCANE_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", _p16m.arcaneMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", _p16m.arcaneMaxColor) end)
             elseif pt == 19 then
                 -- Essence: three color pickers (ready, recharging, max)
-                local readyColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR)
-                local cpReady = AceGUI:Create("ColorPicker")
-                cpReady:SetLabel("Essence (Ready)")
-                cpReady:SetColor(readyColor[1], readyColor[2], readyColor[3])
-                cpReady:SetHasAlpha(false)
-                cpReady:SetFullWidth(true)
-                cpReady:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", {r, g, b})
-                end)
-                cpReady:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpReady)
+                local _p19r = { essenceReadyColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR) }
+                AddColorPicker(container, _p19r, "essenceReadyColor", "Essence (Ready)", DEFAULT_ESSENCE_READY_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", _p19r.essenceReadyColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", _p19r.essenceReadyColor) end)
 
-                local rechargingColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", DEFAULT_ESSENCE_RECHARGING_COLOR)
-                local cpRecharging = AceGUI:Create("ColorPicker")
-                cpRecharging:SetLabel("Essence (Recharging)")
-                cpRecharging:SetColor(rechargingColor[1], rechargingColor[2], rechargingColor[3])
-                cpRecharging:SetHasAlpha(false)
-                cpRecharging:SetFullWidth(true)
-                cpRecharging:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", {r, g, b})
-                end)
-                cpRecharging:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpRecharging)
+                local _p19c = { essenceRechargingColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", DEFAULT_ESSENCE_RECHARGING_COLOR) }
+                AddColorPicker(container, _p19c, "essenceRechargingColor", "Essence (Recharging)", DEFAULT_ESSENCE_RECHARGING_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", _p19c.essenceRechargingColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", _p19c.essenceRechargingColor) end)
 
-                local maxColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", DEFAULT_ESSENCE_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("Essence (Max)")
-                cpMax:SetColor(maxColor[1], maxColor[2], maxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p19m = { essenceMaxColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", DEFAULT_ESSENCE_MAX_COLOR) }
+                AddColorPicker(container, _p19m, "essenceMaxColor", "Essence (Max)", DEFAULT_ESSENCE_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", _p19m.essenceMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", _p19m.essenceMaxColor) end)
             elseif pt == 100 then
                 -- Maelstrom Weapon: three color pickers (base, overlay, max)
-                local baseColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR)
-                local cpBase = AceGUI:Create("ColorPicker")
-                cpBase:SetLabel("MW (Base)")
-                cpBase:SetColor(baseColor[1], baseColor[2], baseColor[3])
-                cpBase:SetHasAlpha(false)
-                cpBase:SetFullWidth(true)
-                cpBase:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", {r, g, b})
-                end)
-                cpBase:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpBase)
+                local _p100b = { mwBaseColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR) }
+                AddColorPicker(container, _p100b, "mwBaseColor", "MW (Base)", DEFAULT_MW_BASE_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", _p100b.mwBaseColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", _p100b.mwBaseColor) end)
 
-                local overlayColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", DEFAULT_MW_OVERLAY_COLOR)
-                local cpOverlay = AceGUI:Create("ColorPicker")
-                cpOverlay:SetLabel("MW (Overlay)")
-                cpOverlay:SetColor(overlayColor[1], overlayColor[2], overlayColor[3])
-                cpOverlay:SetHasAlpha(false)
-                cpOverlay:SetFullWidth(true)
-                cpOverlay:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", {r, g, b})
-                end)
-                cpOverlay:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpOverlay)
+                local _p100o = { mwOverlayColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", DEFAULT_MW_OVERLAY_COLOR) }
+                AddColorPicker(container, _p100o, "mwOverlayColor", "MW (Overlay)", DEFAULT_MW_OVERLAY_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", _p100o.mwOverlayColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", _p100o.mwOverlayColor) end)
 
-                local mwMaxColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", DEFAULT_MW_MAX_COLOR)
-                local cpMax = AceGUI:Create("ColorPicker")
-                cpMax:SetLabel("MW (Max)")
-                cpMax:SetColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3])
-                cpMax:SetHasAlpha(false)
-                cpMax:SetFullWidth(true)
-                cpMax:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", {r, g, b})
-                end)
-                cpMax:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpMax)
+                local _p100m = { mwMaxColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", DEFAULT_MW_MAX_COLOR) }
+                AddColorPicker(container, _p100m, "mwMaxColor", "MW (Max)", DEFAULT_MW_MAX_COLOR, false,
+                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", _p100m.mwMaxColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", _p100m.mwMaxColor) end)
             elseif pt == 101 then
                 -- Stagger: three color pickers (green/yellow/red thresholds)
-                local stGreenColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", { 0.52, 0.90, 0.52 })
-                local cpGreen = AceGUI:Create("ColorPicker")
-                cpGreen:SetLabel("Stagger (Low)")
-                cpGreen:SetColor(stGreenColor[1], stGreenColor[2], stGreenColor[3])
-                cpGreen:SetHasAlpha(false)
-                cpGreen:SetFullWidth(true)
-                cpGreen:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", {r, g, b})
-                end)
-                cpGreen:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpGreen)
+                local _p101g = { staggerGreenColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", { 0.52, 0.90, 0.52 }) }
+                AddColorPicker(container, _p101g, "staggerGreenColor", "Stagger (Low)", { 0.52, 0.90, 0.52 }, false,
+                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", _p101g.staggerGreenColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", _p101g.staggerGreenColor) end)
 
-                local stYellowColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", { 1.0, 0.85, 0.36 })
-                local cpYellow = AceGUI:Create("ColorPicker")
-                cpYellow:SetLabel("Stagger (Medium)")
-                cpYellow:SetColor(stYellowColor[1], stYellowColor[2], stYellowColor[3])
-                cpYellow:SetHasAlpha(false)
-                cpYellow:SetFullWidth(true)
-                cpYellow:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", {r, g, b})
-                end)
-                cpYellow:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpYellow)
+                local _p101y = { staggerYellowColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", { 1.0, 0.85, 0.36 }) }
+                AddColorPicker(container, _p101y, "staggerYellowColor", "Stagger (Medium)", { 1.0, 0.85, 0.36 }, false,
+                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", _p101y.staggerYellowColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", _p101y.staggerYellowColor) end)
 
-                local stRedColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", { 1.0, 0.42, 0.42 })
-                local cpRed = AceGUI:Create("ColorPicker")
-                cpRed:SetLabel("Stagger (High)")
-                cpRed:SetColor(stRedColor[1], stRedColor[2], stRedColor[3])
-                cpRed:SetHasAlpha(false)
-                cpRed:SetFullWidth(true)
-                cpRed:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", {r, g, b})
-                end)
-                cpRed:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", {r, g, b})
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpRed)
+                local _p101r = { staggerRedColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", { 1.0, 0.42, 0.42 }) }
+                AddColorPicker(container, _p101r, "staggerRedColor", "Stagger (High)", { 1.0, 0.42, 0.42 }, false,
+                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", _p101r.staggerRedColor); applyBars() end,
+                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", _p101r.staggerRedColor) end)
             else
                 local name = POWER_NAMES[pt] or ("Power " .. pt)
 
                 if settings.barTexture == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
                     -- Atlas-backed type; color picker not applicable
                 else
-                    local currentColor = ReadSpecOverrideKey(settings, pt, _colorSpecID, "color", DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 })
                     local capturedGenericPt = pt
-
-                    local cp = AceGUI:Create("ColorPicker")
-                    cp:SetLabel(name)
-                    cp:SetColor(currentColor[1], currentColor[2], currentColor[3])
-                    cp:SetHasAlpha(false)
-                    cp:SetFullWidth(true)
-                    cp:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                        WriteSpecOverrideKey(settings, capturedGenericPt, _colorSpecID, "color", {r, g, b})
-                    end)
-                    cp:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                        WriteSpecOverrideKey(settings, capturedGenericPt, _colorSpecID, "color", {r, g, b})
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(cp)
+                    local _pGen = { color = ReadSpecOverrideKey(settings, pt, _colorSpecID, "color", DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 }) }
+                    AddColorPicker(container, _pGen, "color", name, DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 }, false,
+                        function() WriteSpecOverrideKey(settings, capturedGenericPt, _colorSpecID, "color", _pGen.color); applyBars() end,
+                        function() WriteSpecOverrideKey(settings, capturedGenericPt, _colorSpecID, "color", _pGen.color) end)
                 end
             end
 
@@ -1250,21 +963,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         end)
                         container:AddChild(thresholdEdit)
 
-                        local _segColor = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", nil)
-                        local thresholdColor = GetSafeRGBConfig(_segColor, DEFAULT_SEG_THRESHOLD_COLOR)
-                        local thresholdColorPicker = AceGUI:Create("ColorPicker")
-                        thresholdColorPicker:SetLabel(resourceName .. " Threshold Color")
-                        thresholdColorPicker:SetColor(thresholdColor[1], thresholdColor[2], thresholdColor[3])
-                        thresholdColorPicker:SetHasAlpha(false)
-                        thresholdColorPicker:SetFullWidth(true)
-                        thresholdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", { r, g, b })
-                        end)
-                        thresholdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", { r, g, b })
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(thresholdColorPicker)
+                        local _pSeg = { segThresholdColor = GetSafeRGBConfig(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", nil), DEFAULT_SEG_THRESHOLD_COLOR) }
+                        AddColorPicker(container, _pSeg, "segThresholdColor", resourceName .. " Threshold Color", DEFAULT_SEG_THRESHOLD_COLOR, false,
+                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", _pSeg.segThresholdColor); applyBars() end,
+                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", _pSeg.segThresholdColor) end)
                     end
                 elseif capturedPt ~= 101 then
                     -- Stagger (101) has built-in threshold coloring; tick markers not applicable
@@ -1366,21 +1068,12 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             container:AddChild(absoluteEdit)
                         end
 
-                        local _tickColorVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", nil)
-                        local tickColor = GetSafeRGBAConfig(_tickColorVal, DEFAULT_CONTINUOUS_TICK_COLOR)
-                        local tickColorPicker = AceGUI:Create("ColorPicker")
-                        tickColorPicker:SetLabel(resourceName .. " Tick Color")
-                        tickColorPicker:SetColor(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
-                        tickColorPicker:SetHasAlpha(true)
-                        tickColorPicker:SetFullWidth(true)
-                        tickColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", { r, g, b, a })
-                        end)
-                        tickColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", { r, g, b, a })
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(tickColorPicker)
+                        local _tickColorResolved = GetSafeRGBAConfig(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", nil), DEFAULT_CONTINUOUS_TICK_COLOR)
+                        if _tickColorResolved[4] == nil then _tickColorResolved = { _tickColorResolved[1], _tickColorResolved[2], _tickColorResolved[3], 1 } end
+                        local _pTick = { continuousTickColor = _tickColorResolved }
+                        AddColorPicker(container, _pTick, "continuousTickColor", resourceName .. " Tick Color", DEFAULT_CONTINUOUS_TICK_COLOR, true,
+                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", _pTick.continuousTickColor); applyBars() end,
+                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", _pTick.continuousTickColor) end)
 
                         local _tickWidthVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", nil)
                         local tickWidthSlider = AceGUI:Create("Slider")
@@ -1967,22 +1660,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 container:AddChild(colorHeading)
 
                 -- Bar Color (all modes)
-                local barColor = cab.barColor or {0.5, 0.5, 1}
-                local cpBar = AceGUI:Create("ColorPicker")
-                cpBar:SetLabel("Bar Color")
-                cpBar:SetColor(barColor[1], barColor[2], barColor[3])
-                cpBar:SetHasAlpha(false)
-                cpBar:SetFullWidth(true)
                 local cabIdx = capturedIdx
-                cpBar:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                    customBars[cabIdx].barColor = {r, g, b}
-                    CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx])
-                end)
-                cpBar:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                    customBars[cabIdx].barColor = {r, g, b}
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                container:AddChild(cpBar)
+                local cabApplyBars = function() CooldownCompanion:ApplyResourceBars() end
+                AddColorPicker(container, customBars[cabIdx], "barColor", "Bar Color", {0.5, 0.5, 1}, false,
+                    cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
                 local isActiveTracking = (cab.trackingMode or "stacks") == "active"
                 if not isActiveTracking then
@@ -1998,21 +1679,8 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     container:AddChild(thresholdCb)
 
                     if cab.thresholdColorEnabled == true then
-                        local maxThresholdColor = cab.thresholdMaxColor or DEFAULT_CUSTOM_AURA_MAX_COLOR
-                        local cpThreshold = AceGUI:Create("ColorPicker")
-                        cpThreshold:SetLabel("Max Stack Color")
-                        cpThreshold:SetColor(maxThresholdColor[1], maxThresholdColor[2], maxThresholdColor[3])
-                        cpThreshold:SetHasAlpha(false)
-                        cpThreshold:SetFullWidth(true)
-                        cpThreshold:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                            customBars[cabIdx].thresholdMaxColor = {r, g, b}
-                            CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx])
-                        end)
-                        cpThreshold:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                            customBars[cabIdx].thresholdMaxColor = {r, g, b}
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(cpThreshold)
+                        AddColorPicker(container, customBars[cabIdx], "thresholdMaxColor", "Max Stack Color", DEFAULT_CUSTOM_AURA_MAX_COLOR, false,
+                            cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
                     end
                 end
 
@@ -2092,21 +1760,8 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         container:AddChild(styleDrop)
 
                         -- Color picker
-                        local glowColor = cab.maxStacksGlowColor or {1, 0.84, 0, 0.9}
-                        local cpGlow = AceGUI:Create("ColorPicker")
-                        cpGlow:SetLabel("Indicator Color")
-                        cpGlow:SetColor(glowColor[1], glowColor[2], glowColor[3], glowColor[4] or 0.9)
-                        cpGlow:SetHasAlpha(true)
-                        cpGlow:SetFullWidth(true)
-                        cpGlow:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                            customBars[cabIdx].maxStacksGlowColor = {r, g, b, a}
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        cpGlow:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                            customBars[cabIdx].maxStacksGlowColor = {r, g, b, a}
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(cpGlow)
+                        AddColorPicker(container, customBars[cabIdx], "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
+                            cabApplyBars, cabApplyBars)
 
                         -- Border size slider (border styles only — overlay has no size param)
                         if currentStyle ~= "pulsingOverlay" then
@@ -2140,21 +1795,8 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
                 -- Overlay Color (overlay mode only)
                 if cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
-                    local overlayColor = cab.overlayColor or {1, 0.84, 0}
-                    local cpOverlay = AceGUI:Create("ColorPicker")
-                    cpOverlay:SetLabel("Overlay Color")
-                    cpOverlay:SetColor(overlayColor[1], overlayColor[2], overlayColor[3])
-                    cpOverlay:SetHasAlpha(false)
-                    cpOverlay:SetFullWidth(true)
-                    cpOverlay:SetCallback("OnValueChanged", function(widget, event, r, g, b)
-                        customBars[cabIdx].overlayColor = {r, g, b}
-                        CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx])
-                    end)
-                    cpOverlay:SetCallback("OnValueConfirmed", function(widget, event, r, g, b)
-                        customBars[cabIdx].overlayColor = {r, g, b}
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    container:AddChild(cpOverlay)
+                    local cpOverlay = AddColorPicker(container, customBars[cabIdx], "overlayColor", "Overlay Color", {1, 0.84, 0}, false,
+                        cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
                     -- Overlay Color tooltip (?) — use SetDescription for AceGUI-safe approach
                     cpOverlay:SetCallback("OnEnter", function(widget)
@@ -2239,20 +1881,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         end)
                         container:AddChild(outlineDrop)
 
-                        local textColorPicker = AceGUI:Create("ColorPicker")
-                        textColorPicker:SetLabel("Duration Text Color")
-                        local tc = cab.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-                        textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-                        textColorPicker:SetHasAlpha(true)
-                        textColorPicker:SetFullWidth(true)
-                        textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                            customBars[cabIdx].durationTextFontColor = {r, g, b, a}
-                        end)
-                        textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                            customBars[cabIdx].durationTextFontColor = {r, g, b, a}
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(textColorPicker)
+                        AddColorPicker(container, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
 
                         local decimalCheck = AceGUI:Create("CheckBox")
                         decimalCheck:SetLabel("Show Decimal Point")
@@ -2332,20 +1961,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         end)
                         container:AddChild(outlineDrop)
 
-                        local textColorPicker = AceGUI:Create("ColorPicker")
-                        textColorPicker:SetLabel("Stack Text Color")
-                        local tc = cab.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-                        textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-                        textColorPicker:SetHasAlpha(true)
-                        textColorPicker:SetFullWidth(true)
-                        textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-                            customBars[cabIdx].stackTextFontColor = {r, g, b, a}
-                        end)
-                        textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-                            customBars[cabIdx].stackTextFontColor = {r, g, b, a}
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(textColorPicker)
+                        AddColorPicker(container, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
                     end
                 end
 

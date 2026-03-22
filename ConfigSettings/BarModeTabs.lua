@@ -17,7 +17,10 @@ local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
+local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddFontControls = ST._AddFontControls
+local AddOffsetSliders = ST._AddOffsetSliders
 
 -- Imports from SectionBuilders.lua
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
@@ -114,14 +117,7 @@ local function BuildBarAppearanceTab(container, group, style)
     container:AddChild(barTexDrop)
 
     -- Bar Color (basic)
-    local barColorPicker = AceGUI:Create("ColorPicker")
-    barColorPicker:SetLabel("Bar Color")
-    barColorPicker:SetHasAlpha(true)
-    local brc = style.barColor or {0.2, 0.6, 1.0, 1.0}
-    barColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
-    barColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barColorPicker, style, "barColor", refreshStyle, refreshStyle)
-    container:AddChild(barColorPicker)
+    AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
 
     if barAdvExpanded then
     local updateFreqSlider = AceGUI:Create("Slider")
@@ -139,41 +135,13 @@ local function BuildBarAppearanceTab(container, group, style)
     end -- not barSettingsCollapsed
 
     -- Contextual color pickers (no heading/collapse/promote)
-    local barCdColorPicker = AceGUI:Create("ColorPicker")
-    barCdColorPicker:SetLabel("Bar Cooldown Color")
-    barCdColorPicker:SetHasAlpha(true)
-    local bcc = style.barCooldownColor or {0.6, 0.6, 0.6, 1.0}
-    barCdColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
-    barCdColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barCdColorPicker, style, "barCooldownColor", refreshStyle, refreshStyle)
-    container:AddChild(barCdColorPicker)
+    AddColorPicker(container, style, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshStyle, refreshStyle)
 
-    local barChargeColorPicker = AceGUI:Create("ColorPicker")
-    barChargeColorPicker:SetLabel("Bar Recharging Color")
-    barChargeColorPicker:SetHasAlpha(true)
-    local bchc = style.barChargeColor or {1.0, 0.82, 0.0, 1.0}
-    barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
-    barChargeColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barChargeColorPicker, style, "barChargeColor", refreshStyle, refreshStyle)
-    container:AddChild(barChargeColorPicker)
+    AddColorPicker(container, style, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshStyle, refreshStyle)
 
-    local barBgColorPicker = AceGUI:Create("ColorPicker")
-    barBgColorPicker:SetLabel("Bar Background Color")
-    barBgColorPicker:SetHasAlpha(true)
-    local bbg = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
-    barBgColorPicker:SetColor(bbg[1], bbg[2], bbg[3], bbg[4])
-    barBgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barBgColorPicker, style, "barBgColor", refreshStyle, refreshStyle)
-    container:AddChild(barBgColorPicker)
+    AddColorPicker(container, style, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshStyle, refreshStyle)
 
-    local borderColor = AceGUI:Create("ColorPicker")
-    borderColor:SetLabel("Border Color")
-    borderColor:SetHasAlpha(true)
-    local bc = style.borderColor or {0, 0, 0, 1}
-    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColor:SetFullWidth(true)
-    SetupColorCallbacks(borderColor, style, "borderColor", refreshStyle, refreshStyle)
-    container:AddChild(borderColor)
+    AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
 
     -- ================================================================
     -- Show Icon (standalone checkbox with advanced toggle + promote)
@@ -266,69 +234,9 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(flipNameCheck)
 
-        local nameFontSizeSlider = AceGUI:Create("Slider")
-        nameFontSizeSlider:SetLabel("Font Size")
-        nameFontSizeSlider:SetSliderValues(6, 24, 1)
-        nameFontSizeSlider:SetValue(style.barNameFontSize or 10)
-        nameFontSizeSlider:SetFullWidth(true)
-        nameFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(nameFontSizeSlider)
-
-        local nameFontDrop = AceGUI:Create("Dropdown")
-        nameFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(nameFontDrop)
-        nameFontDrop:SetValue(style.barNameFont or "Friz Quadrata TT")
-        nameFontDrop:SetFullWidth(true)
-        nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(nameFontDrop)
-
-        local nameOutlineDrop = AceGUI:Create("Dropdown")
-        nameOutlineDrop:SetLabel("Font Outline")
-        nameOutlineDrop:SetList(CS.outlineOptions)
-        nameOutlineDrop:SetValue(style.barNameFontOutline or "OUTLINE")
-        nameOutlineDrop:SetFullWidth(true)
-        nameOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(nameOutlineDrop)
-
-        local nameFontColor = AceGUI:Create("ColorPicker")
-        nameFontColor:SetLabel("Font Color")
-        nameFontColor:SetHasAlpha(true)
-        local nfc = style.barNameFontColor or {1, 1, 1, 1}
-        nameFontColor:SetColor(nfc[1], nfc[2], nfc[3], nfc[4])
-        nameFontColor:SetFullWidth(true)
-        SetupColorCallbacks(nameFontColor, style, "barNameFontColor", refreshStyle, refreshStyle)
-        container:AddChild(nameFontColor)
-
-        local nameOffXSlider = AceGUI:Create("Slider")
-        nameOffXSlider:SetLabel("X Offset")
-        nameOffXSlider:SetSliderValues(-50, 50, 0.1)
-        nameOffXSlider:SetValue(style.barNameTextOffsetX or 0)
-        nameOffXSlider:SetFullWidth(true)
-        nameOffXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameTextOffsetX = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(nameOffXSlider)
-
-        local nameOffYSlider = AceGUI:Create("Slider")
-        nameOffYSlider:SetLabel("Y Offset")
-        nameOffYSlider:SetSliderValues(-50, 50, 0.1)
-        nameOffYSlider:SetValue(style.barNameTextOffsetY or 0)
-        nameOffYSlider:SetFullWidth(true)
-        nameOffYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barNameTextOffsetY = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(nameOffYSlider)
+        AddFontControls(container, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle)
+        AddColorPicker(container, style, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddOffsetSliders(container, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle)
     end
 
     -- Show Cooldown Text toggle
@@ -363,69 +271,9 @@ local function BuildBarAppearanceTab(container, group, style)
             {"Applies to all time-based text, including cooldown time, aura time, and ready text.", 1, 1, 1, true},
         }, flipTimeCheck)
 
-        local fontSizeSlider = AceGUI:Create("Slider")
-        fontSizeSlider:SetLabel("Font Size")
-        fontSizeSlider:SetSliderValues(6, 24, 1)
-        fontSizeSlider:SetValue(style.cooldownFontSize or 12)
-        fontSizeSlider:SetFullWidth(true)
-        fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(fontSizeSlider)
-
-        local fontDrop = AceGUI:Create("Dropdown")
-        fontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(fontDrop)
-        fontDrop:SetValue(style.cooldownFont or "Friz Quadrata TT")
-        fontDrop:SetFullWidth(true)
-        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(fontDrop)
-
-        local outlineDrop = AceGUI:Create("Dropdown")
-        outlineDrop:SetLabel("Font Outline")
-        outlineDrop:SetList(CS.outlineOptions)
-        outlineDrop:SetValue(style.cooldownFontOutline or "OUTLINE")
-        outlineDrop:SetFullWidth(true)
-        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.cooldownFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(outlineDrop)
-
-        local cdFontColor = AceGUI:Create("ColorPicker")
-        cdFontColor:SetLabel("Font Color")
-        cdFontColor:SetHasAlpha(false)
-        local cdc = style.cooldownFontColor or {1, 1, 1, 1}
-        cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
-        cdFontColor:SetFullWidth(true)
-        SetupColorCallbacks(cdFontColor, style, "cooldownFontColor", refreshStyle, refreshStyle)
-        container:AddChild(cdFontColor)
-
-        local cdOffXSlider = AceGUI:Create("Slider")
-        cdOffXSlider:SetLabel("X Offset")
-        cdOffXSlider:SetSliderValues(-50, 50, 0.1)
-        cdOffXSlider:SetValue(style.barCdTextOffsetX or 0)
-        cdOffXSlider:SetFullWidth(true)
-        cdOffXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barCdTextOffsetX = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(cdOffXSlider)
-
-        local cdOffYSlider = AceGUI:Create("Slider")
-        cdOffYSlider:SetLabel("Y Offset")
-        cdOffYSlider:SetSliderValues(-50, 50, 0.1)
-        cdOffYSlider:SetValue(style.barCdTextOffsetY or 0)
-        cdOffYSlider:SetFullWidth(true)
-        cdOffYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barCdTextOffsetY = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(cdOffYSlider)
+        AddFontControls(container, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+        AddColorPicker(container, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
+        AddOffsetSliders(container, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
     end
 
     -- Show Charge Text toggle
@@ -444,102 +292,12 @@ local function BuildBarAppearanceTab(container, group, style)
     CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
 
     if chargeAdvExpanded and style.showChargeText ~= false then
-        local chargeFontSizeSlider = AceGUI:Create("Slider")
-        chargeFontSizeSlider:SetLabel("Font Size")
-        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-        chargeFontSizeSlider:SetValue(style.chargeFontSize or 12)
-        chargeFontSizeSlider:SetFullWidth(true)
-        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeFontSizeSlider)
-
-        local chargeFontDrop = AceGUI:Create("Dropdown")
-        chargeFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(chargeFontDrop)
-        chargeFontDrop:SetValue(style.chargeFont or "Friz Quadrata TT")
-        chargeFontDrop:SetFullWidth(true)
-        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeFontDrop)
-
-        local chargeOutlineDrop = AceGUI:Create("Dropdown")
-        chargeOutlineDrop:SetLabel("Font Outline")
-        chargeOutlineDrop:SetList(CS.outlineOptions)
-        chargeOutlineDrop:SetValue(style.chargeFontOutline or "OUTLINE")
-        chargeOutlineDrop:SetFullWidth(true)
-        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeOutlineDrop)
-
-        local chargeFontColor = AceGUI:Create("ColorPicker")
-        chargeFontColor:SetLabel("Font Color (Max Charges)")
-        chargeFontColor:SetHasAlpha(true)
-        local cfc = style.chargeFontColor or {1, 1, 1, 1}
-        chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
-        chargeFontColor:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColor, style, "chargeFontColor", refreshStyle, refreshStyle)
-        container:AddChild(chargeFontColor)
-
-        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-        chargeFontColorMissing:SetHasAlpha(true)
-        local cfcm = style.chargeFontColorMissing or {1, 1, 1, 1}
-        chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
-        chargeFontColorMissing:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorMissing, style, "chargeFontColorMissing", refreshStyle, refreshStyle)
-        container:AddChild(chargeFontColorMissing)
-
-        local chargeFontColorZero = AceGUI:Create("ColorPicker")
-        chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
-        chargeFontColorZero:SetHasAlpha(true)
-        local cfcz = style.chargeFontColorZero or {1, 1, 1, 1}
-        chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
-        chargeFontColorZero:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorZero, style, "chargeFontColorZero", refreshStyle, refreshStyle)
-        container:AddChild(chargeFontColorZero)
-
-        local chargeAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local chargeAnchorDrop = AceGUI:Create("Dropdown")
-        chargeAnchorDrop:SetLabel("Anchor")
-        chargeAnchorDrop:SetList(chargeAnchorValues, CS.anchorPoints)
-        chargeAnchorDrop:SetValue(style.chargeAnchor or "BOTTOMRIGHT")
-        chargeAnchorDrop:SetFullWidth(true)
-        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeAnchorDrop)
-
-        local chargeXSlider = AceGUI:Create("Slider")
-        chargeXSlider:SetLabel("X Offset")
-        chargeXSlider:SetSliderValues(-20, 20, 0.1)
-        chargeXSlider:SetValue(style.chargeXOffset or -2)
-        chargeXSlider:SetFullWidth(true)
-        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeXSlider)
-
-        local chargeYSlider = AceGUI:Create("Slider")
-        chargeYSlider:SetLabel("Y Offset")
-        chargeYSlider:SetSliderValues(-20, 20, 0.1)
-        chargeYSlider:SetValue(style.chargeYOffset or 2)
-        chargeYSlider:SetFullWidth(true)
-        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.chargeYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(chargeYSlider)
+        AddFontControls(container, style, "charge", {}, refreshStyle)
+        AddColorPicker(container, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddColorPicker(container, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddColorPicker(container, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddAnchorDropdown(container, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
+        AddOffsetSliders(container, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle)
     end
 
     -- ================================================================
@@ -560,47 +318,8 @@ local function BuildBarAppearanceTab(container, group, style)
     CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
 
     if barAuraTextAdvExpanded and style.showAuraText ~= false then
-        local auraFontSizeSlider = AceGUI:Create("Slider")
-        auraFontSizeSlider:SetLabel("Font Size")
-        auraFontSizeSlider:SetSliderValues(6, 24, 1)
-        auraFontSizeSlider:SetValue(style.auraTextFontSize or 12)
-        auraFontSizeSlider:SetFullWidth(true)
-        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontSizeSlider)
-
-        local auraFontDrop = AceGUI:Create("Dropdown")
-        auraFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(auraFontDrop)
-        auraFontDrop:SetValue(style.auraTextFont or "Friz Quadrata TT")
-        auraFontDrop:SetFullWidth(true)
-        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraFontDrop)
-
-        local auraOutlineDrop = AceGUI:Create("Dropdown")
-        auraOutlineDrop:SetLabel("Font Outline")
-        auraOutlineDrop:SetList(CS.outlineOptions)
-        auraOutlineDrop:SetValue(style.auraTextFontOutline or "OUTLINE")
-        auraOutlineDrop:SetFullWidth(true)
-        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraTextFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(auraOutlineDrop)
-
-        local auraFontColor = AceGUI:Create("ColorPicker")
-        auraFontColor:SetLabel("Font Color")
-        auraFontColor:SetHasAlpha(false)
-        local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
-        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
-        auraFontColor:SetFullWidth(true)
-        SetupColorCallbacks(auraFontColor, style, "auraTextFontColor", refreshStyle, refreshStyle)
-        container:AddChild(auraFontColor)
+        AddFontControls(container, style, "auraText", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+        AddColorPicker(container, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
     end -- barAuraTextAdvExpanded
 
     -- ================================================================
@@ -621,84 +340,10 @@ local function BuildBarAppearanceTab(container, group, style)
     CreateCheckboxPromoteButton(barAuraStackCb, barAuraStackAdvBtn, "auraStackText", group, style)
 
     if barAuraStackAdvExpanded and style.showAuraStackText ~= false then
-        local asFontSizeSlider = AceGUI:Create("Slider")
-        asFontSizeSlider:SetLabel("Font Size")
-        asFontSizeSlider:SetSliderValues(8, 32, 1)
-        asFontSizeSlider:SetValue(style.auraStackFontSize or 12)
-        asFontSizeSlider:SetFullWidth(true)
-        asFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asFontSizeSlider)
-
-        local asFontDrop = AceGUI:Create("Dropdown")
-        asFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(asFontDrop)
-        asFontDrop:SetValue(style.auraStackFont or "Friz Quadrata TT")
-        asFontDrop:SetFullWidth(true)
-        asFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asFontDrop)
-
-        local asOutlineDrop = AceGUI:Create("Dropdown")
-        asOutlineDrop:SetLabel("Font Outline")
-        asOutlineDrop:SetList(CS.outlineOptions)
-        asOutlineDrop:SetValue(style.auraStackFontOutline or "OUTLINE")
-        asOutlineDrop:SetFullWidth(true)
-        asOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asOutlineDrop)
-
-        local asFontColor = AceGUI:Create("ColorPicker")
-        asFontColor:SetLabel("Font Color")
-        asFontColor:SetHasAlpha(true)
-        local asc = style.auraStackFontColor or {1, 1, 1, 1}
-        asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
-        asFontColor:SetFullWidth(true)
-        SetupColorCallbacks(asFontColor, style, "auraStackFontColor", refreshStyle, refreshStyle)
-        container:AddChild(asFontColor)
-
-        local asAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            asAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local asAnchorDrop = AceGUI:Create("Dropdown")
-        asAnchorDrop:SetLabel("Anchor")
-        asAnchorDrop:SetList(asAnchorValues, CS.anchorPoints)
-        asAnchorDrop:SetValue(style.auraStackAnchor or "BOTTOMLEFT")
-        asAnchorDrop:SetFullWidth(true)
-        asAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackAnchor = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asAnchorDrop)
-
-        local asXSlider = AceGUI:Create("Slider")
-        asXSlider:SetLabel("X Offset")
-        asXSlider:SetSliderValues(-20, 20, 0.1)
-        asXSlider:SetValue(style.auraStackXOffset or 2)
-        asXSlider:SetFullWidth(true)
-        asXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackXOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asXSlider)
-
-        local asYSlider = AceGUI:Create("Slider")
-        asYSlider:SetLabel("Y Offset")
-        asYSlider:SetSliderValues(-20, 20, 0.1)
-        asYSlider:SetValue(style.auraStackYOffset or 2)
-        asYSlider:SetFullWidth(true)
-        asYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.auraStackYOffset = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(asYSlider)
+        AddFontControls(container, style, "auraStack", {}, refreshStyle)
+        AddColorPicker(container, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddAnchorDropdown(container, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
+        AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshStyle)
     end -- barAuraStackAdvExpanded
 
     -- Show Ready Text toggle
@@ -728,47 +373,8 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(readyTextBox)
 
-        local readyColorPicker = AceGUI:Create("ColorPicker")
-        readyColorPicker:SetLabel("Ready Text Color")
-        readyColorPicker:SetHasAlpha(true)
-        local rtc = style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
-        readyColorPicker:SetColor(rtc[1], rtc[2], rtc[3], rtc[4])
-        readyColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(readyColorPicker, style, "barReadyTextColor", refreshStyle, refreshStyle)
-        container:AddChild(readyColorPicker)
-
-        local readyFontSizeSlider = AceGUI:Create("Slider")
-        readyFontSizeSlider:SetLabel("Font Size")
-        readyFontSizeSlider:SetSliderValues(6, 24, 1)
-        readyFontSizeSlider:SetValue(style.barReadyFontSize or 12)
-        readyFontSizeSlider:SetFullWidth(true)
-        readyFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barReadyFontSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(readyFontSizeSlider)
-
-        local readyFontDrop = AceGUI:Create("Dropdown")
-        readyFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(readyFontDrop)
-        readyFontDrop:SetValue(style.barReadyFont or "Friz Quadrata TT")
-        readyFontDrop:SetFullWidth(true)
-        readyFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barReadyFont = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(readyFontDrop)
-
-        local readyOutlineDrop = AceGUI:Create("Dropdown")
-        readyOutlineDrop:SetLabel("Font Outline")
-        readyOutlineDrop:SetList(CS.outlineOptions)
-        readyOutlineDrop:SetValue(style.barReadyFontOutline or "OUTLINE")
-        readyOutlineDrop:SetFullWidth(true)
-        readyOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barReadyFontOutline = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(readyOutlineDrop)
+        AddColorPicker(container, style, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
+        AddFontControls(container, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle)
     end
 
     -- Show Decimal Point toggle (affects both cooldown and aura duration text)

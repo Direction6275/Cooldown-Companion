@@ -12,7 +12,10 @@ local CreateRevertButton = ST._CreateRevertButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
+local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddFontControls = ST._AddFontControls
+local AddOffsetSliders = ST._AddOffsetSliders
 
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
@@ -37,47 +40,8 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
     container:AddChild(cdTextCb)
 
     if styleTable.showCooldownText then
-        local fontSizeSlider = AceGUI:Create("Slider")
-        fontSizeSlider:SetLabel("Font Size")
-        fontSizeSlider:SetSliderValues(8, 32, 1)
-        fontSizeSlider:SetValue(styleTable.cooldownFontSize or 12)
-        fontSizeSlider:SetFullWidth(true)
-        fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.cooldownFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(fontSizeSlider)
-
-        local fontDrop = AceGUI:Create("Dropdown")
-        fontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(fontDrop)
-        fontDrop:SetValue(styleTable.cooldownFont or "Friz Quadrata TT")
-        fontDrop:SetFullWidth(true)
-        fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.cooldownFont = val
-            refreshCallback()
-        end)
-        container:AddChild(fontDrop)
-
-        local outlineDrop = AceGUI:Create("Dropdown")
-        outlineDrop:SetLabel("Font Outline")
-        outlineDrop:SetList(CS.outlineOptions)
-        outlineDrop:SetValue(styleTable.cooldownFontOutline or "OUTLINE")
-        outlineDrop:SetFullWidth(true)
-        outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.cooldownFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(outlineDrop)
-
-        local cdFontColor = AceGUI:Create("ColorPicker")
-        cdFontColor:SetLabel("Font Color")
-        cdFontColor:SetHasAlpha(false)
-        local cdc = styleTable.cooldownFontColor or {1, 1, 1, 1}
-        cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
-        cdFontColor:SetFullWidth(true)
-        SetupColorCallbacks(cdFontColor, styleTable, "cooldownFontColor", refreshCallback, refreshCallback)
-        container:AddChild(cdFontColor)
+        AddFontControls(container, styleTable, "cooldown", {}, refreshCallback)
+        AddColorPicker(container, styleTable, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshCallback, refreshCallback)
 
         local decimalCheck = AceGUI:Create("CheckBox")
         decimalCheck:SetLabel("Show Decimal Point")
@@ -97,20 +61,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
             {"Bar and text mode only.", 0.7, 0.7, 0.7, true},
         }, decimalCheck)
 
-        local cdAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            cdAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local cdAnchorDrop = AceGUI:Create("Dropdown")
-        cdAnchorDrop:SetLabel("Anchor")
-        cdAnchorDrop:SetList(cdAnchorValues, CS.anchorPoints)
-        cdAnchorDrop:SetValue(styleTable.cooldownTextAnchor or "CENTER")
-        cdAnchorDrop:SetFullWidth(true)
-        cdAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.cooldownTextAnchor = val
-            refreshCallback()
-        end)
-        container:AddChild(cdAnchorDrop)
+        local cdAnchorDrop = AddAnchorDropdown(container, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback)
 
         -- (?) tooltip for shared positioning
         CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
@@ -118,27 +69,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
             {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
         }, cdAnchorDrop)
 
-        local cdXSlider = AceGUI:Create("Slider")
-        cdXSlider:SetLabel("X Offset")
-        cdXSlider:SetSliderValues(-20, 20, 0.1)
-        cdXSlider:SetValue(styleTable.cooldownTextXOffset or 0)
-        cdXSlider:SetFullWidth(true)
-        cdXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.cooldownTextXOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(cdXSlider)
-
-        local cdYSlider = AceGUI:Create("Slider")
-        cdYSlider:SetLabel("Y Offset")
-        cdYSlider:SetSliderValues(-20, 20, 0.1)
-        cdYSlider:SetValue(styleTable.cooldownTextYOffset or 0)
-        cdYSlider:SetFullWidth(true)
-        cdYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.cooldownTextYOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(cdYSlider)
+        AddOffsetSliders(container, styleTable, "cooldownTextXOffset", "cooldownTextYOffset", {}, refreshCallback)
 
     end
 end
@@ -162,47 +93,8 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
     }, auraTextCb)
 
     if styleTable.showAuraText ~= false then
-        local auraFontSizeSlider = AceGUI:Create("Slider")
-        auraFontSizeSlider:SetLabel("Font Size")
-        auraFontSizeSlider:SetSliderValues(8, 32, 1)
-        auraFontSizeSlider:SetValue(styleTable.auraTextFontSize or 12)
-        auraFontSizeSlider:SetFullWidth(true)
-        auraFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraTextFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(auraFontSizeSlider)
-
-        local auraFontDrop = AceGUI:Create("Dropdown")
-        auraFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(auraFontDrop)
-        auraFontDrop:SetValue(styleTable.auraTextFont or "Friz Quadrata TT")
-        auraFontDrop:SetFullWidth(true)
-        auraFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraTextFont = val
-            refreshCallback()
-        end)
-        container:AddChild(auraFontDrop)
-
-        local auraOutlineDrop = AceGUI:Create("Dropdown")
-        auraOutlineDrop:SetLabel("Font Outline")
-        auraOutlineDrop:SetList(CS.outlineOptions)
-        auraOutlineDrop:SetValue(styleTable.auraTextFontOutline or "OUTLINE")
-        auraOutlineDrop:SetFullWidth(true)
-        auraOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraTextFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(auraOutlineDrop)
-
-        local auraFontColor = AceGUI:Create("ColorPicker")
-        auraFontColor:SetLabel("Font Color")
-        auraFontColor:SetHasAlpha(false)
-        local ac = styleTable.auraTextFontColor or {0, 0.925, 1, 1}
-        auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
-        auraFontColor:SetFullWidth(true)
-        SetupColorCallbacks(auraFontColor, styleTable, "auraTextFontColor", refreshCallback, refreshCallback)
-        container:AddChild(auraFontColor)
+        AddFontControls(container, styleTable, "auraText", {}, refreshCallback)
+        AddColorPicker(container, styleTable, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshCallback, refreshCallback)
 
         local sepPosCb = AceGUI:Create("CheckBox")
         sepPosCb:SetLabel("Separate Text Positions")
@@ -221,42 +113,8 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
         }, sepPosCb)
 
         if styleTable.separateTextPositions then
-            local atAnchorValues = {}
-            for _, pt in ipairs(CS.anchorPoints) do
-                atAnchorValues[pt] = CS.anchorPointLabels[pt]
-            end
-            local atAnchorDrop = AceGUI:Create("Dropdown")
-            atAnchorDrop:SetLabel("Anchor")
-            atAnchorDrop:SetList(atAnchorValues, CS.anchorPoints)
-            atAnchorDrop:SetValue(styleTable.auraTextAnchor or "TOPLEFT")
-            atAnchorDrop:SetFullWidth(true)
-            atAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.auraTextAnchor = val
-                refreshCallback()
-            end)
-            container:AddChild(atAnchorDrop)
-
-            local atXSlider = AceGUI:Create("Slider")
-            atXSlider:SetLabel("X Offset")
-            atXSlider:SetSliderValues(-20, 20, 0.1)
-            atXSlider:SetValue(styleTable.auraTextXOffset or 2)
-            atXSlider:SetFullWidth(true)
-            atXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.auraTextXOffset = val
-                refreshCallback()
-            end)
-            container:AddChild(atXSlider)
-
-            local atYSlider = AceGUI:Create("Slider")
-            atYSlider:SetLabel("Y Offset")
-            atYSlider:SetSliderValues(-20, 20, 0.1)
-            atYSlider:SetValue(styleTable.auraTextYOffset or -2)
-            atYSlider:SetFullWidth(true)
-            atYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.auraTextYOffset = val
-                refreshCallback()
-            end)
-            container:AddChild(atYSlider)
+            AddAnchorDropdown(container, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback)
+            AddOffsetSliders(container, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2}, refreshCallback)
         end
     end
 end
@@ -274,84 +132,10 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
     container:AddChild(auraStackCb)
 
     if styleTable.showAuraStackText ~= false then
-        local asFontSizeSlider = AceGUI:Create("Slider")
-        asFontSizeSlider:SetLabel("Font Size")
-        asFontSizeSlider:SetSliderValues(8, 32, 1)
-        asFontSizeSlider:SetValue(styleTable.auraStackFontSize or 12)
-        asFontSizeSlider:SetFullWidth(true)
-        asFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraStackFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(asFontSizeSlider)
-
-        local asFontDrop = AceGUI:Create("Dropdown")
-        asFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(asFontDrop)
-        asFontDrop:SetValue(styleTable.auraStackFont or "Friz Quadrata TT")
-        asFontDrop:SetFullWidth(true)
-        asFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraStackFont = val
-            refreshCallback()
-        end)
-        container:AddChild(asFontDrop)
-
-        local asOutlineDrop = AceGUI:Create("Dropdown")
-        asOutlineDrop:SetLabel("Font Outline")
-        asOutlineDrop:SetList(CS.outlineOptions)
-        asOutlineDrop:SetValue(styleTable.auraStackFontOutline or "OUTLINE")
-        asOutlineDrop:SetFullWidth(true)
-        asOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraStackFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(asOutlineDrop)
-
-        local asFontColor = AceGUI:Create("ColorPicker")
-        asFontColor:SetLabel("Font Color")
-        asFontColor:SetHasAlpha(true)
-        local asc = styleTable.auraStackFontColor or {1, 1, 1, 1}
-        asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
-        asFontColor:SetFullWidth(true)
-        SetupColorCallbacks(asFontColor, styleTable, "auraStackFontColor", refreshCallback, refreshCallback)
-        container:AddChild(asFontColor)
-
-        local asAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            asAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local asAnchorDrop = AceGUI:Create("Dropdown")
-        asAnchorDrop:SetLabel("Anchor")
-        asAnchorDrop:SetList(asAnchorValues, CS.anchorPoints)
-        asAnchorDrop:SetValue(styleTable.auraStackAnchor or "BOTTOMLEFT")
-        asAnchorDrop:SetFullWidth(true)
-        asAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraStackAnchor = val
-            refreshCallback()
-        end)
-        container:AddChild(asAnchorDrop)
-
-        local asXSlider = AceGUI:Create("Slider")
-        asXSlider:SetLabel("X Offset")
-        asXSlider:SetSliderValues(-20, 20, 0.1)
-        asXSlider:SetValue(styleTable.auraStackXOffset or 2)
-        asXSlider:SetFullWidth(true)
-        asXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraStackXOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(asXSlider)
-
-        local asYSlider = AceGUI:Create("Slider")
-        asYSlider:SetLabel("Y Offset")
-        asYSlider:SetSliderValues(-20, 20, 0.1)
-        asYSlider:SetValue(styleTable.auraStackYOffset or 2)
-        asYSlider:SetFullWidth(true)
-        asYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraStackYOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(asYSlider)
+        AddFontControls(container, styleTable, "auraStack", {}, refreshCallback)
+        AddColorPicker(container, styleTable, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddAnchorDropdown(container, styleTable, "auraStackAnchor", "BOTTOMLEFT", refreshCallback)
+        AddOffsetSliders(container, styleTable, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshCallback)
     end
 end
 
@@ -368,84 +152,10 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
     container:AddChild(kbCb)
 
     if styleTable.showKeybindText then
-        local kbAnchorDrop = AceGUI:Create("Dropdown")
-        kbAnchorDrop:SetLabel("Anchor")
-        local kbAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            kbAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        kbAnchorDrop:SetList(kbAnchorValues, CS.anchorPoints)
-        kbAnchorDrop:SetValue(styleTable.keybindAnchor or "TOPRIGHT")
-        kbAnchorDrop:SetFullWidth(true)
-        kbAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.keybindAnchor = val
-            refreshCallback()
-        end)
-        container:AddChild(kbAnchorDrop)
-
-        local kbXSlider = AceGUI:Create("Slider")
-        kbXSlider:SetLabel("X Offset")
-        kbXSlider:SetSliderValues(-20, 20, 0.1)
-        kbXSlider:SetValue(styleTable.keybindXOffset or -2)
-        kbXSlider:SetFullWidth(true)
-        kbXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.keybindXOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(kbXSlider)
-
-        local kbYSlider = AceGUI:Create("Slider")
-        kbYSlider:SetLabel("Y Offset")
-        kbYSlider:SetSliderValues(-20, 20, 0.1)
-        kbYSlider:SetValue(styleTable.keybindYOffset or -2)
-        kbYSlider:SetFullWidth(true)
-        kbYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.keybindYOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(kbYSlider)
-
-        local kbFontSizeSlider = AceGUI:Create("Slider")
-        kbFontSizeSlider:SetLabel("Font Size")
-        kbFontSizeSlider:SetSliderValues(6, 24, 1)
-        kbFontSizeSlider:SetValue(styleTable.keybindFontSize or 10)
-        kbFontSizeSlider:SetFullWidth(true)
-        kbFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.keybindFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(kbFontSizeSlider)
-
-        local kbFontDrop = AceGUI:Create("Dropdown")
-        kbFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(kbFontDrop)
-        kbFontDrop:SetValue(styleTable.keybindFont or "Friz Quadrata TT")
-        kbFontDrop:SetFullWidth(true)
-        kbFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.keybindFont = val
-            refreshCallback()
-        end)
-        container:AddChild(kbFontDrop)
-
-        local kbOutlineDrop = AceGUI:Create("Dropdown")
-        kbOutlineDrop:SetLabel("Font Outline")
-        kbOutlineDrop:SetList(CS.outlineOptions)
-        kbOutlineDrop:SetValue(styleTable.keybindFontOutline or "OUTLINE")
-        kbOutlineDrop:SetFullWidth(true)
-        kbOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.keybindFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(kbOutlineDrop)
-
-        local kbFontColor = AceGUI:Create("ColorPicker")
-        kbFontColor:SetLabel("Font Color")
-        kbFontColor:SetHasAlpha(true)
-        local kbc = styleTable.keybindFontColor or {1, 1, 1, 1}
-        kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
-        kbFontColor:SetFullWidth(true)
-        SetupColorCallbacks(kbFontColor, styleTable, "keybindFontColor", refreshCallback, refreshCallback)
-        container:AddChild(kbFontColor)
+        AddAnchorDropdown(container, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback)
+        AddOffsetSliders(container, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2}, refreshCallback)
+        AddFontControls(container, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24}, refreshCallback)
+        AddColorPicker(container, styleTable, "keybindFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
     end
 end
 
@@ -462,102 +172,12 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
     container:AddChild(chargeTextCb)
 
     if styleTable.showChargeText ~= false then
-        local chargeFontSizeSlider = AceGUI:Create("Slider")
-        chargeFontSizeSlider:SetLabel("Font Size")
-        chargeFontSizeSlider:SetSliderValues(8, 32, 1)
-        chargeFontSizeSlider:SetValue(styleTable.chargeFontSize or 12)
-        chargeFontSizeSlider:SetFullWidth(true)
-        chargeFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.chargeFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(chargeFontSizeSlider)
-
-        local chargeFontDrop = AceGUI:Create("Dropdown")
-        chargeFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(chargeFontDrop)
-        chargeFontDrop:SetValue(styleTable.chargeFont or "Friz Quadrata TT")
-        chargeFontDrop:SetFullWidth(true)
-        chargeFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.chargeFont = val
-            refreshCallback()
-        end)
-        container:AddChild(chargeFontDrop)
-
-        local chargeOutlineDrop = AceGUI:Create("Dropdown")
-        chargeOutlineDrop:SetLabel("Font Outline")
-        chargeOutlineDrop:SetList(CS.outlineOptions)
-        chargeOutlineDrop:SetValue(styleTable.chargeFontOutline or "OUTLINE")
-        chargeOutlineDrop:SetFullWidth(true)
-        chargeOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.chargeFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(chargeOutlineDrop)
-
-        local chargeFontColor = AceGUI:Create("ColorPicker")
-        chargeFontColor:SetLabel("Font Color (Max Charges)")
-        chargeFontColor:SetHasAlpha(true)
-        local cfc = styleTable.chargeFontColor or {1, 1, 1, 1}
-        chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
-        chargeFontColor:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColor, styleTable, "chargeFontColor", refreshCallback, refreshCallback)
-        container:AddChild(chargeFontColor)
-
-        local chargeFontColorMissing = AceGUI:Create("ColorPicker")
-        chargeFontColorMissing:SetLabel("Font Color (Missing Charges)")
-        chargeFontColorMissing:SetHasAlpha(true)
-        local cfcm = styleTable.chargeFontColorMissing or {1, 1, 1, 1}
-        chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
-        chargeFontColorMissing:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorMissing, styleTable, "chargeFontColorMissing", refreshCallback, refreshCallback)
-        container:AddChild(chargeFontColorMissing)
-
-        local chargeFontColorZero = AceGUI:Create("ColorPicker")
-        chargeFontColorZero:SetLabel("Font Color (Zero Charges)")
-        chargeFontColorZero:SetHasAlpha(true)
-        local cfcz = styleTable.chargeFontColorZero or {1, 1, 1, 1}
-        chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
-        chargeFontColorZero:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorZero, styleTable, "chargeFontColorZero", refreshCallback, refreshCallback)
-        container:AddChild(chargeFontColorZero)
-
-        local chargeAnchorValues = {}
-        for _, pt in ipairs(CS.anchorPoints) do
-            chargeAnchorValues[pt] = CS.anchorPointLabels[pt]
-        end
-        local chargeAnchorDrop = AceGUI:Create("Dropdown")
-        chargeAnchorDrop:SetLabel("Anchor")
-        chargeAnchorDrop:SetList(chargeAnchorValues, CS.anchorPoints)
-        chargeAnchorDrop:SetValue(styleTable.chargeAnchor or "BOTTOMRIGHT")
-        chargeAnchorDrop:SetFullWidth(true)
-        chargeAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.chargeAnchor = val
-            refreshCallback()
-        end)
-        container:AddChild(chargeAnchorDrop)
-
-        local chargeXSlider = AceGUI:Create("Slider")
-        chargeXSlider:SetLabel("X Offset")
-        chargeXSlider:SetSliderValues(-20, 20, 0.1)
-        chargeXSlider:SetValue(styleTable.chargeXOffset or -2)
-        chargeXSlider:SetFullWidth(true)
-        chargeXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.chargeXOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(chargeXSlider)
-
-        local chargeYSlider = AceGUI:Create("Slider")
-        chargeYSlider:SetLabel("Y Offset")
-        chargeYSlider:SetSliderValues(-20, 20, 0.1)
-        chargeYSlider:SetValue(styleTable.chargeYOffset or 2)
-        chargeYSlider:SetFullWidth(true)
-        chargeYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.chargeYOffset = val
-            refreshCallback()
-        end)
-        container:AddChild(chargeYSlider)
+        AddFontControls(container, styleTable, "charge", {}, refreshCallback)
+        AddColorPicker(container, styleTable, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddColorPicker(container, styleTable, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddColorPicker(container, styleTable, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddAnchorDropdown(container, styleTable, "chargeAnchor", "BOTTOMRIGHT", refreshCallback)
+        AddOffsetSliders(container, styleTable, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshCallback)
     end
 end
 
@@ -573,25 +193,11 @@ local function BuildBorderControls(container, styleTable, refreshCallback)
     end)
     container:AddChild(borderSlider)
 
-    local borderColor = AceGUI:Create("ColorPicker")
-    borderColor:SetLabel("Border Color")
-    borderColor:SetHasAlpha(true)
-    local bc = styleTable.borderColor or {0, 0, 0, 1}
-    borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColor:SetFullWidth(true)
-    SetupColorCallbacks(borderColor, styleTable, "borderColor", refreshCallback, refreshCallback)
-    container:AddChild(borderColor)
+    AddColorPicker(container, styleTable, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
 end
 
 local function BuildBackgroundColorControls(container, styleTable, refreshCallback)
-    local bgColor = AceGUI:Create("ColorPicker")
-    bgColor:SetLabel("Background Color")
-    bgColor:SetHasAlpha(true)
-    local bgc = styleTable.backgroundColor or {0, 0, 0, 0.5}
-    bgColor:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
-    bgColor:SetFullWidth(true)
-    SetupColorCallbacks(bgColor, styleTable, "backgroundColor", refreshCallback, refreshCallback)
-    container:AddChild(bgColor)
+    AddColorPicker(container, styleTable, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, refreshCallback, refreshCallback)
 end
 
 local function BuildDesaturationControls(container, styleTable, refreshCallback)
@@ -633,14 +239,7 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
 end
 
 local function BuildIconTintControls(container, styleTable, refreshCallback)
-    local baseTint = AceGUI:Create("ColorPicker")
-    baseTint:SetLabel("Base Icon Color")
-    baseTint:SetHasAlpha(true)
-    local bt = styleTable.iconTintColor or {1, 1, 1, 1}
-    baseTint:SetColor(bt[1], bt[2], bt[3], bt[4])
-    baseTint:SetFullWidth(true)
-    SetupColorCallbacks(baseTint, styleTable, "iconTintColor", refreshCallback, refreshCallback)
-    container:AddChild(baseTint)
+    AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
 
     local cdTintCb = AceGUI:Create("CheckBox")
     cdTintCb:SetLabel("Use Separate Cooldown Tint")
@@ -654,14 +253,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     container:AddChild(cdTintCb)
 
     if styleTable.iconCooldownTintEnabled then
-        local cdTint = AceGUI:Create("ColorPicker")
-        cdTint:SetLabel("Cooldown Icon Color")
-        cdTint:SetHasAlpha(true)
-        local ct = styleTable.iconCooldownTintColor or {1, 0, 0.102, 1}
-        cdTint:SetColor(ct[1], ct[2], ct[3], ct[4])
-        cdTint:SetFullWidth(true)
-        SetupColorCallbacks(cdTint, styleTable, "iconCooldownTintColor", refreshCallback, refreshCallback)
-        container:AddChild(cdTint)
+        AddColorPicker(container, styleTable, "iconCooldownTintColor", "Cooldown Icon Color", {1, 0, 0.102, 1}, true, refreshCallback, refreshCallback)
     end
 
     local auraTintCb = AceGUI:Create("CheckBox")
@@ -676,16 +268,8 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     container:AddChild(auraTintCb)
 
     if styleTable.iconAuraTintEnabled then
-        local auraTint = AceGUI:Create("ColorPicker")
-        auraTint:SetLabel("Aura Active Icon Color")
-        auraTint:SetHasAlpha(true)
-        local at = styleTable.iconAuraTintColor or {0, 0.925, 1, 1}
-        auraTint:SetColor(at[1], at[2], at[3], at[4])
-        auraTint:SetFullWidth(true)
-        SetupColorCallbacks(auraTint, styleTable, "iconAuraTintColor", refreshCallback, refreshCallback)
-        container:AddChild(auraTint)
+        AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
     end
-
 end
 
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
@@ -803,14 +387,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
     container:AddChild(styleDrop)
 
     if styleTable.assistedHighlightStyle == "solid" then
-        local hlColor = AceGUI:Create("ColorPicker")
-        hlColor:SetLabel("Highlight Color")
-        hlColor:SetHasAlpha(true)
-        local c = styleTable.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
-        hlColor:SetColor(c[1], c[2], c[3], c[4])
-        hlColor:SetFullWidth(true)
-        SetupColorCallbacks(hlColor, styleTable, "assistedHighlightColor", refreshCallback, refreshCallback)
-        container:AddChild(hlColor)
+        AddColorPicker(container, styleTable, "assistedHighlightColor", "Highlight Color", {0.3, 1, 0.3, 0.9}, true, refreshCallback, refreshCallback)
 
         local hlSizeSlider = AceGUI:Create("Slider")
         hlSizeSlider:SetLabel("Border Size")
@@ -834,14 +411,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         end)
         container:AddChild(blizzSlider)
     elseif styleTable.assistedHighlightStyle == "proc" then
-        local procHlColor = AceGUI:Create("ColorPicker")
-        procHlColor:SetLabel("Glow Color")
-        procHlColor:SetHasAlpha(true)
-        local phc = styleTable.assistedHighlightProcColor or {1, 1, 1, 1}
-        procHlColor:SetColor(phc[1], phc[2], phc[3], phc[4])
-        procHlColor:SetFullWidth(true)
-        SetupColorCallbacks(procHlColor, styleTable, "assistedHighlightProcColor", refreshCallback, refreshCallback)
-        container:AddChild(procHlColor)
+        AddColorPicker(container, styleTable, "assistedHighlightProcColor", "Glow Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
 
         local procSlider = AceGUI:Create("Slider")
         procSlider:SetLabel("Glow Size")
@@ -1068,14 +638,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     end)
     container:AddChild(styleDrop)
 
-    local colorPicker = AceGUI:Create("ColorPicker")
-    colorPicker:SetLabel(cfg.colorLabel)
-    colorPicker:SetHasAlpha(true)
-    local c = styleTable[cfg.colorKey] or cfg.defaultColor
-    colorPicker:SetColor(c[1], c[2], c[3], c[4])
-    colorPicker:SetFullWidth(true)
-    SetupColorCallbacks(colorPicker, styleTable, cfg.colorKey, refreshCallback, refreshCallback)
-    container:AddChild(colorPicker)
+    AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
 
     BuildGlowSliders(container, styleTable, currentStyle, {
         size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
@@ -1124,14 +687,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         opts.afterEnableCallback(container)
     end
 
-    local barColorPicker = AceGUI:Create("ColorPicker")
-    barColorPicker:SetLabel(cfg.colorLabel)
-    barColorPicker:SetHasAlpha(true)
-    local bc = styleTable[cfg.colorKey] or cfg.defaultColor
-    barColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
-    barColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barColorPicker, styleTable, cfg.colorKey, refreshCallback, refreshCallback)
-    container:AddChild(barColorPicker)
+    AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
 
     local effectDrop = AceGUI:Create("Dropdown")
     effectDrop:SetLabel(cfg.effectLabel)
@@ -1152,14 +708,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
 
     local currentEffect = styleTable[cfg.effectKey] or "none"
     if currentEffect ~= "none" then
-        local effectColorPicker = AceGUI:Create("ColorPicker")
-        effectColorPicker:SetLabel(cfg.effectColorLabel)
-        effectColorPicker:SetHasAlpha(true)
-        local ec = styleTable[cfg.effectColorKey] or cfg.defaultEffectColor
-        effectColorPicker:SetColor(ec[1], ec[2], ec[3], ec[4])
-        effectColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(effectColorPicker, styleTable, cfg.effectColorKey, refreshCallback, refreshCallback)
-        container:AddChild(effectColorPicker)
+        AddColorPicker(container, styleTable, cfg.effectColorKey, cfg.effectColorLabel, cfg.defaultEffectColor, true, refreshCallback, refreshCallback)
 
         BuildGlowSliders(container, styleTable, currentEffect, {
             size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey, lines = cfg.effectLinesKey,
@@ -1240,41 +789,10 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 end
 
 local function BuildBarColorsControls(container, styleTable, refreshCallback)
-    local barColorPicker = AceGUI:Create("ColorPicker")
-    barColorPicker:SetLabel("Bar Color")
-    barColorPicker:SetHasAlpha(true)
-    local brc = styleTable.barColor or {0.2, 0.6, 1.0, 1.0}
-    barColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
-    barColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barColorPicker, styleTable, "barColor", refreshCallback, refreshCallback)
-    container:AddChild(barColorPicker)
-
-    local barCdColorPicker = AceGUI:Create("ColorPicker")
-    barCdColorPicker:SetLabel("Bar Cooldown Color")
-    barCdColorPicker:SetHasAlpha(true)
-    local bcc = styleTable.barCooldownColor or {0.6, 0.6, 0.6, 1.0}
-    barCdColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
-    barCdColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barCdColorPicker, styleTable, "barCooldownColor", refreshCallback, refreshCallback)
-    container:AddChild(barCdColorPicker)
-
-    local barChargeColorPicker = AceGUI:Create("ColorPicker")
-    barChargeColorPicker:SetLabel("Bar Recharging Color")
-    barChargeColorPicker:SetHasAlpha(true)
-    local bchc = styleTable.barChargeColor or {1.0, 0.82, 0.0, 1.0}
-    barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
-    barChargeColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barChargeColorPicker, styleTable, "barChargeColor", refreshCallback, refreshCallback)
-    container:AddChild(barChargeColorPicker)
-
-    local barBgColorPicker = AceGUI:Create("ColorPicker")
-    barBgColorPicker:SetLabel("Bar Background Color")
-    barBgColorPicker:SetHasAlpha(true)
-    local bbg = styleTable.barBgColor or {0.1, 0.1, 0.1, 0.8}
-    barBgColorPicker:SetColor(bbg[1], bbg[2], bbg[3], bbg[4])
-    barBgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barBgColorPicker, styleTable, "barBgColor", refreshCallback, refreshCallback)
-    container:AddChild(barBgColorPicker)
+    AddColorPicker(container, styleTable, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshCallback, refreshCallback)
+    AddColorPicker(container, styleTable, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshCallback, refreshCallback)
+    AddColorPicker(container, styleTable, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshCallback, refreshCallback)
+    AddColorPicker(container, styleTable, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshCallback, refreshCallback)
 end
 
 local function BuildBarNameTextControls(container, styleTable, refreshCallback)
@@ -1300,47 +818,8 @@ local function BuildBarNameTextControls(container, styleTable, refreshCallback)
         end)
         container:AddChild(flipNameCheck)
 
-        local nameFontSizeSlider = AceGUI:Create("Slider")
-        nameFontSizeSlider:SetLabel("Font Size")
-        nameFontSizeSlider:SetSliderValues(6, 24, 1)
-        nameFontSizeSlider:SetValue(styleTable.barNameFontSize or 10)
-        nameFontSizeSlider:SetFullWidth(true)
-        nameFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barNameFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(nameFontSizeSlider)
-
-        local nameFontDrop = AceGUI:Create("Dropdown")
-        nameFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(nameFontDrop)
-        nameFontDrop:SetValue(styleTable.barNameFont or "Friz Quadrata TT")
-        nameFontDrop:SetFullWidth(true)
-        nameFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barNameFont = val
-            refreshCallback()
-        end)
-        container:AddChild(nameFontDrop)
-
-        local nameOutlineDrop = AceGUI:Create("Dropdown")
-        nameOutlineDrop:SetLabel("Font Outline")
-        nameOutlineDrop:SetList(CS.outlineOptions)
-        nameOutlineDrop:SetValue(styleTable.barNameFontOutline or "OUTLINE")
-        nameOutlineDrop:SetFullWidth(true)
-        nameOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barNameFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(nameOutlineDrop)
-
-        local nameFontColor = AceGUI:Create("ColorPicker")
-        nameFontColor:SetLabel("Font Color")
-        nameFontColor:SetHasAlpha(true)
-        local nfc = styleTable.barNameFontColor or {1, 1, 1, 1}
-        nameFontColor:SetColor(nfc[1], nfc[2], nfc[3], nfc[4])
-        nameFontColor:SetFullWidth(true)
-        SetupColorCallbacks(nameFontColor, styleTable, "barNameFontColor", refreshCallback, refreshCallback)
-        container:AddChild(nameFontColor)
+        AddFontControls(container, styleTable, "barName", {size = 10, sizeMin = 6, sizeMax = 24}, refreshCallback)
+        AddColorPicker(container, styleTable, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
     end
 end
 
@@ -1368,47 +847,8 @@ local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
         end)
         container:AddChild(readyTextBox)
 
-        local readyColorPicker = AceGUI:Create("ColorPicker")
-        readyColorPicker:SetLabel("Ready Text Color")
-        readyColorPicker:SetHasAlpha(true)
-        local rtc = styleTable.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
-        readyColorPicker:SetColor(rtc[1], rtc[2], rtc[3], rtc[4])
-        readyColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(readyColorPicker, styleTable, "barReadyTextColor", refreshCallback, refreshCallback)
-        container:AddChild(readyColorPicker)
-
-        local readyFontSizeSlider = AceGUI:Create("Slider")
-        readyFontSizeSlider:SetLabel("Font Size")
-        readyFontSizeSlider:SetSliderValues(6, 24, 1)
-        readyFontSizeSlider:SetValue(styleTable.barReadyFontSize or 12)
-        readyFontSizeSlider:SetFullWidth(true)
-        readyFontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barReadyFontSize = val
-            refreshCallback()
-        end)
-        container:AddChild(readyFontSizeSlider)
-
-        local readyFontDrop = AceGUI:Create("Dropdown")
-        readyFontDrop:SetLabel("Font")
-        CS.SetupFontDropdown(readyFontDrop)
-        readyFontDrop:SetValue(styleTable.barReadyFont or "Friz Quadrata TT")
-        readyFontDrop:SetFullWidth(true)
-        readyFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barReadyFont = val
-            refreshCallback()
-        end)
-        container:AddChild(readyFontDrop)
-
-        local readyOutlineDrop = AceGUI:Create("Dropdown")
-        readyOutlineDrop:SetLabel("Font Outline")
-        readyOutlineDrop:SetList(CS.outlineOptions)
-        readyOutlineDrop:SetValue(styleTable.barReadyFontOutline or "OUTLINE")
-        readyOutlineDrop:SetFullWidth(true)
-        readyOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.barReadyFontOutline = val
-            refreshCallback()
-        end)
-        container:AddChild(readyOutlineDrop)
+        AddColorPicker(container, styleTable, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshCallback, refreshCallback)
+        AddFontControls(container, styleTable, "barReady", {sizeMin = 6, sizeMax = 24}, refreshCallback)
     end
 end
 
@@ -1416,14 +856,7 @@ end
 -- Text Mode — Text Colors
 ------------------------------------------------------------------------
 local function BuildTextBackgroundControls(container, styleTable, refreshCallback)
-    local bgColorPicker = AceGUI:Create("ColorPicker")
-    bgColorPicker:SetLabel("Background Color")
-    bgColorPicker:SetHasAlpha(true)
-    local bg = styleTable.textBgColor or {0, 0, 0, 0}
-    bgColorPicker:SetColor(bg[1], bg[2], bg[3], bg[4])
-    bgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(bgColorPicker, styleTable, "textBgColor", refreshCallback, refreshCallback)
-    container:AddChild(bgColorPicker)
+    AddColorPicker(container, styleTable, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshCallback, refreshCallback)
 
     local borderSlider = AceGUI:Create("Slider")
     borderSlider:SetLabel("Border Size")
@@ -1436,49 +869,11 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
     end)
     container:AddChild(borderSlider)
 
-    local borderColorPicker = AceGUI:Create("ColorPicker")
-    borderColorPicker:SetLabel("Border Color")
-    borderColorPicker:SetHasAlpha(true)
-    local bc = styleTable.textBorderColor or {0, 0, 0, 1}
-    borderColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
-    borderColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(borderColorPicker, styleTable, "textBorderColor", refreshCallback, refreshCallback)
-    container:AddChild(borderColorPicker)
+    AddColorPicker(container, styleTable, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
 end
 
 local function BuildTextFontControls(container, styleTable, refreshCallback)
-    local fontDrop = AceGUI:Create("Dropdown")
-    fontDrop:SetLabel("Font")
-    CS.SetupFontDropdown(fontDrop)
-    fontDrop:SetValue(styleTable.textFont or "Friz Quadrata TT")
-    fontDrop:SetFullWidth(true)
-    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.textFont = val
-        refreshCallback()
-    end)
-    container:AddChild(fontDrop)
-
-    local fontSizeSlider = AceGUI:Create("Slider")
-    fontSizeSlider:SetLabel("Font Size")
-    fontSizeSlider:SetSliderValues(6, 72, 1)
-    fontSizeSlider:SetValue(styleTable.textFontSize or 12)
-    fontSizeSlider:SetFullWidth(true)
-    fontSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.textFontSize = val
-        refreshCallback()
-    end)
-    container:AddChild(fontSizeSlider)
-
-    local outlineDrop = AceGUI:Create("Dropdown")
-    outlineDrop:SetLabel("Font Outline")
-    outlineDrop:SetList(CS.outlineOptions)
-    outlineDrop:SetValue(styleTable.textFontOutline or "OUTLINE")
-    outlineDrop:SetFullWidth(true)
-    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.textFontOutline = val
-        refreshCallback()
-    end)
-    container:AddChild(outlineDrop)
+    AddFontControls(container, styleTable, "text", {sizeMin = 6, sizeMax = 72}, refreshCallback)
 
     local alignDrop = AceGUI:Create("Dropdown")
     alignDrop:SetLabel("Alignment")
@@ -1503,32 +898,10 @@ local function BuildTextFontControls(container, styleTable, refreshCallback)
 end
 
 local function BuildTextColorsControls(container, styleTable, refreshCallback)
-    local textColorPicker = AceGUI:Create("ColorPicker")
-    textColorPicker:SetLabel("Text Color")
-    textColorPicker:SetHasAlpha(true)
-    local tc = styleTable.textFontColor or {1, 1, 1, 1}
-    textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
-    textColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(textColorPicker, styleTable, "textFontColor", refreshCallback, refreshCallback)
-    container:AddChild(textColorPicker)
+    AddColorPicker(container, styleTable, "textFontColor", "Text Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+    AddColorPicker(container, styleTable, "textCooldownColor", "Cooldown Color", {1, 0.3, 0.3, 1}, true, refreshCallback, refreshCallback)
 
-    local cdColorPicker = AceGUI:Create("ColorPicker")
-    cdColorPicker:SetLabel("Cooldown Color")
-    cdColorPicker:SetHasAlpha(true)
-    local cdc = styleTable.textCooldownColor or {1, 0.3, 0.3, 1}
-    cdColorPicker:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
-    cdColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(cdColorPicker, styleTable, "textCooldownColor", refreshCallback, refreshCallback)
-    container:AddChild(cdColorPicker)
-
-    local readyColorPicker = AceGUI:Create("ColorPicker")
-    readyColorPicker:SetLabel("Ready Color")
-    readyColorPicker:SetHasAlpha(true)
-    local rc = styleTable.textReadyColor or {0.2, 1.0, 0.2, 1}
-    readyColorPicker:SetColor(rc[1], rc[2], rc[3], rc[4])
-    readyColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(readyColorPicker, styleTable, "textReadyColor", refreshCallback, refreshCallback)
-    container:AddChild(readyColorPicker)
+    local readyColorPicker = AddColorPicker(container, styleTable, "textReadyColor", "Ready Color", {0.2, 1.0, 0.2, 1}, true, refreshCallback, refreshCallback)
 
     local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons)
     readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
@@ -1546,14 +919,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
         container:AddChild(readyTextBox)
     end
 
-    local auraColorPicker = AceGUI:Create("ColorPicker")
-    auraColorPicker:SetLabel("Aura Color")
-    auraColorPicker:SetHasAlpha(true)
-    local ac = styleTable.textAuraColor or {0, 0.925, 1, 1}
-    auraColorPicker:SetColor(ac[1], ac[2], ac[3], ac[4])
-    auraColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(auraColorPicker, styleTable, "textAuraColor", refreshCallback, refreshCallback)
-    container:AddChild(auraColorPicker)
+    AddColorPicker(container, styleTable, "textAuraColor", "Aura Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
 end
 
 ------------------------------------------------------------------------

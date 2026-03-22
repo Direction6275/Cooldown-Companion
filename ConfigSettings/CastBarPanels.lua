@@ -9,7 +9,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -117,6 +117,7 @@ end
 
 local function BuildCastBarStylingPanel(container)
     local settings = CooldownCompanion:GetCastBarSettings()
+    local applyCastBar = function() CooldownCompanion:ApplyCastBarSettings() end
 
     -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
     local styleCb = AceGUI:Create("CheckBox")
@@ -149,14 +150,7 @@ local function BuildCastBarStylingPanel(container)
     local cbAdvBtns = {}
 
     -- Bar Color
-    local barColorPicker = AceGUI:Create("ColorPicker")
-    barColorPicker:SetLabel("Bar Color")
-    local bcc = settings.barColor or { 1.0, 0.7, 0.0, 1.0 }
-    barColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
-    barColorPicker:SetHasAlpha(true)
-    barColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(barColorPicker, settings, "barColor", function() CooldownCompanion:ApplyCastBarSettings() end)
-    container:AddChild(barColorPicker)
+    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
 
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
@@ -171,14 +165,7 @@ local function BuildCastBarStylingPanel(container)
     container:AddChild(texDrop)
 
     -- Background Color
-    local bgColorPicker = AceGUI:Create("ColorPicker")
-    bgColorPicker:SetLabel("Background Color")
-    local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
-    bgColorPicker:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
-    bgColorPicker:SetHasAlpha(true)
-    bgColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(bgColorPicker, settings, "backgroundColor", function() CooldownCompanion:ApplyCastBarSettings() end)
-    container:AddChild(bgColorPicker)
+    AddColorPicker(container, settings, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, applyCastBar)
 
     -- Show Spell Icon
     local iconCb = AceGUI:Create("CheckBox")
@@ -301,14 +288,7 @@ local function BuildCastBarStylingPanel(container)
 
     -- Border Color and Size (only when pixel)
     if settings.borderStyle == "pixel" then
-        local borderColorPicker = AceGUI:Create("ColorPicker")
-        borderColorPicker:SetLabel("Border Color")
-        local brc = settings.borderColor or { 0, 0, 0, 1 }
-        borderColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
-        borderColorPicker:SetHasAlpha(true)
-        borderColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(borderColorPicker, settings, "borderColor", function() CooldownCompanion:ApplyCastBarSettings() end)
-        container:AddChild(borderColorPicker)
+        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
 
         local borderSizeSlider = AceGUI:Create("Slider")
         borderSizeSlider:SetLabel("Border Size")
@@ -374,14 +354,7 @@ local function BuildCastBarStylingPanel(container)
         container:AddChild(nameOutlineDrop)
 
         -- Color
-        local nameColorPicker = AceGUI:Create("ColorPicker")
-        nameColorPicker:SetLabel("Font Color")
-        local nc = settings.nameFontColor or { 1, 1, 1, 1 }
-        nameColorPicker:SetColor(nc[1], nc[2], nc[3], nc[4])
-        nameColorPicker:SetHasAlpha(true)
-        nameColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(nameColorPicker, settings, "nameFontColor", function() CooldownCompanion:ApplyCastBarSettings() end)
-        container:AddChild(nameColorPicker)
+        AddColorPicker(container, settings, "nameFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
     end
 
     -- Show Cast Time
@@ -436,14 +409,7 @@ local function BuildCastBarStylingPanel(container)
         container:AddChild(ctOutlineDrop)
 
         -- Color
-        local ctColorPicker = AceGUI:Create("ColorPicker")
-        ctColorPicker:SetLabel("Font Color")
-        local ctc = settings.castTimeFontColor or { 1, 1, 1, 1 }
-        ctColorPicker:SetColor(ctc[1], ctc[2], ctc[3], ctc[4])
-        ctColorPicker:SetHasAlpha(true)
-        ctColorPicker:SetFullWidth(true)
-        SetupColorCallbacks(ctColorPicker, settings, "castTimeFontColor", function() CooldownCompanion:ApplyCastBarSettings() end)
-        container:AddChild(ctColorPicker)
+        AddColorPicker(container, settings, "castTimeFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
 
         -- X Offset
         local ctXSlider = AceGUI:Create("Slider")

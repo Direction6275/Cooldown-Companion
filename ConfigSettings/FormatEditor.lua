@@ -12,7 +12,7 @@ local ParseFormatString = ST._ParseFormatString
 local HasAnyEffects = ST._HasAnyEffects
 local CreateInfoButton = ST._CreateInfoButton
 local FormatTime = CooldownCompanion.FormatTime
-local SetupColorCallbacks = ST._SetupColorCallbacks
+local AddColorPicker = ST._AddColorPicker
 
 -- Module-level reference for lifecycle management
 local formatEditorFrame = nil
@@ -933,14 +933,7 @@ local function OpenFormatEditor(style, groupId, opts)
         colorGroup:AddChild(colorBtn)
     end
 
-    local customColorPicker = AceGUI:Create("ColorPicker")
-    customColorPicker:SetLabel("Custom Color")
-    customColorPicker:SetHasAlpha(true)
-    local cc = style.textCustomColor or {1, 0.82, 0, 1}
-    customColorPicker:SetColor(cc[1], cc[2], cc[3], cc[4])
-    customColorPicker:SetFullWidth(true)
-    SetupColorCallbacks(customColorPicker, style, "textCustomColor", UpdateDisplay, UpdateDisplay)
-    window:AddChild(customColorPicker)
+    AddColorPicker(window, style, "textCustomColor", "Custom Color", {1, 0.82, 0, 1}, true, UpdateDisplay, UpdateDisplay)
 
     -- ================================================================
     -- CONDITIONAL INSERT BUTTONS
