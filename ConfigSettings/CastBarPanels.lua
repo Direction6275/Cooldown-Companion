@@ -9,6 +9,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
+local SetupColorCallbacks = ST._SetupColorCallbacks
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -154,13 +155,7 @@ local function BuildCastBarStylingPanel(container)
     barColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
     barColorPicker:SetHasAlpha(true)
     barColorPicker:SetFullWidth(true)
-    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        settings.barColor = {r, g, b, a}
-    end)
-    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        settings.barColor = {r, g, b, a}
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
+    SetupColorCallbacks(barColorPicker, settings, "barColor", function() CooldownCompanion:ApplyCastBarSettings() end)
     container:AddChild(barColorPicker)
 
     -- Bar Texture
@@ -182,13 +177,7 @@ local function BuildCastBarStylingPanel(container)
     bgColorPicker:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
     bgColorPicker:SetHasAlpha(true)
     bgColorPicker:SetFullWidth(true)
-    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        settings.backgroundColor = {r, g, b, a}
-    end)
-    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        settings.backgroundColor = {r, g, b, a}
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
+    SetupColorCallbacks(bgColorPicker, settings, "backgroundColor", function() CooldownCompanion:ApplyCastBarSettings() end)
     container:AddChild(bgColorPicker)
 
     -- Show Spell Icon
@@ -318,13 +307,7 @@ local function BuildCastBarStylingPanel(container)
         borderColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
         borderColorPicker:SetHasAlpha(true)
         borderColorPicker:SetFullWidth(true)
-        borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            settings.borderColor = {r, g, b, a}
-        end)
-        borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            settings.borderColor = {r, g, b, a}
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
+        SetupColorCallbacks(borderColorPicker, settings, "borderColor", function() CooldownCompanion:ApplyCastBarSettings() end)
         container:AddChild(borderColorPicker)
 
         local borderSizeSlider = AceGUI:Create("Slider")
@@ -397,13 +380,7 @@ local function BuildCastBarStylingPanel(container)
         nameColorPicker:SetColor(nc[1], nc[2], nc[3], nc[4])
         nameColorPicker:SetHasAlpha(true)
         nameColorPicker:SetFullWidth(true)
-        nameColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            settings.nameFontColor = {r, g, b, a}
-        end)
-        nameColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            settings.nameFontColor = {r, g, b, a}
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
+        SetupColorCallbacks(nameColorPicker, settings, "nameFontColor", function() CooldownCompanion:ApplyCastBarSettings() end)
         container:AddChild(nameColorPicker)
     end
 
@@ -465,13 +442,7 @@ local function BuildCastBarStylingPanel(container)
         ctColorPicker:SetColor(ctc[1], ctc[2], ctc[3], ctc[4])
         ctColorPicker:SetHasAlpha(true)
         ctColorPicker:SetFullWidth(true)
-        ctColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            settings.castTimeFontColor = {r, g, b, a}
-        end)
-        ctColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            settings.castTimeFontColor = {r, g, b, a}
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
+        SetupColorCallbacks(ctColorPicker, settings, "castTimeFontColor", function() CooldownCompanion:ApplyCastBarSettings() end)
         container:AddChild(ctColorPicker)
 
         -- X Offset

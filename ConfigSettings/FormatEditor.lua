@@ -12,6 +12,7 @@ local ParseFormatString = ST._ParseFormatString
 local HasAnyEffects = ST._HasAnyEffects
 local CreateInfoButton = ST._CreateInfoButton
 local FormatTime = CooldownCompanion.FormatTime
+local SetupColorCallbacks = ST._SetupColorCallbacks
 
 -- Module-level reference for lifecycle management
 local formatEditorFrame = nil
@@ -938,14 +939,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local cc = style.textCustomColor or {1, 0.82, 0, 1}
     customColorPicker:SetColor(cc[1], cc[2], cc[3], cc[4])
     customColorPicker:SetFullWidth(true)
-    customColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textCustomColor = {r, g, b, a}
-        UpdateDisplay()
-    end)
-    customColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textCustomColor = {r, g, b, a}
-        UpdateDisplay()
-    end)
+    SetupColorCallbacks(customColorPicker, style, "textCustomColor", UpdateDisplay, UpdateDisplay)
     window:AddChild(customColorPicker)
 
     -- ================================================================
