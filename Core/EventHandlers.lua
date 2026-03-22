@@ -104,10 +104,12 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                 local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
                 -- Base spell may lack charges when the override has them
                 -- (e.g. Primal Strike base → Stormstrike with 2 charges).
+                local chargeQueryID = buttonData.id
                 if not chargeInfo then
                     local overrideID = C_Spell.GetOverrideSpell(buttonData.id)
                     if overrideID and overrideID ~= 0 and overrideID ~= buttonData.id then
                         chargeInfo = C_Spell.GetSpellCharges(overrideID)
+                        chargeQueryID = overrideID
                     end
                 end
                 local hasRealCharges = buttonData.hasCharges and true or nil
@@ -126,7 +128,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             end
 
                             -- Secondary source: display count
-                            local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
+                            local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
                             if not issecretvalue(rawDisplayCount) then
                                 local displayCount = tonumber(rawDisplayCount)
                                 if displayCount and displayCount > (buttonData.maxCharges or 0) then
