@@ -12,6 +12,7 @@ local CreateRevertButton = ST._CreateRevertButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
+local SetupColorCallbacks = ST._SetupColorCallbacks
 
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
@@ -75,14 +76,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
         local cdc = styleTable.cooldownFontColor or {1, 1, 1, 1}
         cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
         cdFontColor:SetFullWidth(true)
-        cdFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.cooldownFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        cdFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.cooldownFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(cdFontColor, styleTable, "cooldownFontColor", refreshCallback, refreshCallback)
         container:AddChild(cdFontColor)
 
         local decimalCheck = AceGUI:Create("CheckBox")
@@ -207,14 +201,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
         local ac = styleTable.auraTextFontColor or {0, 0.925, 1, 1}
         auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
         auraFontColor:SetFullWidth(true)
-        auraFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.auraTextFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        auraFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.auraTextFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(auraFontColor, styleTable, "auraTextFontColor", refreshCallback, refreshCallback)
         container:AddChild(auraFontColor)
 
         local sepPosCb = AceGUI:Create("CheckBox")
@@ -326,14 +313,7 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
         local asc = styleTable.auraStackFontColor or {1, 1, 1, 1}
         asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
         asFontColor:SetFullWidth(true)
-        asFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.auraStackFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        asFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.auraStackFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(asFontColor, styleTable, "auraStackFontColor", refreshCallback, refreshCallback)
         container:AddChild(asFontColor)
 
         local asAnchorValues = {}
@@ -464,14 +444,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
         local kbc = styleTable.keybindFontColor or {1, 1, 1, 1}
         kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
         kbFontColor:SetFullWidth(true)
-        kbFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.keybindFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        kbFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.keybindFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(kbFontColor, styleTable, "keybindFontColor", refreshCallback, refreshCallback)
         container:AddChild(kbFontColor)
     end
 end
@@ -528,14 +501,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
         local cfc = styleTable.chargeFontColor or {1, 1, 1, 1}
         chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
         chargeFontColor:SetFullWidth(true)
-        chargeFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.chargeFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        chargeFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.chargeFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(chargeFontColor, styleTable, "chargeFontColor", refreshCallback, refreshCallback)
         container:AddChild(chargeFontColor)
 
         local chargeFontColorMissing = AceGUI:Create("ColorPicker")
@@ -544,14 +510,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
         local cfcm = styleTable.chargeFontColorMissing or {1, 1, 1, 1}
         chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
         chargeFontColorMissing:SetFullWidth(true)
-        chargeFontColorMissing:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.chargeFontColorMissing = {r, g, b, a}
-            refreshCallback()
-        end)
-        chargeFontColorMissing:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.chargeFontColorMissing = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(chargeFontColorMissing, styleTable, "chargeFontColorMissing", refreshCallback, refreshCallback)
         container:AddChild(chargeFontColorMissing)
 
         local chargeFontColorZero = AceGUI:Create("ColorPicker")
@@ -560,14 +519,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
         local cfcz = styleTable.chargeFontColorZero or {1, 1, 1, 1}
         chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
         chargeFontColorZero:SetFullWidth(true)
-        chargeFontColorZero:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.chargeFontColorZero = {r, g, b, a}
-            refreshCallback()
-        end)
-        chargeFontColorZero:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.chargeFontColorZero = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(chargeFontColorZero, styleTable, "chargeFontColorZero", refreshCallback, refreshCallback)
         container:AddChild(chargeFontColorZero)
 
         local chargeAnchorValues = {}
@@ -627,14 +579,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback)
     local bc = styleTable.borderColor or {0, 0, 0, 1}
     borderColor:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColor:SetFullWidth(true)
-    borderColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.borderColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    borderColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.borderColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(borderColor, styleTable, "borderColor", refreshCallback, refreshCallback)
     container:AddChild(borderColor)
 end
 
@@ -645,14 +590,7 @@ local function BuildBackgroundColorControls(container, styleTable, refreshCallba
     local bgc = styleTable.backgroundColor or {0, 0, 0, 0.5}
     bgColor:SetColor(bgc[1], bgc[2], bgc[3], bgc[4])
     bgColor:SetFullWidth(true)
-    bgColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.backgroundColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    bgColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.backgroundColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(bgColor, styleTable, "backgroundColor", refreshCallback, refreshCallback)
     container:AddChild(bgColor)
 end
 
@@ -701,14 +639,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     local bt = styleTable.iconTintColor or {1, 1, 1, 1}
     baseTint:SetColor(bt[1], bt[2], bt[3], bt[4])
     baseTint:SetFullWidth(true)
-    baseTint:SetCallback("OnValueChanged", function(w, e, r, g, b, a)
-        styleTable.iconTintColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    baseTint:SetCallback("OnValueConfirmed", function(w, e, r, g, b, a)
-        styleTable.iconTintColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(baseTint, styleTable, "iconTintColor", refreshCallback, refreshCallback)
     container:AddChild(baseTint)
 
     local cdTintCb = AceGUI:Create("CheckBox")
@@ -729,14 +660,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
         local ct = styleTable.iconCooldownTintColor or {1, 0, 0.102, 1}
         cdTint:SetColor(ct[1], ct[2], ct[3], ct[4])
         cdTint:SetFullWidth(true)
-        cdTint:SetCallback("OnValueChanged", function(w, e, r, g, b, a)
-            styleTable.iconCooldownTintColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        cdTint:SetCallback("OnValueConfirmed", function(w, e, r, g, b, a)
-            styleTable.iconCooldownTintColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(cdTint, styleTable, "iconCooldownTintColor", refreshCallback, refreshCallback)
         container:AddChild(cdTint)
     end
 
@@ -758,14 +682,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
         local at = styleTable.iconAuraTintColor or {0, 0.925, 1, 1}
         auraTint:SetColor(at[1], at[2], at[3], at[4])
         auraTint:SetFullWidth(true)
-        auraTint:SetCallback("OnValueChanged", function(w, e, r, g, b, a)
-            styleTable.iconAuraTintColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        auraTint:SetCallback("OnValueConfirmed", function(w, e, r, g, b, a)
-            styleTable.iconAuraTintColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(auraTint, styleTable, "iconAuraTintColor", refreshCallback, refreshCallback)
         container:AddChild(auraTint)
     end
 
@@ -892,14 +809,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         local c = styleTable.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
         hlColor:SetColor(c[1], c[2], c[3], c[4])
         hlColor:SetFullWidth(true)
-        hlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.assistedHighlightColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        hlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.assistedHighlightColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(hlColor, styleTable, "assistedHighlightColor", refreshCallback, refreshCallback)
         container:AddChild(hlColor)
 
         local hlSizeSlider = AceGUI:Create("Slider")
@@ -930,14 +840,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         local phc = styleTable.assistedHighlightProcColor or {1, 1, 1, 1}
         procHlColor:SetColor(phc[1], phc[2], phc[3], phc[4])
         procHlColor:SetFullWidth(true)
-        procHlColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.assistedHighlightProcColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        procHlColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.assistedHighlightProcColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(procHlColor, styleTable, "assistedHighlightProcColor", refreshCallback, refreshCallback)
         container:AddChild(procHlColor)
 
         local procSlider = AceGUI:Create("Slider")
@@ -1171,14 +1074,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     local c = styleTable[cfg.colorKey] or cfg.defaultColor
     colorPicker:SetColor(c[1], c[2], c[3], c[4])
     colorPicker:SetFullWidth(true)
-    colorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable[cfg.colorKey] = {r, g, b, a}
-        refreshCallback()
-    end)
-    colorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable[cfg.colorKey] = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(colorPicker, styleTable, cfg.colorKey, refreshCallback, refreshCallback)
     container:AddChild(colorPicker)
 
     BuildGlowSliders(container, styleTable, currentStyle, {
@@ -1234,14 +1130,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
     local bc = styleTable[cfg.colorKey] or cfg.defaultColor
     barColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
     barColorPicker:SetFullWidth(true)
-    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable[cfg.colorKey] = {r, g, b, a}
-        refreshCallback()
-    end)
-    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable[cfg.colorKey] = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(barColorPicker, styleTable, cfg.colorKey, refreshCallback, refreshCallback)
     container:AddChild(barColorPicker)
 
     local effectDrop = AceGUI:Create("Dropdown")
@@ -1269,14 +1158,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         local ec = styleTable[cfg.effectColorKey] or cfg.defaultEffectColor
         effectColorPicker:SetColor(ec[1], ec[2], ec[3], ec[4])
         effectColorPicker:SetFullWidth(true)
-        effectColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable[cfg.effectColorKey] = {r, g, b, a}
-            refreshCallback()
-        end)
-        effectColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable[cfg.effectColorKey] = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(effectColorPicker, styleTable, cfg.effectColorKey, refreshCallback, refreshCallback)
         container:AddChild(effectColorPicker)
 
         BuildGlowSliders(container, styleTable, currentEffect, {
@@ -1364,14 +1246,7 @@ local function BuildBarColorsControls(container, styleTable, refreshCallback)
     local brc = styleTable.barColor or {0.2, 0.6, 1.0, 1.0}
     barColorPicker:SetColor(brc[1], brc[2], brc[3], brc[4])
     barColorPicker:SetFullWidth(true)
-    barColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.barColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    barColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.barColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(barColorPicker, styleTable, "barColor", refreshCallback, refreshCallback)
     container:AddChild(barColorPicker)
 
     local barCdColorPicker = AceGUI:Create("ColorPicker")
@@ -1380,14 +1255,7 @@ local function BuildBarColorsControls(container, styleTable, refreshCallback)
     local bcc = styleTable.barCooldownColor or {0.6, 0.6, 0.6, 1.0}
     barCdColorPicker:SetColor(bcc[1], bcc[2], bcc[3], bcc[4])
     barCdColorPicker:SetFullWidth(true)
-    barCdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.barCooldownColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    barCdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.barCooldownColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(barCdColorPicker, styleTable, "barCooldownColor", refreshCallback, refreshCallback)
     container:AddChild(barCdColorPicker)
 
     local barChargeColorPicker = AceGUI:Create("ColorPicker")
@@ -1396,14 +1264,7 @@ local function BuildBarColorsControls(container, styleTable, refreshCallback)
     local bchc = styleTable.barChargeColor or {1.0, 0.82, 0.0, 1.0}
     barChargeColorPicker:SetColor(bchc[1], bchc[2], bchc[3], bchc[4])
     barChargeColorPicker:SetFullWidth(true)
-    barChargeColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.barChargeColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    barChargeColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.barChargeColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(barChargeColorPicker, styleTable, "barChargeColor", refreshCallback, refreshCallback)
     container:AddChild(barChargeColorPicker)
 
     local barBgColorPicker = AceGUI:Create("ColorPicker")
@@ -1412,14 +1273,7 @@ local function BuildBarColorsControls(container, styleTable, refreshCallback)
     local bbg = styleTable.barBgColor or {0.1, 0.1, 0.1, 0.8}
     barBgColorPicker:SetColor(bbg[1], bbg[2], bbg[3], bbg[4])
     barBgColorPicker:SetFullWidth(true)
-    barBgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.barBgColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    barBgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.barBgColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(barBgColorPicker, styleTable, "barBgColor", refreshCallback, refreshCallback)
     container:AddChild(barBgColorPicker)
 end
 
@@ -1485,14 +1339,7 @@ local function BuildBarNameTextControls(container, styleTable, refreshCallback)
         local nfc = styleTable.barNameFontColor or {1, 1, 1, 1}
         nameFontColor:SetColor(nfc[1], nfc[2], nfc[3], nfc[4])
         nameFontColor:SetFullWidth(true)
-        nameFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.barNameFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        nameFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.barNameFontColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(nameFontColor, styleTable, "barNameFontColor", refreshCallback, refreshCallback)
         container:AddChild(nameFontColor)
     end
 end
@@ -1527,14 +1374,7 @@ local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
         local rtc = styleTable.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
         readyColorPicker:SetColor(rtc[1], rtc[2], rtc[3], rtc[4])
         readyColorPicker:SetFullWidth(true)
-        readyColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            styleTable.barReadyTextColor = {r, g, b, a}
-            refreshCallback()
-        end)
-        readyColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            styleTable.barReadyTextColor = {r, g, b, a}
-            refreshCallback()
-        end)
+        SetupColorCallbacks(readyColorPicker, styleTable, "barReadyTextColor", refreshCallback, refreshCallback)
         container:AddChild(readyColorPicker)
 
         local readyFontSizeSlider = AceGUI:Create("Slider")
@@ -1582,14 +1422,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
     local bg = styleTable.textBgColor or {0, 0, 0, 0}
     bgColorPicker:SetColor(bg[1], bg[2], bg[3], bg[4])
     bgColorPicker:SetFullWidth(true)
-    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.textBgColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.textBgColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(bgColorPicker, styleTable, "textBgColor", refreshCallback, refreshCallback)
     container:AddChild(bgColorPicker)
 
     local borderSlider = AceGUI:Create("Slider")
@@ -1609,14 +1442,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
     local bc = styleTable.textBorderColor or {0, 0, 0, 1}
     borderColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColorPicker:SetFullWidth(true)
-    borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.textBorderColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.textBorderColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(borderColorPicker, styleTable, "textBorderColor", refreshCallback, refreshCallback)
     container:AddChild(borderColorPicker)
 end
 
@@ -1683,14 +1509,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
     local tc = styleTable.textFontColor or {1, 1, 1, 1}
     textColorPicker:SetColor(tc[1], tc[2], tc[3], tc[4])
     textColorPicker:SetFullWidth(true)
-    textColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.textFontColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    textColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.textFontColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(textColorPicker, styleTable, "textFontColor", refreshCallback, refreshCallback)
     container:AddChild(textColorPicker)
 
     local cdColorPicker = AceGUI:Create("ColorPicker")
@@ -1699,14 +1518,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
     local cdc = styleTable.textCooldownColor or {1, 0.3, 0.3, 1}
     cdColorPicker:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
     cdColorPicker:SetFullWidth(true)
-    cdColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.textCooldownColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    cdColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.textCooldownColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(cdColorPicker, styleTable, "textCooldownColor", refreshCallback, refreshCallback)
     container:AddChild(cdColorPicker)
 
     local readyColorPicker = AceGUI:Create("ColorPicker")
@@ -1715,14 +1527,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
     local rc = styleTable.textReadyColor or {0.2, 1.0, 0.2, 1}
     readyColorPicker:SetColor(rc[1], rc[2], rc[3], rc[4])
     readyColorPicker:SetFullWidth(true)
-    readyColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.textReadyColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    readyColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.textReadyColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(readyColorPicker, styleTable, "textReadyColor", refreshCallback, refreshCallback)
     container:AddChild(readyColorPicker)
 
     local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons)
@@ -1747,14 +1552,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
     local ac = styleTable.textAuraColor or {0, 0.925, 1, 1}
     auraColorPicker:SetColor(ac[1], ac[2], ac[3], ac[4])
     auraColorPicker:SetFullWidth(true)
-    auraColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        styleTable.textAuraColor = {r, g, b, a}
-        refreshCallback()
-    end)
-    auraColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        styleTable.textAuraColor = {r, g, b, a}
-        refreshCallback()
-    end)
+    SetupColorCallbacks(auraColorPicker, styleTable, "textAuraColor", refreshCallback, refreshCallback)
     container:AddChild(auraColorPicker)
 end
 

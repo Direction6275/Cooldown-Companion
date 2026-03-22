@@ -699,6 +699,20 @@ local function GetBarTextureOptions()
     return t
 end
 
+-- Helper: wire up OnValueChanged and OnValueConfirmed for a ColorPicker widget.
+-- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires on release; onChangeFn
+-- (optional) fires during drag for live preview.
+local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn)
+    widget:SetCallback("OnValueChanged", function(_, _, r, g, b, a)
+        tbl[key] = {r, g, b, a}
+        if onChangeFn then onChangeFn() end
+    end)
+    widget:SetCallback("OnValueConfirmed", function(_, _, r, g, b, a)
+        tbl[key] = {r, g, b, a}
+        if onConfirmedFn then onConfirmedFn() end
+    end)
+end
+
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
@@ -711,3 +725,4 @@ ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
 ST._GetBarTextureOptions = GetBarTextureOptions
+ST._SetupColorCallbacks = SetupColorCallbacks

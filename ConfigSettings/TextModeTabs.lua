@@ -16,6 +16,7 @@ local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local CreatePromoteButton = ST._CreatePromoteButton
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local OpenFormatEditor = ST._OpenFormatEditor
+local SetupColorCallbacks = ST._SetupColorCallbacks
 local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
 
@@ -101,6 +102,9 @@ local function BuildFormatSummary(formatString)
 end
 
 local function BuildTextAppearanceTab(container, group, style)
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local refreshFrame = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
+
     -- ================================================================
     -- Text Settings (width, height, spacing)
     -- ================================================================
@@ -197,14 +201,7 @@ local function BuildTextAppearanceTab(container, group, style)
         local hc = style.textHeaderFontColor or {1, 1, 1, 1}
         headerColorPicker:SetColor(hc[1], hc[2], hc[3], hc[4])
         headerColorPicker:SetFullWidth(true)
-        headerColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-            style.textHeaderFontColor = {r, g, b, a}
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
-        headerColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-            style.textHeaderFontColor = {r, g, b, a}
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end)
+        SetupColorCallbacks(headerColorPicker, style, "textHeaderFontColor", refreshFrame, refreshFrame)
         container:AddChild(headerColorPicker)
     end
     end -- not textSettingsCollapsed
@@ -409,14 +406,7 @@ local function BuildTextAppearanceTab(container, group, style)
     local bg = style.textBgColor or {0, 0, 0, 0}
     bgColorPicker:SetColor(bg[1], bg[2], bg[3], bg[4])
     bgColorPicker:SetFullWidth(true)
-    bgColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textBgColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    bgColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textBgColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    SetupColorCallbacks(bgColorPicker, style, "textBgColor", refreshStyle, refreshStyle)
     container:AddChild(bgColorPicker)
 
     local borderSlider = AceGUI:Create("Slider")
@@ -436,14 +426,7 @@ local function BuildTextAppearanceTab(container, group, style)
     local bc = style.textBorderColor or {0, 0, 0, 1}
     borderColorPicker:SetColor(bc[1], bc[2], bc[3], bc[4])
     borderColorPicker:SetFullWidth(true)
-    borderColorPicker:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        style.textBorderColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    borderColorPicker:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        style.textBorderColor = {r, g, b, a}
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    SetupColorCallbacks(borderColorPicker, style, "textBorderColor", refreshStyle, refreshStyle)
     container:AddChild(borderColorPicker)
 
     end -- not bgCollapsed

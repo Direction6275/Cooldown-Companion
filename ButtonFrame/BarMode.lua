@@ -38,18 +38,10 @@ local UpdateIconTint = ST._UpdateIconTint
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
--- IsItemEquippable from Helpers (exported on CooldownCompanion)
+-- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
-
--- Format remaining seconds for bar time text display
-local function FormatBarTime(seconds, decimal)
-    if seconds >= 60 then
-        return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
-    elseif seconds > 0 then
-        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
-    end
-    return ""
-end
+local FormatTime = CooldownCompanion.FormatTime
+local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
 local function SetBarIconTooltipScripts(button, enable)
@@ -155,14 +147,14 @@ local function UpdateBarFill(button)
                 or (button.style.cooldownFontColor or {1, 1, 1, 1})
             button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             -- Time text: HasSecretValues() returns a non-secret boolean.
-            -- Non-secret: full FormatBarTime formatting ("1:30", "45", etc.)
+            -- Non-secret: full FormatTime formatting ("1:30:00", "1:30", "45", etc.)
             -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
             local decimal = button.style.decimalTimers
             if button._durationObj then
                 local remaining = button._durationObj:GetRemainingDuration()
                 if not button._durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        button.timeText:SetText(FormatBarTime(remaining, decimal))
+                        button.timeText:SetText(FormatTime(remaining, decimal))
                     else
                         button.timeText:SetText("")
                     end
@@ -178,7 +170,7 @@ local function UpdateBarFill(button)
                 button.timeText:SetFormattedText(decimal and "%.1f" or "%.0f", button._viewerBar:GetValue())
             else
                 if itemRemaining > 0 then
-                    button.timeText:SetText(FormatBarTime(itemRemaining, decimal))
+                    button.timeText:SetText(FormatTime(itemRemaining, decimal))
                 else
                     button.timeText:SetText("")
                 end
@@ -499,12 +491,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Name text
     button.nameText = button.statusBar:CreateFontString(nil, "OVERLAY")
-    local nameFont = CooldownCompanion:FetchFont(style.barNameFont or "Friz Quadrata TT")
-    local nameFontSize = style.barNameFontSize or 10
-    local nameFontOutline = style.barNameFontOutline or "OUTLINE"
-    button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
-    local nameColor = style.barNameFontColor or {1, 1, 1, 1}
-    button.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
+    ApplyFontStyle(button.nameText, style, "barName", 10)
     local nameOffX = style.barNameTextOffsetX or 0
     local nameOffY = style.barNameTextOffsetY or 0
     local nameReverse = style.barNameTextReverse
@@ -532,12 +519,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Time text
     button.timeText = button.statusBar:CreateFontString(nil, "OVERLAY")
-    local cdFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
-    local cdFontSize = style.cooldownFontSize or 12
-    local cdFontOutline = style.cooldownFontOutline or "OUTLINE"
-    button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
-    local cdColor = style.cooldownFontColor or {1, 1, 1, 1}
-    button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+    ApplyFontStyle(button.timeText, style, "cooldown")
     local cdOffX = style.barCdTextOffsetX or 0
     local cdOffY = style.barCdTextOffsetY or 0
     local timeReverse = style.barTimeTextReverse
@@ -621,12 +603,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if buttonData.hasCharges or buttonData.isPassive then
-        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = style.chargeFontSize or 12
-        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
-        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = style.chargeFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
+        ApplyFontStyle(button.count, style, "charge")
         local chargeAnchor, chargeXOffset, chargeYOffset
         if showIcon then
             chargeAnchor = style.chargeAnchor or defAnchor
@@ -639,12 +616,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         end
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
-        local itemFontSize = buttonData.itemCountFontSize or 12
-        local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
-        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
-        local icColor = buttonData.itemCountFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+        ApplyFontStyle(button.count, buttonData, "itemCount")
         local itemAnchor = buttonData.itemCountAnchor or defAnchor
         local itemXOffset = buttonData.itemCountXOffset or defXOff
         local itemYOffset = buttonData.itemCountYOffset or defYOff
@@ -657,12 +629,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     if buttonData.auraTracking or buttonData.isPassive then
         button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
         button.auraStackCount:SetText("")
-        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
-        local asFontSize = style.auraStackFontSize or 12
-        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
-        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
-        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
-        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        ApplyFontStyle(button.auraStackCount, style, "auraStack")
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local asXOff = style.auraStackXOffset or 2
         local asYOff = style.auraStackYOffset or 2
@@ -930,24 +897,14 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Update name text font and position
     local hasCustomName = button.buttonData and button.buttonData.customName
     if newStyle.showBarNameText ~= false or hasCustomName then
-        local nameFont = CooldownCompanion:FetchFont(newStyle.barNameFont or "Friz Quadrata TT")
-        local nameFontSize = newStyle.barNameFontSize or 10
-        local nameFontOutline = newStyle.barNameFontOutline or "OUTLINE"
-        button.nameText:SetFont(nameFont, nameFontSize, nameFontOutline)
-        local nameColor = newStyle.barNameFontColor or {1, 1, 1, 1}
-        button.nameText:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
+        ApplyFontStyle(button.nameText, newStyle, "barName", 10)
         button.nameText:Show()
     else
         button.nameText:Hide()
     end
 
     -- Update time text font (default state; per-tick logic handles aura mode)
-    local cdFont = CooldownCompanion:FetchFont(newStyle.cooldownFont or "Friz Quadrata TT")
-    local cdFontSize = newStyle.cooldownFontSize or 12
-    local cdFontOutline = newStyle.cooldownFontOutline or "OUTLINE"
-    button.timeText:SetFont(cdFont, cdFontSize, cdFontOutline)
-    local cdColor = newStyle.cooldownFontColor or {1, 1, 1, 1}
-    button.timeText:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+    ApplyFontStyle(button.timeText, newStyle, "cooldown")
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._barTextMode = nil
 
@@ -1003,12 +960,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local defXOff = showIcon and -2 or 0
     local defYOff = 2
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = CooldownCompanion:FetchFont(newStyle.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = newStyle.chargeFontSize or 12
-        local chargeFontOutline = newStyle.chargeFontOutline or "OUTLINE"
-        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = newStyle.chargeFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
+        ApplyFontStyle(button.count, newStyle, "charge")
         local chargeAnchor, chargeXOffset, chargeYOffset
         if showIcon then
             chargeAnchor = newStyle.chargeAnchor or defAnchor
@@ -1022,12 +974,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
-        local itemFont = CooldownCompanion:FetchFont(button.buttonData.itemCountFont or "Friz Quadrata TT")
-        local itemFontSize = button.buttonData.itemCountFontSize or 12
-        local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
-        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
-        local icColor = button.buttonData.itemCountFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+        ApplyFontStyle(button.count, button.buttonData, "itemCount")
         local itemAnchor = button.buttonData.itemCountAnchor or defAnchor
         local itemXOffset = button.buttonData.itemCountXOffset or defXOff
         local itemYOffset = button.buttonData.itemCountYOffset or defYOff
@@ -1039,12 +986,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Update aura stack count font/anchor settings
     if button.auraStackCount then
         button.auraStackCount:ClearAllPoints()
-        local asFont = CooldownCompanion:FetchFont(newStyle.auraStackFont or "Friz Quadrata TT")
-        local asFontSize = newStyle.auraStackFontSize or 12
-        local asFontOutline = newStyle.auraStackFontOutline or "OUTLINE"
-        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
-        local asColor = newStyle.auraStackFontColor or {1, 1, 1, 1}
-        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        ApplyFontStyle(button.auraStackCount, newStyle, "auraStack")
         local asAnchor = newStyle.auraStackAnchor or "BOTTOMLEFT"
         local asXOff = newStyle.auraStackXOffset or 2
         local asYOff = newStyle.auraStackYOffset or 2
@@ -1105,4 +1047,3 @@ end
 
 -- Exports
 ST._UpdateBarDisplay = UpdateBarDisplay
-ST._FormatBarTime = FormatBarTime

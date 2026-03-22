@@ -13,6 +13,7 @@ local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local HasTooltipCooldown = ST.HasTooltipCooldown
+local SetupColorCallbacks = ST._SetupColorCallbacks
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
@@ -644,13 +645,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local icc = buttonData.itemCountFontColor or {1, 1, 1, 1}
     itemFontColor:SetColor(icc[1], icc[2], icc[3], icc[4])
     itemFontColor:SetFullWidth(true)
-    itemFontColor:SetCallback("OnValueChanged", function(widget, event, r, g, b, a)
-        buttonData.itemCountFontColor = {r, g, b, a}
-    end)
-    itemFontColor:SetCallback("OnValueConfirmed", function(widget, event, r, g, b, a)
-        buttonData.itemCountFontColor = {r, g, b, a}
-        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    end)
+    SetupColorCallbacks(itemFontColor, buttonData, "itemCountFontColor", function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end)
     scroll:AddChild(itemFontColor)
 
     -- Item count anchor point
