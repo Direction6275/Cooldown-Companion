@@ -36,6 +36,7 @@ local PANDEMIC_GLOW_LCG_KEY = "CooldownCompanionPandemic"
 local READY_GLOW_LCG_KEY = "CooldownCompanionReady"
 local BAR_AURA_EFFECT_LCG_KEY = "CooldownCompanionBarAura"
 local PANDEMIC_BAR_EFFECT_LCG_KEY = "CooldownCompanionPandemicBar"
+local KEY_PRESS_HIGHLIGHT_LCG_KEY = "CooldownCompanionKeyPress"
 
 local function IsLibCustomGlowStyle(style)
     return style == PROC_STYLE_LCG_BUTTON or style == PROC_STYLE_LCG_AUTOCAST
@@ -566,6 +567,54 @@ local function SetReadyGlow(button, show)
     })
 end
 
+-- Show or hide key press highlight on a button (glow while keybind is held).
+-- Follows the same caching pattern as SetProcGlow / SetReadyGlow.
+local function SetKeyPressHighlight(button, show)
+    local kph = button.keyPressHighlight
+    if not kph then return end
+
+    local desiredState
+    if show then
+        local style = button.style
+        local glowStyle = NormalizeGlowStyle((style and style.keyPressHighlightStyle) or "solid")
+        local c = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
+        local sz = GetGlowSize(style, "keyPressHighlightSize", glowStyle, {
+            solid = 5, pixel = 8, glow = 30, autocast = 2,
+        })
+        local th = (glowStyle == "pixel") and ((style and style.keyPressHighlightThickness) or 4) or 0
+        local usesSpeed = UsesGlowSpeed(glowStyle)
+        local spd = usesSpeed and ((style and style.keyPressHighlightSpeed) or 50) or 0
+        local ln = (glowStyle == "pixel") and ((style and style.keyPressHighlightLines) or 8) or 0
+        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, c[1], c[2], c[3], c[4] or 1, sz, th, spd, ln)
+    end
+    if button._keyPressHighlightActive == desiredState and (not desiredState or IsGlowAnimationAlive(kph)) then return end
+    button._keyPressHighlightActive = desiredState
+
+    HideGlowStyles(kph)
+
+    if not desiredState then return end
+
+    local style = button.style
+    local glowStyle = NormalizeGlowStyle((style and style.keyPressHighlightStyle) or "solid")
+    local color = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
+    local sz = GetGlowSize(style, "keyPressHighlightSize", glowStyle, {
+        solid = 5, pixel = 8, glow = 30, autocast = 2,
+    })
+    local usesSpeed = UsesGlowSpeed(glowStyle)
+    local kphThickness = (glowStyle == "pixel") and ((style and style.keyPressHighlightThickness) or 4) or 0
+    local kphSpeed = usesSpeed and ((style and style.keyPressHighlightSpeed) or 50) or 0
+    local kphLines = (glowStyle == "pixel") and ((style and style.keyPressHighlightLines) or 8) or nil
+    ShowGlowStyle(kph, glowStyle, button, color, {
+        size = sz,
+        thickness = kphThickness,
+        speed = kphSpeed,
+        lines = kphLines,
+        frequency = usesSpeed and SpeedToGlowFrequency(kphSpeed) or nil,
+        scale = math_min(math_max(sz, 0.2), 3),
+        key = KEY_PRESS_HIGHLIGHT_LCG_KEY,
+    })
+end
+
 -- Create a complete glow container with solid border and proc glow sub-frames.
 -- Pixel glow is handled by LibCustomGlow (frames created/pooled by the library).
 -- parent: parent button frame
@@ -767,3 +816,4 @@ ST._GetViewerAuraStackText = GetViewerAuraStackText
 ST._SetupTooltipScripts = SetupTooltipScripts
 ST._SetBarAuraEffect = SetBarAuraEffect
 ST._SetReadyGlow = SetReadyGlow
+ST._SetKeyPressHighlight = SetKeyPressHighlight

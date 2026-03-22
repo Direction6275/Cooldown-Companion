@@ -41,6 +41,7 @@ local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
+local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
@@ -1317,7 +1318,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     local sectionOrder = {
         "borderSettings", "cooldownText", "auraText", "auraStackText",
         "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
-        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator", "readyGlow",
+        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
         "textFont", "textColors", "textBackground",
     }
@@ -1346,6 +1347,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         pandemicGlow = BuildPandemicGlowControls,
         auraIndicator = BuildAuraIndicatorControls,
         readyGlow = BuildReadyGlowControls,
+        keyPressHighlight = BuildKeyPressHighlightControls,
         barColors = BuildBarColorsControls,
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
@@ -1404,6 +1406,8 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                         combatOnlyKey = "readyGlowCombatOnly"
                     elseif sectionId == "assistedHighlight" then
                         combatOnlyKey = "assistedHighlightCombatOnly"
+                    elseif sectionId == "keyPressHighlight" then
+                        combatOnlyKey = "keyPressHighlightCombatOnly"
                     end
 
                     -- Assisted highlight: combat-only stays inline (no parent enable toggle)

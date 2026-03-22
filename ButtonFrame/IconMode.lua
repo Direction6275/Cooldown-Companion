@@ -27,6 +27,9 @@ local SetAssistedHighlight = ST._SetAssistedHighlight
 local SetProcGlow = ST._SetProcGlow
 local SetAuraGlow = ST._SetAuraGlow
 local SetReadyGlow = ST._SetReadyGlow
+local SetKeyPressHighlight = ST._SetKeyPressHighlight
+local IsBindingKeyPressed = ST._IsBindingKeyPressed
+local CacheButtonBindingKeys = ST._CacheButtonBindingKeys
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -124,6 +127,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Ready glow elements (glow while off cooldown)
     button.readyGlow = CreateGlowContainer(button, 32)
+
+    -- Key press highlight elements (glow while keybind is held)
+    button.keyPressHighlight = CreateGlowContainer(button, 32)
 
     -- Aura/ready glow frame levels are now managed by ApplyStrataOrder (called below)
 
@@ -252,6 +258,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraInstanceID = nil
     button._viewerAuraVisualsActive = nil
 
+    -- Key press highlight runtime state
+    button._keyPressHighlightActive = nil
+    CacheButtonBindingKeys(button, buttonData)
+
     -- Per-button visibility runtime state
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
@@ -315,6 +325,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         end
         if button.readyGlow.procFrame then
             SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
+        end
+    end
+    if button.keyPressHighlight then
+        if button.keyPressHighlight.solidFrame then
+            SetFrameClickThroughRecursive(button.keyPressHighlight.solidFrame, true, true)
+        end
+        if button.keyPressHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
         end
     end
     if button.secondaryCooldown then
@@ -779,6 +797,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._procGlowActive = nil
     button._auraGlowActive = nil
     button._readyGlowActive = nil
+    button._keyPressHighlightActive = nil
     button._displaySpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
@@ -941,6 +960,14 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         SetReadyGlow(button, false)
     end
 
+    -- Update key press highlight frames
+    if button.keyPressHighlight then
+        button.keyPressHighlight.solidFrame:SetAllPoints()
+        ApplyEdgePositions(button.keyPressHighlight.solidTextures, button, button.style.keyPressHighlightSize or 2)
+        FitHighlightFrame(button.keyPressHighlight.procFrame, button, button.style.keyPressHighlightSize or 32)
+        SetKeyPressHighlight(button, false)
+    end
+
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
 
@@ -990,6 +1017,14 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
             SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
         end
     end
+    if button.keyPressHighlight then
+        if button.keyPressHighlight.solidFrame then
+            SetFrameClickThroughRecursive(button.keyPressHighlight.solidFrame, true, true)
+        end
+        if button.keyPressHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
+        end
+    end
 
     -- Re-set aura/ready glow frame levels after strata order
     if button.auraGlow then
@@ -1002,6 +1037,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.readyGlow.solidFrame:SetFrameLevel(readyGlowLevel)
         button.readyGlow.procFrame:SetFrameLevel(readyGlowLevel)
     end
+    if button.keyPressHighlight then
+        local kphLevel = button.cooldown:GetFrameLevel() + 1
+        button.keyPressHighlight.solidFrame:SetFrameLevel(kphLevel)
+        button.keyPressHighlight.procFrame:SetFrameLevel(kphLevel)
+    end
 
     -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
     if showTooltips then
@@ -1010,5 +1050,54 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 end
 
 -- Exports
+-- Per-frame key press highlight updater.
+-- Runs every frame for instant visual feedback (the 0.1s ticker is too slow for
+-- a "key held" indicator). Cost is trivial: ~4 C API calls per button per frame.
+local kphUpdateFrame = CreateFrame("Frame")
+kphUpdateFrame:SetScript("OnUpdate", function()
+    local groupFrames = CooldownCompanion.groupFrames
+    if not groupFrames then return end
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+    if not groups then return end
+    local inCombat
+    for groupId, groupFrame in pairs(groupFrames) do
+        local group = groups[groupId]
+        if group and group.displayMode ~= "bars" and group.displayMode ~= "text" then
+            for _, button in ipairs(groupFrame.buttons) do
+                if button.keyPressHighlight then
+                    local style = button.style
+                    local buttonData = button.buttonData
+                    local showKPH = false
+                    if button._keyPressHighlightPreview then
+                        showKPH = true
+                    elseif style and style.keyPressHighlightStyle
+                           and style.keyPressHighlightStyle ~= "none"
+                           and buttonData and buttonData.type ~= "header"
+                           and not buttonData.isPassive then
+                        local passedCombatCheck = true
+                        if style.keyPressHighlightCombatOnly then
+                            if inCombat == nil then inCombat = InCombatLockdown() end
+                            passedCombatCheck = inCombat
+                        end
+                        if passedCombatCheck then
+                            local keyInfos = button._bindingKeyInfos
+                            if keyInfos then
+                                for _, info in ipairs(keyInfos) do
+                                    if IsBindingKeyPressed(info) then
+                                        showKPH = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    SetKeyPressHighlight(button, showKPH)
+                end
+            end
+        end
+    end
+end)
+
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows

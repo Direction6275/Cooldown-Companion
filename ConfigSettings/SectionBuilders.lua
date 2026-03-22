@@ -763,6 +763,17 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
     }, opts)
 end
 
+local function BuildKeyPressHighlightControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "keyPressHighlightStyle", colorKey = "keyPressHighlightColor", colorLabel = "Highlight Color",
+        sizeKey = "keyPressHighlightSize", thicknessKey = "keyPressHighlightThickness", speedKey = "keyPressHighlightSpeed", linesKey = "keyPressHighlightLines",
+        defaultStyle = "solid", defaultColor = {1, 1, 1, 0.4},
+        enableLabel = "Show Key Press Highlight",
+        styleOptions = LCG_GLOW_STYLE_OPTIONS,
+        styleOrder = LCG_GLOW_STYLE_ORDER,
+    }, opts)
+end
+
 local function BuildPandemicBarControls(container, styleTable, refreshCallback, opts)
     BuildBarEffectControls(container, styleTable, refreshCallback, {
         colorKey = "barPandemicColor", colorLabel = "Pandemic Bar Color",
@@ -946,6 +957,7 @@ ST._BuildPandemicGlowControls = BuildPandemicGlowControls
 ST._BuildPandemicBarControls = BuildPandemicBarControls
 ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
+ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
