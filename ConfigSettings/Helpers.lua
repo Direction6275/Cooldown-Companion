@@ -716,7 +716,7 @@ end
 ------------------------------------------------------------------------
 -- WIDGET FACTORIES
 -- Composable builders that replace repeated AceGUI boilerplate.
--- Each creates, configures, and adds to container.
+-- Each creates, configures, and adds to container; single-widget factories return the widget.
 ------------------------------------------------------------------------
 
 -- Create a ColorPicker, configure it, wire callbacks, add to container.
@@ -749,7 +749,7 @@ local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label)
     return drop
 end
 
--- Create Font dropdown + Font Size slider + Font Outline dropdown.
+-- Create Font Size slider + Font dropdown + Font Outline dropdown.
 -- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
 -- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} — all optional with sane fallbacks.
 local function AddFontControls(container, tbl, prefix, defaults, refreshFn)
