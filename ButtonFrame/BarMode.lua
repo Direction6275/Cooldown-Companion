@@ -38,7 +38,7 @@ local UpdateIconTint = ST._UpdateIconTint
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
--- IsItemEquippable from Helpers (exported on CooldownCompanion)
+-- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local FormatTime = CooldownCompanion.FormatTime
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
@@ -147,7 +147,7 @@ local function UpdateBarFill(button)
                 or (button.style.cooldownFontColor or {1, 1, 1, 1})
             button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             -- Time text: HasSecretValues() returns a non-secret boolean.
-            -- Non-secret: full FormatTime formatting ("1:30", "45", etc.)
+            -- Non-secret: full FormatTime formatting ("1:30:00", "1:30", "45", etc.)
             -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
             local decimal = button.style.decimalTimers
             if button._durationObj then

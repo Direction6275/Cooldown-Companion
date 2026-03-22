@@ -37,7 +37,7 @@ local UpdateIconTint = ST._UpdateIconTint
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
--- IsItemEquippable from Helpers (exported on CooldownCompanion)
+-- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 

@@ -26,7 +26,7 @@ local ApplyEdgePositions = ST._ApplyEdgePositions
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
--- IsItemEquippable from Helpers (exported on CooldownCompanion)
+-- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local FormatTime = CooldownCompanion.FormatTime
 
@@ -144,10 +144,6 @@ end
 local function ComputePulse(now)
     return 0.7 + 0.3 * math_sin(now * 2 * math_pi)
 end
-
-------------------------------------------------------------------------
--- TIME FORMATTING (shared via ButtonFrame/Helpers.lua FormatTime)
-------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
 -- COLOR WRAPPING

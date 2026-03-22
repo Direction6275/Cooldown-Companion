@@ -110,8 +110,9 @@ local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 
--- Other ST imports
+-- Shared helper from ButtonFrame/Helpers.lua
 local FormatTime = CooldownCompanion.FormatTime
+-- Other ST imports
 local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles

@@ -1252,7 +1252,7 @@ local function BuildAppearanceTab(container)
         local cdc = style.cooldownFontColor or {1, 1, 1, 1}
         cdFontColor:SetColor(cdc[1], cdc[2], cdc[3], cdc[4])
         cdFontColor:SetFullWidth(true)
-        SetupColorCallbacks(cdFontColor, style, "cooldownFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(cdFontColor, style, "cooldownFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(cdFontColor)
 
         local cdAnchorValues = {}
@@ -1355,7 +1355,7 @@ local function BuildAppearanceTab(container)
         local cfc = style.chargeFontColor or {1, 1, 1, 1}
         chargeFontColor:SetColor(cfc[1], cfc[2], cfc[3], cfc[4])
         chargeFontColor:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColor, style, "chargeFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(chargeFontColor, style, "chargeFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(chargeFontColor)
 
         local chargeFontColorMissing = AceGUI:Create("ColorPicker")
@@ -1364,7 +1364,7 @@ local function BuildAppearanceTab(container)
         local cfcm = style.chargeFontColorMissing or {1, 1, 1, 1}
         chargeFontColorMissing:SetColor(cfcm[1], cfcm[2], cfcm[3], cfcm[4])
         chargeFontColorMissing:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorMissing, style, "chargeFontColorMissing", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(chargeFontColorMissing, style, "chargeFontColorMissing", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(chargeFontColorMissing)
 
         local chargeFontColorZero = AceGUI:Create("ColorPicker")
@@ -1373,7 +1373,7 @@ local function BuildAppearanceTab(container)
         local cfcz = style.chargeFontColorZero or {1, 1, 1, 1}
         chargeFontColorZero:SetColor(cfcz[1], cfcz[2], cfcz[3], cfcz[4])
         chargeFontColorZero:SetFullWidth(true)
-        SetupColorCallbacks(chargeFontColorZero, style, "chargeFontColorZero", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(chargeFontColorZero, style, "chargeFontColorZero", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(chargeFontColorZero)
 
         local chargeAnchorValues = {}
@@ -1477,7 +1477,7 @@ local function BuildAppearanceTab(container)
         local ac = style.auraTextFontColor or {0, 0.925, 1, 1}
         auraFontColor:SetColor(ac[1], ac[2], ac[3], ac[4])
         auraFontColor:SetFullWidth(true)
-        SetupColorCallbacks(auraFontColor, style, "auraTextFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(auraFontColor, style, "auraTextFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(auraFontColor)
 
         local sepPosCb = AceGUI:Create("CheckBox")
@@ -1591,7 +1591,7 @@ local function BuildAppearanceTab(container)
         local asc = style.auraStackFontColor or {1, 1, 1, 1}
         asFontColor:SetColor(asc[1], asc[2], asc[3], asc[4])
         asFontColor:SetFullWidth(true)
-        SetupColorCallbacks(asFontColor, style, "auraStackFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(asFontColor, style, "auraStackFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(asFontColor)
 
         local asAnchorValues = {}
@@ -1725,7 +1725,7 @@ local function BuildAppearanceTab(container)
         local kbc = style.keybindFontColor or {1, 1, 1, 1}
         kbFontColor:SetColor(kbc[1], kbc[2], kbc[3], kbc[4])
         kbFontColor:SetFullWidth(true)
-        SetupColorCallbacks(kbFontColor, style, "keybindFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+        SetupColorCallbacks(kbFontColor, style, "keybindFontColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
         container:AddChild(kbFontColor)
     end -- showKeybindText + kbAdvExpanded
 
@@ -1756,7 +1756,7 @@ local function BuildAppearanceTab(container)
     if group.masqueEnabled then
         borderColor:SetDisabled(true)
     end
-    SetupColorCallbacks(borderColor, style, "borderColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
+    SetupColorCallbacks(borderColor, style, "borderColor", function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end, function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end)
     container:AddChild(borderColor)
     end -- not borderCollapsed
 
