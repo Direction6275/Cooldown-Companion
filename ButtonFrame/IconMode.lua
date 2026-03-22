@@ -39,6 +39,7 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 -- IsItemEquippable from Helpers (exported on CooldownCompanion)
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
+local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
@@ -184,24 +185,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Apply custom count text font/anchor settings from effective style
     if buttonData.hasCharges or buttonData.isPassive then
-        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = style.chargeFontSize or 12
-        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
-        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = style.chargeFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
+        ApplyFontStyle(button.count, style, "charge")
 
         local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
         local chargeXOffset = style.chargeXOffset or -2
         local chargeYOffset = style.chargeYOffset or 2
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        local itemFont = CooldownCompanion:FetchFont(buttonData.itemCountFont or "Friz Quadrata TT")
-        local itemFontSize = buttonData.itemCountFontSize or 12
-        local itemFontOutline = buttonData.itemCountFontOutline or "OUTLINE"
-        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
-        local icColor = buttonData.itemCountFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+        ApplyFontStyle(button.count, buttonData, "itemCount")
 
         local itemAnchor = buttonData.itemCountAnchor or "BOTTOMRIGHT"
         local itemXOffset = buttonData.itemCountXOffset or -2
@@ -215,12 +206,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     if buttonData.auraTracking or buttonData.isPassive then
         button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
         button.auraStackCount:SetText("")
-        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
-        local asFontSize = style.auraStackFontSize or 12
-        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
-        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
-        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
-        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        ApplyFontStyle(button.auraStackCount, style, "auraStack")
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local asXOff = style.auraStackXOffset or 2
         local asYOff = style.auraStackYOffset or 2
@@ -230,12 +216,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
     do
-        local kbFont = CooldownCompanion:FetchFont(style.keybindFont or "Friz Quadrata TT")
-        local kbSize = style.keybindFontSize or 10
-        local kbOutline = style.keybindFontOutline or "OUTLINE"
-        button.keybindText:SetFont(kbFont, kbSize, kbOutline)
-        local kbColor = style.keybindFontColor or {1, 1, 1, 1}
-        button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
+        ApplyFontStyle(button.keybindText, style, "keybind", 10)
         local anchor = style.keybindAnchor or "TOPRIGHT"
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
@@ -875,12 +856,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update count text font/anchor settings from effective style
     button.count:ClearAllPoints()
     if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        local chargeFont = CooldownCompanion:FetchFont(style.chargeFont or "Friz Quadrata TT")
-        local chargeFontSize = style.chargeFontSize or 12
-        local chargeFontOutline = style.chargeFontOutline or "OUTLINE"
-        button.count:SetFont(chargeFont, chargeFontSize, chargeFontOutline)
-        local chColor = style.chargeFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(chColor[1], chColor[2], chColor[3], chColor[4])
+        ApplyFontStyle(button.count, style, "charge")
 
         local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
         local chargeXOffset = style.chargeXOffset or -2
@@ -888,12 +864,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
     elseif button.buttonData and button.buttonData.type == "item"
        and not IsItemEquippable(button.buttonData) then
-        local itemFont = CooldownCompanion:FetchFont(button.buttonData.itemCountFont or "Friz Quadrata TT")
-        local itemFontSize = button.buttonData.itemCountFontSize or 12
-        local itemFontOutline = button.buttonData.itemCountFontOutline or "OUTLINE"
-        button.count:SetFont(itemFont, itemFontSize, itemFontOutline)
-        local icColor = button.buttonData.itemCountFontColor or {1, 1, 1, 1}
-        button.count:SetTextColor(icColor[1], icColor[2], icColor[3], icColor[4])
+        ApplyFontStyle(button.count, button.buttonData, "itemCount")
 
         local itemAnchor = button.buttonData.itemCountAnchor or "BOTTOMRIGHT"
         local itemXOffset = button.buttonData.itemCountXOffset or -2
@@ -906,12 +877,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update aura stack count font/anchor settings
     if button.auraStackCount then
         button.auraStackCount:ClearAllPoints()
-        local asFont = CooldownCompanion:FetchFont(style.auraStackFont or "Friz Quadrata TT")
-        local asFontSize = style.auraStackFontSize or 12
-        local asFontOutline = style.auraStackFontOutline or "OUTLINE"
-        button.auraStackCount:SetFont(asFont, asFontSize, asFontOutline)
-        local asColor = style.auraStackFontColor or {1, 1, 1, 1}
-        button.auraStackCount:SetTextColor(asColor[1], asColor[2], asColor[3], asColor[4])
+        ApplyFontStyle(button.auraStackCount, style, "auraStack")
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local asXOff = style.auraStackXOffset or 2
         local asYOff = style.auraStackYOffset or 2
@@ -920,12 +886,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update keybind text overlay
     if button.keybindText then
-        local kbFont = CooldownCompanion:FetchFont(style.keybindFont or "Friz Quadrata TT")
-        local kbSize = style.keybindFontSize or 10
-        local kbOutline = style.keybindFontOutline or "OUTLINE"
-        button.keybindText:SetFont(kbFont, kbSize, kbOutline)
-        local kbColor = style.keybindFontColor or {1, 1, 1, 1}
-        button.keybindText:SetTextColor(kbColor[1], kbColor[2], kbColor[3], kbColor[4])
+        ApplyFontStyle(button.keybindText, style, "keybind", 10)
         button.keybindText:ClearAllPoints()
         local anchor = style.keybindAnchor or "TOPRIGHT"
         local xOff = style.keybindXOffset or -2
