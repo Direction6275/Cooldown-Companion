@@ -117,6 +117,7 @@ end
 
 local function BuildCastBarStylingPanel(container)
     local settings = CooldownCompanion:GetCastBarSettings()
+    local applyCastBar = function() CooldownCompanion:ApplyCastBarSettings() end
 
     -- Enable Styling checkbox — always visible, but grayed out when anchoring is off
     local styleCb = AceGUI:Create("CheckBox")
@@ -149,7 +150,7 @@ local function BuildCastBarStylingPanel(container)
     local cbAdvBtns = {}
 
     -- Bar Color
-    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, function() CooldownCompanion:ApplyCastBarSettings() end)
+    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
 
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
@@ -164,7 +165,7 @@ local function BuildCastBarStylingPanel(container)
     container:AddChild(texDrop)
 
     -- Background Color
-    AddColorPicker(container, settings, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, function() CooldownCompanion:ApplyCastBarSettings() end)
+    AddColorPicker(container, settings, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, applyCastBar)
 
     -- Show Spell Icon
     local iconCb = AceGUI:Create("CheckBox")
@@ -287,7 +288,7 @@ local function BuildCastBarStylingPanel(container)
 
     -- Border Color and Size (only when pixel)
     if settings.borderStyle == "pixel" then
-        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, function() CooldownCompanion:ApplyCastBarSettings() end)
+        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
 
         local borderSizeSlider = AceGUI:Create("Slider")
         borderSizeSlider:SetLabel("Border Size")
@@ -353,7 +354,7 @@ local function BuildCastBarStylingPanel(container)
         container:AddChild(nameOutlineDrop)
 
         -- Color
-        AddColorPicker(container, settings, "nameFontColor", "Font Color", {1, 1, 1, 1}, true, function() CooldownCompanion:ApplyCastBarSettings() end)
+        AddColorPicker(container, settings, "nameFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
     end
 
     -- Show Cast Time
@@ -408,7 +409,7 @@ local function BuildCastBarStylingPanel(container)
         container:AddChild(ctOutlineDrop)
 
         -- Color
-        AddColorPicker(container, settings, "castTimeFontColor", "Font Color", {1, 1, 1, 1}, true, function() CooldownCompanion:ApplyCastBarSettings() end)
+        AddColorPicker(container, settings, "castTimeFontColor", "Font Color", {1, 1, 1, 1}, true, applyCastBar)
 
         -- X Offset
         local ctXSlider = AceGUI:Create("Slider")

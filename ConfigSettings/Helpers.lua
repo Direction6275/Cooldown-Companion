@@ -716,7 +716,7 @@ end
 ------------------------------------------------------------------------
 -- WIDGET FACTORIES
 -- Composable builders that replace repeated AceGUI boilerplate.
--- Each creates, configures, adds to container, and returns the widget.
+-- Each creates, configures, and adds to container.
 ------------------------------------------------------------------------
 
 -- Create a ColorPicker, configure it, wire callbacks, add to container.
@@ -832,7 +832,6 @@ ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
 ST._GetBarTextureOptions = GetBarTextureOptions
-ST._SetupColorCallbacks = SetupColorCallbacks
 ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown
 ST._AddFontControls = AddFontControls
