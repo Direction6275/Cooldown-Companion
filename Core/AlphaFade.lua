@@ -213,8 +213,13 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     local effectiveRegularMounted = regularMounted
     local effectiveDragonridingMounted = dragonridingMounted
     if group.treatTravelFormAsMounted and inTravelForm then
-        effectiveRegularMounted = true
-        effectiveDragonridingMounted = true
+        if inTravelForm == 783 then
+            effectiveRegularMounted = false
+            effectiveDragonridingMounted = true
+        else
+            effectiveRegularMounted = true
+            effectiveDragonridingMounted = false
+        end
     end
 
     -- Check force-hidden conditions
@@ -314,7 +319,9 @@ function CooldownCompanion:InitAlphaUpdateFrame()
             local fi = GetShapeshiftForm()
             if fi and fi > 0 then
                 local _, _, _, spellID = GetShapeshiftFormInfo(fi)
-                if spellID == 783 then inTravelForm = true end
+                if spellID == 783 or spellID == 210053 then
+                    inTravelForm = spellID
+                end
             end
         end
 
