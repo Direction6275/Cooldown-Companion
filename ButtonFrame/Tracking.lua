@@ -153,16 +153,19 @@ local function UpdateIconTint(button, buttonData, style)
         end
     end
     if not stateOverride and style.showUnusable then
+        local uc = style.iconUnusableTintColor
         if buttonData.type == "spell" then
             local isUsable = C_Spell.IsSpellUsable(buttonData.id)
             if not isUsable then
-                r, g, b = 0.4, 0.4, 0.4
+                r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
+                a = uc and uc[4] or a
                 stateOverride = true
             end
         elseif buttonData.type == "item" then
             local usable, noMana = IsUsableItem(buttonData.id)
             if not usable then
-                r, g, b = 0.4, 0.4, 0.4
+                r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
+                a = uc and uc[4] or a
                 stateOverride = true
             end
         end

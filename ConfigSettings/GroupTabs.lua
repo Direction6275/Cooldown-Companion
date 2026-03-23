@@ -1442,6 +1442,9 @@ local function BuildAppearanceTab(container)
         " ",
         {"Aura Tint:", 1, 0.82, 0},
         {"A separate color applied while an aura-tracked ability's buff or debuff is active. Only affects buttons with aura tracking enabled.", 1, 1, 1, true},
+        " ",
+        {"Unusable Dimming Tint:", 1, 0.82, 0},
+        {"A color applied when an ability is not usable. Only appears when unusable dimming is enabled in the Indicators tab.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     iconTintHeading.right:ClearAllPoints()
@@ -1457,12 +1460,13 @@ local function BuildAppearanceTab(container)
         end)
 
         local resetTintBtn = AceGUI:Create("Button")
-        resetTintBtn:SetText("Reset Tint Settings to Default")
+        resetTintBtn:SetText("Reset Colors to Default")
         resetTintBtn:SetFullWidth(true)
         resetTintBtn:SetCallback("OnClick", function()
             style.iconTintColor = {1, 1, 1, 1}
             style.iconCooldownTintColor = {1, 0, 0.102, 1}
             style.iconAuraTintColor = {0, 0.925, 1, 1}
+            style.iconUnusableTintColor = {0.4, 0.4, 0.4, 1}
             style.backgroundColor = {0, 0, 0, 0.5}
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
