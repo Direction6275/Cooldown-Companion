@@ -784,8 +784,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 if useIt then
                     button._durationObj = durationForDisplay
-                    -- SetCooldownFromDurationObject works for both secret and
-                    -- non-secret DurationObjects.
                     button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
                     fetchOk = true
                 end
@@ -1060,8 +1058,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         if not auraOverrideActive and button._chargeDurationObj then
             if not button._isBar and not button._isText then
-                -- Icon mode: always set _durationObj, show recharge radial.
-                -- SetCooldownFromDurationObject works with secret DurationObjects.
+                -- Icon mode: always set _durationObj, show recharge radial
                 button._durationObj = button._chargeDurationObj
                 button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
             elseif button._chargeRecharging then
@@ -1069,11 +1066,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._durationObj = button._chargeDurationObj
             end
         elseif not button._isBar and not button._isText and not auraOverrideActive then
-            -- Icon mode fallback: no chargeDurationObj, try fetching one
+            -- Icon mode fallback: no chargeDurationObj, try fetching one.
+            -- Clear if unavailable to prevent stale cooldown widget state.
             local chargeSpellID = cooldownSpellId or buttonData.id
             local fallbackDuration = C_Spell.GetSpellChargeDuration(chargeSpellID)
             if fallbackDuration then
                 button.cooldown:SetCooldownFromDurationObject(fallbackDuration)
+            else
+                button.cooldown:SetCooldown(0, 0)
             end
         end
 

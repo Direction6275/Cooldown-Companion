@@ -173,7 +173,10 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
 end
 
 -- Update loss-of-control cooldown on a button.
--- SetCooldownFromDurationObject handles DurationObjects with secret constituent values.
+-- Update loss-of-control cooldown on a button.
+-- DurationObject path handles secret values. If no DurationObject is available
+-- (no LoC active), clear the cooldown. The legacy GetSpellLossOfControlCooldown
+-- returns secret start/duration that SetCooldown will reject after the hotfix.
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
