@@ -156,6 +156,7 @@ ST._configState = {
     gearDropdownFrame = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
+    buttonIconPickerFrame = nil,
     panelContextMenu = nil,
 
     -- Cross-character browse mode
@@ -296,6 +297,10 @@ CS.ShowPopupAboveConfig = ShowPopupAboveConfig
 -- Helper: Get icon for a button data entry
 ------------------------------------------------------------------------
 local function GetButtonIcon(buttonData)
+    local manualIcon = buttonData.manualIcon
+    if type(manualIcon) == "number" or type(manualIcon) == "string" then
+        return manualIcon
+    end
     if buttonData.type == "spell" then
         return C_Spell.GetSpellTexture(buttonData.id) or 134400
     elseif buttonData.type == "item" then
@@ -435,6 +440,15 @@ local function EnsureFolderIconPickerFrame()
     frame.BorderBox.EditBoxHeaderText:Hide()
     frame.BorderBox.IconSelectorEditBox:Hide()
 
+    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
+    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
+    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
+    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
+    -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
+    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (AcquireMenu line 2088).
+    frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
+
     function frame:OnHide()
         IconSelectorPopupFrameTemplateMixin.OnHide(self)
         if self.iconDataProvider then
@@ -489,6 +503,137 @@ local function OpenFolderIconPicker(folderId)
     local currentIcon = folder.manualIcon
     if not IsValidIconTexture(currentIcon) then
         currentIcon = GetAutoFolderIcon(folderId, db)
+    end
+
+    local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
+    if not selectedIndex then
+        selectedIndex = 1
+        currentIcon = pickerFrame:GetIconByIndex(selectedIndex)
+    end
+
+    pickerFrame.IconSelector:SetSelectionsDataProvider(
+        function(selectionIndex)
+            return pickerFrame:GetIconByIndex(selectionIndex)
+        end,
+        function()
+            return pickerFrame:GetNumIcons()
+        end
+    )
+    pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
+    pickerFrame.IconSelector:ScrollToSelectedIndex()
+    pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
+    pickerFrame:SetSelectedIconText()
+    pickerFrame.BorderBox.OkayButton:Enable()
+
+    pickerFrame.IconSelector:SetSelectedCallback(function(_, icon)
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(icon)
+        pickerFrame:SetSelectedIconText()
+    end)
+
+    pickerFrame:Show()
+    return true
+end
+
+------------------------------------------------------------------------
+-- Button icon picker (per-entry icon art override)
+------------------------------------------------------------------------
+local function EnsureButtonIconPickerFrame()
+    if CS.buttonIconPickerFrame then
+        return CS.buttonIconPickerFrame
+    end
+
+    if not CreateAndInitFromMixin
+        or not IconDataProviderMixin
+        or not IconDataProviderExtraType
+        or not IconSelectorPopupFrameTemplateMixin
+        or not IconSelectorPopupFrameIconFilterTypes then
+        return nil
+    end
+
+    local frame = CreateFrame("Frame", "CDCButtonIconPickerFrame", UIParent, "IconSelectorPopupFrameTemplate")
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(200)
+    frame:SetToplevel(true)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame.BorderBox.EditBoxHeaderText:Hide()
+    frame.BorderBox.IconSelectorEditBox:Hide()
+
+    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
+    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
+    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
+    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
+    -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
+    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (AcquireMenu line 2088).
+    frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
+
+    function frame:OnHide()
+        IconSelectorPopupFrameTemplateMixin.OnHide(self)
+        if self.iconDataProvider then
+            self.iconDataProvider:Release()
+            self.iconDataProvider = nil
+        end
+        self._cdcGroupId = nil
+        self._cdcButtonIndex = nil
+        self.IconSelector:SetSelectedCallback(nil)
+    end
+
+    function frame:OkayButton_OnClick()
+        local groupId = self._cdcGroupId
+        local buttonIndex = self._cdcButtonIndex
+        local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
+        local db = CooldownCompanion.db and CooldownCompanion.db.profile
+        local group = db and db.groups and db.groups[groupId]
+        local buttonData = group and group.buttons and group.buttons[buttonIndex]
+        if buttonData and IsValidIconTexture(iconTexture) then
+            buttonData.manualIcon = iconTexture
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
+    end
+
+    function frame:CancelButton_OnClick()
+        IconSelectorPopupFrameTemplateMixin.CancelButton_OnClick(self)
+    end
+
+    CS.buttonIconPickerFrame = frame
+    return frame
+end
+
+local function OpenButtonIconPicker(groupId, buttonIndex)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = db and db.groups and db.groups[groupId]
+    local buttonData = group and group.buttons and group.buttons[buttonIndex]
+    if not buttonData then
+        return false
+    end
+
+    local pickerFrame = EnsureButtonIconPickerFrame()
+    if not pickerFrame then
+        CooldownCompanion:Print("Icon picker is unavailable on this client build.")
+        return false
+    end
+
+    if pickerFrame:IsShown() then
+        pickerFrame:Hide()
+    end
+
+    pickerFrame._cdcGroupId = groupId
+    pickerFrame._cdcButtonIndex = buttonIndex
+    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
+    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
+
+    local currentIcon = buttonData.manualIcon
+    if not IsValidIconTexture(currentIcon) then
+        currentIcon = GetButtonIcon(buttonData)
     end
 
     local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
@@ -1098,6 +1243,8 @@ ST._GetGroupIcon = GetGroupIcon
 ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
 ST._OpenFolderIconPicker = OpenFolderIconPicker
+ST._OpenButtonIconPicker = OpenButtonIconPicker
+ST._IsValidIconTexture = IsValidIconTexture
 ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
 ST._COLUMN_PADDING = COLUMN_PADDING
