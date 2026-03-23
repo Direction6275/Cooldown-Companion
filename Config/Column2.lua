@@ -1751,6 +1751,31 @@ local function RefreshColumn2()
                                     end
                                     UIDropDownMenu_AddButton(dupInfo, level)
 
+                                    local iconInfo = UIDropDownMenu_CreateInfo()
+                                    iconInfo.text = "Override Icon..."
+                                    iconInfo.notCheckable = true
+                                    iconInfo.tooltipTitle = "Override Icon"
+                                    iconInfo.tooltipText = "Overrides all icon states. If aura tracking with Show Aura Icon is active, the aura icon takes priority."
+                                    iconInfo.tooltipOnButton = true
+                                    iconInfo.func = function()
+                                        CloseDropDownMenus()
+                                        ST._OpenButtonIconPicker(sourceGroupId, sourceIndex)
+                                    end
+                                    UIDropDownMenu_AddButton(iconInfo, level)
+
+                                    if ST._IsValidIconTexture(entryData.manualIcon) then
+                                        local resetIconInfo = UIDropDownMenu_CreateInfo()
+                                        resetIconInfo.text = "Reset Icon"
+                                        resetIconInfo.notCheckable = true
+                                        resetIconInfo.func = function()
+                                            CloseDropDownMenus()
+                                            entryData.manualIcon = nil
+                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                            CooldownCompanion:RefreshConfigPanel()
+                                        end
+                                        UIDropDownMenu_AddButton(resetIconInfo, level)
+                                    end
+
                                     local moveInfo = UIDropDownMenu_CreateInfo()
                                     moveInfo.text = "Move to..."
                                     moveInfo.notCheckable = true

@@ -462,6 +462,12 @@ function CooldownCompanion:UpdateButtonIcon(button)
         icon = C_Item.GetItemIconByID(buttonData.id)
     end
 
+    -- Manual icon override: replaces base icon; aura icon swap still takes precedence
+    local manualIcon = buttonData.manualIcon
+    if type(manualIcon) == "number" or type(manualIcon) == "string" then
+        icon = manualIcon
+    end
+
     -- Aura icon swap: show the tracked aura spell's icon while aura is active
     if buttonData.type == "spell" and button._auraActive
        and buttonData.auraShowAuraIcon and button._auraSpellID then
