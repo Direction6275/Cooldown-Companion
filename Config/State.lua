@@ -440,6 +440,12 @@ local function EnsureFolderIconPickerFrame()
     frame.BorderBox.EditBoxHeaderText:Hide()
     frame.BorderBox.IconSelectorEditBox:Hide()
 
+    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
+    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
+    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
+    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
+
     function frame:OnHide()
         IconSelectorPopupFrameTemplateMixin.OnHide(self)
         if self.iconDataProvider then
@@ -555,7 +561,12 @@ local function EnsureButtonIconPickerFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame.BorderBox.EditBoxHeaderText:Hide()
     frame.BorderBox.IconSelectorEditBox:Hide()
-    frame.BorderBox.IconTypeDropdown:Hide()
+
+    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
+    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
+    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
+    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
 
     function frame:OnHide()
         IconSelectorPopupFrameTemplateMixin.OnHide(self)
