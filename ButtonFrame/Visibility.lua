@@ -173,8 +173,9 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
 end
 
 -- Update loss-of-control cooldown on a button.
--- Uses a CooldownFrame to avoid comparing secret values — the raw start/duration
--- go directly to SetCooldown which handles them on the C side.
+-- DurationObject path handles secret values. If no DurationObject is available
+-- (no LoC active), clear the cooldown. The legacy GetSpellLossOfControlCooldown
+-- returns secret start/duration that SetCooldown will reject after the 12.0.1 hotfix.
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
@@ -183,7 +184,7 @@ local function UpdateLossOfControl(button)
         if locDuration then
             button.locCooldown:SetCooldownFromDurationObject(locDuration)
         else
-            button.locCooldown:SetCooldown(C_Spell.GetSpellLossOfControlCooldown(button.buttonData.id))
+            button.locCooldown:SetCooldown(0, 0)
         end
     end
 end

@@ -63,14 +63,13 @@ end
 -- Returns:
 --   shown      : true/false/nil (nil = no slots found or unknown from secret state)
 --   durationObj: active LuaDurationObject when shown, else nil
---   cooldownInfo: matching ActionBarCooldownInfo when shown, else nil
 local actionSlotSeenScratch = {}
 
 local function ProbeActionSlotsForSpellID(spellID)
-    if not spellID then return false, nil, nil, false, false end
+    if not spellID then return false, nil, false, false end
 
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
-    if not slots then return false, nil, nil, false, false end
+    if not slots then return false, nil, false, false end
 
     local sawAnySlot = false
     local sawUnknown = false
@@ -81,74 +80,64 @@ local function ProbeActionSlotsForSpellID(spellID)
             sawAnySlot = true
 
             local durationObj = C_ActionBar.GetActionCooldownDuration(slot)
-            local cooldownInfo
             local shown = false
 
             if durationObj then
                 if not durationObj:HasSecretValues() then
                     shown = not durationObj:IsZero()
                 else
-                    cooldownInfo = C_ActionBar.GetActionCooldown(slot)
-                    if cooldownInfo then
-                        scratchCooldown:Hide()
-                        scratchCooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-                        shown = scratchCooldown:IsShown()
-                        scratchCooldown:Hide()
-                    else
-                        sawUnknown = true
-                    end
-                end
-            else
-                cooldownInfo = C_ActionBar.GetActionCooldown(slot)
-                if cooldownInfo then
+                    -- SetCooldownFromDurationObject accepts secret DurationObjects
+                    -- (confirmed in-game). Probe scratchCooldown for active state.
                     scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+                    scratchCooldown:SetCooldownFromDurationObject(durationObj)
                     shown = scratchCooldown:IsShown()
                     scratchCooldown:Hide()
                 end
+            else
+                sawUnknown = true
             end
 
             if shown then
-                return true, durationObj, cooldownInfo, sawAnySlot, sawUnknown
+                return true, durationObj, sawAnySlot, sawUnknown
             end
         end
     end
 
-    return false, nil, nil, sawAnySlot, sawUnknown
+    return false, nil, sawAnySlot, sawUnknown
 end
 
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    if not baseSpellID then return nil, nil, nil end
+    if not baseSpellID then return nil, nil end
 
     wipe(actionSlotSeenScratch)
 
     local sawAnySlot = false
     local sawUnknown = false
 
-    local shown, durationObj, cooldownInfo, sawAny, sawUnk = ProbeActionSlotsForSpellID(baseSpellID)
+    local shown, durationObj, sawAny, sawUnk = ProbeActionSlotsForSpellID(baseSpellID)
     if sawAny then sawAnySlot = true end
     if sawUnk then sawUnknown = true end
     if shown then
-        return true, durationObj, cooldownInfo
+        return true, durationObj
     end
 
     if displaySpellID and displaySpellID ~= baseSpellID then
-        shown, durationObj, cooldownInfo, sawAny, sawUnk = ProbeActionSlotsForSpellID(displaySpellID)
+        shown, durationObj, sawAny, sawUnk = ProbeActionSlotsForSpellID(displaySpellID)
         if sawAny then sawAnySlot = true end
         if sawUnk then sawUnknown = true end
         if shown then
-            return true, durationObj, cooldownInfo
+            return true, durationObj
         end
     end
 
     if sawAnySlot then
         if sawUnknown then
-            return nil, nil, nil
+            return nil, nil
         end
-        return false, nil, nil
+        return false, nil
     end
 
-    return nil, nil, nil
+    return nil, nil
 end
 
 function CooldownCompanion:UpdateButtonCooldown(button)
@@ -219,9 +208,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
     local spellCooldownInfo
+    local spellCooldownDuration
     local actionSlotCooldownShown
     local actionSlotDurationObj
-    local actionSlotCooldownInfo
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -341,7 +330,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- spells (TrackedBar category). These appear in BuffBar
                 -- viewer but have no auraInstanceID, auraDataUnit, or
                 -- Cooldown widget. GetTotemInfo returns secret start/duration
-                -- values that SetCooldown accepts directly — no arithmetic.
+                -- values; SetCooldown still accepts them as a stopgap.
+                -- PHASE 2: replace with GetTotemDuration() DurationObject
+                -- when the API ships (12.0.1 hotfix).
                 -- Read preferredTotemUpdateSlot directly from the viewer
                 -- frame (plain number set by CDM) rather than caching it,
                 -- since the slot may not be populated at BuildViewerAuraMap time.
@@ -685,11 +676,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     end
                 end
                 if not probeIsGCDOnly then
-                    button.secondaryCooldown:SetCooldown(probeInfo.startTime, probeInfo.duration)
-                    scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(probeInfo.startTime, probeInfo.duration)
-                    button._secondaryCdActive = scratchCooldown:IsShown()
-                    scratchCooldown:Hide()
+                    local probeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
+                    if probeDuration then
+                        button.secondaryCooldown:SetCooldownFromDurationObject(probeDuration)
+                        scratchCooldown:Hide()
+                        scratchCooldown:SetCooldownFromDurationObject(probeDuration)
+                        button._secondaryCdActive = scratchCooldown:IsShown()
+                        scratchCooldown:Hide()
+                    else
+                        button.secondaryCooldown:SetCooldown(0, 0)
+                        button._secondaryCdActive = false
+                    end
                 else
                     button.secondaryCooldown:SetCooldown(0, 0)
                     button._secondaryCdActive = false
@@ -724,24 +721,30 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
             if not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
-                actionSlotCooldownShown, actionSlotDurationObj, actionSlotCooldownInfo =
+                actionSlotCooldownShown, actionSlotDurationObj =
                     ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             end
 
             -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
-            -- SetCooldown accepts secret startTime/duration values.
+            -- DurationObject used for display (SetCooldownFromDurationObject
+            -- accepts both secret and non-secret DurationObjects).
             spellCooldownInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+            spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
             if spellCooldownInfo then
                 isOnGCD = spellCooldownInfo.isOnGCD
                 if not fetchOk then
-                    button.cooldown:SetCooldown(spellCooldownInfo.startTime, spellCooldownInfo.duration)
+                    if spellCooldownDuration then
+                        button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    else
+                        button.cooldown:SetCooldown(0, 0)
+                    end
                 end
                 fetchOk = true
-            elseif actionSlotCooldownInfo and not fetchOk then
+            elseif actionSlotDurationObj and not fetchOk then
                 -- Fallback: some ContextuallySecret spells can return nil from
                 -- C_Spell.GetSpellCooldown while action-slot cooldown data is
                 -- still available (matches Blizzard action button behavior).
-                button.cooldown:SetCooldown(actionSlotCooldownInfo.startTime, actionSlotCooldownInfo.duration)
+                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
                 fetchOk = true
             end
             -- GCD-only detection: compare spell's cooldown against GCD reference (61304).
@@ -764,27 +767,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             -- DurationObject path: HasSecretValues gates IsZero comparison.
             -- Non-secret: use IsZero to filter zero-duration (spell ready).
-            -- Secret: fall back to isOnGCD (NeverSecret) as activity signal.
-            local spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
+            -- Secret: probe scratchCooldown since IsZero() is unavailable.
             if spellCooldownDuration then
                 local useIt = false
                 local durationForDisplay = spellCooldownDuration
                 if not spellCooldownDuration:HasSecretValues() then
                     if not spellCooldownDuration:IsZero() then useIt = true end
                 else
-                    -- Secret values: can't call IsZero() to check if spell is ready.
-                    -- GetSpellCooldownDuration returns non-nil even for ready spells
-                    -- during combat.  Use scratchCooldown as a C++ level signal:
-                    -- SetCooldown() auto-shows it only when duration > 0 (handles
-                    -- secrets internally).  button.cooldown:IsShown() is unreliable
-                    -- — force-shown by UpdateIconModeVisuals, not auto-hidden by
-                    -- SetCooldown(0,0).
-                    if spellCooldownInfo then
-                        scratchCooldown:Hide()
-                        scratchCooldown:SetCooldown(spellCooldownInfo.startTime, spellCooldownInfo.duration)
-                        useIt = scratchCooldown:IsShown()
-                        scratchCooldown:Hide()
-                    elseif actionSlotCooldownShown == true then
+                    -- Secret values: can't call IsZero(). Probe scratchCooldown
+                    -- with DurationObject (confirmed working with secrets in-game).
+                    scratchCooldown:Hide()
+                    scratchCooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    useIt = scratchCooldown:IsShown()
+                    scratchCooldown:Hide()
+                    if not useIt and actionSlotCooldownShown == true then
                         useIt = true
                         if actionSlotDurationObj then
                             durationForDisplay = actionSlotDurationObj
@@ -793,22 +789,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 if useIt then
                     button._durationObj = durationForDisplay
-                    if not durationForDisplay:HasSecretValues() then
-                        button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
-                    elseif not spellCooldownInfo and actionSlotCooldownInfo then
-                        button.cooldown:SetCooldown(actionSlotCooldownInfo.startTime, actionSlotCooldownInfo.duration)
-                    end
+                    button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
                     fetchOk = true
                 end
             elseif actionSlotCooldownShown == true and actionSlotDurationObj then
                 -- Fallback when spell duration API is unavailable but action-slot
                 -- duration object is present.
                 button._durationObj = actionSlotDurationObj
-                if not actionSlotDurationObj:HasSecretValues() then
-                    button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                elseif actionSlotCooldownInfo then
-                    button.cooldown:SetCooldown(actionSlotCooldownInfo.startTime, actionSlotCooldownInfo.duration)
-                end
+                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
                 fetchOk = true
             end
         elseif buttonData.type == "item" then
@@ -934,21 +922,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and buttonData.type == "spell"
             and isOnGCD == true
         if showBarGCDSwipe then
-            local startTime, duration
-            local gcdInfo = CooldownCompanion._gcdInfo
-            if gcdInfo and gcdInfo.startTime and gcdInfo.duration then
-                startTime, duration = gcdInfo.startTime, gcdInfo.duration
-            elseif spellCooldownInfo and spellCooldownInfo.startTime and spellCooldownInfo.duration
-            then
-                startTime, duration = spellCooldownInfo.startTime, spellCooldownInfo.duration
+            local gcdDurationObj = CooldownCompanion._gcdDurationObj
+            if not gcdDurationObj and spellCooldownDuration then
+                gcdDurationObj = spellCooldownDuration
             end
-            if startTime and duration then
+            if gcdDurationObj then
                 local iconGCDCooldown = button.iconGCDCooldown
                 iconGCDCooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
                 iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
-                -- Secret-safe pass-through: let CooldownFrame handle duration validity.
                 iconGCDCooldown:Hide()
-                iconGCDCooldown:SetCooldown(startTime, duration)
+                iconGCDCooldown:SetCooldownFromDurationObject(gcdDurationObj)
             else
                 button.iconGCDCooldown:Hide()
             end
@@ -987,23 +970,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             elseif not auraOverrideActive and (button._isBar or button._isText) then
                 button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
             elseif not auraOverrideActive then
-                -- Icon mode: no action bar slot, fall back to scratchCooldown.
+                -- Icon mode: no action bar slot, probe with DurationObject.
+                -- SetCooldownFromDurationObject works with both secret and
+                -- non-secret DurationObjects on scratchCooldown.
                 local mainCDDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-                if mainCDDuration and not mainCDDuration:HasSecretValues() then
+                if mainCDDuration then
                     scratchCooldown:Hide()
                     scratchCooldown:SetCooldownFromDurationObject(mainCDDuration)
                     button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
                     scratchCooldown:Hide()
-                elseif mainCDDuration then
-                    local ci = C_Spell.GetSpellCooldown(cooldownSpellId)
-                    if ci then
-                        scratchCooldown:Hide()
-                        scratchCooldown:SetCooldown(ci.startTime, ci.duration)
-                        button._mainCDShown = scratchCooldown:IsShown() and not isGCDOnly
-                        scratchCooldown:Hide()
-                    else
-                        button._mainCDShown = false
-                    end
                 else
                     button._mainCDShown = false
                 end
@@ -1075,27 +1050,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Always detect charge recharging state (needed for text/bar color even during aura override).
         -- Charge DurationObjects may report non-zero even at full charges (stale data);
         -- scratchCooldown auto-show is the ground truth.
+        -- SetCooldownFromDurationObject works with both secret and non-secret
+        -- DurationObjects (confirmed in-game).
         if button._chargeDurationObj then
-            if not button._chargeDurationObj:HasSecretValues() then
-                scratchCooldown:Hide()
-                scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
-                button._chargeRecharging = scratchCooldown:IsShown()
-                scratchCooldown:Hide()
-            else
-                -- Secret values (combat): SetCooldownFromDurationObject fails.
-                -- Probe scratchCooldown with charge timing data instead
-                -- (SetCooldown accepts secrets; IsShown returns plain bool).
-                -- Uses charge-specific timing, not the main cooldown (which
-                -- includes GCD for on-GCD charge spells like Fire Breath).
-                if charges then
-                    scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
-                    button._chargeRecharging = scratchCooldown:IsShown()
-                    scratchCooldown:Hide()
-                else
-                    button._chargeRecharging = false
-                end
-            end
+            scratchCooldown:Hide()
+            scratchCooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+            button._chargeRecharging = scratchCooldown:IsShown()
+            scratchCooldown:Hide()
         else
             button._chargeRecharging = false
         end
@@ -1104,19 +1065,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if not button._isBar and not button._isText then
                 -- Icon mode: always set _durationObj, show recharge radial
                 button._durationObj = button._chargeDurationObj
-                if not button._chargeDurationObj:HasSecretValues() then
-                    button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
-                elseif charges then
-                    -- Secret: SetCooldownFromDurationObject fails; use SetCooldown
-                    button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
-                end
+                button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
             elseif button._chargeRecharging then
                 -- Bar/text mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
-        elseif not button._isBar and not button._isText and not auraOverrideActive and charges then
-            -- Icon mode fallback
-            button.cooldown:SetCooldown(charges.cooldownStartTime, charges.cooldownDuration)
+        elseif not button._isBar and not button._isText and not auraOverrideActive then
+            -- Icon mode fallback: no chargeDurationObj, try fetching one.
+            -- Clear if unavailable to prevent stale cooldown widget state.
+            local chargeSpellID = cooldownSpellId or buttonData.id
+            local fallbackDuration = C_Spell.GetSpellChargeDuration(chargeSpellID)
+            if fallbackDuration then
+                button.cooldown:SetCooldownFromDurationObject(fallbackDuration)
+            else
+                button.cooldown:SetCooldown(0, 0)
+            end
         end
 
       elseif buttonData.type == "item" then
@@ -1234,17 +1197,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         end
                     end
 
-                    scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(probeInfo.startTime, probeInfo.duration)
-                    cooldownActive = scratchCooldown:IsShown() and not probeIsGCDOnly
-                    scratchCooldown:Hide()
+                    local probeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
+                    if probeDuration then
+                        scratchCooldown:Hide()
+                        scratchCooldown:SetCooldownFromDurationObject(probeDuration)
+                        cooldownActive = scratchCooldown:IsShown() and not probeIsGCDOnly
+                        scratchCooldown:Hide()
+                    else
+                        cooldownActive = false
+                    end
                 else
                     cooldownActive = false
                 end
             else
-                if spellCooldownInfo then
+                -- Normal path: use function-scope spellCooldownDuration
+                if spellCooldownDuration then
                     scratchCooldown:Hide()
-                    scratchCooldown:SetCooldown(spellCooldownInfo.startTime, spellCooldownInfo.duration)
+                    scratchCooldown:SetCooldownFromDurationObject(spellCooldownDuration)
                     cooldownActive = scratchCooldown:IsShown() and not isGCDOnly
                     scratchCooldown:Hide()
                 else

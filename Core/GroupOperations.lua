@@ -1049,6 +1049,8 @@ function CooldownCompanion:UpdateAllCooldowns()
     else
         self._gcdActive = false
     end
+    -- Cache for GCD overlay display in CooldownUpdate
+    self._gcdDurationObj = gcdDuration
 
     -- Assisted highlight target gate:
     -- hard target has priority; if none exists, allow soft enemy fallback.
