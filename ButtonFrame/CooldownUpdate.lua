@@ -767,7 +767,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             -- DurationObject path: HasSecretValues gates IsZero comparison.
             -- Non-secret: use IsZero to filter zero-duration (spell ready).
-            -- Secret: probe scratchCooldown with DurationObject.
+            -- Secret: probe scratchCooldown since IsZero() is unavailable.
             if spellCooldownDuration then
                 local useIt = false
                 local durationForDisplay = spellCooldownDuration

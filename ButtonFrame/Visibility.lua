@@ -175,7 +175,7 @@ end
 -- Update loss-of-control cooldown on a button.
 -- DurationObject path handles secret values. If no DurationObject is available
 -- (no LoC active), clear the cooldown. The legacy GetSpellLossOfControlCooldown
--- returns secret start/duration that SetCooldown rejects (12.0.1+).
+-- returns secret start/duration that SetCooldown will reject after the 12.0.1 hotfix.
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
