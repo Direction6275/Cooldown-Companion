@@ -270,6 +270,10 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     if styleTable.iconAuraTintEnabled then
         AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
     end
+
+    if styleTable.showUnusable then
+        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dimming Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
+    end
 end
 
 local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
