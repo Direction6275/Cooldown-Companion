@@ -1039,7 +1039,8 @@ end
 
 function CooldownCompanion:UpdateAllCooldowns()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
-    -- Widget-level GCD activity signal (secret-safe, plain boolean)
+    -- Widget-level GCD activity signal (secret-safe, plain boolean).
+    -- Cache DurationObject for GCD overlay display in CooldownUpdate.
     local gcdDuration = C_Spell.GetSpellCooldownDuration(61304)
     if gcdDuration then
         self._gcdScratch:Hide()
@@ -1049,6 +1050,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     else
         self._gcdActive = false
     end
+    self._gcdDurationObj = gcdDuration
 
     -- Assisted highlight target gate:
     -- hard target has priority; if none exists, allow soft enemy fallback.
