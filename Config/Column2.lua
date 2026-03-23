@@ -1243,7 +1243,7 @@ local function RefreshColumn2()
                         CooldownCompanion:RefreshConfigPanel()
                         -- Pending drag for panel reorder (multi-panel containers only).
                         -- Set up AFTER refresh so widget refs are current and CancelDrag()
-                        -- (called inside RefreshColumn1) doesn't clear our state.
+                        -- (called inside RefreshConfigPanel) doesn't clear our state.
                         if panelCount > 1 and not GetCursorInfo() then
                             CS.dragState = {
                                 kind = "panel",
