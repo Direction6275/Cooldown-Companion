@@ -1241,6 +1241,29 @@ local function RefreshColumn2()
                         CS.selectedButton = nil
                         wipe(CS.selectedButtons)
                         CooldownCompanion:RefreshConfigPanel()
+                        -- Pending drag for panel reorder (multi-panel containers only).
+                        -- Set up AFTER refresh so widget refs are current and CancelDrag()
+                        -- (called inside RefreshColumn1) doesn't clear our state.
+                        if panelCount > 1 and not GetCursorInfo() then
+                            CS.dragState = {
+                                kind = "panel",
+                                phase = "pending",
+                                sourcePanelId = panelId,
+                                containerId = CS.selectedContainer,
+                                scrollWidget = CS.col2Scroll,
+                                startY = GetScaledCursorPosition(CS.col2Scroll),
+                                panelDropTargets = CS._panelDropTargets,
+                            }
+                            if CS.lastCol2RenderedRows then
+                                for _, row in ipairs(CS.lastCol2RenderedRows) do
+                                    if row.kind == "header" and row.panelId == panelId then
+                                        CS.dragState.widget = row.widget
+                                        break
+                                    end
+                                end
+                            end
+                            StartDragTracking()
+                        end
                     elseif mouseButton == "MiddleButton" then
                         -- Toggle panel anchor lock
                         if panel.locked == false then
@@ -1505,39 +1528,6 @@ local function RefreshColumn2()
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
 
-                -- Drag-to-reorder panel headers (only for multi-panel containers)
-                if panelCount > 1 then
-                    local headerFrame = header.frame
-                    if not headerFrame._cdcDragHooked then
-                        headerFrame._cdcDragHooked = true
-                        headerFrame:HookScript("OnMouseDown", function(self, mouseBtn)
-                            if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
-                        end)
-                    end
-                    local dragPanelId = panelId
-                    headerFrame._cdcOnMouseDown = function(self, mouseButton)
-                        if self._cdcDragSkip then
-                            self._cdcDragSkip = nil
-                            return
-                        end
-                        if GetCursorInfo() then return end
-                        if mouseButton == "LeftButton" and not IsControlKeyDown() then
-                            local cursorY = GetScaledCursorPosition(CS.col2Scroll)
-                            CS.dragState = {
-                                kind = "panel",
-                                phase = "pending",
-                                sourcePanelId = dragPanelId,
-                                containerId = CS.selectedContainer,
-                                scrollWidget = CS.col2Scroll,
-                                widget = header,
-                                startY = cursorY,
-                                panelDropTargets = CS._panelDropTargets,
-                            }
-                            StartDragTracking()
-                        end
-                    end
-                end
-
             -- Button list for this panel (skip if collapsed)
             if not isCollapsed then
                 local panelButtons = panel.buttons or {}
@@ -1671,7 +1661,27 @@ local function RefreshColumn2()
 
                     LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
 
-                    entry:SetCallback("OnClick", function() end)
+                    entry:SetCallback("OnClick", function(widget, event, mouseButton)
+                        if mouseButton == "LeftButton" and not IsControlKeyDown() and not GetCursorInfo() then
+                            -- Auto-select this panel for drag context
+                            if CS.selectedGroup ~= panelId then
+                                CS.selectedGroup = panelId
+                                CS.selectedButton = nil
+                                wipe(CS.selectedButtons)
+                            end
+                            CS.dragState = {
+                                kind = "button",
+                                phase = "pending",
+                                sourceIndex = i,
+                                groupId = panelId,
+                                scrollWidget = CS.col2Scroll,
+                                widget = entry,
+                                startY = GetScaledCursorPosition(CS.col2Scroll),
+                                col2RenderedRows = col2RenderedRows,
+                            }
+                            StartDragTracking()
+                        end
+                    end)
 
                     -- Handle clicks via OnMouseUp with drag guard
                     -- Capture upvalues for this button's panel context
@@ -1931,49 +1941,6 @@ local function RefreshColumn2()
 
                     panelContainer:AddChild(entry)
                     table.insert(col2RenderedRows, { kind = "button", panelId = panelId, buttonIndex = i, widget = entry })
-
-                    -- (Drop is now handled by per-panel overlay, not individual button rows)
-
-                    -- Hold-click drag reorder (within this panel only)
-                    if not entryFrame._cdcDragHooked then
-                        entryFrame._cdcDragHooked = true
-                        entryFrame:HookScript("OnMouseDown", function(self, mouseBtn)
-                            if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
-                        end)
-                    end
-                    local dragPanelId = panelId
-                    local dragBtnIndex = i
-                    entryFrame._cdcOnMouseDown = function(self, mouseButton)
-                        -- Guard: if the frame was just recycled during a refresh
-                        -- triggered by this same mousedown, skip to avoid selecting
-                        -- the wrong panel.  CleanRecycledEntry sets this flag.
-                        if self._cdcDragSkip then
-                            self._cdcDragSkip = nil
-                            return
-                        end
-                        if GetCursorInfo() then return end
-                        if mouseButton == "LeftButton" and not IsControlKeyDown() then
-                            -- Auto-select this panel for drag context
-                            if CS.selectedGroup ~= dragPanelId then
-                                CS.selectedGroup = dragPanelId
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                            end
-                            local cursorY = GetScaledCursorPosition(CS.col2Scroll)
-                            CS.dragState = {
-                                kind = "button",
-                                phase = "pending",
-                                sourceIndex = dragBtnIndex,
-                                groupId = dragPanelId,
-                                scrollWidget = CS.col2Scroll,
-                                widget = entry,
-                                startY = cursorY,
-                                -- Multi-panel: use rendered rows for cross-panel awareness
-                                col2RenderedRows = col2RenderedRows,
-                            }
-                            StartDragTracking()
-                        end
-                    end
                 end -- button loop
 
                 -- Inline add editbox (visible only when this panel is the active add target)
@@ -2066,6 +2033,8 @@ local function RefreshColumn2()
                 end
             end -- not collapsed
         end -- panel loop
+
+        CS.lastCol2RenderedRows = col2RenderedRows
 
         CS.col2Scroll:DoLayout()
 
