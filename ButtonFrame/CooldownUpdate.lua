@@ -330,8 +330,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- spells (TrackedBar category). These appear in BuffBar
                 -- viewer but have no auraInstanceID, auraDataUnit, or
                 -- Cooldown widget. GetTotemInfo returns secret start/duration
-                -- values. PHASE 2: migrate to GetTotemDuration() DurationObject
-                -- when the API is available (12.0.1 hotfix).
+                -- values; SetCooldown still accepts them as a stopgap.
+                -- PHASE 2: replace with GetTotemDuration() DurationObject
+                -- when the API ships (12.0.1 hotfix).
                 -- Read preferredTotemUpdateSlot directly from the viewer
                 -- frame (plain number set by CDM) rather than caching it,
                 -- since the slot may not be populated at BuildViewerAuraMap time.
@@ -731,8 +732,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
             if spellCooldownInfo then
                 isOnGCD = spellCooldownInfo.isOnGCD
-                if not fetchOk and spellCooldownDuration then
-                    button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                if not fetchOk then
+                    if spellCooldownDuration then
+                        button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
+                    else
+                        button.cooldown:SetCooldown(0, 0)
+                    end
                 end
                 fetchOk = true
             elseif actionSlotDurationObj and not fetchOk then
