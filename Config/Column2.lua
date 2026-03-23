@@ -1754,8 +1754,8 @@ local function RefreshColumn2()
                                     local iconInfo = UIDropDownMenu_CreateInfo()
                                     iconInfo.text = "Override Icon..."
                                     iconInfo.notCheckable = true
-                                    iconInfo.tooltipTitle = "Override Icon"
-                                    iconInfo.tooltipText = "Overrides all icon states. If aura tracking with Show Aura Icon is active, the aura icon takes priority."
+                                    iconInfo.tooltipTitle = "|cffffd100Override Icon|r"
+                                    iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon. If aura tracking with Show Aura Icon is active, the aura icon still takes priority while the aura is up.|r"
                                     iconInfo.tooltipOnButton = true
                                     iconInfo.func = function()
                                         CloseDropDownMenus()

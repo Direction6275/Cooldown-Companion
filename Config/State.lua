@@ -446,7 +446,7 @@ local function EnsureFolderIconPickerFrame()
     frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
     frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
     -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
-    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (AcquireMenu line 2088).
+    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
     frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
 
     function frame:OnHide()
@@ -571,7 +571,7 @@ local function EnsureButtonIconPickerFrame()
     frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
     frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
     -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
-    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (AcquireMenu line 2088).
+    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
     frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
 
     function frame:OnHide()
