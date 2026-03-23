@@ -1516,6 +1516,10 @@ local function RefreshColumn2()
                     end
                     local dragPanelId = panelId
                     headerFrame._cdcOnMouseDown = function(self, mouseButton)
+                        if self._cdcDragSkip then
+                            self._cdcDragSkip = nil
+                            return
+                        end
                         if GetCursorInfo() then return end
                         if mouseButton == "LeftButton" and not IsControlKeyDown() then
                             local cursorY = GetScaledCursorPosition(CS.col2Scroll)
@@ -1940,6 +1944,13 @@ local function RefreshColumn2()
                     local dragPanelId = panelId
                     local dragBtnIndex = i
                     entryFrame._cdcOnMouseDown = function(self, mouseButton)
+                        -- Guard: if the frame was just recycled during a refresh
+                        -- triggered by this same mousedown, skip to avoid selecting
+                        -- the wrong panel.  CleanRecycledEntry sets this flag.
+                        if self._cdcDragSkip then
+                            self._cdcDragSkip = nil
+                            return
+                        end
                         if GetCursorInfo() then return end
                         if mouseButton == "LeftButton" and not IsControlKeyDown() then
                             -- Auto-select this panel for drag context
