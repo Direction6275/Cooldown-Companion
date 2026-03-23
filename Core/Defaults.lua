@@ -563,7 +563,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     iconTint = {
         label = "Icon Tint",
-        keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "iconUnusableTintColor", "backgroundColor"},
+        keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "backgroundColor"},
         modes = {icons = true, bars = true},
     },
     assistedHighlight = {

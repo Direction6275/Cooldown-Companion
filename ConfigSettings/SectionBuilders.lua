@@ -272,7 +272,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     end
 
     if styleTable.showUnusable then
-        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dimming Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
+        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dimming Tint", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
     end
 end
 
