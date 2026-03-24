@@ -796,7 +796,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         end
         if chargeInfo then
             local mc = chargeInfo.maxCharges
-            if mc and mc > 1 then
+            if mc > 1 then
                 group.buttons[buttonIndex].hasCharges = true
                 group.buttons[buttonIndex].showChargeText = true
                 group.buttons[buttonIndex].maxCharges = mc
@@ -809,11 +809,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                         group.buttons[buttonIndex].maxCharges = displayCount
                     end
                 end
-            elseif mc == nil then
-                -- maxCharges nil: keep a provisional charge classification
-                -- until RefreshChargeFlags can resolve it.
-                group.buttons[buttonIndex].hasCharges = true
-                group.buttons[buttonIndex].showChargeText = true
             end
         else
             -- No charge data: check if spell has a readable non-zero cast

@@ -205,9 +205,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local procOverlayActive = false
     if buttonData.type == "spell" and not buttonData.isPassive then
         local displaySpellId = button._displaySpellId
-        procOverlayActive = CooldownCompanion.procOverlaySpells[buttonData.id] and true or false
+        procOverlayActive = CooldownCompanion.procOverlaySpells[buttonData.id] ~= nil
         if not procOverlayActive and displaySpellId and displaySpellId ~= buttonData.id then
-            procOverlayActive = CooldownCompanion.procOverlaySpells[displaySpellId] and true or false
+            procOverlayActive = CooldownCompanion.procOverlaySpells[displaySpellId] ~= nil
         end
     end
 
@@ -539,7 +539,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         -- Aura icon swap: trigger icon update on _auraActive transition
         if buttonData.auraShowAuraIcon and button._auraSpellID then
-            local shouldShow = auraOverrideActive and true or false
+            local shouldShow = auraOverrideActive
             button._auraViewerFrame = shouldShow and viewerFrame or nil
             if shouldShow ~= (button._showingAuraIcon or false) then
                 button._showingAuraIcon = shouldShow
@@ -1010,11 +1010,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._durationObj = nil
         end
 
-        -- Charge recharging state: isActive (NeverSecret, 12.0.1 hotfix) replaces
-        -- the scratchCooldown probe.  False when not recharging (at max charges,
-        -- or start/duration zero) — exactly the semantic we need.
+        -- Charge recharging state: charges.isActive (NeverSecret) is false when
+        -- not recharging (at max charges, or start/duration zero) — exactly the
+        -- semantic we need.
         if charges then
-            button._chargeRecharging = charges.isActive and true or false
+            button._chargeRecharging = charges.isActive
         else
             button._chargeRecharging = false
         end
@@ -1117,13 +1117,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     currentCharges = charges.currentCharges
                 end
 
-                if charges and charges.maxCharges ~= nil then
+                if charges then
                     maxCharges = charges.maxCharges
                 elseif buttonData.maxCharges and buttonData.maxCharges > 0 then
                     maxCharges = buttonData.maxCharges
                 end
 
-                chargeRecharging = button._chargeRecharging and true or false
+                chargeRecharging = button._chargeRecharging
                 if charges and charges.cooldownStartTime ~= nil
                    and not issecretvalue(charges.cooldownStartTime) then
                     chargeCooldownStartTime = charges.cooldownStartTime
@@ -1160,8 +1160,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button,
                 cooldownSpellId,
                 isOnGCD or false,
-                cooldownActive and true or false,
-                auraOverrideActive and true or false,
+                cooldownActive,
+                auraOverrideActive,
                 currentCharges,
                 maxCharges,
                 chargeRecharging,

@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - ButtonFrame/Tracking
-    Charge tracking (spell + item) and icon tinting
+    Charge tracking (spell + item), icon tinting, and desaturation
 ]]
 
 local ADDON_NAME, ST = ...
@@ -30,10 +30,9 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     button._currentReadableCharges = cur
     button._chargeCountReadable = (cur ~= nil)
 
-    -- Update persisted maxCharges when readable. Prefer API maxCharges over
-    -- display count, which can reflect current charges instead of true max.
+    -- Persist maxCharges from the charge API whenever available.
     local persistedMax = buttonData.maxCharges or 0
-    if charges and charges.maxCharges ~= nil then
+    if charges then
         if charges.maxCharges ~= persistedMax then
             buttonData.maxCharges = charges.maxCharges
             persistedMax = charges.maxCharges
@@ -45,7 +44,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     -- to 2; when the buff fades and the API returns 1, immediately clear charge
     -- classification so the normal cooldown/desaturation path applies.
     -- Safe for real charge spells: they always return maxCharges >= 2.
-    if charges and charges.maxCharges ~= nil and charges.maxCharges <= 1 then
+    if charges and charges.maxCharges <= 1 then
         buttonData.hasCharges = nil
         buttonData.maxCharges = charges.maxCharges
         button.count:SetText("")
@@ -53,12 +52,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         return nil
     end
 
-    -- Fallback: if API maxCharges is unavailable (nil), keep upward-only
-    -- observed max from readable charge count.
-    if cur and cur > persistedMax then
-        buttonData.maxCharges = cur
-    end
-    local mx = buttonData.maxCharges  -- Cached from outside combat
+    local mx = buttonData.maxCharges
 
     -- Recharge DurationObject for multi-charge spells.
     -- GetSpellChargeDuration returns nil for maxCharges=1 (Blizzard doesn't treat
@@ -193,7 +187,45 @@ local function UpdateIconTint(button, buttonData, style)
     end
 end
 
+-- Icon desaturation: aura-tracked buttons desaturate when aura absent;
+-- cooldown buttons desaturate based on _desatCooldownActive (set per-tick from cooldown / item state);
+-- equippable-but-not-equipped items always desaturate.
+-- Shared by icon-mode and bar-mode display paths.
+local function EvaluateDesaturation(button, buttonData, style)
+    local wantDesat = false
+    if buttonData.auraTracking then
+        if buttonData.isPassive then
+            wantDesat = not button._auraActive
+        else
+            wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
+        end
+        if not wantDesat and not button._auraActive
+            and style.desaturateOnCooldown and button._desatCooldownActive then
+            wantDesat = true
+        end
+    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
+        or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
+        if style.desaturateOnCooldown and button._desatCooldownActive then
+            wantDesat = true
+        end
+        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._zeroChargesConfirmed then
+            wantDesat = true
+        end
+        if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+            wantDesat = true
+        end
+    end
+    if not wantDesat and button._isEquippableNotEquipped then
+        wantDesat = true
+    end
+    if button._desaturated ~= wantDesat then
+        button._desaturated = wantDesat
+        button.icon:SetDesaturated(wantDesat)
+    end
+end
+
 -- Exports
 ST._UpdateChargeTracking = UpdateChargeTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking
 ST._UpdateIconTint = UpdateIconTint
+ST._EvaluateDesaturation = EvaluateDesaturation
