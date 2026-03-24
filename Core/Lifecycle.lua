@@ -57,11 +57,6 @@ function CooldownCompanion:OnInitialize()
     self.containerFrames = {}
     self.buttonFrames = {}
 
-    -- Hidden scratch CooldownFrame for secret-safe GCD activity detection
-    local gcdScratchParent = CreateFrame("Frame")
-    gcdScratchParent:Hide()
-    self._gcdScratch = CreateFrame("Cooldown", nil, gcdScratchParent, "CooldownFrameTemplate")
-
     -- Register minimap icon
     LDBIcon:Register(ADDON_NAME, minimapButton, self.db.profile.minimap)
 

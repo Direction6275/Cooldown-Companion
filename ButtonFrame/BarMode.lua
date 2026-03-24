@@ -162,7 +162,7 @@ local function UpdateBarFill(button)
                     button.timeText:SetFormattedText(decimal and "%.1f" or "%.0f", remaining)
                 end
             elseif button._viewerBar then
-                -- Totem: viewer bar values are always secret (GetTotemInfo origin).
+                -- Totem: viewer bar values may be secret (set by Blizzard's internal totem tracking).
                 -- HasSecretValues() on the viewer StatusBar is unreliable (Blizzard's
                 -- secure code sets it, so the widget reports plain — but the actual
                 -- number returned by GetValue() is a secret wrapper).
