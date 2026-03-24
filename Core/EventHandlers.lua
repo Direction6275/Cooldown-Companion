@@ -117,40 +117,29 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     buttonData._castCountCandidate = nil
                     buttonData._castCountSelf = nil
                     local mc = chargeInfo.maxCharges
-                    if mc then
-                        if mc > 1 then
-                            hasRealCharges = true
-                            if mc > (buttonData.maxCharges or 0) then
-                                buttonData.maxCharges = mc
-                            end
-                            -- Auto-enable charge text when first promoted to charge-based.
-                            if buttonData.showChargeText == nil then
-                                buttonData.showChargeText = true
-                            end
-
-                            -- Secondary source: display count
-                            local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
-                            if not issecretvalue(rawDisplayCount) then
-                                local displayCount = tonumber(rawDisplayCount)
-                                if displayCount and displayCount > (buttonData.maxCharges or 0) then
-                                    buttonData.maxCharges = displayCount
-                                end
-                            end
-                        else
-                            hasRealCharges = nil
-                            -- Reset stored maxCharges so the secret-value fallback
-                            -- won't re-promote from a stale inflated value
-                            -- (e.g. Strafing Run temporarily granting 2).
+                    if mc > 1 then
+                        hasRealCharges = true
+                        if mc > (buttonData.maxCharges or 0) then
                             buttonData.maxCharges = mc
                         end
-                    elseif mc == nil then
-                        -- maxCharges nil (malformed API response): trust stored
-                        -- maxCharges if a value > 1 was previously observed.
-                        -- A later re-evaluation (QueueTalentChargeRefresh,
-                        -- OnTalentsChanged, OnSpecChanged) will confirm.
-                        if (buttonData.maxCharges or 0) > 1 then
-                            hasRealCharges = true
+                        -- Auto-enable charge text when first promoted to charge-based.
+                        if buttonData.showChargeText == nil then
+                            buttonData.showChargeText = true
                         end
+
+                        -- Secondary source: display count
+                        local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
+                        if not issecretvalue(rawDisplayCount) then
+                            local displayCount = tonumber(rawDisplayCount)
+                            if displayCount and displayCount > (buttonData.maxCharges or 0) then
+                                buttonData.maxCharges = displayCount
+                            end
+                        end
+                    else
+                        hasRealCharges = nil
+                        -- Reset stored maxCharges to reflect the current API value
+                        -- (e.g. Strafing Run talent temporarily inflating to 2).
+                        buttonData.maxCharges = mc
                     end
                 else
                     -- chargeInfo nil: check if spell has "use count" (brez shared

@@ -36,6 +36,7 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 
 -- Imports from Tracking
 local UpdateIconTint = ST._UpdateIconTint
+local EvaluateDesaturation = ST._EvaluateDesaturation
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
@@ -611,51 +612,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Desaturation: aura-tracked buttons desaturate when aura absent;
-    -- cooldown buttons desaturate based on DurationObject / item CD state.
-    if buttonData.auraTracking then
-        local wantDesat
-        if buttonData.isPassive then
-            wantDesat = not button._auraActive
-        else
-            wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
-        end
-        if not wantDesat and not button._auraActive
-            and style.desaturateOnCooldown and button._desatCooldownActive then
-            wantDesat = true
-        end
-        if not wantDesat and button._isEquippableNotEquipped then
-            wantDesat = true
-        end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
-        or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
-        local wantDesat = false
-        if style.desaturateOnCooldown and button._desatCooldownActive then
-            wantDesat = true
-        end
-        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._zeroChargesConfirmed then
-            wantDesat = true
-        end
-        if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
-            wantDesat = true
-        end
-        if not wantDesat and button._isEquippableNotEquipped then
-            wantDesat = true
-        end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    else
-        if button._desaturated ~= false then
-            button._desaturated = false
-            button.icon:SetDesaturated(false)
-        end
-    end
+    EvaluateDesaturation(button, buttonData, style)
 
     UpdateIconTint(button, buttonData, style)
 end
