@@ -226,8 +226,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local actionSlotCooldownShown
     local actionSlotDurationObj
-    -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
-    local auraProbeInfo, auraProbeIsGCDOnly
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -672,19 +670,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.cooldown:Hide()
     end
 
-    -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
-    if auraOverrideActive and buttonData.type == "spell" and not buttonData.isPassive then
-        auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-        auraProbeIsGCDOnly = auraProbeInfo and IsSpellGCDOnly(auraProbeInfo, buttonData._cooldownSecrecy) or false
-    end
-
-    -- Secondary cooldown text display during aura override
+    -- Secondary cooldown text: probe spell/item CD during aura override
     if auraOverrideActive and button.secondaryCooldown then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            if auraProbeInfo then
-                if not auraProbeIsGCDOnly then
+            local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+            if probeInfo then
+                local probeIsGCDOnly = IsSpellGCDOnly(probeInfo, buttonData._cooldownSecrecy)
+                if not probeIsGCDOnly then
                     local probeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-                    if probeDuration and auraProbeInfo.isActive then
+                    if probeDuration and probeInfo.isActive then
                         button.secondaryCooldown:SetCooldownFromDurationObject(probeDuration)
                         button._secondaryCdActive = true
                     else
@@ -1145,11 +1139,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     cooldownActive = button._zeroChargesConfirmed == true
                 end
             elseif auraOverrideActive then
-                -- Aura visuals can replace button.cooldown, so probe spell cooldown
-                -- directly for sound-event state.  Reuse the probe from the
-                -- secondary cooldown block (same spell, same tick).
-                if auraProbeInfo then
-                    cooldownActive = auraProbeInfo.isActive and not auraProbeIsGCDOnly
+                -- Aura visuals replace button.cooldown; probe spell cooldown
+                -- directly for sound-event state.
+                local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+                if probeInfo then
+                    cooldownActive = probeInfo.isActive and not IsSpellGCDOnly(probeInfo, buttonData._cooldownSecrecy)
                 else
                     cooldownActive = false
                 end
