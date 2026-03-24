@@ -796,7 +796,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         end
         if chargeInfo then
             local mc = chargeInfo.maxCharges
-            if mc and not issecretvalue(mc) and mc > 1 then
+            if mc and mc > 1 then
                 group.buttons[buttonIndex].hasCharges = true
                 group.buttons[buttonIndex].showChargeText = true
                 group.buttons[buttonIndex].maxCharges = mc
@@ -809,7 +809,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                         group.buttons[buttonIndex].maxCharges = displayCount
                     end
                 end
-            elseif mc == nil or issecretvalue(mc) then
+            elseif mc == nil then
                 -- If maxCharges is unreadable in this context, keep a provisional
                 -- charge classification until RefreshChargeFlags can resolve it.
                 group.buttons[buttonIndex].hasCharges = true

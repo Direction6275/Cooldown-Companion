@@ -42,7 +42,8 @@ local function ApplyFontStyle(region, source, prefix, defaultSize)
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 
--- Scratch cooldown (legacy; kept for potential fallback use).
+-- Scratch cooldown: only used in ProbeActionSlotsForSpellID for action-bar
+-- DurationObjects that may still HasSecretValues(). Remove once verified.
 local scratchParent = CreateFrame("Frame")
 scratchParent:Hide()
 local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")

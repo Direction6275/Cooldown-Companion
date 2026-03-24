@@ -33,7 +33,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     -- Update persisted maxCharges when readable. Prefer API maxCharges over
     -- display count, which can reflect current charges instead of true max.
     local persistedMax = buttonData.maxCharges or 0
-    if charges and charges.maxCharges ~= nil and not issecretvalue(charges.maxCharges) then
+    if charges and charges.maxCharges ~= nil then
         if charges.maxCharges ~= persistedMax then
             buttonData.maxCharges = charges.maxCharges
             persistedMax = charges.maxCharges
@@ -45,8 +45,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     -- to 2; when the buff fades and the API returns 1, immediately clear charge
     -- classification so the normal cooldown/desaturation path applies.
     -- Safe for real charge spells: they always return maxCharges >= 2.
-    if charges and charges.maxCharges ~= nil and not issecretvalue(charges.maxCharges)
-       and charges.maxCharges <= 1 then
+    if charges and charges.maxCharges ~= nil and charges.maxCharges <= 1 then
         buttonData.hasCharges = nil
         buttonData.maxCharges = charges.maxCharges
         button.count:SetText("")

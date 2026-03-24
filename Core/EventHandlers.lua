@@ -117,7 +117,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     buttonData._castCountCandidate = nil
                     buttonData._castCountSelf = nil
                     local mc = chargeInfo.maxCharges
-                    if mc and not issecretvalue(mc) then
+                    if mc then
                         if mc > 1 then
                             hasRealCharges = true
                             if mc > (buttonData.maxCharges or 0) then
@@ -143,7 +143,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             -- (e.g. Strafing Run temporarily granting 2).
                             buttonData.maxCharges = mc
                         end
-                    elseif issecretvalue(mc) or mc == nil then
+                    elseif mc == nil then
                         -- maxCharges unreadable (secret or nil): can't classify
                         -- from current API data alone.  Trust stored maxCharges
                         -- if a readable value > 1 was previously observed
