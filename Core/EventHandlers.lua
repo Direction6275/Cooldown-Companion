@@ -138,7 +138,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     else
                         hasRealCharges = nil
                         -- Reset stored maxCharges to reflect the current API value
-                        -- (e.g. Strafing Run talent temporarily inflating to 2).
+                        -- (e.g. after Strafing Run buff fades, maxCharges returns from 2 to 1).
                         buttonData.maxCharges = mc
                     end
                 else

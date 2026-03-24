@@ -186,7 +186,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
             local mc = button.buttonData.maxCharges
             return cur ~= nil and mc ~= nil and cur > 0 and cur < mc
         else
-            return button._chargeRecharging == true and not button._zeroChargesConfirmed
+            return button._chargeRecharging and not button._zeroChargesConfirmed
         end
     elseif tokenName == "zerocharges" then
         if not button.buttonData.hasCharges then return false end

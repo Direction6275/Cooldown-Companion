@@ -189,11 +189,11 @@ local function UpdateIconTint(button, buttonData, style)
 end
 
 -- Icon desaturation: aura-tracked buttons desaturate when aura absent;
--- cooldown buttons desaturate based on DurationObject / item CD state.
+-- cooldown buttons desaturate based on _desatCooldownActive (set per-tick from cooldown / item state).
 -- Shared by icon-mode and bar-mode display paths.
 local function EvaluateDesaturation(button, buttonData, style)
+    local wantDesat = false
     if buttonData.auraTracking then
-        local wantDesat
         if buttonData.isPassive then
             wantDesat = not button._auraActive
         else
@@ -203,16 +203,8 @@ local function EvaluateDesaturation(button, buttonData, style)
             and style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
         end
-        if not wantDesat and button._isEquippableNotEquipped then
-            wantDesat = true
-        end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
     elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
         or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
-        local wantDesat = false
         if style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
         end
@@ -222,18 +214,13 @@ local function EvaluateDesaturation(button, buttonData, style)
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
             wantDesat = true
         end
-        if not wantDesat and button._isEquippableNotEquipped then
-            wantDesat = true
-        end
-        if button._desaturated ~= wantDesat then
-            button._desaturated = wantDesat
-            button.icon:SetDesaturated(wantDesat)
-        end
-    else
-        if button._desaturated ~= false then
-            button._desaturated = false
-            button.icon:SetDesaturated(false)
-        end
+    end
+    if not wantDesat and button._isEquippableNotEquipped then
+        wantDesat = true
+    end
+    if button._desaturated ~= wantDesat then
+        button._desaturated = wantDesat
+        button.icon:SetDesaturated(wantDesat)
     end
 end
 
