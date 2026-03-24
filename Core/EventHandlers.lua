@@ -144,14 +144,10 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                             buttonData.maxCharges = mc
                         end
                     elseif mc == nil then
-                        -- maxCharges unreadable (secret or nil): can't classify
-                        -- from current API data alone.  Trust stored maxCharges
-                        -- if a readable value > 1 was previously observed
-                        -- (set by AddButtonToGroup or a prior readable pass);
-                        -- otherwise preserve existing classification.
-                        -- A later re-evaluation when values become readable
-                        -- (QueueTalentChargeRefresh, OnTalentsChanged, OnSpecChanged)
-                        -- will confirm with readable data.
+                        -- maxCharges nil (malformed API response): trust stored
+                        -- maxCharges if a value > 1 was previously observed.
+                        -- A later re-evaluation (QueueTalentChargeRefresh,
+                        -- OnTalentsChanged, OnSpecChanged) will confirm.
                         if (buttonData.maxCharges or 0) > 1 then
                             hasRealCharges = true
                         end

@@ -810,8 +810,8 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                     end
                 end
             elseif mc == nil then
-                -- If maxCharges is unreadable in this context, keep a provisional
-                -- charge classification until RefreshChargeFlags can resolve it.
+                -- maxCharges nil: keep a provisional charge classification
+                -- until RefreshChargeFlags can resolve it.
                 group.buttons[buttonIndex].hasCharges = true
                 group.buttons[buttonIndex].showChargeText = true
             end

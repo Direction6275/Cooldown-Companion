@@ -56,13 +56,28 @@ local function GetViewerNameFontString(viewerFrame)
     return bar and bar.Name or nil
 end
 
--- Hidden scratch CooldownFrame for action-slot probing.
+-- Hidden scratch CooldownFrame for probing DurationObject activity.
 -- DurationObject:IsZero() returns a secret boolean in tainted contexts;
 -- feeding the object to a Cooldown widget and checking IsShown() yields
--- a plain boolean safe for Lua logic.
+-- a plain boolean safe for Lua logic.  Used by action-slot and totem
+-- probes, which have no isActive companion field on their return values.
 local scratchParent = CreateFrame("Frame")
 scratchParent:Hide()
 local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
+
+-- GCD-only detection: is the spell's cooldown just the global cooldown?
+-- NeverSecret path uses direct field comparison (precise at GCD boundaries).
+-- Secret path uses isOnGCD + _gcdActive (coarser, avoids secret arithmetic).
+local function IsSpellGCDOnly(info, secrecy)
+    local gcdInfo = CooldownCompanion._gcdInfo
+    if not gcdInfo then return false end
+    if secrecy == 0 then
+        return (info.startTime == gcdInfo.startTime
+            and info.duration == gcdInfo.duration)
+    else
+        return info.isOnGCD and CooldownCompanion._gcdActive
+    end
+end
 
 -- Probe action-slot cooldown state for a spell ID pair (base + display override).
 -- Returns:
@@ -211,6 +226,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local actionSlotCooldownShown
     local actionSlotDurationObj
+    -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
+    local auraProbeInfo, auraProbeIsGCDOnly
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -336,7 +353,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local totemSlot = viewerFrame.preferredTotemUpdateSlot
                     if totemSlot and viewerFrame:IsVisible() then
                         local totemDuration = GetTotemDuration(totemSlot)
-                        local totemActive = totemDuration and not totemDuration:IsZero()
+                        local totemActive = false
+                        if totemDuration then
+                            scratchCooldown:SetCooldownFromDurationObject(totemDuration)
+                            totemActive = scratchCooldown:IsShown()
+                            scratchCooldown:SetCooldown(0, 0)
+                        end
                         if totemActive then
                             button.cooldown:SetCooldownFromDurationObject(totemDuration)
                             button._durationObj = totemDuration
@@ -650,25 +672,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.cooldown:Hide()
     end
 
-    -- Secondary cooldown text: probe spell/item CD during aura override
+    -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
+    if auraOverrideActive and buttonData.type == "spell" and not buttonData.isPassive then
+        auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+        auraProbeIsGCDOnly = auraProbeInfo and IsSpellGCDOnly(auraProbeInfo, buttonData._cooldownSecrecy) or false
+    end
+
+    -- Secondary cooldown text display during aura override
     if auraOverrideActive and button.secondaryCooldown then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-            if probeInfo then
-                -- Filter GCD-only (same pattern as sound alert probe)
-                local probeIsGCDOnly = false
-                local gcdInfo = CooldownCompanion._gcdInfo
-                if gcdInfo then
-                    if buttonData._cooldownSecrecy == 0 then
-                        probeIsGCDOnly = (probeInfo.startTime == gcdInfo.startTime
-                            and probeInfo.duration == gcdInfo.duration)
-                    else
-                        probeIsGCDOnly = (probeInfo.isOnGCD and CooldownCompanion._gcdActive)
-                    end
-                end
-                if not probeIsGCDOnly then
+            if auraProbeInfo then
+                if not auraProbeIsGCDOnly then
                     local probeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-                    if probeDuration and probeInfo.isActive then
+                    if probeDuration and auraProbeInfo.isActive then
                         button.secondaryCooldown:SetCooldownFromDurationObject(probeDuration)
                         button._secondaryCdActive = true
                     else
@@ -713,53 +729,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             end
 
-            -- Get isOnGCD (NeverSecret) via GetSpellCooldown.
-            -- DurationObject used for display (SetCooldownFromDurationObject
-            -- accepts both secret and non-secret DurationObjects).
             spellCooldownInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-            spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
             if spellCooldownInfo then
                 isOnGCD = spellCooldownInfo.isOnGCD
-                if not fetchOk then
-                    if spellCooldownDuration then
-                        button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
-                    else
-                        button.cooldown:SetCooldown(0, 0)
-                    end
+                isGCDOnly = IsSpellGCDOnly(spellCooldownInfo, buttonData._cooldownSecrecy)
+
+                -- Only fetch the DurationObject when the cooldown is active or
+                -- an action-slot override says so.  When isActive is false the
+                -- DurationObject is zero-span (12.0.1 hotfix), so SetCooldown(0,0)
+                -- is equivalent and avoids the API call.
+                if spellCooldownInfo.isActive or actionSlotCooldownShown then
+                    spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
                 end
-                fetchOk = true
-            elseif actionSlotDurationObj and not fetchOk then
-                -- Fallback: some ContextuallySecret spells can return nil from
-                -- C_Spell.GetSpellCooldown while action-slot cooldown data is
-                -- still available (matches Blizzard action button behavior).
-                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                fetchOk = true
-            end
-            -- GCD-only detection: compare spell's cooldown against GCD reference (61304).
-            -- More reliable than isOnGCD at GCD boundaries (Blizzard CooldownViewer pattern).
-            if spellCooldownInfo then
-                local gcdInfo = CooldownCompanion._gcdInfo
-                if gcdInfo then
-                    if buttonData._cooldownSecrecy == 0 then
-                        -- NeverSecret: direct comparison is safe
-                        isGCDOnly = (spellCooldownInfo.startTime == gcdInfo.startTime
-                            and spellCooldownInfo.duration == gcdInfo.duration)
-                    else
-                        -- Secret cooldown: both signals must agree to avoid false positives.
-                        -- isOnGCD (NeverSecret) = Blizzard's per-spell GCD flag.
-                        -- _gcdActive = widget-level GCD signal (covers boundary where
-                        -- isOnGCD lingers true after GCD ends).
-                        isGCDOnly = isOnGCD and CooldownCompanion._gcdActive
-                    end
-                end
-            end
-            -- isActive (NeverSecret, 12.0.1 hotfix) replaces HasSecretValues/IsZero
-            -- and scratchCooldown probes for cooldown-active detection.
-            if spellCooldownDuration then
-                local useIt = false
-                local durationForDisplay = spellCooldownDuration
-                if spellCooldownInfo then
-                    useIt = spellCooldownInfo.isActive
+
+                if spellCooldownDuration then
+                    local useIt = spellCooldownInfo.isActive
+                    local durationForDisplay = spellCooldownDuration
                     if not useIt and actionSlotCooldownShown == true then
                         -- Action slot says active but spell API disagrees;
                         -- trust action slot (charge-aware, can differ from spell-level).
@@ -768,12 +753,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             durationForDisplay = actionSlotDurationObj
                         end
                     end
+                    if useIt then
+                        button._durationObj = durationForDisplay
+                        button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
+                    elseif not fetchOk then
+                        button.cooldown:SetCooldown(0, 0)
+                    end
+                elseif not fetchOk then
+                    button.cooldown:SetCooldown(0, 0)
                 end
-                if useIt then
-                    button._durationObj = durationForDisplay
-                    button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
-                    fetchOk = true
-                end
+                fetchOk = true
+            elseif actionSlotDurationObj and not fetchOk then
+                -- Fallback: some ContextuallySecret spells can return nil from
+                -- C_Spell.GetSpellCooldown while action-slot cooldown data is
+                -- still available (matches Blizzard action button behavior).
+                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
+                fetchOk = true
             elseif actionSlotCooldownShown == true and actionSlotDurationObj then
                 -- Fallback when spell duration API is unavailable but action-slot
                 -- duration object is present.
@@ -949,10 +944,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if slotShown ~= nil then
                 button._mainCDShown = slotShown and not isGCDOnly
                 button._mainCDProbed = true
-            elseif not auraOverrideActive and (button._isBar or button._isText) then
-                button._mainCDShown = button.cooldown:IsShown() and not isGCDOnly
             elseif not auraOverrideActive then
-                -- Icon mode: isActive (NeverSecret) replaces scratchCooldown probe.
+                -- No action bar slot found; use isActive (NeverSecret) directly.
                 if spellCooldownInfo then
                     button._mainCDShown = spellCooldownInfo.isActive and not isGCDOnly
                 else
@@ -972,9 +965,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
            and button._chargeCountReadable ~= true
            and not button._mainCDProbed then
             -- Heuristic: suppress zero-charge when cast history says charges remain.
-            -- Only applies when _mainCDShown was determined by non-charge-aware
-            -- fallbacks (cooldown:IsShown / scratchCooldown). Skip when the action
-            -- bar probe was used — it is already charge-aware and authoritative.
+            -- Only applies when _mainCDShown was determined by isActive (not
+            -- charge-aware). Skip when the action bar probe was used — it is
+            -- already charge-aware and authoritative.
             local maxCharges = buttonData.maxCharges
             local spent = button._chargesSpent
             if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
@@ -1153,27 +1146,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             elseif auraOverrideActive then
                 -- Aura visuals can replace button.cooldown, so probe spell cooldown
-                -- directly for sound-event state.
-                local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-                if probeInfo then
-                    local probeIsOnGCD = probeInfo.isOnGCD and true or false
-                    local probeIsGCDOnly = false
-                    local gcdInfo = CooldownCompanion._gcdInfo
-                    if gcdInfo then
-                        if buttonData._cooldownSecrecy == 0 then
-                            probeIsGCDOnly = (probeInfo.startTime == gcdInfo.startTime
-                                and probeInfo.duration == gcdInfo.duration)
-                        else
-                            probeIsGCDOnly = probeIsOnGCD and CooldownCompanion._gcdActive
-                        end
-                    end
-
-                    cooldownActive = probeInfo.isActive and not probeIsGCDOnly
+                -- directly for sound-event state.  Reuse the probe from the
+                -- secondary cooldown block (same spell, same tick).
+                if auraProbeInfo then
+                    cooldownActive = auraProbeInfo.isActive and not auraProbeIsGCDOnly
                 else
                     cooldownActive = false
                 end
             else
-                -- Normal path: isActive replaces scratchCooldown probe
+                -- Normal path: isActive (NeverSecret)
                 if spellCooldownInfo then
                     cooldownActive = spellCooldownInfo.isActive and not isGCDOnly
                 else

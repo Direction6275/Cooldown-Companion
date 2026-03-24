@@ -42,8 +42,6 @@ local function ApplyFontStyle(region, source, prefix, defaultSize)
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 
-
-
 -- Position a region in the icon area of a bar button.
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.
 local function SetIconAreaPoints(region, button, isVertical, iconReverse, iconSize, inset)
