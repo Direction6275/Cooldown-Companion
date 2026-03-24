@@ -1011,8 +1011,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
         -- Charge recharging state: isActive (NeverSecret, 12.0.1 hotfix) replaces
-        -- the scratchCooldown probe.  "False if recharging is not active (at max
-        -- charges, start/duration zero)" — exactly the semantic we need.
+        -- the scratchCooldown probe.  False when not recharging (at max charges,
+        -- or start/duration zero) — exactly the semantic we need.
         if charges then
             button._chargeRecharging = charges.isActive and true or false
         else
