@@ -56,6 +56,14 @@ local function GetViewerNameFontString(viewerFrame)
     return bar and bar.Name or nil
 end
 
+-- Hidden scratch CooldownFrame for action-slot probing.
+-- DurationObject:IsZero() returns a secret boolean in tainted contexts;
+-- feeding the object to a Cooldown widget and checking IsShown() yields
+-- a plain boolean safe for Lua logic.
+local scratchParent = CreateFrame("Frame")
+scratchParent:Hide()
+local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
+
 -- Probe action-slot cooldown state for a spell ID pair (base + display override).
 -- Returns:
 --   shown      : true/false/nil (nil = no slots found or unknown from secret state)
@@ -80,8 +88,11 @@ local function ProbeActionSlotsForSpellID(spellID)
             local shown = false
 
             if durationObj then
-                -- HasSecretValues() confirmed false post-hotfix (12.0.1 build 66562).
-                shown = not durationObj:IsZero()
+                -- IsZero() returns a secret boolean in tainted contexts;
+                -- feed through a hidden Cooldown widget for a plain boolean.
+                scratchCooldown:SetCooldownFromDurationObject(durationObj)
+                shown = scratchCooldown:IsShown()
+                scratchCooldown:SetCooldown(0, 0)
             else
                 sawUnknown = true
             end
