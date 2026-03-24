@@ -15,12 +15,6 @@ local pairs = pairs
 local wipe = wipe
 local issecretvalue = issecretvalue
 
--- Imports from Helpers
--- scratchCooldown: only used in ProbeActionSlotsForSpellID for action-bar
--- DurationObjects that may still HasSecretValues(). Can be removed once
--- verified that HasSecretValues() returns false post-hotfix.
-local scratchCooldown = ST._scratchCooldown
-
 -- Imports from Glows
 local GetViewerAuraStackText = ST._GetViewerAuraStackText
 
@@ -86,17 +80,8 @@ local function ProbeActionSlotsForSpellID(spellID)
             local shown = false
 
             if durationObj then
-                if not durationObj:HasSecretValues() then
-                    shown = not durationObj:IsZero()
-                else
-                    -- Action-bar DurationObjects may still HasSecretValues();
-                    -- scratchCooldown probe is the last remaining use.
-                    -- TODO: remove if HasSecretValues() returns false post-hotfix.
-                    scratchCooldown:Hide()
-                    scratchCooldown:SetCooldownFromDurationObject(durationObj)
-                    shown = scratchCooldown:IsShown()
-                    scratchCooldown:Hide()
-                end
+                -- HasSecretValues() confirmed false post-hotfix (12.0.1 build 66562).
+                shown = not durationObj:IsZero()
             else
                 sawUnknown = true
             end
@@ -331,14 +316,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     end
                 end
                 -- Fallback 2: GetTotemDuration for totem/summoning spells
-                -- (TrackedBar category). Returns a LuaDurationObject (12.0.1 hotfix).
+                -- (TrackedBar category). Returns a LuaDurationObject.
+                -- GetTotemDuration is a global (not C_Totem-namespaced).
                 -- Read preferredTotemUpdateSlot directly from the viewer
                 -- frame (plain number set by CDM) rather than caching it,
                 -- since the slot may not be populated at BuildViewerAuraMap time.
                 if not auraOverrideActive then
                     local totemSlot = viewerFrame.preferredTotemUpdateSlot
                     if totemSlot and viewerFrame:IsVisible() then
-                        local totemDuration = C_Totem.GetTotemDuration(totemSlot)
+                        local totemDuration = GetTotemDuration(totemSlot)
                         local totemActive = totemDuration and not totemDuration:IsZero()
                         if totemActive then
                             button.cooldown:SetCooldownFromDurationObject(totemDuration)

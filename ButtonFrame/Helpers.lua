@@ -42,11 +42,7 @@ local function ApplyFontStyle(region, source, prefix, defaultSize)
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 
--- Scratch cooldown: only used in ProbeActionSlotsForSpellID for action-bar
--- DurationObjects that may still HasSecretValues(). Remove once verified.
-local scratchParent = CreateFrame("Frame")
-scratchParent:Hide()
-local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
+
 
 -- Position a region in the icon area of a bar button.
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.
@@ -233,8 +229,6 @@ local function FitHighlightFrame(frame, button, overhangPct)
 end
 
 -- Exports
-ST._scratchParent = scratchParent
-ST._scratchCooldown = scratchCooldown
 ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
 ST._DEFAULT_BAR_PANDEMIC_COLOR = DEFAULT_BAR_PANDEMIC_COLOR
 ST._DEFAULT_BAR_CHARGE_COLOR = DEFAULT_BAR_CHARGE_COLOR
