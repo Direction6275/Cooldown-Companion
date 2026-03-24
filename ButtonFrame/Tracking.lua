@@ -30,8 +30,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     button._currentReadableCharges = cur
     button._chargeCountReadable = (cur ~= nil)
 
-    -- Update persisted maxCharges from the charge API. Prefer API maxCharges
-    -- over display count, which can reflect current charges instead of true max.
+    -- Persist maxCharges from the charge API whenever available.
     local persistedMax = buttonData.maxCharges or 0
     if charges then
         if charges.maxCharges ~= persistedMax then
@@ -189,7 +188,8 @@ local function UpdateIconTint(button, buttonData, style)
 end
 
 -- Icon desaturation: aura-tracked buttons desaturate when aura absent;
--- cooldown buttons desaturate based on _desatCooldownActive (set per-tick from cooldown / item state).
+-- cooldown buttons desaturate based on _desatCooldownActive (set per-tick from cooldown / item state);
+-- equippable-but-not-equipped items always desaturate.
 -- Shared by icon-mode and bar-mode display paths.
 local function EvaluateDesaturation(button, buttonData, style)
     local wantDesat = false

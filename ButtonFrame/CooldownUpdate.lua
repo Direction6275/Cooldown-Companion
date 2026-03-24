@@ -1010,9 +1010,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._durationObj = nil
         end
 
-        -- Charge recharging state: isActive (NeverSecret, 12.0.1 hotfix) replaces
-        -- the scratchCooldown probe.  False when not recharging (at max charges,
-        -- or start/duration zero) — exactly the semantic we need.
+        -- Charge recharging state: charges.isActive (NeverSecret) is false when
+        -- not recharging (at max charges, or start/duration zero) — exactly the
+        -- semantic we need.
         if charges then
             button._chargeRecharging = charges.isActive
         else
