@@ -347,9 +347,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Read preferredTotemUpdateSlot directly from the viewer
                 -- frame (plain number set by CDM) rather than caching it,
                 -- since the slot may not be populated at BuildViewerAuraMap time.
+                -- Guard: viewerFrame.totemData is non-nil only when CDM has
+                -- validated that the totem slot still contains this child's
+                -- spell (GetPreferredTotemSlotInfo checks spellID).  Without
+                -- this, a stale preferredTotemUpdateSlot causes CC to read a
+                -- different spell's totem duration after slot reuse.
                 if not auraOverrideActive then
                     local totemSlot = viewerFrame.preferredTotemUpdateSlot
-                    if totemSlot and viewerFrame:IsVisible() then
+                    if totemSlot and viewerFrame:IsVisible() and viewerFrame.totemData then
                         local totemDuration = GetTotemDuration(totemSlot)
                         local totemActive = false
                         if totemDuration then
