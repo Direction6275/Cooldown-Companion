@@ -310,7 +310,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- auras first, so auraDataUnit can incorrectly be "player" for a
                 -- viewer child that tracks a target debuff.  Reject the mismatch
                 -- so target-debuff buttons don't display random player buff durations.
-                if durationObj and (unit == configUnit or configUnit == "player") then
+                if durationObj and (unit == configUnit or configUnit == "player" or hasExplicitAuraOverride) then
                     button._durationObj = durationObj
                     button._viewerBar = nil  -- primary path: DurationObject available
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -330,7 +330,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         -- Plain values: safe to do ms->s arithmetic
                         if durMs > 0 and (startMs + durMs) > now * 1000 then
                             local vUnit = viewerFrame.auraDataUnit or auraUnit
-                            if vUnit == configUnit or configUnit == "player" then
+                            if vUnit == configUnit or configUnit == "player" or hasExplicitAuraOverride then
                                 button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
                                 button._auraUnit = vUnit
                                 auraOverrideActive = true
@@ -344,7 +344,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         -- Blizzard secure code set the values — check the returned
                         -- value directly with issecretvalue() instead.)
                         local vUnit = viewerFrame.auraDataUnit or auraUnit
-                        if vUnit == configUnit or configUnit == "player" then
+                        if vUnit == configUnit or configUnit == "player" or hasExplicitAuraOverride then
                             button._auraUnit = vUnit
                             auraOverrideActive = true
                             fetchOk = true
@@ -399,7 +399,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
         -- the viewer path has no auraInstanceID (form-variant spells like
         -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
-        if not auraOverrideActive and auraUnit == "player" then
+        -- Also try the player fallback when an explicit auraSpellID override is
+        -- set — the override aura may be a player buff even when the button's
+        -- auraUnit is "target" (e.g. tracking Apex Predator's Craving on
+        -- Ferocious Bite).
+        if not auraOverrideActive and (auraUnit == "player" or hasExplicitAuraOverride) then
             local baseId = C_Spell.GetBaseSpell(buttonData.id)
             -- Try base spell first (buff is applied as base), then _auraSpellID
             local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
@@ -416,7 +420,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
                         button._auraInstanceID = instId
-                        if configUnit == "player" then
+                        if configUnit == "player" or hasExplicitAuraOverride then
                             button._auraUnit = "player"
                         end
                         auraOverrideActive = true
