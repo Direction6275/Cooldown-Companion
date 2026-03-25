@@ -195,7 +195,7 @@ local function EvaluateDesaturation(button, buttonData, style)
     local wantDesat = false
     if buttonData.auraTracking then
         if buttonData.isPassive then
-            wantDesat = not button._auraActive
+            wantDesat = not buttonData.saturateWhileAuraNotActive and not button._auraActive
         else
             wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
         end
