@@ -627,6 +627,14 @@ end
 
 local function ApplyCustomAuraPulse(frame, speed, minAlpha)
     EnsureCustomAuraPulse(frame)
+    -- Skip if already playing with same parameters
+    if frame._auraPulseSpd == speed
+       and frame._auraPulseMin == minAlpha
+       and frame._auraPulseAG:IsPlaying() then
+        return
+    end
+    frame._auraPulseSpd = speed
+    frame._auraPulseMin = minAlpha
     frame._auraPulseAnim:SetDuration(speed)
     frame._auraPulseAnim:SetFromAlpha(1.0)
     frame._auraPulseAnim:SetToAlpha(minAlpha)
@@ -638,6 +646,8 @@ local function StopCustomAuraPulse(frame)
     if not frame._auraPulseAG then return end
     frame._auraPulseAG:Stop()
     frame:SetAlpha(1)
+    frame._auraPulseSpd = nil
+    frame._auraPulseMin = nil
 end
 
 local function EnsureCustomAuraBorderTextures(frame)
@@ -654,12 +664,30 @@ end
 
 local function ApplyCustomAuraBorder(frame, color, size)
     EnsureCustomAuraBorderTextures(frame)
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+    -- Skip if already showing with same parameters
+    if frame._auraBdrR == r and frame._auraBdrG == g
+       and frame._auraBdrB == b and frame._auraBdrA == a
+       and frame._auraBdrSz == size
+       and frame._auraBorderTextures.TOP:IsShown() then
+        return
+    end
+    frame._auraBdrR = r
+    frame._auraBdrG = g
+    frame._auraBdrB = b
+    frame._auraBdrA = a
+    frame._auraBdrSz = size
     ApplyPixelBorders(frame._auraBorderTextures, frame, color, size)
 end
 
 local function HideCustomAuraBorder(frame)
     if not frame._auraBorderTextures then return end
     HidePixelBorders(frame._auraBorderTextures)
+    frame._auraBdrR = nil
+    frame._auraBdrG = nil
+    frame._auraBdrB = nil
+    frame._auraBdrA = nil
+    frame._auraBdrSz = nil
 end
 
 local function EnsureCustomAuraContinuousThresholdOverlay(bar)

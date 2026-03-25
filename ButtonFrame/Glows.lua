@@ -243,7 +243,12 @@ local function HideGlowStyles(container)
         end
         container._ccPulseTarget = nil
     end
-    -- NOTE: border textures NOT hidden here — managed by independent cache in setter
+    -- Hide border textures so invalidation paths don't leave orphans
+    if container.borderTextures then
+        for _, tex in ipairs(container.borderTextures) do
+            tex:Hide()
+        end
+    end
 end
 
 -- Show the selected glow style on a container.
