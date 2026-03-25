@@ -41,6 +41,8 @@ Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 #@end-no-lib-strip@
 
 # Core Addon Files
+Core\ClickThrough.lua
+Core\SpellQueries.lua
 Core\Utils.lua
 Core\Init.lua
 Core\Defaults.lua
