@@ -356,7 +356,7 @@ local function InstallHooks()
     -- When anchor group refreshes — re-evaluate
     hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
         local s = GetFrameAnchoringSettings()
-        if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
+        if s and s.enabled then
             C_Timer.After(0, function()
                 CooldownCompanion:EvaluateFrameAnchoring()
             end)

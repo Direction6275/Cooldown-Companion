@@ -2384,8 +2384,8 @@ local function BuildLayoutOrderPanel(container)
     local castSlots = {}
     if cbSettings and cbSettings.enabled then
         local defaultAnchor = CooldownCompanion:GetFirstAvailableAnchorGroup()
-        local cbAnchor = cbSettings.anchorGroupId or defaultAnchor
-        local rbAnchor = rbSettings.anchorGroupId or defaultAnchor
+        local cbAnchor = defaultAnchor
+        local rbAnchor = defaultAnchor
         if cbAnchor and cbAnchor == rbAnchor then
             local cbColor = cbSettings.barColor or { 1.0, 0.7, 0.0 }
             table.insert(castSlots, {

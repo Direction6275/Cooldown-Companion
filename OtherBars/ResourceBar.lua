@@ -2388,7 +2388,7 @@ function CooldownCompanion:InitializeCustomAuraIndependentAnchor(slotIdx)
 
     cabConfig.independentAnchorTargetMode = "group"
     if cabConfig.independentAnchorGroupId == nil then
-        cabConfig.independentAnchorGroupId = settings.anchorGroupId
+        cabConfig.independentAnchorGroupId = CooldownCompanion:GetFirstAvailableAnchorGroup()
     end
     cabConfig.independentAnchor = {
         point = "CENTER",
@@ -2697,7 +2697,7 @@ local function InstallHooks()
     -- When anchor group refreshes — re-evaluate
     hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
         local s = GetResourceBarSettings()
-        if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
+        if s and s.enabled then
             C_Timer.After(0, function()
                 CooldownCompanion:EvaluateResourceBars()
             end)

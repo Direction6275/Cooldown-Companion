@@ -692,11 +692,16 @@ local function RefreshColumn1(preserveDrag)
                             info.notCheckable = true
                             info.func = function()
                                 CloseDropDownMenus()
-                                if not db.groupContainers[containerId] then return end
-                                if container.isGlobal then
-                                    db.groupContainers[containerId].anchorEligible = not container.anchorEligible or nil
+                                local fresh = db.groupContainers[containerId]
+                                if not fresh then return end
+                                if fresh.isGlobal then
+                                    fresh.anchorEligible = not fresh.anchorEligible or nil
                                 else
-                                    db.groupContainers[containerId].anchorEligible = isCurrentlyEligible and false or nil
+                                    if fresh.anchorEligible ~= false then
+                                        fresh.anchorEligible = false
+                                    else
+                                        fresh.anchorEligible = nil
+                                    end
                                 end
                                 CooldownCompanion:EvaluateResourceBars()
                                 CooldownCompanion:UpdateAnchorStacking()

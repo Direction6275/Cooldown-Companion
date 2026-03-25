@@ -1184,7 +1184,7 @@ local function InstallHooks()
         -- When anchor group refreshes (visibility changes) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
             local s = GetCastBarSettings()
-            if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
+            if s and s.enabled then
                 C_Timer.After(0, function()
                     CooldownCompanion:EvaluateCastBar()
                 end)
