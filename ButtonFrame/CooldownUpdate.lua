@@ -288,7 +288,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- and is always present in the viewer map after BuildViewerAuraMap.
         if not viewerFrame then
             viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-            if not viewerFrame and not hasExplicitAuraOverride then
+            if not viewerFrame then
                 viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(buttonData.id)
                     or (button._displaySpellId and CooldownCompanion:ResolveBuffViewerFrameForSpell(button._displaySpellId))
                 -- Try base spell for form-variant spells (e.g. Stampeding Roar)
