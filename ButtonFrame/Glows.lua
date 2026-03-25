@@ -497,9 +497,7 @@ local function SetAuraGlow(button, show, pandemicOverride)
                 linesKey = "auraGlowLines"
                 glowKey = AURA_GLOW_LCG_KEY
             end
-            sz = GetGlowSize(btnStyle, sizeKey, glowStyle, {
-                solid = 5, pixel = 8, glow = 30, autocast = 2,
-            })
+            sz = GetGlowSize(btnStyle, sizeKey, glowStyle, DEFAULT_GLOW_SIZES)
             usesSpeed = UsesGlowSpeed(glowStyle)
             th = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 4) or 0
             spd = usesSpeed and ((btnStyle and btnStyle[speedKey]) or 50) or 0
