@@ -302,7 +302,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 local unit = viewerFrame.auraDataUnit or auraUnit
                 local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
                 -- Gate on unit compatibility: CDM's GetAuraData() checks player
-                -- auras first, so auraDataUnit can transiently be "player" for a
+                -- auras first, so auraDataUnit can incorrectly be "player" for a
                 -- viewer child that tracks a target debuff.  Reject the mismatch
                 -- so target-debuff buttons don't display random player buff durations.
                 if durationObj and (unit == configUnit or configUnit == "player") then
@@ -1156,8 +1156,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     cooldownActive = button._zeroChargesConfirmed == true
                 end
             elseif auraOverrideActive then
-                -- Aura visuals replace button.cooldown; reuse the probe from
-                -- the secondary cooldown block (same spell, same tick).
+                -- Aura visuals replace button.cooldown; reuse the shared
+                -- probe computed above (same spell, same tick).
                 if auraProbeInfo then
                     cooldownActive = auraProbeInfo.isActive and not auraProbeIsGCDOnly
                 else

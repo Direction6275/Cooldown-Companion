@@ -629,7 +629,7 @@ local function SetKeyPressHighlight(button, show)
         sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
     end
 
-    -- Off path: == nil (not "not") so external nil-invalidation falls through
+    -- Off path
     if not glowStyle then
         if button._keyPressHighlightActive == nil then return end
         button._keyPressHighlightActive = nil
@@ -809,7 +809,7 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
         end
     end
 
-    -- Off path: == nil (not "not") so external nil-invalidation falls through
+    -- Off path
     if not effect then
         if button._barAuraEffectActive == nil then return end
         button._barAuraEffectActive = nil
