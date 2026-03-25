@@ -21,6 +21,10 @@ local GetViewerAuraStackText = ST._GetViewerAuraStackText
 -- Imports from Visibility
 local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 
+-- Pre-defined color constant tables to avoid per-tick allocation.
+-- IMPORTANT: These tables are read-only — never write to their indices.
+local DEFAULT_WHITE = {1, 1, 1, 1}
+
 -- APIs for text-mode conditional tokens
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
@@ -158,6 +162,7 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
+    local now = GetTime()
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
     local wasAuraActive = button._auraActive == true
@@ -323,7 +328,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local startMs, durMs = viewerCooldown:GetCooldownTimes()
                     if not issecretvalue(durMs) then
                         -- Plain values: safe to do ms->s arithmetic
-                        if durMs > 0 and (startMs + durMs) > GetTime() * 1000 then
+                        if durMs > 0 and (startMs + durMs) > now * 1000 then
                             local vUnit = viewerFrame.auraDataUnit or auraUnit
                             if vUnit == configUnit or configUnit == "player" then
                                 button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
@@ -457,7 +462,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     if button._targetSwitchDataReceived then
                         expired = true
                     else
-                        expired = (GetTime() - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
+                        expired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
                     end
                 end
             elseif not prevAuraDurationObj:HasSecretValues() then
@@ -465,9 +470,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             if not expired then
                 if not button._auraGraceStart then
-                    button._auraGraceStart = GetTime()
+                    button._auraGraceStart = now
                 end
-                if GetTime() - button._auraGraceStart <= 0.3 or button._targetSwitchAt then
+                if now - button._auraGraceStart <= 0.3 or button._targetSwitchAt then
                     button._durationObj = prevAuraDurationObj
                     auraOverrideActive = true
                 else
@@ -506,7 +511,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if button._targetSwitchDataReceived then
                     catchAllExpired = true
                 else
-                    catchAllExpired = (GetTime() - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
+                    catchAllExpired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
                 end
             end
             if catchAllExpired then
@@ -629,9 +634,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 else
                     -- Grace hold — see block comment above.
                     if not button._pandemicGraceStart then
-                        button._pandemicGraceStart = GetTime()
+                        button._pandemicGraceStart = now
                     end
-                    if GetTime() - button._pandemicGraceStart <= 0.3 then
+                    if now - button._pandemicGraceStart <= 0.3 then
                         inPandemic = true
                     else
                         button._pandemicGraceStart = nil
@@ -868,7 +873,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Store raw GCD state for downstream display logic.
     if button._postCastGCDHold then
-        local holdExpired = button._postCastGCDHoldUntil and GetTime() > button._postCastGCDHoldUntil
+        local holdExpired = button._postCastGCDHoldUntil and now > button._postCastGCDHoldUntil
         if holdExpired or not CooldownCompanion._gcdActive then
             button._postCastGCDHold = nil
             button._postCastGCDHoldUntil = nil
@@ -1009,7 +1014,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- desatWasActive is true only when the previous tick had an active cooldown,
     -- so nil → false (initial load) does NOT set a start time.
     if desatWasActive and button._desatCooldownActive == false then
-        button._readyGlowStartTime = GetTime()
+        button._readyGlowStartTime = now
     elseif button._desatCooldownActive == true then
         button._readyGlowStartTime = nil
     end
@@ -1097,21 +1102,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local cur = button._currentReadableCharges
         if button._chargeCountReadable == true and cur ~= nil and buttonData.maxCharges then
             if cur == 0 then
-                cc = style.chargeFontColorZero or {1, 1, 1, 1}
+                cc = style.chargeFontColorZero or DEFAULT_WHITE
             elseif cur < buttonData.maxCharges then
-                cc = style.chargeFontColorMissing or {1, 1, 1, 1}
+                cc = style.chargeFontColorMissing or DEFAULT_WHITE
             else
-                cc = style.chargeFontColor or {1, 1, 1, 1}
+                cc = style.chargeFontColor or DEFAULT_WHITE
             end
         else
             -- Restricted mode: charges unreadable via C_Spell.
             -- Use canonical zero state derived from _mainCDShown + cast history.
             if not button._chargeRecharging then
-                cc = style.chargeFontColor or {1, 1, 1, 1}             -- FULL (max charges)
+                cc = style.chargeFontColor or DEFAULT_WHITE             -- FULL (max charges)
             elseif button._zeroChargesConfirmed then
-                cc = style.chargeFontColorZero or {1, 1, 1, 1}         -- ZERO (all spent)
+                cc = style.chargeFontColorZero or DEFAULT_WHITE         -- ZERO (all spent)
             else
-                cc = style.chargeFontColorMissing or {1, 1, 1, 1}      -- MISSING (recharging)
+                cc = style.chargeFontColorMissing or DEFAULT_WHITE      -- MISSING (recharging)
             end
         end
         button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
