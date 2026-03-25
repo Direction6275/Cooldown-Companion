@@ -1041,8 +1041,8 @@ function CooldownCompanion:UpdateAllCooldowns()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
     self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
-    -- Cache for GCD overlay display in CooldownUpdate
-    self._gcdDurationObj = C_Spell.GetSpellCooldownDuration(61304)
+    -- Cache for GCD overlay display in CooldownUpdate (only when GCD is active)
+    self._gcdDurationObj = self._gcdActive and C_Spell.GetSpellCooldownDuration(61304) or nil
 
     -- Assisted highlight target gate:
     -- hard target has priority; if none exists, allow soft enemy fallback.

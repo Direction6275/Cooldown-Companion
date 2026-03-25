@@ -12,7 +12,8 @@ local ipairs = ipairs
 local next = next
 local pairs = pairs
 local unpack = unpack
-local string_format = string.format
+-- string.format was previously used for glow cache keys; replaced with
+-- per-field comparisons to eliminate per-tick string allocations.
 local math_max = math.max
 local math_min = math.min
 
@@ -386,14 +387,13 @@ end
 
 -- Show or hide proc glow on a button.
 -- Supports built-in styles and LibCustomGlow styles.
--- Tracks state (style + color + size) to avoid restarting animations every tick.
+-- Tracks state via per-field caching to avoid restarting animations every tick.
+-- Field comparison avoids per-tick string.format allocation (GC pressure).
 local function SetProcGlow(button, show)
     local pg = button.procGlow
     if not pg then return end
 
-    -- Build a cache key that includes style, color and size so changes trigger an update.
-    -- Variables are hoisted so the same values drive both the cache key and ShowGlowStyle.
-    local desiredState, glowStyle, color, sz, th, spd, ln, usesSpeed
+    local glowStyle, color, sz, th, spd, ln, usesSpeed
     if show then
         local style = button.style
         glowStyle = NormalizeGlowStyle((style and style.procGlowStyle) or "glow")
@@ -405,14 +405,40 @@ local function SetProcGlow(button, show)
         th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 4) or 0
         spd = usesSpeed and ((style and style.procGlowSpeed) or 50) or 0
         ln = (glowStyle == "pixel") and ((style and style.procGlowLines) or 8) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, color[1], color[2], color[3], color[4] or 1, sz, th, spd, ln)
     end
-    if button._procGlowActive == desiredState and (not desiredState or IsGlowAnimationAlive(pg)) then return end
-    button._procGlowActive = desiredState
+
+    -- Off path: == nil (not "not") so external false-invalidation falls through
+    if not glowStyle then
+        if button._procGlowActive == nil then return end
+        button._procGlowActive = nil
+        HideGlowStyles(pg)
+        return
+    end
+
+    -- On path: compare individual fields instead of string.format cache key
+    local ca = color[4] or 1
+    if button._procGlowActive
+       and button._procGlowStyle == glowStyle
+       and button._procGlowR == color[1] and button._procGlowG == color[2]
+       and button._procGlowB == color[3] and button._procGlowA == ca
+       and button._procGlowSz == sz and button._procGlowTh == th
+       and button._procGlowSpd == spd and button._procGlowLn == ln
+       and IsGlowAnimationAlive(pg) then
+        return
+    end
+
+    button._procGlowActive = true
+    button._procGlowStyle = glowStyle
+    button._procGlowR = color[1]
+    button._procGlowG = color[2]
+    button._procGlowB = color[3]
+    button._procGlowA = ca
+    button._procGlowSz = sz
+    button._procGlowTh = th
+    button._procGlowSpd = spd
+    button._procGlowLn = ln
 
     HideGlowStyles(pg)
-
-    if not desiredState then return end
 
     ShowGlowStyle(pg, glowStyle, button, color, {
         size = sz,
@@ -427,14 +453,12 @@ end
 
 -- Show or hide aura active glow on a button.
 -- Supports built-in styles and LibCustomGlow styles.
--- Tracks state (style + color + size) to avoid restarting animations every tick.
+-- Tracks state via per-field caching to avoid restarting animations every tick.
 local function SetAuraGlow(button, show, pandemicOverride)
     local ag = button.auraGlow
     if not ag then return end
 
-    -- Build cache key from style + color + size + pandemic state.
-    -- Variables are hoisted so the same values drive both the cache key and ShowGlowStyle.
-    local desiredState, glowStyle, color, sz, th, spd, ln, usesSpeed, glowKey
+    local glowStyle, color, sz, th, spd, ln, usesSpeed, glowKey
     if show then
         local btnStyle = button.style
         if pandemicOverride then
@@ -466,16 +490,45 @@ local function SetAuraGlow(button, show, pandemicOverride)
             th = (glowStyle == "pixel") and ((btnStyle and btnStyle[thicknessKey]) or 4) or 0
             spd = usesSpeed and ((btnStyle and btnStyle[speedKey]) or 50) or 0
             ln = (glowStyle == "pixel") and ((btnStyle and btnStyle[linesKey]) or 8) or 0
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d%s", glowStyle, color[1], color[2], color[3], color[4] or 0.9, sz, th, spd, ln, pandemicOverride and "P" or "")
+        else
+            glowStyle = nil  -- treat "none" as off
         end
     end
 
-    if button._auraGlowActive == desiredState and (not desiredState or IsGlowAnimationAlive(ag)) then return end
-    button._auraGlowActive = desiredState
+    -- Off path: == nil (not "not") so external false-invalidation falls through
+    if not glowStyle then
+        if button._auraGlowActive == nil then return end
+        button._auraGlowActive = nil
+        HideGlowStyles(ag)
+        return
+    end
+
+    -- On path: compare individual fields instead of string.format cache key
+    local ca = color[4] or 0.9
+    if button._auraGlowActive
+       and button._auraGlowStyle == glowStyle
+       and button._auraGlowR == color[1] and button._auraGlowG == color[2]
+       and button._auraGlowB == color[3] and button._auraGlowA == ca
+       and button._auraGlowSz == sz and button._auraGlowTh == th
+       and button._auraGlowSpd == spd and button._auraGlowLn == ln
+       and button._auraGlowPandemic == pandemicOverride
+       and IsGlowAnimationAlive(ag) then
+        return
+    end
+
+    button._auraGlowActive = true
+    button._auraGlowStyle = glowStyle
+    button._auraGlowR = color[1]
+    button._auraGlowG = color[2]
+    button._auraGlowB = color[3]
+    button._auraGlowA = ca
+    button._auraGlowSz = sz
+    button._auraGlowTh = th
+    button._auraGlowSpd = spd
+    button._auraGlowLn = ln
+    button._auraGlowPandemic = pandemicOverride
 
     HideGlowStyles(ag)
-
-    if not desiredState then return end
 
     ShowGlowStyle(ag, glowStyle, button, color, {
         size = sz,
@@ -490,12 +543,12 @@ local function SetAuraGlow(button, show, pandemicOverride)
 end
 
 -- Show or hide ready glow on a button (glow while off cooldown).
--- Follows the same caching pattern as SetProcGlow.
+-- Tracks state via per-field caching to avoid restarting animations every tick.
 local function SetReadyGlow(button, show)
     local rg = button.readyGlow
     if not rg then return end
 
-    local desiredState, glowStyle, color, sz, th, spd, ln, usesSpeed
+    local glowStyle, color, sz, th, spd, ln, usesSpeed
     if show then
         local style = button.style
         glowStyle = NormalizeGlowStyle((style and style.readyGlowStyle) or "solid")
@@ -507,14 +560,40 @@ local function SetReadyGlow(button, show)
         th = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 4) or 0
         spd = usesSpeed and ((style and style.readyGlowSpeed) or 50) or 0
         ln = (glowStyle == "pixel") and ((style and style.readyGlowLines) or 8) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f%.2f%.2f%d", glowStyle, color[1], color[2], color[3], color[4] or 1, sz, th, spd, ln)
     end
-    if button._readyGlowActive == desiredState and (not desiredState or IsGlowAnimationAlive(rg)) then return end
-    button._readyGlowActive = desiredState
+
+    -- Off path: == nil (not "not") so external false-invalidation falls through
+    if not glowStyle then
+        if button._readyGlowActive == nil then return end
+        button._readyGlowActive = nil
+        HideGlowStyles(rg)
+        return
+    end
+
+    -- On path: compare individual fields instead of string.format cache key
+    local ca = color[4] or 1
+    if button._readyGlowActive
+       and button._readyGlowStyle == glowStyle
+       and button._readyGlowR == color[1] and button._readyGlowG == color[2]
+       and button._readyGlowB == color[3] and button._readyGlowA == ca
+       and button._readyGlowSz == sz and button._readyGlowTh == th
+       and button._readyGlowSpd == spd and button._readyGlowLn == ln
+       and IsGlowAnimationAlive(rg) then
+        return
+    end
+
+    button._readyGlowActive = true
+    button._readyGlowStyle = glowStyle
+    button._readyGlowR = color[1]
+    button._readyGlowG = color[2]
+    button._readyGlowB = color[3]
+    button._readyGlowA = ca
+    button._readyGlowSz = sz
+    button._readyGlowTh = th
+    button._readyGlowSpd = spd
+    button._readyGlowLn = ln
 
     HideGlowStyles(rg)
-
-    if not desiredState then return end
 
     ShowGlowStyle(rg, glowStyle, button, color, {
         size = sz,
@@ -536,25 +615,48 @@ end
 
 -- Show or hide key press highlight on a button (glow while keybind is held).
 -- Only supports "solid" (border) and "overlay" (full-button wash) styles.
--- Follows the same caching pattern as SetProcGlow / SetReadyGlow.
+-- Tracks state via per-field caching to avoid restarting animations every frame.
+-- (This runs on the per-frame kphUpdateFrame OnUpdate, not the 10 Hz ticker.)
 local function SetKeyPressHighlight(button, show)
     local kph = button.keyPressHighlight
     if not kph then return end
 
-    local desiredState, glowStyle, color, sz
+    local glowStyle, color, sz
     if show then
         local style = button.style
         glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
         color = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
         sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
-        desiredState = string_format("%s%.2f%.2f%.2f%.2f%.2f", glowStyle, color[1], color[2], color[3], color[4] or 1, sz)
     end
-    if button._keyPressHighlightActive == desiredState and (not desiredState or IsGlowAnimationAlive(kph)) then return end
-    button._keyPressHighlightActive = desiredState
+
+    -- Off path
+    if not glowStyle then
+        if button._keyPressHighlightActive == nil then return end
+        button._keyPressHighlightActive = nil
+        HideGlowStyles(kph)
+        return
+    end
+
+    -- On path: compare individual fields instead of string.format cache key
+    local ca = color[4] or 1
+    if button._keyPressHighlightActive
+       and button._kphStyle == glowStyle
+       and button._kphR == color[1] and button._kphG == color[2]
+       and button._kphB == color[3] and button._kphA == ca
+       and button._kphSz == sz
+       and IsGlowAnimationAlive(kph) then
+        return
+    end
+
+    button._keyPressHighlightActive = true
+    button._kphStyle = glowStyle
+    button._kphR = color[1]
+    button._kphG = color[2]
+    button._kphB = color[3]
+    button._kphA = ca
+    button._kphSz = sz
 
     HideGlowStyles(kph)
-
-    if not desiredState then return end
 
     ShowGlowStyle(kph, glowStyle, button, color, {size = sz})
 end
@@ -675,14 +777,13 @@ local function CreateAssistedHighlight(button, style)
     return hl
 end
 
--- Apply bar-specific aura effect (solid border, pixel glow, proc glow)
+-- Apply bar-specific aura effect (solid border, pixel glow, proc glow).
+-- Tracks state via per-field caching to avoid restarting animations every tick.
 local function SetBarAuraEffect(button, show, pandemicOverride)
     local ae = button.barAuraEffect
     if not ae then return end
 
-    -- Build cache key from effect + color + size + pandemic state.
-    -- Variables are hoisted so the same values drive both the cache key and ShowGlowStyle.
-    local desiredState, effect, color, sz, th, spd, ln
+    local effect, color, sz, th, spd, ln
     if show then
         local btnStyle = button.style
         if pandemicOverride then
@@ -703,16 +804,45 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
                 ln = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectLines) or 8) or 0
             end
             spd = (pandemicOverride and ((btnStyle and btnStyle.pandemicBarEffectSpeed) or 50) or (btnStyle and btnStyle.barAuraEffectSpeed)) or 50
-            desiredState = string_format("%s%.2f%.2f%.2f%.2f%d%d%d%.2f%s", effect, color[1], color[2], color[3], color[4] or 0.9, sz, th, ln, spd, pandemicOverride and "P" or "")
+        else
+            effect = nil  -- treat "none" as off
         end
     end
 
-    if button._barAuraEffectActive == desiredState and (not desiredState or IsGlowAnimationAlive(ae)) then return end
-    button._barAuraEffectActive = desiredState
+    -- Off path
+    if not effect then
+        if button._barAuraEffectActive == nil then return end
+        button._barAuraEffectActive = nil
+        HideGlowStyles(ae)
+        return
+    end
+
+    -- On path: compare individual fields instead of string.format cache key
+    local ca = color[4] or 0.9
+    if button._barAuraEffectActive
+       and button._baeEffect == effect
+       and button._baeR == color[1] and button._baeG == color[2]
+       and button._baeB == color[3] and button._baeA == ca
+       and button._baeSz == sz and button._baeTh == th
+       and button._baeSpd == spd and button._baeLn == ln
+       and button._baePandemic == pandemicOverride
+       and IsGlowAnimationAlive(ae) then
+        return
+    end
+
+    button._barAuraEffectActive = true
+    button._baeEffect = effect
+    button._baeR = color[1]
+    button._baeG = color[2]
+    button._baeB = color[3]
+    button._baeA = ca
+    button._baeSz = sz
+    button._baeTh = th
+    button._baeSpd = spd
+    button._baeLn = ln
+    button._baePandemic = pandemicOverride
 
     HideGlowStyles(ae)
-
-    if not desiredState then return end
 
     ShowGlowStyle(ae, effect, button, color, {
         size = sz,
