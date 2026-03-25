@@ -52,6 +52,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                         if button._auraInstanceID == instId then
                             button._auraInstanceID = nil
                             button._inPandemic = false
+                            button._auraEventRemoved = true
                             break
                         end
                     end

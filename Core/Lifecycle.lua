@@ -351,6 +351,7 @@ end
 function CooldownCompanion:OnProcGlowHide(event, spellID)
     self.procOverlaySpells[spellID] = nil
     self._cooldownsDirty = true
+    self:UpdateAllCooldowns()
 end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
