@@ -187,7 +187,8 @@ local function UpdateIconTint(button, buttonData, style)
     end
 end
 
--- Icon desaturation: aura-tracked buttons desaturate when aura absent;
+-- Icon desaturation: aura-tracked buttons desaturate when aura absent
+-- (passive opt out via saturateWhileAuraNotActive; non-passive opt in via desaturateWhileAuraNotActive);
 -- cooldown buttons desaturate based on _desatCooldownActive (set per-tick from cooldown / item state);
 -- equippable-but-not-equipped items always desaturate.
 -- Shared by icon-mode and bar-mode display paths.
