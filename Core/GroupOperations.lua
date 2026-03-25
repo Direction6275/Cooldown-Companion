@@ -475,7 +475,8 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     if not group.parentContainerId then return false end
     if group.displayMode ~= "icons" then return false end
     local container = self:GetParentContainer(group)
-    if container and container.isGlobal then return false end
+    if container and container.isGlobal and not container.anchorEligible then return false end
+    if container and not container.isGlobal and container.anchorEligible == false then return false end
     if not self:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,

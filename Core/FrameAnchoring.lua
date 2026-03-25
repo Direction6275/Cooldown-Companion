@@ -78,7 +78,7 @@ end
 
 local function GetEffectiveAnchorGroupId(settings)
     if not settings then return nil end
-    return settings.anchorGroupId or CooldownCompanion:GetFirstAvailableAnchorGroup()
+    return CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
 local function GetAnchorGroupFrame(settings)
@@ -356,7 +356,7 @@ local function InstallHooks()
     -- When anchor group refreshes — re-evaluate
     hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
         local s = GetFrameAnchoringSettings()
-        if s and s.enabled and (not s.anchorGroupId or s.anchorGroupId == groupId) then
+        if s and s.enabled then
             C_Timer.After(0, function()
                 CooldownCompanion:EvaluateFrameAnchoring()
             end)

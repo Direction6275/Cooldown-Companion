@@ -113,20 +113,6 @@ local function BuildResourceBarAnchoringPanel(container)
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
 
-    -- Anchor Group dropdown
-    local anchorDrop = AceGUI:Create("Dropdown")
-    anchorDrop:SetLabel("Anchor to Panel")
-    local eligibleCount = CooldownCompanion:PopulateAnchorDropdown(anchorDrop)
-    anchorDrop:SetValue(settings.anchorGroupId and tostring(settings.anchorGroupId) or "")
-    anchorDrop:SetFullWidth(true)
-    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.anchorGroupId = val ~= "" and tonumber(val) or nil
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(anchorDrop)
-
     local orientDrop = AceGUI:Create("Dropdown")
     orientDrop:SetLabel("Bar Orientation")
     orientDrop:SetList({
@@ -158,13 +144,6 @@ local function BuildResourceBarAnchoringPanel(container)
         CooldownCompanion:UpdateAnchorStacking()
     end)
     container:AddChild(fillDirDrop)
-
-    if eligibleCount == 0 then
-        local noGroupsLabel = AceGUI:Create("Label")
-        noGroupsLabel:SetText("No eligible character icon panels are enabled for this spec. Global panels are excluded from anchoring.")
-        noGroupsLabel:SetFullWidth(true)
-        container:AddChild(noGroupsLabel)
-    end
 
     -- Preview toggle (ephemeral)
     local previewCb = AceGUI:Create("CheckBox")
@@ -2405,8 +2384,8 @@ local function BuildLayoutOrderPanel(container)
     local castSlots = {}
     if cbSettings and cbSettings.enabled then
         local defaultAnchor = CooldownCompanion:GetFirstAvailableAnchorGroup()
-        local cbAnchor = cbSettings.anchorGroupId or defaultAnchor
-        local rbAnchor = rbSettings.anchorGroupId or defaultAnchor
+        local cbAnchor = defaultAnchor
+        local rbAnchor = defaultAnchor
         if cbAnchor and cbAnchor == rbAnchor then
             local cbColor = cbSettings.barColor or { 1.0, 0.7, 0.0 }
             table.insert(castSlots, {
