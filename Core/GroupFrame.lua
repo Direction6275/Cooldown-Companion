@@ -426,10 +426,11 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     frame._anchorDirty = nil
     frame:ClearAllPoints()
 
-    -- ClearAllPoints wipes any accumulated AdjustPointsOffset from compact
-    -- anchor compensation.  Clear the sized flag so the next ResizeGroupFrame
-    -- call treats the freshly-set anchor as the baseline — no compensation
-    -- relative to the previous size.
+    -- ClearAllPoints removes all anchor points, discarding any offsets that
+    -- AdjustPointsOffset added for compact anchor compensation.  Clear the
+    -- sized flag so subsequent ResizeGroupFrame calls (from PopulateGroupButtons
+    -- or the layout ticker) treat the freshly-set anchor as the baseline —
+    -- no compensation relative to the previous size.
     frame._hasBeenSized = false
 
     -- Stop any existing alpha sync
@@ -730,10 +731,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
 
-    -- Prevent compact-layout anchor compensation during the initial sizing
-    -- sequence.  The anchor point was just established by AnchorGroupFrame
-    -- (or CreateGroupFrame), so WoW's SetSize naturally keeps it fixed.
-    -- Compensation only applies to incremental ticker-driven resizes.
+    -- Reset the sized flag so the next ResizeGroupFrame call skips compact
+    -- anchor compensation and treats the current size as a baseline.
+    -- Callers that just called AnchorGroupFrame need this because the
+    -- anchor was freshly set; other callers (e.g., UpdateGroupStyle)
+    -- accept a baseline reset because the full button set was just rebuilt.
     frame._hasBeenSized = false
 
     -- Update clickthrough state
@@ -750,10 +752,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
-    -- compact resize was needed.  Either state is correct: the first
-    -- ticker-driven resize after this will either compensate (true) relative
-    -- to the established compact baseline, or skip compensation (false) to
-    -- establish a new baseline when config-forced visibility clears.
+    -- compact resize was needed.  When compactLayout is off, it stays false
+    -- (harmless — ResizeGroupFrame skips compensation for non-compact groups).
+    -- Either state is correct: the first ticker-driven resize after this
+    -- will either compensate (true) relative to the established compact
+    -- baseline, or skip compensation (false) to establish a new baseline
+    -- when config-forced visibility clears.
 
     -- Propagate group frame strata to all button sub-elements
     local effectiveStrata = group.frameStrata or "MEDIUM"
