@@ -677,6 +677,36 @@ local function RefreshColumn1(preserveDrag)
                         end
                         UIDropDownMenu_AddButton(info, level)
 
+                        -- Auto-Anchoring eligibility toggle
+                        do
+                            local isCurrentlyEligible
+                            if container.isGlobal then
+                                isCurrentlyEligible = container.anchorEligible == true
+                            else
+                                isCurrentlyEligible = container.anchorEligible ~= false
+                            end
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = isCurrentlyEligible
+                                and "Exclude from Auto-Anchoring"
+                                or "Include in Auto-Anchoring"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                if not db.groupContainers[containerId] then return end
+                                if container.isGlobal then
+                                    db.groupContainers[containerId].anchorEligible = not container.anchorEligible or nil
+                                else
+                                    db.groupContainers[containerId].anchorEligible = isCurrentlyEligible and false or nil
+                                end
+                                CooldownCompanion:EvaluateResourceBars()
+                                CooldownCompanion:UpdateAnchorStacking()
+                                CooldownCompanion:EvaluateCastBar()
+                                CooldownCompanion:EvaluateFrameAnchoring()
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+                        end
+
                         -- Spec Filter
                         info = UIDropDownMenu_CreateInfo()
                         info.text = "Spec Filter"
