@@ -187,16 +187,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         cooldownSpellId = button._displaySpellId or buttonData.id
     end
 
-    -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's Fury
+    -- Throttled icon staleness detection for silent transforms (e.g. Tiger's Fury
     -- changing Rake/Rip icons). GetSpellTexture dynamically resolves the current
-    -- visual, but no event fires for these transforms. cdmChildSlot buttons
-    -- already have their own per-tick viewer-based icon re-sync.
+    -- visual, but no event fires for these transforms. Polled every 5th tick
+    -- (0.5s) instead of every tick to reduce API call volume. cdmChildSlot
+    -- buttons already have their own per-tick viewer-based icon re-sync.
+    -- Event-driven updates (_iconDirty) remain instant (handled above).
     if buttonData.type == "spell" and not buttonData.cdmChildSlot then
-        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
-        if freshIcon and freshIcon ~= button._lastSpellTexture then
-            button._lastSpellTexture = freshIcon
-            CooldownCompanion:UpdateButtonIcon(button)
-            cooldownSpellId = button._displaySpellId or buttonData.id
+        button._iconCheckCounter = (button._iconCheckCounter or 0) + 1
+        if button._iconCheckCounter >= 5 then
+            button._iconCheckCounter = 0
+            local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
+            if freshIcon and freshIcon ~= button._lastSpellTexture then
+                button._lastSpellTexture = freshIcon
+                CooldownCompanion:UpdateButtonIcon(button)
+                cooldownSpellId = button._displaySpellId or buttonData.id
+            end
         end
     end
 
@@ -226,6 +232,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local actionSlotCooldownShown
     local actionSlotDurationObj
+    -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
+    local auraProbeInfo, auraProbeIsGCDOnly
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -293,16 +301,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if viewerInstId then
                 local unit = viewerFrame.auraDataUnit or auraUnit
                 local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
-                if durationObj then
+                -- Gate on unit compatibility: CDM's GetAuraData() checks player
+                -- auras first, so auraDataUnit can transiently be "player" for a
+                -- viewer child that tracks a target debuff.  Reject the mismatch
+                -- so target-debuff buttons don't display random player buff durations.
+                if durationObj and (unit == configUnit or configUnit == "player") then
                     button._durationObj = durationObj
                     button._viewerBar = nil  -- primary path: DurationObject available
                     button.cooldown:SetCooldownFromDurationObject(durationObj)
                     button._auraInstanceID = viewerInstId
-                    -- Only update _auraUnit if viewer unit is compatible with config.
-                    -- Prevents stale CDM auraDataUnit from corrupting target-debuff buttons on login.
-                    if unit == configUnit or configUnit == "player" then
-                        button._auraUnit = unit
-                    end
+                    button._auraUnit = unit
                     auraOverrideActive = true
                     fetchOk = true
                 end
@@ -316,12 +324,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     if not issecretvalue(durMs) then
                         -- Plain values: safe to do ms->s arithmetic
                         if durMs > 0 and (startMs + durMs) > GetTime() * 1000 then
-                            button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
-                            auraOverrideActive = true
-                            fetchOk = true
                             local vUnit = viewerFrame.auraDataUnit or auraUnit
                             if vUnit == configUnit or configUnit == "player" then
+                                button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
                                 button._auraUnit = vUnit
+                                auraOverrideActive = true
+                                fetchOk = true
                             end
                         end
                     else
@@ -330,11 +338,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         -- (HasSecretValues() on viewer widgets is unreliable when
                         -- Blizzard secure code set the values — check the returned
                         -- value directly with issecretvalue() instead.)
-                        auraOverrideActive = true
-                        fetchOk = true
                         local vUnit = viewerFrame.auraDataUnit or auraUnit
                         if vUnit == configUnit or configUnit == "player" then
                             button._auraUnit = vUnit
+                            auraOverrideActive = true
+                            fetchOk = true
                         end
                     end
                     if button._auraInstanceID then
@@ -675,15 +683,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.cooldown:Hide()
     end
 
-    -- Secondary cooldown text: probe spell/item CD during aura override
+    -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
+    if auraOverrideActive and buttonData.type == "spell" and not buttonData.isPassive then
+        auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
+        auraProbeIsGCDOnly = auraProbeInfo and IsSpellGCDOnly(auraProbeInfo, buttonData._cooldownSecrecy) or false
+    end
+
+    -- Secondary cooldown text display during aura override
     if auraOverrideActive and button.secondaryCooldown then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-            if probeInfo then
-                local probeIsGCDOnly = IsSpellGCDOnly(probeInfo, buttonData._cooldownSecrecy)
-                if not probeIsGCDOnly then
+            if auraProbeInfo then
+                if not auraProbeIsGCDOnly then
                     local probeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-                    if probeDuration and probeInfo.isActive then
+                    if probeDuration and auraProbeInfo.isActive then
                         button.secondaryCooldown:SetCooldownFromDurationObject(probeDuration)
                         button._secondaryCdActive = true
                     else
@@ -1144,11 +1156,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     cooldownActive = button._zeroChargesConfirmed == true
                 end
             elseif auraOverrideActive then
-                -- Aura visuals replace button.cooldown; probe spell cooldown
-                -- directly for sound-event state.
-                local probeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-                if probeInfo then
-                    cooldownActive = probeInfo.isActive and not IsSpellGCDOnly(probeInfo, buttonData._cooldownSecrecy)
+                -- Aura visuals replace button.cooldown; reuse the probe from
+                -- the secondary cooldown block (same spell, same tick).
+                if auraProbeInfo then
+                    cooldownActive = auraProbeInfo.isActive and not auraProbeIsGCDOnly
                 else
                     cooldownActive = false
                 end
