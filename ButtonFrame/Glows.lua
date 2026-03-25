@@ -24,6 +24,16 @@ local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
+-- Pre-defined color constant tables to avoid per-tick allocation.
+-- IMPORTANT: These tables are read-only — never write to their indices.
+local DEFAULT_WHITE = {1, 1, 1, 1}
+local DEFAULT_ASSISTED_HL_COLOR = {0.3, 1, 0.3, 0.9}
+local DEFAULT_PANDEMIC_COLOR = {1, 0.5, 0, 1}
+local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
+local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
+local DEFAULT_KEY_PRESS_COLOR = {1, 1, 1, 0.4}
+local DEFAULT_GLOW_SIZES = {solid = 5, pixel = 8, glow = 30, autocast = 2}
+
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
@@ -131,6 +141,7 @@ local function StopLibCustomGlow(container)
         end
         container._pixelTarget = nil
         container._pixelKey = nil
+        container._pixelGlowLookupKey = nil
     end
 
     local lcgStyle = container._lcgStyle
@@ -140,6 +151,7 @@ local function StopLibCustomGlow(container)
     container._lcgStyle = nil
     container._lcgTarget = nil
     container._lcgKey = nil
+    container._autocastGlowLookupKey = nil
 
     if not (LCG and lcgStyle and lcgTarget) then return end
 
@@ -181,6 +193,9 @@ local function StartLibCustomGlow(container, style, button, color, params)
     container._lcgStyle = style
     container._lcgTarget = button
     container._lcgKey = key
+    if style == PROC_STYLE_LCG_AUTOCAST then
+        container._autocastGlowLookupKey = "_AutoCastGlow" .. (key or "")
+    end
     return true
 end
 
@@ -258,6 +273,7 @@ local function ShowGlowStyle(container, style, button, color, params)
                 size or 8, params.thickness or 4, 0, 0, false, key, relativeLevel)
             container._pixelTarget = button
             container._pixelKey = key
+            container._pixelGlowLookupKey = "_PixelGlow" .. key
         else
             -- Fallback to solid border if LCG unavailable
             ApplyEdgePositions(container.solidTextures, button, size or 8)
@@ -302,7 +318,7 @@ end
 local function IsGlowAnimationAlive(container)
     -- LCG pixel glow: verify LCG still owns the frame on the target
     if container._pixelTarget then
-        return container._pixelTarget["_PixelGlow" .. (container._pixelKey or "")] ~= nil
+        return container._pixelTarget[container._pixelGlowLookupKey] ~= nil
     end
     -- LCG button / autocast glow: verify LCG frame reference on the target
     if container._lcgStyle and container._lcgTarget then
@@ -312,7 +328,7 @@ local function IsGlowAnimationAlive(container)
             local owners = lcgButtonOwnersByTarget[container._lcgTarget]
             return owners and owners[container] ~= nil
         elseif container._lcgStyle == PROC_STYLE_LCG_AUTOCAST then
-            return container._lcgTarget["_AutoCastGlow" .. (container._lcgKey or "")] ~= nil
+            return container._lcgTarget[container._autocastGlowLookupKey] ~= nil
         else
             return false  -- unknown LCG style; assume dead to force restart
         end
@@ -356,10 +372,10 @@ local function SetAssistedHighlight(button, show)
     -- so color changes via settings invalidate the cache
     local colorKey
     if show and highlightStyle == "solid" then
-        local c = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        local c = button.style.assistedHighlightColor or DEFAULT_ASSISTED_HL_COLOR
         colorKey = ST.FormatColorKey(c)
     elseif show and highlightStyle == "proc" then
-        local c = button.style.assistedHighlightProcColor or {1, 1, 1, 1}
+        local c = button.style.assistedHighlightProcColor or DEFAULT_WHITE
         colorKey = ST.FormatColorKey(c)
     end
     local desiredState = show and (highlightStyle .. (colorKey or "")) or nil
@@ -375,12 +391,12 @@ local function SetAssistedHighlight(button, show)
     -- Map "proc" → "glow" for ShowGlowStyle (assisted highlight uses "proc" as style name
     -- but the visual is the same "glow" proc-style animation)
     if highlightStyle == "solid" then
-        local color = button.style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+        local color = button.style.assistedHighlightColor or DEFAULT_ASSISTED_HL_COLOR
         ShowGlowStyle(hl, "solid", button, color, {size = button.style.assistedHighlightBorderSize or 2})
     elseif highlightStyle == "blizzard" then
         ShowGlowStyle(hl, "blizzard", button, {1, 1, 1, 1}, {})
     elseif highlightStyle == "proc" then
-        local color = button.style.assistedHighlightProcColor or {1, 1, 1, 1}
+        local color = button.style.assistedHighlightProcColor or DEFAULT_WHITE
         ShowGlowStyle(hl, "glow", button, color, {size = button.style.assistedHighlightProcOverhang or 32})
     end
 end
@@ -397,10 +413,8 @@ local function SetProcGlow(button, show)
     if show then
         local style = button.style
         glowStyle = NormalizeGlowStyle((style and style.procGlowStyle) or "glow")
-        color = (style and style.procGlowColor) or {1, 1, 1, 1}
-        sz = GetGlowSize(style, "procGlowSize", glowStyle, {
-            solid = 5, pixel = 8, glow = 30, autocast = 2,
-        })
+        color = (style and style.procGlowColor) or DEFAULT_WHITE
+        sz = GetGlowSize(style, "procGlowSize", glowStyle, DEFAULT_GLOW_SIZES)
         usesSpeed = UsesGlowSpeed(glowStyle)
         th = (glowStyle == "pixel") and ((style and style.procGlowThickness) or 4) or 0
         spd = usesSpeed and ((style and style.procGlowSpeed) or 50) or 0
@@ -463,10 +477,10 @@ local function SetAuraGlow(button, show, pandemicOverride)
         local btnStyle = button.style
         if pandemicOverride then
             glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.pandemicGlowStyle) or "solid")
-            color = (btnStyle and btnStyle.pandemicGlowColor) or {1, 0.5, 0, 1}
+            color = (btnStyle and btnStyle.pandemicGlowColor) or DEFAULT_PANDEMIC_COLOR
         else
             glowStyle = NormalizeGlowStyle((btnStyle and btnStyle.auraGlowStyle) or "pixel")
-            color = (btnStyle and btnStyle.auraGlowColor) or {1, 0.84, 0, 0.9}
+            color = (btnStyle and btnStyle.auraGlowColor) or DEFAULT_AURA_GLOW_COLOR
         end
         if glowStyle ~= "none" then
             local sizeKey, thicknessKey, speedKey, linesKey
@@ -552,10 +566,8 @@ local function SetReadyGlow(button, show)
     if show then
         local style = button.style
         glowStyle = NormalizeGlowStyle((style and style.readyGlowStyle) or "solid")
-        color = (style and style.readyGlowColor) or {0.2, 1.0, 0.2, 1}
-        sz = GetGlowSize(style, "readyGlowSize", glowStyle, {
-            solid = 5, pixel = 8, glow = 30, autocast = 2,
-        })
+        color = (style and style.readyGlowColor) or DEFAULT_READY_COLOR
+        sz = GetGlowSize(style, "readyGlowSize", glowStyle, DEFAULT_GLOW_SIZES)
         usesSpeed = UsesGlowSpeed(glowStyle)
         th = (glowStyle == "pixel") and ((style and style.readyGlowThickness) or 4) or 0
         spd = usesSpeed and ((style and style.readyGlowSpeed) or 50) or 0
@@ -625,7 +637,7 @@ local function SetKeyPressHighlight(button, show)
     if show then
         local style = button.style
         glowStyle = NormalizeKPHStyle((style and style.keyPressHighlightStyle) or "solid")
-        color = (style and style.keyPressHighlightColor) or {1, 1, 1, 0.4}
+        color = (style and style.keyPressHighlightColor) or DEFAULT_KEY_PRESS_COLOR
         sz = (glowStyle == "solid") and ((style and style.keyPressHighlightSize) or 5) or 0
     end
 
@@ -745,7 +757,7 @@ local function CreateAssistedHighlight(button, style)
 
     -- Solid border: 4 edge textures
     local highlightSize = style.assistedHighlightBorderSize or 2
-    local hlColor = style.assistedHighlightColor or {0.3, 1, 0.3, 0.9}
+    local hlColor = style.assistedHighlightColor or DEFAULT_ASSISTED_HL_COLOR
     hl.solidFrame = CreateFrame("Frame", nil, button)
     hl.solidFrame:SetAllPoints()
     hl.solidFrame:EnableMouse(false)
@@ -793,12 +805,12 @@ local function SetBarAuraEffect(button, show, pandemicOverride)
         end
         if effect ~= "none" then
             if pandemicOverride then
-                color = (btnStyle and btnStyle.pandemicBarEffectColor) or {1, 0.5, 0, 1}
+                color = (btnStyle and btnStyle.pandemicBarEffectColor) or DEFAULT_PANDEMIC_COLOR
                 sz = (btnStyle and btnStyle.pandemicBarEffectSize) or (effect == "solid" and 5 or effect == "pixel" and 8 or 30)
                 th = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectThickness) or 4) or 0
                 ln = (effect == "pixel") and ((btnStyle and btnStyle.pandemicBarEffectLines) or 8) or 0
             else
-                color = (btnStyle and btnStyle.barAuraEffectColor) or {1, 0.84, 0, 0.9}
+                color = (btnStyle and btnStyle.barAuraEffectColor) or DEFAULT_AURA_GLOW_COLOR
                 sz = (btnStyle and btnStyle.barAuraEffectSize) or (effect == "solid" and 5 or effect == "pixel" and 8 or 30)
                 th = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectThickness) or 4) or 0
                 ln = (effect == "pixel") and ((btnStyle and btnStyle.barAuraEffectLines) or 8) or 0

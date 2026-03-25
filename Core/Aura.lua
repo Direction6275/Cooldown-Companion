@@ -37,50 +37,43 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
 
     if not updateInfo then return end
 
-    -- Process removals first so refreshed auras (remove + add in same event) work.
-    -- Single traversal with inner loop (instead of N traversals) to avoid N closures
-    -- and N full button scans when many auras are removed at once (e.g. leaving combat).
-    if updateInfo.removedAuraInstanceIDs then
-        local removedIDs = updateInfo.removedAuraInstanceIDs
+    -- Merged single-pass processing: removals, pandemic updates, and target-switch
+    -- signaling in one ForEachButton call instead of three separate iterations.
+    -- Removals are processed first so refreshed auras (remove + add in same event)
+    -- work correctly — the update path re-checks _auraInstanceID after removals.
+    local removedIDs = updateInfo.removedAuraInstanceIDs
+    local updatedIDs = updateInfo.updatedAuraInstanceIDs
+    local isTarget = (unit == "target")
+    if removedIDs or updatedIDs or isTarget then
         self:ForEachButton(function(button)
             if button._auraInstanceID and button._auraUnit == unit then
-                for _, instId in ipairs(removedIDs) do
-                    if button._auraInstanceID == instId then
-                        button._auraInstanceID = nil
-                        button._inPandemic = false
-                        break
+                if removedIDs then
+                    for _, instId in ipairs(removedIDs) do
+                        if button._auraInstanceID == instId then
+                            button._auraInstanceID = nil
+                            button._inPandemic = false
+                            break
+                        end
+                    end
+                end
+                -- Aura reapplication (pandemic refresh) arrives as an update, not a
+                -- removal + add.  Clear pandemic state and suppress the grace hold so
+                -- the next evaluation clears pandemic immediately instead of holding 0.3s.
+                if updatedIDs and button._auraInstanceID then
+                    for _, instId in ipairs(updatedIDs) do
+                        if button._auraInstanceID == instId then
+                            button._inPandemic = false
+                            button._pandemicGraceStart = nil
+                            button._pandemicGraceSuppressed = true
+                            break
+                        end
                     end
                 end
             end
-        end)
-    end
-
-    -- Aura reapplication (pandemic refresh) arrives as an update, not a
-    -- removal + add.  Clear pandemic state and suppress the grace hold so
-    -- the next evaluation in UpdateAllCooldowns() clears pandemic
-    -- immediately rather than holding stale state for 0.3s.
-    if updateInfo.updatedAuraInstanceIDs then
-        local updatedIDs = updateInfo.updatedAuraInstanceIDs
-        self:ForEachButton(function(button)
-            if button._auraInstanceID and button._auraUnit == unit then
-                for _, instId in ipairs(updatedIDs) do
-                    if button._auraInstanceID == instId then
-                        button._inPandemic = false
-                        button._pandemicGraceStart = nil
-                        button._pandemicGraceSuppressed = true
-                        break
-                    end
-                end
-            end
-        end)
-    end
-
-    -- Signal that the server has delivered target aura data, so the hold
-    -- logic in CooldownUpdate can terminate early instead of waiting for the
-    -- safety cap timeout.
-    if unit == "target" then
-        self:ForEachButton(function(button)
-            if button._targetSwitchAt then
+            -- Signal that the server has delivered target aura data, so the hold
+            -- logic in CooldownUpdate can terminate early instead of waiting for the
+            -- safety cap timeout.
+            if isTarget and button._targetSwitchAt then
                 button._targetSwitchDataReceived = true
             end
         end)
@@ -263,7 +256,9 @@ function CooldownCompanion:QueueBuildViewerAuraMap()
 end
 
 function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
-    if not spellID or spellID == 0 or not GetCVarBool("cooldownViewerEnabled") then
+    local enabled = self._cdmViewerEnabled
+    if enabled == nil then enabled = GetCVarBool("cooldownViewerEnabled") end
+    if not spellID or spellID == 0 or not enabled then
         return nil
     end
 

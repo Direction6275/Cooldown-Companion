@@ -30,6 +30,15 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local FormatTime = CooldownCompanion.FormatTime
 
+-- Pre-defined color constant tables to avoid per-tick allocation.
+-- These are used as fallbacks when style keys are nil (user hasn't customized).
+-- IMPORTANT: These tables are read-only — never write to their indices.
+local DEFAULT_WHITE = {1, 1, 1, 1}
+local DEFAULT_CD_COLOR = {1, 0.3, 0.3, 1}
+local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
+local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
+local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
+
 ------------------------------------------------------------------------
 -- FORMAT STRING PARSER
 -- Parses "{name}  {status}" into a list of segments:
@@ -248,16 +257,16 @@ local function SubstituteTokens(button, segments, style, effectState)
     local secretColorToken = nil
     local secretStackValue = nil
 
-    local baseColor = style.textFontColor or {1, 1, 1, 1}
-    local cdColor = style.textCooldownColor or {1, 0.3, 0.3, 1}
-    local readyColor = style.textReadyColor or {0.2, 1.0, 0.2, 1}
-    local auraColor = style.textAuraColor or {0, 0.925, 1, 1}
-    local customColor = style.textCustomColor or {1, 0.82, 0, 1}
+    local baseColor = style.textFontColor or DEFAULT_WHITE
+    local cdColor = style.textCooldownColor or DEFAULT_CD_COLOR
+    local readyColor = style.textReadyColor or DEFAULT_READY_COLOR
+    local auraColor = style.textAuraColor or DEFAULT_AURA_COLOR
+    local customColor = style.textCustomColor or DEFAULT_CUSTOM_COLOR
 
     -- Charge color resolution
-    local chargeFull = style.chargeFontColor or {1, 1, 1, 1}
-    local chargeMissing = style.chargeFontColorMissing or {1, 1, 1, 1}
-    local chargeZero = style.chargeFontColorZero or {1, 1, 1, 1}
+    local chargeFull = style.chargeFontColor or DEFAULT_WHITE
+    local chargeMissing = style.chargeFontColorMissing or DEFAULT_WHITE
+    local chargeZero = style.chargeFontColorZero or DEFAULT_WHITE
 
     -- Gather live state
     local currentCharges = button._currentReadableCharges
@@ -497,7 +506,7 @@ local function UpdateTextDisplay(button)
         -- Secret value pass-through: use SetFormattedText with the secret value
         -- Per-token coloring via |c..|r escape sequences works alongside % format specifiers
         -- (they operate at different layers: WoW text rendering vs C sprintf)
-        local baseColor = style.textFontColor or {1, 1, 1, 1}
+        local baseColor = style.textFontColor or DEFAULT_WHITE
         button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
 
         local fmtStr = text
@@ -545,7 +554,7 @@ local function UpdateTextDisplay(button)
         button.textString:SetFormattedText(finalFmt, unpack(args))
     else
         -- Normal path: full per-token coloring via escape sequences
-        local baseColor = style.textFontColor or {1, 1, 1, 1}
+        local baseColor = style.textFontColor or DEFAULT_WHITE
         button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
         button.textString:SetText(text)
     end
@@ -688,7 +697,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     local fontSize = style.textFontSize or 12
     local fontOutline = style.textFontOutline or "OUTLINE"
     button.textString:SetFont(font, fontSize, fontOutline)
-    local baseColor = style.textFontColor or {1, 1, 1, 1}
+    local baseColor = style.textFontColor or DEFAULT_WHITE
     button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
 
     local align = style.textAlignment or "LEFT"

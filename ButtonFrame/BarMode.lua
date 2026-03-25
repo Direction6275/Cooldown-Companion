@@ -25,6 +25,13 @@ local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
+-- Pre-defined color constant tables to avoid per-tick allocation.
+-- IMPORTANT: These tables are read-only — never write to their indices.
+local DEFAULT_WHITE = {1, 1, 1, 1}
+local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
+local DEFAULT_BAR_COLOR = {0.2, 0.6, 1.0, 1.0}
+local DEFAULT_READY_TEXT_COLOR = {0.2, 1.0, 0.2, 1.0}
+
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
@@ -131,6 +138,7 @@ local function UpdateBarFill(button)
             local mode = button._auraActive and "aura" or "cd"
             if button._barTextMode ~= mode then
                 button._barTextMode = mode
+                button._barTextColorDirty = true
                 if button._auraActive then
                     local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
                     local s = button.style.auraTextFontSize or 12
@@ -143,10 +151,13 @@ local function UpdateBarFill(button)
                     button.timeText:SetFont(f, s, o)
                 end
             end
-            local cc = button._auraActive
-                and (button.style.auraTextFontColor or {0, 0.925, 1, 1})
-                or (button.style.cooldownFontColor or {1, 1, 1, 1})
-            button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+            if button._barTextColorDirty then
+                button._barTextColorDirty = nil
+                local cc = button._auraActive
+                    and (button.style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR)
+                    or (button.style.cooldownFontColor or DEFAULT_WHITE)
+                button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+            end
             -- Time text: HasSecretValues() returns a non-secret boolean.
             -- Non-secret: full FormatTime formatting ("1:30:00", "1:30", "45", etc.)
             -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
@@ -229,10 +240,10 @@ local function UpdateBarDisplay(button)
     if button._barReadyTextColor ~= wantReadyTextColor then
         button._barReadyTextColor = wantReadyTextColor
         if wantReadyTextColor then
-            local rc = style.barReadyTextColor or {0.2, 1.0, 0.2, 1.0}
+            local rc = style.barReadyTextColor or DEFAULT_READY_TEXT_COLOR
             button.timeText:SetTextColor(rc[1], rc[2], rc[3], rc[4])
         else
-            local cc = style.cooldownFontColor or {1, 1, 1, 1}
+            local cc = style.cooldownFontColor or DEFAULT_WHITE
             button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
         end
     end
@@ -249,7 +260,7 @@ local function UpdateBarDisplay(button)
     end
     if button._barCdColor ~= wantCdColor then
         button._barCdColor = wantCdColor
-        local c = wantCdColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+        local c = wantCdColor or style.barColor or DEFAULT_BAR_COLOR
         button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
@@ -291,7 +302,7 @@ local function UpdateBarDisplay(button)
                     resetColor = style.barCooldownColor
                 end
             end
-            local c = resetColor or style.barColor or {0.2, 0.6, 1.0, 1.0}
+            local c = resetColor or style.barColor or DEFAULT_BAR_COLOR
             button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
         end
     end
@@ -331,7 +342,7 @@ local function BarModeOnUpdate(self, elapsed)
                 self._auraActive = false
                 self._inPandemic = false
                 self._barAuraColor = nil
-                local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+                local c = self.style.barColor or DEFAULT_BAR_COLOR
                 self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
                 SetBarAuraEffect(self, false)
             end
@@ -345,7 +356,7 @@ local function BarModeOnUpdate(self, elapsed)
             self._auraActive = false
             self._inPandemic = false
             self._barAuraColor = nil
-            local c = self.style.barColor or {0.2, 0.6, 1.0, 1.0}
+            local c = self.style.barColor or DEFAULT_BAR_COLOR
             self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
             self.statusBar:SetMinMaxValues(0, 1)
             SetBarAuraEffect(self, false)
@@ -442,7 +453,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.statusBar:SetValue(1)
     button.statusBar:SetReverseFill(style.barReverseFill or false)
     button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(style.barTexture or "Solid"))
-    local barColor = style.barColor or {0.2, 0.6, 1.0, 1.0}
+    local barColor = style.barColor or DEFAULT_BAR_COLOR
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
     button.statusBar:EnableMouse(false)
 
@@ -862,8 +873,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     -- Update time text font (default state; per-tick logic handles aura mode)
     ApplyFontStyle(button.timeText, newStyle, "cooldown")
-    -- Clear cached text mode so per-tick logic re-applies the correct font
+    -- Clear cached text mode so per-tick logic re-applies the correct font and color
     button._barTextMode = nil
+    button._barTextColorDirty = true
 
     -- Re-anchor name and time text for orientation
     local nameOffX = newStyle.barNameTextOffsetX or 0
