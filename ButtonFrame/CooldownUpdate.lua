@@ -192,22 +192,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         cooldownSpellId = button._displaySpellId or buttonData.id
     end
 
-    -- Throttled icon staleness detection for silent transforms (e.g. Tiger's Fury
+    -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's Fury
     -- changing Rake/Rip icons). GetSpellTexture dynamically resolves the current
-    -- visual, but no event fires for these transforms. Polled every 5th tick
-    -- (0.5s) instead of every tick to reduce API call volume. cdmChildSlot
-    -- buttons already have their own per-tick viewer-based icon re-sync.
+    -- visual, but no event fires for these transforms. cdmChildSlot buttons
+    -- already have their own per-tick viewer-based icon re-sync.
     -- Event-driven updates (_iconDirty) remain instant (handled above).
     if buttonData.type == "spell" and not buttonData.cdmChildSlot then
-        button._iconCheckCounter = (button._iconCheckCounter or 0) + 1
-        if button._iconCheckCounter >= 5 then
-            button._iconCheckCounter = 0
-            local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
-            if freshIcon and freshIcon ~= button._lastSpellTexture then
-                button._lastSpellTexture = freshIcon
-                CooldownCompanion:UpdateButtonIcon(button)
-                cooldownSpellId = button._displaySpellId or buttonData.id
-            end
+        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
+        if freshIcon and freshIcon ~= button._lastSpellTexture then
+            button._lastSpellTexture = freshIcon
+            CooldownCompanion:UpdateButtonIcon(button)
+            cooldownSpellId = button._displaySpellId or buttonData.id
         end
     end
 
