@@ -987,8 +987,28 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         }, infoButtons)
     end
 
-    -- Desaturate While Aura Not Active (spell+aura only; passive buttons always desaturate)
-    -- Batch: show if not all selected are passive
+    -- Saturate While Aura Not Active (passive aura entries only — inverted toggle)
+    local anyPassiveAura
+    if isBatch then anyPassiveAura = AnySelectedHas(group, "isPassive")
+    else anyPassiveAura = buttonData.isPassive end
+    if anyPassiveAura then
+        local satNoAuraCb = AceGUI:Create("CheckBox")
+        satNoAuraCb:SetLabel("Saturate While Aura Not Active")
+        SetCheckboxValue(satNoAuraCb, "saturateWhileAuraNotActive", FilterAuraTracking)
+        satNoAuraCb:SetFullWidth(true)
+        WrapBatchCallback(satNoAuraCb, function(widget, event, val)
+            ApplyToAuraTracking("saturateWhileAuraNotActive", val or nil)
+        end)
+        scroll:AddChild(satNoAuraCb)
+
+        -- (?) tooltip
+        CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
+            "Saturate While Aura Not Active",
+            {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
+        }, infoButtons)
+    end
+
+    -- Desaturate While Aura Not Active (non-passive aura entries)
     local allPassiveAura
     if isBatch then allPassiveAura = AllSelectedAre(group, "isPassive")
     else allPassiveAura = buttonData.isPassive end
