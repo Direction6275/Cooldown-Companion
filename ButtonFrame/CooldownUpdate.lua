@@ -237,6 +237,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
+    -- Capture and clear event-driven removal flag (set by OnUnitAura when
+    -- removedAuraInstanceIDs confirms the aura is gone).  Used to bypass the
+    -- grace hold, which otherwise can't detect expiry in combat (secret values).
+    local auraEventRemoved = button._auraEventRemoved
+    button._auraEventRemoved = nil
     if buttonData.auraTracking and button._auraSpellID then
         local auraUnit = button._auraUnit or "player"
         local hasExplicitAuraOverride = buttonData.auraSpellID ~= nil
@@ -447,7 +452,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not auraOverrideActive and button._auraActive
            and prevAuraDurationObj and not buttonData.isPassive then
             local expired = false
-            if button._targetSwitchAt then
+            if auraEventRemoved then
+                -- Server confirmed aura removal via UNIT_AURA
+                -- removedAuraInstanceIDs — bypass grace hold entirely.
+                -- Without this, combat secret values prevent
+                -- GetRemainingDuration() from detecting expiry, causing
+                -- a ~0.3s ghost hold on every aura-tracked proc consumed.
+                expired = true
+            elseif button._targetSwitchAt then
                 -- CDM processes UNIT_TARGET before PLAYER_TARGET_CHANGED,
                 -- so the viewer frame already reflects the new target.
                 -- If CDM has no aura data, the debuff is confirmed absent.
@@ -620,26 +632,27 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Pandemic detection: style-level (Show Pandemic Glow) OR per-button visibility toggle.
         elseif auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic) and viewerFrame then
             local pi = viewerFrame.PandemicIcon
-            if pi and pi:IsVisible() then
+            if button._pandemicGraceSuppressed then
+                -- Aura was just refreshed (pandemic recast).  Clear pandemic
+                -- immediately regardless of PandemicIcon visibility — CDM may
+                -- not have run its OnUpdate yet, leaving PandemicIcon stale.
+                button._pandemicGraceSuppressed = nil
+                button._pandemicGraceStart = nil
+                -- inPandemic stays false
+            elseif pi and pi:IsVisible() then
                 inPandemic = true
                 button._pandemicGraceStart = nil
-                button._pandemicGraceSuppressed = nil
             elseif button._inPandemic then
-                if button._pandemicGraceSuppressed then
-                    -- Aura was just reapplied — skip grace hold so pandemic
-                    -- clears immediately instead of lingering 0.3s.
-                    button._pandemicGraceSuppressed = nil
-                    button._pandemicGraceStart = nil
+                -- Grace hold: absorbs brief CDM RefreshLayout recycling dropouts.
+                -- Time-based rather than tick-based so rapid UNIT_AURA-driven
+                -- UpdateAllCooldowns() calls don't burn through the window.
+                if not button._pandemicGraceStart then
+                    button._pandemicGraceStart = now
+                end
+                if now - button._pandemicGraceStart <= 0.3 then
+                    inPandemic = true
                 else
-                    -- Grace hold — see block comment above.
-                    if not button._pandemicGraceStart then
-                        button._pandemicGraceStart = now
-                    end
-                    if now - button._pandemicGraceStart <= 0.3 then
-                        inPandemic = true
-                    else
-                        button._pandemicGraceStart = nil
-                    end
+                    button._pandemicGraceStart = nil
                 end
             end
         end
