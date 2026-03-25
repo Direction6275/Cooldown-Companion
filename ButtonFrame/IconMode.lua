@@ -764,6 +764,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil
+    button._auraGlowPulseOn = nil
+    button._auraGlowBorderOn = nil
     button._readyGlowActive = nil
     button._keyPressHighlightActive = nil
     button._displaySpellId = nil

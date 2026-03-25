@@ -1793,6 +1793,70 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     end -- glowAdvExpanded
                 end
 
+                -- Aura Pulse
+                local auraPulseCb = AceGUI:Create("CheckBox")
+                auraPulseCb:SetLabel("Pulse When Active")
+                auraPulseCb:SetValue(cab.auraPulse == true)
+                auraPulseCb:SetFullWidth(true)
+                auraPulseCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    customBars[cabIdx].auraPulse = val or nil
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                container:AddChild(auraPulseCb)
+
+                if cab.auraPulse then
+                    local pSpeedSlider = AceGUI:Create("Slider")
+                    pSpeedSlider:SetLabel("Pulse Duration")
+                    pSpeedSlider:SetSliderValues(0.1, 2.0, 0.1)
+                    pSpeedSlider:SetValue(cab.auraPulseSpeed or 0.5)
+                    pSpeedSlider:SetFullWidth(true)
+                    pSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].auraPulseSpeed = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(pSpeedSlider)
+
+                    local pMinSlider = AceGUI:Create("Slider")
+                    pMinSlider:SetLabel("Minimum Opacity")
+                    pMinSlider:SetSliderValues(0, 0.9, 0.05)
+                    pMinSlider:SetValue(cab.auraPulseMinAlpha or 0.3)
+                    pMinSlider:SetFullWidth(true)
+                    pMinSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].auraPulseMinAlpha = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(pMinSlider)
+                end
+
+                -- Aura Border
+                local auraBorderCb = AceGUI:Create("CheckBox")
+                auraBorderCb:SetLabel("Active Border")
+                auraBorderCb:SetValue(cab.auraBorder == true)
+                auraBorderCb:SetFullWidth(true)
+                auraBorderCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    customBars[cabIdx].auraBorder = val or nil
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                container:AddChild(auraBorderCb)
+
+                if cab.auraBorder then
+                    AddColorPicker(container, customBars[cabIdx], "auraBorderColor", "Border Color", {1, 0.84, 0, 0.9}, true,
+                        cabApplyBars, cabApplyBars)
+
+                    local bSizeSlider = AceGUI:Create("Slider")
+                    bSizeSlider:SetLabel("Border Size")
+                    bSizeSlider:SetSliderValues(1, 4, 1)
+                    bSizeSlider:SetValue(cab.auraBorderSize or 1)
+                    bSizeSlider:SetFullWidth(true)
+                    bSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].auraBorderSize = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    container:AddChild(bSizeSlider)
+                end
+
                 -- Overlay Color (overlay mode only)
                 if cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
                     local cpOverlay = AddColorPicker(container, customBars[cabIdx], "overlayColor", "Overlay Color", {1, 0.84, 0}, false,

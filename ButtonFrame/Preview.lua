@@ -137,6 +137,8 @@ local function pandemicOnToggle(button, show)
         SetBarAuraEffect(button, button._auraActive)
     else
         button._barAuraEffectActive = nil
+        button._baePulseOn = nil
+        button._baeBorderOn = nil
     end
 end
 
@@ -206,6 +208,8 @@ function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
                 SetBarAuraEffect(button, button._auraActive)
             else
                 button._barAuraEffectActive = nil
+                button._baePulseOn = nil
+                button._baeBorderOn = nil
             end
             return
         end

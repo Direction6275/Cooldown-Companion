@@ -721,6 +721,81 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
 end
 
 ------------------------------------------------------------------------
+-- Pulse + Border Controls (shared by aura glow and bar aura effect)
+------------------------------------------------------------------------
+
+local function BuildPulseBorderControls(container, styleTable, refreshCallback, cfg)
+    if not cfg then return end
+
+    -- Pulse checkbox
+    if cfg.pulseKey then
+        local pulseCb = AceGUI:Create("CheckBox")
+        pulseCb:SetLabel("Pulse Animation")
+        pulseCb:SetValue(styleTable[cfg.pulseKey] or false)
+        pulseCb:SetFullWidth(true)
+        pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[cfg.pulseKey] = val or false
+            refreshCallback()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(pulseCb)
+
+        if styleTable[cfg.pulseKey] then
+            local speedSlider = AceGUI:Create("Slider")
+            speedSlider:SetLabel("Pulse Duration")
+            speedSlider:SetSliderValues(0.1, 2.0, 0.1)
+            speedSlider:SetValue(styleTable[cfg.pulseSpeedKey] or 0.5)
+            speedSlider:SetFullWidth(true)
+            speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[cfg.pulseSpeedKey] = val
+                refreshCallback()
+            end)
+            container:AddChild(speedSlider)
+
+            local minSlider = AceGUI:Create("Slider")
+            minSlider:SetLabel("Minimum Opacity")
+            minSlider:SetSliderValues(0, 0.9, 0.05)
+            minSlider:SetValue(styleTable[cfg.pulseMinKey] or 0.3)
+            minSlider:SetFullWidth(true)
+            minSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[cfg.pulseMinKey] = val
+                refreshCallback()
+            end)
+            container:AddChild(minSlider)
+        end
+    end
+
+    -- Border checkbox
+    if cfg.borderKey then
+        local borderCb = AceGUI:Create("CheckBox")
+        borderCb:SetLabel("Pixel Border")
+        borderCb:SetValue(styleTable[cfg.borderKey] or false)
+        borderCb:SetFullWidth(true)
+        borderCb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[cfg.borderKey] = val or false
+            refreshCallback()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(borderCb)
+
+        if styleTable[cfg.borderKey] then
+            AddColorPicker(container, styleTable, cfg.borderColorKey, "Border Color", cfg.defaultBorderColor or {1, 0.84, 0, 0.9}, true, refreshCallback, refreshCallback)
+
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Border Size")
+            sizeSlider:SetSliderValues(1, 6, 0.5)
+            sizeSlider:SetValue(styleTable[cfg.borderSizeKey] or 2)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[cfg.borderSizeKey] = val
+                refreshCallback()
+            end)
+            container:AddChild(sizeSlider)
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- PUBLIC GLOW/EFFECT WRAPPERS (same signatures as original functions)
 ------------------------------------------------------------------------
 local function BuildProcGlowControls(container, styleTable, refreshCallback, opts)
@@ -754,6 +829,11 @@ local function BuildAuraIndicatorControls(container, styleTable, refreshCallback
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
         styleOrder = LCG_GLOW_STYLE_ORDER,
     }, opts)
+    BuildPulseBorderControls(container, styleTable, refreshCallback, {
+        pulseKey = "auraGlowPulse", pulseSpeedKey = "auraGlowPulseSpeed", pulseMinKey = "auraGlowPulseMinAlpha",
+        borderKey = "auraGlowBorder", borderColorKey = "auraGlowBorderColor", borderSizeKey = "auraGlowBorderSize",
+        defaultBorderColor = {1, 0.84, 0, 0.9},
+    })
 end
 
 local function BuildReadyGlowControls(container, styleTable, refreshCallback, opts)
@@ -804,6 +884,11 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         effectSizeKey = "barAuraEffectSize", effectThicknessKey = "barAuraEffectThickness",
         effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
     }, opts)
+    BuildPulseBorderControls(container, styleTable, refreshCallback, {
+        pulseKey = "barAuraPulse", pulseSpeedKey = "barAuraPulseSpeed", pulseMinKey = "barAuraPulseMinAlpha",
+        borderKey = "barAuraBorder", borderColorKey = "barAuraBorderColor", borderSizeKey = "barAuraBorderSize",
+        defaultBorderColor = {1, 0.84, 0, 0.9},
+    })
 end
 
 local function BuildBarColorsControls(container, styleTable, refreshCallback)

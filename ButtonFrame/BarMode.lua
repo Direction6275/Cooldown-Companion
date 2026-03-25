@@ -768,6 +768,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barReadyTextColor = nil
     button._barAuraColor = nil
     button._barAuraEffectActive = nil
+    button._baePulseOn = nil
+    button._baeBorderOn = nil
 
     if isVertical then
         button:SetSize(barHeight, barLength)

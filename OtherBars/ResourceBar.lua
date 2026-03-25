@@ -98,6 +98,10 @@ local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
 local EnsureMaxStacksIndicator = RB.EnsureMaxStacksIndicator
 local LayoutMaxStacksIndicator = RB.LayoutMaxStacksIndicator
 local ClearMaxStacksIndicator = RB.ClearMaxStacksIndicator
+local ApplyCustomAuraPulse = RB.ApplyCustomAuraPulse
+local StopCustomAuraPulse = RB.StopCustomAuraPulse
+local ApplyCustomAuraBorder = RB.ApplyCustomAuraBorder
+local HideCustomAuraBorder = RB.HideCustomAuraBorder
 local EnsureCustomAuraContinuousThresholdOverlay = RB.EnsureCustomAuraContinuousThresholdOverlay
 local EnsureCustomAuraSegmentThresholdOverlays = RB.EnsureCustomAuraSegmentThresholdOverlays
 local EnsureCustomAuraOverlayThresholdOverlays = RB.EnsureCustomAuraOverlayThresholdOverlays
@@ -1217,6 +1221,29 @@ local function UpdateCustomAuraBar(barInfo)
     if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
         barInfo._maxStacksIndicator:SetValue(auraPresent and applications or 0)
     end
+
+    -- Aura pulse: alpha oscillation on bar frame when aura is present
+    local frame = barInfo.frame
+    if cabConfig.auraPulse then
+        if auraPresent then
+            ApplyCustomAuraPulse(frame, cabConfig.auraPulseSpeed or 0.5, cabConfig.auraPulseMinAlpha or 0.3)
+        else
+            StopCustomAuraPulse(frame)
+        end
+    elseif frame._auraPulseAG then
+        StopCustomAuraPulse(frame)
+    end
+
+    -- Aura border: colored edge when aura is present
+    if cabConfig.auraBorder then
+        if auraPresent then
+            ApplyCustomAuraBorder(frame, cabConfig.auraBorderColor or {1, 0.84, 0, 0.9}, cabConfig.auraBorderSize or 1)
+        else
+            HideCustomAuraBorder(frame)
+        end
+    elseif frame._auraBorderTextures then
+        HideCustomAuraBorder(frame)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1224,6 +1251,10 @@ end
 ------------------------------------------------------------------------
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
+    -- Clean up pulse/border state on restyle
+    StopCustomAuraPulse(barInfo.frame)
+    HideCustomAuraBorder(barInfo.frame)
+
     local barColor = cabConfig.barColor or {0.5, 0.5, 1}
     local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
     local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)

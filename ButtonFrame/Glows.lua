@@ -234,6 +234,16 @@ local function HideGlowStyles(container)
         end
         container.blizzardFrame:Hide()
     end
+    -- Stop pulse animation when glow style changes (target frame may change)
+    if container._ccPulseTarget then
+        local target = container._ccPulseTarget
+        if target._ccPulseAG then
+            target._ccPulseAG:Stop()
+            target:SetAlpha(1)
+        end
+        container._ccPulseTarget = nil
+    end
+    -- NOTE: border textures NOT hidden here — managed by independent cache in setter
 end
 
 -- Show the selected glow style on a container.
@@ -361,6 +371,104 @@ local function IsGlowAnimationAlive(container)
     return false
 end
 
+--------------------------------------------------------------------------------
+-- Pulse Animation Helpers
+-- Alpha oscillation via AnimationGroup + SetLooping("BOUNCE").
+-- Same pattern as ResourceBarVisuals.lua max-stacks indicator.
+--------------------------------------------------------------------------------
+
+-- Map glow style → the container sub-frame that hosts its visuals.
+-- Returns nil for LCG-managed styles (pixel, lcgButton, lcgAutoCast) where
+-- attaching an AnimationGroup would be fragile.
+local function GetPulseTargetFrame(container, glowStyle)
+    if glowStyle == "solid" or glowStyle == "overlay" then
+        return container.solidFrame
+    elseif glowStyle == "glow" then
+        return container.procFrame
+    elseif glowStyle == "blizzard" then
+        return container.blizzardFrame
+    end
+    return nil
+end
+
+-- Start or update a pulse animation on the appropriate target frame.
+local function ApplyPulseAnimation(container, glowStyle, speed, minAlpha)
+    local target = GetPulseTargetFrame(container, glowStyle)
+    if not target then
+        -- Unsupported style (pixel/LCG): stop any leftover pulse
+        if container._ccPulseTarget then
+            local old = container._ccPulseTarget
+            if old._ccPulseAG then old._ccPulseAG:Stop(); old:SetAlpha(1) end
+            container._ccPulseTarget = nil
+        end
+        return
+    end
+    -- If the target changed (style switch), stop old pulse
+    if container._ccPulseTarget and container._ccPulseTarget ~= target then
+        local old = container._ccPulseTarget
+        if old._ccPulseAG then old._ccPulseAG:Stop(); old:SetAlpha(1) end
+    end
+    -- Lazily create AnimationGroup on the target frame
+    if not target._ccPulseAG then
+        local ag = target:CreateAnimationGroup()
+        ag:SetLooping("BOUNCE")
+        local anim = ag:CreateAnimation("Alpha")
+        target._ccPulseAG = ag
+        target._ccPulseAnim = anim
+    end
+    target._ccPulseAnim:SetDuration(speed)
+    target._ccPulseAnim:SetFromAlpha(1.0)
+    target._ccPulseAnim:SetToAlpha(minAlpha)
+    target._ccPulseAG:Stop()
+    target._ccPulseAG:Play()
+    container._ccPulseTarget = target
+end
+
+-- Stop any active pulse animation and reset alpha.
+local function StopPulseAnimation(container)
+    local target = container._ccPulseTarget
+    if not target then return end
+    if target._ccPulseAG then
+        target._ccPulseAG:Stop()
+        target:SetAlpha(1)
+    end
+    container._ccPulseTarget = nil
+end
+
+--------------------------------------------------------------------------------
+-- Pixel Border Helpers
+-- Thin colored edge textures independent of glow style.
+-- Created lazily on container.solidFrame at OVERLAY sublevel 3 (above glow's
+-- solidTextures at sublevel 2) so they inherit strata ordering.
+--------------------------------------------------------------------------------
+
+local function EnsureBorderTextures(container)
+    if container.borderTextures then return end
+    container.borderTextures = {}
+    for i = 1, 4 do
+        local tex = container.solidFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+        tex:Hide()
+        container.borderTextures[i] = tex
+    end
+end
+
+local function ShowBorder(container, button, color, size)
+    EnsureBorderTextures(container)
+    ApplyEdgePositions(container.borderTextures, button, size)
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+    for _, tex in ipairs(container.borderTextures) do
+        tex:SetColorTexture(r, g, b, a)
+        tex:Show()
+    end
+end
+
+local function HideBorder(container)
+    if not container.borderTextures then return end
+    for _, tex in ipairs(container.borderTextures) do
+        tex:Hide()
+    end
+end
+
 -- Show or hide assisted highlight on a button based on the selected style.
 -- Tracks current state to avoid restarting animations every tick.
 local function SetAssistedHighlight(button, show)
@@ -469,15 +577,27 @@ local function MakeGlowSetter(cfg)
     local sizeOnlyForSolid = cfg.sizeOnlyForSolid
     local defSize          = cfg.defaultSize
 
+    -- Pulse/border sub-table configs (nil for setters that don't support them)
+    local pulseConfig  = cfg.pulse
+    local borderConfig = cfg.border
+
     -- The actual glow setter closure. Signature: (button, show [, pandemicOverride])
     return function(button, show, pandemicOverride)
         local container = button[containerKey]
         if not container then return end
 
+        -- Fast path: nothing active and nothing wanted — skip all evaluation
+        if not show and button[cActive] == nil
+           and (not pulseConfig or not button[pulseConfig.cEnabled])
+           and (not borderConfig or not button[borderConfig.cEnabled]) then
+            return
+        end
+
         local glowStyle, color, sz, th, spd, ln, usesSpeed, resolvedLcgKey
+        local btnStyle
 
         if show then
-            local btnStyle = button.style
+            btnStyle = button.style
 
             -- Resolve style and color based on pandemic branching
             if hasPandemic and pandemicOverride then
@@ -525,60 +645,127 @@ local function MakeGlowSetter(cfg)
             end
         end
 
-        -- Off path: == nil (not "not") so external false-invalidation falls through
-        if not glowStyle then
-            if button[cActive] == nil then return end
+        -- === GLOW PATH ===
+        if glowStyle then
+            -- On path: compare individual cached fields
+            local ca = color[4] or defaultAlpha
+            local glowCacheHit = button[cActive]
+               and button[cStyle] == glowStyle
+               and button[cR] == color[1] and button[cG] == color[2]
+               and button[cB] == color[3] and button[cA] == ca
+               and (not cSz or button[cSz] == sz)
+               and (not cTh or button[cTh] == th)
+               and (not cSpd or button[cSpd] == spd)
+               and (not cLn or button[cLn] == ln)
+               and (not cPandemic or button[cPandemic] == pandemicOverride)
+               and IsGlowAnimationAlive(container)
+
+            if not glowCacheHit then
+                -- Update cache
+                button[cActive] = true
+                button[cStyle] = glowStyle
+                button[cR] = color[1]
+                button[cG] = color[2]
+                button[cB] = color[3]
+                button[cA] = ca
+                if cSz then button[cSz] = sz end
+                if cTh then button[cTh] = th end
+                if cSpd then button[cSpd] = spd end
+                if cLn then button[cLn] = ln end
+                if cPandemic then button[cPandemic] = pandemicOverride end
+
+                HideGlowStyles(container)
+
+                -- Build opts table (state-change path only, so allocation is OK)
+                local opts = { size = sz, key = resolvedLcgKey }
+                if fullParams then
+                    opts.thickness = th
+                    opts.speed = spd
+                    if glowStyle == "pixel" then opts.lines = ln end
+                end
+                if includeFreqScale and usesSpeed then
+                    opts.frequency = SpeedToGlowFrequency(spd)
+                    opts.scale = math_min(math_max(sz, 0.2), 3)
+                end
+                if optsDefaultAlpha then
+                    opts.defaultAlpha = optsDefaultAlpha
+                end
+
+                ShowGlowStyle(container, glowStyle, button, color, opts)
+            end
+        elseif button[cActive] ~= nil then
+            -- Glow off: clear glow state (HideGlowStyles also stops pulse)
             button[cActive] = nil
             HideGlowStyles(container)
-            return
         end
 
-        -- On path: compare individual cached fields
-        local ca = color[4] or defaultAlpha
-        if button[cActive]
-           and button[cStyle] == glowStyle
-           and button[cR] == color[1] and button[cG] == color[2]
-           and button[cB] == color[3] and button[cA] == ca
-           and (not cSz or button[cSz] == sz)
-           and (not cTh or button[cTh] == th)
-           and (not cSpd or button[cSpd] == spd)
-           and (not cLn or button[cLn] == ln)
-           and (not cPandemic or button[cPandemic] == pandemicOverride)
-           and IsGlowAnimationAlive(container) then
-            return
+        -- === PULSE PATH === (independent, only when configured)
+        if pulseConfig then
+            local pc = pulseConfig
+            local pEnabled = glowStyle and btnStyle and btnStyle[pc.enabledKey] or false
+            if pEnabled then
+                local pSpeed = btnStyle[pc.speedKey] or pc.defSpeed
+                local pMin = btnStyle[pc.minAlphaKey] or pc.defMinAlpha
+                -- Cache-match + alive check
+                local pHit = button[pc.cEnabled]
+                    and button[pc.cSpeed] == pSpeed
+                    and button[pc.cMin] == pMin
+                if pHit then
+                    local pt = container._ccPulseTarget
+                    if pt then
+                        pHit = not pt:IsVisible()
+                            or (pt._ccPulseAG and pt._ccPulseAG:IsPlaying())
+                    else
+                        pHit = false
+                    end
+                end
+                if not pHit then
+                    button[pc.cEnabled] = true
+                    button[pc.cSpeed] = pSpeed
+                    button[pc.cMin] = pMin
+                    ApplyPulseAnimation(container, glowStyle, pSpeed, pMin)
+                end
+            elseif button[pc.cEnabled] then
+                button[pc.cEnabled] = nil
+                button[pc.cSpeed] = nil
+                button[pc.cMin] = nil
+                StopPulseAnimation(container)
+            end
         end
 
-        -- Update cache
-        button[cActive] = true
-        button[cStyle] = glowStyle
-        button[cR] = color[1]
-        button[cG] = color[2]
-        button[cB] = color[3]
-        button[cA] = ca
-        if cSz then button[cSz] = sz end
-        if cTh then button[cTh] = th end
-        if cSpd then button[cSpd] = spd end
-        if cLn then button[cLn] = ln end
-        if cPandemic then button[cPandemic] = pandemicOverride end
-
-        HideGlowStyles(container)
-
-        -- Build opts table (state-change path only, so allocation is OK)
-        local opts = { size = sz, key = resolvedLcgKey }
-        if fullParams then
-            opts.thickness = th
-            opts.speed = spd
-            if glowStyle == "pixel" then opts.lines = ln end
+        -- === BORDER PATH === (independent, only when configured)
+        -- Border gates on show (aura active), not glowStyle, so it works
+        -- as "border only" when glow style is "none".
+        if borderConfig then
+            local bc = borderConfig
+            local bEnabled = show and btnStyle and btnStyle[bc.enabledKey] or false
+            if bEnabled then
+                local bColor = btnStyle[bc.colorKey] or bc.defColor
+                local bSize = btnStyle[bc.sizeKey] or bc.defSize
+                local bA = bColor[4] or 1
+                -- Cache-match + alive check
+                if button[bc.cEnabled]
+                   and button[bc.cR] == bColor[1] and button[bc.cG] == bColor[2]
+                   and button[bc.cB] == bColor[3] and button[bc.cA] == bA
+                   and button[bc.cSz] == bSize
+                   and container.borderTextures and container.borderTextures[1]
+                   and container.borderTextures[1]:IsShown() then
+                    -- Border cache hit, still visible
+                else
+                    button[bc.cEnabled] = true
+                    button[bc.cR] = bColor[1]; button[bc.cG] = bColor[2]
+                    button[bc.cB] = bColor[3]; button[bc.cA] = bA
+                    button[bc.cSz] = bSize
+                    ShowBorder(container, button, bColor, bSize)
+                end
+            elseif button[bc.cEnabled] then
+                button[bc.cEnabled] = nil
+                button[bc.cR] = nil; button[bc.cG] = nil
+                button[bc.cB] = nil; button[bc.cA] = nil
+                button[bc.cSz] = nil
+                HideBorder(container)
+            end
         end
-        if includeFreqScale and usesSpeed then
-            opts.frequency = SpeedToGlowFrequency(spd)
-            opts.scale = math_min(math_max(sz, 0.2), 3)
-        end
-        if optsDefaultAlpha then
-            opts.defaultAlpha = optsDefaultAlpha
-        end
-
-        ShowGlowStyle(container, glowStyle, button, color, opts)
     end
 end
 
@@ -639,6 +826,27 @@ local SetAuraGlow = MakeGlowSetter({
     cacheSz = "_auraGlowSz", cacheTh = "_auraGlowTh",
     cacheSpd = "_auraGlowSpd", cacheLn = "_auraGlowLn",
     cachePandemic = "_auraGlowPandemic",
+    pulse = {
+        enabledKey = "auraGlowPulse",
+        speedKey   = "auraGlowPulseSpeed",
+        minAlphaKey = "auraGlowPulseMinAlpha",
+        defSpeed   = 0.5,
+        defMinAlpha = 0.3,
+        cEnabled   = "_auraGlowPulseOn",
+        cSpeed     = "_auraGlowPulseSpd",
+        cMin       = "_auraGlowPulseMin",
+    },
+    border = {
+        enabledKey = "auraGlowBorder",
+        colorKey   = "auraGlowBorderColor",
+        sizeKey    = "auraGlowBorderSize",
+        defColor   = DEFAULT_AURA_GLOW_COLOR,
+        defSize    = 2,
+        cEnabled   = "_auraGlowBorderOn",
+        cR = "_agBdrR", cG = "_agBdrG",
+        cB = "_agBdrB", cA = "_agBdrA",
+        cSz = "_agBdrSz",
+    },
 })
 
 local SetReadyGlow = MakeGlowSetter({
@@ -836,6 +1044,27 @@ local SetBarAuraEffect = MakeGlowSetter({
     cacheSz = "_baeSz", cacheTh = "_baeTh",
     cacheSpd = "_baeSpd", cacheLn = "_baeLn",
     cachePandemic = "_baePandemic",
+    pulse = {
+        enabledKey = "barAuraPulse",
+        speedKey   = "barAuraPulseSpeed",
+        minAlphaKey = "barAuraPulseMinAlpha",
+        defSpeed   = 0.5,
+        defMinAlpha = 0.3,
+        cEnabled   = "_baePulseOn",
+        cSpeed     = "_baePulseSpd",
+        cMin       = "_baePulseMin",
+    },
+    border = {
+        enabledKey = "barAuraBorder",
+        colorKey   = "barAuraBorderColor",
+        sizeKey    = "barAuraBorderSize",
+        defColor   = DEFAULT_AURA_GLOW_COLOR,
+        defSize    = 2,
+        cEnabled   = "_baeBorderOn",
+        cR = "_baeBdrR", cG = "_baeBdrG",
+        cB = "_baeBdrB", cA = "_baeBdrA",
+        cSz = "_baeBdrSz",
+    },
 })
 
 -- Exports

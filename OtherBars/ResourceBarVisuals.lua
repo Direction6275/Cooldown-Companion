@@ -611,6 +611,57 @@ local function ClearMaxStacksIndicator(barInfo)
     indicator:SetValue(0)
 end
 
+------------------------------------------------------------------------
+-- Custom Aura Bar Pulse + Border (aura-active state indicators)
+-- Same AnimationGroup + BOUNCE pattern as max-stacks indicator.
+------------------------------------------------------------------------
+
+local function EnsureCustomAuraPulse(frame)
+    if frame._auraPulseAG then return end
+    local ag = frame:CreateAnimationGroup()
+    ag:SetLooping("BOUNCE")
+    local anim = ag:CreateAnimation("Alpha")
+    frame._auraPulseAG = ag
+    frame._auraPulseAnim = anim
+end
+
+local function ApplyCustomAuraPulse(frame, speed, minAlpha)
+    EnsureCustomAuraPulse(frame)
+    frame._auraPulseAnim:SetDuration(speed)
+    frame._auraPulseAnim:SetFromAlpha(1.0)
+    frame._auraPulseAnim:SetToAlpha(minAlpha)
+    frame._auraPulseAG:Stop()
+    frame._auraPulseAG:Play()
+end
+
+local function StopCustomAuraPulse(frame)
+    if not frame._auraPulseAG then return end
+    frame._auraPulseAG:Stop()
+    frame:SetAlpha(1)
+end
+
+local function EnsureCustomAuraBorderTextures(frame)
+    if frame._auraBorderTextures then return end
+    frame._auraBorderTextures = {}
+    local names = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
+    for _, side in ipairs(names) do
+        local tex = frame:CreateTexture(nil, "OVERLAY", nil, 6)
+        tex:SetColorTexture(0, 0, 0, 1)
+        tex:Hide()
+        frame._auraBorderTextures[side] = tex
+    end
+end
+
+local function ApplyCustomAuraBorder(frame, color, size)
+    EnsureCustomAuraBorderTextures(frame)
+    ApplyPixelBorders(frame._auraBorderTextures, frame, color, size)
+end
+
+local function HideCustomAuraBorder(frame)
+    if not frame._auraBorderTextures then return end
+    HidePixelBorders(frame._auraBorderTextures)
+end
+
 local function EnsureCustomAuraContinuousThresholdOverlay(bar)
     if not bar or bar.thresholdOverlay then return end
     local overlay = CreateFrame("StatusBar", nil, bar)
@@ -1005,6 +1056,10 @@ RB.SetCustomAuraMaxThresholdRange = SetCustomAuraMaxThresholdRange
 RB.EnsureMaxStacksIndicator = EnsureMaxStacksIndicator
 RB.LayoutMaxStacksIndicator = LayoutMaxStacksIndicator
 RB.ClearMaxStacksIndicator = ClearMaxStacksIndicator
+RB.ApplyCustomAuraPulse = ApplyCustomAuraPulse
+RB.StopCustomAuraPulse = StopCustomAuraPulse
+RB.ApplyCustomAuraBorder = ApplyCustomAuraBorder
+RB.HideCustomAuraBorder = HideCustomAuraBorder
 RB.EnsureCustomAuraContinuousThresholdOverlay = EnsureCustomAuraContinuousThresholdOverlay
 RB.EnsureCustomAuraSegmentThresholdOverlays = EnsureCustomAuraSegmentThresholdOverlays
 RB.EnsureCustomAuraOverlayThresholdOverlays = EnsureCustomAuraOverlayThresholdOverlays

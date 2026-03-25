@@ -162,8 +162,12 @@ local function ResetButtonGlowTransitionState(button)
 
     button._procGlowActive = nil
     button._auraGlowActive = nil
+    button._auraGlowPulseOn = nil
+    button._auraGlowBorderOn = nil
     button._readyGlowActive = nil
     button._barAuraEffectActive = nil
+    button._baePulseOn = nil
+    button._baeBorderOn = nil
     if button.assistedHighlight then
         button.assistedHighlight.currentState = nil
     end
