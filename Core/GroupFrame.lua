@@ -426,6 +426,12 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     frame._anchorDirty = nil
     frame:ClearAllPoints()
 
+    -- ClearAllPoints wipes any accumulated AdjustPointsOffset from compact
+    -- anchor compensation.  Clear the sized flag so the next ResizeGroupFrame
+    -- call treats the freshly-set anchor as the baseline — no compensation
+    -- relative to the previous size.
+    frame._hasBeenSized = false
+
     -- Stop any existing alpha sync
     if frame.alphaSyncFrame then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
@@ -724,6 +730,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
 
+    -- Prevent compact-layout anchor compensation during the initial sizing
+    -- sequence.  The anchor point was just established by AnchorGroupFrame
+    -- (or CreateGroupFrame), so WoW's SetSize naturally keeps it fixed.
+    -- Compensation only applies to incremental ticker-driven resizes.
+    frame._hasBeenSized = false
+
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
 
@@ -736,6 +748,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         frame._layoutDirty = true
         self:UpdateGroupLayout(groupId)
     end
+    -- _hasBeenSized is now true if the compact resize ran (set by
+    -- ResizeGroupFrame), or still false if all buttons were visible and no
+    -- compact resize was needed.  Either state is correct: the first
+    -- ticker-driven resize after this will either compensate (true) relative
+    -- to the established compact baseline, or skip compensation (false) to
+    -- establish a new baseline when config-forced visibility clears.
 
     -- Propagate group frame strata to all button sub-elements
     local effectiveStrata = group.frameStrata or "MEDIUM"
