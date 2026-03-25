@@ -256,7 +256,9 @@ function CooldownCompanion:QueueBuildViewerAuraMap()
 end
 
 function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
-    if not spellID or spellID == 0 or not self._cdmViewerEnabled then
+    local enabled = self._cdmViewerEnabled
+    if enabled == nil then enabled = GetCVarBool("cooldownViewerEnabled") end
+    if not spellID or spellID == 0 or not enabled then
         return nil
     end
 

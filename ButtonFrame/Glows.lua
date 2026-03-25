@@ -141,6 +141,7 @@ local function StopLibCustomGlow(container)
         end
         container._pixelTarget = nil
         container._pixelKey = nil
+        container._pixelGlowLookupKey = nil
     end
 
     local lcgStyle = container._lcgStyle
@@ -150,6 +151,7 @@ local function StopLibCustomGlow(container)
     container._lcgStyle = nil
     container._lcgTarget = nil
     container._lcgKey = nil
+    container._autocastGlowLookupKey = nil
 
     if not (LCG and lcgStyle and lcgTarget) then return end
 
