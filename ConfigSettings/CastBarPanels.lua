@@ -39,6 +39,82 @@ local function BuildCastBarAnchoringPanel(container)
 
     if not settings.enabled then return end
 
+    local isIndependent = settings.independentAnchorEnabled == true
+
+    -- Anchoring Mode dropdown
+    local anchorModeDrop = AceGUI:Create("Dropdown")
+    anchorModeDrop:SetLabel("Anchoring Mode")
+    anchorModeDrop:SetList({
+        attached = "Attached to Group",
+        independent = "Independent",
+    }, { "attached", "independent" })
+    anchorModeDrop:SetValue(isIndependent and "independent" or "attached")
+    anchorModeDrop:SetFullWidth(true)
+    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.independentAnchorEnabled = (val == "independent")
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorModeDrop)
+
+    -- Stack Position section (independent mode only)
+    if isIndependent then
+        local castPosHeading = AceGUI:Create("Heading")
+        castPosHeading:SetText("Cast Bar Position")
+        ColorHeading(castPosHeading)
+        castPosHeading:SetFullWidth(true)
+        container:AddChild(castPosHeading)
+
+        -- Ensure anchor config exists for sliders
+        if type(settings.independentAnchor) ~= "table" then
+            settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+        end
+
+        local unlockCb = AceGUI:Create("CheckBox")
+        unlockCb:SetLabel("Unlock Placement")
+        unlockCb:SetValue(not settings.independentAnchorLocked)
+        unlockCb:SetFullWidth(true)
+        unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.independentAnchorLocked = not val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(unlockCb)
+
+        local widthSlider = AceGUI:Create("Slider")
+        widthSlider:SetLabel("Cast Bar Width")
+        widthSlider:SetSliderValues(20, 600, 1)
+        widthSlider:SetValue(settings.independentWidth or 200)
+        widthSlider:SetFullWidth(true)
+        widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.independentWidth = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(widthSlider)
+
+        local xSlider = AceGUI:Create("Slider")
+        xSlider:SetLabel("X Offset")
+        xSlider:SetSliderValues(-1000, 1000, 0.1)
+        xSlider:SetValue(settings.independentAnchor.x or 0)
+        xSlider:SetFullWidth(true)
+        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.independentAnchor.x = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(xSlider)
+
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(-1000, 1000, 0.1)
+        ySlider:SetValue(settings.independentAnchor.y or 0)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.independentAnchor.y = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(ySlider)
+    end
+
     -- Preview toggle (ephemeral — not saved to DB)
     local previewCb = AceGUI:Create("CheckBox")
     previewCb:SetLabel("Preview Cast Bar")

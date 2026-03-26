@@ -422,6 +422,10 @@ local defaults = {
             textFontOutline = "OUTLINE",
             textFontColor = { 1, 1, 1, 1 },
             textFormat = "current",
+            independentAnchorEnabled = false,
+            independentAnchorLocked = true,
+            independentAnchor = nil,
+            independentWidth = nil,
         },
         castBar = {
             enabled = false,
@@ -461,6 +465,10 @@ local defaults = {
             castTimeFontColor = { 1, 1, 1, 1 },
             castTimeXOffset = 0,
             castTimeYOffset = 0,
+            independentAnchorEnabled = false,
+            independentAnchorLocked = true,
+            independentAnchor = nil,
+            independentWidth = nil,
         },
         frameAnchoring = {
             enabled = false,

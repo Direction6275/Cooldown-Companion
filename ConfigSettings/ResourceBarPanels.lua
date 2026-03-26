@@ -113,6 +113,25 @@ local function BuildResourceBarAnchoringPanel(container)
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
 
+    local isIndependentStack = settings.independentAnchorEnabled == true
+
+    -- Anchoring Mode dropdown
+    local anchorModeDrop = AceGUI:Create("Dropdown")
+    anchorModeDrop:SetLabel("Anchoring Mode")
+    anchorModeDrop:SetList({
+        attached = "Attached to Group",
+        independent = "Independent",
+    }, { "attached", "independent" })
+    anchorModeDrop:SetValue(isIndependentStack and "independent" or "attached")
+    anchorModeDrop:SetFullWidth(true)
+    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.independentAnchorEnabled = (val == "independent")
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorModeDrop)
+
     local orientDrop = AceGUI:Create("Dropdown")
     orientDrop:SetLabel("Bar Orientation")
     orientDrop:SetList({
@@ -159,16 +178,85 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(previewCb)
 
-    -- Inherit group alpha checkbox
+    -- Inherit group alpha checkbox (disabled when independent — no group to inherit from)
     local alphaCb = AceGUI:Create("CheckBox")
     alphaCb:SetLabel("Inherit group alpha")
     alphaCb:SetValue(settings.inheritAlpha)
+    alphaCb:SetDisabled(isIndependentStack)
     alphaCb:SetFullWidth(true)
     alphaCb:SetCallback("OnValueChanged", function(widget, event, val)
         settings.inheritAlpha = val
         CooldownCompanion:ApplyResourceBars()
     end)
     container:AddChild(alphaCb)
+
+    -- ============ Stack Position Section (independent mode only) ============
+    if isIndependentStack then
+        local stackPosHeading = AceGUI:Create("Heading")
+        stackPosHeading:SetText("Stack Position")
+        ColorHeading(stackPosHeading)
+        stackPosHeading:SetFullWidth(true)
+        container:AddChild(stackPosHeading)
+
+        local stackPosKey = "rb_stack_position"
+        local stackPosCollapsed = resourceBarCollapsedSections[stackPosKey]
+
+        AttachCollapseButton(stackPosHeading, stackPosCollapsed, function()
+            resourceBarCollapsedSections[stackPosKey] = not resourceBarCollapsedSections[stackPosKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+
+        if not stackPosCollapsed then
+            -- Ensure anchor config exists for sliders
+            if type(settings.independentAnchor) ~= "table" then
+                settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+            end
+
+            local unlockCb = AceGUI:Create("CheckBox")
+            unlockCb:SetLabel("Unlock Placement")
+            unlockCb:SetValue(not settings.independentAnchorLocked)
+            unlockCb:SetFullWidth(true)
+            unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.independentAnchorLocked = not val
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(unlockCb)
+
+            local widthSlider = AceGUI:Create("Slider")
+            widthSlider:SetLabel("Bar Width")
+            widthSlider:SetSliderValues(20, 600, 1)
+            widthSlider:SetValue(settings.independentWidth or 200)
+            widthSlider:SetFullWidth(true)
+            widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.independentWidth = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(widthSlider)
+
+            local xSlider = AceGUI:Create("Slider")
+            xSlider:SetLabel("X Offset")
+            xSlider:SetSliderValues(-1000, 1000, 0.1)
+            xSlider:SetValue(settings.independentAnchor.x or 0)
+            xSlider:SetFullWidth(true)
+            xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.independentAnchor.x = val
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(xSlider)
+
+            local ySlider = AceGUI:Create("Slider")
+            ySlider:SetLabel("Y Offset")
+            ySlider:SetSliderValues(-1000, 1000, 0.1)
+            ySlider:SetValue(settings.independentAnchor.y or 0)
+            ySlider:SetFullWidth(true)
+            ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.independentAnchor.y = val
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(ySlider)
+        end
+    end
 
     -- ============ Position Section ============
     local posHeading = AceGUI:Create("Heading")

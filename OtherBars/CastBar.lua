@@ -38,10 +38,13 @@ local castEventFrame = nil
 local fillMaskLeft, fillMaskRight = nil, nil
 local isPreviewActive = false
 local originalFXSizes = nil
+local independentMoverFrame = nil
 
 ------------------------------------------------------------------------
 -- Helpers
 ------------------------------------------------------------------------
+
+local math_floor = math.floor
 
 local function GetCastBarSettings()
     return CooldownCompanion:GetCastBarSettings()
@@ -56,6 +59,159 @@ local function GetAnchorGroupFrame(settings)
     local groupId = GetEffectiveAnchorGroupId(settings)
     if not groupId then return nil end
     return CooldownCompanion.groupFrames[groupId]
+end
+
+------------------------------------------------------------------------
+-- Independent Cast Bar Anchor (proxy mover frame to avoid Blizzard taint)
+------------------------------------------------------------------------
+
+local function ClampCastBarDimension(value, fallback)
+    local dim = tonumber(value) or tonumber(fallback) or 200
+    if dim < 20 then dim = 20 elseif dim > 1200 then dim = 1200 end
+    return dim
+end
+
+local function RoundToTenths(value)
+    return math_floor((tonumber(value) or 0) * 10 + 0.5) / 10
+end
+
+local function GetAnchorOffset(point, width, height)
+    if point == "TOPLEFT" then return -width / 2, height / 2
+    elseif point == "TOP" then return 0, height / 2
+    elseif point == "TOPRIGHT" then return width / 2, height / 2
+    elseif point == "LEFT" then return -width / 2, 0
+    elseif point == "CENTER" then return 0, 0
+    elseif point == "RIGHT" then return width / 2, 0
+    elseif point == "BOTTOMLEFT" then return -width / 2, -height / 2
+    elseif point == "BOTTOM" then return 0, -height / 2
+    elseif point == "BOTTOMRIGHT" then return width / 2, -height / 2
+    end
+    return 0, 0
+end
+
+local function EnsureIndependentCastBarConfig(settings)
+    if type(settings.independentAnchor) ~= "table" then
+        settings.independentAnchor = {}
+    end
+    local anchor = settings.independentAnchor
+    anchor.point = anchor.point or "CENTER"
+    anchor.relativePoint = anchor.relativePoint or "CENTER"
+    anchor.x = tonumber(anchor.x) or 0
+    anchor.y = tonumber(anchor.y) or 0
+    settings.independentWidth = ClampCastBarDimension(settings.independentWidth, 200)
+end
+
+local function IsBarsConfigActive()
+    local cs = ST and ST._configState
+    if not cs or not cs.resourceBarPanelActive then return false end
+    if not CooldownCompanion.GetConfigFrame then return false end
+    local configFrame = CooldownCompanion:GetConfigFrame()
+    return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
+end
+
+local function SaveIndependentCastBarAnchor(refreshConfig)
+    if not independentMoverFrame then return end
+    local settings = GetCastBarSettings()
+    if not settings then return end
+    EnsureIndependentCastBarConfig(settings)
+
+    local frame = independentMoverFrame
+    local anchor = settings.independentAnchor
+
+    local cx, cy = frame:GetCenter()
+    local fw, fh = frame:GetSize()
+    local tcx, tcy = UIParent:GetCenter()
+    local tw, th = UIParent:GetSize()
+    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return end
+
+    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
+    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
+    anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
+    anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
+
+    if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local UpdateIndependentCastBarDragState
+
+local function CreateCastBarMoverFrame()
+    if independentMoverFrame then return end
+
+    local frame = CreateFrame("Frame", "CooldownCompanionCastBarMover", UIParent, "BackdropTemplate")
+    frame:SetFrameStrata("HIGH")
+    frame:SetSize(200, 15)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+
+    local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", -40, 2)
+    dragHandle:SetSize(80, 15)
+    dragHandle:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
+    dragHandle:EnableMouse(false)
+    dragHandle:RegisterForDrag()
+
+    dragHandle.text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dragHandle.text:SetPoint("CENTER")
+    dragHandle.text:SetText("Cast Bar")
+    dragHandle.text:SetTextColor(1, 1, 1, 1)
+
+    dragHandle:RegisterForDrag("LeftButton")
+    dragHandle:SetScript("OnDragStart", function()
+        local settings = GetCastBarSettings()
+        if not settings or settings.independentAnchorLocked then return end
+        if InCombatLockdown() then return end
+        frame:StartMoving()
+    end)
+    dragHandle:SetScript("OnDragStop", function()
+        frame:StopMovingOrSizing()
+        SaveIndependentCastBarAnchor(true)
+    end)
+    dragHandle:SetScript("OnMouseUp", function(_, button)
+        if button ~= "MiddleButton" then return end
+        local settings = GetCastBarSettings()
+        if not settings then return end
+        settings.independentAnchorLocked = true
+        frame:StopMovingOrSizing()
+        SaveIndependentCastBarAnchor(true)
+        UpdateIndependentCastBarDragState(settings)
+    end)
+
+    frame._dragHandle = dragHandle
+    independentMoverFrame = frame
+end
+
+UpdateIndependentCastBarDragState = function(settings)
+    if not independentMoverFrame then return end
+    local frame = independentMoverFrame
+    local unlocked = settings and settings.independentAnchorEnabled and not settings.independentAnchorLocked
+
+    frame:SetMovable(unlocked or false)
+
+    if frame._dragHandle then
+        frame._dragHandle:SetShown(unlocked or false)
+        frame._dragHandle:EnableMouse(unlocked or false)
+        if unlocked then
+            frame._dragHandle:RegisterForDrag("LeftButton")
+        else
+            frame._dragHandle:RegisterForDrag()
+        end
+    end
+end
+
+local function HideIndependentCastBarMover()
+    if not independentMoverFrame then return end
+    independentMoverFrame:Hide()
+    if independentMoverFrame._dragHandle then
+        independentMoverFrame._dragHandle:Hide()
+    end
 end
 
 --- Create or return the pixel border textures for the cast bar
@@ -435,21 +591,8 @@ end
 ------------------------------------------------------------------------
 
 local function ApplyPosition(cb, s, height)
-    local groupFrame = GetAnchorGroupFrame(s)
-    if not groupFrame then return end
-
     -- Remove from managed layout (OnShow re-adds on each cast via AddManagedFrame)
     UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
-
-    cb:ClearAllPoints()
-    local specLayout = CooldownCompanion:GetSpecLayoutOrder()
-    local cbLayout = specLayout and specLayout.castBar
-    local cbPosition = (cbLayout and cbLayout.position) or "below"
-    local cbOrder = (cbLayout and cbLayout.order) or 2000
-    local predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
-    local gap = rbSettings and (rbSettings.yOffset or 3) or 3
-    local barSpacing = rbSettings and (rbSettings.barSpacing or 3.6) or 3.6
 
     -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
     local iconInsetLeft, iconInsetRight = 0, 0
@@ -461,6 +604,30 @@ local function ApplyPosition(cb, s, height)
             iconInsetLeft = iconSize
         end
     end
+
+    -- Independent mode: anchor to mover frame instead of group/resource predecessor
+    if s.independentAnchorEnabled then
+        if not independentMoverFrame then return end
+        cb:ClearAllPoints()
+        cb:SetPoint("TOPLEFT", independentMoverFrame, "TOPLEFT", iconInsetLeft, 0)
+        cb:SetPoint("TOPRIGHT", independentMoverFrame, "TOPRIGHT", -iconInsetRight, 0)
+        cb:SetHeight(height or 15)
+        return
+    end
+
+    -- Group-relative mode (original behavior)
+    local groupFrame = GetAnchorGroupFrame(s)
+    if not groupFrame then return end
+
+    cb:ClearAllPoints()
+    local specLayout = CooldownCompanion:GetSpecLayoutOrder()
+    local cbLayout = specLayout and specLayout.castBar
+    local cbPosition = (cbLayout and cbLayout.position) or "below"
+    local cbOrder = (cbLayout and cbLayout.order) or 2000
+    local predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local gap = rbSettings and (rbSettings.yOffset or 3) or 3
+    local barSpacing = rbSettings and (rbSettings.barSpacing or 3.6) or 3.6
 
     if predecessor then
         if cbPosition == "above" then
@@ -653,6 +820,7 @@ function CooldownCompanion:RevertCastBar()
     if not isApplied then return end
     isApplied = false
 
+    HideIndependentCastBarMover()
     DisableCastEventFrame()
 
     local cb = PlayerCastingBarFrame
@@ -782,29 +950,48 @@ function CooldownCompanion:ApplyCastBarSettings()
         return
     end
 
-    -- Validate anchor group
-    local groupId = GetEffectiveAnchorGroupId(settings)
-    if not groupId then
-        self:RevertCastBar()
-        return
-    end
+    local isIndependent = settings.independentAnchorEnabled == true
+    local groupId, groupFrame
 
-    local group = self.db.profile.groups[groupId]
-    if not group then
-        self:RevertCastBar()
-        return
-    end
+    if isIndependent then
+        -- Independent mode: no group needed, set up mover frame
+        EnsureIndependentCastBarConfig(settings)
+        CreateCastBarMoverFrame()
+        local anchor = settings.independentAnchor
+        local width = settings.independentWidth
+        independentMoverFrame:ClearAllPoints()
+        independentMoverFrame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+        local effectiveHeight = settings.stylingEnabled and (settings.height or 15) or 11
+        independentMoverFrame:SetSize(width, effectiveHeight)
+        independentMoverFrame:Show()
+        UpdateIndependentCastBarDragState(settings)
+    else
+        -- Validate anchor group
+        groupId = GetEffectiveAnchorGroupId(settings)
+        if not groupId then
+            self:RevertCastBar()
+            return
+        end
 
-    local groupFrame = CooldownCompanion.groupFrames[groupId]
-    if not groupFrame or not groupFrame:IsShown() then
-        self:RevertCastBar()
-        return
-    end
+        local group = self.db.profile.groups[groupId]
+        if not group then
+            self:RevertCastBar()
+            return
+        end
 
-    -- Only anchor to icon-mode groups
-    if group.displayMode ~= "icons" then
-        self:RevertCastBar()
-        return
+        groupFrame = CooldownCompanion.groupFrames[groupId]
+        if not groupFrame or not groupFrame:IsShown() then
+            self:RevertCastBar()
+            return
+        end
+
+        -- Only anchor to icon-mode groups
+        if group.displayMode ~= "icons" then
+            self:RevertCastBar()
+            return
+        end
+
+        HideIndependentCastBarMover()
     end
 
     local cb = PlayerCastingBarFrame
@@ -822,7 +1009,12 @@ function CooldownCompanion:ApplyCastBarSettings()
     local effectiveHeight = settings.stylingEnabled and (settings.height or 15) or 11
     ApplyPosition(cb, settings, effectiveHeight)
     ApplySparkSize(cb, effectiveHeight)
-    local barWidth = groupFrame:GetWidth()
+    local barWidth
+    if isIndependent then
+        barWidth = settings.independentWidth
+    else
+        barWidth = groupFrame:GetWidth()
+    end
     if settings.showIcon and not settings.iconOffset and settings.stylingEnabled then
         barWidth = barWidth - effectiveHeight
     end
@@ -1212,6 +1404,7 @@ local function InstallHooks()
         local function ReapplyFXFromHook(groupId)
             local s = GetCastBarSettings()
             if not s or not s.enabled then return end
+            if s.independentAnchorEnabled then return end  -- independent: width not tied to group
             local anchorGroupId = GetEffectiveAnchorGroupId(s)
             if anchorGroupId ~= groupId then return end
             if not isApplied then return end

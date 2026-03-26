@@ -417,6 +417,10 @@ local function SanitizeResourceBarAnchors(settings)
 
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
 
+    if settings.independentAnchor ~= nil and type(settings.independentAnchor) ~= "table" then
+        settings.independentAnchor = nil
+    end
+
     if type(settings.customAuraBars) ~= "table" then
         return
     end
@@ -437,6 +441,10 @@ local function SanitizeCastBarAnchors(settings)
         return
     end
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
+
+    if settings.independentAnchor ~= nil and type(settings.independentAnchor) ~= "table" then
+        settings.independentAnchor = nil
+    end
 end
 
 local function SanitizeFrameAnchoringAnchors(settings)
