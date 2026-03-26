@@ -223,11 +223,13 @@ local function RefreshColumn2()
         if col2 and col2._infoBtn then col2._infoBtn:Hide() end
         if not col2 then return end
 
-        if CS.barPanelTab == "resource_anchoring" then
-            if col2._barsStylingScroll then
-                col2._barsStylingScroll.frame:Hide()
-            end
+        -- Hide all Column 2 bar widgets upfront; each branch shows the one it needs
+        if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
+        if col2._resourceStylingTabGroup then col2._resourceStylingTabGroup.frame:Hide() end
+        if col2._castBarStylingTabGroup then col2._castBarStylingTabGroup.frame:Hide() end
+        col2._resourceStylingSubScroll = nil
 
+        if CS.barPanelTab == "resource_anchoring" then
             if not col2._resourceStylingTabGroup then
                 local tabGroup = AceGUI:Create("TabGroup")
                 tabGroup:SetLayout("Fill")
@@ -289,19 +291,10 @@ local function RefreshColumn2()
             return
         end
 
-        if col2._resourceStylingTabGroup then
-            col2._resourceStylingTabGroup.frame:Hide()
-        end
-        col2._resourceStylingSubScroll = nil
-
         -- Cast bar: show TabGroup when independent, otherwise single scroll
         if CS.barPanelTab == "castbar_anchoring" then
             local castBarSettings = CooldownCompanion:GetCastBarSettings()
             if castBarSettings and castBarSettings.independentAnchorEnabled then
-                if col2._barsStylingScroll then
-                    col2._barsStylingScroll.frame:Hide()
-                end
-
                 if not col2._castBarStylingTabGroup then
                     local tabGroup = AceGUI:Create("TabGroup")
                     tabGroup:SetLayout("Fill")
@@ -340,11 +333,6 @@ local function RefreshColumn2()
                 col2._castBarStylingTabGroup:SelectTab(CS.castBarStylingTab or "styling")
                 return
             end
-        end
-
-        -- Hide cast bar TabGroup if it was previously visible
-        if col2._castBarStylingTabGroup then
-            col2._castBarStylingTabGroup.frame:Hide()
         end
 
         -- Create/show styling scroll
