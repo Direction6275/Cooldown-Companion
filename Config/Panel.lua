@@ -1264,7 +1264,7 @@ function CooldownCompanion:RefreshConfigPanel()
 
     if CS.resourceBarPanelActive then
         CS.configFrame.col1:SetTitle("Bars & Frames")
-        CS.configFrame.col2:SetTitle("Styling")
+        -- Column 2 title is set dynamically in RefreshColumn2 based on barPanelTab
         CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
         CS.configFrame.col4:SetTitle(GetLayoutOrderColumnTitle())
     elseif CS.browseMode then

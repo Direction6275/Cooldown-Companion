@@ -312,6 +312,34 @@ local function BuildResourceBarPositioningPanel(container)
     end)
     container:AddChild(fillDirDrop)
 
+    -- Bar Spacing
+    local spacingSlider = AceGUI:Create("Slider")
+    spacingSlider:SetLabel("Bar Spacing")
+    spacingSlider:SetSliderValues(0, 20, 0.1)
+    spacingSlider:SetValue(settings.barSpacing or 3.6)
+    spacingSlider:SetFullWidth(true)
+    spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.barSpacing = val
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+    end)
+    container:AddChild(spacingSlider)
+
+    -- Segment Gap
+    local segGapSlider = AceGUI:Create("Slider")
+    segGapSlider:SetLabel("Segment Gap")
+    segGapSlider:SetSliderValues(0, 20, 0.1)
+    segGapSlider:SetValue(settings.segmentGap or 4)
+    segGapSlider:SetFullWidth(true)
+    segGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.segmentGap = val
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(segGapSlider)
+
+    -- Bar Height + Custom Heights
+    ST._BuildBarHeightControls(container, settings)
+
     -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
         local stackPosHeading = AceGUI:Create("Heading")
@@ -508,17 +536,6 @@ local function BuildResourceBarPositioningPanel(container)
             container:AddChild(castGapSlider)
         end
 
-        local spacingSlider = AceGUI:Create("Slider")
-        spacingSlider:SetLabel("Bar Spacing")
-        spacingSlider:SetSliderValues(0, 20, 0.1)
-        spacingSlider:SetValue(settings.barSpacing or 3.6)
-        spacingSlider:SetFullWidth(true)
-        spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.barSpacing = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-        end)
-        container:AddChild(spacingSlider)
     end
 end
 
@@ -653,20 +670,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         end)
         container:AddChild(borderSizeSlider)
     end
-
-    -- Segment Gap
-    local gapSlider = AceGUI:Create("Slider")
-    gapSlider:SetLabel("Segment Gap")
-    gapSlider:SetSliderValues(0, 20, 0.1)
-    gapSlider:SetValue(settings.segmentGap or 4)
-    gapSlider:SetFullWidth(true)
-    gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.segmentGap = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(gapSlider)
-
-    ST._BuildBarHeightControls(container, settings)
 
     -- ============ Text Section ============
     local rbTextAdvBtns = {}
