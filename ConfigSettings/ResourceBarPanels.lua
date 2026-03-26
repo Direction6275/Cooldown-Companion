@@ -586,6 +586,11 @@ local function BuildBarHeightControls(container, settings)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(customHeightsCb)
+
+    CreateInfoButton(customHeightsCb.frame, customHeightsCb.checkbg, "LEFT", "RIGHT", customHeightsCb.text:GetStringWidth() + 4, 0, {
+        "Custom Resource Bar Heights",
+        {"When enabled, each resource can have its own bar height. Click the advanced settings toggle for a resource in Column 1 to configure its individual height.", 1, 1, 1, true},
+    }, customHeightsCb)
 end
 
 ST._BuildBarHeightControls = BuildBarHeightControls

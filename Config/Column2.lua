@@ -300,10 +300,10 @@ local function RefreshColumn2()
             return
         end
 
-        -- Cast bar: show TabGroup when independent, otherwise single scroll
+        -- Cast bar: always show TabGroup with Styling + Layout tabs
         if CS.barPanelTab == "castbar_anchoring" then
             local castBarSettings = CooldownCompanion:GetCastBarSettings()
-            if castBarSettings and castBarSettings.independentAnchorEnabled then
+            if castBarSettings then
                 if not col2._castBarStylingTabGroup then
                     local tabGroup = AceGUI:Create("TabGroup")
                     tabGroup:SetLayout("Fill")

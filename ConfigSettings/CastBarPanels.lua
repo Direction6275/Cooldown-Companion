@@ -129,10 +129,18 @@ local function BuildCastBarPositioningPanel(container)
     end
 
     if not settings.independentAnchorEnabled then
-        local label = AceGUI:Create("Label")
-        label:SetText("Cast bar position is controlled by the panel it is attached to.\n\nSwitch to Independent anchoring mode to configure positioning here.")
-        label:SetFullWidth(true)
-        container:AddChild(label)
+        local rbSettings = CooldownCompanion:GetResourceBarSettings()
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(0, 50, 0.1)
+        ySlider:SetValue(rbSettings and rbSettings.yOffset or 3)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if rbSettings then rbSettings.yOffset = val end
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(ySlider)
         return
     end
 

@@ -276,6 +276,13 @@ local function RefreshColumn1(preserveDrag)
                 tabGroup:SetLayout("Fill")
                 tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                     CS.barPanelTab = tab
+                    -- Clean up info buttons from previous tab before recycling widgets
+                    for _, btn in ipairs(CS.tabInfoButtons) do
+                        btn:ClearAllPoints()
+                        btn:Hide()
+                        btn:SetParent(nil)
+                    end
+                    wipe(CS.tabInfoButtons)
                     widget:ReleaseChildren()
                     local scroll = AceGUI:Create("ScrollFrame")
                     scroll:SetLayout("List")
