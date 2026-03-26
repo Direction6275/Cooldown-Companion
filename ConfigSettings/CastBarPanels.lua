@@ -12,7 +12,6 @@ local GetBarTextureOptions = ST._GetBarTextureOptions
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
-local BuildAlphaControls = ST._BuildAlphaControls
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -116,28 +115,6 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(castFinishCb)
 
-    -- ============ Alpha Section ============
-    local group = db.groups[CS.selectedGroup]
-
-    if not isIndependent then
-        local inheritCb = AceGUI:Create("CheckBox")
-        inheritCb:SetLabel("Inherit group alpha")
-        inheritCb:SetValue(settings.inheritAlpha)
-        inheritCb:SetFullWidth(true)
-        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.inheritAlpha = val
-            CooldownCompanion:ApplyCastBarSettings()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(inheritCb)
-    end
-
-    if isIndependent or not settings.inheritAlpha then
-        BuildAlphaControls(container, settings, function()
-            CooldownCompanion:ApplyCastBarSettings()
-            CooldownCompanion:RefreshConfigPanel()
-        end, "cb_alpha", { isGlobal = group and group.isGlobal })
-    end
 end
 
 local function BuildCastBarPositioningPanel(container)

@@ -295,7 +295,7 @@ local function RefreshColumn2()
         col2._resourceStylingSubScroll = nil
 
         -- Cast bar: show TabGroup when independent, otherwise single scroll
-        if CS.barPanelTab == "cast_bar" then
+        if CS.barPanelTab == "castbar_anchoring" then
             local castBarSettings = CooldownCompanion:GetCastBarSettings()
             if castBarSettings and castBarSettings.independentAnchorEnabled then
                 if col2._barsStylingScroll then
