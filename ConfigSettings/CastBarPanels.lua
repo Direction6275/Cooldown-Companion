@@ -297,22 +297,9 @@ local function BuildCastBarStylingPanel(container)
     if not settings.enabled then return end
     if not settings.stylingEnabled then return end
 
-    -- Height (styling-only — anchoring uses Blizzard default height)
-    local hSlider = AceGUI:Create("Slider")
-    hSlider:SetLabel("Height")
-    hSlider:SetSliderValues(4, 40, 0.1)
-    hSlider:SetValue(settings.height or 15)
-    hSlider:SetFullWidth(true)
-    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.height = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(hSlider)
-
     local cbAdvBtns = {}
 
-    -- Bar Color
-    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
+    -- ============ Texture & Colors ============
 
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
@@ -326,8 +313,62 @@ local function BuildCastBarStylingPanel(container)
     end)
     container:AddChild(texDrop)
 
+    -- Bar Color
+    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
+
     -- Background Color
     AddColorPicker(container, settings, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, applyCastBar)
+
+    -- ============ Border ============
+
+    -- Border Style
+    local borderDrop = AceGUI:Create("Dropdown")
+    borderDrop:SetLabel("Border Style")
+    borderDrop:SetList({
+        blizzard = "Blizzard",
+        pixel = "Pixel",
+        none = "None",
+    }, { "blizzard", "pixel", "none" })
+    borderDrop:SetValue(settings.borderStyle or "pixel")
+    borderDrop:SetFullWidth(true)
+    borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.borderStyle = val
+        CooldownCompanion:ApplyCastBarSettings()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(borderDrop)
+
+    -- Border Color and Size (only when pixel)
+    if settings.borderStyle == "pixel" then
+        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
+
+        local borderSizeSlider = AceGUI:Create("Slider")
+        borderSizeSlider:SetLabel("Border Size")
+        borderSizeSlider:SetSliderValues(0, 5, 0.1)
+        borderSizeSlider:SetValue(settings.borderSize or 1)
+        borderSizeSlider:SetFullWidth(true)
+        borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.borderSize = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(borderSizeSlider)
+    end
+
+    -- ============ Size ============
+
+    -- Height
+    local hSlider = AceGUI:Create("Slider")
+    hSlider:SetLabel("Height")
+    hSlider:SetSliderValues(4, 40, 0.1)
+    hSlider:SetValue(settings.height or 15)
+    hSlider:SetFullWidth(true)
+    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.height = val
+        CooldownCompanion:ApplyCastBarSettings()
+    end)
+    container:AddChild(hSlider)
+
+    -- ============ Feature Toggles ============
 
     -- Show Spell Icon
     local iconCb = AceGUI:Create("CheckBox")
@@ -430,39 +471,6 @@ local function BuildCastBarStylingPanel(container)
         CooldownCompanion:ApplyCastBarSettings()
     end)
     container:AddChild(sparkCb)
-
-    -- Border Style
-    local borderDrop = AceGUI:Create("Dropdown")
-    borderDrop:SetLabel("Border Style")
-    borderDrop:SetList({
-        blizzard = "Blizzard",
-        pixel = "Pixel",
-        none = "None",
-    }, { "blizzard", "pixel", "none" })
-    borderDrop:SetValue(settings.borderStyle or "pixel")
-    borderDrop:SetFullWidth(true)
-    borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.borderStyle = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(borderDrop)
-
-    -- Border Color and Size (only when pixel)
-    if settings.borderStyle == "pixel" then
-        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
-
-        local borderSizeSlider = AceGUI:Create("Slider")
-        borderSizeSlider:SetLabel("Border Size")
-        borderSizeSlider:SetSliderValues(0, 5, 0.1)
-        borderSizeSlider:SetValue(settings.borderSize or 1)
-        borderSizeSlider:SetFullWidth(true)
-        borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.borderSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        container:AddChild(borderSizeSlider)
-    end
 
     -- Show Spell Name
     local nameCb = AceGUI:Create("CheckBox")
