@@ -579,6 +579,9 @@ local function EnsureIndependentStackConfig(settings)
     anchor.relativePoint = anchor.relativePoint or "CENTER"
     anchor.x = tonumber(anchor.x) or 0
     anchor.y = tonumber(anchor.y) or 0
+    if anchor.relativeTo ~= nil and type(anchor.relativeTo) ~= "string" then
+        anchor.relativeTo = nil
+    end
     settings.independentWidth = ClampIndependentDimension(settings.independentWidth, 200)
 end
 
@@ -593,8 +596,12 @@ local function SaveIndependentStackAnchor(refreshConfig)
 
     local cx, cy = frame:GetCenter()
     local fw, fh = frame:GetSize()
-    local tcx, tcy = UIParent:GetCenter()
-    local tw, th = UIParent:GetSize()
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = _G[anchor.relativeTo] or UIParent
+    end
+    local tcx, tcy = relFrame:GetCenter()
+    local tw, th = relFrame:GetSize()
     if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return end
 
     local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
@@ -2530,8 +2537,12 @@ function CooldownCompanion:ApplyResourceBars()
         -- Independent mode: create wrapper frame at saved position, anchor containers to it
         CreateIndependentWrapperFrame()
         local anchor = settings.independentAnchor
+        local relFrame = UIParent
+        if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+            relFrame = _G[anchor.relativeTo] or UIParent
+        end
         independentWrapperFrame:ClearAllPoints()
-        independentWrapperFrame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
+        independentWrapperFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)
         independentWrapperFrame:Show()
 
         if isVerticalLayout then

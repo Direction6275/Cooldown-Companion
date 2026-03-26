@@ -834,5 +834,24 @@ ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
 ST._GetBarTextureOptions = GetBarTextureOptions
 ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown
+
+-- Allow decimal input from editbox while keeping slider/wheel at 1px steps.
+-- Reusable across any AceGUI Slider widget that needs sub-integer precision.
+local function HookSliderEditBox(sliderWidget)
+    sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
+        local widget = editbox.obj
+        local value = tonumber(editbox:GetText())
+        if value then
+            value = math.floor(value * 10 + 0.5) / 10
+            value = math.max(widget.min, math.min(widget.max, value))
+            PlaySound(856)
+            widget:SetValue(value)
+            widget:Fire("OnValueChanged", value)
+            widget:Fire("OnMouseUp", value)
+        end
+    end)
+end
+ST._HookSliderEditBox = HookSliderEditBox
+
 ST._AddFontControls = AddFontControls
 ST._AddOffsetSliders = AddOffsetSliders

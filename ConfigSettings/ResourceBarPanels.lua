@@ -18,6 +18,8 @@ local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
+local AddAnchorDropdown = ST._AddAnchorDropdown
+local HookSliderEditBox = ST._HookSliderEditBox
 local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants
@@ -119,7 +121,7 @@ local function BuildResourceBarAnchoringPanel(container)
     local anchorModeDrop = AceGUI:Create("Dropdown")
     anchorModeDrop:SetLabel("Anchoring Mode")
     anchorModeDrop:SetList({
-        attached = "Attached to Group",
+        attached = "Attached to Panel",
         independent = "Independent",
     }, { "attached", "independent" })
     anchorModeDrop:SetValue(isIndependentStack and "independent" or "attached")
@@ -211,6 +213,7 @@ local function BuildResourceBarAnchoringPanel(container)
             if type(settings.independentAnchor) ~= "table" then
                 settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
             end
+            local anchor = settings.independentAnchor
 
             local unlockCb = AceGUI:Create("CheckBox")
             unlockCb:SetLabel("Unlock Placement")
@@ -234,26 +237,111 @@ local function BuildResourceBarAnchoringPanel(container)
             end)
             container:AddChild(widthSlider)
 
+            -- Anchor to Frame (editbox + pick button row)
+            local anchorRow = AceGUI:Create("SimpleGroup")
+            anchorRow:SetFullWidth(true)
+            anchorRow:SetLayout("Flow")
+
+            local anchorBox = AceGUI:Create("EditBox")
+            if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
+            anchorBox:SetLabel("Anchor to Frame")
+            local currentRelativeTo = anchor.relativeTo
+            if not currentRelativeTo or currentRelativeTo == "UIParent" then currentRelativeTo = "" end
+            anchorBox:SetText(currentRelativeTo)
+            anchorBox:SetRelativeWidth(0.68)
+            anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                if text == "" then
+                    local wasAnchored = anchor.relativeTo and anchor.relativeTo ~= "UIParent"
+                    if wasAnchored then
+                        anchor.point = "CENTER"
+                        anchor.relativeTo = nil
+                        anchor.relativePoint = "CENTER"
+                        anchor.x = 0
+                        anchor.y = 0
+                    else
+                        anchor.relativeTo = nil
+                    end
+                else
+                    local targetFrame = _G[text]
+                    if not targetFrame then
+                        CooldownCompanion:Print("Frame '" .. text .. "' not found.")
+                        CooldownCompanion:RefreshConfigPanel()
+                        return
+                    end
+                    anchor.relativeTo = text
+                end
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            anchorRow:AddChild(anchorBox)
+
+            local pickBtn = AceGUI:Create("Button")
+            pickBtn:SetText("Pick")
+            pickBtn:SetRelativeWidth(0.24)
+            pickBtn:SetCallback("OnClick", function()
+                CS.StartPickFrame(function(name)
+                    if CS.configFrame then
+                        CS.configFrame.frame:Show()
+                    end
+                    if name then
+                        anchor.point = "TOPLEFT"
+                        anchor.relativeTo = name
+                        anchor.relativePoint = "BOTTOMLEFT"
+                        anchor.x = 0
+                        anchor.y = -5
+                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:UpdateAnchorStacking()
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+            end)
+            anchorRow:AddChild(pickBtn)
+            container:AddChild(anchorRow)
+
+            pickBtn.frame:SetScript("OnUpdate", function(self)
+                self:SetScript("OnUpdate", nil)
+                local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+                if yOfs then
+                    self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+                end
+            end)
+
+            -- Anchor Point / Relative Point dropdowns
+            local function refreshResourceBarAnchor()
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end
+
+            AddAnchorDropdown(container, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point")
+            AddAnchorDropdown(container, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point")
+
+            -- X Offset
             local xSlider = AceGUI:Create("Slider")
             xSlider:SetLabel("X Offset")
-            xSlider:SetSliderValues(-1000, 1000, 0.1)
-            xSlider:SetValue(settings.independentAnchor.x or 0)
+            xSlider:SetSliderValues(-2000, 2000, 0.1)
+            xSlider:SetValue(anchor.x or 0)
             xSlider:SetFullWidth(true)
             xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.independentAnchor.x = val
+                anchor.x = val
                 CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
             end)
+            HookSliderEditBox(xSlider)
             container:AddChild(xSlider)
 
+            -- Y Offset
             local ySlider = AceGUI:Create("Slider")
             ySlider:SetLabel("Y Offset")
-            ySlider:SetSliderValues(-1000, 1000, 0.1)
-            ySlider:SetValue(settings.independentAnchor.y or 0)
+            ySlider:SetSliderValues(-2000, 2000, 0.1)
+            ySlider:SetValue(anchor.y or 0)
             ySlider:SetFullWidth(true)
             ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.independentAnchor.y = val
+                anchor.y = val
                 CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
             end)
+            HookSliderEditBox(ySlider)
             container:AddChild(ySlider)
         end
     end
@@ -2516,7 +2604,7 @@ local function BuildLayoutOrderPanel(container)
         return
     end
 
-    RenderSlotOrdering(resourceSlots, "Resources & Custom Aura Bars", "left", "right", "Icons", "Left", "Right")
+    RenderSlotOrdering(resourceSlots, nil, "left", "right", "Icons", "Left", "Right")
 
     if #castSlots > 0 then
         local spacer = AceGUI:Create("Label")

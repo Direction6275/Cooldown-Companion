@@ -17,6 +17,7 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
+local HookSliderEditBox = ST._HookSliderEditBox
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -150,22 +151,6 @@ local function BuildLayoutTab(container)
 
     AddAnchorDropdown(container, group.anchor, "point", "CENTER", refreshGroupAnchor, "Anchor Point")
     AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point")
-
-    -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
-    local function HookSliderEditBox(sliderWidget)
-        sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
-            local widget = editbox.obj
-            local value = tonumber(editbox:GetText())
-            if value then
-                value = math.floor(value * 10 + 0.5) / 10
-                value = math.max(widget.min, math.min(widget.max, value))
-                PlaySound(856)
-                widget:SetValue(value)
-                widget:Fire("OnValueChanged", value)
-                widget:Fire("OnMouseUp", value)
-            end
-        end)
-    end
 
     -- X Offset
     local xSlider = AceGUI:Create("Slider")
@@ -1666,22 +1651,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     AddAnchorDropdown(scroll, container.anchor, "point", "CENTER", refreshContainerAnchor, "Anchor Point")
     AddAnchorDropdown(scroll, container.anchor, "relativePoint", "CENTER", refreshContainerAnchor, "Relative Point")
-
-    -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
-    local function HookSliderEditBox(sliderWidget)
-        sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
-            local widget = editbox.obj
-            local value = tonumber(editbox:GetText())
-            if value then
-                value = math.floor(value * 10 + 0.5) / 10
-                value = math.max(widget.min, math.min(widget.max, value))
-                PlaySound(856)
-                widget:SetValue(value)
-                widget:Fire("OnValueChanged", value)
-                widget:Fire("OnMouseUp", value)
-            end
-        end)
-    end
 
     -- X Offset
     local xSlider = AceGUI:Create("Slider")
