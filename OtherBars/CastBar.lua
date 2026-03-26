@@ -65,6 +65,22 @@ end
 -- Independent Cast Bar Anchor (proxy mover frame to avoid Blizzard taint)
 ------------------------------------------------------------------------
 
+local CAST_NUDGE_BTN_SIZE = 12
+local CAST_NUDGE_REPEAT_DELAY = 0.5
+local CAST_NUDGE_REPEAT_INTERVAL = 0.05
+
+local function CancelCastBarNudgeTimers(button)
+    if not button then return end
+    if button._cdcNudgeDelayTimer then
+        button._cdcNudgeDelayTimer:Cancel()
+        button._cdcNudgeDelayTimer = nil
+    end
+    if button._cdcNudgeTicker then
+        button._cdcNudgeTicker:Cancel()
+        button._cdcNudgeTicker = nil
+    end
+end
+
 local function ClampCastBarDimension(value, fallback)
     local dim = tonumber(value) or tonumber(fallback) or 200
     if dim < 20 then dim = 20 elseif dim > 1200 then dim = 1200 end
@@ -129,6 +145,10 @@ local function SaveIndependentCastBarAnchor(refreshConfig)
     anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
     anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
 
+    if frame._coordLabel then
+        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(anchor.x, anchor.y))
+    end
+
     if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
     end
@@ -145,9 +165,11 @@ local function CreateCastBarMoverFrame()
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
 
+    -- Drag handle (full-width, two-point anchored to mover frame)
     local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", -40, 2)
-    dragHandle:SetSize(80, 15)
+    dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
+    dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
+    dragHandle:SetHeight(15)
     dragHandle:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -163,6 +185,95 @@ local function CreateCastBarMoverFrame()
     dragHandle.text:SetText("Cast Bar")
     dragHandle.text:SetTextColor(1, 1, 1, 1)
 
+    -- Nudger (4-direction pixel nudge, matches icon panel pattern)
+    local NUDGE_GAP = 2
+    local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
+    nudger:SetSize(CAST_NUDGE_BTN_SIZE * 2 + NUDGE_GAP, CAST_NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
+    nudger:SetPoint("BOTTOM", dragHandle, "TOP", 0, 2)
+    nudger:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    nudger:SetBackdropBorderColor(0, 0, 0, 1)
+    nudger:EnableMouse(false)
+    nudger._cdcButtons = {}
+
+    local directions = {
+        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx = 0, dy = 1, ox = 0, oy = NUDGE_GAP },
+        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP", dx = 0, dy = -1, ox = 0, oy = -NUDGE_GAP },
+        { atlas = "common-dropdown-icon-back", rotation = 0, anchor = "RIGHT", dx = -1, dy = 0, ox = -NUDGE_GAP, oy = 0 },
+        { atlas = "common-dropdown-icon-next", rotation = 0, anchor = "LEFT", dx = 1, dy = 0, ox = NUDGE_GAP, oy = 0 },
+    }
+
+    for _, dir in ipairs(directions) do
+        local btn = CreateFrame("Button", nil, nudger)
+        btn:SetSize(CAST_NUDGE_BTN_SIZE, CAST_NUDGE_BTN_SIZE)
+        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
+        btn:EnableMouse(true)
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetAtlas(dir.atlas, false)
+        arrow:SetAllPoints()
+        arrow:SetRotation(dir.rotation)
+        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        btn.arrow = arrow
+
+        local function DoNudge()
+            local settings = GetCastBarSettings()
+            if not settings or settings.independentAnchorLocked then return end
+            frame:AdjustPointsOffset(dir.dx, dir.dy)
+            -- Write position per step and update coord label (GroupFrame pattern)
+            local _, _, _, x, y = frame:GetPoint()
+            if x and y then
+                EnsureIndependentCastBarConfig(settings)
+                settings.independentAnchor.x = RoundToTenths(x)
+                settings.independentAnchor.y = RoundToTenths(y)
+                if frame._coordLabel then
+                    frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+                end
+            end
+        end
+
+        btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
+        btn:SetScript("OnLeave", function(self)
+            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+            CancelCastBarNudgeTimers(self)
+            SaveIndependentCastBarAnchor(true)
+        end)
+        btn:SetScript("OnMouseDown", function(self)
+            DoNudge()
+            self._cdcNudgeDelayTimer = C_Timer.NewTimer(CAST_NUDGE_REPEAT_DELAY, function()
+                self._cdcNudgeTicker = C_Timer.NewTicker(CAST_NUDGE_REPEAT_INTERVAL, DoNudge)
+            end)
+        end)
+        btn:SetScript("OnMouseUp", function(self)
+            CancelCastBarNudgeTimers(self)
+            SaveIndependentCastBarAnchor(true)
+        end)
+
+        nudger._cdcButtons[#nudger._cdcButtons + 1] = btn
+    end
+
+    -- Coordinate label (parented to mover frame, below bar content)
+    local coordLabel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
+    coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
+    coordLabel:SetHeight(15)
+    coordLabel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
+    coordLabel:EnableMouse(false)
+    coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    coordLabel.text:SetPoint("CENTER")
+    coordLabel.text:SetTextColor(1, 1, 1, 1)
+
+    -- Drag scripts
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
         local settings = GetCastBarSettings()
@@ -185,6 +296,8 @@ local function CreateCastBarMoverFrame()
     end)
 
     frame._dragHandle = dragHandle
+    frame._nudger = nudger
+    frame._coordLabel = coordLabel
     independentMoverFrame = frame
 end
 
@@ -204,6 +317,32 @@ UpdateIndependentCastBarDragState = function(settings)
             frame._dragHandle:RegisterForDrag()
         end
     end
+
+    if frame._nudger then
+        frame._nudger:SetShown(unlocked or false)
+        frame._nudger:EnableMouse(unlocked or false)
+        if frame._nudger._cdcButtons then
+            for _, btn in ipairs(frame._nudger._cdcButtons) do
+                btn:EnableMouse(unlocked or false)
+                if not unlocked then
+                    CancelCastBarNudgeTimers(btn)
+                end
+            end
+        end
+    end
+
+    if frame._coordLabel then
+        frame._coordLabel:SetShown(unlocked or false)
+    end
+
+    -- Force preview on while unlocked so cast bar is visible for positioning
+    if unlocked and not isPreviewActive then
+        CooldownCompanion:StartCastBarPreview()
+        frame._cdcForcedPreview = true
+    elseif not unlocked and frame._cdcForcedPreview then
+        frame._cdcForcedPreview = false
+        CooldownCompanion:StopCastBarPreview()
+    end
 end
 
 local function HideIndependentCastBarMover()
@@ -211,6 +350,21 @@ local function HideIndependentCastBarMover()
     independentMoverFrame:Hide()
     if independentMoverFrame._dragHandle then
         independentMoverFrame._dragHandle:Hide()
+    end
+    if independentMoverFrame._nudger then
+        independentMoverFrame._nudger:Hide()
+        if independentMoverFrame._nudger._cdcButtons then
+            for _, btn in ipairs(independentMoverFrame._nudger._cdcButtons) do
+                CancelCastBarNudgeTimers(btn)
+            end
+        end
+    end
+    if independentMoverFrame._coordLabel then
+        independentMoverFrame._coordLabel:Hide()
+    end
+    if independentMoverFrame._cdcForcedPreview then
+        independentMoverFrame._cdcForcedPreview = false
+        CooldownCompanion:StopCastBarPreview()
     end
 end
 
@@ -965,6 +1119,11 @@ function CooldownCompanion:ApplyCastBarSettings()
         independentMoverFrame:SetSize(width, effectiveHeight)
         independentMoverFrame:Show()
         UpdateIndependentCastBarDragState(settings)
+        if independentMoverFrame._coordLabel then
+            independentMoverFrame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(
+                anchor.x or 0, anchor.y or 0
+            ))
+        end
     else
         -- Validate anchor group
         groupId = GetEffectiveAnchorGroupId(settings)

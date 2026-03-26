@@ -602,6 +602,10 @@ local function SaveIndependentStackAnchor(refreshConfig)
     anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
     anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
 
+    if frame._coordLabel then
+        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(anchor.x, anchor.y))
+    end
+
     if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
     end
@@ -618,10 +622,9 @@ local function CreateIndependentWrapperFrame()
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
 
-    -- Drag handle (follows container drag handle pattern from GroupFrame.lua)
+    -- Drag handle (full-width, anchored to containers by UpdateIndependentStackChrome)
     local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", -40, 2)
-    dragHandle:SetSize(80, 15)
+    dragHandle:SetHeight(15)
     dragHandle:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -630,7 +633,7 @@ local function CreateIndependentWrapperFrame()
     dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
     dragHandle:EnableMouse(false)
-    dragHandle:RegisterForDrag()
+    dragHandle:Hide()
 
     dragHandle.text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     dragHandle.text:SetPoint("CENTER")
@@ -676,6 +679,16 @@ local function CreateIndependentWrapperFrame()
             local settings = GetResourceBarSettings()
             if not settings or settings.independentAnchorLocked then return end
             frame:AdjustPointsOffset(dir.dx, dir.dy)
+            -- Write position per step and update coord label (GroupFrame pattern)
+            local _, _, _, x, y = frame:GetPoint()
+            if x and y then
+                EnsureIndependentStackConfig(settings)
+                settings.independentAnchor.x = RoundToTenths(x)
+                settings.independentAnchor.y = RoundToTenths(y)
+                if frame._coordLabel then
+                    frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+                end
+            end
         end
 
         btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
@@ -697,6 +710,21 @@ local function CreateIndependentWrapperFrame()
 
         nudger._cdcButtons[#nudger._cdcButtons + 1] = btn
     end
+
+    -- Coordinate label (parented to dragHandle, anchored by UpdateIndependentStackChrome)
+    local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
+    coordLabel:SetHeight(15)
+    coordLabel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
+    coordLabel:EnableMouse(false)
+    coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    coordLabel.text:SetPoint("CENTER")
+    coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
@@ -721,6 +749,7 @@ local function CreateIndependentWrapperFrame()
 
     frame._dragHandle = dragHandle
     frame._nudger = nudger
+    frame._coordLabel = coordLabel
     independentWrapperFrame = frame
 end
 
@@ -753,6 +782,19 @@ UpdateIndependentStackDragState = function(settings)
             end
         end
     end
+
+    if frame._coordLabel then
+        frame._coordLabel:SetShown(unlocked or false)
+    end
+
+    -- Force preview on while unlocked so bars are visible for positioning
+    if unlocked and not isPreviewActive then
+        CooldownCompanion:StartResourceBarPreview()
+        frame._cdcForcedPreview = true
+    elseif not unlocked and frame._cdcForcedPreview then
+        frame._cdcForcedPreview = false
+        CooldownCompanion:StopResourceBarPreview()
+    end
 end
 
 local function HideIndependentWrapperFrame()
@@ -767,6 +809,67 @@ local function HideIndependentWrapperFrame()
             for _, btn in ipairs(independentWrapperFrame._nudger._cdcButtons) do
                 CancelIndependentNudgeTimers(btn)
             end
+        end
+    end
+    if independentWrapperFrame._coordLabel then
+        independentWrapperFrame._coordLabel:Hide()
+    end
+    if independentWrapperFrame._cdcForcedPreview then
+        independentWrapperFrame._cdcForcedPreview = false
+        CooldownCompanion:StopResourceBarPreview()
+    end
+end
+
+--- Re-anchor drag handle and coord label to frame the bar content.
+--- Called after containers are positioned and RelayoutBars() completes.
+local function UpdateIndependentStackChrome(isVerticalLayout)
+    if not independentWrapperFrame then return end
+    if not containerFrameAbove or not containerFrameBelow then return end
+    local frame = independentWrapperFrame
+
+    -- Anchor chrome to the containers that actually have bars to avoid dead space.
+    -- When all bars are on one side, the empty container is hidden (height/width=1).
+    local aboveShown = containerFrameAbove:IsShown()
+    local belowShown = containerFrameBelow:IsShown()
+
+    local dragHandle = frame._dragHandle
+    if dragHandle then
+        dragHandle:ClearAllPoints()
+        if isVerticalLayout then
+            -- Vertical: bars are left/right of wrapper — span across both containers
+            local topLeft = aboveShown and containerFrameAbove or containerFrameBelow
+            local topRight = belowShown and containerFrameBelow or containerFrameAbove
+            dragHandle:SetPoint("BOTTOMLEFT", topLeft, "TOPLEFT", 0, 2)
+            dragHandle:SetPoint("BOTTOMRIGHT", topRight, "TOPRIGHT", 0, 2)
+        else
+            -- Horizontal: anchor above whichever container is the topmost with bars
+            local topRef = aboveShown and containerFrameAbove or containerFrameBelow
+            dragHandle:SetPoint("BOTTOMLEFT", topRef, "TOPLEFT", 0, 2)
+            dragHandle:SetPoint("BOTTOMRIGHT", topRef, "TOPRIGHT", 0, 2)
+        end
+    end
+
+    local coordLabel = frame._coordLabel
+    if coordLabel then
+        coordLabel:ClearAllPoints()
+        if isVerticalLayout then
+            local botLeft = aboveShown and containerFrameAbove or containerFrameBelow
+            local botRight = belowShown and containerFrameBelow or containerFrameAbove
+            coordLabel:SetPoint("TOPLEFT", botLeft, "BOTTOMLEFT", 0, -2)
+            coordLabel:SetPoint("TOPRIGHT", botRight, "BOTTOMRIGHT", 0, -2)
+        else
+            -- Horizontal: anchor below whichever container is the bottommost with bars
+            local botRef = belowShown and containerFrameBelow or containerFrameAbove
+            coordLabel:SetPoint("TOPLEFT", botRef, "BOTTOMLEFT", 0, -2)
+            coordLabel:SetPoint("TOPRIGHT", botRef, "BOTTOMRIGHT", 0, -2)
+        end
+
+        local settings = GetResourceBarSettings()
+        if settings and settings.independentAnchor then
+            coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(
+                settings.independentAnchor.x or 0,
+                settings.independentAnchor.y or 0
+            ))
         end
     end
 end
@@ -2434,13 +2537,13 @@ function CooldownCompanion:ApplyResourceBars()
         if isVerticalLayout then
             containerFrameAbove:SetHeight(totalPrimaryLength)
             containerFrameBelow:SetHeight(totalPrimaryLength)
-            containerFrameAbove:SetPoint("TOPRIGHT", independentWrapperFrame, "TOPLEFT", -gap, 0)
-            containerFrameBelow:SetPoint("TOPLEFT", independentWrapperFrame, "TOPRIGHT", gap, 0)
+            containerFrameAbove:SetPoint("RIGHT", independentWrapperFrame, "LEFT", -gap, 0)
+            containerFrameBelow:SetPoint("LEFT", independentWrapperFrame, "RIGHT", gap, 0)
         else
             containerFrameAbove:SetWidth(totalPrimaryLength)
             containerFrameBelow:SetWidth(totalPrimaryLength)
-            containerFrameAbove:SetPoint("BOTTOMLEFT", independentWrapperFrame, "TOPLEFT", 0, gap)
-            containerFrameBelow:SetPoint("TOPLEFT", independentWrapperFrame, "BOTTOMLEFT", 0, -gap)
+            containerFrameAbove:SetPoint("BOTTOM", independentWrapperFrame, "TOP", 0, gap)
+            containerFrameBelow:SetPoint("TOP", independentWrapperFrame, "BOTTOM", 0, -gap)
         end
 
         UpdateIndependentStackDragState(settings)
@@ -2462,6 +2565,11 @@ function CooldownCompanion:ApplyResourceBars()
 
     -- Position bars within containers (reusable for relayout on visibility change)
     RelayoutBars()
+
+    -- Anchor drag chrome to frame the content (after containers are sized)
+    if isIndependentStack then
+        UpdateIndependentStackChrome(isVerticalLayout)
+    end
 
     -- Enable OnUpdate
     if not onUpdateFrame then

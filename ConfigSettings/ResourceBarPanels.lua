@@ -2470,7 +2470,7 @@ local function BuildLayoutOrderPanel(container)
     end
 
     local castSlots = {}
-    if cbSettings and cbSettings.enabled then
+    if cbSettings and cbSettings.enabled and not cbSettings.independentAnchorEnabled then
         local defaultAnchor = CooldownCompanion:GetFirstAvailableAnchorGroup()
         local cbAnchor = defaultAnchor
         local rbAnchor = defaultAnchor
