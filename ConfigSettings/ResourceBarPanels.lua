@@ -133,6 +133,20 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(anchorModeDrop)
 
+    -- Inherit group alpha (only when attached to panel)
+    if not isIndependentStack then
+        local inheritCb = AceGUI:Create("CheckBox")
+        inheritCb:SetLabel("Inherit group alpha")
+        inheritCb:SetValue(settings.inheritAlpha)
+        inheritCb:SetFullWidth(true)
+        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.inheritAlpha = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(inheritCb)
+    end
+
     -- Preview toggle (ephemeral)
     local previewCb = AceGUI:Create("CheckBox")
     previewCb:SetLabel("Preview Resource Bars")
@@ -238,22 +252,8 @@ local function BuildResourceBarAnchoringPanel(container)
     end
 
     -- ============ Alpha Section ============
-    local group = db.groups[CS.selectedGroup]
-
-    if not isIndependentStack then
-        local inheritCb = AceGUI:Create("CheckBox")
-        inheritCb:SetLabel("Inherit group alpha")
-        inheritCb:SetValue(settings.inheritAlpha)
-        inheritCb:SetFullWidth(true)
-        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.inheritAlpha = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(inheritCb)
-    end
-
     if isIndependentStack or not settings.inheritAlpha then
+        local group = db.groups[CS.selectedGroup]
         BuildAlphaControls(container, settings, function()
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
@@ -275,7 +275,6 @@ local function BuildResourceBarPositioningPanel(container)
     end
 
     local isVerticalLayout = IsResourceBarVerticalConfig(settings)
-    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
     local gapField, gapLabel = GetResourceGapFieldConfig(settings)
     local isIndependentStack = settings.independentAnchorEnabled == true
 
@@ -509,35 +508,6 @@ local function BuildResourceBarPositioningPanel(container)
             container:AddChild(castGapSlider)
         end
 
-        local hSlider = AceGUI:Create("Slider")
-        hSlider:SetLabel(thicknessLabel)
-        hSlider:SetSliderValues(4, 40, 0.1)
-        if thicknessField == "barWidth" then
-            hSlider:SetValue(settings.barWidth or settings.barHeight or 12)
-        else
-            hSlider:SetValue(settings.barHeight or settings.barWidth or 12)
-        end
-        hSlider:SetFullWidth(true)
-        hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings[thicknessField] = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-        end)
-        hSlider:SetDisabled(settings.customBarHeights or false)
-        container:AddChild(hSlider)
-
-        local customHeightsCb = AceGUI:Create("CheckBox")
-        customHeightsCb:SetLabel(customThicknessLabel)
-        customHeightsCb:SetValue(settings.customBarHeights or false)
-        customHeightsCb:SetFullWidth(true)
-        customHeightsCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.customBarHeights = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(customHeightsCb)
-
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Bar Spacing")
         spacingSlider:SetSliderValues(0, 20, 0.1)
@@ -564,6 +534,43 @@ local function GetResourceBarTextureOptions()
     t["blizzard_class"] = "Blizzard (Class)"
     return t
 end
+
+-- Extracted to its own function to avoid pushing BuildResourceBarStylingPanel
+-- over the Lua 5.1 60-upvalue limit.
+local function BuildBarHeightControls(container, settings)
+    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
+
+    local hSlider = AceGUI:Create("Slider")
+    hSlider:SetLabel(thicknessLabel)
+    hSlider:SetSliderValues(4, 40, 0.1)
+    if thicknessField == "barWidth" then
+        hSlider:SetValue(settings.barWidth or settings.barHeight or 12)
+    else
+        hSlider:SetValue(settings.barHeight or settings.barWidth or 12)
+    end
+    hSlider:SetFullWidth(true)
+    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings[thicknessField] = val
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+    end)
+    hSlider:SetDisabled(settings.customBarHeights or false)
+    container:AddChild(hSlider)
+
+    local customHeightsCb = AceGUI:Create("CheckBox")
+    customHeightsCb:SetLabel(customThicknessLabel)
+    customHeightsCb:SetValue(settings.customBarHeights or false)
+    customHeightsCb:SetFullWidth(true)
+    customHeightsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.customBarHeights = val
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(customHeightsCb)
+end
+
+ST._BuildBarHeightControls = BuildBarHeightControls
 
 local function BuildResourceBarStylingPanel(container, sectionMode)
     local settings = CooldownCompanion:GetResourceBarSettings()
@@ -658,6 +665,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         CooldownCompanion:ApplyResourceBars()
     end)
     container:AddChild(gapSlider)
+
+    ST._BuildBarHeightControls(container, settings)
 
     -- ============ Text Section ============
     local rbTextAdvBtns = {}

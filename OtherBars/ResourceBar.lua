@@ -2603,8 +2603,12 @@ function CooldownCompanion:ApplyResourceBars()
         end
         savedContainerAlpha = nil
 
-        if independentWrapperFrame then
-            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, { independentWrapperFrame })
+        local frames = {}
+        if independentWrapperFrame then frames[#frames + 1] = independentWrapperFrame end
+        if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
+        if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        if #frames > 0 then
+            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
     elseif settings.inheritAlpha and groupFrame then
         -- Attached + inheriting: sync to group alpha via 30Hz polling
