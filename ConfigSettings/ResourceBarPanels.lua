@@ -490,52 +490,53 @@ local function BuildResourceBarPositioningPanel(container)
         end
     end
 
-    -- ============ Layout Section ============
-    local posHeading = AceGUI:Create("Heading")
-    posHeading:SetText("Layout")
-    ColorHeading(posHeading)
-    posHeading:SetFullWidth(true)
-    container:AddChild(posHeading)
+    -- ============ Layout Section (attached mode only) ============
+    if not isIndependentStack then
+        local posHeading = AceGUI:Create("Heading")
+        posHeading:SetText("Layout")
+        ColorHeading(posHeading)
+        posHeading:SetFullWidth(true)
+        container:AddChild(posHeading)
 
-    local posKey = "rb_position"
-    local posCollapsed = resourceBarCollapsedSections[posKey]
+        local posKey = "rb_position"
+        local posCollapsed = resourceBarCollapsedSections[posKey]
 
-    AttachCollapseButton(posHeading, posCollapsed, function()
-        resourceBarCollapsedSections[posKey] = not resourceBarCollapsedSections[posKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not posCollapsed then
-        local gapSlider = AceGUI:Create("Slider")
-        gapSlider:SetLabel(gapLabel)
-        gapSlider:SetSliderValues(0, 50, 0.1)
-        if gapField == "verticalXOffset" then
-            gapSlider:SetValue(settings.verticalXOffset or settings.yOffset or 3)
-        else
-            gapSlider:SetValue(settings.yOffset or settings.verticalXOffset or 3)
-        end
-        gapSlider:SetFullWidth(true)
-        gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings[gapField] = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
+        AttachCollapseButton(posHeading, posCollapsed, function()
+            resourceBarCollapsedSections[posKey] = not resourceBarCollapsedSections[posKey]
+            CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(gapSlider)
 
-        if isVerticalLayout then
-            local castGapSlider = AceGUI:Create("Slider")
-            castGapSlider:SetLabel("Cast Bar Y Offset")
-            castGapSlider:SetSliderValues(0, 50, 0.1)
-            castGapSlider:SetValue(settings.yOffset or 3)
-            castGapSlider:SetFullWidth(true)
-            castGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.yOffset = val
+        if not posCollapsed then
+            local gapSlider = AceGUI:Create("Slider")
+            gapSlider:SetLabel(gapLabel)
+            gapSlider:SetSliderValues(0, 50, 0.1)
+            if gapField == "verticalXOffset" then
+                gapSlider:SetValue(settings.verticalXOffset or settings.yOffset or 3)
+            else
+                gapSlider:SetValue(settings.yOffset or settings.verticalXOffset or 3)
+            end
+            gapSlider:SetFullWidth(true)
+            gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings[gapField] = val
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
             end)
-            container:AddChild(castGapSlider)
-        end
+            container:AddChild(gapSlider)
 
+            if isVerticalLayout then
+                local castGapSlider = AceGUI:Create("Slider")
+                castGapSlider:SetLabel("Cast Bar Y Offset")
+                castGapSlider:SetSliderValues(0, 50, 0.1)
+                castGapSlider:SetValue(settings.yOffset or 3)
+                castGapSlider:SetFullWidth(true)
+                castGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.yOffset = val
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                end)
+                container:AddChild(castGapSlider)
+            end
+        end
     end
 end
 
