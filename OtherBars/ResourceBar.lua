@@ -2593,27 +2593,31 @@ function CooldownCompanion:ApplyResourceBars()
 
     isApplied = true
 
-    -- Alpha inheritance
+    -- Alpha handling: 3-way branching
+    local rbModuleId = "rb"
+
     if isIndependentStack then
-        -- Independent mode: no group to inherit from, use full alpha
+        -- Independent mode: own alpha settings, no group inheritance
         if alphaSyncFrame then
             alphaSyncFrame:SetScript("OnUpdate", nil)
         end
-        if containerFrameAbove then containerFrameAbove:SetAlpha(1) end
-        if containerFrameBelow then containerFrameBelow:SetAlpha(1) end
         savedContainerAlpha = nil
+
+        if independentWrapperFrame then
+            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, { independentWrapperFrame })
+        end
     elseif settings.inheritAlpha and groupFrame then
-        -- Save original alpha (only if not already saved)
+        -- Attached + inheriting: sync to group alpha via 30Hz polling
+        CooldownCompanion:UnregisterModuleAlpha(rbModuleId)
+
         if not savedContainerAlpha then
             savedContainerAlpha = containerFrameAbove:GetAlpha()
         end
 
-        -- Apply alpha immediately — use natural alpha to avoid config override cascade
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
         containerFrameBelow:SetAlpha(groupAlpha)
 
-        -- Start alpha sync OnUpdate (~30Hz polling)
         if not alphaSyncFrame then
             alphaSyncFrame = CreateFrame("Frame")
         end
@@ -2633,14 +2637,17 @@ function CooldownCompanion:ApplyResourceBars()
             end
         end)
     else
-        -- inheritAlpha is off — stop sync and restore original if we had it
+        -- Attached + NOT inheriting: own alpha settings on container frames
         if alphaSyncFrame then
             alphaSyncFrame:SetScript("OnUpdate", nil)
         end
-        if savedContainerAlpha then
-            if containerFrameAbove then containerFrameAbove:SetAlpha(savedContainerAlpha) end
-            if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
-            savedContainerAlpha = nil
+        savedContainerAlpha = nil
+
+        local frames = {}
+        if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
+        if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        if #frames > 0 then
+            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
     end
 
@@ -2663,7 +2670,8 @@ function CooldownCompanion:RevertResourceBars()
     lastAppliedBarThickness = nil
     layoutDirty = false
 
-    -- Stop alpha sync and restore alpha
+    -- Stop alpha sync, unregister module alpha, restore alpha
+    CooldownCompanion:UnregisterModuleAlpha("rb")
     if alphaSyncFrame then
         alphaSyncFrame:SetScript("OnUpdate", nil)
     end

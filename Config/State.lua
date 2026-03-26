@@ -206,6 +206,7 @@ ST._configState = {
     resourceBarPanelActive = false,
     barPanelTab = "resource_anchoring",
     resourceStylingTab = "bar_text",
+    castBarStylingTab = "styling",
     resourceAuraOverlayDrafts = {},
     characterScopedCopySelection = {
         resourceBars = nil,

@@ -39,6 +39,7 @@ local fillMaskLeft, fillMaskRight = nil, nil
 local isPreviewActive = false
 local originalFXSizes = nil
 local independentMoverFrame = nil
+local cbAlphaSyncFrame = nil
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -981,15 +982,22 @@ function CooldownCompanion:RevertCastBar()
     if not isApplied then return end
     isApplied = false
 
+    -- Stop alpha sync and unregister module alpha
+    CooldownCompanion:UnregisterModuleAlpha("cb")
+    if cbAlphaSyncFrame then
+        cbAlphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+
     HideIndependentCastBarMover()
     DisableCastEventFrame()
 
     local cb = PlayerCastingBarFrame
     if not cb then return end
 
-    -- Restore size (CLASSIC defaults)
+    -- Restore size and alpha (CLASSIC defaults)
     cb:SetWidth(208)
     cb:SetHeight(11)
+    cb:SetAlpha(1)
 
     -- Restore parent / strata
     cb:SetParent(UIParent)
@@ -1396,6 +1404,47 @@ function CooldownCompanion:ApplyCastBarSettings()
             cb.CastTimeText:SetPoint("LEFT", cb, "RIGHT", 10, 0)
             cb.CastTimeText:SetVertexColor(1, 1, 1, 1)
         end
+    end
+
+    -- Alpha handling: 3-way branching
+    local cbModuleId = "cb"
+
+    if isIndependent then
+        -- Independent mode: own alpha settings
+        if cbAlphaSyncFrame then
+            cbAlphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        CooldownCompanion:RegisterModuleAlpha(cbModuleId, settings, { cb })
+    elseif settings.inheritAlpha and groupFrame then
+        -- Attached + inheriting: sync to group alpha via 30Hz polling
+        CooldownCompanion:UnregisterModuleAlpha(cbModuleId)
+
+        local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
+        cb:SetAlpha(groupAlpha)
+
+        if not cbAlphaSyncFrame then
+            cbAlphaSyncFrame = CreateFrame("Frame")
+        end
+        local lastAlpha = groupAlpha
+        local accumulator = 0
+        local SYNC_INTERVAL = 1 / 30
+        cbAlphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+            accumulator = accumulator + dt
+            if accumulator < SYNC_INTERVAL then return end
+            accumulator = 0
+            if not groupFrame then return end
+            local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
+            if alpha ~= lastAlpha then
+                lastAlpha = alpha
+                cb:SetAlpha(alpha)
+            end
+        end)
+    else
+        -- Attached + NOT inheriting: own alpha settings
+        if cbAlphaSyncFrame then
+            cbAlphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        CooldownCompanion:RegisterModuleAlpha(cbModuleId, settings, { cb })
     end
 
     isApplied = true

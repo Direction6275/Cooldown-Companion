@@ -20,6 +20,7 @@ local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
+local BuildAlphaControls = ST._BuildAlphaControls
 local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants
@@ -89,9 +90,7 @@ local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetResourceBarSettings()
-    local isVerticalLayout = IsResourceBarVerticalConfig(settings)
-    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
-    local gapField, gapLabel = GetResourceGapFieldConfig(settings)
+    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings)
 
     -- Enable Resource Bars
     local enableCb = AceGUI:Create("CheckBox")
@@ -134,6 +133,153 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(anchorModeDrop)
 
+    -- Preview toggle (ephemeral)
+    local previewCb = AceGUI:Create("CheckBox")
+    previewCb:SetLabel("Preview Resource Bars")
+    previewCb:SetValue(CooldownCompanion:IsResourceBarPreviewActive())
+    previewCb:SetFullWidth(true)
+    previewCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if val then
+            CooldownCompanion:StartResourceBarPreview()
+        else
+            CooldownCompanion:StopResourceBarPreview()
+        end
+    end)
+    container:AddChild(previewCb)
+
+    -- ============ Resource Toggles Section ============
+    local toggleHeading = AceGUI:Create("Heading")
+    toggleHeading:SetText("Resource Toggles")
+    ColorHeading(toggleHeading)
+    toggleHeading:SetFullWidth(true)
+    container:AddChild(toggleHeading)
+
+    local toggleKey = "rb_toggles"
+    local toggleCollapsed = resourceBarCollapsedSections[toggleKey]
+
+    AttachCollapseButton(toggleHeading, toggleCollapsed, function()
+        resourceBarCollapsedSections[toggleKey] = not resourceBarCollapsedSections[toggleKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not toggleCollapsed then
+        -- Only show mana toggle for classes that actually use mana
+        local _, _, classID = UnitClass("player")
+        local NO_MANA_CLASSES = { [1] = true, [3] = true, [4] = true, [6] = true, [12] = true }
+        if classID and not NO_MANA_CLASSES[classID] then
+            local manaCb = AceGUI:Create("CheckBox")
+            manaCb:SetLabel("Hide Mana for Non-Healer Specs")
+            manaCb:SetValue(settings.hideManaForNonHealer ~= false)
+            manaCb:SetFullWidth(true)
+            manaCb:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.hideManaForNonHealer = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            container:AddChild(manaCb)
+        end
+
+        -- Per-resource enable/disable
+        local rbHeightAdvBtns = {}
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            local name = POWER_NAMES[pt] or ("Power " .. pt)
+            if not settings.resources[pt] then
+                settings.resources[pt] = {}
+            end
+            local enabled = settings.resources[pt].enabled ~= false
+
+            local resCb = AceGUI:Create("CheckBox")
+            resCb:SetLabel("Show " .. name)
+            resCb:SetValue(enabled)
+            resCb:SetFullWidth(true)
+            resCb:SetCallback("OnValueChanged", function(widget, event, val)
+                if not settings.resources[pt] then
+                    settings.resources[pt] = {}
+                end
+                settings.resources[pt].enabled = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:UpdateAnchorStacking()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(resCb)
+
+            if settings.customBarHeights then
+                local advExpanded = AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled)
+                if advExpanded then
+                    local resHeightSlider = AceGUI:Create("Slider")
+                    resHeightSlider:SetLabel(thicknessLabel)
+                    resHeightSlider:SetSliderValues(4, 40, 0.1)
+                    if thicknessField == "barWidth" then
+                        resHeightSlider:SetValue(
+                            settings.resources[pt].barWidth or settings.resources[pt].barHeight
+                            or settings.barWidth or settings.barHeight or 12
+                        )
+                    else
+                        resHeightSlider:SetValue(
+                            settings.resources[pt].barHeight or settings.resources[pt].barWidth
+                            or settings.barHeight or settings.barWidth or 12
+                        )
+                    end
+                    resHeightSlider:SetFullWidth(true)
+                    local capturedPt = pt
+                    resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        if not settings.resources[capturedPt] then
+                            settings.resources[capturedPt] = {}
+                        end
+                        settings.resources[capturedPt][thicknessField] = val
+                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:UpdateAnchorStacking()
+                    end)
+                    container:AddChild(resHeightSlider)
+                end
+            end
+        end
+    end
+
+    -- ============ Alpha Section ============
+    local group = db.groups[CS.selectedGroup]
+
+    if not isIndependentStack then
+        local inheritCb = AceGUI:Create("CheckBox")
+        inheritCb:SetLabel("Inherit group alpha")
+        inheritCb:SetValue(settings.inheritAlpha)
+        inheritCb:SetFullWidth(true)
+        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.inheritAlpha = val
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(inheritCb)
+    end
+
+    if isIndependentStack or not settings.inheritAlpha then
+        BuildAlphaControls(container, settings, function()
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end, "rb_alpha", { isGlobal = group and group.isGlobal })
+    end
+end
+
+------------------------------------------------------------------------
+
+local function BuildResourceBarPositioningPanel(container)
+    local settings = CooldownCompanion:GetResourceBarSettings()
+
+    if not settings.enabled then
+        local label = AceGUI:Create("Label")
+        label:SetText("Enable Resource Bars to configure positioning.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    local isVerticalLayout = IsResourceBarVerticalConfig(settings)
+    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
+    local gapField, gapLabel = GetResourceGapFieldConfig(settings)
+    local isIndependentStack = settings.independentAnchorEnabled == true
+
+    -- Bar Orientation
     local orientDrop = AceGUI:Create("Dropdown")
     orientDrop:SetLabel("Bar Orientation")
     orientDrop:SetList({
@@ -150,6 +296,7 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(orientDrop)
 
+    -- Vertical Fill Direction
     local fillDirDrop = AceGUI:Create("Dropdown")
     fillDirDrop:SetLabel("Vertical Fill Direction")
     fillDirDrop:SetList({
@@ -166,36 +313,10 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(fillDirDrop)
 
-    -- Preview toggle (ephemeral)
-    local previewCb = AceGUI:Create("CheckBox")
-    previewCb:SetLabel("Preview Resource Bars")
-    previewCb:SetValue(CooldownCompanion:IsResourceBarPreviewActive())
-    previewCb:SetFullWidth(true)
-    previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if val then
-            CooldownCompanion:StartResourceBarPreview()
-        else
-            CooldownCompanion:StopResourceBarPreview()
-        end
-    end)
-    container:AddChild(previewCb)
-
-    -- Inherit group alpha checkbox (disabled when independent — no group to inherit from)
-    local alphaCb = AceGUI:Create("CheckBox")
-    alphaCb:SetLabel("Inherit group alpha")
-    alphaCb:SetValue(settings.inheritAlpha)
-    alphaCb:SetDisabled(isIndependentStack)
-    alphaCb:SetFullWidth(true)
-    alphaCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.inheritAlpha = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(alphaCb)
-
-    -- ============ Stack Position Section (independent mode only) ============
+    -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
         local stackPosHeading = AceGUI:Create("Heading")
-        stackPosHeading:SetText("Stack Position")
+        stackPosHeading:SetText("Anchor Settings")
         ColorHeading(stackPosHeading)
         stackPosHeading:SetFullWidth(true)
         container:AddChild(stackPosHeading)
@@ -209,7 +330,6 @@ local function BuildResourceBarAnchoringPanel(container)
         end)
 
         if not stackPosCollapsed then
-            -- Ensure anchor config exists for sliders
             if type(settings.independentAnchor) ~= "table" then
                 settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
             end
@@ -307,7 +427,6 @@ local function BuildResourceBarAnchoringPanel(container)
                 end
             end)
 
-            -- Anchor Point / Relative Point dropdowns
             local function refreshResourceBarAnchor()
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
@@ -316,7 +435,6 @@ local function BuildResourceBarAnchoringPanel(container)
             AddAnchorDropdown(container, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point")
             AddAnchorDropdown(container, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point")
 
-            -- X Offset
             local xSlider = AceGUI:Create("Slider")
             xSlider:SetLabel("X Offset")
             xSlider:SetSliderValues(-2000, 2000, 0.1)
@@ -330,7 +448,6 @@ local function BuildResourceBarAnchoringPanel(container)
             HookSliderEditBox(xSlider)
             container:AddChild(xSlider)
 
-            -- Y Offset
             local ySlider = AceGUI:Create("Slider")
             ySlider:SetLabel("Y Offset")
             ySlider:SetSliderValues(-2000, 2000, 0.1)
@@ -346,9 +463,9 @@ local function BuildResourceBarAnchoringPanel(container)
         end
     end
 
-    -- ============ Position Section ============
+    -- ============ Layout Section ============
     local posHeading = AceGUI:Create("Heading")
-    posHeading:SetText("Position")
+    posHeading:SetText("Layout")
     ColorHeading(posHeading)
     posHeading:SetFullWidth(true)
     container:AddChild(posHeading)
@@ -432,96 +549,6 @@ local function BuildResourceBarAnchoringPanel(container)
             CooldownCompanion:UpdateAnchorStacking()
         end)
         container:AddChild(spacingSlider)
-    end
-
-    -- ============ Resource Toggles Section ============
-    local toggleHeading = AceGUI:Create("Heading")
-    toggleHeading:SetText("Resource Toggles")
-    ColorHeading(toggleHeading)
-    toggleHeading:SetFullWidth(true)
-    container:AddChild(toggleHeading)
-
-    local toggleKey = "rb_toggles"
-    local toggleCollapsed = resourceBarCollapsedSections[toggleKey]
-
-    AttachCollapseButton(toggleHeading, toggleCollapsed, function()
-        resourceBarCollapsedSections[toggleKey] = not resourceBarCollapsedSections[toggleKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not toggleCollapsed then
-        -- Only show mana toggle for classes that actually use mana
-        local _, _, classID = UnitClass("player")
-        local NO_MANA_CLASSES = { [1] = true, [3] = true, [4] = true, [6] = true, [12] = true }
-        if classID and not NO_MANA_CLASSES[classID] then
-            local manaCb = AceGUI:Create("CheckBox")
-            manaCb:SetLabel("Hide Mana for Non-Healer Specs")
-            manaCb:SetValue(settings.hideManaForNonHealer ~= false)
-            manaCb:SetFullWidth(true)
-            manaCb:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.hideManaForNonHealer = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-            end)
-            container:AddChild(manaCb)
-        end
-
-        -- Per-resource enable/disable
-        local rbHeightAdvBtns = {}
-        local resources = GetConfigActiveResources()
-        for _, pt in ipairs(resources) do
-            local name = POWER_NAMES[pt] or ("Power " .. pt)
-            if not settings.resources[pt] then
-                settings.resources[pt] = {}
-            end
-            local enabled = settings.resources[pt].enabled ~= false
-
-            local resCb = AceGUI:Create("CheckBox")
-            resCb:SetLabel("Show " .. name)
-            resCb:SetValue(enabled)
-            resCb:SetFullWidth(true)
-            resCb:SetCallback("OnValueChanged", function(widget, event, val)
-                if not settings.resources[pt] then
-                    settings.resources[pt] = {}
-                end
-                settings.resources[pt].enabled = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            container:AddChild(resCb)
-
-            if settings.customBarHeights then
-                local advExpanded = AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled)
-                if advExpanded then
-                    local resHeightSlider = AceGUI:Create("Slider")
-                    resHeightSlider:SetLabel(thicknessLabel)
-                    resHeightSlider:SetSliderValues(4, 40, 0.1)
-                    if thicknessField == "barWidth" then
-                        resHeightSlider:SetValue(
-                            settings.resources[pt].barWidth or settings.resources[pt].barHeight
-                            or settings.barWidth or settings.barHeight or 12
-                        )
-                    else
-                        resHeightSlider:SetValue(
-                            settings.resources[pt].barHeight or settings.resources[pt].barWidth
-                            or settings.barHeight or settings.barWidth or 12
-                        )
-                    end
-                    resHeightSlider:SetFullWidth(true)
-                    local capturedPt = pt
-                    resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        if not settings.resources[capturedPt] then
-                            settings.resources[capturedPt] = {}
-                        end
-                        settings.resources[capturedPt][thicknessField] = val
-                        CooldownCompanion:ApplyResourceBars()
-                        CooldownCompanion:UpdateAnchorStacking()
-                    end)
-                    container:AddChild(resHeightSlider)
-                end
-            end
-        end
     end
 end
 
@@ -2617,6 +2644,7 @@ end
 
 -- Expose for ButtonSettings.lua and Config.lua
 ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
+ST._BuildResourceBarPositioningPanel = BuildResourceBarPositioningPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
 ST._BuildResourceBarColorsStylingPanel = BuildResourceBarColorsStylingPanel

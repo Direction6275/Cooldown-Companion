@@ -853,5 +853,172 @@ local function HookSliderEditBox(sliderWidget)
 end
 ST._HookSliderEditBox = HookSliderEditBox
 
+-- Shared alpha UI builder for groups, resource bars, and cast bar.
+-- container: AceGUI parent widget
+-- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
+-- refreshFn: function called after value changes (typically RefreshConfigPanel)
+-- collapseKey: string key for CS.collapsedSections
+-- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool }
+local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
+    opts = opts or {}
+    local tabInfoBtns = CS.tabInfoButtons
+
+    local alphaHeading = AceGUI:Create("Heading")
+    alphaHeading:SetText("Alpha")
+    ColorHeading(alphaHeading)
+    alphaHeading:SetFullWidth(true)
+    container:AddChild(alphaHeading)
+
+    local alphaCollapsed = CS.collapsedSections[collapseKey]
+    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
+        CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if alphaCollapsed then return end
+
+    local baseAlphaSlider = AceGUI:Create("Slider")
+    baseAlphaSlider:SetLabel("Baseline Alpha")
+    baseAlphaSlider:SetSliderValues(0, 1, 0.1)
+    baseAlphaSlider:SetValue(config.baselineAlpha or 1)
+    baseAlphaSlider:SetFullWidth(true)
+    baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        config.baselineAlpha = val
+        if opts.onBaselineChanged then
+            opts.onBaselineChanged(val)
+        end
+    end)
+    container:AddChild(baseAlphaSlider)
+
+    CreateInfoButton(baseAlphaSlider.frame, baseAlphaSlider.label, "LEFT", "CENTER", baseAlphaSlider.label:GetStringWidth() / 2 + 4, 0, {
+        "Alpha",
+        {"Controls transparency. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true},
+    }, tabInfoBtns)
+
+    do
+        local function GetTriState(visibleKey, hiddenKey)
+            if config[hiddenKey] then return nil end
+            if config[visibleKey] then return true end
+            return false
+        end
+
+        local function TriStateLabel(base, value)
+            if value == true then
+                return base .. " - |cff00ff00Fully Visible|r"
+            elseif value == nil then
+                return base .. " - |cffff0000Fully Hidden|r"
+            end
+            return base
+        end
+
+        local function CreateTriStateToggle(label, visibleKey, hiddenKey)
+            local val = GetTriState(visibleKey, hiddenKey)
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetTriState(true)
+            cb:SetLabel(TriStateLabel(label, val))
+            cb:SetValue(val)
+            cb:SetFullWidth(true)
+            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+                config[visibleKey] = (newVal == true)
+                config[hiddenKey] = (newVal == nil)
+                refreshFn()
+            end)
+            return cb
+        end
+
+        container:AddChild(CreateTriStateToggle("In Combat", "forceAlphaInCombat", "forceHideInCombat"))
+        container:AddChild(CreateTriStateToggle("Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat"))
+        container:AddChild(CreateTriStateToggle("Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted"))
+        container:AddChild(CreateTriStateToggle("Skyriding", "forceAlphaDragonriding", "forceHideDragonriding"))
+
+        local mountedActive = config.forceAlphaRegularMounted
+            or config.forceHideRegularMounted
+            or config.forceAlphaDragonriding
+            or config.forceHideDragonriding
+        local isDruid = CooldownCompanion._playerClassID == 11
+        if mountedActive and (opts.isGlobal or isDruid) then
+            local travelVal = config.treatTravelFormAsMounted or false
+            local travelCb = AceGUI:Create("CheckBox")
+            travelCb:SetLabel("Include Druid Travel Form (applies to both)")
+            travelCb:SetValue(travelVal)
+            travelCb:SetFullWidth(true)
+            travelCb:SetCallback("OnValueChanged", function(widget, event, val)
+                config.treatTravelFormAsMounted = val
+            end)
+            container:AddChild(travelCb)
+        end
+
+        local targetVal = config.forceAlphaTargetExists or false
+        local targetCb = AceGUI:Create("CheckBox")
+        targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
+        targetCb:SetValue(targetVal)
+        targetCb:SetFullWidth(true)
+        targetCb:SetCallback("OnValueChanged", function(widget, event, val)
+            config.forceAlphaTargetExists = val
+            refreshFn()
+        end)
+        container:AddChild(targetCb)
+
+        local mouseoverVal = config.forceAlphaMouseover or false
+        local mouseoverCb = AceGUI:Create("CheckBox")
+        mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
+        mouseoverCb:SetValue(mouseoverVal)
+        mouseoverCb:SetFullWidth(true)
+        mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
+            config.forceAlphaMouseover = val
+            refreshFn()
+        end)
+        container:AddChild(mouseoverCb)
+
+        CreateInfoButton(mouseoverCb.frame, mouseoverCb.text, "LEFT", "RIGHT", 4, 0, {
+            "Mouseover",
+            {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
+        }, tabInfoBtns)
+
+        local fadeCb = AceGUI:Create("CheckBox")
+        fadeCb:SetLabel("Custom Fade Settings")
+        fadeCb:SetValue(config.customFade or false)
+        fadeCb:SetFullWidth(true)
+        fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
+            config.customFade = val or nil
+            refreshFn()
+        end)
+        container:AddChild(fadeCb)
+
+        if config.customFade then
+        local fadeDelaySlider = AceGUI:Create("Slider")
+        fadeDelaySlider:SetLabel("Fade Delay (seconds)")
+        fadeDelaySlider:SetSliderValues(0, 5, 0.1)
+        fadeDelaySlider:SetValue(config.fadeDelay or 1)
+        fadeDelaySlider:SetFullWidth(true)
+        fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            config.fadeDelay = val
+        end)
+        container:AddChild(fadeDelaySlider)
+
+        local fadeInSlider = AceGUI:Create("Slider")
+        fadeInSlider:SetLabel("Fade In Duration (seconds)")
+        fadeInSlider:SetSliderValues(0, 5, 0.1)
+        fadeInSlider:SetValue(config.fadeInDuration or 0.2)
+        fadeInSlider:SetFullWidth(true)
+        fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            config.fadeInDuration = val
+        end)
+        container:AddChild(fadeInSlider)
+
+        local fadeOutSlider = AceGUI:Create("Slider")
+        fadeOutSlider:SetLabel("Fade Out Duration (seconds)")
+        fadeOutSlider:SetSliderValues(0, 5, 0.1)
+        fadeOutSlider:SetValue(config.fadeOutDuration or 0.2)
+        fadeOutSlider:SetFullWidth(true)
+        fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            config.fadeOutDuration = val
+        end)
+        container:AddChild(fadeOutSlider)
+        end -- config.customFade
+    end
+end
+ST._BuildAlphaControls = BuildAlphaControls
+
 ST._AddFontControls = AddFontControls
 ST._AddOffsetSliders = AddOffsetSliders
