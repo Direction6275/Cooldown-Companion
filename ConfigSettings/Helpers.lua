@@ -625,68 +625,66 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     container:AddChild(buttonRow)
 end
 
-local function AddCharacterScopedCopyControls(container, systemKey, label, onCopied)
-    if not CS.characterScopedCopySelection then
-        CS.characterScopedCopySelection = {
-            resourceBars = nil,
-            castBar = nil,
-            frameAnchoring = nil,
-        }
-    end
-
+local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     local copyValues, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
-    if #copyOrder == 0 then
-        local hintLabel = AceGUI:Create("Label")
-        hintLabel:SetText("|cff888888No other character " .. label:lower() .. " settings are stored in this profile yet.|r")
-        hintLabel:SetFullWidth(true)
-        container:AddChild(hintLabel)
-        return
-    end
+    if #copyOrder == 0 then return end
 
-    local selected = CS.characterScopedCopySelection[systemKey]
-    if not selected or not copyValues[selected] then
-        selected = copyOrder[1]
-        CS.characterScopedCopySelection[systemKey] = selected
-    end
+    local btn = CreateFrame("Button", nil, enableCb.frame)
+    btn:SetSize(16, 16)
+    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
 
-    local copyRow = AceGUI:Create("SimpleGroup")
-    copyRow:SetFullWidth(true)
-    copyRow:SetLayout("Flow")
+    local icon = btn:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(14, 14)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("BattleBar-SwapPetIcon", false)
 
-    local sourceDrop = AceGUI:Create("Dropdown")
-    sourceDrop:SetLabel("Copy " .. label .. " From")
-    sourceDrop:SetList(copyValues, copyOrder)
-    sourceDrop:SetValue(selected)
-    sourceDrop:SetRelativeWidth(0.72)
-    sourceDrop:SetCallback("OnValueChanged", function(widget, event, value)
-        CS.characterScopedCopySelection[systemKey] = value
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Copy " .. label .. " Settings")
+        GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
+        GameTooltip:Show()
     end)
-    copyRow:AddChild(sourceDrop)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    local copyButton = AceGUI:Create("Button")
-    copyButton:SetText("Copy")
-    copyButton:SetRelativeWidth(0.25)
-    copyButton:SetCallback("OnClick", function()
-        local sourceCharKey = CS.characterScopedCopySelection and CS.characterScopedCopySelection[systemKey]
-        if not sourceCharKey then
-            return
+    btn:SetScript("OnClick", function()
+        if not CS.charCopyMenu then
+            CS.charCopyMenu = CreateFrame("Frame", "CDCCharCopyMenu", UIParent, "UIDropDownMenuTemplate")
         end
+        local vals, order = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
+        if #order == 0 then return end
 
-        if not ShowPopupAboveConfig then
-            CooldownCompanion:Print("Copy confirmation is unavailable.")
-            return
-        end
-
-        ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
-            systemKey = systemKey,
-            systemLabel = label,
-            sourceCharKey = sourceCharKey,
-            onCopied = onCopied,
-        })
+        UIDropDownMenu_Initialize(CS.charCopyMenu, function(self, level)
+            for _, charKey in ipairs(order) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = vals[charKey]
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if not ShowPopupAboveConfig then return end
+                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
+                        systemKey = systemKey,
+                        systemLabel = label,
+                        sourceCharKey = charKey,
+                        onCopied = onCopied,
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+        CS.charCopyMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, CS.charCopyMenu, "cursor", 0, 0)
     end)
-    copyRow:AddChild(copyButton)
 
-    container:AddChild(copyRow)
+    -- Clean up on widget release (raw frame persists across AceGUI recycling)
+    local prevOnRelease = enableCb.events and enableCb.events["OnRelease"]
+    enableCb:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(enableCb, "OnRelease")
+        end
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end)
 end
 
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
@@ -830,7 +828,7 @@ ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
-ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
+ST._CreateCharacterCopyButton = CreateCharacterCopyButton
 ST._GetBarTextureOptions = GetBarTextureOptions
 ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown

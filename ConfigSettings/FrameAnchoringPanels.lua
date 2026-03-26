@@ -5,7 +5,7 @@ local CS = ST._configState
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
-local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
+local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 
 ------------------------------------------------------------------------
 -- Frame Anchoring panels
@@ -45,7 +45,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
     end)
     container:AddChild(enableCb)
 
-    AddCharacterScopedCopyControls(container, "frameAnchoring", "Frame Anchoring", function()
+    CreateCharacterCopyButton(enableCb, "frameAnchoring", "Frame Anchoring", function()
         CooldownCompanion:EvaluateFrameAnchoring()
         CooldownCompanion:RefreshConfigPanel()
     end)

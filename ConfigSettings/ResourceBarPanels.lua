@@ -14,7 +14,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
+local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
@@ -105,7 +105,7 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    AddCharacterScopedCopyControls(container, "resourceBars", "Resource Bars", function()
+    CreateCharacterCopyButton(enableCb, "resourceBars", "Resource Bars", function()
         CooldownCompanion:EvaluateResourceBars()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()

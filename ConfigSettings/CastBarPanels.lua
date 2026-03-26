@@ -7,7 +7,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
+local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local GetBarTextureOptions = ST._GetBarTextureOptions
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
@@ -33,7 +33,7 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    AddCharacterScopedCopyControls(container, "castBar", "Cast Bar", function()
+    CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
         CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
