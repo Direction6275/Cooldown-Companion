@@ -224,6 +224,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Save previous aura DurationObject for one-tick grace period on target switch.
     local prevAuraDurationObj = button._auraActive and button._durationObj or nil
     button._durationObj = nil
+    button._cooldownDeferred = nil
 
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
@@ -763,6 +764,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 isOnGCD = spellCooldownInfo.isOnGCD
                 isGCDOnly = IsSpellGCDOnly(spellCooldownInfo, buttonData._cooldownSecrecy)
 
+                -- Deferred cooldown detection (e.g. Feign Death while the
+                -- buff is active): isEnabled=false means the timer hasn't
+                -- started yet.  isActive is already false (gates swipe below),
+                -- but downstream code needs _cooldownDeferred for desat/visibility.
+                if spellCooldownInfo.isEnabled == false then
+                    button._cooldownDeferred = true
+                end
+
                 -- Only fetch the DurationObject when the cooldown is active or
                 -- an action-slot override says so.  When isActive is false the
                 -- DurationObject is zero-span (12.0.1 hotfix), so SetCooldown(0,0)
@@ -816,19 +825,30 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._itemCdDuration = 0
             else
                 button._isEquippableNotEquipped = false
-                local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-                button.cooldown:SetCooldown(cdStart, cdDuration)
-                button._itemCdStart = cdStart
-                button._itemCdDuration = cdDuration
-                -- GCD-only detection for items: C_Item.GetItemCooldown returns
-                -- GCD values when the item is on GCD but has no real cooldown.
-                -- Item cooldown values are never secret; direct comparison is safe
-                -- (same pattern as NeverSecret spells above).
-                if cdDuration > 0 then
-                    local gcdInfo = CooldownCompanion._gcdInfo
-                    if gcdInfo and cdStart == gcdInfo.startTime
-                            and cdDuration == gcdInfo.duration then
-                        isGCDOnly = true
+                local cdStart, cdDuration, enableCooldownTimer = C_Item.GetItemCooldown(buttonData.id)
+                if not enableCooldownTimer and cdStart > 0 then
+                    -- Deferred cooldown (e.g. Healthstone used in combat): the
+                    -- timer hasn't started yet.  Suppress the swipe to prevent
+                    -- flicker from cdStart advancing every tick with dur=0.
+                    -- Downstream code uses _cooldownDeferred for desat/visibility.
+                    button.cooldown:SetCooldown(0, 0)
+                    button._itemCdStart = 0
+                    button._itemCdDuration = 0
+                    button._cooldownDeferred = true
+                else
+                    button.cooldown:SetCooldown(cdStart, cdDuration)
+                    button._itemCdStart = cdStart
+                    button._itemCdDuration = cdDuration
+                    -- GCD-only detection for items: C_Item.GetItemCooldown returns
+                    -- GCD values when the item is on GCD but has no real cooldown.
+                    -- Item cooldown values are never secret; direct comparison is safe
+                    -- (same pattern as NeverSecret spells above).
+                    if cdDuration > 0 then
+                        local gcdInfo = CooldownCompanion._gcdInfo
+                        if gcdInfo and cdStart == gcdInfo.startTime
+                                and cdDuration == gcdInfo.duration then
+                            isGCDOnly = true
+                        end
                     end
                 end
             end
@@ -1011,8 +1031,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Canonical desaturation signal:
     -- For non-charge spells, use action-slot cooldown state when spell cooldown
     -- info is unavailable (ContextuallySecret fallback). Otherwise use addon state.
+    -- _cooldownDeferred: timer hasn't started (e.g. Healthstone in combat, Feign
+    -- Death while buff active).  Treat as "on cooldown" for dimming/visibility.
     if buttonData.type == "item" then
-        button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly) or false
+        button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
+            or button._cooldownDeferred or false
     elseif buttonData.hasCharges then
         button._desatCooldownActive = (button._zeroChargesConfirmed == true)
     else
@@ -1020,9 +1043,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._desatCooldownActive = actionSlotCooldownShown
         else
             button._desatCooldownActive = (button._durationObj ~= nil) and (not isGCDOnly)
+                or button._cooldownDeferred or false
         end
     end
-
     -- Track on-CD → off-CD transition for ready glow duration timer.
     -- desatWasActive is true only when the previous tick had an active cooldown,
     -- so nil → false (initial load) does NOT set a start time.
@@ -1079,7 +1102,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateItemChargeTracking(button, buttonData)
 
         -- Detect recharging via stored item cooldown values
-        button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly) or false
+        button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
+            or button._cooldownDeferred or false
       end
     end
 
