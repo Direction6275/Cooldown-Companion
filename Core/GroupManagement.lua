@@ -688,6 +688,11 @@ function CooldownCompanion:MoveGroupToFolder(id, folderId)
 
     container.folderId = folderId  -- nil = loose (no folder)
 
+    -- Clear custom icon when moving into a folder (icons only for non-foldered containers)
+    if folderId then
+        container.manualIcon = nil
+    end
+
     -- Stamp folder spec filters onto this container (see ApplyFolderSpecFilterToChildren)
     if folderId then
         local folder = db.folders and db.folders[folderId]

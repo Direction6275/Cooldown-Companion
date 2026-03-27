@@ -18,6 +18,8 @@ local GetGroupIcon = ST._GetGroupIcon
 local GetContainerIcon = ST._GetContainerIcon
 local GetFolderIcon = ST._GetFolderIcon
 local OpenFolderIconPicker = ST._OpenFolderIconPicker
+local OpenContainerIconPicker = ST._OpenContainerIconPicker
+local IsValidIconTexture = ST._IsValidIconTexture
 local GenerateFolderName = ST._GenerateFolderName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
@@ -464,9 +466,14 @@ local function RefreshColumn1(preserveDrag)
         end
 
         entry:SetText(displayName)
-        entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
-        entry:SetImageSize(inFolder and 13 or 1, 30)
-        entry.image:SetAlpha(0)
+        if not inFolder and IsValidIconTexture(container.manualIcon) then
+            entry:SetImage(container.manualIcon)
+            entry:SetImageSize(32, 32)
+        else
+            entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
+            entry:SetImageSize(inFolder and 13 or 1, 30)
+            entry.image:SetAlpha(0)
+        end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -734,6 +741,33 @@ local function RefreshColumn1(preserveDrag)
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
+
+                        -- Set Group Icon (only for non-foldered containers)
+                        if not container.folderId then
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "Set Group Icon..."
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                OpenContainerIconPicker(containerId)
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            if IsValidIconTexture(container.manualIcon) then
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = "Clear Custom Icon"
+                                info.notCheckable = true
+                                info.func = function()
+                                    CloseDropDownMenus()
+                                    local fresh = db.groupContainers[containerId]
+                                    if fresh then
+                                        fresh.manualIcon = nil
+                                        CooldownCompanion:RefreshConfigPanel()
+                                    end
+                                end
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+                        end
 
                         -- Add Panel submenu
                         info = UIDropDownMenu_CreateInfo()
