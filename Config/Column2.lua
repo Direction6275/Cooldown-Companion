@@ -1666,7 +1666,7 @@ local function RefreshColumn2()
                     local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
                     local warnBadge, overrideBadge, soundBadge, auraBadge
 
-                    if not usable then
+                    if not usable and buttonData.enabled ~= false then
                         warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
                         warnBadge:SetFrameLevel(rowBadgeLevel)
                         SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
