@@ -100,13 +100,14 @@ local function PlaceRowBadge(frame, badge, offsetX)
     return offsetX - ROW_BADGE_SIZE - ROW_BADGE_SPACING
 end
 
-local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4, badge5)
+local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4, badge5, badge6)
     local offsetX = -ROW_BADGE_RIGHT_PAD
     offsetX = PlaceRowBadge(frame, badge1, offsetX)
     offsetX = PlaceRowBadge(frame, badge2, offsetX)
     offsetX = PlaceRowBadge(frame, badge3, offsetX)
     offsetX = PlaceRowBadge(frame, badge4, offsetX)
-    PlaceRowBadge(frame, badge5, offsetX)
+    offsetX = PlaceRowBadge(frame, badge5, offsetX)
+    PlaceRowBadge(frame, badge6, offsetX)
 end
 
 local function IsBuffViewerChild(frame)
@@ -536,6 +537,11 @@ local function RefreshColumn2()
                     entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
                     if CS.selectedGroup == panelGroupId and CS.selectedButton == buttonIndex then
                         entry:SetColor(0, 1, 0)
+                    elseif buttonData.enabled == false then
+                        entry:SetColor(0.5, 0.5, 0.5)
+                    end
+                    if buttonData.enabled == false and entry.image and entry.image.SetDesaturated then
+                        entry.image:SetDesaturated(true)
                     end
                     local capturedIndex = buttonIndex
                     entry:SetCallback("OnClick", function()
@@ -1660,7 +1666,7 @@ local function RefreshColumn2()
                     local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
                     local warnBadge, overrideBadge, soundBadge, auraBadge
 
-                    if not usable then
+                    if not usable and buttonData.enabled ~= false then
                         warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
                         warnBadge:SetFrameLevel(rowBadgeLevel)
                         SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
@@ -1710,7 +1716,15 @@ local function RefreshColumn2()
                         talentBadge:Show()
                     end
 
-                    LayoutRowBadges(rowFrame, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
+                    local disabledBadge
+                    if buttonData.enabled == false then
+                        disabledBadge = EnsureRowBadge(rowFrame, "_cdcDisabledBadge", "GM-icon-visibleDis-pressed")
+                        disabledBadge:SetFrameLevel(rowBadgeLevel)
+                        SetRowBadgeTooltip(disabledBadge, "Disabled", 0.6, 0.6, 0.6)
+                        disabledBadge:Show()
+                    end
+
+                    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
 
                     entry:SetCallback("OnClick", function(widget, event, mouseButton)
                         if mouseButton == "LeftButton" and not IsControlKeyDown() and not GetCursorInfo() then
@@ -1790,6 +1804,18 @@ local function RefreshColumn2()
                             UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
                                 level = level or 1
                                 if level == 1 then
+                                    -- Disable / Enable button
+                                    local toggleInfo = UIDropDownMenu_CreateInfo()
+                                    toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
+                                    toggleInfo.notCheckable = true
+                                    toggleInfo.func = function()
+                                        CloseDropDownMenus()
+                                        entryData.enabled = not (entryData.enabled ~= false)
+                                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                        CooldownCompanion:RefreshConfigPanel()
+                                    end
+                                    UIDropDownMenu_AddButton(toggleInfo, level)
+
                                     local dupInfo = UIDropDownMenu_CreateInfo()
                                     dupInfo.text = "Duplicate"
                                     dupInfo.notCheckable = true
