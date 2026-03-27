@@ -692,6 +692,8 @@ local function SpellIDsMatchCanonicalForm(storedSpellID, resolvedSpellID)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData)
+    if buttonData.enabled == false then return false end
+
     -- Per-button talent condition: gate visibility on a specific talent node.
     if not self:IsTalentConditionMet(buttonData) then return false end
 
