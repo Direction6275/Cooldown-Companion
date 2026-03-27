@@ -136,7 +136,7 @@ local function BuildResourceBarAnchoringPanel(container)
     -- Inherit group alpha (only when attached to panel)
     if not isIndependentStack then
         local inheritCb = AceGUI:Create("CheckBox")
-        inheritCb:SetLabel("Inherit group alpha")
+        inheritCb:SetLabel("Inherit panel alpha")
         inheritCb:SetValue(settings.inheritAlpha)
         inheritCb:SetFullWidth(true)
         inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
