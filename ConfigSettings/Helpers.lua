@@ -625,18 +625,31 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     container:AddChild(buttonRow)
 end
 
+local charCopyButtons = {}
+
 local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     local copyValues, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
     if #copyOrder == 0 then return end
 
-    local btn = CreateFrame("Button", nil, enableCb.frame)
-    btn:SetSize(16, 16)
-    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    -- Pool one button per systemKey to avoid frame leaks across panel rebuilds
+    local btn = charCopyButtons[systemKey]
+    if not btn then
+        btn = CreateFrame("Button", nil, enableCb.frame)
+        btn:SetSize(16, 16)
 
-    local icon = btn:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(14, 14)
-    icon:SetPoint("CENTER")
-    icon:SetAtlas("BattleBar-SwapPetIcon", false)
+        local icon = btn:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(14, 14)
+        icon:SetPoint("CENTER")
+        icon:SetAtlas("BattleBar-SwapPetIcon", false)
+
+        charCopyButtons[systemKey] = btn
+    else
+        btn:SetParent(enableCb.frame)
+    end
+
+    btn:ClearAllPoints()
+    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    btn:Show()
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -660,7 +673,10 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    if not ShowPopupAboveConfig then return end
+                    if not ShowPopupAboveConfig then
+                        CooldownCompanion:Print("Copy confirmation is unavailable.")
+                        return
+                    end
                     ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
                         systemKey = systemKey,
                         systemLabel = label,
@@ -683,7 +699,6 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         end
         btn:ClearAllPoints()
         btn:Hide()
-        btn:SetParent(nil)
     end)
 end
 
@@ -836,9 +851,11 @@ ST._AddAnchorDropdown = AddAnchorDropdown
 -- Allow decimal input from editbox while keeping slider/wheel at 1px steps.
 -- Reusable across any AceGUI Slider widget that needs sub-integer precision.
 local function HookSliderEditBox(sliderWidget)
-    sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
-        local widget = editbox.obj
-        local value = tonumber(editbox:GetText())
+    local editbox = sliderWidget.editbox
+    local origHandler = editbox:GetScript("OnEnterPressed")
+    editbox:SetScript("OnEnterPressed", function(eb)
+        local widget = eb.obj
+        local value = tonumber(eb:GetText())
         if value then
             value = math.floor(value * 10 + 0.5) / 10
             value = math.max(widget.min, math.min(widget.max, value))
@@ -847,6 +864,15 @@ local function HookSliderEditBox(sliderWidget)
             widget:Fire("OnValueChanged", value)
             widget:Fire("OnMouseUp", value)
         end
+    end)
+
+    -- Restore original AceGUI handler on release so recycled sliders aren't permanently modified
+    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
+    sliderWidget:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(sliderWidget, "OnRelease")
+        end
+        editbox:SetScript("OnEnterPressed", origHandler)
     end)
 end
 ST._HookSliderEditBox = HookSliderEditBox
