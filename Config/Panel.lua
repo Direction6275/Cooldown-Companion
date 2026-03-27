@@ -446,6 +446,15 @@ local function CreateConfigPanel()
                 ShowPopupAboveConfig("CDC_DIAGNOSTIC_EXPORT")
             end
             UIDropDownMenu_AddButton(info3, level)
+
+            local info4 = UIDropDownMenu_CreateInfo()
+            info4.text = "  Join Discord"
+            info4.notCheckable = true
+            info4.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DISCORD_INVITE")
+            end
+            UIDropDownMenu_AddButton(info4, level)
         end, "MENU")
         CS.gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)

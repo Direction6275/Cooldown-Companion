@@ -1708,3 +1708,21 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+StaticPopupDialogs["CDC_DISCORD_INVITE"] = {
+    text = "Join the Cooldown Companion Discord (Ctrl+C to copy):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        self.EditBox:SetText("https://discord.gg/7MGhWMFYeS")
+        self.EditBox:HighlightText()
+        self.EditBox:SetFocus()
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
