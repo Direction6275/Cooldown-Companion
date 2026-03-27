@@ -107,6 +107,11 @@ local function UpdateBarFill(button)
             button.statusBar:SetMinMaxValues(0, maxVal)
             button.statusBar:SetValue(viewerBar:GetValue())
         end
+    elseif button._cooldownDeferred then
+        -- Deferred cooldown (timer hasn't started): show as "on cooldown"
+        -- with a static full bar (no animation, no time text).
+        onCooldown = true
+        button.statusBar:SetValue(0)
     elseif button.buttonData.type == "item" then
         -- Items: use stored C_Item.GetItemCooldown values (avoids hidden-widget staleness)
         local startMs = (button._itemCdStart or 0) * 1000
@@ -224,7 +229,9 @@ local function UpdateBarDisplay(button)
     -- _durationObj is non-nil only when UpdateButtonCooldown found an active CD/aura.
     -- _viewerBar is non-nil when a totem/guardian viewer bar is active.
     local onCooldown
-    if button._durationObj then
+    if button._cooldownDeferred then
+        onCooldown = true
+    elseif button._durationObj then
         onCooldown = not button._barGCDSuppressed
     elseif button._viewerBar and button._auraActive then
         onCooldown = not button._barGCDSuppressed

@@ -66,17 +66,20 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     local hideReasons = 0
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
+    -- _cooldownDeferred: treat deferred cooldowns (timer not yet started) as "on CD".
     if buttonData.hideWhileOnCooldown and not button._noCooldown then
         if buttonData.hasCharges then
             if button._mainCDShown or button._chargeRecharging then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif buttonData.type == "item" then
-            if button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly then
+            if (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
+                    or button._cooldownDeferred then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         else
-            if button._durationObj and not isGCDOnly and not auraOverrideActive then
+            if (button._durationObj and not isGCDOnly and not auraOverrideActive)
+                    or button._cooldownDeferred then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         end
@@ -89,11 +92,13 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif buttonData.type == "item" then
-            if not button._itemCdDuration or button._itemCdDuration == 0 or isGCDOnly then
+            if (not button._itemCdDuration or button._itemCdDuration == 0 or isGCDOnly)
+                    and not button._cooldownDeferred then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         else
-            if (not button._durationObj or isGCDOnly) and not auraOverrideActive then
+            if (not button._durationObj or isGCDOnly) and not auraOverrideActive
+                    and not button._cooldownDeferred then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         end

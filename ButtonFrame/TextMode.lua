@@ -272,7 +272,7 @@ local function SubstituteTokens(button, segments, style, effectState)
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local auraActive = button._auraActive
-    local onCooldown = button.cooldown and button.cooldown:IsShown()
+    local onCooldown = button._cooldownDeferred or (button.cooldown and button.cooldown:IsShown())
 
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
     -- Determine which domain owns it this tick.
