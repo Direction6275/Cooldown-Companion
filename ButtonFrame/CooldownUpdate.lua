@@ -311,13 +311,20 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- viewer child that tracks a target debuff.  Reject the mismatch
                 -- so target-debuff buttons don't display random player buff durations.
                 if durationObj and (unit == configUnit or configUnit == "player" or hasExplicitAuraOverride) then
-                    button._durationObj = durationObj
-                    button._viewerBar = nil  -- primary path: DurationObject available
-                    button.cooldown:SetCooldownFromDurationObject(durationObj)
-                    button._auraInstanceID = viewerInstId
-                    button._auraUnit = unit
-                    auraOverrideActive = true
-                    fetchOk = true
+                    -- Cross-validate: confirm the aura instance actually exists
+                    -- on the claimed unit.  GetAuraDuration may return data for
+                    -- stale instance IDs that belong to a different unit (e.g.
+                    -- old target after a target switch), causing ghost auras.
+                    local auraConfirmed = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId) ~= nil
+                    if auraConfirmed then
+                        button._durationObj = durationObj
+                        button._viewerBar = nil  -- primary path: DurationObject available
+                        button.cooldown:SetCooldownFromDurationObject(durationObj)
+                        button._auraInstanceID = viewerInstId
+                        button._auraUnit = unit
+                        auraOverrideActive = true
+                        fetchOk = true
+                    end
                 end
             else
                 -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
@@ -463,18 +470,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- CDM processes UNIT_TARGET before PLAYER_TARGET_CHANGED,
                 -- so the viewer frame already reflects the new target.
                 -- If CDM has no aura data, the debuff is confirmed absent.
+                -- Don't check the viewer's Cooldown widget state here — CDM
+                -- can leave stale auraDataUnit + IsShown() from the old target,
+                -- which would prevent expiry and cause ghost auras in raids.
                 if viewerFrame and not viewerFrame.auraInstanceID then
-                    local vc = viewerFrame.Cooldown
-                    if not (viewerFrame.auraDataUnit and vc and vc:IsShown()) then
-                        expired = true
-                    end
-                end
-                if not expired then
-                    if button._targetSwitchDataReceived then
-                        expired = true
-                    else
-                        expired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
-                    end
+                    expired = true
+                elseif button._targetSwitchDataReceived then
+                    expired = true
+                else
+                    expired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
                 end
             elseif not prevAuraDurationObj:HasSecretValues() then
                 expired = prevAuraDurationObj:GetRemainingDuration() <= 0
@@ -512,18 +516,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- without a previous DurationObject (tracked via fallback path only)
         if not auraOverrideActive and button._targetSwitchAt and button._auraActive then
             local catchAllExpired
+            -- Don't check viewer Cooldown widget state — it can be stale from
+            -- the old target and prevent expiry, causing ghost auras.  Trust
+            -- auraInstanceID (authoritative) and _targetSwitchDataReceived.
             if viewerFrame and not viewerFrame.auraInstanceID then
-                local vc = viewerFrame.Cooldown
-                if not (viewerFrame.auraDataUnit and vc and vc:IsShown()) then
-                    catchAllExpired = true
-                end
-            end
-            if not catchAllExpired then
-                if button._targetSwitchDataReceived then
-                    catchAllExpired = true
-                else
-                    catchAllExpired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
-                end
+                catchAllExpired = true
+            elseif button._targetSwitchDataReceived then
+                catchAllExpired = true
+            else
+                catchAllExpired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
             end
             if catchAllExpired then
                 button._targetSwitchAt = nil
