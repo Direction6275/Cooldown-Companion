@@ -45,6 +45,8 @@ local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
 local INDEPENDENT_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
 local INDEPENDENT_NUDGE_REPEAT_DELAY = RB.INDEPENDENT_NUDGE_REPEAT_DELAY
 local INDEPENDENT_NUDGE_REPEAT_INTERVAL = RB.INDEPENDENT_NUDGE_REPEAT_INTERVAL
+local IsBarsConfigActive = RB.IsBarsConfigActive
+local CancelNudgeTimers = RB.CancelNudgeTimers
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 local RESOURCE_COLOR_DEFS = RB.RESOURCE_COLOR_DEFS
@@ -209,17 +211,6 @@ local function ResolveIndependentAnchorTarget(cabConfig, settings)
     return UIParent, "UIParent"
 end
 
-local function IsBarsConfigActive()
-    local cs = ST and ST._configState
-    if not cs or not cs.resourceBarPanelActive then
-        return false
-    end
-    if not CooldownCompanion.GetConfigFrame then
-        return false
-    end
-    local configFrame = CooldownCompanion:GetConfigFrame()
-    return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
-end
 
 local function ApplyIndependentAlphaSync(frame, settings, targetFrame)
     if not frame then return end
@@ -318,17 +309,6 @@ local function SaveIndependentCustomAuraAnchor(barInfo, refreshConfig)
     end
 end
 
-local function CancelIndependentNudgeTimers(button)
-    if not button then return end
-    if button._cdcNudgeDelayTimer then
-        button._cdcNudgeDelayTimer:Cancel()
-        button._cdcNudgeDelayTimer = nil
-    end
-    if button._cdcNudgeTicker then
-        button._cdcNudgeTicker:Cancel()
-        button._cdcNudgeTicker = nil
-    end
-end
 
 local UpdateIndependentDragState
 
@@ -399,7 +379,7 @@ local function EnsureIndependentDragChrome(frame)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CancelIndependentNudgeTimers(self)
+            CancelNudgeTimers(self)
             local info = frame._cdcIndependentBarInfo
             if info and info._isIndependent then
                 SaveIndependentCustomAuraAnchor(info, true)
@@ -414,7 +394,7 @@ local function EnsureIndependentDragChrome(frame)
             end)
         end)
         btn:SetScript("OnMouseUp", function(self)
-            CancelIndependentNudgeTimers(self)
+            CancelNudgeTimers(self)
             local info = frame._cdcIndependentBarInfo
             if info and info._isIndependent then
                 SaveIndependentCustomAuraAnchor(info, true)
@@ -493,7 +473,7 @@ UpdateIndependentDragState = function(frame, barInfo)
             for _, btn in ipairs(nudger._cdcButtons) do
                 btn:EnableMouse(unlocked)
                 if not unlocked then
-                    CancelIndependentNudgeTimers(btn)
+                    CancelNudgeTimers(btn)
                 end
             end
         end
@@ -515,7 +495,7 @@ local function ClearIndependentRuntimeState(frame)
     if frame._cdcIndependentNudger then
         if frame._cdcIndependentNudger._cdcButtons then
             for _, btn in ipairs(frame._cdcIndependentNudger._cdcButtons) do
-                CancelIndependentNudgeTimers(btn)
+                CancelNudgeTimers(btn)
                 btn:EnableMouse(false)
             end
         end
@@ -701,7 +681,7 @@ local function CreateIndependentWrapperFrame()
         btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CancelIndependentNudgeTimers(self)
+            CancelNudgeTimers(self)
             SaveIndependentStackAnchor(true)
         end)
         btn:SetScript("OnMouseDown", function(self)
@@ -711,7 +691,7 @@ local function CreateIndependentWrapperFrame()
             end)
         end)
         btn:SetScript("OnMouseUp", function(self)
-            CancelIndependentNudgeTimers(self)
+            CancelNudgeTimers(self)
             SaveIndependentStackAnchor(true)
         end)
 
@@ -784,7 +764,7 @@ UpdateIndependentStackDragState = function(settings)
             for _, btn in ipairs(frame._nudger._cdcButtons) do
                 btn:EnableMouse(unlocked or false)
                 if not unlocked then
-                    CancelIndependentNudgeTimers(btn)
+                    CancelNudgeTimers(btn)
                 end
             end
         end
@@ -814,7 +794,7 @@ local function HideIndependentWrapperFrame()
         independentWrapperFrame._nudger:Hide()
         if independentWrapperFrame._nudger._cdcButtons then
             for _, btn in ipairs(independentWrapperFrame._nudger._cdcButtons) do
-                CancelIndependentNudgeTimers(btn)
+                CancelNudgeTimers(btn)
             end
         end
     end

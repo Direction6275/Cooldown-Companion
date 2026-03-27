@@ -30,6 +30,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local RB = ST._RB
 
 local isApplied = false
 local pixelBorders = nil
@@ -65,45 +66,13 @@ end
 -- Independent Cast Bar Anchor (proxy mover frame to avoid Blizzard taint)
 ------------------------------------------------------------------------
 
-local CAST_NUDGE_BTN_SIZE = 12
-local CAST_NUDGE_REPEAT_DELAY = 0.5
-local CAST_NUDGE_REPEAT_INTERVAL = 0.05
-
-local function CancelCastBarNudgeTimers(button)
-    if not button then return end
-    if button._cdcNudgeDelayTimer then
-        button._cdcNudgeDelayTimer:Cancel()
-        button._cdcNudgeDelayTimer = nil
-    end
-    if button._cdcNudgeTicker then
-        button._cdcNudgeTicker:Cancel()
-        button._cdcNudgeTicker = nil
-    end
-end
-
-local function ClampCastBarDimension(value, fallback)
-    local dim = tonumber(value) or tonumber(fallback) or 200
-    if dim < 20 then dim = 20 elseif dim > 1200 then dim = 1200 end
-    return dim
-end
-
-local function RoundToTenths(value)
-    return math_floor((tonumber(value) or 0) * 10 + 0.5) / 10
-end
-
-local function GetAnchorOffset(point, width, height)
-    if point == "TOPLEFT" then return -width / 2, height / 2
-    elseif point == "TOP" then return 0, height / 2
-    elseif point == "TOPRIGHT" then return width / 2, height / 2
-    elseif point == "LEFT" then return -width / 2, 0
-    elseif point == "CENTER" then return 0, 0
-    elseif point == "RIGHT" then return width / 2, 0
-    elseif point == "BOTTOMLEFT" then return -width / 2, -height / 2
-    elseif point == "BOTTOM" then return 0, -height / 2
-    elseif point == "BOTTOMRIGHT" then return width / 2, -height / 2
-    end
-    return 0, 0
-end
+local CAST_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
+local CAST_NUDGE_REPEAT_DELAY = RB.INDEPENDENT_NUDGE_REPEAT_DELAY
+local CAST_NUDGE_REPEAT_INTERVAL = RB.INDEPENDENT_NUDGE_REPEAT_INTERVAL
+local CancelCastBarNudgeTimers = RB.CancelNudgeTimers
+local ClampCastBarDimension = function(value, fallback) return RB.ClampIndependentDimension(value, fallback, 20) end
+local RoundToTenths = RB.RoundToTenths
+local GetAnchorOffset = RB.GetAnchorOffset
 
 local function EnsureIndependentCastBarConfig(settings)
     if type(settings.independentAnchor) ~= "table" then
@@ -120,13 +89,7 @@ local function EnsureIndependentCastBarConfig(settings)
     settings.independentWidth = ClampCastBarDimension(settings.independentWidth, 200)
 end
 
-local function IsBarsConfigActive()
-    local cs = ST and ST._configState
-    if not cs or not cs.resourceBarPanelActive then return false end
-    if not CooldownCompanion.GetConfigFrame then return false end
-    local configFrame = CooldownCompanion:GetConfigFrame()
-    return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
-end
+local IsBarsConfigActive = RB.IsBarsConfigActive
 
 local function SaveIndependentCastBarAnchor(refreshConfig)
     if not independentMoverFrame then return end

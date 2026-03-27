@@ -175,10 +175,11 @@ local function RoundToTenths(value)
     return math_floor((tonumber(value) or 0) * 10 + 0.5) / 10
 end
 
-local function ClampIndependentDimension(value, fallback)
+local function ClampIndependentDimension(value, fallback, minVal)
     local dim = tonumber(value) or tonumber(fallback) or 120
-    if dim < 4 then
-        dim = 4
+    minVal = minVal or 4
+    if dim < minVal then
+        dim = minVal
     elseif dim > 1200 then
         dim = 1200
     end
@@ -512,6 +513,34 @@ local function SetSegmentedText(holder, currentValue, maxValue)
 end
 
 ------------------------------------------------------------------------
+-- Shared Independent Mover Utilities
+------------------------------------------------------------------------
+
+local function IsBarsConfigActive()
+    local cs = ST and ST._configState
+    if not cs or not cs.resourceBarPanelActive then
+        return false
+    end
+    if not CooldownCompanion.GetConfigFrame then
+        return false
+    end
+    local configFrame = CooldownCompanion:GetConfigFrame()
+    return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
+end
+
+local function CancelNudgeTimers(button)
+    if not button then return end
+    if button._cdcNudgeDelayTimer then
+        button._cdcNudgeDelayTimer:Cancel()
+        button._cdcNudgeDelayTimer = nil
+    end
+    if button._cdcNudgeTicker then
+        button._cdcNudgeTicker:Cancel()
+        button._cdcNudgeTicker = nil
+    end
+end
+
+------------------------------------------------------------------------
 -- Add all helpers to ST._RB
 ------------------------------------------------------------------------
 
@@ -533,6 +562,8 @@ RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetAnchorOffset = GetAnchorOffset
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
+RB.IsBarsConfigActive = IsBarsConfigActive
+RB.CancelNudgeTimers = CancelNudgeTimers
 RB.IsTruthyConfigFlag = IsTruthyConfigFlag
 RB.NormalizeCustomAuraIndependentOrientation = NormalizeCustomAuraIndependentOrientation
 RB.NormalizeCustomAuraIndependentVerticalFillDirection = NormalizeCustomAuraIndependentVerticalFillDirection

@@ -28,6 +28,13 @@ local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 
+local function HideAllBarWidgets(col2)
+    if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
+    if col2._resourceStylingTabGroup then col2._resourceStylingTabGroup.frame:Hide() end
+    if col2._castBarStylingTabGroup then col2._castBarStylingTabGroup.frame:Hide() end
+    col2._resourceStylingSubScroll = nil
+end
+
 local tonumber = tonumber
 local ipairs = ipairs
 
@@ -232,11 +239,7 @@ local function RefreshColumn2()
         end
         CS.configFrame.col2:SetTitle(col2Title)
 
-        -- Hide all Column 2 bar widgets upfront; each branch shows the one it needs
-        if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
-        if col2._resourceStylingTabGroup then col2._resourceStylingTabGroup.frame:Hide() end
-        if col2._castBarStylingTabGroup then col2._castBarStylingTabGroup.frame:Hide() end
-        col2._resourceStylingSubScroll = nil
+        HideAllBarWidgets(col2)
 
         if CS.barPanelTab == "resource_anchoring" then
             if not col2._resourceStylingTabGroup then
@@ -370,18 +373,7 @@ local function RefreshColumn2()
     end
 
     -- Normal mode: hide bars styling scroll and tab groups
-    if col2 and col2._barsStylingScroll then
-        col2._barsStylingScroll.frame:Hide()
-    end
-    if col2 and col2._resourceStylingTabGroup then
-        col2._resourceStylingTabGroup.frame:Hide()
-    end
-    if col2 and col2._castBarStylingTabGroup then
-        col2._castBarStylingTabGroup.frame:Hide()
-    end
-    if col2 then
-        col2._resourceStylingSubScroll = nil
-    end
+    if col2 then HideAllBarWidgets(col2) end
     if col2 and col2._infoBtn then col2._infoBtn:Show() end
 
     CancelDrag()
