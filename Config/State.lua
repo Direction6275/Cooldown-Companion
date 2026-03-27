@@ -693,17 +693,16 @@ local function EnsureContainerIconPickerFrame()
     frame:SetFrameLevel(200)
     frame:SetToplevel(true)
     frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame.BorderBox.EditBoxHeaderText:Hide()
     frame.BorderBox.IconSelectorEditBox:Hide()
 
+    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
+    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
     frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
     frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
     frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
+    -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
+    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
     frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
 
     function frame:OnHide()
