@@ -465,6 +465,10 @@ local function SubstituteTokens(button, segments, style, effectState)
                     parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or cdColor)
                 elseif timeRemaining and timeRemaining > 0 then
                     parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
+                elseif button._cooldownDeferred then
+                    -- Deferred cooldown: timer hasn't started yet, show cooldown
+                    -- color with placeholder instead of "Ready".
+                    parts[#parts + 1] = WrapColor("...", colorOverride or cdColor)
                 else
                     parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end
