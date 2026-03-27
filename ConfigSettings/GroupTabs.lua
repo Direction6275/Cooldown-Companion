@@ -17,6 +17,8 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
+local HookSliderEditBox = ST._HookSliderEditBox
+local BuildAlphaControls = ST._BuildAlphaControls
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -150,22 +152,6 @@ local function BuildLayoutTab(container)
 
     AddAnchorDropdown(container, group.anchor, "point", "CENTER", refreshGroupAnchor, "Anchor Point")
     AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point")
-
-    -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
-    local function HookSliderEditBox(sliderWidget)
-        sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
-            local widget = editbox.obj
-            local value = tonumber(editbox:GetText())
-            if value then
-                value = math.floor(value * 10 + 0.5) / 10
-                value = math.max(widget.min, math.min(widget.max, value))
-                PlaySound(856)
-                widget:SetValue(value)
-                widget:Fire("OnValueChanged", value)
-                widget:Fire("OnMouseUp", value)
-            end
-        end)
-    end
 
     -- X Offset
     local xSlider = AceGUI:Create("Slider")
@@ -318,168 +304,24 @@ local function BuildLayoutTab(container)
     -- ================================================================
     -- ADVANCED: Alpha (from Extras)
     -- ================================================================
-    local alphaHeading = AceGUI:Create("Heading")
-    alphaHeading:SetText("Alpha")
-    ColorHeading(alphaHeading)
-    alphaHeading:SetFullWidth(true)
-    container:AddChild(alphaHeading)
-
-    local alphaCollapsed = CS.collapsedSections["layout_alpha"]
-    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
-        CS.collapsedSections["layout_alpha"] = not CS.collapsedSections["layout_alpha"]
+    BuildAlphaControls(container, group, function()
         CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not alphaCollapsed then
-    local baseAlphaSlider = AceGUI:Create("Slider")
-    baseAlphaSlider:SetLabel("Baseline Alpha")
-    baseAlphaSlider:SetSliderValues(0, 1, 0.1)
-    baseAlphaSlider:SetValue(group.baselineAlpha or 1)
-    baseAlphaSlider:SetFullWidth(true)
-    baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        group.baselineAlpha = val
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame and frame:IsShown() then
-            frame:SetAlpha(val)
-        end
-        local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[CS.selectedGroup]
-        if state then
-            state.currentAlpha = val
-            state.desiredAlpha = val
-            state.lastAlpha = val
-            state.fadeDuration = 0
-        end
-    end)
-    container:AddChild(baseAlphaSlider)
-
-    CreateInfoButton(baseAlphaSlider.frame, baseAlphaSlider.label, "LEFT", "CENTER", baseAlphaSlider.label:GetStringWidth() / 2 + 4, 0, {
-        "Alpha",
-        {"Controls the transparency of this group. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true},
-    }, tabInfoButtons)
-
-    do
-        local function GetTriState(visibleKey, hiddenKey)
-            if group[hiddenKey] then return nil end
-            if group[visibleKey] then return true end
-            return false
-        end
-
-        local function TriStateLabel(base, value)
-            if value == true then
-                return base .. " - |cff00ff00Fully Visible|r"
-            elseif value == nil then
-                return base .. " - |cffff0000Fully Hidden|r"
+    end, "layout_alpha", {
+        isGlobal = group.isGlobal,
+        onBaselineChanged = function(val)
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame and frame:IsShown() then
+                frame:SetAlpha(val)
             end
-            return base
-        end
-
-        local function CreateTriStateToggle(label, visibleKey, hiddenKey)
-            local val = GetTriState(visibleKey, hiddenKey)
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetTriState(true)
-            cb:SetLabel(TriStateLabel(label, val))
-            cb:SetValue(val)
-            cb:SetFullWidth(true)
-            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
-                group[visibleKey] = (newVal == true)
-                group[hiddenKey] = (newVal == nil)
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            return cb
-        end
-
-        container:AddChild(CreateTriStateToggle("In Combat", "forceAlphaInCombat", "forceHideInCombat"))
-        container:AddChild(CreateTriStateToggle("Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat"))
-        container:AddChild(CreateTriStateToggle("Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted"))
-        container:AddChild(CreateTriStateToggle("Skyriding", "forceAlphaDragonriding", "forceHideDragonriding"))
-
-        local mountedActive = group.forceAlphaRegularMounted
-            or group.forceHideRegularMounted
-            or group.forceAlphaDragonriding
-            or group.forceHideDragonriding
-        local isDruid = CooldownCompanion._playerClassID == 11
-        if mountedActive and (group.isGlobal or isDruid) then
-            local travelVal = group.treatTravelFormAsMounted or false
-            local travelCb = AceGUI:Create("CheckBox")
-            travelCb:SetLabel("Include Druid Travel Form (applies to both)")
-            travelCb:SetValue(travelVal)
-            travelCb:SetFullWidth(true)
-            travelCb:SetCallback("OnValueChanged", function(widget, event, val)
-                group.treatTravelFormAsMounted = val
-            end)
-            container:AddChild(travelCb)
-        end
-
-        local targetVal = group.forceAlphaTargetExists or false
-        local targetCb = AceGUI:Create("CheckBox")
-        targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
-        targetCb:SetValue(targetVal)
-        targetCb:SetFullWidth(true)
-        targetCb:SetCallback("OnValueChanged", function(widget, event, val)
-            group.forceAlphaTargetExists = val
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(targetCb)
-
-        local mouseoverVal = group.forceAlphaMouseover or false
-        local mouseoverCb = AceGUI:Create("CheckBox")
-        mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
-        mouseoverCb:SetValue(mouseoverVal)
-        mouseoverCb:SetFullWidth(true)
-        mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
-            group.forceAlphaMouseover = val
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(mouseoverCb)
-
-        CreateInfoButton(mouseoverCb.frame, mouseoverCb.text, "LEFT", "RIGHT", 4, 0, {
-            "Mouseover",
-            {"When enabled, mousing over the group forces it to full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
-        }, tabInfoButtons)
-
-        local fadeCb = AceGUI:Create("CheckBox")
-        fadeCb:SetLabel("Custom Fade Settings")
-        fadeCb:SetValue(group.customFade or false)
-        fadeCb:SetFullWidth(true)
-        fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
-            group.customFade = val or nil
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(fadeCb)
-
-        if group.customFade then
-        local fadeDelaySlider = AceGUI:Create("Slider")
-        fadeDelaySlider:SetLabel("Fade Delay (seconds)")
-        fadeDelaySlider:SetSliderValues(0, 5, 0.1)
-        fadeDelaySlider:SetValue(group.fadeDelay or 1)
-        fadeDelaySlider:SetFullWidth(true)
-        fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            group.fadeDelay = val
-        end)
-        container:AddChild(fadeDelaySlider)
-
-        local fadeInSlider = AceGUI:Create("Slider")
-        fadeInSlider:SetLabel("Fade In Duration (seconds)")
-        fadeInSlider:SetSliderValues(0, 5, 0.1)
-        fadeInSlider:SetValue(group.fadeInDuration or 0.2)
-        fadeInSlider:SetFullWidth(true)
-        fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            group.fadeInDuration = val
-        end)
-        container:AddChild(fadeInSlider)
-
-        local fadeOutSlider = AceGUI:Create("Slider")
-        fadeOutSlider:SetLabel("Fade Out Duration (seconds)")
-        fadeOutSlider:SetSliderValues(0, 5, 0.1)
-        fadeOutSlider:SetValue(group.fadeOutDuration or 0.2)
-        fadeOutSlider:SetFullWidth(true)
-        fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            group.fadeOutDuration = val
-        end)
-        container:AddChild(fadeOutSlider)
-        end -- group.customFade
-    end
-    end -- not alphaCollapsed
+            local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[CS.selectedGroup]
+            if state then
+                state.currentAlpha = val
+                state.desiredAlpha = val
+                state.lastAlpha = val
+                state.fadeDuration = 0
+            end
+        end,
+    })
 
     -- ================================================================
     -- ADVANCED: Strata — Frame Strata (all modes) + Custom Strata (icon mode only)
@@ -1666,22 +1508,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     AddAnchorDropdown(scroll, container.anchor, "point", "CENTER", refreshContainerAnchor, "Anchor Point")
     AddAnchorDropdown(scroll, container.anchor, "relativePoint", "CENTER", refreshContainerAnchor, "Relative Point")
-
-    -- Allow decimal input from editbox while keeping slider/wheel at 1px steps
-    local function HookSliderEditBox(sliderWidget)
-        sliderWidget.editbox:SetScript("OnEnterPressed", function(editbox)
-            local widget = editbox.obj
-            local value = tonumber(editbox:GetText())
-            if value then
-                value = math.floor(value * 10 + 0.5) / 10
-                value = math.max(widget.min, math.min(widget.max, value))
-                PlaySound(856)
-                widget:SetValue(value)
-                widget:Fire("OnValueChanged", value)
-                widget:Fire("OnMouseUp", value)
-            end
-        end)
-    end
 
     -- X Offset
     local xSlider = AceGUI:Create("Slider")

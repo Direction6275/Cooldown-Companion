@@ -158,6 +158,7 @@ ST._configState = {
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
     panelContextMenu = nil,
+    charCopyMenu = nil,
 
     -- Cross-character browse mode
     browseMode = false,
@@ -206,12 +207,8 @@ ST._configState = {
     resourceBarPanelActive = false,
     barPanelTab = "resource_anchoring",
     resourceStylingTab = "bar_text",
+    castBarStylingTab = "styling",
     resourceAuraOverlayDrafts = {},
-    characterScopedCopySelection = {
-        resourceBars = nil,
-        castBar = nil,
-        frameAnchoring = nil,
-    },
     customAuraBarTab = "bar_1",
     customAuraBarSubTabs = {},
     groupPresetSelection = {

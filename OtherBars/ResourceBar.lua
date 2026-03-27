@@ -45,6 +45,8 @@ local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
 local INDEPENDENT_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
 local INDEPENDENT_NUDGE_REPEAT_DELAY = RB.INDEPENDENT_NUDGE_REPEAT_DELAY
 local INDEPENDENT_NUDGE_REPEAT_INTERVAL = RB.INDEPENDENT_NUDGE_REPEAT_INTERVAL
+local IsBarsConfigActive = RB.IsBarsConfigActive
+local CancelNudgeTimers = RB.CancelNudgeTimers
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 local RESOURCE_COLOR_DEFS = RB.RESOURCE_COLOR_DEFS
@@ -141,6 +143,7 @@ local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
 local layoutDirty = false
+local independentWrapperFrame = nil
 
 ------------------------------------------------------------------------
 -- Independent Anchor Config (writes state — stays in main file)
@@ -208,17 +211,6 @@ local function ResolveIndependentAnchorTarget(cabConfig, settings)
     return UIParent, "UIParent"
 end
 
-local function IsBarsConfigActive()
-    local cs = ST and ST._configState
-    if not cs or not cs.resourceBarPanelActive then
-        return false
-    end
-    if not CooldownCompanion.GetConfigFrame then
-        return false
-    end
-    local configFrame = CooldownCompanion:GetConfigFrame()
-    return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
-end
 
 local function ApplyIndependentAlphaSync(frame, settings, targetFrame)
     if not frame then return end
@@ -317,17 +309,6 @@ local function SaveIndependentCustomAuraAnchor(barInfo, refreshConfig)
     end
 end
 
-local function CancelIndependentNudgeTimers(button)
-    if not button then return end
-    if button._cdcNudgeDelayTimer then
-        button._cdcNudgeDelayTimer:Cancel()
-        button._cdcNudgeDelayTimer = nil
-    end
-    if button._cdcNudgeTicker then
-        button._cdcNudgeTicker:Cancel()
-        button._cdcNudgeTicker = nil
-    end
-end
 
 local UpdateIndependentDragState
 
@@ -398,7 +379,7 @@ local function EnsureIndependentDragChrome(frame)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CancelIndependentNudgeTimers(self)
+            CancelNudgeTimers(self)
             local info = frame._cdcIndependentBarInfo
             if info and info._isIndependent then
                 SaveIndependentCustomAuraAnchor(info, true)
@@ -413,7 +394,7 @@ local function EnsureIndependentDragChrome(frame)
             end)
         end)
         btn:SetScript("OnMouseUp", function(self)
-            CancelIndependentNudgeTimers(self)
+            CancelNudgeTimers(self)
             local info = frame._cdcIndependentBarInfo
             if info and info._isIndependent then
                 SaveIndependentCustomAuraAnchor(info, true)
@@ -492,7 +473,7 @@ UpdateIndependentDragState = function(frame, barInfo)
             for _, btn in ipairs(nudger._cdcButtons) do
                 btn:EnableMouse(unlocked)
                 if not unlocked then
-                    CancelIndependentNudgeTimers(btn)
+                    CancelNudgeTimers(btn)
                 end
             end
         end
@@ -514,7 +495,7 @@ local function ClearIndependentRuntimeState(frame)
     if frame._cdcIndependentNudger then
         if frame._cdcIndependentNudger._cdcButtons then
             for _, btn in ipairs(frame._cdcIndependentNudger._cdcButtons) do
-                CancelIndependentNudgeTimers(btn)
+                CancelNudgeTimers(btn)
                 btn:EnableMouse(false)
             end
         end
@@ -563,6 +544,321 @@ end
 
 function CooldownCompanion:ClearIndependentCustomAuraRuntimeState(frame)
     ClearIndependentRuntimeState(frame)
+end
+
+------------------------------------------------------------------------
+-- Independent Stack Anchoring (entire resource bar stack to UIParent)
+------------------------------------------------------------------------
+
+local function EnsureIndependentStackConfig(settings)
+    if type(settings.independentAnchor) ~= "table" then
+        settings.independentAnchor = {}
+    end
+    local anchor = settings.independentAnchor
+    anchor.point = anchor.point or "CENTER"
+    anchor.relativePoint = anchor.relativePoint or "CENTER"
+    anchor.x = tonumber(anchor.x) or 0
+    anchor.y = tonumber(anchor.y) or 0
+    if anchor.relativeTo ~= nil and type(anchor.relativeTo) ~= "string" then
+        anchor.relativeTo = nil
+    end
+    settings.independentWidth = ClampIndependentDimension(settings.independentWidth, 200)
+end
+
+local function SaveIndependentStackAnchor(refreshConfig)
+    if not independentWrapperFrame then return end
+    local settings = GetResourceBarSettings()
+    if not settings then return end
+    EnsureIndependentStackConfig(settings)
+
+    local frame = independentWrapperFrame
+    local anchor = settings.independentAnchor
+
+    local cx, cy = frame:GetCenter()
+    local fw, fh = frame:GetSize()
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = _G[anchor.relativeTo] or UIParent
+    end
+    local tcx, tcy = relFrame:GetCenter()
+    local tw, th = relFrame:GetSize()
+    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return end
+
+    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
+    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
+    anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
+    anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
+
+    if frame._coordLabel then
+        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(anchor.x, anchor.y))
+    end
+
+    if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local UpdateIndependentStackDragState
+
+local function CreateIndependentWrapperFrame()
+    if independentWrapperFrame then return end
+
+    local frame = CreateFrame("Frame", "CooldownCompanionResourceBarsIndependent", UIParent, "BackdropTemplate")
+    frame:SetFrameStrata("MEDIUM")
+    frame:SetSize(1, 1)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+
+    -- Drag handle (full-width, anchored to containers by UpdateIndependentStackChrome)
+    local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    dragHandle:SetHeight(15)
+    dragHandle:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
+    dragHandle:EnableMouse(false)
+    dragHandle:Hide()
+
+    dragHandle.text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dragHandle.text:SetPoint("CENTER")
+    dragHandle.text:SetText("Resource Bars")
+    dragHandle.text:SetTextColor(1, 1, 1, 1)
+
+    -- Nudger (4-direction pixel nudge, same pattern as custom aura bars)
+    local NUDGE_GAP = 2
+    local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
+    nudger:SetSize(INDEPENDENT_NUDGE_BTN_SIZE * 2 + NUDGE_GAP, INDEPENDENT_NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
+    nudger:SetPoint("BOTTOM", dragHandle, "TOP", 0, 2)
+    nudger:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    nudger:SetBackdropBorderColor(0, 0, 0, 1)
+    nudger:EnableMouse(false)
+    nudger._cdcButtons = {}
+
+    local directions = {
+        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx = 0, dy = 1, ox = 0, oy = NUDGE_GAP },
+        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP", dx = 0, dy = -1, ox = 0, oy = -NUDGE_GAP },
+        { atlas = "common-dropdown-icon-back", rotation = 0, anchor = "RIGHT", dx = -1, dy = 0, ox = -NUDGE_GAP, oy = 0 },
+        { atlas = "common-dropdown-icon-next", rotation = 0, anchor = "LEFT", dx = 1, dy = 0, ox = NUDGE_GAP, oy = 0 },
+    }
+
+    for _, dir in ipairs(directions) do
+        local btn = CreateFrame("Button", nil, nudger)
+        btn:SetSize(INDEPENDENT_NUDGE_BTN_SIZE, INDEPENDENT_NUDGE_BTN_SIZE)
+        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
+        btn:EnableMouse(true)
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetAtlas(dir.atlas, false)
+        arrow:SetAllPoints()
+        arrow:SetRotation(dir.rotation)
+        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        btn.arrow = arrow
+
+        local function DoNudge()
+            local settings = GetResourceBarSettings()
+            if not settings or settings.independentAnchorLocked then return end
+            frame:AdjustPointsOffset(dir.dx, dir.dy)
+            -- Write position per step and update coord label (GroupFrame pattern)
+            local _, _, _, x, y = frame:GetPoint()
+            if x and y then
+                EnsureIndependentStackConfig(settings)
+                settings.independentAnchor.x = RoundToTenths(x)
+                settings.independentAnchor.y = RoundToTenths(y)
+                if frame._coordLabel then
+                    frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
+                end
+            end
+        end
+
+        btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
+        btn:SetScript("OnLeave", function(self)
+            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+            CancelNudgeTimers(self)
+            SaveIndependentStackAnchor(true)
+        end)
+        btn:SetScript("OnMouseDown", function(self)
+            DoNudge()
+            self._cdcNudgeDelayTimer = C_Timer.NewTimer(INDEPENDENT_NUDGE_REPEAT_DELAY, function()
+                self._cdcNudgeTicker = C_Timer.NewTicker(INDEPENDENT_NUDGE_REPEAT_INTERVAL, DoNudge)
+            end)
+        end)
+        btn:SetScript("OnMouseUp", function(self)
+            CancelNudgeTimers(self)
+            SaveIndependentStackAnchor(true)
+        end)
+
+        nudger._cdcButtons[#nudger._cdcButtons + 1] = btn
+    end
+
+    -- Coordinate label (parented to dragHandle, anchored by UpdateIndependentStackChrome)
+    local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
+    coordLabel:SetHeight(15)
+    coordLabel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    coordLabel:SetBackdropBorderColor(0, 0, 0, 1)
+    coordLabel:EnableMouse(false)
+    coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    coordLabel.text:SetPoint("CENTER")
+    coordLabel.text:SetTextColor(1, 1, 1, 1)
+
+    dragHandle:RegisterForDrag("LeftButton")
+    dragHandle:SetScript("OnDragStart", function()
+        local settings = GetResourceBarSettings()
+        if not settings or settings.independentAnchorLocked then return end
+        if InCombatLockdown() then return end
+        frame:StartMoving()
+    end)
+    dragHandle:SetScript("OnDragStop", function()
+        frame:StopMovingOrSizing()
+        SaveIndependentStackAnchor(true)
+    end)
+    dragHandle:SetScript("OnMouseUp", function(_, button)
+        if button ~= "MiddleButton" then return end
+        local settings = GetResourceBarSettings()
+        if not settings then return end
+        settings.independentAnchorLocked = true
+        frame:StopMovingOrSizing()
+        SaveIndependentStackAnchor(true)
+        UpdateIndependentStackDragState(settings)
+    end)
+
+    frame._dragHandle = dragHandle
+    frame._nudger = nudger
+    frame._coordLabel = coordLabel
+    independentWrapperFrame = frame
+end
+
+UpdateIndependentStackDragState = function(settings)
+    if not independentWrapperFrame then return end
+    local frame = independentWrapperFrame
+    local unlocked = settings and settings.independentAnchorEnabled and not settings.independentAnchorLocked
+
+    frame:SetMovable(unlocked or false)
+
+    if frame._dragHandle then
+        frame._dragHandle:SetShown(unlocked or false)
+        frame._dragHandle:EnableMouse(unlocked or false)
+        if unlocked then
+            frame._dragHandle:RegisterForDrag("LeftButton")
+        else
+            frame._dragHandle:RegisterForDrag()
+        end
+    end
+
+    if frame._nudger then
+        frame._nudger:SetShown(unlocked or false)
+        frame._nudger:EnableMouse(unlocked or false)
+        if frame._nudger._cdcButtons then
+            for _, btn in ipairs(frame._nudger._cdcButtons) do
+                btn:EnableMouse(unlocked or false)
+                if not unlocked then
+                    CancelNudgeTimers(btn)
+                end
+            end
+        end
+    end
+
+    if frame._coordLabel then
+        frame._coordLabel:SetShown(unlocked or false)
+    end
+
+    -- Force preview on while unlocked so bars are visible for positioning
+    if unlocked and not isPreviewActive then
+        CooldownCompanion:StartResourceBarPreview()
+        frame._cdcForcedPreview = true
+    elseif not unlocked and frame._cdcForcedPreview then
+        frame._cdcForcedPreview = false
+        CooldownCompanion:StopResourceBarPreview()
+    end
+end
+
+local function HideIndependentWrapperFrame()
+    if not independentWrapperFrame then return end
+    independentWrapperFrame:Hide()
+    if independentWrapperFrame._dragHandle then
+        independentWrapperFrame._dragHandle:Hide()
+    end
+    if independentWrapperFrame._nudger then
+        independentWrapperFrame._nudger:Hide()
+        if independentWrapperFrame._nudger._cdcButtons then
+            for _, btn in ipairs(independentWrapperFrame._nudger._cdcButtons) do
+                CancelNudgeTimers(btn)
+            end
+        end
+    end
+    if independentWrapperFrame._coordLabel then
+        independentWrapperFrame._coordLabel:Hide()
+    end
+    if independentWrapperFrame._cdcForcedPreview then
+        independentWrapperFrame._cdcForcedPreview = false
+        CooldownCompanion:StopResourceBarPreview()
+    end
+end
+
+--- Re-anchor drag handle and coord label to frame the bar content.
+--- Called after containers are positioned and RelayoutBars() completes.
+local function UpdateIndependentStackChrome(isVerticalLayout)
+    if not independentWrapperFrame then return end
+    if not containerFrameAbove or not containerFrameBelow then return end
+    local frame = independentWrapperFrame
+
+    -- Anchor chrome to the containers that actually have bars to avoid dead space.
+    -- When all bars are on one side, the empty container is hidden (height/width=1).
+    local aboveShown = containerFrameAbove:IsShown()
+    local belowShown = containerFrameBelow:IsShown()
+
+    local dragHandle = frame._dragHandle
+    if dragHandle then
+        dragHandle:ClearAllPoints()
+        if isVerticalLayout then
+            -- Vertical: bars are left/right of wrapper — span across both containers
+            local topLeft = aboveShown and containerFrameAbove or containerFrameBelow
+            local topRight = belowShown and containerFrameBelow or containerFrameAbove
+            dragHandle:SetPoint("BOTTOMLEFT", topLeft, "TOPLEFT", 0, 2)
+            dragHandle:SetPoint("BOTTOMRIGHT", topRight, "TOPRIGHT", 0, 2)
+        else
+            -- Horizontal: anchor above whichever container is the topmost with bars
+            local topRef = aboveShown and containerFrameAbove or containerFrameBelow
+            dragHandle:SetPoint("BOTTOMLEFT", topRef, "TOPLEFT", 0, 2)
+            dragHandle:SetPoint("BOTTOMRIGHT", topRef, "TOPRIGHT", 0, 2)
+        end
+    end
+
+    local coordLabel = frame._coordLabel
+    if coordLabel then
+        coordLabel:ClearAllPoints()
+        if isVerticalLayout then
+            local botLeft = aboveShown and containerFrameAbove or containerFrameBelow
+            local botRight = belowShown and containerFrameBelow or containerFrameAbove
+            coordLabel:SetPoint("TOPLEFT", botLeft, "BOTTOMLEFT", 0, -2)
+            coordLabel:SetPoint("TOPRIGHT", botRight, "BOTTOMRIGHT", 0, -2)
+        else
+            -- Horizontal: anchor below whichever container is the bottommost with bars
+            local botRef = belowShown and containerFrameBelow or containerFrameAbove
+            coordLabel:SetPoint("TOPLEFT", botRef, "BOTTOMLEFT", 0, -2)
+            coordLabel:SetPoint("TOPRIGHT", botRef, "BOTTOMRIGHT", 0, -2)
+        end
+
+        local settings = GetResourceBarSettings()
+        if settings and settings.independentAnchor then
+            coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(
+                settings.independentAnchor.x or 0,
+                settings.independentAnchor.y or 0
+            ))
+        end
+    end
 end
 
 --- Update cached MW max stacks based on Raging Maelstrom talent (OOC only — talents can't change in combat).
@@ -1923,23 +2219,33 @@ function CooldownCompanion:ApplyResourceBars()
         return
     end
 
-    local groupId = GetEffectiveAnchorGroupId(settings)
-    if not groupId then
-        self:RevertResourceBars()
-        return
+    local isIndependentStack = settings.independentAnchorEnabled == true
+    local groupId, groupFrame
+
+    if isIndependentStack then
+        -- Independent mode: no group needed
+        groupId = nil
+        groupFrame = nil
+    else
+        groupId = GetEffectiveAnchorGroupId(settings)
+        if not groupId then
+            self:RevertResourceBars()
+            return
+        end
+
+        local group = self.db.profile.groups[groupId]
+        if not group or group.displayMode ~= "icons" then
+            self:RevertResourceBars()
+            return
+        end
+
+        groupFrame = CooldownCompanion.groupFrames[groupId]
+        if not groupFrame or not groupFrame:IsShown() then
+            self:RevertResourceBars()
+            return
+        end
     end
 
-    local group = self.db.profile.groups[groupId]
-    if not group or group.displayMode ~= "icons" then
-        self:RevertResourceBars()
-        return
-    end
-
-    local groupFrame = CooldownCompanion.groupFrames[groupId]
-    if not groupFrame or not groupFrame:IsShown() then
-        self:RevertResourceBars()
-        return
-    end
     local isVerticalLayout = IsVerticalResourceLayout(settings)
     local reverseVerticalFill = IsVerticalFillReversed(settings)
 
@@ -1984,7 +2290,13 @@ function CooldownCompanion:ApplyResourceBars()
     lastAppliedBarThickness = globalBarThickness
     lastAppliedOrientation = GetResourceLayoutOrientation(settings)
     local segmentGap = settings.segmentGap or 4
-    local totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
+    local totalPrimaryLength
+    if isIndependentStack then
+        EnsureIndependentStackConfig(settings)
+        totalPrimaryLength = settings.independentWidth
+    else
+        totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
+    end
 
     -- Determine side/order for each bar (per-spec layout)
     local layout = GetSpecLayoutOrder(settings)
@@ -2198,23 +2510,57 @@ function CooldownCompanion:ApplyResourceBars()
     local gap = GetResourceAnchorGap(settings)
     lastAppliedPrimaryLength = totalPrimaryLength
 
-    -- Anchor containers to group frame (static — only changes on full Apply)
+    -- Anchor containers to anchor reference (group frame or independent wrapper)
     containerFrameAbove:ClearAllPoints()
     containerFrameBelow:ClearAllPoints()
-    if isVerticalLayout then
-        containerFrameAbove:SetHeight(totalPrimaryLength)
-        containerFrameBelow:SetHeight(totalPrimaryLength)
-        containerFrameAbove:SetPoint("TOPRIGHT", groupFrame, "TOPLEFT", -gap, 0)
-        containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "TOPRIGHT", gap, 0)
-    else
-        containerFrameAbove:SetWidth(totalPrimaryLength)
-        containerFrameBelow:SetWidth(totalPrimaryLength)
-        containerFrameAbove:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, gap)
-        containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, -gap)
+    if isIndependentStack then
+        -- Independent mode: create wrapper frame at saved position, anchor containers to it
+        CreateIndependentWrapperFrame()
+        local anchor = settings.independentAnchor
+        local relFrame = UIParent
+        if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+            relFrame = _G[anchor.relativeTo] or UIParent
+        end
+        independentWrapperFrame:ClearAllPoints()
+        independentWrapperFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)
+        independentWrapperFrame:Show()
+
+        if isVerticalLayout then
+            containerFrameAbove:SetHeight(totalPrimaryLength)
+            containerFrameBelow:SetHeight(totalPrimaryLength)
+            containerFrameAbove:SetPoint("RIGHT", independentWrapperFrame, "LEFT", -gap, 0)
+            containerFrameBelow:SetPoint("LEFT", independentWrapperFrame, "RIGHT", gap, 0)
+        else
+            containerFrameAbove:SetWidth(totalPrimaryLength)
+            containerFrameBelow:SetWidth(totalPrimaryLength)
+            containerFrameAbove:SetPoint("BOTTOM", independentWrapperFrame, "TOP", 0, gap)
+            containerFrameBelow:SetPoint("TOP", independentWrapperFrame, "BOTTOM", 0, -gap)
+        end
+
+        UpdateIndependentStackDragState(settings)
+    elseif groupFrame then
+        -- Group-relative mode (original behavior)
+        HideIndependentWrapperFrame()
+        if isVerticalLayout then
+            containerFrameAbove:SetHeight(totalPrimaryLength)
+            containerFrameBelow:SetHeight(totalPrimaryLength)
+            containerFrameAbove:SetPoint("TOPRIGHT", groupFrame, "TOPLEFT", -gap, 0)
+            containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "TOPRIGHT", gap, 0)
+        else
+            containerFrameAbove:SetWidth(totalPrimaryLength)
+            containerFrameBelow:SetWidth(totalPrimaryLength)
+            containerFrameAbove:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", 0, gap)
+            containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", 0, -gap)
+        end
     end
 
     -- Position bars within containers (reusable for relayout on visibility change)
     RelayoutBars()
+
+    -- Anchor drag chrome to frame the content (after containers are sized)
+    if isIndependentStack then
+        UpdateIndependentStackChrome(isVerticalLayout)
+    end
 
     -- Enable OnUpdate
     if not onUpdateFrame then
@@ -2227,19 +2573,35 @@ function CooldownCompanion:ApplyResourceBars()
 
     isApplied = true
 
-    -- Alpha inheritance
-    if settings.inheritAlpha then
-        -- Save original alpha (only if not already saved)
+    -- Alpha handling: 3-way branching
+    local rbModuleId = "rb"
+
+    if isIndependentStack then
+        -- Independent mode: own alpha settings, no group inheritance
+        if alphaSyncFrame then
+            alphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        savedContainerAlpha = nil
+
+        local frames = {}
+        if independentWrapperFrame then frames[#frames + 1] = independentWrapperFrame end
+        if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
+        if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        if #frames > 0 then
+            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
+        end
+    elseif settings.inheritAlpha and groupFrame then
+        -- Attached + inheriting: sync to group alpha via 30Hz polling
+        CooldownCompanion:UnregisterModuleAlpha(rbModuleId)
+
         if not savedContainerAlpha then
             savedContainerAlpha = containerFrameAbove:GetAlpha()
         end
 
-        -- Apply alpha immediately — use natural alpha to avoid config override cascade
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
         containerFrameBelow:SetAlpha(groupAlpha)
 
-        -- Start alpha sync OnUpdate (~30Hz polling)
         if not alphaSyncFrame then
             alphaSyncFrame = CreateFrame("Frame")
         end
@@ -2259,14 +2621,17 @@ function CooldownCompanion:ApplyResourceBars()
             end
         end)
     else
-        -- inheritAlpha is off — stop sync and restore original if we had it
+        -- Attached + NOT inheriting: own alpha settings on container frames
         if alphaSyncFrame then
             alphaSyncFrame:SetScript("OnUpdate", nil)
         end
-        if savedContainerAlpha then
-            if containerFrameAbove then containerFrameAbove:SetAlpha(savedContainerAlpha) end
-            if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
-            savedContainerAlpha = nil
+        savedContainerAlpha = nil
+
+        local frames = {}
+        if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
+        if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        if #frames > 0 then
+            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
     end
 
@@ -2289,7 +2654,8 @@ function CooldownCompanion:RevertResourceBars()
     lastAppliedBarThickness = nil
     layoutDirty = false
 
-    -- Stop alpha sync and restore alpha
+    -- Stop alpha sync, unregister module alpha, restore alpha
+    CooldownCompanion:UnregisterModuleAlpha("rb")
     if alphaSyncFrame then
         alphaSyncFrame:SetScript("OnUpdate", nil)
     end
@@ -2320,9 +2686,10 @@ function CooldownCompanion:RevertResourceBars()
         end
     end
 
-    -- Hide containers
+    -- Hide containers and independent wrapper
     if containerFrameAbove then containerFrameAbove:Hide() end
     if containerFrameBelow then containerFrameBelow:Hide() end
+    HideIndependentWrapperFrame()
 
     isPreviewActive = false
     activeResources = {}
@@ -2725,6 +3092,7 @@ local function InstallHooks()
     hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
         local s = GetResourceBarSettings()
         if not s or not s.enabled then return end
+        if s.independentAnchorEnabled then return end  -- independent stack: width not tied to group
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
@@ -2740,6 +3108,7 @@ local function InstallHooks()
     hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
         local s = GetResourceBarSettings()
         if not s or not s.enabled then return end
+        if s.independentAnchorEnabled then return end  -- independent stack: width not tied to group
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]

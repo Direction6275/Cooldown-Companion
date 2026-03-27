@@ -68,9 +68,9 @@ ButtonFrame\TextMode.lua
 ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
 Core\GroupFrame.lua
-OtherBars\CastBar.lua
 OtherBars\ResourceBarConstants.lua
 OtherBars\ResourceBarHelpers.lua
+OtherBars\CastBar.lua
 OtherBars\ResourceBarVisuals.lua
 OtherBars\ResourceBar.lua
 Core\FrameAnchoring.lua

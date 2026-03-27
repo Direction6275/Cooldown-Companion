@@ -67,11 +67,6 @@ local function ResetConfigForProfileChange()
     wipe(CS.collapsedPanels)
     wipe(CS.customAuraBarSubTabs)
     wipe(CS.resourceAuraOverlayDrafts)
-    if CS.characterScopedCopySelection then
-        for key in pairs(CS.characterScopedCopySelection) do
-            CS.characterScopedCopySelection[key] = nil
-        end
-    end
     SetPrimaryMode("buttons", { skipRefresh = true })
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
@@ -1264,7 +1259,6 @@ function CooldownCompanion:RefreshConfigPanel()
 
     if CS.resourceBarPanelActive then
         CS.configFrame.col1:SetTitle("Bars & Frames")
-        CS.configFrame.col2:SetTitle("Styling")
         CS.configFrame.col3:SetTitle(GetCustomAuraBarsColumnTitle())
         CS.configFrame.col4:SetTitle(GetLayoutOrderColumnTitle())
     elseif CS.browseMode then

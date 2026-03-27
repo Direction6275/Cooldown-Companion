@@ -7,9 +7,11 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local AddCharacterScopedCopyControls = ST._AddCharacterScopedCopyControls
+local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local GetBarTextureOptions = ST._GetBarTextureOptions
 local AddColorPicker = ST._AddColorPicker
+local AddAnchorDropdown = ST._AddAnchorDropdown
+local HookSliderEditBox = ST._HookSliderEditBox
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -31,13 +33,32 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    AddCharacterScopedCopyControls(container, "castBar", "Cast Bar", function()
+    CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
         CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
 
     if not settings.enabled then return end
+
+    local isIndependent = settings.independentAnchorEnabled == true
+
+    -- Anchoring Mode dropdown
+    local anchorModeDrop = AceGUI:Create("Dropdown")
+    anchorModeDrop:SetLabel("Anchoring Mode")
+    anchorModeDrop:SetList({
+        attached = "Attached to Panel",
+        independent = "Independent",
+    }, { "attached", "independent" })
+    anchorModeDrop:SetValue(isIndependent and "independent" or "attached")
+    anchorModeDrop:SetFullWidth(true)
+    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.independentAnchorEnabled = (val == "independent")
+        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorModeDrop)
 
     -- Preview toggle (ephemeral — not saved to DB)
     local previewCb = AceGUI:Create("CheckBox")
@@ -93,6 +114,167 @@ local function BuildCastBarAnchoringPanel(container)
         CooldownCompanion:ApplyCastBarSettings()
     end)
     container:AddChild(castFinishCb)
+
+end
+
+local function BuildCastBarPositioningPanel(container)
+    local settings = CooldownCompanion:GetCastBarSettings()
+
+    if not settings.enabled then
+        local label = AceGUI:Create("Label")
+        label:SetText("Enable Cast Bar Anchoring to configure positioning.")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    if not settings.independentAnchorEnabled then
+        local rbSettings = CooldownCompanion:GetResourceBarSettings()
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(0, 50, 0.1)
+        ySlider:SetValue(rbSettings and rbSettings.yOffset or 3)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if rbSettings then rbSettings.yOffset = val end
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+        end)
+        container:AddChild(ySlider)
+        return
+    end
+
+    -- Anchor Settings
+    local castPosHeading = AceGUI:Create("Heading")
+    castPosHeading:SetText("Anchor Settings")
+    ColorHeading(castPosHeading)
+    castPosHeading:SetFullWidth(true)
+    container:AddChild(castPosHeading)
+
+    if type(settings.independentAnchor) ~= "table" then
+        settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+    end
+    local anchor = settings.independentAnchor
+
+    local unlockCb = AceGUI:Create("CheckBox")
+    unlockCb:SetLabel("Unlock Placement")
+    unlockCb:SetValue(not settings.independentAnchorLocked)
+    unlockCb:SetFullWidth(true)
+    unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.independentAnchorLocked = not val
+        CooldownCompanion:ApplyCastBarSettings()
+    end)
+    container:AddChild(unlockCb)
+
+    local widthSlider = AceGUI:Create("Slider")
+    widthSlider:SetLabel("Cast Bar Width")
+    widthSlider:SetSliderValues(20, 600, 1)
+    widthSlider:SetValue(settings.independentWidth or 200)
+    widthSlider:SetFullWidth(true)
+    widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.independentWidth = val
+        CooldownCompanion:ApplyCastBarSettings()
+    end)
+    container:AddChild(widthSlider)
+
+    -- Anchor to Frame (editbox + pick button row)
+    local anchorRow = AceGUI:Create("SimpleGroup")
+    anchorRow:SetFullWidth(true)
+    anchorRow:SetLayout("Flow")
+
+    local anchorBox = AceGUI:Create("EditBox")
+    if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
+    anchorBox:SetLabel("Anchor to Frame")
+    local currentRelativeTo = anchor.relativeTo
+    if not currentRelativeTo or currentRelativeTo == "UIParent" then currentRelativeTo = "" end
+    anchorBox:SetText(currentRelativeTo)
+    anchorBox:SetRelativeWidth(0.68)
+    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        if text == "" then
+            local wasAnchored = anchor.relativeTo and anchor.relativeTo ~= "UIParent"
+            if wasAnchored then
+                anchor.point = "CENTER"
+                anchor.relativeTo = nil
+                anchor.relativePoint = "CENTER"
+                anchor.x = 0
+                anchor.y = 0
+            else
+                anchor.relativeTo = nil
+            end
+        else
+            local targetFrame = _G[text]
+            if not targetFrame then
+                CooldownCompanion:Print("Frame '" .. text .. "' not found.")
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
+            anchor.relativeTo = text
+        end
+        CooldownCompanion:ApplyCastBarSettings()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    anchorRow:AddChild(anchorBox)
+
+    local pickBtn = AceGUI:Create("Button")
+    pickBtn:SetText("Pick")
+    pickBtn:SetRelativeWidth(0.24)
+    pickBtn:SetCallback("OnClick", function()
+        CS.StartPickFrame(function(name)
+            if CS.configFrame then
+                CS.configFrame.frame:Show()
+            end
+            if name then
+                anchor.point = "TOPLEFT"
+                anchor.relativeTo = name
+                anchor.relativePoint = "BOTTOMLEFT"
+                anchor.x = 0
+                anchor.y = -5
+                CooldownCompanion:ApplyCastBarSettings()
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end)
+    anchorRow:AddChild(pickBtn)
+    container:AddChild(anchorRow)
+
+    pickBtn.frame:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", nil)
+        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+        if yOfs then
+            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+        end
+    end)
+
+    local function refreshCastBarAnchor()
+        CooldownCompanion:ApplyCastBarSettings()
+    end
+
+    AddAnchorDropdown(container, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point")
+    AddAnchorDropdown(container, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point")
+
+    local xSlider = AceGUI:Create("Slider")
+    xSlider:SetLabel("X Offset")
+    xSlider:SetSliderValues(-2000, 2000, 0.1)
+    xSlider:SetValue(anchor.x or 0)
+    xSlider:SetFullWidth(true)
+    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        anchor.x = val
+        CooldownCompanion:ApplyCastBarSettings()
+    end)
+    HookSliderEditBox(xSlider)
+    container:AddChild(xSlider)
+
+    local ySlider = AceGUI:Create("Slider")
+    ySlider:SetLabel("Y Offset")
+    ySlider:SetSliderValues(-2000, 2000, 0.1)
+    ySlider:SetValue(anchor.y or 0)
+    ySlider:SetFullWidth(true)
+    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+        anchor.y = val
+        CooldownCompanion:ApplyCastBarSettings()
+    end)
+    HookSliderEditBox(ySlider)
+    container:AddChild(ySlider)
 end
 
 local function BuildCastBarStylingPanel(container)
@@ -115,22 +297,9 @@ local function BuildCastBarStylingPanel(container)
     if not settings.enabled then return end
     if not settings.stylingEnabled then return end
 
-    -- Height (styling-only — anchoring uses Blizzard default height)
-    local hSlider = AceGUI:Create("Slider")
-    hSlider:SetLabel("Height")
-    hSlider:SetSliderValues(4, 40, 0.1)
-    hSlider:SetValue(settings.height or 15)
-    hSlider:SetFullWidth(true)
-    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.height = val
-        CooldownCompanion:ApplyCastBarSettings()
-    end)
-    container:AddChild(hSlider)
-
     local cbAdvBtns = {}
 
-    -- Bar Color
-    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
+    -- ============ Texture & Colors ============
 
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
@@ -144,8 +313,62 @@ local function BuildCastBarStylingPanel(container)
     end)
     container:AddChild(texDrop)
 
+    -- Bar Color
+    AddColorPicker(container, settings, "barColor", "Bar Color", {1.0, 0.7, 0.0, 1.0}, true, applyCastBar)
+
     -- Background Color
     AddColorPicker(container, settings, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, applyCastBar)
+
+    -- ============ Border ============
+
+    -- Border Style
+    local borderDrop = AceGUI:Create("Dropdown")
+    borderDrop:SetLabel("Border Style")
+    borderDrop:SetList({
+        blizzard = "Blizzard",
+        pixel = "Pixel",
+        none = "None",
+    }, { "blizzard", "pixel", "none" })
+    borderDrop:SetValue(settings.borderStyle or "pixel")
+    borderDrop:SetFullWidth(true)
+    borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.borderStyle = val
+        CooldownCompanion:ApplyCastBarSettings()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(borderDrop)
+
+    -- Border Color and Size (only when pixel)
+    if settings.borderStyle == "pixel" then
+        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
+
+        local borderSizeSlider = AceGUI:Create("Slider")
+        borderSizeSlider:SetLabel("Border Size")
+        borderSizeSlider:SetSliderValues(0, 5, 0.1)
+        borderSizeSlider:SetValue(settings.borderSize or 1)
+        borderSizeSlider:SetFullWidth(true)
+        borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            settings.borderSize = val
+            CooldownCompanion:ApplyCastBarSettings()
+        end)
+        container:AddChild(borderSizeSlider)
+    end
+
+    -- ============ Size ============
+
+    -- Height
+    local hSlider = AceGUI:Create("Slider")
+    hSlider:SetLabel("Height")
+    hSlider:SetSliderValues(4, 40, 0.1)
+    hSlider:SetValue(settings.height or 15)
+    hSlider:SetFullWidth(true)
+    hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.height = val
+        CooldownCompanion:ApplyCastBarSettings()
+    end)
+    container:AddChild(hSlider)
+
+    -- ============ Feature Toggles ============
 
     -- Show Spell Icon
     local iconCb = AceGUI:Create("CheckBox")
@@ -248,39 +471,6 @@ local function BuildCastBarStylingPanel(container)
         CooldownCompanion:ApplyCastBarSettings()
     end)
     container:AddChild(sparkCb)
-
-    -- Border Style
-    local borderDrop = AceGUI:Create("Dropdown")
-    borderDrop:SetLabel("Border Style")
-    borderDrop:SetList({
-        blizzard = "Blizzard",
-        pixel = "Pixel",
-        none = "None",
-    }, { "blizzard", "pixel", "none" })
-    borderDrop:SetValue(settings.borderStyle or "pixel")
-    borderDrop:SetFullWidth(true)
-    borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.borderStyle = val
-        CooldownCompanion:ApplyCastBarSettings()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(borderDrop)
-
-    -- Border Color and Size (only when pixel)
-    if settings.borderStyle == "pixel" then
-        AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
-
-        local borderSizeSlider = AceGUI:Create("Slider")
-        borderSizeSlider:SetLabel("Border Size")
-        borderSizeSlider:SetSliderValues(0, 5, 0.1)
-        borderSizeSlider:SetValue(settings.borderSize or 1)
-        borderSizeSlider:SetFullWidth(true)
-        borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.borderSize = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end)
-        container:AddChild(borderSizeSlider)
-    end
 
     -- Show Spell Name
     local nameCb = AceGUI:Create("CheckBox")
@@ -419,4 +609,5 @@ end
 
 -- Expose for ButtonSettings.lua and Config.lua
 ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
+ST._BuildCastBarPositioningPanel = BuildCastBarPositioningPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel

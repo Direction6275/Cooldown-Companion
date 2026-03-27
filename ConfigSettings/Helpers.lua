@@ -625,68 +625,81 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     container:AddChild(buttonRow)
 end
 
-local function AddCharacterScopedCopyControls(container, systemKey, label, onCopied)
-    if not CS.characterScopedCopySelection then
-        CS.characterScopedCopySelection = {
-            resourceBars = nil,
-            castBar = nil,
-            frameAnchoring = nil,
-        }
-    end
+local charCopyButtons = {}
 
+local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     local copyValues, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
-    if #copyOrder == 0 then
-        local hintLabel = AceGUI:Create("Label")
-        hintLabel:SetText("|cff888888No other character " .. label:lower() .. " settings are stored in this profile yet.|r")
-        hintLabel:SetFullWidth(true)
-        container:AddChild(hintLabel)
-        return
+    if #copyOrder == 0 then return end
+
+    -- Pool one button per systemKey to avoid frame leaks across panel rebuilds
+    local btn = charCopyButtons[systemKey]
+    if not btn then
+        btn = CreateFrame("Button", nil, enableCb.frame)
+        btn:SetSize(16, 16)
+
+        local icon = btn:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(14, 14)
+        icon:SetPoint("CENTER")
+        icon:SetAtlas("BattleBar-SwapPetIcon", false)
+
+        charCopyButtons[systemKey] = btn
+    else
+        btn:SetParent(enableCb.frame)
     end
 
-    local selected = CS.characterScopedCopySelection[systemKey]
-    if not selected or not copyValues[selected] then
-        selected = copyOrder[1]
-        CS.characterScopedCopySelection[systemKey] = selected
-    end
+    btn:ClearAllPoints()
+    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    btn:Show()
 
-    local copyRow = AceGUI:Create("SimpleGroup")
-    copyRow:SetFullWidth(true)
-    copyRow:SetLayout("Flow")
-
-    local sourceDrop = AceGUI:Create("Dropdown")
-    sourceDrop:SetLabel("Copy " .. label .. " From")
-    sourceDrop:SetList(copyValues, copyOrder)
-    sourceDrop:SetValue(selected)
-    sourceDrop:SetRelativeWidth(0.72)
-    sourceDrop:SetCallback("OnValueChanged", function(widget, event, value)
-        CS.characterScopedCopySelection[systemKey] = value
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Copy " .. label .. " Settings")
+        GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
+        GameTooltip:Show()
     end)
-    copyRow:AddChild(sourceDrop)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    local copyButton = AceGUI:Create("Button")
-    copyButton:SetText("Copy")
-    copyButton:SetRelativeWidth(0.25)
-    copyButton:SetCallback("OnClick", function()
-        local sourceCharKey = CS.characterScopedCopySelection and CS.characterScopedCopySelection[systemKey]
-        if not sourceCharKey then
-            return
+    btn:SetScript("OnClick", function()
+        if not CS.charCopyMenu then
+            CS.charCopyMenu = CreateFrame("Frame", "CDCCharCopyMenu", UIParent, "UIDropDownMenuTemplate")
         end
+        local vals, order = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
+        if #order == 0 then return end
 
-        if not ShowPopupAboveConfig then
-            CooldownCompanion:Print("Copy confirmation is unavailable.")
-            return
-        end
-
-        ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
-            systemKey = systemKey,
-            systemLabel = label,
-            sourceCharKey = sourceCharKey,
-            onCopied = onCopied,
-        })
+        UIDropDownMenu_Initialize(CS.charCopyMenu, function(self, level)
+            for _, charKey in ipairs(order) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = vals[charKey]
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if not ShowPopupAboveConfig then
+                        CooldownCompanion:Print("Copy confirmation is unavailable.")
+                        return
+                    end
+                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
+                        systemKey = systemKey,
+                        systemLabel = label,
+                        sourceCharKey = charKey,
+                        onCopied = onCopied,
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+        CS.charCopyMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, CS.charCopyMenu, "cursor", 0, 0)
     end)
-    copyRow:AddChild(copyButton)
 
-    container:AddChild(copyRow)
+    -- Clean up on widget release (raw frame persists across AceGUI recycling)
+    local prevOnRelease = enableCb.events and enableCb.events["OnRelease"]
+    enableCb:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(enableCb, "OnRelease")
+        end
+        btn:ClearAllPoints()
+        btn:Hide()
+    end)
 end
 
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
@@ -830,9 +843,206 @@ ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
-ST._AddCharacterScopedCopyControls = AddCharacterScopedCopyControls
+ST._CreateCharacterCopyButton = CreateCharacterCopyButton
 ST._GetBarTextureOptions = GetBarTextureOptions
 ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown
+
+-- Allow decimal input from editbox while keeping slider/wheel at 1px steps.
+-- Reusable across any AceGUI Slider widget that needs sub-integer precision.
+local function HookSliderEditBox(sliderWidget)
+    local editbox = sliderWidget.editbox
+    local origHandler = editbox:GetScript("OnEnterPressed")
+    editbox:SetScript("OnEnterPressed", function(eb)
+        local widget = eb.obj
+        local value = tonumber(eb:GetText())
+        if value then
+            value = math.floor(value * 10 + 0.5) / 10
+            value = math.max(widget.min, math.min(widget.max, value))
+            PlaySound(856)
+            widget:SetValue(value)
+            widget:Fire("OnValueChanged", value)
+            widget:Fire("OnMouseUp", value)
+        end
+    end)
+
+    -- Restore original AceGUI handler on release so recycled sliders aren't permanently modified
+    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
+    sliderWidget:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(sliderWidget, "OnRelease")
+        end
+        editbox:SetScript("OnEnterPressed", origHandler)
+    end)
+end
+ST._HookSliderEditBox = HookSliderEditBox
+
+-- Shared alpha UI builder for groups, resource bars, and cast bar.
+-- container: AceGUI parent widget
+-- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
+-- refreshFn: function called after value changes (typically RefreshConfigPanel)
+-- collapseKey: string key for CS.collapsedSections
+-- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool }
+local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
+    opts = opts or {}
+    local tabInfoBtns = CS.tabInfoButtons
+
+    local alphaHeading = AceGUI:Create("Heading")
+    alphaHeading:SetText("Alpha")
+    ColorHeading(alphaHeading)
+    alphaHeading:SetFullWidth(true)
+    container:AddChild(alphaHeading)
+
+    local alphaCollapsed = CS.collapsedSections[collapseKey]
+    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
+        CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if alphaCollapsed then return end
+
+    local baseAlphaSlider = AceGUI:Create("Slider")
+    baseAlphaSlider:SetLabel("Baseline Alpha")
+    baseAlphaSlider:SetSliderValues(0, 1, 0.1)
+    baseAlphaSlider:SetValue(config.baselineAlpha or 1)
+    baseAlphaSlider:SetFullWidth(true)
+    baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        config.baselineAlpha = val
+        if opts.onBaselineChanged then
+            opts.onBaselineChanged(val)
+        end
+    end)
+    container:AddChild(baseAlphaSlider)
+
+    CreateInfoButton(baseAlphaSlider.frame, baseAlphaSlider.label, "LEFT", "CENTER", baseAlphaSlider.label:GetStringWidth() / 2 + 4, 0, {
+        "Alpha",
+        {"Controls transparency. Alpha = 1 is fully visible. Alpha = 0 means completely hidden.\n\nThe first four options (In Combat, Out of Combat, Regular Mount, Skyriding) are 3-way toggles — click to cycle through Disabled, |cff00ff00Fully Visible|r, and |cffff0000Fully Hidden|r.\n\n|cff00ff00Fully Visible|r overrides alpha to 1 when the condition is met.\n\n|cffff0000Fully Hidden|r overrides alpha to 0 when the condition is met.\n\nIf both apply simultaneously, |cff00ff00Fully Visible|r takes priority.", 1, 1, 1, true},
+    }, tabInfoBtns)
+
+    do
+        local function GetTriState(visibleKey, hiddenKey)
+            if config[hiddenKey] then return nil end
+            if config[visibleKey] then return true end
+            return false
+        end
+
+        local function TriStateLabel(base, value)
+            if value == true then
+                return base .. " - |cff00ff00Fully Visible|r"
+            elseif value == nil then
+                return base .. " - |cffff0000Fully Hidden|r"
+            end
+            return base
+        end
+
+        local function CreateTriStateToggle(label, visibleKey, hiddenKey)
+            local val = GetTriState(visibleKey, hiddenKey)
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetTriState(true)
+            cb:SetLabel(TriStateLabel(label, val))
+            cb:SetValue(val)
+            cb:SetFullWidth(true)
+            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+                config[visibleKey] = (newVal == true)
+                config[hiddenKey] = (newVal == nil)
+                refreshFn()
+            end)
+            return cb
+        end
+
+        container:AddChild(CreateTriStateToggle("In Combat", "forceAlphaInCombat", "forceHideInCombat"))
+        container:AddChild(CreateTriStateToggle("Out of Combat", "forceAlphaOutOfCombat", "forceHideOutOfCombat"))
+        container:AddChild(CreateTriStateToggle("Regular Mount", "forceAlphaRegularMounted", "forceHideRegularMounted"))
+        container:AddChild(CreateTriStateToggle("Skyriding", "forceAlphaDragonriding", "forceHideDragonriding"))
+
+        local mountedActive = config.forceAlphaRegularMounted
+            or config.forceHideRegularMounted
+            or config.forceAlphaDragonriding
+            or config.forceHideDragonriding
+        local isDruid = CooldownCompanion._playerClassID == 11
+        if mountedActive and (opts.isGlobal or isDruid) then
+            local travelVal = config.treatTravelFormAsMounted or false
+            local travelCb = AceGUI:Create("CheckBox")
+            travelCb:SetLabel("Include Druid Travel Form (applies to both)")
+            travelCb:SetValue(travelVal)
+            travelCb:SetFullWidth(true)
+            travelCb:SetCallback("OnValueChanged", function(widget, event, val)
+                config.treatTravelFormAsMounted = val
+            end)
+            container:AddChild(travelCb)
+        end
+
+        local targetVal = config.forceAlphaTargetExists or false
+        local targetCb = AceGUI:Create("CheckBox")
+        targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
+        targetCb:SetValue(targetVal)
+        targetCb:SetFullWidth(true)
+        targetCb:SetCallback("OnValueChanged", function(widget, event, val)
+            config.forceAlphaTargetExists = val
+            refreshFn()
+        end)
+        container:AddChild(targetCb)
+
+        local mouseoverVal = config.forceAlphaMouseover or false
+        local mouseoverCb = AceGUI:Create("CheckBox")
+        mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
+        mouseoverCb:SetValue(mouseoverVal)
+        mouseoverCb:SetFullWidth(true)
+        mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
+            config.forceAlphaMouseover = val
+            refreshFn()
+        end)
+        container:AddChild(mouseoverCb)
+
+        CreateInfoButton(mouseoverCb.frame, mouseoverCb.text, "LEFT", "RIGHT", 4, 0, {
+            "Mouseover",
+            {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
+        }, tabInfoBtns)
+
+        local fadeCb = AceGUI:Create("CheckBox")
+        fadeCb:SetLabel("Custom Fade Settings")
+        fadeCb:SetValue(config.customFade or false)
+        fadeCb:SetFullWidth(true)
+        fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
+            config.customFade = val or nil
+            refreshFn()
+        end)
+        container:AddChild(fadeCb)
+
+        if config.customFade then
+        local fadeDelaySlider = AceGUI:Create("Slider")
+        fadeDelaySlider:SetLabel("Fade Delay (seconds)")
+        fadeDelaySlider:SetSliderValues(0, 5, 0.1)
+        fadeDelaySlider:SetValue(config.fadeDelay or 1)
+        fadeDelaySlider:SetFullWidth(true)
+        fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            config.fadeDelay = val
+        end)
+        container:AddChild(fadeDelaySlider)
+
+        local fadeInSlider = AceGUI:Create("Slider")
+        fadeInSlider:SetLabel("Fade In Duration (seconds)")
+        fadeInSlider:SetSliderValues(0, 5, 0.1)
+        fadeInSlider:SetValue(config.fadeInDuration or 0.2)
+        fadeInSlider:SetFullWidth(true)
+        fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            config.fadeInDuration = val
+        end)
+        container:AddChild(fadeInSlider)
+
+        local fadeOutSlider = AceGUI:Create("Slider")
+        fadeOutSlider:SetLabel("Fade Out Duration (seconds)")
+        fadeOutSlider:SetSliderValues(0, 5, 0.1)
+        fadeOutSlider:SetValue(config.fadeOutDuration or 0.2)
+        fadeOutSlider:SetFullWidth(true)
+        fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            config.fadeOutDuration = val
+        end)
+        container:AddChild(fadeOutSlider)
+        end -- config.customFade
+    end
+end
+ST._BuildAlphaControls = BuildAlphaControls
+
 ST._AddFontControls = AddFontControls
 ST._AddOffsetSliders = AddOffsetSliders
