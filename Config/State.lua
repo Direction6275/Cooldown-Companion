@@ -317,10 +317,23 @@ local function GetGroupIcon(group)
 end
 
 ------------------------------------------------------------------------
+-- Helper: Validate icon texture (number or string)
+------------------------------------------------------------------------
+local function IsValidIconTexture(iconTexture)
+    local iconType = type(iconTexture)
+    return iconType == "number" or iconType == "string"
+end
+
+------------------------------------------------------------------------
 -- Helper: Get icon for a container (from its first panel's first button)
 ------------------------------------------------------------------------
 local function GetContainerIcon(containerId, db)
-    if not db or not db.groups then return 134400 end
+    if not db then return 134400 end
+    local container = db.groupContainers and db.groupContainers[containerId]
+    if container and IsValidIconTexture(container.manualIcon) then
+        return container.manualIcon
+    end
+    if not db.groups then return 134400 end
     local firstPanel, firstOrder
     for gid, group in pairs(db.groups) do
         if group.parentContainerId == containerId then
@@ -340,11 +353,6 @@ end
 ------------------------------------------------------------------------
 -- Helper: Get icon for a folder (manual override, else first child group's first button)
 ------------------------------------------------------------------------
-local function IsValidIconTexture(iconTexture)
-    local iconType = type(iconTexture)
-    return iconType == "number" or iconType == "string"
-end
-
 local function GetAutoFolderIcon(folderId, db)
     if not db then
         return 134400
@@ -631,6 +639,126 @@ local function OpenButtonIconPicker(groupId, buttonIndex)
     local currentIcon = buttonData.manualIcon
     if not IsValidIconTexture(currentIcon) then
         currentIcon = GetButtonIcon(buttonData)
+    end
+
+    local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
+    if not selectedIndex then
+        selectedIndex = 1
+        currentIcon = pickerFrame:GetIconByIndex(selectedIndex)
+    end
+
+    pickerFrame.IconSelector:SetSelectionsDataProvider(
+        function(selectionIndex)
+            return pickerFrame:GetIconByIndex(selectionIndex)
+        end,
+        function()
+            return pickerFrame:GetNumIcons()
+        end
+    )
+    pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
+    pickerFrame.IconSelector:ScrollToSelectedIndex()
+    pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
+    pickerFrame:SetSelectedIconText()
+    pickerFrame.BorderBox.OkayButton:Enable()
+
+    pickerFrame.IconSelector:SetSelectedCallback(function(_, icon)
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(icon)
+        pickerFrame:SetSelectedIconText()
+    end)
+
+    pickerFrame:Show()
+    return true
+end
+
+------------------------------------------------------------------------
+-- Container icon picker (per-group icon in Column 1)
+------------------------------------------------------------------------
+local function EnsureContainerIconPickerFrame()
+    if CS.containerIconPickerFrame then
+        return CS.containerIconPickerFrame
+    end
+
+    if not CreateAndInitFromMixin
+        or not IconDataProviderMixin
+        or not IconDataProviderExtraType
+        or not IconSelectorPopupFrameTemplateMixin
+        or not IconSelectorPopupFrameIconFilterTypes then
+        return nil
+    end
+
+    local frame = CreateFrame("Frame", "CDCContainerIconPickerFrame", UIParent, "IconSelectorPopupFrameTemplate")
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(200)
+    frame:SetToplevel(true)
+    frame:SetClampedToScreen(true)
+    frame.BorderBox.EditBoxHeaderText:Hide()
+    frame.BorderBox.IconSelectorEditBox:Hide()
+
+    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
+    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
+    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
+    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
+    -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
+    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
+    frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
+
+    function frame:OnHide()
+        IconSelectorPopupFrameTemplateMixin.OnHide(self)
+        if self.iconDataProvider then
+            self.iconDataProvider:Release()
+            self.iconDataProvider = nil
+        end
+        self._cdcContainerId = nil
+        self.IconSelector:SetSelectedCallback(nil)
+    end
+
+    function frame:OkayButton_OnClick()
+        local containerId = self._cdcContainerId
+        local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
+        local db = CooldownCompanion.db and CooldownCompanion.db.profile
+        local container = db and db.groupContainers and db.groupContainers[containerId]
+        if container and IsValidIconTexture(iconTexture) then
+            container.manualIcon = iconTexture
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
+    end
+
+    function frame:CancelButton_OnClick()
+        IconSelectorPopupFrameTemplateMixin.CancelButton_OnClick(self)
+    end
+
+    CS.containerIconPickerFrame = frame
+    return frame
+end
+
+local function OpenContainerIconPicker(containerId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local container = db and db.groupContainers and db.groupContainers[containerId]
+    if not container then
+        return false
+    end
+
+    local pickerFrame = EnsureContainerIconPickerFrame()
+    if not pickerFrame then
+        CooldownCompanion:Print("Icon picker is unavailable on this client build.")
+        return false
+    end
+
+    if pickerFrame:IsShown() then
+        pickerFrame:Hide()
+    end
+
+    pickerFrame._cdcContainerId = containerId
+    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
+    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
+
+    local currentIcon = container.manualIcon
+    if not IsValidIconTexture(currentIcon) then
+        currentIcon = GetContainerIcon(containerId, db)
     end
 
     local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
@@ -1241,6 +1369,7 @@ ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
 ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._OpenButtonIconPicker = OpenButtonIconPicker
+ST._OpenContainerIconPicker = OpenContainerIconPicker
 ST._IsValidIconTexture = IsValidIconTexture
 ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
