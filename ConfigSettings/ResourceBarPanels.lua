@@ -133,7 +133,7 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(anchorModeDrop)
 
-    -- Inherit group alpha (only when attached to panel)
+    -- Inherit panel alpha (only when attached to panel)
     if not isIndependentStack then
         local inheritCb = AceGUI:Create("CheckBox")
         inheritCb:SetLabel("Inherit panel alpha")
@@ -553,8 +553,7 @@ local function GetResourceBarTextureOptions()
     return t
 end
 
--- Extracted to its own function to avoid pushing BuildResourceBarStylingPanel
--- over the Lua 5.1 60-upvalue limit.
+-- Extracted to its own function to keep upvalue counts manageable in the caller.
 local function BuildBarHeightControls(container, settings)
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
 

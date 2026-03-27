@@ -164,7 +164,7 @@ function CooldownCompanion:InvalidateMountAlphaCache()
     self._mountAlphaDirty = true
 end
 
--- Shared force-condition evaluation: returns desiredAlpha (0, 1, or baselineAlpha).
+-- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
 -- Used by both UpdateGroupAlpha and UpdateModuleAlpha.
 local function EvaluateDesiredAlpha(config, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
     -- Effective mounted states: mounted subtype plus optional druid travel form.
@@ -293,7 +293,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
 end
 
 -- Module alpha: evaluates alpha for non-group frames (resource bars, cast bar).
--- moduleId: unique string key (e.g., "rb_<groupId>", "cb_<groupId>")
+-- moduleId: unique string key (e.g., "rb", "cb")
 -- config: table with the same alpha fields as group (baselineAlpha, forceAlpha*, etc.)
 -- frames: list of frames to apply alpha to
 function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCombat, hasTarget, regularMounted, dragonridingMounted, inTravelForm)
@@ -338,7 +338,7 @@ function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCo
 end
 
 -- Registration for module alpha targets processed by the OnUpdate loop.
--- Each entry: { moduleId = string, config = table, frames = {frame, ...} }
+-- _moduleAlphaTargets[moduleId] = { config = table, frames = {frame, ...} }
 function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames)
     if not self._moduleAlphaTargets then
         self._moduleAlphaTargets = {}
