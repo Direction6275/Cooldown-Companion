@@ -763,11 +763,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            if not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
-                actionSlotCooldownShown, actionSlotDurationObj =
-                    ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-            end
-
             spellCooldownInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
             if spellCooldownInfo then
                 isOnGCD = spellCooldownInfo.isOnGCD
@@ -781,47 +776,42 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._cooldownDeferred = true
                 end
 
-                -- Only fetch the DurationObject when the cooldown is active or
-                -- an action-slot override says so.  When isActive is false the
-                -- DurationObject is zero-span (12.0.1 hotfix), so SetCooldown(0,0)
-                -- is equivalent and avoids the API call.
-                if spellCooldownInfo.isActive or actionSlotCooldownShown then
+                -- 12.0.1 hotfix: isActive is NeverSecret and means the UI should
+                -- render a cooldown display. For non-charge spells, treat it as
+                -- authoritative when spell cooldown info is present.
+                -- DurationObject APIs now yield a zero-span object when inactive,
+                -- so skip the call entirely unless isActive is true.
+                if spellCooldownInfo.isActive then
                     spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
                 end
 
                 if spellCooldownDuration then
-                    local useIt = spellCooldownInfo.isActive
-                    local durationForDisplay = spellCooldownDuration
-                    if not useIt and actionSlotCooldownShown == true then
-                        -- Action slot says active but spell API disagrees;
-                        -- trust action slot (charge-aware, can differ from spell-level).
-                        useIt = true
-                        if actionSlotDurationObj then
-                            durationForDisplay = actionSlotDurationObj
-                        end
-                    end
-                    if useIt then
-                        button._durationObj = durationForDisplay
-                        button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
-                    elseif not fetchOk then
-                        button.cooldown:SetCooldown(0, 0)
-                    end
+                    button._durationObj = spellCooldownDuration
+                    button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
                 elseif not fetchOk then
                     button.cooldown:SetCooldown(0, 0)
                 end
                 fetchOk = true
-            elseif actionSlotDurationObj and not fetchOk then
-                -- Fallback: some ContextuallySecret spells can return nil from
-                -- C_Spell.GetSpellCooldown while action-slot cooldown data is
-                -- still available (matches Blizzard action button behavior).
-                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                fetchOk = true
-            elseif actionSlotCooldownShown == true and actionSlotDurationObj then
-                -- Fallback when spell duration API is unavailable but action-slot
-                -- duration object is present.
-                button._durationObj = actionSlotDurationObj
-                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                fetchOk = true
+            elseif not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
+                -- Fallback only: some ContextuallySecret spells can still return
+                -- nil from C_Spell.GetSpellCooldown. In that narrow case, probe
+                -- the action bar to mirror Blizzard action button behavior.
+                actionSlotCooldownShown, actionSlotDurationObj =
+                    ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+                if actionSlotDurationObj and not fetchOk then
+                    -- Fallback: some ContextuallySecret spells can return nil from
+                    -- C_Spell.GetSpellCooldown while action-slot cooldown data is
+                    -- still available (matches Blizzard action button behavior).
+                    button._durationObj = actionSlotDurationObj
+                    button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
+                    fetchOk = true
+                elseif actionSlotCooldownShown == true and actionSlotDurationObj then
+                    -- Fallback when spell duration API is unavailable but action-slot
+                    -- duration object is present.
+                    button._durationObj = actionSlotDurationObj
+                    button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
+                    fetchOk = true
+                end
             end
         elseif buttonData.type == "item" then
             button._isEquippableNotEquipped = false
