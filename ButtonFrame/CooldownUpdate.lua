@@ -776,9 +776,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._cooldownDeferred = true
                 end
 
-                -- 12.0.1 hotfix: isActive is NeverSecret and means the UI should
-                -- render a cooldown display. For non-charge spells, treat it as
-                -- authoritative when spell cooldown info is present.
+                -- 12.0.1 hotfix: isActive is a non-secret boolean that means the
+                -- UI should render a cooldown display for this spell query.
                 -- DurationObject APIs now yield a zero-span object when inactive,
                 -- so skip the call entirely unless isActive is true.
                 if spellCooldownInfo.isActive then
@@ -799,15 +798,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 actionSlotCooldownShown, actionSlotDurationObj =
                     ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
                 if actionSlotDurationObj and not fetchOk then
-                    -- Fallback: some ContextuallySecret spells can return nil from
-                    -- C_Spell.GetSpellCooldown while action-slot cooldown data is
-                    -- still available (matches Blizzard action button behavior).
-                    button._durationObj = actionSlotDurationObj
-                    button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                    fetchOk = true
-                elseif actionSlotCooldownShown == true and actionSlotDurationObj then
-                    -- Fallback when spell duration API is unavailable but action-slot
-                    -- duration object is present.
+                    -- Fallback: if the spell cooldown query returned nil, mirror
+                    -- Blizzard action button behavior with the action-slot probe.
                     button._durationObj = actionSlotDurationObj
                     button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
                     fetchOk = true
@@ -926,7 +918,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
        and desatWasActive
        and not wasAuraActive
        and button._durationObj
-       and actionSlotCooldownShown == true then
+       and spellCooldownInfo
+       and spellCooldownInfo.isActive then
         isGCDOnly = false
     end
 
