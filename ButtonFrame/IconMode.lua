@@ -1021,13 +1021,18 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 end
 
 -- Exports
--- Per-frame key press highlight updater.
--- Runs every frame for instant visual feedback (the 0.1s ticker is too slow for
--- a "key held" indicator). Cost is low: 1-4 C API calls per binding per button
--- per frame (IsKeyDown + modifier checks), plus a lazy InCombatLockdown shared
--- across all buttons.
+-- Throttled key press highlight updater (~20Hz).
+-- Polls modifier + key state to light up buttons whose keybind is held.
+-- Throttled from per-frame to 0.05s intervals — 50ms latency is imperceptible
+-- for a "key held" indicator and avoids thousands of redundant API calls/sec
+-- when many buttons are visible.
+local KPH_INTERVAL = 0.05
+local kphAccumulator = 0
 local kphUpdateFrame = CreateFrame("Frame")
-kphUpdateFrame:SetScript("OnUpdate", function()
+kphUpdateFrame:SetScript("OnUpdate", function(_, elapsed)
+    kphAccumulator = kphAccumulator + elapsed
+    if kphAccumulator < KPH_INTERVAL then return end
+    kphAccumulator = kphAccumulator - KPH_INTERVAL
     local groupFrames = CooldownCompanion.groupFrames
     if not groupFrames then return end
     local groups = CooldownCompanion.db and CooldownCompanion.db.profile

@@ -763,10 +763,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            if not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
-                actionSlotCooldownShown, actionSlotDurationObj =
-                    ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-            end
+            -- isActive (NeverSecret, 12.0.1 hotfix) is authoritative for whether
+            -- the UI should render a cooldown.  Action-slot probing is deferred to
+            -- the nil-fallback below — only needed when GetSpellCooldown returns nil
+            -- (vehicle bar, override bar edge cases).
 
             spellCooldownInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
             if spellCooldownInfo then
@@ -781,47 +781,34 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._cooldownDeferred = true
                 end
 
-                -- Only fetch the DurationObject when the cooldown is active or
-                -- an action-slot override says so.  When isActive is false the
-                -- DurationObject is zero-span (12.0.1 hotfix), so SetCooldown(0,0)
-                -- is equivalent and avoids the API call.
-                if spellCooldownInfo.isActive or actionSlotCooldownShown then
+                -- Only fetch the DurationObject when the cooldown is active.
+                -- When isActive is false the DurationObject is zero-span
+                -- (12.0.1 hotfix), so SetCooldown(0,0) is equivalent and
+                -- avoids the API call.
+                if spellCooldownInfo.isActive then
                     spellCooldownDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
                 end
 
                 if spellCooldownDuration then
-                    local useIt = spellCooldownInfo.isActive
-                    local durationForDisplay = spellCooldownDuration
-                    if not useIt and actionSlotCooldownShown == true then
-                        -- Action slot says active but spell API disagrees;
-                        -- trust action slot (charge-aware, can differ from spell-level).
-                        useIt = true
-                        if actionSlotDurationObj then
-                            durationForDisplay = actionSlotDurationObj
-                        end
-                    end
-                    if useIt then
-                        button._durationObj = durationForDisplay
-                        button.cooldown:SetCooldownFromDurationObject(durationForDisplay)
-                    elseif not fetchOk then
-                        button.cooldown:SetCooldown(0, 0)
-                    end
+                    button._durationObj = spellCooldownDuration
+                    button.cooldown:SetCooldownFromDurationObject(spellCooldownDuration)
                 elseif not fetchOk then
                     button.cooldown:SetCooldown(0, 0)
                 end
                 fetchOk = true
-            elseif actionSlotDurationObj and not fetchOk then
-                -- Fallback: some ContextuallySecret spells can return nil from
-                -- C_Spell.GetSpellCooldown while action-slot cooldown data is
-                -- still available (matches Blizzard action button behavior).
-                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                fetchOk = true
-            elseif actionSlotCooldownShown == true and actionSlotDurationObj then
-                -- Fallback when spell duration API is unavailable but action-slot
-                -- duration object is present.
-                button._durationObj = actionSlotDurationObj
-                button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
-                fetchOk = true
+            elseif not fetchOk then
+                -- GetSpellCooldown returned nil: fall back to action-slot probe.
+                -- Covers vehicle bar, override bar, and rare ContextuallySecret
+                -- spells whose spell-level API is unavailable in combat.
+                if not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
+                    actionSlotCooldownShown, actionSlotDurationObj =
+                        ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+                    if actionSlotDurationObj then
+                        button._durationObj = actionSlotDurationObj
+                        button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
+                        fetchOk = true
+                    end
+                end
             end
         elseif buttonData.type == "item" then
             button._isEquippableNotEquipped = false
@@ -926,6 +913,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- short cooldown is already active. If we were already showing cooldown and
     -- still have active cooldown data, keep treating it as non-GCD-only.
     -- Scope this to the cast-start GCD for this spell only.
+    -- isActive (NeverSecret, 12.0.1 hotfix) confirms a real cooldown is ticking,
+    -- replacing the pre-hotfix action-slot probe that served the same purpose.
     if buttonData.type == "spell"
        and not buttonData.hasCharges
        and not auraOverrideActive
@@ -936,7 +925,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
        and desatWasActive
        and not wasAuraActive
        and button._durationObj
-       and actionSlotCooldownShown == true then
+       and spellCooldownInfo and spellCooldownInfo.isActive then
         isGCDOnly = false
     end
 
@@ -1039,7 +1028,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Canonical desaturation signal:
     -- For non-charge spells, use action-slot cooldown state when spell cooldown
-    -- info is unavailable (ContextuallySecret fallback). Otherwise use addon state.
+    -- info is unavailable (deferred probe fallback). Otherwise use addon state.
     -- _cooldownDeferred: timer hasn't started (e.g. Healthstone in combat, Feign
     -- Death while buff active).  Treat as "on cooldown" for dimming/visibility.
     if buttonData.type == "item" then

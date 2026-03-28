@@ -10,10 +10,17 @@ local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
 local select = select
+local wipe = wipe
 
 -- Some talent swaps briefly report pre-final spell charge state. Coalesce a
 -- delayed second pass so charge flags settle without duplicate refresh storms.
 local pendingTalentChargeRefreshToken = 0
+
+-- Coalesce rapid-fire ACTIONBAR_SLOT_CHANGED events (e.g. modifier-reactive
+-- macros changing many slots simultaneously) into a single rebuild pass.
+-- Same token pattern as QueueTalentChargeRefresh.
+local pendingSlotChangeToken = 0
+local pendingSlotChangedSlots = {}
 
 local function QueueTalentChargeRefresh(addon)
     pendingTalentChargeRefreshToken = pendingTalentChargeRefreshToken + 1
@@ -379,15 +386,30 @@ function CooldownCompanion:OnBindingsChanged()
 end
 
 function CooldownCompanion:OnActionBarSlotChanged(_, slot)
-    -- Rebuild slot mapping since frame .action fields may have changed
-    self:RebuildSlotMapping()
+    -- Coalesce: modifier-reactive macros fire this event per affected slot in
+    -- the same frame. Accumulate slots and defer the rebuild to next frame so
+    -- N simultaneous changes collapse into one pass.
     if slot then
-        self:UpdateItemSlotCache(slot)
+        pendingSlotChangedSlots[slot] = true
     else
-        self:RebuildItemSlotCache()
+        pendingSlotChangedSlots._fullRebuild = true
     end
-    self:RebuildAddonSlotBindings()
-    self:OnKeybindsChanged()
+    pendingSlotChangeToken = pendingSlotChangeToken + 1
+    local token = pendingSlotChangeToken
+    C_Timer.After(0, function()
+        if pendingSlotChangeToken ~= token then return end
+        self:RebuildSlotMapping()
+        if pendingSlotChangedSlots._fullRebuild then
+            self:RebuildItemSlotCache()
+        else
+            for s in pairs(pendingSlotChangedSlots) do
+                self:UpdateItemSlotCache(s)
+            end
+        end
+        wipe(pendingSlotChangedSlots)
+        self:RebuildAddonSlotBindings()
+        self:OnKeybindsChanged()
+    end)
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged()
