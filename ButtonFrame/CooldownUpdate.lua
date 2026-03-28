@@ -238,7 +238,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
-    local viewerRejectedStaleId = false
     -- Capture and clear event-driven removal flag (set by OnUnitAura when
     -- removedAuraInstanceIDs confirms the aura is gone).  Used to bypass the
     -- grace hold, which otherwise can't detect expiry in combat (secret values).
@@ -405,14 +404,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         end
-        -- Stale viewer detection: the viewer block was fully evaluated but did
-        -- not produce valid aura data.  If the viewer still has a non-nil
-        -- auraInstanceID it is stale (from the old target after a switch).
-        -- Propagate this to the grace/catch-all holds so they expire
-        -- immediately instead of holding with the old DurationObject.
-        if not auraOverrideActive and viewerFrame then
-            viewerRejectedStaleId = true
-        end
         -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
         -- the viewer path has no auraInstanceID (form-variant spells like
         -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
@@ -483,7 +474,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Don't check the viewer's Cooldown widget state here — CDM
                 -- can leave stale auraDataUnit + IsShown() from the old target,
                 -- which would prevent expiry and cause ghost auras in raids.
-                if viewerRejectedStaleId or (viewerFrame and not viewerFrame.auraInstanceID) then
+                if viewerFrame and not viewerFrame.auraInstanceID then
                     expired = true
                 elseif button._targetSwitchDataReceived then
                     expired = true
@@ -529,7 +520,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Don't check viewer Cooldown widget state — it can be stale from
             -- the old target and prevent expiry, causing ghost auras.  Trust
             -- auraInstanceID (authoritative) and _targetSwitchDataReceived.
-            if viewerRejectedStaleId or (viewerFrame and not viewerFrame.auraInstanceID) then
+            if viewerFrame and not viewerFrame.auraInstanceID then
                 catchAllExpired = true
             elseif button._targetSwitchDataReceived then
                 catchAllExpired = true
