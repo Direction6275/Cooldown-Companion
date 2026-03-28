@@ -17,6 +17,16 @@ local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 
+local function CompareTopLevelItems(a, b)
+    if a.kind ~= b.kind then
+        return a.kind == "folder"
+    end
+    if a.order ~= b.order then
+        return a.order < b.order
+    end
+    return a.id < b.id
+end
+
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
@@ -527,7 +537,7 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     for _, lc in ipairs(looseContainers) do
         topItems[#topItems + 1] = { kind = "container", id = lc.id, order = lc.order }
     end
-    table.sort(topItems, function(a, b) return a.order < b.order end)
+    table.sort(topItems, CompareTopLevelItems)
 
     -- Iterate in visual order, return first available panel
     for _, item in ipairs(topItems) do

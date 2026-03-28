@@ -32,6 +32,16 @@ local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
+local function CompareTopLevelItems(a, b)
+    if a.kind ~= b.kind then
+        return a.kind == "folder"
+    end
+    if a.order ~= b.order then
+        return a.order < b.order
+    end
+    return a.id < b.id
+end
+
 ------------------------------------------------------------------------
 -- Clear all selection state (container, panel, button, multi-select)
 ------------------------------------------------------------------------
@@ -407,7 +417,7 @@ local function RefreshColumn1(preserveDrag)
         for _, cid in ipairs(looseContainerIds) do
             table.insert(items, { kind = "container", id = cid, order = db.groupContainers[cid].order or cid })
         end
-        table.sort(items, function(a, b) return a.order < b.order end)
+        table.sort(items, CompareTopLevelItems)
 
         return items, folderChildContainers
     end
