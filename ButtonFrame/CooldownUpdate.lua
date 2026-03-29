@@ -909,11 +909,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Scope this to the cast-start GCD for this spell only.
     -- isActive (NeverSecret, 12.0.1 hotfix) confirms a real cooldown is ticking,
     -- replacing the pre-hotfix action-slot probe that served the same purpose.
+    -- Proc overlay guard: when SPELL_ACTIVATION_OVERLAY_GLOW_SHOW has fired for
+    -- this spell, the cooldown was likely reset by a proc — let the GCD-only
+    -- detection stand so the button saturates immediately.
     if buttonData.type == "spell"
        and not buttonData.hasCharges
        and not auraOverrideActive
        and buttonData._cooldownSecrecy ~= 0
        and button._postCastGCDHold
+       and not procOverlayActive
        and isOnGCD
        and isGCDOnly
        and desatWasActive
@@ -1036,6 +1040,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             button._desatCooldownActive = (button._durationObj ~= nil) and (not isGCDOnly)
                 or button._cooldownDeferred or false
+        end
+        -- Proc overlay override: SPELL_ACTIVATION_OVERLAY_GLOW_SHOW indicates a
+        -- proc reset.  Force saturation even when stale isOnGCD prevents the
+        -- coarse IsSpellGCDOnly check from returning true on the first tick
+        -- after the reset.  (isOnGCD can lag by one tick — wiki: "do not trust
+        -- this field unless responding to a SPELL_UPDATE_COOLDOWN event.")
+        if procOverlayActive and button._desatCooldownActive then
+            button._desatCooldownActive = false
         end
     end
     -- Track on-CD → off-CD transition for ready glow duration timer.
