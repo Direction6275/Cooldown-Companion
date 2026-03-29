@@ -985,12 +985,27 @@ local function RefreshColumn2()
             spacer.noAutoHeight = true
             CS.col2Scroll:AddChild(spacer)
 
-            local msg = AceGUI:Create("Label")
-            msg:SetText("Click one of the buttons below to add your first panel.")
-            msg:SetFullWidth(true)
-            msg:SetJustifyH("CENTER")
-            msg:SetFont((GameFontNormal:GetFont()), 15, "")
-            CS.col2Scroll:AddChild(msg)
+            local header = AceGUI:Create("Label")
+            header:SetText("Every entry needs a panel.")
+            header:SetFullWidth(true)
+            header:SetJustifyH("CENTER")
+            header:SetFont((GameFontNormal:GetFont()), 15, "")
+            CS.col2Scroll:AddChild(header)
+
+            local descSpacer = AceGUI:Create("SimpleGroup")
+            descSpacer:SetFullWidth(true)
+            descSpacer:SetHeight(6)
+            descSpacer.noAutoHeight = true
+            CS.col2Scroll:AddChild(descSpacer)
+
+            local desc = AceGUI:Create("Label")
+            desc:SetText("A panel controls dimensions, display mode, and layout for all entries inside it. Use the buttons below to create your first panel.")
+            desc:SetFullWidth(true)
+            desc:SetJustifyH("CENTER")
+            desc:SetFont((GameFontNormal:GetFont()), 12, "")
+            desc:SetColor(0.7, 0.7, 0.7)
+            CS.col2Scroll:AddChild(desc)
+
             CS.col2Scroll:DoLayout()
             return
         end
