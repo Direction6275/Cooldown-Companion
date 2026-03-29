@@ -909,11 +909,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Scope this to the cast-start GCD for this spell only.
     -- isActive (NeverSecret, 12.0.1 hotfix) confirms a real cooldown is ticking,
     -- replacing the pre-hotfix action-slot probe that served the same purpose.
+    -- Proc overlay guard: when SPELL_ACTIVATION_OVERLAY_GLOW_SHOW has fired for
+    -- this spell, a proc may have reset its cooldown — let the GCD-only
+    -- detection stand so the button saturates immediately.
     if buttonData.type == "spell"
        and not buttonData.hasCharges
        and not auraOverrideActive
        and buttonData._cooldownSecrecy ~= 0
        and button._postCastGCDHold
+       and not procOverlayActive
        and isOnGCD
        and isGCDOnly
        and desatWasActive
