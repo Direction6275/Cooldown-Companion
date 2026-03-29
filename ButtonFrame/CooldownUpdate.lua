@@ -1041,18 +1041,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._desatCooldownActive = (button._durationObj ~= nil) and (not isGCDOnly)
                 or button._cooldownDeferred or false
         end
-        -- Proc overlay override: SPELL_ACTIVATION_OVERLAY_GLOW_SHOW indicates an
-        -- active proc that may have reset this spell's cooldown.  Force
-        -- saturation even when stale isOnGCD prevents the coarse
-        -- IsSpellGCDOnly check from returning true on the first tick after the
-        -- reset.  (isOnGCD can lag by one tick — C_Spell.GetSpellCooldown docs:
-        -- "do not trust this field unless responding to a SPELL_UPDATE_COOLDOWN
-        -- event.")  Preserve deferred-cooldown desaturation (timer not yet
-        -- started, e.g. Feign Death while buff active).
-        if procOverlayActive and button._desatCooldownActive
-           and not button._cooldownDeferred then
-            button._desatCooldownActive = false
-        end
     end
     -- Track on-CD → off-CD transition for ready glow duration timer.
     -- desatWasActive is true only when the previous tick had an active cooldown,
