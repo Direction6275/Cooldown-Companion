@@ -809,6 +809,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         fetchOk = true
                     end
                 end
+                -- Ensure widget is in a known state when all paths failed.
+                if not fetchOk then
+                    button.cooldown:SetCooldown(0, 0)
+                end
             end
         elseif buttonData.type == "item" then
             button._isEquippableNotEquipped = false
@@ -1028,7 +1032,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Canonical desaturation signal:
     -- For non-charge spells, use action-slot cooldown state when spell cooldown
-    -- info is unavailable (deferred probe fallback). Otherwise use addon state.
+    -- info is unavailable (nil-fallback probe). Otherwise use addon state.
     -- _cooldownDeferred: timer hasn't started (e.g. Healthstone in combat, Feign
     -- Death while buff active).  Treat as "on cooldown" for dimming/visibility.
     if buttonData.type == "item" then

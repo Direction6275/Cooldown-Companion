@@ -1032,7 +1032,7 @@ local kphUpdateFrame = CreateFrame("Frame")
 kphUpdateFrame:SetScript("OnUpdate", function(_, elapsed)
     kphAccumulator = kphAccumulator + elapsed
     if kphAccumulator < KPH_INTERVAL then return end
-    kphAccumulator = kphAccumulator - KPH_INTERVAL
+    kphAccumulator = 0
     local groupFrames = CooldownCompanion.groupFrames
     if not groupFrames then return end
     local groups = CooldownCompanion.db and CooldownCompanion.db.profile
