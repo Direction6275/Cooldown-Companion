@@ -910,7 +910,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- isActive (NeverSecret, 12.0.1 hotfix) confirms a real cooldown is ticking,
     -- replacing the pre-hotfix action-slot probe that served the same purpose.
     -- Proc overlay guard: when SPELL_ACTIVATION_OVERLAY_GLOW_SHOW has fired for
-    -- this spell, the cooldown was likely reset by a proc — let the GCD-only
+    -- this spell, a proc may have reset its cooldown — let the GCD-only
     -- detection stand so the button saturates immediately.
     if buttonData.type == "spell"
        and not buttonData.hasCharges
@@ -1041,12 +1041,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._desatCooldownActive = (button._durationObj ~= nil) and (not isGCDOnly)
                 or button._cooldownDeferred or false
         end
-        -- Proc overlay override: SPELL_ACTIVATION_OVERLAY_GLOW_SHOW indicates a
-        -- proc reset.  Force saturation even when stale isOnGCD prevents the
-        -- coarse IsSpellGCDOnly check from returning true on the first tick
-        -- after the reset.  (isOnGCD can lag by one tick — wiki: "do not trust
-        -- this field unless responding to a SPELL_UPDATE_COOLDOWN event.")
-        if procOverlayActive and button._desatCooldownActive then
+        -- Proc overlay override: SPELL_ACTIVATION_OVERLAY_GLOW_SHOW indicates an
+        -- active proc that may have reset this spell's cooldown.  Force
+        -- saturation even when stale isOnGCD prevents the coarse
+        -- IsSpellGCDOnly check from returning true on the first tick after the
+        -- reset.  (isOnGCD can lag by one tick — C_Spell.GetSpellCooldown docs:
+        -- "do not trust this field unless responding to a SPELL_UPDATE_COOLDOWN
+        -- event.")  Preserve deferred-cooldown desaturation (timer not yet
+        -- started, e.g. Feign Death while buff active).
+        if procOverlayActive and button._desatCooldownActive
+           and not button._cooldownDeferred then
             button._desatCooldownActive = false
         end
     end
