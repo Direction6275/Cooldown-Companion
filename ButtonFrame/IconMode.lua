@@ -543,7 +543,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
     if buttonData.hasCharges and buttonData.hideCooldownWithCharges and not button._auraActive then
-        local hasChargesRemaining = not button._zeroChargesConfirmed
+        local hasChargesRemaining = (button._zeroChargesConfirmed == false)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
             if hasChargesRemaining then
