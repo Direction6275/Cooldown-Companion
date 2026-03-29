@@ -540,6 +540,27 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
+    -- Charge-visual suppression: when toggle is active and charges remain,
+    -- hide the swipe fill (dark overlay) but keep the edge visible.
+    if buttonData.hasCharges and buttonData.hideCooldownWithCharges and not button._auraActive then
+        local hasChargesRemaining = not button._zeroChargesConfirmed
+        if hasChargesRemaining ~= button._hideCooldownChargesActive then
+            button._hideCooldownChargesActive = hasChargesRemaining
+            if hasChargesRemaining then
+                button.cooldown:SetDrawSwipe(false)
+            else
+                local swipeEnabled = style.showCooldownSwipe ~= false
+                local fillEnabled = style.showCooldownSwipeFill ~= false
+                button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
+            end
+        end
+    elseif button._hideCooldownChargesActive ~= nil then
+        button._hideCooldownChargesActive = nil
+        local swipeEnabled = style.showCooldownSwipe ~= false
+        local fillEnabled = style.showCooldownSwipeFill ~= false
+        button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
+    end
+
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
     if button._secondaryCdTextRegion and button._cdTextRegion then
         local wantAuraPos = button._auraActive == true
@@ -575,6 +596,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
         else
             showText = style.showCooldownText
+            if showText and button._hideCooldownChargesActive then
+                showText = false
+            end
             fontColor = style.cooldownFontColor or DEFAULT_WHITE
             wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
             wantSize = style.cooldownFontSize or 12
@@ -761,6 +785,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeText = nil
     button._chargeCountReadable = nil
     button._zeroChargesConfirmed = nil
+    button._hideCooldownChargesActive = nil
     button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil

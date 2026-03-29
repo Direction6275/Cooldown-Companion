@@ -705,6 +705,16 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             CooldownCompanion:RefreshConfigPanel()
         end)
         scroll:AddChild(desatZeroChargesCb)
+
+        -- Hide Cooldown While Charges Remain
+        local hideCdChargesCb = AceGUI:Create("CheckBox")
+        hideCdChargesCb:SetLabel("Hide Cooldown While Charges Remain")
+        SetCheckboxValue(hideCdChargesCb, "hideCooldownWithCharges", FilterChargeCapable)
+        hideCdChargesCb:SetFullWidth(true)
+        WrapBatchCallback(hideCdChargesCb, function(widget, event, val)
+            ApplyToChargeCapable("hideCooldownWithCharges", val or nil)
+        end)
+        scroll:AddChild(hideCdChargesCb)
     end
 
     -- Stack-based visibility toggles (non-equippable items without charges)
