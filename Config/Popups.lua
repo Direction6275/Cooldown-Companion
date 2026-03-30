@@ -979,6 +979,7 @@ local function ImportGroupData(text)
             container.createdBy = charKey
             container.isGlobal = false
             container.order = containerId
+            container.specOrders = nil
             container.folderId = nil
             container.locked = true
             db.groupContainers[containerId] = container
@@ -1182,6 +1183,7 @@ local function ImportGroupData(text)
                 container.createdBy = charKey
                 container.isGlobal = false
                 container.order = containerId
+                container.specOrders = nil
                 container.folderId = folderId
                 container.locked = true
                 db.groupContainers[containerId] = container
@@ -1347,6 +1349,7 @@ local function ImportGroupData(text)
         container.createdBy = charKey
         container.isGlobal = false
         container.order = containerId
+        container.specOrders = nil
         container.folderId = nil
         container.locked = true
         db.groupContainers[containerId] = container
