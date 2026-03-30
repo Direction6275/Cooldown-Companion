@@ -328,8 +328,9 @@ local function UpdateBarDisplay(button)
             or (barAuraVisualsEnabled and (not style.auraGlowCombatOnly or inCombat))))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
-    -- New bar indicator effects: alpha pulse, color shift, pixel border
-    -- Use same trigger conditions as existing bar aura indicators
+    -- Bar indicator effects: alpha pulse, color shift
+    -- Pulse/color-shift use the same combat-only and pandemic conditions as bar aura effects,
+    -- but each has its own independent enable toggle.
     local auraActivePassesCombat = button._auraActive
         and (not style.auraGlowCombatOnly or inCombat)
 
@@ -381,7 +382,7 @@ local function UpdateBarDisplay(button)
     end
 end
 
--- Shared OnUpdate for bar-mode buttons: aura expiry detection + throttled bar fill.
+-- Shared OnUpdate for bar-mode buttons: aura expiry detection, pulse/color-shift animation, + throttled bar fill.
 -- Reads interval from self._barUpdateInterval so it can be updated without re-installing.
 local function BarModeOnUpdate(self, elapsed)
     -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
@@ -437,12 +438,15 @@ local function BarModeOnUpdate(self, elapsed)
             if base and shift then
                 local speed = self._barCSSpeed or 0.5
                 local t = 0.5 + 0.5 * math_sin(now * math_pi / speed)
+                local ba = base[4] or 1
                 self.statusBar:SetStatusBarColor(
                     base[1] + (shift[1] - base[1]) * t,
                     base[2] + (shift[2] - base[2]) * t,
                     base[3] + (shift[3] - base[3]) * t,
-                    base[4] or 1
+                    ba + ((shift[4] or 1) - ba) * t
                 )
+            else
+                self._barColorShiftActive = nil
             end
         end
     end

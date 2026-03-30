@@ -241,6 +241,9 @@ function CooldownCompanion:SetBarColorShiftPreview(groupId, buttonIndex, show)
     for _, button in ipairs(frame.buttons) do
         if button.index == buttonIndex then
             button._barColorShiftPreview = show or nil
+            if not show then
+                button._barColorShiftActive = nil
+            end
             return
         end
     end

@@ -721,7 +721,8 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         ["none"] = "None",
         ["pixel"] = "Pixel Glow",
         ["solid"] = "Solid Border",
-    }, {"none", "pixel", "solid"})
+        ["glow"] = "Proc Glow",
+    }, {"none", "pixel", "solid", "glow"})
     effectDrop:SetValue(styleTable[cfg.effectKey] or "none")
     effectDrop:SetFullWidth(true)
     effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
@@ -828,14 +829,12 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
 end
 
 ------------------------------------------------------------------------
--- BAR MODE PULSE / COLOR SHIFT / PIXEL BORDER CONTROLS
+-- BAR MODE PULSE / COLOR SHIFT CONTROLS
 ------------------------------------------------------------------------
 
 -- cfg = { pulseKey, pulseSpeedKey,
 --         colorShiftKey, colorShiftSpeedKey, colorShiftColorKey, defaultShiftColor }
 local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg, opts)
-    local isOverrideMode = opts and opts.isOverride == true
-
     -- Alpha Pulse
     local pulseCb = AceGUI:Create("CheckBox")
     pulseCb:SetLabel("Alpha Pulse")
