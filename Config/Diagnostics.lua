@@ -504,9 +504,10 @@ local function FormatDiagnosticAsText(diag)
     if p.groupContainers then
         local containerIds = {}
         for id in pairs(p.groupContainers) do containerIds[#containerIds + 1] = id end
+        local specId = CooldownCompanion._currentSpecId
         table.sort(containerIds, function(a, b)
-            local oa = p.groupContainers[a].order or 999
-            local ob = p.groupContainers[b].order or 999
+            local oa = CooldownCompanion:GetOrderForSpec(p.groupContainers[a], specId, 999)
+            local ob = CooldownCompanion:GetOrderForSpec(p.groupContainers[b], specId, 999)
             if oa ~= ob then return oa < ob end
             return a < b
         end)

@@ -363,7 +363,7 @@ local function GetAutoFolderIcon(folderId, db)
         local children = {}
         for cid, container in pairs(containers) do
             if container.folderId == folderId then
-                table.insert(children, { id = cid, order = container.order or cid })
+                table.insert(children, { id = cid, order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid) })
             end
         end
         table.sort(children, function(a, b) return a.order < b.order end)

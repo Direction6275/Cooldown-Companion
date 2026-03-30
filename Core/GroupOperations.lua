@@ -20,6 +20,29 @@ local InCombatLockdown = InCombatLockdown
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
+--- Return the per-spec order for a container or folder, falling back to the
+--- global .order field and then to the supplied default (typically the ID).
+--- @param obj table  groupContainer or folder table with optional specOrders
+--- @param specId number|nil  current specialization ID
+--- @param default number|nil  fallback when no order exists
+function CooldownCompanion:GetOrderForSpec(obj, specId, default)
+    if obj.specOrders and specId then
+        local so = obj.specOrders[specId]
+        if so then return so end
+    end
+    return obj.order or default
+end
+ST.GetOrderForSpec = function(obj, specId, default)
+    return CooldownCompanion:GetOrderForSpec(obj, specId, default)
+end
+
+--- Write a per-spec order value to a container or folder.
+--- Creates the specOrders table if it doesn't exist.
+function CooldownCompanion:SetOrderForSpec(obj, specId, value)
+    if not obj.specOrders then obj.specOrders = {} end
+    obj.specOrders[specId] = value
+end
+
 function CooldownCompanion:FetchFont(name)
     return LSM:Fetch("font", name) or LSM:Fetch("font", "Friz Quadrata TT") or STANDARD_TEXT_FONT
 end
@@ -495,6 +518,7 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     local containers = db.groupContainers
     if not containers then return nil end
     local folders = db.folders or {}
+    local specId = self._currentSpecId
 
     -- Build container-to-folder mapping
     local folderContainers = {}  -- [folderId] = { {id, order}, ... }
@@ -506,13 +530,13 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
             if not folderContainers[fid] then
                 folderContainers[fid] = {}
             end
-            folderContainers[fid][#folderContainers[fid] + 1] = { id = cid, order = container.order or cid }
+            folderContainers[fid][#folderContainers[fid] + 1] = { id = cid, order = self:GetOrderForSpec(container, specId, cid) }
         else
-            looseContainers[#looseContainers + 1] = { id = cid, order = container.order or cid }
+            looseContainers[#looseContainers + 1] = { id = cid, order = self:GetOrderForSpec(container, specId, cid) }
         end
     end
 
-    -- Sort containers within each folder by container.order
+    -- Sort containers within each folder by per-spec order
     for _, children in pairs(folderContainers) do
         table.sort(children, function(a, b) return a.order < b.order end)
     end
@@ -522,7 +546,7 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     -- (mirrors Column1.lua BuildSectionItems)
     local topItems = {}
     for fid in pairs(folderContainers) do
-        topItems[#topItems + 1] = { kind = "folder", id = fid, order = folders[fid].order or fid }
+        topItems[#topItems + 1] = { kind = "folder", id = fid, order = self:GetOrderForSpec(folders[fid], specId, fid) }
     end
     for _, lc in ipairs(looseContainers) do
         topItems[#topItems + 1] = { kind = "container", id = lc.id, order = lc.order }
@@ -580,7 +604,7 @@ function CooldownCompanion:PopulateAnchorDropdown(dropdown)
     local sortedFolders = {}
     for fid, folder in pairs(folders) do
         if folderPanels[fid] then
-            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = self:GetOrderForSpec(folder, self._currentSpecId, fid) })
         end
     end
     table.sort(sortedFolders, function(a, b) return a.order < b.order end)

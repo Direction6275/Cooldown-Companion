@@ -1067,8 +1067,9 @@ function CooldownCompanion:GetCharacterContainers(charKey)
         end
     end
 
+    local specId = self._currentSpecId
     table_sort(result, function(a, b)
-        return (a.container.order or a.containerId) < (b.container.order or b.containerId)
+        return self:GetOrderForSpec(a.container, specId, a.containerId) < self:GetOrderForSpec(b.container, specId, b.containerId)
     end)
     return result
 end
