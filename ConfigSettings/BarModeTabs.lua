@@ -25,6 +25,8 @@ local AddOffsetSliders = ST._AddOffsetSliders
 -- Imports from SectionBuilders.lua
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
+local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
+local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
@@ -442,6 +444,10 @@ local function BuildBarEffectsTab(container, group, style)
     BuildBarActiveAuraControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    BuildBarAuraPulseControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
     end -- barAuraAdvExpanded
 
     -- ================================================================
@@ -474,6 +480,10 @@ local function BuildBarEffectsTab(container, group, style)
     ApplyCheckboxIndent(barPandemicCombatCb, 20)
 
     BuildPandemicBarControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+
+    BuildPandemicBarPulseControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     end -- barPandemicAdvExpanded

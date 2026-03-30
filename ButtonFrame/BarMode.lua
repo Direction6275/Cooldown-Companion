@@ -12,6 +12,8 @@ local pairs = pairs
 local ipairs = ipairs
 local unpack = unpack
 local math_floor = math.floor
+local math_sin = math.sin
+local math_pi = math.pi
 local string_format = string.format
 local InCombatLockdown = InCombatLockdown
 
@@ -326,6 +328,53 @@ local function UpdateBarDisplay(button)
             or (barAuraVisualsEnabled and (not style.auraGlowCombatOnly or inCombat))))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
+    -- New bar indicator effects: alpha pulse, color shift, pixel border
+    -- Use same trigger conditions as existing bar aura indicators
+    local auraActivePassesCombat = button._auraActive
+        and (not style.auraGlowCombatOnly or inCombat)
+
+    -- Alpha Pulse — cache state for per-frame animation in BarModeOnUpdate
+    local wantPulse
+    if button._barPulsePreview or button._pandemicPreview then
+        wantPulse = true
+    elseif barAuraEffectPandemic and style.pandemicBarPulseEnabled then
+        wantPulse = "pandemic"
+    elseif auraActivePassesCombat and style.barAuraPulseEnabled then
+        wantPulse = "aura"
+    end
+    if wantPulse then
+        button._barPulseActive = true
+        button._barPulseSpeed = (wantPulse == "pandemic" or button._pandemicPreview)
+            and (style.pandemicBarPulseSpeed or 0.5)
+            or (style.barAuraPulseSpeed or 0.5)
+    elseif button._barPulseActive then
+        button._barPulseActive = nil
+        button.statusBar:SetAlpha(1.0)
+    end
+
+    -- Color Shift Pulse — cache state for per-frame animation in BarModeOnUpdate
+    local wantColorShift
+    if button._barColorShiftPreview or button._pandemicPreview then
+        wantColorShift = true
+    elseif barAuraEffectPandemic and style.pandemicBarColorShiftEnabled then
+        wantColorShift = "pandemic"
+    elseif auraActivePassesCombat and style.barAuraColorShiftEnabled then
+        wantColorShift = "aura"
+    end
+    if wantColorShift then
+        button._barColorShiftActive = true
+        button._barCSBaseColor = wantAuraColor or wantCdColor or style.barColor or DEFAULT_BAR_COLOR
+        if wantColorShift == "pandemic" or button._pandemicPreview then
+            button._barCSShiftColor = style.pandemicBarColorShiftColor or DEFAULT_WHITE
+            button._barCSSpeed = style.pandemicBarColorShiftSpeed or 0.5
+        else
+            button._barCSShiftColor = style.barAuraColorShiftColor or DEFAULT_WHITE
+            button._barCSSpeed = style.barAuraColorShiftSpeed or 0.5
+        end
+    elseif button._barColorShiftActive then
+        button._barColorShiftActive = nil
+    end
+
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
     if button.cooldown:IsShown() then
         button.cooldown:Hide()
@@ -352,6 +401,9 @@ local function BarModeOnUpdate(self, elapsed)
                 local c = self.style.barColor or DEFAULT_BAR_COLOR
                 self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
                 SetBarAuraEffect(self, false)
+                self._barPulseActive = nil
+                self._barColorShiftActive = nil
+                self.statusBar:SetAlpha(1.0)
             end
         end
     end
@@ -367,8 +419,34 @@ local function BarModeOnUpdate(self, elapsed)
             self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
             self.statusBar:SetMinMaxValues(0, 1)
             SetBarAuraEffect(self, false)
+            self._barPulseActive = nil
+            self._barColorShiftActive = nil
+            self.statusBar:SetAlpha(1.0)
         end
     end
+    -- Per-frame pulse/color-shift animations (must run at frame rate for smoothness)
+    if self._barPulseActive or self._barColorShiftActive then
+        local now = GetTime()
+        if self._barPulseActive then
+            local speed = self._barPulseSpeed or 0.5
+            self.statusBar:SetAlpha(0.6 + 0.4 * math_sin(now * math_pi / speed))
+        end
+        if self._barColorShiftActive then
+            local base = self._barCSBaseColor
+            local shift = self._barCSShiftColor
+            if base and shift then
+                local speed = self._barCSSpeed or 0.5
+                local t = 0.5 + 0.5 * math_sin(now * math_pi / speed)
+                self.statusBar:SetStatusBarColor(
+                    base[1] + (shift[1] - base[1]) * t,
+                    base[2] + (shift[2] - base[2]) * t,
+                    base[3] + (shift[3] - base[3]) * t,
+                    base[4] or 1
+                )
+            end
+        end
+    end
+
     self._barFillElapsed = self._barFillElapsed + elapsed
     if self._barFillElapsed >= self._barUpdateInterval then
         self._barFillElapsed = 0
@@ -775,6 +853,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barReadyTextColor = nil
     button._barAuraColor = nil
     button._barAuraEffectActive = nil
+    button._barPulseActive = nil
+    button._barColorShiftActive = nil
+    button.statusBar:SetAlpha(1.0)
 
     if isVertical then
         button:SetSize(barHeight, barLength)

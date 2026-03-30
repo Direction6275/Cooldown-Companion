@@ -213,6 +213,40 @@ function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
 end
 
 --------------------------------------------------------------------------------
+-- Bar Pulse Preview (unique — no tokens, no UpdateCooldown)
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetBarPulsePreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._barPulsePreview = show or nil
+            if not show then
+                button._barPulseActive = nil
+                button.statusBar:SetAlpha(1.0)
+            end
+            return
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar Color Shift Preview (unique — no tokens, no UpdateCooldown)
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetBarColorShiftPreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._barColorShiftPreview = show or nil
+            return
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Pandemic Preview
 --------------------------------------------------------------------------------
 

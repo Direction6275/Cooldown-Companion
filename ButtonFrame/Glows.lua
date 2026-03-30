@@ -838,6 +838,10 @@ local SetBarAuraEffect = MakeGlowSetter({
     cachePandemic = "_baePandemic",
 })
 
+--------------------------------------------------------------------------------
+-- Bar Pixel Border (LCG PixelGlow on _barBounds, thickness = bar borderSize)
+--------------------------------------------------------------------------------
+
 -- Exports
 ST._SetAssistedHighlight = SetAssistedHighlight
 ST._SetProcGlow = SetProcGlow

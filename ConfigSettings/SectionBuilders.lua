@@ -721,8 +721,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         ["none"] = "None",
         ["pixel"] = "Pixel Glow",
         ["solid"] = "Solid Border",
-        ["glow"] = "Proc Glow",
-    }, {"none", "pixel", "solid", "glow"})
+    }, {"none", "pixel", "solid"})
     effectDrop:SetValue(styleTable[cfg.effectKey] or "none")
     effectDrop:SetFullWidth(true)
     effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
@@ -825,6 +824,84 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         defaultEffectColor = {1, 0.84, 0, 0.9},
         effectSizeKey = "barAuraEffectSize", effectThicknessKey = "barAuraEffectThickness",
         effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
+    }, opts)
+end
+
+------------------------------------------------------------------------
+-- BAR MODE PULSE / COLOR SHIFT / PIXEL BORDER CONTROLS
+------------------------------------------------------------------------
+
+-- cfg = { pulseKey, pulseSpeedKey,
+--         colorShiftKey, colorShiftSpeedKey, colorShiftColorKey, defaultShiftColor }
+local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg, opts)
+    local isOverrideMode = opts and opts.isOverride == true
+
+    -- Alpha Pulse
+    local pulseCb = AceGUI:Create("CheckBox")
+    pulseCb:SetLabel("Alpha Pulse")
+    pulseCb:SetValue(styleTable[cfg.pulseKey] or false)
+    pulseCb:SetFullWidth(true)
+    pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable[cfg.pulseKey] = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(pulseCb)
+
+    if styleTable[cfg.pulseKey] then
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Pulse Duration")
+        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
+        speedSlider:SetValue(styleTable[cfg.pulseSpeedKey] or 0.5)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[cfg.pulseSpeedKey] = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
+    end
+
+    -- Color Shift
+    local shiftCb = AceGUI:Create("CheckBox")
+    shiftCb:SetLabel("Color Shift Pulse")
+    shiftCb:SetValue(styleTable[cfg.colorShiftKey] or false)
+    shiftCb:SetFullWidth(true)
+    shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable[cfg.colorShiftKey] = val
+        refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(shiftCb)
+
+    if styleTable[cfg.colorShiftKey] then
+        AddColorPicker(container, styleTable, cfg.colorShiftColorKey, "Shift Color", cfg.defaultShiftColor, true, refreshCallback, refreshCallback)
+
+        local shiftSpeedSlider = AceGUI:Create("Slider")
+        shiftSpeedSlider:SetLabel("Shift Duration")
+        shiftSpeedSlider:SetSliderValues(0.1, 2.0, 0.05)
+        shiftSpeedSlider:SetValue(styleTable[cfg.colorShiftSpeedKey] or 0.5)
+        shiftSpeedSlider:SetFullWidth(true)
+        shiftSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[cfg.colorShiftSpeedKey] = val
+            refreshCallback()
+        end)
+        container:AddChild(shiftSpeedSlider)
+    end
+end
+
+local function BuildBarAuraPulseControls(container, styleTable, refreshCallback, opts)
+    BuildBarPulseControls(container, styleTable, refreshCallback, {
+        pulseKey = "barAuraPulseEnabled", pulseSpeedKey = "barAuraPulseSpeed",
+        colorShiftKey = "barAuraColorShiftEnabled", colorShiftSpeedKey = "barAuraColorShiftSpeed",
+        colorShiftColorKey = "barAuraColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
+    }, opts)
+end
+
+local function BuildPandemicBarPulseControls(container, styleTable, refreshCallback, opts)
+    BuildBarPulseControls(container, styleTable, refreshCallback, {
+        pulseKey = "pandemicBarPulseEnabled", pulseSpeedKey = "pandemicBarPulseSpeed",
+        colorShiftKey = "pandemicBarColorShiftEnabled", colorShiftSpeedKey = "pandemicBarColorShiftSpeed",
+        colorShiftColorKey = "pandemicBarColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
     }, opts)
 end
 
@@ -988,6 +1065,8 @@ ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
+ST._BuildBarAuraPulseControls = BuildBarAuraPulseControls
+ST._BuildPandemicBarPulseControls = BuildPandemicBarPulseControls
 ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls

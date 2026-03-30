@@ -43,6 +43,8 @@ local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
+local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
+local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
@@ -1351,8 +1353,14 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         barColors = BuildBarColorsControls,
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
-        pandemicBar = BuildPandemicBarControls,
-        barActiveAura = BuildBarActiveAuraControls,
+        pandemicBar = function(container, styleTable, onChange, opts)
+            BuildPandemicBarControls(container, styleTable, onChange, opts)
+            BuildPandemicBarPulseControls(container, styleTable, onChange, opts)
+        end,
+        barActiveAura = function(container, styleTable, onChange, opts)
+            BuildBarActiveAuraControls(container, styleTable, onChange, opts)
+            BuildBarAuraPulseControls(container, styleTable, onChange, opts)
+        end,
         textFont = BuildTextFontControls,
         textColors = BuildTextColorsControls,
         textBackground = BuildTextBackgroundControls,
