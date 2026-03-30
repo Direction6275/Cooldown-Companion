@@ -1544,7 +1544,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                         auraActivePreviewBtn:SetFullWidth(true)
                         auraActivePreviewBtn:SetCallback("OnClick", function()
                             if CS.selectedGroup and CS.selectedButton then
-                                CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, 3, CS.selectedButton)
+                                CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, CS.selectedButton, 3)
                             end
                         end)
                         scroll:AddChild(auraActivePreviewBtn)

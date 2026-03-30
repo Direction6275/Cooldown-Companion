@@ -453,7 +453,9 @@ local function BuildBarEffectsTab(container, group, style)
     auraActivePreviewBtn:SetText("Preview Active Aura Effects (3s)")
     auraActivePreviewBtn:SetFullWidth(true)
     auraActivePreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, 3)
+        if CS.selectedGroup then
+            CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, nil, 3)
+        end
     end)
     container:AddChild(auraActivePreviewBtn)
     end -- barAuraAdvExpanded
@@ -499,7 +501,9 @@ local function BuildBarEffectsTab(container, group, style)
     pandemicPreviewBtn:SetText("Preview Pandemic Effects (3s)")
     pandemicPreviewBtn:SetFullWidth(true)
     pandemicPreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
+        if CS.selectedGroup then
+            CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
+        end
     end)
     container:AddChild(pandemicPreviewBtn)
     end -- barPandemicAdvExpanded
