@@ -835,10 +835,17 @@ end
 -- cfg = { pulseKey, pulseSpeedKey,
 --         colorShiftKey, colorShiftSpeedKey, colorShiftColorKey, defaultShiftColor }
 local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg, opts)
+    local fb = opts and opts.fallbackStyle
+    local function resolve(key, default)
+        local v = styleTable[key]
+        if v == nil and fb then v = fb[key] end
+        return v ~= nil and v or default
+    end
+
     -- Alpha Pulse
     local pulseCb = AceGUI:Create("CheckBox")
     pulseCb:SetLabel("Alpha Pulse")
-    pulseCb:SetValue(styleTable[cfg.pulseKey] or false)
+    pulseCb:SetValue(resolve(cfg.pulseKey, false))
     pulseCb:SetFullWidth(true)
     pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.pulseKey] = val
@@ -847,11 +854,11 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     end)
     container:AddChild(pulseCb)
 
-    if styleTable[cfg.pulseKey] then
+    if resolve(cfg.pulseKey, false) then
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Pulse Duration")
         speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(styleTable[cfg.pulseSpeedKey] or 0.5)
+        speedSlider:SetValue(resolve(cfg.pulseSpeedKey, 0.5))
         speedSlider:SetFullWidth(true)
         speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[cfg.pulseSpeedKey] = val
@@ -863,7 +870,7 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     -- Color Shift
     local shiftCb = AceGUI:Create("CheckBox")
     shiftCb:SetLabel("Color Shift Pulse")
-    shiftCb:SetValue(styleTable[cfg.colorShiftKey] or false)
+    shiftCb:SetValue(resolve(cfg.colorShiftKey, false))
     shiftCb:SetFullWidth(true)
     shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.colorShiftKey] = val
@@ -872,13 +879,13 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     end)
     container:AddChild(shiftCb)
 
-    if styleTable[cfg.colorShiftKey] then
+    if resolve(cfg.colorShiftKey, false) then
         AddColorPicker(container, styleTable, cfg.colorShiftColorKey, "Shift Color", cfg.defaultShiftColor, true, refreshCallback, refreshCallback)
 
         local shiftSpeedSlider = AceGUI:Create("Slider")
         shiftSpeedSlider:SetLabel("Shift Duration")
         shiftSpeedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        shiftSpeedSlider:SetValue(styleTable[cfg.colorShiftSpeedKey] or 0.5)
+        shiftSpeedSlider:SetValue(resolve(cfg.colorShiftSpeedKey, 0.5))
         shiftSpeedSlider:SetFullWidth(true)
         shiftSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[cfg.colorShiftSpeedKey] = val

@@ -329,9 +329,9 @@ local function UpdateBarDisplay(button)
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Bar indicator effects: alpha pulse, color shift
-    -- Pulse/color-shift use the same combat-only and pandemic conditions as bar aura effects,
-    -- but each has its own independent enable toggle.
-    local auraActivePassesCombat = button._auraActive
+    -- Gated behind the same master toggles as existing bar aura effects:
+    -- barAuraVisualsEnabled for aura-active, showPandemicGlow for pandemic (via barAuraEffectPandemic).
+    local auraActiveForPulse = barAuraVisualsEnabled and button._auraActive
         and (not style.auraGlowCombatOnly or inCombat)
 
     -- Alpha Pulse — cache state for per-frame animation in BarModeOnUpdate
@@ -340,7 +340,7 @@ local function UpdateBarDisplay(button)
         wantPulse = true
     elseif barAuraEffectPandemic and style.pandemicBarPulseEnabled then
         wantPulse = "pandemic"
-    elseif auraActivePassesCombat and style.barAuraPulseEnabled then
+    elseif auraActiveForPulse and style.barAuraPulseEnabled then
         wantPulse = "aura"
     end
     if wantPulse then
@@ -359,7 +359,7 @@ local function UpdateBarDisplay(button)
         wantColorShift = true
     elseif barAuraEffectPandemic and style.pandemicBarColorShiftEnabled then
         wantColorShift = "pandemic"
-    elseif auraActivePassesCombat and style.barAuraColorShiftEnabled then
+    elseif auraActiveForPulse and style.barAuraColorShiftEnabled then
         wantColorShift = "aura"
     end
     if wantColorShift then
