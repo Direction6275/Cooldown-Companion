@@ -653,9 +653,13 @@ local function ApplyCol1Drop(state)
             local specId = CooldownCompanion._currentSpecId
             for i, item in ipairs(orderItems) do
                 if item.kind == "folder" then
-                    CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
+                    if db.folders[item.id] then
+                        CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
+                    end
                 else
-                    CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
+                    if db.groupContainers[item.id] then
+                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
+                    end
                 end
             end
         end

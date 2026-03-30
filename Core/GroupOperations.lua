@@ -32,13 +32,14 @@ function CooldownCompanion:GetOrderForSpec(obj, specId, default)
     end
     return obj.order or default
 end
-ST.GetOrderForSpec = function(obj, specId, default)
-    return CooldownCompanion:GetOrderForSpec(obj, specId, default)
-end
 
 --- Write a per-spec order value to a container or folder.
 --- Creates the specOrders table if it doesn't exist.
 function CooldownCompanion:SetOrderForSpec(obj, specId, value)
+    if not specId then
+        obj.order = value
+        return
+    end
     if not obj.specOrders then obj.specOrders = {} end
     obj.specOrders[specId] = value
 end
