@@ -884,6 +884,7 @@ local function BuildContainerExportData(container)
     local data = CopyTable(container)
     data.createdBy = nil
     data.order = nil
+    data.specOrders = nil
     data.folderId = nil
     data.isGlobal = nil
     return data
@@ -978,6 +979,7 @@ local function ImportGroupData(text)
             container.createdBy = charKey
             container.isGlobal = false
             container.order = containerId
+            container.specOrders = nil
             container.folderId = nil
             container.locked = true
             db.groupContainers[containerId] = container
@@ -1181,6 +1183,7 @@ local function ImportGroupData(text)
                 container.createdBy = charKey
                 container.isGlobal = false
                 container.order = containerId
+                container.specOrders = nil
                 container.folderId = folderId
                 container.locked = true
                 db.groupContainers[containerId] = container
@@ -1346,6 +1349,7 @@ local function ImportGroupData(text)
         container.createdBy = charKey
         container.isGlobal = false
         container.order = containerId
+        container.specOrders = nil
         container.folderId = nil
         container.locked = true
         db.groupContainers[containerId] = container

@@ -390,11 +390,12 @@ local function RefreshColumn1(preserveDrag)
             end
         end
 
-        -- Sort folder children by container order
+        -- Sort folder children by per-spec container order
+        local specId = CooldownCompanion._currentSpecId
         for fid, children in pairs(folderChildContainers) do
             table.sort(children, function(a, b)
-                local orderA = db.groupContainers[a].order or a
-                local orderB = db.groupContainers[b].order or b
+                local orderA = CooldownCompanion:GetOrderForSpec(db.groupContainers[a], specId, a)
+                local orderB = CooldownCompanion:GetOrderForSpec(db.groupContainers[b], specId, b)
                 return orderA < orderB
             end)
         end
@@ -402,10 +403,10 @@ local function RefreshColumn1(preserveDrag)
         -- Build top-level items list: folders + loose containers
         local items = {}
         for _, fid in ipairs(sectionFolderIds) do
-            table.insert(items, { kind = "folder", id = fid, order = db.folders[fid].order or fid })
+            table.insert(items, { kind = "folder", id = fid, order = CooldownCompanion:GetOrderForSpec(db.folders[fid], specId, fid) })
         end
         for _, cid in ipairs(looseContainerIds) do
-            table.insert(items, { kind = "container", id = cid, order = db.groupContainers[cid].order or cid })
+            table.insert(items, { kind = "container", id = cid, order = CooldownCompanion:GetOrderForSpec(db.groupContainers[cid], specId, cid) })
         end
         table.sort(items, function(a, b) return a.order < b.order end)
 
@@ -636,7 +637,7 @@ local function RefreshColumn1(preserveDrag)
                                 for cid in pairs(CS.selectedGroups) do
                                     local c = db.groupContainers[cid]
                                     if c then
-                                        orderedCids[#orderedCids + 1] = { cid = cid, order = c.order or cid }
+                                        orderedCids[#orderedCids + 1] = { cid = cid, order = CooldownCompanion:GetOrderForSpec(c, CooldownCompanion._currentSpecId, cid) }
                                     end
                                 end
                                 table.sort(orderedCids, function(a, b) return a.order < b.order end)
@@ -804,7 +805,7 @@ local function RefreshColumn1(preserveDrag)
                                 if containerSection == "char" and folder.createdBy and folder.createdBy ~= charKey then
                                     -- skip: belongs to another character
                                 else
-                                    table.insert(folderList, { id = fid, name = folder.name, order = folder.order or fid })
+                                    table.insert(folderList, { id = fid, name = folder.name, order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid) })
                                 end
                             end
                         end
@@ -1283,7 +1284,7 @@ local function RefreshColumn1(preserveDrag)
                         local orderedCids = {}
                         for cid, c in pairs(db.groupContainers) do
                             if c.folderId == folderId then
-                                orderedCids[#orderedCids + 1] = { cid = cid, order = c.order or cid }
+                                orderedCids[#orderedCids + 1] = { cid = cid, order = CooldownCompanion:GetOrderForSpec(c, CooldownCompanion._currentSpecId, cid) }
                             end
                         end
                         table.sort(orderedCids, function(a, b) return a.order < b.order end)

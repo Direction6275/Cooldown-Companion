@@ -619,7 +619,7 @@ local function RefreshColumn2()
                     local targets = {}
                     for cid, c in pairs(db.groupContainers) do
                         if CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
-                            targets[#targets + 1] = { id = cid, name = c.name, order = c.order or cid }
+                            targets[#targets + 1] = { id = cid, name = c.name, order = CooldownCompanion:GetOrderForSpec(c, CooldownCompanion._currentSpecId, cid) }
                         end
                     end
                     table.sort(targets, function(a, b) return a.order < b.order end)
@@ -695,7 +695,10 @@ local function RefreshColumn2()
     -- Sort by container order so exports and bulk operations preserve visual layout
     local containers = CooldownCompanion.db.profile.groupContainers or {}
     table.sort(multiContainerIds, function(a, b)
-        return (containers[a] and containers[a].order or a) < (containers[b] and containers[b].order or b)
+        local ca, cb = containers[a], containers[b]
+        local oa = ca and CooldownCompanion:GetOrderForSpec(ca, CooldownCompanion._currentSpecId, a) or a
+        local ob = cb and CooldownCompanion:GetOrderForSpec(cb, CooldownCompanion._currentSpecId, b) or b
+        return oa < ob
     end)
     if multiGroupCount >= 2 then
         if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
@@ -774,7 +777,7 @@ local function RefreshColumn2()
                             id = fid,
                             name = folder.name,
                             section = folder.section,
-                            order = folder.order or fid,
+                            order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
                         })
                     end
                 end
@@ -1494,16 +1497,16 @@ local function RefreshColumn2()
                                     local fid = ctr.folderId
                                     if fid and db.folders[fid] then
                                         folderContainers[fid] = folderContainers[fid] or {}
-                                        table.insert(folderContainers[fid], { id = cid, name = cName, order = ctr.order or cid })
+                                        table.insert(folderContainers[fid], { id = cid, name = cName, order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid) })
                                     else
-                                        table.insert(looseContainers, { id = cid, name = cName, order = ctr.order or cid })
+                                        table.insert(looseContainers, { id = cid, name = cName, order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid) })
                                     end
                                 end
                             end
                             local sortedFolders = {}
                             for fid, folder in pairs(db.folders) do
                                 if folderContainers[fid] then
-                                    table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                                    table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid) })
                                 end
                             end
                             table.sort(sortedFolders, function(a, b) return a.order < b.order end)
@@ -1905,7 +1908,7 @@ local function RefreshColumn2()
                                     local sortedFolders = {}
                                     for fid, folder in pairs(db.folders) do
                                         if folderGroups[fid] then
-                                            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                                            table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid) })
                                         end
                                     end
                                     table.sort(sortedFolders, function(a, b) return a.order < b.order end)
@@ -1997,7 +2000,7 @@ local function RefreshColumn2()
                                 local sortedFolders = {}
                                 for fid, folder in pairs(db.folders) do
                                     if folderGroups[fid] then
-                                        table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = folder.order or fid })
+                                        table.insert(sortedFolders, { id = fid, name = folder.name or ("Folder " .. fid), order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid) })
                                     end
                                 end
                                 table.sort(sortedFolders, function(a, b) return a.order < b.order end)

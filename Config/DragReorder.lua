@@ -457,9 +457,10 @@ local function ApplyCol1Drop(state)
                         end
                     end
                     table.insert(orderItems, insertPos, sourceContainerId)
+                    local specId = CooldownCompanion._currentSpecId
                     for i, cid in ipairs(orderItems) do
                         if db.groupContainers[cid] then
-                            db.groupContainers[cid].order = i
+                            CooldownCompanion:SetOrderForSpec(db.groupContainers[cid], specId, i)
                         end
                     end
                 else
@@ -472,11 +473,12 @@ local function ApplyCol1Drop(state)
                         end
                     end
                     table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
+                    local specId = CooldownCompanion._currentSpecId
                     for i, item in ipairs(orderItems) do
                         if item.kind == "folder" and db.folders[item.id] then
-                            db.folders[item.id].order = i
+                            CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
                         elseif db.groupContainers[item.id] then
-                            db.groupContainers[item.id].order = i
+                            CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
                         end
                     end
                 end
@@ -521,12 +523,13 @@ local function ApplyCol1Drop(state)
             end
         end
 
-        -- Sort selected containers by current order to preserve relative ordering
+        -- Sort selected containers by current per-spec order to preserve relative ordering
+        local specId = CooldownCompanion._currentSpecId
         local sortedSelected = {}
         for cid in pairs(sourceContainerIds) do
             local c = db.groupContainers[cid]
             if c then
-                table.insert(sortedSelected, { id = cid, order = c.order or cid })
+                table.insert(sortedSelected, { id = cid, order = CooldownCompanion:GetOrderForSpec(c, specId, cid) })
             end
         end
         table.sort(sortedSelected, function(a, b) return a.order < b.order end)
@@ -557,7 +560,7 @@ local function ApplyCol1Drop(state)
                 end
                 for i, cid in ipairs(orderItems) do
                     if db.groupContainers[cid] then
-                        db.groupContainers[cid].order = i
+                        CooldownCompanion:SetOrderForSpec(db.groupContainers[cid], specId, i)
                     end
                 end
             else
@@ -586,9 +589,9 @@ local function ApplyCol1Drop(state)
                 end
                 for i, item in ipairs(orderItems) do
                     if item.kind == "folder" and db.folders[item.id] then
-                        db.folders[item.id].order = i
+                        CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
                     elseif db.groupContainers[item.id] then
-                        db.groupContainers[item.id].order = i
+                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
                     end
                 end
             end
@@ -647,11 +650,16 @@ local function ApplyCol1Drop(state)
                 end
             end
             table.insert(orderItems, insertPos, { kind = "folder", id = sourceFolderId })
+            local specId = CooldownCompanion._currentSpecId
             for i, item in ipairs(orderItems) do
                 if item.kind == "folder" then
-                    db.folders[item.id].order = i
+                    if db.folders[item.id] then
+                        CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
+                    end
                 else
-                    db.groupContainers[item.id].order = i
+                    if db.groupContainers[item.id] then
+                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
+                    end
                 end
             end
         end
