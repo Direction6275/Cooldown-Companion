@@ -152,9 +152,9 @@ local pendingSpecChange = false
 local savedContainerAlpha = nil
 
 -- Per-frame animation state for custom aura bar effects
-local cabAnimFrame = nil          -- lazy-created animation frame
+local cabAnimFrame = nil          -- forward declaration; created at load, shown/hidden on demand
 local cabEffectPreviewTokens = {} -- per-bar preview invalidation tokens
-local cabScratchColor = {0, 0, 0, 1} -- reusable table for per-frame color dispatch
+local cabScratchColor = {0, 0, 0, 1} -- reusable table for per-frame color interpolation (avoids allocation in OnUpdate)
 
 -- Fallback color constants (avoid per-tick table allocation when config keys are nil)
 local DEFAULT_CAB_BAR_COLOR = {0.5, 0.5, 1}
@@ -1955,6 +1955,7 @@ local function PrepareCustomAuraBar(
         if barInfo and barInfo.frame then
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
+            ClearCustomAuraBarEffects(barInfo)
             barInfo.frame:Hide()
         end
         if mode == "continuous" then
@@ -2948,12 +2949,17 @@ function CooldownCompanion:RevertResourceBars()
             ClearIndependentRuntimeState(barInfo.frame)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
+            ClearCustomAuraBarEffects(barInfo)
             barInfo.frame:Hide()
             if barInfo.frame.brightnessOverlay then
                 barInfo.frame.brightnessOverlay:Hide()
             end
         end
     end
+
+    -- Stop custom aura bar animation frame
+    if cabAnimFrame then cabAnimFrame:Hide() end
+    wipe(cabEffectPreviewTokens)
 
     -- Hide containers and independent wrapper
     if containerFrameAbove then containerFrameAbove:Hide() end

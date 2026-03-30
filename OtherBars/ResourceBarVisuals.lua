@@ -14,9 +14,6 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local issecretvalue = issecretvalue
-local math_sin = math.sin
-local math_pi = math.pi
-
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 -- Import from ResourceBarConstants & ResourceBarHelpers
