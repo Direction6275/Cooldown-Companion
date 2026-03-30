@@ -43,6 +43,8 @@ local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
+local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
+local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
@@ -1351,8 +1353,28 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         barColors = BuildBarColorsControls,
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
-        pandemicBar = BuildPandemicBarControls,
-        barActiveAura = BuildBarActiveAuraControls,
+        pandemicBar = function(container, styleTable, onChange, opts)
+            BuildPandemicBarControls(container, styleTable, onChange, opts)
+            -- Only show pulse controls when the pandemic indicator is enabled
+            local panEnabled = styleTable.showPandemicGlow
+            if panEnabled == nil and opts and opts.fallbackStyle then
+                panEnabled = opts.fallbackStyle.showPandemicGlow
+            end
+            if panEnabled ~= false then
+                BuildPandemicBarPulseControls(container, styleTable, onChange, opts)
+            end
+        end,
+        barActiveAura = function(container, styleTable, onChange, opts)
+            BuildBarActiveAuraControls(container, styleTable, onChange, opts)
+            -- Only show pulse controls when the aura indicator is enabled
+            local auraEffect = styleTable.barAuraEffect
+            if auraEffect == nil and opts and opts.fallbackStyle then
+                auraEffect = opts.fallbackStyle.barAuraEffect
+            end
+            if (auraEffect or "none") ~= "none" then
+                BuildBarAuraPulseControls(container, styleTable, onChange, opts)
+            end
+        end,
         textFont = BuildTextFontControls,
         textColors = BuildTextColorsControls,
         textBackground = BuildTextBackgroundControls,
@@ -1509,6 +1531,26 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                     elseif sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
                         local pandemicPreviewBtn = AceGUI:Create("Button")
                         pandemicPreviewBtn:SetText("Preview Pandemic Glow (3s)")
+                        pandemicPreviewBtn:SetFullWidth(true)
+                        pandemicPreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayPandemicPreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(pandemicPreviewBtn)
+                    elseif sectionId == "barActiveAura" then
+                        local auraActivePreviewBtn = AceGUI:Create("Button")
+                        auraActivePreviewBtn:SetText("Preview Active Aura Effects (3s)")
+                        auraActivePreviewBtn:SetFullWidth(true)
+                        auraActivePreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(auraActivePreviewBtn)
+                    elseif sectionId == "pandemicBar" then
+                        local pandemicPreviewBtn = AceGUI:Create("Button")
+                        pandemicPreviewBtn:SetText("Preview Pandemic Effects (3s)")
                         pandemicPreviewBtn:SetFullWidth(true)
                         pandemicPreviewBtn:SetCallback("OnClick", function()
                             if CS.selectedGroup and CS.selectedButton then

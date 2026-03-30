@@ -1,7 +1,8 @@
 --[[
     CooldownCompanion - ButtonFrame/Preview
-    Config panel preview methods for proc glow, aura glow, bar aura effect, pandemic,
-    ready glow, and key press highlight.
+    Config panel preview methods for proc glow, aura glow, bar aura effect,
+    bar aura active, bar pulse, bar color shift, pandemic, ready glow, and
+    key press highlight.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -208,6 +209,107 @@ function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
                 button._barAuraEffectActive = nil
             end
             return
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar Pulse Preview (unique — no tokens, no UpdateCooldown)
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetBarPulsePreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._barPulsePreview = show or nil
+            if not show then
+                button._barPulseActive = nil
+                if button.statusBar then button.statusBar:SetAlpha(1.0) end
+            end
+            return
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar Color Shift Preview (unique — no tokens, no UpdateCooldown)
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetBarColorShiftPreview(groupId, buttonIndex, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._barColorShiftPreview = show or nil
+            if not show then
+                button._barColorShiftActive = nil
+                button._barAuraColor = nil
+                button._barCdColor = nil
+            end
+            return
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar Aura Active Preview (simulates full aura-active state: aura color,
+-- bar glow, alpha pulse, color shift — everything the aura indicator shows)
+-- Optional buttonIndex targets a single button (per-button override preview).
+--------------------------------------------------------------------------------
+
+local barAuraActiveGroupTokens = {}
+local barAuraActiveButtonTokens = {}
+
+function CooldownCompanion:PlayBarAuraActivePreview(groupId, buttonIndex, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then duration = 3 end
+
+    local token
+    if buttonIndex then
+        token = BumpButtonPreviewToken(barAuraActiveButtonTokens, groupId, buttonIndex)
+    else
+        barAuraActiveButtonTokens[groupId] = nil
+        token = (barAuraActiveGroupTokens[groupId] or 0) + 1
+        barAuraActiveGroupTokens[groupId] = token
+    end
+
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if not buttonIndex or button.index == buttonIndex then
+            button._barAuraActivePreview = true
+            if button.UpdateCooldown then button:UpdateCooldown() end
+        end
+    end
+
+    C_Timer_After(duration, function()
+        if buttonIndex then
+            local groupTokens = barAuraActiveButtonTokens[groupId]
+            if not groupTokens or groupTokens[buttonIndex] ~= token then return end
+        else
+            if barAuraActiveGroupTokens[groupId] ~= token then return end
+        end
+        local f = self.groupFrames[groupId]
+        if not f then return end
+        for _, btn in ipairs(f.buttons) do
+            if not buttonIndex or btn.index == buttonIndex then
+                btn._barAuraActivePreview = nil
+                if btn.UpdateCooldown then btn:UpdateCooldown() end
+            end
+        end
+    end)
+end
+
+function CooldownCompanion:ClearAllBarAuraActivePreviews()
+    wipe(barAuraActiveGroupTokens)
+    wipe(barAuraActiveButtonTokens)
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            if button._barAuraActivePreview then
+                button._barAuraActivePreview = nil
+                if button.UpdateCooldown then button:UpdateCooldown() end
+            end
         end
     end
 end
