@@ -839,7 +839,8 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     local function resolve(key, default)
         local v = styleTable[key]
         if v == nil and fb then v = fb[key] end
-        return v ~= nil and v or default
+        if v ~= nil then return v end
+        return default
     end
 
     -- Alpha Pulse
