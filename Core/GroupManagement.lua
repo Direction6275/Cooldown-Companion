@@ -364,6 +364,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
     local newContainer = CopyTable(sourceContainer)
     newContainer.name = sourceContainer.name .. " (Copy)"
     newContainer.order = newContainerId
+    newContainer.specOrders = nil
     newContainer.createdBy = self.db.keys.char
     newContainer.isGlobal = false
 

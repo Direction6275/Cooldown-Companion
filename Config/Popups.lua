@@ -884,6 +884,7 @@ local function BuildContainerExportData(container)
     local data = CopyTable(container)
     data.createdBy = nil
     data.order = nil
+    data.specOrders = nil
     data.folderId = nil
     data.isGlobal = nil
     return data

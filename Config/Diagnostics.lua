@@ -506,8 +506,8 @@ local function FormatDiagnosticAsText(diag)
         for id in pairs(p.groupContainers) do containerIds[#containerIds + 1] = id end
         local specId = CooldownCompanion._currentSpecId
         table.sort(containerIds, function(a, b)
-            local oa = CooldownCompanion:GetOrderForSpec(p.groupContainers[a], specId, 999)
-            local ob = CooldownCompanion:GetOrderForSpec(p.groupContainers[b], specId, 999)
+            local oa = CooldownCompanion:GetOrderForSpec(p.groupContainers[a], specId, a)
+            local ob = CooldownCompanion:GetOrderForSpec(p.groupContainers[b], specId, b)
             if oa ~= ob then return oa < ob end
             return a < b
         end)
@@ -840,8 +840,9 @@ local function FormatDiagnosticAsText(diag)
                 end
                 table.sort(memberContainers)
                 local membersStr = #memberContainers > 0 and table.concat(memberContainers, ", ") or "empty"
+                local effectiveOrder = CooldownCompanion:GetOrderForSpec(f, CooldownCompanion._currentSpecId, fid)
                 add(("[%s] %q section=%s order=%s | containers: %s"):format(
-                    tostring(fid), f.name or "?", f.section or "?", tostring(f.order), membersStr))
+                    tostring(fid), f.name or "?", f.section or "?", tostring(effectiveOrder), membersStr))
                 if f.specs and next(f.specs) then
                     add(("  specs: %s"):format(formatSpecList(f.specs)))
                 end
