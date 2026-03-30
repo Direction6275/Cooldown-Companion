@@ -106,7 +106,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
     button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
     button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
-    button.cooldown:SetSwipeColor(0, 0, 0, 0.8)
+    button.cooldown:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
+    local edgeColor = style.cooldownSwipeEdgeColor
+    if edgeColor then
+        button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+    end
     button.cooldown:SetHideCountdownNumbers(false) -- Always allow; visibility controlled via text alpha
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
@@ -845,6 +849,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
     button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
     button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
+    button.cooldown:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
+    local edgeColor = style.cooldownSwipeEdgeColor
+    if edgeColor then
+        button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+    end
 
     -- Update cooldown font settings (default state; per-tick logic handles aura mode)
     local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")

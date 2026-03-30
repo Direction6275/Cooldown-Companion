@@ -321,6 +321,21 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     container:AddChild(fillCb)
     ApplyCheckboxIndent(fillCb, 20)
 
+    -- Swipe Fill Opacity (only when fill is visible)
+    if styleTable.showCooldownSwipeFill ~= false then
+        local alphaSlider = AceGUI:Create("Slider")
+        alphaSlider:SetLabel("Swipe Fill Opacity")
+        alphaSlider:SetSliderValues(0, 1, 0.05)
+        alphaSlider:SetIsPercent(true)
+        alphaSlider:SetValue(styleTable.cooldownSwipeAlpha or 0.8)
+        alphaSlider:SetFullWidth(true)
+        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.cooldownSwipeAlpha = val
+            refreshCallback()
+        end)
+        container:AddChild(alphaSlider)
+    end
+
     local edgeCb = AceGUI:Create("CheckBox")
     edgeCb:SetLabel("Show Swipe Edge")
     edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)
@@ -331,6 +346,11 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     end)
     container:AddChild(edgeCb)
     ApplyCheckboxIndent(edgeCb, 20)
+
+    -- Swipe Edge Color (only when edge is visible)
+    if styleTable.showCooldownSwipeEdge ~= false then
+        AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+    end
 end
 
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
