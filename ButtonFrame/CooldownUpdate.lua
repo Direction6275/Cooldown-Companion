@@ -1004,6 +1004,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- _mainCDShown is the raw "main cooldown sweep shown" signal; suppress zero
     -- while we have explicit cast-history evidence that not all charges are spent.
     if buttonData.hasCharges then
+        -- Seed _chargesSpent when recharging without cast history (e.g. after
+        -- /reload mid-recharge).  Defaults to maxCharges ("all spent") so the
+        -- heuristic below does not suppress genuine zero-charge signals.
+        -- OnSpellCast takes over on the next cast; full recharge resets the cycle.
+        if button._chargeRecharging and not button._chargesSpent then
+            button._chargesSpent = buttonData.maxCharges or 0
+        end
+
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
            and buttonData.type == "spell"
