@@ -154,6 +154,14 @@ local savedContainerAlpha = nil
 -- Per-frame animation state for custom aura bar effects
 local cabAnimFrame = nil          -- lazy-created animation frame
 local cabEffectPreviewTokens = {} -- per-bar preview invalidation tokens
+local cabScratchColor = {0, 0, 0, 1} -- reusable table for per-frame color dispatch
+
+-- Fallback color constants (avoid per-tick table allocation when config keys are nil)
+local DEFAULT_CAB_BAR_COLOR = {0.5, 0.5, 1}
+local DEFAULT_CAB_SHIFT_COLOR = {1, 1, 1, 1}
+local DEFAULT_CAB_PANDEMIC_COLOR = {1, 0, 0, 1}
+local DEFAULT_CAB_GLOW_COLOR = {1, 0.84, 0, 0.9}
+local DEFAULT_CAB_PANDEMIC_GLOW_COLOR = {1, 0, 0, 0.9}
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
@@ -1590,7 +1598,6 @@ local function UpdateCustomAuraBar(barInfo)
     -- ----------------------------------------------------------------
     -- Indicator effects: alpha pulse, color shift, pixel glow
     -- ----------------------------------------------------------------
-    local now = GetTime()
     local inCombat = InCombatLockdown()
     local effectContext  -- "aura", "pandemic", or nil
 
@@ -1611,7 +1618,6 @@ local function UpdateCustomAuraBar(barInfo)
                 inPandemic = true
             end
         end
-        barInfo._cabInPandemic = inPandemic
 
         -- Pandemic replaces aura active
         if inPandemic and (not cabConfig.cabPandemicCombatOnly or inCombat) then
@@ -1625,46 +1631,43 @@ local function UpdateCustomAuraBar(barInfo)
     -- Read effect settings for the active context
     local wantPulse, pulseSpeed
     local wantColorShift, csShiftColor, csSpeed
-    local wantPixelGlow, pgColor, pgLines, pgSpeed, pgSize, pgThickness, pgKey
+    local wantPixelGlow, pgColor, pgLines, pgSpeed, pgKey, pgThickness
     local wantBarColor
 
     if effectContext == "aura" then
-        -- No bar color override for aura active — bar color IS the aura color
         if cabConfig.cabAuraPulseEnabled then
             wantPulse = true
             pulseSpeed = cabConfig.cabAuraPulseSpeed or 0.5
         end
         if cabConfig.cabAuraColorShiftEnabled then
             wantColorShift = true
-            csShiftColor = cabConfig.cabAuraColorShiftColor or {1, 1, 1, 1}
+            csShiftColor = cabConfig.cabAuraColorShiftColor or DEFAULT_CAB_SHIFT_COLOR
             csSpeed = cabConfig.cabAuraColorShiftSpeed or 0.5
         end
         if (cabConfig.cabAuraBarEffect or "none") == "pixel" then
             wantPixelGlow = true
-            pgColor = cabConfig.cabAuraBarEffectColor or {1, 0.84, 0, 0.9}
+            pgColor = cabConfig.cabAuraBarEffectColor or DEFAULT_CAB_GLOW_COLOR
             pgLines = cabConfig.cabAuraBarEffectLines
             pgSpeed = cabConfig.cabAuraBarEffectSpeed
-            pgSize = cabConfig.cabAuraBarEffectSize
             pgThickness = cabConfig.cabAuraBarEffectThickness
             pgKey = CAB_AURA_LCG_KEY
         end
     elseif effectContext == "pandemic" then
-        wantBarColor = cabConfig.cabPandemicColor or {1, 0, 0, 1}
+        wantBarColor = cabConfig.cabPandemicColor or DEFAULT_CAB_PANDEMIC_COLOR
         if cabConfig.cabPandemicPulseEnabled then
             wantPulse = true
             pulseSpeed = cabConfig.cabPandemicPulseSpeed or 0.5
         end
         if cabConfig.cabPandemicColorShiftEnabled then
             wantColorShift = true
-            csShiftColor = cabConfig.cabPandemicColorShiftColor or {1, 1, 1, 1}
+            csShiftColor = cabConfig.cabPandemicColorShiftColor or DEFAULT_CAB_SHIFT_COLOR
             csSpeed = cabConfig.cabPandemicColorShiftSpeed or 0.5
         end
         if (cabConfig.cabPandemicBarEffect or "none") == "pixel" then
             wantPixelGlow = true
-            pgColor = cabConfig.cabPandemicBarEffectColor or {1, 0, 0, 0.9}
+            pgColor = cabConfig.cabPandemicBarEffectColor or DEFAULT_CAB_PANDEMIC_GLOW_COLOR
             pgLines = cabConfig.cabPandemicBarEffectLines
             pgSpeed = cabConfig.cabPandemicBarEffectSpeed
-            pgSize = cabConfig.cabPandemicBarEffectSize
             pgThickness = cabConfig.cabPandemicBarEffectThickness
             pgKey = CAB_PANDEMIC_LCG_KEY
         end
@@ -1673,18 +1676,17 @@ local function UpdateCustomAuraBar(barInfo)
     -- Color shift base = bar color override OR current bar color
     local csBaseColor
     if wantColorShift then
-        csBaseColor = wantBarColor or cabConfig.barColor or {0.5, 0.5, 1}
+        csBaseColor = wantBarColor or cabConfig.barColor or DEFAULT_CAB_BAR_COLOR
     end
 
-    -- Apply bar color override (aura active / pandemic)
+    -- Apply bar color override (pandemic color shift handles its own color)
     if wantBarColor and not wantColorShift then
         SetCustomAuraBarColor(barInfo, wantBarColor)
         barInfo._cabBarColorOverride = true
     elseif barInfo._cabBarColorOverride and not wantBarColor then
-        SetCustomAuraBarColor(barInfo, cabConfig.barColor or {0.5, 0.5, 1})
+        SetCustomAuraBarColor(barInfo, cabConfig.barColor or DEFAULT_CAB_BAR_COLOR)
         barInfo._cabBarColorOverride = nil
     end
-    if not wantBarColor then barInfo._cabBarColorOverride = nil end
 
     -- Pulse state
     local wasAnimating = barInfo._cabPulseActive or barInfo._cabColorShiftActive
@@ -1709,7 +1711,7 @@ local function UpdateCustomAuraBar(barInfo)
         barInfo._cabCSShiftColor = nil
         barInfo._cabCSSpeed = nil
         -- Restore bar color
-        local restoreColor = wantBarColor or cabConfig.barColor or {0.5, 0.5, 1}
+        local restoreColor = wantBarColor or cabConfig.barColor or DEFAULT_CAB_BAR_COLOR
         SetCustomAuraBarColor(barInfo, restoreColor)
     end
 
@@ -1720,7 +1722,7 @@ local function UpdateCustomAuraBar(barInfo)
             if activeGlowKey then
                 StopCustomAuraPixelGlow(barInfo.frame, activeGlowKey)
             end
-            StartCustomAuraPixelGlow(barInfo.frame, pgColor, pgLines, pgSpeed, pgSize, pgThickness, pgKey)
+            StartCustomAuraPixelGlow(barInfo.frame, pgColor, pgLines, pgSpeed, nil, pgThickness, pgKey)
             barInfo._cabPixelGlowKey = pgKey
         end
     elseif activeGlowKey then
@@ -1752,7 +1754,7 @@ end
 ------------------------------------------------------------------------
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
-    local barColor = cabConfig.barColor or {0.5, 0.5, 1}
+    local barColor = cabConfig.barColor or DEFAULT_CAB_BAR_COLOR
     local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
     local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
 
@@ -2254,27 +2256,12 @@ cabAnimFrame:SetScript("OnUpdate", function(self, elapsed)
             if base and shift then
                 local speed = barInfo._cabCSSpeed or 0.5
                 local t = 0.5 + 0.5 * math_sin(now * 2 * math_pi / speed)
-                local r = base[1] + (shift[1] - base[1]) * t
-                local g = base[2] + (shift[2] - base[2]) * t
-                local b = base[3] + (shift[3] - base[3]) * t
                 local ba = base[4] or 1
-                local a = ba + ((shift[4] or 1) - ba) * t
-                -- Apply to all fill segments based on bar type
-                if barInfo.barType == "custom_continuous" then
-                    barInfo.frame:SetStatusBarColor(r, g, b, a)
-                elseif barInfo.barType == "custom_segmented" and barInfo.frame.segments then
-                    for _, seg in ipairs(barInfo.frame.segments) do
-                        seg:SetStatusBarColor(r, g, b, a)
-                    end
-                elseif barInfo.barType == "custom_overlay" and barInfo.frame.segments then
-                    local half = barInfo.halfSegments or 1
-                    for i = 1, half do
-                        barInfo.frame.segments[i]:SetStatusBarColor(r, g, b, a)
-                        if barInfo.frame.overlaySegments then
-                            barInfo.frame.overlaySegments[i]:SetStatusBarColor(r, g, b, a)
-                        end
-                    end
-                end
+                cabScratchColor[1] = base[1] + (shift[1] - base[1]) * t
+                cabScratchColor[2] = base[2] + (shift[2] - base[2]) * t
+                cabScratchColor[3] = base[3] + (shift[3] - base[3]) * t
+                cabScratchColor[4] = ba + ((shift[4] or 1) - ba) * t
+                SetCustomAuraBarColor(barInfo, cabScratchColor)
             else
                 barInfo._cabColorShiftActive = nil
             end

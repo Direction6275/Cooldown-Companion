@@ -675,7 +675,7 @@ local function ClearCustomAuraBarEffects(barInfo)
     barInfo._cabCSShiftColor = nil
     barInfo._cabCSSpeed = nil
     barInfo._cabPixelGlowKey = nil
-    barInfo._cabInPandemic = nil
+    barInfo._cabBarColorOverride = nil
     barInfo._cabEffectPreview = nil
 end
 
