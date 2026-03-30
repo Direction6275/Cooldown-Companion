@@ -21,9 +21,15 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_abs = math.abs
+local math_sin = math.sin
+local math_pi = math.pi
 local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
 local string_format = string.format
+local ipairs = ipairs
+local wipe = wipe
+local C_Timer_After = C_Timer.After
 
 ------------------------------------------------------------------------
 -- Imports from ResourceBarConstants / ResourceBarHelpers / ResourceBarVisuals
@@ -111,6 +117,11 @@ local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
+local StartCustomAuraPixelGlow = RB.StartCustomAuraPixelGlow
+local StopCustomAuraPixelGlow = RB.StopCustomAuraPixelGlow
+local ClearCustomAuraBarEffects = RB.ClearCustomAuraBarEffects
+local CAB_AURA_LCG_KEY = RB.CAB_AURA_LCG_KEY
+local CAB_PANDEMIC_LCG_KEY = RB.CAB_PANDEMIC_LCG_KEY
 
 -- Shared helper from ButtonFrame/Helpers.lua
 local FormatTime = CooldownCompanion.FormatTime
@@ -139,6 +150,10 @@ local isPreviewActive = false
 local ApplyPreviewData
 local pendingSpecChange = false
 local savedContainerAlpha = nil
+
+-- Per-frame animation state for custom aura bar effects
+local cabAnimFrame = nil          -- lazy-created animation frame
+local cabEffectPreviewTokens = {} -- per-bar preview invalidation tokens
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
@@ -1346,6 +1361,64 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
 end
 
 ------------------------------------------------------------------------
+-- Helper: set StatusBar color on all fill segments of a custom aura bar
+------------------------------------------------------------------------
+
+local function SetCustomAuraBarColor(barInfo, color)
+    if not color then return end
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+    if barInfo.barType == "custom_continuous" then
+        barInfo.frame:SetStatusBarColor(r, g, b, a)
+    elseif barInfo.barType == "custom_segmented" then
+        if barInfo.frame.segments then
+            for _, seg in ipairs(barInfo.frame.segments) do
+                seg:SetStatusBarColor(r, g, b, a)
+            end
+        end
+    elseif barInfo.barType == "custom_overlay" then
+        local holder = barInfo.frame
+        if holder.segments then
+            local half = barInfo.halfSegments or 1
+            for i = 1, half do
+                holder.segments[i]:SetStatusBarColor(r, g, b, a)
+                if holder.overlaySegments then
+                    holder.overlaySegments[i]:SetStatusBarColor(r, g, b, a)
+                end
+            end
+        end
+    end
+end
+
+-- Set alpha on only the fill texture(s) of a custom aura bar,
+-- leaving background, borders, and text unaffected.
+local function SetCustomAuraBarFillAlpha(barInfo, alpha)
+    if barInfo.barType == "custom_continuous" then
+        local tex = barInfo.frame:GetStatusBarTexture()
+        if tex then tex:SetAlpha(alpha) end
+    elseif barInfo.barType == "custom_segmented" then
+        if barInfo.frame.segments then
+            for _, seg in ipairs(barInfo.frame.segments) do
+                local tex = seg:GetStatusBarTexture()
+                if tex then tex:SetAlpha(alpha) end
+            end
+        end
+    elseif barInfo.barType == "custom_overlay" then
+        local holder = barInfo.frame
+        if holder.segments then
+            local half = barInfo.halfSegments or 1
+            for i = 1, half do
+                local tex = holder.segments[i]:GetStatusBarTexture()
+                if tex then tex:SetAlpha(alpha) end
+                if holder.overlaySegments then
+                    local otex = holder.overlaySegments[i]:GetStatusBarTexture()
+                    if otex then otex:SetAlpha(alpha) end
+                end
+            end
+        end
+    end
+end
+
+------------------------------------------------------------------------
 -- Update logic: Custom aura bars (aura-based, secret-safe)
 ------------------------------------------------------------------------
 
@@ -1513,6 +1586,165 @@ local function UpdateCustomAuraBar(barInfo)
     if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
         barInfo._maxStacksIndicator:SetValue(auraPresent and applications or 0)
     end
+
+    -- ----------------------------------------------------------------
+    -- Indicator effects: alpha pulse, color shift, pixel glow
+    -- ----------------------------------------------------------------
+    local now = GetTime()
+    local inCombat = InCombatLockdown()
+    local effectContext  -- "aura", "pandemic", or nil
+
+    -- Preview overrides skip normal evaluation
+    if barInfo._cabEffectPreview then
+        effectContext = barInfo._cabEffectPreview
+        -- Force bar fill during preview so effects are visible on empty bars
+        if barInfo.barType == "custom_continuous" and isActive then
+            barInfo.frame:SetMinMaxValues(0, 1)
+            barInfo.frame:SetValue(1)
+        end
+    elseif isActive then
+        -- Active tracking mode: pandemic detection + aura active
+        local inPandemic = false
+        if auraPresent and cabConfig.cabPandemicEnabled and viewerFrame then
+            local pi = viewerFrame.PandemicIcon
+            if pi and pi:IsVisible() then
+                inPandemic = true
+            end
+        end
+        barInfo._cabInPandemic = inPandemic
+
+        -- Pandemic replaces aura active
+        if inPandemic and (not cabConfig.cabPandemicCombatOnly or inCombat) then
+            effectContext = "pandemic"
+        elseif auraPresent and cabConfig.cabAuraIndicatorEnabled
+               and (not cabConfig.cabAuraCombatOnly or inCombat) then
+            effectContext = "aura"
+        end
+    end
+
+    -- Read effect settings for the active context
+    local wantPulse, pulseSpeed
+    local wantColorShift, csShiftColor, csSpeed
+    local wantPixelGlow, pgColor, pgLines, pgSpeed, pgSize, pgThickness, pgKey
+    local wantBarColor
+
+    if effectContext == "aura" then
+        -- No bar color override for aura active — bar color IS the aura color
+        if cabConfig.cabAuraPulseEnabled then
+            wantPulse = true
+            pulseSpeed = cabConfig.cabAuraPulseSpeed or 0.5
+        end
+        if cabConfig.cabAuraColorShiftEnabled then
+            wantColorShift = true
+            csShiftColor = cabConfig.cabAuraColorShiftColor or {1, 1, 1, 1}
+            csSpeed = cabConfig.cabAuraColorShiftSpeed or 0.5
+        end
+        if (cabConfig.cabAuraBarEffect or "none") == "pixel" then
+            wantPixelGlow = true
+            pgColor = cabConfig.cabAuraBarEffectColor or {1, 0.84, 0, 0.9}
+            pgLines = cabConfig.cabAuraBarEffectLines
+            pgSpeed = cabConfig.cabAuraBarEffectSpeed
+            pgSize = cabConfig.cabAuraBarEffectSize
+            pgThickness = cabConfig.cabAuraBarEffectThickness
+            pgKey = CAB_AURA_LCG_KEY
+        end
+    elseif effectContext == "pandemic" then
+        wantBarColor = cabConfig.cabPandemicColor or {1, 0, 0, 1}
+        if cabConfig.cabPandemicPulseEnabled then
+            wantPulse = true
+            pulseSpeed = cabConfig.cabPandemicPulseSpeed or 0.5
+        end
+        if cabConfig.cabPandemicColorShiftEnabled then
+            wantColorShift = true
+            csShiftColor = cabConfig.cabPandemicColorShiftColor or {1, 1, 1, 1}
+            csSpeed = cabConfig.cabPandemicColorShiftSpeed or 0.5
+        end
+        if (cabConfig.cabPandemicBarEffect or "none") == "pixel" then
+            wantPixelGlow = true
+            pgColor = cabConfig.cabPandemicBarEffectColor or {1, 0, 0, 0.9}
+            pgLines = cabConfig.cabPandemicBarEffectLines
+            pgSpeed = cabConfig.cabPandemicBarEffectSpeed
+            pgSize = cabConfig.cabPandemicBarEffectSize
+            pgThickness = cabConfig.cabPandemicBarEffectThickness
+            pgKey = CAB_PANDEMIC_LCG_KEY
+        end
+    end
+
+    -- Color shift base = bar color override OR current bar color
+    local csBaseColor
+    if wantColorShift then
+        csBaseColor = wantBarColor or cabConfig.barColor or {0.5, 0.5, 1}
+    end
+
+    -- Apply bar color override (aura active / pandemic)
+    if wantBarColor and not wantColorShift then
+        SetCustomAuraBarColor(barInfo, wantBarColor)
+        barInfo._cabBarColorOverride = true
+    elseif barInfo._cabBarColorOverride and not wantBarColor then
+        SetCustomAuraBarColor(barInfo, cabConfig.barColor or {0.5, 0.5, 1})
+        barInfo._cabBarColorOverride = nil
+    end
+    if not wantBarColor then barInfo._cabBarColorOverride = nil end
+
+    -- Pulse state
+    local wasAnimating = barInfo._cabPulseActive or barInfo._cabColorShiftActive
+    if wantPulse then
+        barInfo._cabPulseActive = true
+        barInfo._cabPulseSpeed = pulseSpeed
+    elseif barInfo._cabPulseActive then
+        barInfo._cabPulseActive = nil
+        barInfo._cabPulseSpeed = nil
+        SetCustomAuraBarFillAlpha(barInfo, 1.0)
+    end
+
+    -- Color shift state
+    if wantColorShift then
+        barInfo._cabColorShiftActive = true
+        barInfo._cabCSBaseColor = csBaseColor
+        barInfo._cabCSShiftColor = csShiftColor
+        barInfo._cabCSSpeed = csSpeed
+    elseif barInfo._cabColorShiftActive then
+        barInfo._cabColorShiftActive = nil
+        barInfo._cabCSBaseColor = nil
+        barInfo._cabCSShiftColor = nil
+        barInfo._cabCSSpeed = nil
+        -- Restore bar color
+        local restoreColor = wantBarColor or cabConfig.barColor or {0.5, 0.5, 1}
+        SetCustomAuraBarColor(barInfo, restoreColor)
+    end
+
+    -- Pixel glow state (only call LCG on transitions)
+    local activeGlowKey = barInfo._cabPixelGlowKey
+    if wantPixelGlow and pgKey then
+        if activeGlowKey ~= pgKey then
+            if activeGlowKey then
+                StopCustomAuraPixelGlow(barInfo.frame, activeGlowKey)
+            end
+            StartCustomAuraPixelGlow(barInfo.frame, pgColor, pgLines, pgSpeed, pgSize, pgThickness, pgKey)
+            barInfo._cabPixelGlowKey = pgKey
+        end
+    elseif activeGlowKey then
+        StopCustomAuraPixelGlow(barInfo.frame, activeGlowKey)
+        barInfo._cabPixelGlowKey = nil
+    end
+
+    -- Register/deregister per-frame animation handler
+    local nowAnimating = barInfo._cabPulseActive or barInfo._cabColorShiftActive
+    if cabAnimFrame and (nowAnimating ~= (wasAnimating or false)) then
+        if nowAnimating then
+            cabAnimFrame:Show()
+        else
+            -- Check if any other bar still has active animations
+            local anyActive = false
+            for _, bi in ipairs(resourceBarFrames) do
+                if bi._cabPulseActive or bi._cabColorShiftActive then
+                    anyActive = true
+                    break
+                end
+            end
+            if not anyActive then cabAnimFrame:Hide() end
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -1634,6 +1866,7 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
             owner:ClearIndependentCustomAuraRuntimeState(barInfo.frame)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
+            ClearCustomAuraBarEffects(barInfo)
             barInfo.frame:Hide()
             barInfo.cabConfig = nil
             barInfo.powerType = nil
@@ -1999,6 +2232,55 @@ local function OnUpdate(self, elapsed)
         CooldownCompanion:RepositionCastBar()
     end
 end
+
+------------------------------------------------------------------------
+-- Per-frame animation for custom aura bar effects (alpha pulse, color shift)
+-- Only shown when at least one bar has active animation state.
+------------------------------------------------------------------------
+
+cabAnimFrame = CreateFrame("Frame")
+cabAnimFrame:Hide()
+cabAnimFrame:SetScript("OnUpdate", function(self, elapsed)
+    local now = GetTime()
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo._cabPulseActive then
+            local speed = barInfo._cabPulseSpeed or 0.5
+            local alpha = 0.6 + 0.4 * math_sin(now * 2 * math_pi / speed)
+            SetCustomAuraBarFillAlpha(barInfo, alpha)
+        end
+        if barInfo._cabColorShiftActive then
+            local base = barInfo._cabCSBaseColor
+            local shift = barInfo._cabCSShiftColor
+            if base and shift then
+                local speed = barInfo._cabCSSpeed or 0.5
+                local t = 0.5 + 0.5 * math_sin(now * 2 * math_pi / speed)
+                local r = base[1] + (shift[1] - base[1]) * t
+                local g = base[2] + (shift[2] - base[2]) * t
+                local b = base[3] + (shift[3] - base[3]) * t
+                local ba = base[4] or 1
+                local a = ba + ((shift[4] or 1) - ba) * t
+                -- Apply to all fill segments based on bar type
+                if barInfo.barType == "custom_continuous" then
+                    barInfo.frame:SetStatusBarColor(r, g, b, a)
+                elseif barInfo.barType == "custom_segmented" and barInfo.frame.segments then
+                    for _, seg in ipairs(barInfo.frame.segments) do
+                        seg:SetStatusBarColor(r, g, b, a)
+                    end
+                elseif barInfo.barType == "custom_overlay" and barInfo.frame.segments then
+                    local half = barInfo.halfSegments or 1
+                    for i = 1, half do
+                        barInfo.frame.segments[i]:SetStatusBarColor(r, g, b, a)
+                        if barInfo.frame.overlaySegments then
+                            barInfo.frame.overlaySegments[i]:SetStatusBarColor(r, g, b, a)
+                        end
+                    end
+                end
+            else
+                barInfo._cabColorShiftActive = nil
+            end
+        end
+    end
+end)
 
 ------------------------------------------------------------------------
 -- Event handling (must be defined before Apply/Revert which call these)
@@ -3051,6 +3333,70 @@ end
 
 function CooldownCompanion:IsResourceBarPreviewActive()
     return isPreviewActive
+end
+
+------------------------------------------------------------------------
+-- Custom aura bar effect preview (timed, per-bar, with token invalidation)
+------------------------------------------------------------------------
+
+function CooldownCompanion:PlayCustomAuraBarEffectPreview(cabIndex, context, durationSeconds)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then duration = 3 end
+
+    local token = (cabEffectPreviewTokens[cabIndex] or 0) + 1
+    cabEffectPreviewTokens[cabIndex] = token
+
+    local targetPowerType = CUSTOM_AURA_BAR_BASE + cabIndex - 1
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.powerType == targetPowerType and barInfo.cabConfig then
+            barInfo._cabEffectPreview = context
+            -- Force the bar visible during preview (hideWhenInactive bars)
+            if barInfo.frame and not barInfo.frame:IsShown() then
+                barInfo.frame:Show()
+            end
+            UpdateCustomAuraBar(barInfo)
+            break
+        end
+    end
+
+    C_Timer_After(duration, function()
+        if cabEffectPreviewTokens[cabIndex] ~= token then return end
+        for _, barInfo in ipairs(resourceBarFrames) do
+            if barInfo.powerType == targetPowerType and barInfo.cabConfig then
+                barInfo._cabEffectPreview = nil
+                ClearCustomAuraBarEffects(barInfo)
+                -- Re-style to restore colors
+                StyleCustomAuraBar(barInfo, barInfo.cabConfig)
+                -- Resume normal updates
+                UpdateCustomAuraBar(barInfo)
+                break
+            end
+        end
+    end)
+end
+
+function CooldownCompanion:ClearAllCustomAuraBarEffectPreviews()
+    wipe(cabEffectPreviewTokens)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo._cabEffectPreview then
+            barInfo._cabEffectPreview = nil
+            ClearCustomAuraBarEffects(barInfo)
+            if barInfo.cabConfig then
+                StyleCustomAuraBar(barInfo, barInfo.cabConfig)
+            end
+        end
+    end
+    -- Only hide animation frame if no bars still have live (non-preview) animations
+    if cabAnimFrame then
+        local anyActive = false
+        for _, bi in ipairs(resourceBarFrames) do
+            if bi._cabPulseActive or bi._cabColorShiftActive then
+                anyActive = true
+                break
+            end
+        end
+        if not anyActive then cabAnimFrame:Hide() end
+    end
 end
 
 ------------------------------------------------------------------------

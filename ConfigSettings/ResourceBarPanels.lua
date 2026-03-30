@@ -22,6 +22,7 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local tabInfoButtons = CS.tabInfoButtons
+local BuildBarPulseControls = ST._BuildBarPulseControls
 
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
@@ -1883,6 +1884,207 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     end
                 end
 
+                -- ======================================================
+                -- Active Tracking Mode: Aura Active + Pandemic Indicators
+                -- ======================================================
+                if isActiveTracking then
+                    -- ---- Aura Active Indicator ----
+                    local auraIndHeading = AceGUI:Create("Heading")
+                    auraIndHeading:SetText("Aura Active Indicator")
+                    ColorHeading(auraIndHeading)
+                    auraIndHeading:SetFullWidth(true)
+                    container:AddChild(auraIndHeading)
+
+                    local auraIndCb = AceGUI:Create("CheckBox")
+                    auraIndCb:SetLabel("Enable Aura Active Indicator")
+                    auraIndCb:SetValue(cab.cabAuraIndicatorEnabled == true)
+                    auraIndCb:SetFullWidth(true)
+                    auraIndCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].cabAuraIndicatorEnabled = val or nil
+                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                    container:AddChild(auraIndCb)
+
+                    if cab.cabAuraIndicatorEnabled then
+                        local auraIndAdvExpanded, auraIndAdvBtn = AddAdvancedToggle(auraIndCb, "cabAuraInd", tabInfoButtons, true)
+
+                        if auraIndAdvExpanded then
+                            local auraCombatCb = AceGUI:Create("CheckBox")
+                            auraCombatCb:SetLabel("Show Only In Combat")
+                            auraCombatCb:SetValue(cab.cabAuraCombatOnly or false)
+                            auraCombatCb:SetFullWidth(true)
+                            auraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+                                customBars[cabIdx].cabAuraCombatOnly = val or nil
+                                cabApplyBars()
+                            end)
+                            container:AddChild(auraCombatCb)
+
+                            -- Pixel Glow border
+                            local auraEffectDrop = AceGUI:Create("Dropdown")
+                            auraEffectDrop:SetLabel("Border Effect")
+                            auraEffectDrop:SetList({ ["none"] = "None", ["pixel"] = "Pixel Glow" }, {"none", "pixel"})
+                            auraEffectDrop:SetValue(cab.cabAuraBarEffect or "none")
+                            auraEffectDrop:SetFullWidth(true)
+                            auraEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                                customBars[cabIdx].cabAuraBarEffect = val
+                                cabApplyBars()
+                                CooldownCompanion:RefreshConfigPanel()
+                            end)
+                            container:AddChild(auraEffectDrop)
+
+                            if (cab.cabAuraBarEffect or "none") == "pixel" then
+                                AddColorPicker(container, customBars[cabIdx], "cabAuraBarEffectColor", "Glow Color", {1, 0.84, 0, 0.9}, true, cabApplyBars, cabApplyBars)
+                                local pgSpeedSlider = AceGUI:Create("Slider")
+                                pgSpeedSlider:SetLabel("Glow Speed")
+                                pgSpeedSlider:SetSliderValues(1, 200, 1)
+                                pgSpeedSlider:SetValue(cab.cabAuraBarEffectSpeed or 60)
+                                pgSpeedSlider:SetFullWidth(true)
+                                pgSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                    customBars[cabIdx].cabAuraBarEffectSpeed = val
+                                    cabApplyBars()
+                                end)
+                                container:AddChild(pgSpeedSlider)
+                                local pgLinesSlider = AceGUI:Create("Slider")
+                                pgLinesSlider:SetLabel("Number of Lines")
+                                pgLinesSlider:SetSliderValues(1, 20, 1)
+                                pgLinesSlider:SetValue(cab.cabAuraBarEffectLines or 8)
+                                pgLinesSlider:SetFullWidth(true)
+                                pgLinesSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                    customBars[cabIdx].cabAuraBarEffectLines = val
+                                    cabApplyBars()
+                                end)
+                                container:AddChild(pgLinesSlider)
+                                local pgThickSlider = AceGUI:Create("Slider")
+                                pgThickSlider:SetLabel("Line Thickness")
+                                pgThickSlider:SetSliderValues(1, 8, 1)
+                                pgThickSlider:SetValue(cab.cabAuraBarEffectThickness or 2)
+                                pgThickSlider:SetFullWidth(true)
+                                pgThickSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                    customBars[cabIdx].cabAuraBarEffectThickness = val
+                                    cabApplyBars()
+                                end)
+                                container:AddChild(pgThickSlider)
+                            end
+
+                            -- Pulse controls (alpha + color shift)
+                            BuildBarPulseControls(container, customBars[cabIdx], cabApplyBars, {
+                                pulseKey = "cabAuraPulseEnabled", pulseSpeedKey = "cabAuraPulseSpeed",
+                                colorShiftKey = "cabAuraColorShiftEnabled", colorShiftSpeedKey = "cabAuraColorShiftSpeed",
+                                colorShiftColorKey = "cabAuraColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
+                            })
+
+                            -- Preview
+                            local auraPreviewBtn = AceGUI:Create("Button")
+                            auraPreviewBtn:SetText("Preview Aura Active Effects (3s)")
+                            auraPreviewBtn:SetFullWidth(true)
+                            auraPreviewBtn:SetCallback("OnClick", function()
+                                CooldownCompanion:PlayCustomAuraBarEffectPreview(cabIdx, "aura", 3)
+                            end)
+                            container:AddChild(auraPreviewBtn)
+                        end -- auraIndAdvExpanded
+                    end
+
+                    -- ---- Pandemic Indicator ----
+                    local pandemicHeading = AceGUI:Create("Heading")
+                    pandemicHeading:SetText("Pandemic Indicator")
+                    ColorHeading(pandemicHeading)
+                    pandemicHeading:SetFullWidth(true)
+                    container:AddChild(pandemicHeading)
+
+                    local pandemicCb = AceGUI:Create("CheckBox")
+                    pandemicCb:SetLabel("Enable Pandemic Indicator")
+                    pandemicCb:SetValue(cab.cabPandemicEnabled == true)
+                    pandemicCb:SetFullWidth(true)
+                    pandemicCb:SetCallback("OnValueChanged", function(widget, event, val)
+                        customBars[cabIdx].cabPandemicEnabled = val or nil
+                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end)
+                    container:AddChild(pandemicCb)
+
+                    if cab.cabPandemicEnabled then
+                        local panAdvExpanded, panAdvBtn = AddAdvancedToggle(pandemicCb, "cabPandemicInd", tabInfoButtons, true)
+
+                        if panAdvExpanded then
+                            local panCombatCb = AceGUI:Create("CheckBox")
+                            panCombatCb:SetLabel("Show Only In Combat")
+                            panCombatCb:SetValue(cab.cabPandemicCombatOnly or false)
+                            panCombatCb:SetFullWidth(true)
+                            panCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+                                customBars[cabIdx].cabPandemicCombatOnly = val or nil
+                                cabApplyBars()
+                            end)
+                            container:AddChild(panCombatCb)
+
+                            AddColorPicker(container, customBars[cabIdx], "cabPandemicColor", "Pandemic Color", {1, 0, 0, 1}, true, cabApplyBars, cabApplyBars)
+
+                            -- Pixel Glow border
+                            local panEffectDrop = AceGUI:Create("Dropdown")
+                            panEffectDrop:SetLabel("Border Effect")
+                            panEffectDrop:SetList({ ["none"] = "None", ["pixel"] = "Pixel Glow" }, {"none", "pixel"})
+                            panEffectDrop:SetValue(cab.cabPandemicBarEffect or "none")
+                            panEffectDrop:SetFullWidth(true)
+                            panEffectDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                                customBars[cabIdx].cabPandemicBarEffect = val
+                                cabApplyBars()
+                                CooldownCompanion:RefreshConfigPanel()
+                            end)
+                            container:AddChild(panEffectDrop)
+
+                            if (cab.cabPandemicBarEffect or "none") == "pixel" then
+                                AddColorPicker(container, customBars[cabIdx], "cabPandemicBarEffectColor", "Glow Color", {1, 0, 0, 0.9}, true, cabApplyBars, cabApplyBars)
+                                local panSpeedSlider = AceGUI:Create("Slider")
+                                panSpeedSlider:SetLabel("Glow Speed")
+                                panSpeedSlider:SetSliderValues(1, 200, 1)
+                                panSpeedSlider:SetValue(cab.cabPandemicBarEffectSpeed or 60)
+                                panSpeedSlider:SetFullWidth(true)
+                                panSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                    customBars[cabIdx].cabPandemicBarEffectSpeed = val
+                                    cabApplyBars()
+                                end)
+                                container:AddChild(panSpeedSlider)
+                                local panLinesSlider = AceGUI:Create("Slider")
+                                panLinesSlider:SetLabel("Number of Lines")
+                                panLinesSlider:SetSliderValues(1, 20, 1)
+                                panLinesSlider:SetValue(cab.cabPandemicBarEffectLines or 8)
+                                panLinesSlider:SetFullWidth(true)
+                                panLinesSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                    customBars[cabIdx].cabPandemicBarEffectLines = val
+                                    cabApplyBars()
+                                end)
+                                container:AddChild(panLinesSlider)
+                                local panThickSlider = AceGUI:Create("Slider")
+                                panThickSlider:SetLabel("Line Thickness")
+                                panThickSlider:SetSliderValues(1, 8, 1)
+                                panThickSlider:SetValue(cab.cabPandemicBarEffectThickness or 2)
+                                panThickSlider:SetFullWidth(true)
+                                panThickSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                                    customBars[cabIdx].cabPandemicBarEffectThickness = val
+                                    cabApplyBars()
+                                end)
+                                container:AddChild(panThickSlider)
+                            end
+
+                            -- Pulse controls
+                            BuildBarPulseControls(container, customBars[cabIdx], cabApplyBars, {
+                                pulseKey = "cabPandemicPulseEnabled", pulseSpeedKey = "cabPandemicPulseSpeed",
+                                colorShiftKey = "cabPandemicColorShiftEnabled", colorShiftSpeedKey = "cabPandemicColorShiftSpeed",
+                                colorShiftColorKey = "cabPandemicColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
+                            })
+
+                            -- Preview
+                            local panPreviewBtn = AceGUI:Create("Button")
+                            panPreviewBtn:SetText("Preview Pandemic Effects (3s)")
+                            panPreviewBtn:SetFullWidth(true)
+                            panPreviewBtn:SetCallback("OnClick", function()
+                                CooldownCompanion:PlayCustomAuraBarEffectPreview(cabIdx, "pandemic", 3)
+                            end)
+                            container:AddChild(panPreviewBtn)
+                        end -- panAdvExpanded
+                    end
+                end -- isActiveTracking
+
                 -- Max Stacks Glow (independent of threshold color)
                 if not isActiveTracking then
                     local glowCb = AceGUI:Create("CheckBox")
@@ -2010,6 +2212,12 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 end
 
                 -- ---- Text / Duration controls ----
+                local textHeading = AceGUI:Create("Heading")
+                textHeading:SetText("Text & Visibility")
+                ColorHeading(textHeading)
+                textHeading:SetFullWidth(true)
+                container:AddChild(textHeading)
+
                 local isActive = (cab.trackingMode or "stacks") == "active"
                 local isContinuous = isActive or (cab.displayMode == "continuous")
 

@@ -73,6 +73,7 @@ local function ResetConfigForProfileChange()
     end
     CooldownCompanion:StopCastBarPreview()
     CooldownCompanion:StopResourceBarPreview()
+    CooldownCompanion:ClearAllCustomAuraBarEffectPreviews()
 end
 
 -- File-local aliases for buttonSettingsScroll (only needed within this file)
@@ -165,6 +166,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllReadyGlowPreviews()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
+        CooldownCompanion:ClearAllCustomAuraBarEffectPreviews()
         CooldownCompanion:StopCastBarPreview()
         CloseDropDownMenus()
         CS.HideAutocomplete()
@@ -915,6 +917,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllReadyGlowPreviews()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
+        CooldownCompanion:ClearAllCustomAuraBarEffectPreviews()
         widget:ReleaseChildren()
 
         local scroll = AceGUI:Create("ScrollFrame")

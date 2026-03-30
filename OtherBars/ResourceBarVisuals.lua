@@ -14,6 +14,10 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local issecretvalue = issecretvalue
+local math_sin = math.sin
+local math_pi = math.pi
+
+local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 -- Import from ResourceBarConstants & ResourceBarHelpers
 local RB = ST._RB
@@ -611,6 +615,70 @@ local function ClearMaxStacksIndicator(barInfo)
     indicator:SetValue(0)
 end
 
+------------------------------------------------------------------------
+-- Custom Aura Bar Effect Helpers (pixel glow, alpha pulse, color shift)
+------------------------------------------------------------------------
+
+-- Convert user-facing speed (1–200) to LCG PixelGlow frequency.
+local function CabSpeedToFrequency(speed)
+    return math_max(speed or 60, 1) / 120
+end
+
+local CAB_AURA_LCG_KEY = "CooldownCompanionCabAura"
+local CAB_PANDEMIC_LCG_KEY = "CooldownCompanionCabPandemic"
+
+local function StartCustomAuraPixelGlow(frame, color, lines, speed, size, thickness, key)
+    if not (LCG and LCG.PixelGlow_Start and frame) then return end
+    local frequency = CabSpeedToFrequency(speed)
+    LCG.PixelGlow_Start(frame, color, lines or 8, frequency,
+        size or 8, thickness or 2, 0, 0, false, key or "", 1)
+end
+
+local function StopCustomAuraPixelGlow(frame, key)
+    if not (LCG and LCG.PixelGlow_Stop and frame) then return end
+    LCG.PixelGlow_Stop(frame, key or "")
+end
+
+-- Clear all indicator effects from a custom aura bar (animation state,
+-- pixel glow, alpha, color).  Called when the bar is hidden, rebuilt,
+-- or the config panel navigates away.
+local function ClearCustomAuraBarEffects(barInfo)
+    if not barInfo then return end
+    local frame = barInfo.frame
+    -- Stop pixel glow
+    StopCustomAuraPixelGlow(frame, CAB_AURA_LCG_KEY)
+    StopCustomAuraPixelGlow(frame, CAB_PANDEMIC_LCG_KEY)
+    -- Reset fill texture alpha (not frame alpha — preserves border/background)
+    if frame then
+        if frame.GetStatusBarTexture then
+            local tex = frame:GetStatusBarTexture()
+            if tex then tex:SetAlpha(1.0) end
+        end
+        if frame.segments then
+            for _, seg in ipairs(frame.segments) do
+                local tex = seg:GetStatusBarTexture()
+                if tex then tex:SetAlpha(1.0) end
+            end
+        end
+        if frame.overlaySegments then
+            for _, seg in ipairs(frame.overlaySegments) do
+                local tex = seg:GetStatusBarTexture()
+                if tex then tex:SetAlpha(1.0) end
+            end
+        end
+    end
+    -- Clear animation state flags
+    barInfo._cabPulseActive = nil
+    barInfo._cabPulseSpeed = nil
+    barInfo._cabColorShiftActive = nil
+    barInfo._cabCSBaseColor = nil
+    barInfo._cabCSShiftColor = nil
+    barInfo._cabCSSpeed = nil
+    barInfo._cabPixelGlowKey = nil
+    barInfo._cabInPandemic = nil
+    barInfo._cabEffectPreview = nil
+end
+
 local function EnsureCustomAuraContinuousThresholdOverlay(bar)
     if not bar or bar.thresholdOverlay then return end
     local overlay = CreateFrame("StatusBar", nil, bar)
@@ -1014,3 +1082,9 @@ RB.CreateSegmentedBar = CreateSegmentedBar
 RB.LayoutSegments = LayoutSegments
 RB.CreateOverlayBar = CreateOverlayBar
 RB.LayoutOverlaySegments = LayoutOverlaySegments
+RB.CabSpeedToFrequency = CabSpeedToFrequency
+RB.StartCustomAuraPixelGlow = StartCustomAuraPixelGlow
+RB.StopCustomAuraPixelGlow = StopCustomAuraPixelGlow
+RB.ClearCustomAuraBarEffects = ClearCustomAuraBarEffects
+RB.CAB_AURA_LCG_KEY = CAB_AURA_LCG_KEY
+RB.CAB_PANDEMIC_LCG_KEY = CAB_PANDEMIC_LCG_KEY

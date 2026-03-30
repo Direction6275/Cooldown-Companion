@@ -1071,6 +1071,7 @@ ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
+ST._BuildBarPulseControls = BuildBarPulseControls
 ST._BuildBarAuraPulseControls = BuildBarAuraPulseControls
 ST._BuildPandemicBarPulseControls = BuildPandemicBarPulseControls
 ST._BuildBarColorsControls = BuildBarColorsControls
