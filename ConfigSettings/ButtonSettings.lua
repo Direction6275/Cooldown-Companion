@@ -1355,11 +1355,25 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
         barReadyText = BuildBarReadyTextControls,
         pandemicBar = function(container, styleTable, onChange, opts)
             BuildPandemicBarControls(container, styleTable, onChange, opts)
-            BuildPandemicBarPulseControls(container, styleTable, onChange, opts)
+            -- Only show pulse controls when the pandemic indicator is enabled
+            local panEnabled = styleTable.showPandemicGlow
+            if panEnabled == nil and opts and opts.fallbackStyle then
+                panEnabled = opts.fallbackStyle.showPandemicGlow
+            end
+            if panEnabled ~= false then
+                BuildPandemicBarPulseControls(container, styleTable, onChange, opts)
+            end
         end,
         barActiveAura = function(container, styleTable, onChange, opts)
             BuildBarActiveAuraControls(container, styleTable, onChange, opts)
-            BuildBarAuraPulseControls(container, styleTable, onChange, opts)
+            -- Only show pulse controls when the aura indicator is enabled
+            local auraEffect = styleTable.barAuraEffect
+            if auraEffect == nil and opts and opts.fallbackStyle then
+                auraEffect = opts.fallbackStyle.barAuraEffect
+            end
+            if (auraEffect or "none") ~= "none" then
+                BuildBarAuraPulseControls(container, styleTable, onChange, opts)
+            end
         end,
         textFont = BuildTextFontControls,
         textColors = BuildTextColorsControls,

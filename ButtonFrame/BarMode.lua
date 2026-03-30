@@ -335,17 +335,19 @@ local function UpdateBarDisplay(button)
         and (not style.auraGlowCombatOnly or inCombat)
 
     -- Alpha Pulse — cache state for per-frame animation in BarModeOnUpdate
+    -- _pandemicPreview respects the enable flag so the pandemic preview only
+    -- shows pulse if the user actually enabled it (matching bar aura effect behavior).
     local wantPulse
-    if button._barPulsePreview or button._pandemicPreview then
+    if button._barPulsePreview then
         wantPulse = true
-    elseif barAuraEffectPandemic and style.pandemicBarPulseEnabled then
+    elseif (barAuraEffectPandemic or button._pandemicPreview) and style.pandemicBarPulseEnabled then
         wantPulse = "pandemic"
     elseif auraActiveForPulse and style.barAuraPulseEnabled then
         wantPulse = "aura"
     end
     if wantPulse then
         button._barPulseActive = true
-        button._barPulseSpeed = (wantPulse == "pandemic" or button._pandemicPreview)
+        button._barPulseSpeed = (wantPulse == "pandemic")
             and (style.pandemicBarPulseSpeed or 0.5)
             or (style.barAuraPulseSpeed or 0.5)
     elseif button._barPulseActive then
@@ -353,11 +355,11 @@ local function UpdateBarDisplay(button)
         button.statusBar:SetAlpha(1.0)
     end
 
-    -- Color Shift Pulse — cache state for per-frame animation in BarModeOnUpdate
+    -- Color Shift — cache state for per-frame animation in BarModeOnUpdate
     local wantColorShift
-    if button._barColorShiftPreview or button._pandemicPreview then
+    if button._barColorShiftPreview then
         wantColorShift = true
-    elseif barAuraEffectPandemic and style.pandemicBarColorShiftEnabled then
+    elseif (barAuraEffectPandemic or button._pandemicPreview) and style.pandemicBarColorShiftEnabled then
         wantColorShift = "pandemic"
     elseif auraActiveForPulse and style.barAuraColorShiftEnabled then
         wantColorShift = "aura"
@@ -365,7 +367,7 @@ local function UpdateBarDisplay(button)
     if wantColorShift then
         button._barColorShiftActive = true
         button._barCSBaseColor = wantAuraColor or wantCdColor or style.barColor or DEFAULT_BAR_COLOR
-        if wantColorShift == "pandemic" or button._pandemicPreview then
+        if wantColorShift == "pandemic" then
             button._barCSShiftColor = style.pandemicBarColorShiftColor or DEFAULT_WHITE
             button._barCSSpeed = style.pandemicBarColorShiftSpeed or 0.5
         else
