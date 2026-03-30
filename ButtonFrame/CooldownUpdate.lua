@@ -860,7 +860,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargeRecharging = nil
         button._chargeDurationObj = nil
         button._chargesSpent = nil
-        button._mainCDProbed = nil
         button._chargeText = nil
         if buttonData.type == "spell" then
             button.count:SetText("")
@@ -969,7 +968,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.hasCharges then
         -- Default to non-zero each tick; set true only when a current probe confirms zero.
         button._mainCDShown = false
-        button._mainCDProbed = false
         if buttonData.type == "item" then
             -- Items: 0 charges = on cooldown. No GCD to filter.
             local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
@@ -983,12 +981,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._mainCDShown = (button._currentReadableCharges == 0)
         elseif buttonData.type == "spell" then
             -- Restricted mode: charges unreadable (secret values).
-            -- Action bar cooldown is charge-aware: Blizzard only shows a cooldown
-            -- sweep at zero charges, not during per-cast lockouts (e.g. Hover).
+            -- Action bar probe reflects the regular-cooldown DurationObject
+            -- which is NOT charge-aware (isActive = isEnabled and startTime > 0
+            -- and duration > 0).  It can report true during per-cast lockouts
+            -- and recharge, so the _chargesSpent heuristic below guards both
+            -- this path and the isActive fallback.
             local slotShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             if slotShown ~= nil then
                 button._mainCDShown = slotShown and not isGCDOnly
-                button._mainCDProbed = true
             elseif not auraOverrideActive then
                 -- No action bar slot found; use isActive (NeverSecret) directly.
                 if spellCooldownInfo then
@@ -1004,15 +1004,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- _mainCDShown is the raw "main cooldown sweep shown" signal; suppress zero
     -- while we have explicit cast-history evidence that not all charges are spent.
     if buttonData.hasCharges then
+        -- Seed _chargesSpent when recharging without cast history (e.g. after
+        -- /reload mid-recharge).  Defaults to maxCharges ("all spent") so the
+        -- heuristic below does not suppress genuine zero-charge signals.
+        -- OnSpellCast takes over on the next cast; full recharge resets the cycle.
+        if button._chargeRecharging and not button._chargesSpent then
+            button._chargesSpent = buttonData.maxCharges or 0
+        end
+
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
            and buttonData.type == "spell"
-           and button._chargeCountReadable ~= true
-           and not button._mainCDProbed then
+           and button._chargeCountReadable ~= true then
             -- Heuristic: suppress zero-charge when cast history says charges remain.
-            -- Only applies when _mainCDShown was determined by isActive (not
-            -- charge-aware). Skip when the action bar probe was used — it is
-            -- already charge-aware and authoritative.
+            -- Applies to both the action bar probe and isActive fallback paths.
+            -- The probe reflects the regular-cooldown DurationObject which is
+            -- not charge-aware and can report true during lockouts/recharge;
+            -- _chargesSpent provides authoritative cast-history evidence.
             local maxCharges = buttonData.maxCharges
             local spent = button._chargesSpent
             if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
