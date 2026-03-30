@@ -317,6 +317,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     fillCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showCooldownSwipeFill = val
         refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(fillCb)
     ApplyCheckboxIndent(fillCb, 20)
@@ -343,6 +344,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showCooldownSwipeEdge = val
         refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(edgeCb)
     ApplyCheckboxIndent(edgeCb, 20)
