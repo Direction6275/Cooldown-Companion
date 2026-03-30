@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - ButtonFrame/Preview
-    Config panel preview methods for proc glow, aura glow, bar aura effect, pandemic,
-    ready glow, and key press highlight.
+    Config panel preview methods for proc glow, aura glow, bar aura effect, bar pulse,
+    bar color shift, pandemic, ready glow, and key press highlight.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -224,7 +224,7 @@ function CooldownCompanion:SetBarPulsePreview(groupId, buttonIndex, show)
             button._barPulsePreview = show or nil
             if not show then
                 button._barPulseActive = nil
-                button.statusBar:SetAlpha(1.0)
+                if button.statusBar then button.statusBar:SetAlpha(1.0) end
             end
             return
         end
@@ -243,6 +243,8 @@ function CooldownCompanion:SetBarColorShiftPreview(groupId, buttonIndex, show)
             button._barColorShiftPreview = show or nil
             if not show then
                 button._barColorShiftActive = nil
+                button._barAuraColor = nil
+                button._barCdColor = nil
             end
             return
         end

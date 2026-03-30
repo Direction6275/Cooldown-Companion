@@ -721,8 +721,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         ["none"] = "None",
         ["pixel"] = "Pixel Glow",
         ["solid"] = "Solid Border",
-        ["glow"] = "Proc Glow",
-    }, {"none", "pixel", "solid", "glow"})
+    }, {"none", "pixel", "solid"})
     effectDrop:SetValue(styleTable[cfg.effectKey] or "none")
     effectDrop:SetFullWidth(true)
     effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
@@ -881,7 +880,7 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     container:AddChild(shiftCb)
 
     if resolve(cfg.colorShiftKey, false) then
-        AddColorPicker(container, styleTable, cfg.colorShiftColorKey, "Shift Color", cfg.defaultShiftColor, true, refreshCallback, refreshCallback)
+        AddColorPicker(container, styleTable, cfg.colorShiftColorKey, "Shift Color", resolve(cfg.colorShiftColorKey, cfg.defaultShiftColor), true, refreshCallback, refreshCallback)
 
         local shiftSpeedSlider = AceGUI:Create("Slider")
         shiftSpeedSlider:SetLabel("Shift Duration")

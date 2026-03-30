@@ -315,7 +315,7 @@ local function UpdateBarDisplay(button)
             button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
         end
     end
-    if wantAuraColor then
+    if wantAuraColor and not button._barColorShiftActive then
         button.statusBar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4])
     end
 
@@ -376,6 +376,8 @@ local function UpdateBarDisplay(button)
         end
     elseif button._barColorShiftActive then
         button._barColorShiftActive = nil
+        local c = wantAuraColor or wantCdColor or style.barColor or DEFAULT_BAR_COLOR
+        button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
     end
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
@@ -432,14 +434,14 @@ local function BarModeOnUpdate(self, elapsed)
         local now = GetTime()
         if self._barPulseActive then
             local speed = self._barPulseSpeed or 0.5
-            self.statusBar:SetAlpha(0.6 + 0.4 * math_sin(now * math_pi / speed))
+            self.statusBar:SetAlpha(0.6 + 0.4 * math_sin(now * 2 * math_pi / speed))
         end
         if self._barColorShiftActive then
             local base = self._barCSBaseColor
             local shift = self._barCSShiftColor
             if base and shift then
                 local speed = self._barCSSpeed or 0.5
-                local t = 0.5 + 0.5 * math_sin(now * math_pi / speed)
+                local t = 0.5 + 0.5 * math_sin(now * 2 * math_pi / speed)
                 local ba = base[4] or 1
                 self.statusBar:SetStatusBarColor(
                     base[1] + (shift[1] - base[1]) * t,
