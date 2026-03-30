@@ -672,7 +672,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
 end
 
 -- Generic bar effect builder (Group B): primary color picker + effect
--- dropdown (none/pixel/solid/glow) + conditional effect color +
+-- dropdown (none/pixel/solid) + conditional effect color +
 -- conditional sliders. Replaces BuildPandemicBarControls,
 -- BuildBarActiveAuraControls.
 --

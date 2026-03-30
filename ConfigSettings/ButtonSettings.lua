@@ -1538,6 +1538,26 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                             end
                         end)
                         scroll:AddChild(pandemicPreviewBtn)
+                    elseif sectionId == "barActiveAura" then
+                        local auraActivePreviewBtn = AceGUI:Create("Button")
+                        auraActivePreviewBtn:SetText("Preview Active Aura Effects (3s)")
+                        auraActivePreviewBtn:SetFullWidth(true)
+                        auraActivePreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, 3, CS.selectedButton)
+                            end
+                        end)
+                        scroll:AddChild(auraActivePreviewBtn)
+                    elseif sectionId == "pandemicBar" then
+                        local pandemicPreviewBtn = AceGUI:Create("Button")
+                        pandemicPreviewBtn:SetText("Preview Pandemic Effects (3s)")
+                        pandemicPreviewBtn:SetFullWidth(true)
+                        pandemicPreviewBtn:SetCallback("OnClick", function()
+                            if CS.selectedGroup and CS.selectedButton then
+                                CooldownCompanion:PlayPandemicPreview(CS.selectedGroup, CS.selectedButton, 3)
+                            end
+                        end)
+                        scroll:AddChild(pandemicPreviewBtn)
                     elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
                         local readyPreviewBtn = AceGUI:Create("Button")
                         readyPreviewBtn:SetText("Preview Ready Glow (3s)")

@@ -201,7 +201,10 @@ local function UpdateBarFill(button)
             button.statusBar:SetMinMaxValues(0, 1)
             button._viewerBar = nil
         end
-        if button.buttonData.isPassive then
+        if button._barAuraActivePreview then
+            button.statusBar:SetValue(1)
+            button.timeText:SetText("")
+        elseif button.buttonData.isPassive then
             button.statusBar:SetValue(0)
             button.timeText:SetText("")
         else
@@ -289,6 +292,8 @@ local function UpdateBarDisplay(button)
     local wantAuraColor
     if button._pandemicPreview then
         wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
+    elseif button._barAuraActivePreview then
+        wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
     elseif button._auraActive then
         if button._inPandemic and style.showPandemicGlow ~= false
            and (not style.pandemicGlowCombatOnly or inCombat) then
@@ -323,7 +328,8 @@ local function UpdateBarDisplay(button)
     local barAuraEffectPandemic = button._pandemicPreview
         or (button._auraActive and button._inPandemic and style.showPandemicGlow ~= false
             and (not style.pandemicGlowCombatOnly or inCombat))
-    local barAuraEffectShow = button._barAuraEffectPreview or button._pandemicPreview
+    local barAuraEffectShow = button._barAuraEffectPreview or button._barAuraActivePreview
+        or button._pandemicPreview
         or (button._auraActive and (barAuraEffectPandemic
             or (barAuraVisualsEnabled and (not style.auraGlowCombatOnly or inCombat))))
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
@@ -331,15 +337,16 @@ local function UpdateBarDisplay(button)
     -- Bar indicator effects: alpha pulse, color shift
     -- Gated behind the same master toggles as existing bar aura effects:
     -- barAuraVisualsEnabled for aura-active, showPandemicGlow for pandemic (via barAuraEffectPandemic).
-    local auraActiveForPulse = barAuraVisualsEnabled and button._auraActive
-        and (not style.auraGlowCombatOnly or inCombat)
+    local auraActiveForPulse = button._barAuraActivePreview
+        or (barAuraVisualsEnabled and button._auraActive
+            and (not style.auraGlowCombatOnly or inCombat))
 
     -- Alpha Pulse — cache state for per-frame animation in BarModeOnUpdate
     -- _pandemicPreview respects the enable flag so the pandemic preview only
     -- shows pulse if the user actually enabled it (matching bar aura effect behavior).
     local wantPulse
     if button._barPulsePreview then
-        wantPulse = true
+        wantPulse = button._barPulsePreview
     elseif (barAuraEffectPandemic or button._pandemicPreview) and style.pandemicBarPulseEnabled then
         wantPulse = "pandemic"
     elseif auraActiveForPulse and style.barAuraPulseEnabled then
@@ -358,7 +365,7 @@ local function UpdateBarDisplay(button)
     -- Color Shift — cache state for per-frame animation in BarModeOnUpdate
     local wantColorShift
     if button._barColorShiftPreview then
-        wantColorShift = true
+        wantColorShift = button._barColorShiftPreview
     elseif (barAuraEffectPandemic or button._pandemicPreview) and style.pandemicBarColorShiftEnabled then
         wantColorShift = "pandemic"
     elseif auraActiveForPulse and style.barAuraColorShiftEnabled then

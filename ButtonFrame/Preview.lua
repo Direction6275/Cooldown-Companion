@@ -252,6 +252,43 @@ function CooldownCompanion:SetBarColorShiftPreview(groupId, buttonIndex, show)
 end
 
 --------------------------------------------------------------------------------
+-- Bar Aura Active Preview (simulates full aura-active state: aura color,
+-- bar glow, alpha pulse, color shift — everything the aura indicator shows)
+-- Optional buttonIndex targets a single button (per-button override preview).
+--------------------------------------------------------------------------------
+
+local barAuraActivePreviewTokens = {}
+
+function CooldownCompanion:PlayBarAuraActivePreview(groupId, durationSeconds, buttonIndex)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then duration = 3 end
+
+    local token = (barAuraActivePreviewTokens[groupId] or 0) + 1
+    barAuraActivePreviewTokens[groupId] = token
+
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if not buttonIndex or button.index == buttonIndex then
+            button._barAuraActivePreview = true
+            if button.UpdateCooldown then button:UpdateCooldown() end
+        end
+    end
+
+    C_Timer_After(duration, function()
+        if barAuraActivePreviewTokens[groupId] ~= token then return end
+        local f = self.groupFrames[groupId]
+        if not f then return end
+        for _, btn in ipairs(f.buttons) do
+            if not buttonIndex or btn.index == buttonIndex then
+                btn._barAuraActivePreview = nil
+                if btn.UpdateCooldown then btn:UpdateCooldown() end
+            end
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
 -- Pandemic Preview
 --------------------------------------------------------------------------------
 

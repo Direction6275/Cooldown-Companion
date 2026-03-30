@@ -448,6 +448,14 @@ local function BuildBarEffectsTab(container, group, style)
     BuildBarAuraPulseControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    local auraActivePreviewBtn = AceGUI:Create("Button")
+    auraActivePreviewBtn:SetText("Preview Active Aura Effects (3s)")
+    auraActivePreviewBtn:SetFullWidth(true)
+    auraActivePreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(auraActivePreviewBtn)
     end -- barAuraAdvExpanded
 
     -- ================================================================
@@ -486,6 +494,14 @@ local function BuildBarEffectsTab(container, group, style)
     BuildPandemicBarPulseControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    local pandemicPreviewBtn = AceGUI:Create("Button")
+    pandemicPreviewBtn:SetText("Preview Pandemic Effects (3s)")
+    pandemicPreviewBtn:SetFullWidth(true)
+    pandemicPreviewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(pandemicPreviewBtn)
     end -- barPandemicAdvExpanded
 
     -- ================================================================
