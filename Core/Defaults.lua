@@ -79,6 +79,8 @@ local defaults = {
                         showCooldownSwipeFill = true,
                         cooldownSwipeReverse = false,
                         showCooldownSwipeEdge = true,
+                        cooldownSwipeAlpha = 0.8,
+                        cooldownSwipeEdgeColor = {1, 1, 1, 1},
                         showGCDSwipe = false, -- Show GCD swipe animation on icons
                         showOutOfRange = true, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
@@ -230,6 +232,8 @@ local defaults = {
             showCooldownSwipeFill = true,
             cooldownSwipeReverse = false,
             showCooldownSwipeEdge = true,
+            cooldownSwipeAlpha = 0.8,
+            cooldownSwipeEdgeColor = {1, 1, 1, 1},
             showGCDSwipe = false,
             showOutOfRange = true,
             showAssistedHighlight = false,
@@ -557,7 +561,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
-        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge"},
+        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
         modes = {icons = true},
     },
     showGCDSwipe = {

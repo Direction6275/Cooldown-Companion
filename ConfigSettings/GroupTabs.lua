@@ -843,9 +843,25 @@ local function BuildEffectsTab(container)
         fillCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showCooldownSwipeFill = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(fillCb)
         ApplyCheckboxIndent(fillCb, 20)
+
+        -- Swipe Fill Opacity (only when fill is visible)
+        if style.showCooldownSwipeFill ~= false then
+            local alphaSlider = AceGUI:Create("Slider")
+            alphaSlider:SetLabel("Swipe Fill Opacity")
+            alphaSlider:SetSliderValues(0, 1, 0.05)
+            alphaSlider:SetIsPercent(true)
+            alphaSlider:SetValue(style.cooldownSwipeAlpha or 0.8)
+            alphaSlider:SetFullWidth(true)
+            alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                style.cooldownSwipeAlpha = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+            container:AddChild(alphaSlider)
+        end
 
         -- Show Swipe Edge
         local edgeCb = AceGUI:Create("CheckBox")
@@ -855,9 +871,16 @@ local function BuildEffectsTab(container)
         edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showCooldownSwipeEdge = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(edgeCb)
         ApplyCheckboxIndent(edgeCb, 20)
+
+        -- Swipe Edge Color (only when edge is visible)
+        if style.showCooldownSwipeEdge ~= false then
+            local swipeRefresh = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+            AddColorPicker(container, style, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, swipeRefresh, swipeRefresh)
+        end
     end -- swipeAdvExpanded
 
     -- ================================================================
