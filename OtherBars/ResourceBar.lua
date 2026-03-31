@@ -122,7 +122,6 @@ local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles
 local SetBarAuraEffect = ST._SetBarAuraEffect
-local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 
 ------------------------------------------------------------------------
@@ -385,12 +384,12 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     if pandemicPreview then
         wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
     elseif auraPreview then
-        wantAuraColor = cabConfig.barAuraColor or DEFAULT_BAR_AURA_COLOR
+        wantAuraColor = cabConfig.barColor or {0.5, 0.5, 1}
     elseif auraPresent then
         if bar._inPandemic and pandemicEnabled and pandemicCombatAllowed then
             wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
         elseif auraVisualsEnabled and auraCombatAllowed then
-            wantAuraColor = cabConfig.barAuraColor or DEFAULT_BAR_AURA_COLOR
+            wantAuraColor = cabConfig.barColor or {0.5, 0.5, 1}
         end
     end
 
@@ -470,7 +469,6 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
         bar:SetStatusBarColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4] or 1)
     end
 end
-
 local function IsIndependentCustomAuraUnlocked(barInfo)
     return barInfo and barInfo.cabConfig and barInfo.cabConfig.independentLocked ~= true
 end

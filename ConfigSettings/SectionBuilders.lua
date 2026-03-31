@@ -664,7 +664,9 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     end)
     container:AddChild(styleDrop)
 
-    AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
+    if not (opts and opts.hidePrimaryColorPicker) then
+        AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
+    end
 
     BuildGlowSliders(container, styleTable, currentStyle, {
         size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
@@ -713,7 +715,9 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         opts.afterEnableCallback(container)
     end
 
-    AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
+    if not (opts and opts.hidePrimaryColorPicker) then
+        AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
+    end
 
     local effectDrop = AceGUI:Create("Dropdown")
     effectDrop:SetLabel(cfg.effectLabel)

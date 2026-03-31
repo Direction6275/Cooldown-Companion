@@ -1788,7 +1788,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 active = "Active (On/Off)",
                 stacks = "Stack Count",
             }, { "active", "stacks" })
-            trackDrop:SetValue(cab.trackingMode or "active")
+            trackDrop:SetValue(cab.trackingMode or "stacks")
             trackDrop:SetFullWidth(true)
             trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 customBars[capturedIdx].trackingMode = val
@@ -1913,7 +1913,9 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         container:AddChild(activeAuraCombatCb)
                         ApplyCheckboxIndent(activeAuraCombatCb, 20)
 
-                        BuildBarActiveAuraControls(container, customBars[cabIdx], cabApplyBars)
+                        BuildBarActiveAuraControls(container, customBars[cabIdx], cabApplyBars, {
+                            hidePrimaryColorPicker = true,
+                        })
                         BuildBarAuraPulseControls(container, customBars[cabIdx], cabApplyBars)
 
                         local activeAuraPreviewBtn = AceGUI:Create("Button")
