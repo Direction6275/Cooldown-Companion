@@ -310,6 +310,13 @@ local function WrapPreviewColor(text, color)
         text)
 end
 
+local function IsAuraOnlyPreviewTarget(previewTarget)
+    return type(previewTarget) == "table"
+        and previewTarget.type == "spell"
+        and previewTarget.addedAs == "aura"
+        and previewTarget.auraTracking == true
+end
+
 local function EvaluateMockPresence(tokenName, mockState)
     if tokenName == "name" then return true
     elseif tokenName == "time" then return mockState.time and mockState.time > 0
@@ -363,6 +370,7 @@ local function PreviewSubstitute(segments, style, mockState)
     local pulseDepth = 0
     local pulseActive = false
     local auraActive = mockState.auraTime and mockState.auraTime > 0
+    local auraOnly = mockState.auraOnly == true
     local timeVal = mockState.time
     local auraVal = mockState.auraTime
 
@@ -445,6 +453,8 @@ local function PreviewSubstitute(segments, style, mockState)
                     else
                         parts[#parts + 1] = WrapPreviewColor("Active", colorOverride or auraColor)
                     end
+                elseif auraOnly then
+                    -- Aura-only entries do not have a ready/cooldown fallback.
                 elseif timeVal and timeVal > 0 then
                     parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style.decimalTimers), colorOverride or cdColor)
                 else
@@ -540,10 +550,11 @@ local AURA_STATE_TRIGGERS = {
     aura = true, status = true, stacks = true, pandemic = true,
 }
 
-local function BuildMockStates(style, segments)
+local function BuildMockStates(style, segments, previewTarget)
     local name = GetPreviewName()
     local icon = GetPreviewIcon()
     local states = {}
+    local auraOnly = IsAuraOnlyPreviewTarget(previewTarget)
 
     if not segments then return states end
 
@@ -557,20 +568,20 @@ local function BuildMockStates(style, segments)
         if AURA_STATE_TRIGGERS[token] then showAura = true end
     end
 
-    if showCDStates then
+    if showCDStates and not auraOnly then
         states[#states + 1] = {
             label = WrapPreviewColor("Ready:", style.textReadyColor or {0.2, 1.0, 0.2, 1}),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
         states[#states + 1] = {
             label = WrapPreviewColor("Cooldown:", style.textCooldownColor or {1, 0.3, 0.3, 1}),
-            state = { name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            state = { name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
     end
     if showAura then
         states[#states + 1] = {
             label = WrapPreviewColor("Aura:", style.textAuraColor or {0, 0.925, 1, 1}),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
     end
 
@@ -589,7 +600,7 @@ local function BuildMockStates(style, segments)
         if hasPreviewContent then
             states[#states + 1] = {
                 label = WrapPreviewColor("Preview:", EXTRA_ROW_COLOR),
-                state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+                state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
             }
         end
     end
@@ -598,37 +609,37 @@ local function BuildMockStates(style, segments)
     if used["zerocharges"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Zero Charges:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 83, charges = 0, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            state = { name = name, time = 83, charges = 0, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
     end
     if used["proc"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Proc:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true, auraOnly = auraOnly },
         }
     end
     if used["pandemic"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Pandemic:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 1, auraTime = 4.5, keybind = "F1", icon = icon, pandemic = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 1, auraTime = 4.5, keybind = "F1", icon = icon, pandemic = true, auraOnly = auraOnly },
         }
     end
     if used["unusable"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Unusable:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, unusable = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, unusable = true, auraOnly = auraOnly },
         }
     end
     if used["oor"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Out of Range:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, oor = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, oor = true, auraOnly = auraOnly },
         }
     end
     if used["incombat"] then
         states[#states + 1] = {
             label = WrapPreviewColor("In Combat:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, incombat = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, incombat = true, auraOnly = auraOnly },
         }
     end
 
@@ -730,7 +741,7 @@ local function OpenFormatEditor(style, groupId, opts)
 
     local function UpdateDisplay()
         local segments = ParseFormatString(currentRawText)
-        local mockStates = BuildMockStates(currentStyle, segments)
+        local mockStates = BuildMockStates(currentStyle, segments, currentFormatTarget)
 
         -- Rebuild preview rows
         previewContainer:PauseLayout()

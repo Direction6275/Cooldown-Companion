@@ -33,7 +33,7 @@ local TOKEN_HELP_TEXT = table.concat({
     "|cff00ff00{stacks}|r  Aura stacks or item count",
     "|cff00ff00{aura}|r  Aura duration remaining",
     "|cff00ff00{keybind}|r  Keybind text",
-    "|cff00ff00{status}|r  Shows ready, cooldown, or aura automatically",
+    "|cff00ff00{status}|r  Shows ready/cooldown/aura, or aura-only state for aura entries",
     "|cff00ff00{icon}|r  Inline spell icon texture",
     "|cff00ff00{br}|r  Manual line break",
     "  |cff888888{?aura} checks whether the aura is active, even if it has no timer|r",
@@ -52,6 +52,7 @@ local TOKEN_HELP_TEXT = table.concat({
     "  Ready (green) when off CD",
     "  Cooldown time (red) when on CD",
     "  Aura time (cyan) when aura active",
+    "  Aura entries stay blank when inactive instead of showing Ready",
 }, "\n")
 
 -- Syntax colors for summary (matching FormatEditor.lua)

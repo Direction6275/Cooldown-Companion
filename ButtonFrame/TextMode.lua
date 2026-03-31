@@ -40,6 +40,13 @@ local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
 local DEFAULT_TEXT_FORMAT = "{name}  {status}"
 
+local function IsAuraOnlyEntry(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.addedAs == "aura"
+        and buttonData.auraTracking == true
+end
+
 ------------------------------------------------------------------------
 -- FORMAT STRING PARSER
 -- Parses "{name}  {status}" into a list of segments:
@@ -324,9 +331,11 @@ local function SubstituteTokens(button, segments, style, effectState)
     local chargeZero = style.chargeFontColorZero or DEFAULT_WHITE
 
     -- Gather live state
+    local auraOnlyEntry = IsAuraOnlyEntry(buttonData)
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local auraActive = button._auraActive
+    local auraHasTimer = button._auraHasTimer == true
     local onCooldown = button._cooldownDeferred or (button.cooldown and button.cooldown:IsShown())
 
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
@@ -483,13 +492,13 @@ local function SubstituteTokens(button, segments, style, effectState)
                 end
 
             elseif token == "aura" then
-                if auraIsSecret then
+                if auraHasTimer and auraIsSecret then
                     if not secretValue then
                         secretValue = auraRemaining
                         secretColorToken = "aura"
                     end
                     parts[#parts + 1] = WrapColor("%AURA%", colorOverride or auraColor)
-                elseif auraRemaining then
+                elseif auraHasTimer and auraRemaining then
                     parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                 end
 
@@ -501,7 +510,9 @@ local function SubstituteTokens(button, segments, style, effectState)
 
             elseif token == "status" then
                 if auraActive then
-                    if auraIsSecret then
+                    if not auraHasTimer then
+                        parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
+                    elseif auraIsSecret then
                         if not secretValue then
                             secretValue = auraRemaining
                             secretColorToken = "aura"
@@ -512,6 +523,8 @@ local function SubstituteTokens(button, segments, style, effectState)
                     else
                         parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
+                elseif auraOnlyEntry then
+                    -- Aura-only entries do not have a ready/cooldown fallback.
                 elseif timeIsSecret then
                     if not secretValue then
                         secretValue = timeRemaining

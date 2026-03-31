@@ -54,6 +54,22 @@ local UpdateTextDisplay = ST._UpdateTextDisplay
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local TARGET_SWITCH_SAFETY_CAP = 0.60
 
+local function AuraDataHasTimer(auraData)
+    if not auraData then return false end
+    local duration = auraData.duration
+    if duration == nil then return false end
+    if issecretvalue(duration) then return nil end
+    return duration > 0
+end
+
+local function MergeAuraTimerState(currentHasTimer, auraData)
+    local hasTimer = AuraDataHasTimer(auraData)
+    if hasTimer ~= nil then
+        return hasTimer
+    end
+    return currentHasTimer
+end
+
 local function GetViewerNameFontString(viewerFrame)
     -- BuffBar viewer items render name text on Bar.Name. BuffIcon entries have no name text.
     local bar = viewerFrame and viewerFrame.Bar
@@ -238,6 +254,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
+    local auraHasTimer = button._auraHasTimer == true
     -- Capture and clear event-driven removal flag (set by OnUnitAura when
     -- removedAuraInstanceIDs confirms the aura is gone).  Used to bypass the
     -- grace hold, which otherwise can't detect expiry in combat (secret values).
@@ -316,14 +333,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     -- on the claimed unit.  GetAuraDuration may return data for
                     -- stale instance IDs that belong to a different unit (e.g.
                     -- old target after a target switch), causing ghost auras.
-                    local auraConfirmed = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId) ~= nil
-                    if auraConfirmed then
+                    local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId)
+                    if auraData then
                         button._durationObj = durationObj
                         button._viewerBar = nil  -- primary path: DurationObject available
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
                         button._auraInstanceID = viewerInstId
                         button._auraUnit = unit
                         auraOverrideActive = true
+                        auraHasTimer = MergeAuraTimerState(auraHasTimer, auraData)
                         fetchOk = true
                     end
                 end
@@ -342,6 +360,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                                 button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
                                 button._auraUnit = vUnit
                                 auraOverrideActive = true
+                                auraHasTimer = true
                                 fetchOk = true
                             end
                         end
@@ -387,6 +406,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             button.cooldown:SetCooldownFromDurationObject(totemDuration)
                             button._durationObj = totemDuration
                             auraOverrideActive = true
+                            auraHasTimer = true
                             fetchOk = true
                             -- Bar mode: cache viewer's StatusBar for bar fill pass-through
                             if button._isBar and viewerFrame.Bar then
@@ -432,6 +452,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             button._auraUnit = "player"
                         end
                         auraOverrideActive = true
+                        auraHasTimer = MergeAuraTimerState(auraHasTimer, auraData)
                         fetchOk = true
                     end
                 end
@@ -444,10 +465,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not auraOverrideActive and button._auraInstanceID then
             local durationObj = C_UnitAuras.GetAuraDuration(auraUnit, button._auraInstanceID)
             if durationObj then
+                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, button._auraInstanceID)
                 button._durationObj = durationObj
                 button._viewerBar = nil
                 button.cooldown:SetCooldownFromDurationObject(durationObj)
                 auraOverrideActive = true
+                auraHasTimer = MergeAuraTimerState(auraHasTimer, auraData)
                 fetchOk = true
             end
         end
@@ -535,6 +558,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
         button._auraActive = auraOverrideActive
+        if auraOverrideActive then
+            button._auraHasTimer = auraHasTimer
+        end
         if not auraOverrideActive then
             button._auraInstanceID = nil
         end
