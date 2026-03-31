@@ -107,6 +107,37 @@ local function IsSpellGCDOnly(info, secrecy)
     end
 end
 
+-- Deferred spell cooldown detection: distinguish true held cooldowns from
+-- start-recovery / empower recovery windows. In 12.0.1, unrelated spells can
+-- transiently report isEnabled=false, isActive=false, and a positive
+-- timeUntilEndOfStartRecovery while an empowered cast is being held. That
+-- state should not drive cooldown desaturation, bar fill, text placeholders,
+-- or hide-on-cooldown visibility. Treat it as recovery-only, not deferred CD.
+local function IsSpellCooldownDeferred(info)
+    if not info or info.isEnabled ~= false or info.isActive == true then
+        return false
+    end
+
+    if info.isOnGCD == true then
+        return false
+    end
+
+    local recoveryTime = info.timeUntilEndOfStartRecovery
+    if recoveryTime == nil then
+        return true
+    end
+
+    if issecretvalue(recoveryTime) then
+        -- Secret recovery values are unreadable in restricted states; when they
+        -- coincide with the GCD the earlier guard already classifies them as
+        -- recovery-only. Outside that case, keep the existing deferred-cooldown
+        -- behavior until a concrete counterexample is observed in game.
+        return true
+    end
+
+    return recoveryTime <= 0
+end
+
 -- Probe action-slot cooldown state for a spell ID pair (base + display override).
 -- Returns:
 --   shown      : true/false/nil (nil = no slots found or unknown from secret state)
@@ -796,11 +827,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 isOnGCD = spellCooldownInfo.isOnGCD
                 isGCDOnly = IsSpellGCDOnly(spellCooldownInfo, buttonData._cooldownSecrecy)
 
-                -- Deferred cooldown detection (e.g. Feign Death while the
-                -- buff is active): isEnabled=false means the timer hasn't
-                -- started yet.  isActive is already false (gates swipe below),
-                -- but downstream code needs _cooldownDeferred for desat/visibility.
-                if spellCooldownInfo.isEnabled == false then
+                -- Deferred cooldown detection (e.g. Feign Death while the buff
+                -- is active): keep true hold states on the deferred path, but
+                -- exclude start-recovery / empower recovery windows. Those can
+                -- report isEnabled=false before a real cooldown begins, and
+                -- should not dim or hide unrelated spells as "on cooldown".
+                if IsSpellCooldownDeferred(spellCooldownInfo) then
                     button._cooldownDeferred = true
                 end
 
