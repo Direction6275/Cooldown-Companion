@@ -178,6 +178,7 @@ local NUDGE_REPEAT_DELAY = 0.5
 local NUDGE_REPEAT_INTERVAL = 0.05
 
 local CreatePixelBorders = ST.CreatePixelBorders
+local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
 
 -- Recursively set frame strata on a frame and all its child frames.
 -- Textures/FontStrings inherit from their parent frame automatically,
@@ -614,7 +615,18 @@ local function GetButtonDimensions(group)
     local isTextMode = group.displayMode == "text"
     local w, h
     if isTextMode then
-        w, h = style.textWidth or 200, style.textHeight or 20
+        w = style.textWidth or 200
+        if GetEffectiveTextHeight then
+            local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
+            for _, buttonData in ipairs(group.buttons or {}) do
+                if buttonData.textFormat then
+                    maxHeight = math_max(maxHeight, GetEffectiveTextHeight(style, buttonData.textFormat))
+                end
+            end
+            h = maxHeight
+        else
+            h = style.textHeight or 20
+        end
     elseif isBarMode then
         w, h = style.barLength or 180, style.barHeight or 20
         if style.barFillVertical then w, h = h, w end

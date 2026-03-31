@@ -167,6 +167,41 @@ local function HasAnyEffects(segments)
     return false
 end
 
+local function EstimateFormatLineCount(segments)
+    local lines = 1
+    for _, seg in ipairs(segments) do
+        if seg.type == "token" and not seg.unknown and seg.value == "br" then
+            lines = lines + 1
+        elseif seg.type == "literal" and seg.value and seg.value ~= "" then
+            local _, literalBreaks = seg.value:gsub("\n", "\n")
+            lines = lines + literalBreaks
+        end
+    end
+    return lines
+end
+
+local function GetEffectiveTextHeight(style, formatString)
+    local fmt = formatString or style.textFormat or "{name}  {status}"
+    local segments = ParseFormatString(fmt)
+    local lineCount = EstimateFormatLineCount(segments)
+    if lineCount <= 1 then
+        return style.textHeight or 20, false
+    end
+
+    local fontSize = style.textFontSize or 12
+    local minHeight = math_floor(lineCount * fontSize + 4 + 0.5)
+    return math.max(style.textHeight or 20, minHeight), true
+end
+
+local function ApplyTextLayout(button, style, formatString)
+    local width = style.textWidth or 200
+    local height, isMultiline = GetEffectiveTextHeight(style, formatString)
+
+    button:SetSize(width, height)
+    button.textString:SetJustifyV(isMultiline and "TOP" or "MIDDLE")
+    button.textString:SetWordWrap(isMultiline)
+end
+
 local function ComputePulse(now)
     return 0.7 + 0.3 * math_sin(now * 2 * math_pi)
 end
@@ -227,7 +262,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
         if stackText and (issecretvalue(stackText) or stackText ~= "") then return true end
         return button._itemCount and button._itemCount > 0
     elseif tokenName == "aura" then
-        return auraIsSecret or (auraRemaining and auraRemaining > 0)
+        return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData)
         return kb and kb ~= ""
@@ -634,10 +669,6 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
-    local w = newStyle.textWidth or 200
-    local h = newStyle.textHeight or 20
-
-    button:SetSize(w, h)
 
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
@@ -679,6 +710,7 @@ local function UpdateTextStyle(button, newStyle)
     -- Re-parse format string
     local fmt = button.buttonData.textFormat or newStyle.textFormat or "{name}  {status}"
     button._textSegments = ParseFormatString(fmt)
+    ApplyTextLayout(button, newStyle, fmt)
 
     -- Install or remove effect animation OnUpdate
     InstallEffectOnUpdate(button)
@@ -690,7 +722,7 @@ end
 ------------------------------------------------------------------------
 function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     local w = style.textWidth or 200
-    local h = style.textHeight or 20
+    local h = GetEffectiveTextHeight(style, buttonData.textFormat or style.textFormat or "{name}  {status}")
 
     -- Main frame
     local button = CreateFrame("Frame", parent:GetName() .. "Text" .. index, parent)
@@ -725,8 +757,6 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
 
     local align = style.textAlignment or "LEFT"
     button.textString:SetJustifyH(align)
-    button.textString:SetJustifyV("MIDDLE")
-    button.textString:SetWordWrap(false)
 
     -- Text shadow
     if style.textShadow then
@@ -780,6 +810,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     -- Parse format string
     local fmt = buttonData.textFormat or style.textFormat or "{name}  {status}"
     button._textSegments = ParseFormatString(fmt)
+    ApplyTextLayout(button, style, fmt)
 
     -- Install effect animation if format uses effect tags
     InstallEffectOnUpdate(button)
@@ -827,3 +858,4 @@ ST._UpdateTextDisplay = UpdateTextDisplay
 ST._UpdateTextStyle = UpdateTextStyle
 ST._ParseFormatString = ParseFormatString
 ST._HasAnyEffects = HasAnyEffects
+ST._GetEffectiveTextHeight = GetEffectiveTextHeight

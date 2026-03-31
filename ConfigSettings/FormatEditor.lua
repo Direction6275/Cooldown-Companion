@@ -576,14 +576,17 @@ local function BuildMockStates(style, segments)
 
     -- Fallback: if no base rows but format has value tokens, show a generic preview
     if #states == 0 then
-        local hasValueToken = false
+        local hasPreviewContent = false
         for _, seg in ipairs(segments) do
             if seg.type == "token" and not seg.unknown then
-                hasValueToken = true
+                hasPreviewContent = true
+                break
+            elseif seg.type == "literal" and seg.value and seg.value:match("%S") then
+                hasPreviewContent = true
                 break
             end
         end
-        if hasValueToken then
+        if hasPreviewContent then
             states[#states + 1] = {
                 label = WrapPreviewColor("Preview:", EXTRA_ROW_COLOR),
                 state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
@@ -652,6 +655,7 @@ local function OpenFormatEditor(style, groupId, opts)
     window:SetHeight(600)
     window:SetLayout("List")
     window:EnableResize(false)
+    window:PauseLayout()
     formatEditorFrame = window
     CS.formatEditorFrame = window
 
@@ -715,6 +719,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local previewContainer = AceGUI:Create("SimpleGroup")
     previewContainer:SetFullWidth(true)
     previewContainer:SetLayout("List")
+    previewContainer:SetAutoAdjustHeight(true)
     window:AddChild(previewContainer)
 
     -- ================================================================
@@ -728,15 +733,27 @@ local function OpenFormatEditor(style, groupId, opts)
         local mockStates = BuildMockStates(currentStyle, segments)
 
         -- Rebuild preview rows
+        previewContainer:PauseLayout()
         previewContainer:ReleaseChildren()
+        previewContainer:SetHeight(0)
         local contentLabels = {}
         local pulseFlags = {}
         local anyPulse = false
+
+        if #mockStates == 0 then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetFullWidth(true)
+            emptyLabel:SetFontObject(GameFontDisableSmall)
+            emptyLabel:SetJustifyH("CENTER")
+            emptyLabel:SetText("|cff888888Nothing to preview|r")
+            previewContainer:AddChild(emptyLabel)
+        end
 
         for i, mock in ipairs(mockStates) do
             local rowGroup = AceGUI:Create("SimpleGroup")
             rowGroup:SetFullWidth(true)
             rowGroup:SetLayout("Flow")
+            rowGroup:SetAutoAdjustHeight(true)
             previewContainer:AddChild(rowGroup)
 
             local prefix = AceGUI:Create("Label")
@@ -757,6 +774,8 @@ local function OpenFormatEditor(style, groupId, opts)
             pulseFlags[i] = hasPulse
             if hasPulse then anyPulse = true end
         end
+        previewContainer:ResumeLayout()
+        previewContainer:DoLayout()
 
         -- Install or remove pulse animation OnUpdate
         local rowCount = #mockStates
@@ -786,6 +805,8 @@ local function OpenFormatEditor(style, groupId, opts)
         else
             warningLabel:SetText("")
         end
+
+        window:DoLayout()
     end
 
     -- Initial preview
@@ -837,6 +858,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local tokenGroup = AceGUI:Create("SimpleGroup")
     tokenGroup:SetFullWidth(true)
     tokenGroup:SetLayout("Flow")
+    tokenGroup:SetAutoAdjustHeight(true)
     window:AddChild(tokenGroup)
 
     for _, tokenName in ipairs(TOKEN_LIST) do
@@ -878,6 +900,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local effectGroup = AceGUI:Create("SimpleGroup")
     effectGroup:SetFullWidth(true)
     effectGroup:SetLayout("Flow")
+    effectGroup:SetAutoAdjustHeight(true)
     window:AddChild(effectGroup)
 
     local pulseBtn = AceGUI:Create("Button")
@@ -921,6 +944,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local colorGroup = AceGUI:Create("SimpleGroup")
     colorGroup:SetFullWidth(true)
     colorGroup:SetLayout("Flow")
+    colorGroup:SetAutoAdjustHeight(true)
     window:AddChild(colorGroup)
 
     for _, colorName in ipairs({"cooldown", "ready", "active", "custom"}) do
@@ -982,6 +1006,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local condGroup = AceGUI:Create("SimpleGroup")
     condGroup:SetFullWidth(true)
     condGroup:SetLayout("Flow")
+    condGroup:SetAutoAdjustHeight(true)
     window:AddChild(condGroup)
 
     local condDropdown = AceGUI:Create("Dropdown")
@@ -1031,6 +1056,8 @@ local function OpenFormatEditor(style, groupId, opts)
     saveBtn.frame:SetHeight(24)
     saveBtn.frame:Show()
     window._saveBtn = saveBtn
+    window:ResumeLayout()
+    window:DoLayout()
 
     -- ================================================================
     -- LIVE EDIT CALLBACKS
