@@ -162,6 +162,17 @@ local DEFAULT_CAB_SHIFT_COLOR = {1, 1, 1, 1}
 local DEFAULT_CAB_PANDEMIC_COLOR = {1, 0, 0, 1}
 local DEFAULT_CAB_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_CAB_PANDEMIC_GLOW_COLOR = {1, 0, 0, 0.9}
+
+-- Hide cabAnimFrame if no bars have active pulse or color shift animations.
+-- Called after ClearCustomAuraBarEffects to ensure the per-frame OnUpdate stops.
+local function MaybeHideCabAnimFrame()
+    if not cabAnimFrame or not cabAnimFrame:IsShown() then return end
+    for _, bi in ipairs(resourceBarFrames) do
+        if bi._cabPulseActive or bi._cabColorShiftActive then return end
+    end
+    cabAnimFrame:Hide()
+end
+
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
@@ -1737,15 +1748,7 @@ local function UpdateCustomAuraBar(barInfo)
         if nowAnimating then
             cabAnimFrame:Show()
         else
-            -- Check if any other bar still has active animations
-            local anyActive = false
-            for _, bi in ipairs(resourceBarFrames) do
-                if bi._cabPulseActive or bi._cabColorShiftActive then
-                    anyActive = true
-                    break
-                end
-            end
-            if not anyActive then cabAnimFrame:Hide() end
+            MaybeHideCabAnimFrame()
         end
     end
 end
@@ -1888,6 +1891,7 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
             end
         end
     end
+    MaybeHideCabAnimFrame()
 end
 
 local function PrepareCustomAuraBar(
@@ -1963,6 +1967,7 @@ local function PrepareCustomAuraBar(
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
             ClearCustomAuraBarEffects(barInfo)
+            MaybeHideCabAnimFrame()
             barInfo.frame:Hide()
         end
         if mode == "continuous" then
@@ -3386,17 +3391,8 @@ function CooldownCompanion:ClearAllCustomAuraBarEffectPreviews()
             end
         end
     end
-    -- Only hide animation frame if no bars still have live (non-preview) animations
-    if cabAnimFrame then
-        local anyActive = false
-        for _, bi in ipairs(resourceBarFrames) do
-            if bi._cabPulseActive or bi._cabColorShiftActive then
-                anyActive = true
-                break
-            end
-        end
-        if not anyActive then cabAnimFrame:Hide() end
-    end
+    -- Hide animation frame if no bars still have live (non-preview) animations
+    MaybeHideCabAnimFrame()
 end
 
 ------------------------------------------------------------------------
