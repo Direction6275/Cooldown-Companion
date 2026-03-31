@@ -21,7 +21,10 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_abs = math.abs
+local math_sin = math.sin
+local math_pi = math.pi
 local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
 local string_format = string.format
 
@@ -118,6 +121,9 @@ local FormatTime = CooldownCompanion.FormatTime
 local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles
+local SetBarAuraEffect = ST._SetBarAuraEffect
+local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
+local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 
 ------------------------------------------------------------------------
 -- State
@@ -144,6 +150,11 @@ local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
 local layoutDirty = false
 local independentWrapperFrame = nil
+local customAuraBarActivePreviewTokens = {}
+local customAuraBarPandemicPreviewTokens = {}
+local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
+local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
+local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
 
 ------------------------------------------------------------------------
 -- Independent Anchor Config (writes state — stays in main file)
@@ -256,6 +267,208 @@ local function GetCustomAuraSlotFromPowerType(powerType)
         return nil
     end
     return pt - CUSTOM_AURA_BAR_BASE + 1
+end
+
+local function HasCustomAuraBarAuraVisuals(cabConfig)
+    return cabConfig and (cabConfig.barAuraEffect or "none") ~= "none"
+end
+
+local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
+    if not bar then return end
+
+    bar._barAuraColor = nil
+    bar._barPulseActive = nil
+    bar._barPulseSpeed = nil
+    bar._barColorShiftActive = nil
+    bar._barCSBaseColor = nil
+    bar._barCSShiftColor = nil
+    bar._barCSSpeed = nil
+    local fillTexture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if fillTexture and fillTexture.SetAlpha then
+        fillTexture:SetAlpha(1)
+    end
+
+    local baseColor = (cabConfig and cabConfig.barColor) or {0.5, 0.5, 1}
+    bar:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+
+    if bar.barAuraEffect then
+        SetBarAuraEffect(bar, false, false)
+    end
+end
+
+local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
+    if not barInfo or barInfo.barType ~= "custom_continuous" then
+        return
+    end
+
+    local bar = barInfo and barInfo.frame
+    if not bar then return end
+
+    bar._auraActive = nil
+    bar._inPandemic = nil
+    bar._auraInstanceID = nil
+    bar._auraUnit = nil
+    bar._pandemicGraceStart = nil
+    bar._pandemicGraceSuppressed = nil
+
+    if clearPreviewFlags then
+        bar._barAuraActivePreview = nil
+        bar._pandemicPreview = nil
+    end
+
+    ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
+end
+
+local function AnimateCustomAuraBarIndicator(bar)
+    if not bar then return end
+
+    local now = GetTime()
+    local fillTexture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if bar._barPulseActive then
+        local speed = bar._barPulseSpeed or 0.5
+        if fillTexture and fillTexture.SetAlpha then
+            fillTexture:SetAlpha(0.6 + 0.4 * math_sin(now * 2 * math_pi / speed))
+        end
+    elseif fillTexture and fillTexture.SetAlpha then
+        fillTexture:SetAlpha(1)
+    end
+
+    if bar._barColorShiftActive then
+        local base = bar._barCSBaseColor
+        local shift = bar._barCSShiftColor
+        if base and shift then
+            local speed = bar._barCSSpeed or 0.5
+            local t = 0.5 + 0.5 * math_sin(now * 2 * math_pi / speed)
+            local baseAlpha = base[4] or 1
+            bar:SetStatusBarColor(
+                base[1] + (shift[1] - base[1]) * t,
+                base[2] + (shift[2] - base[2]) * t,
+                base[3] + (shift[3] - base[3]) * t,
+                baseAlpha + ((shift[4] or 1) - baseAlpha) * t
+            )
+        else
+            bar._barColorShiftActive = nil
+        end
+    end
+end
+
+local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
+    if not barInfo or barInfo.barType ~= "custom_continuous" then return end
+    if not cabConfig or cabConfig.trackingMode ~= "active" then
+        ClearCustomAuraBarIndicatorState(barInfo, false)
+        return
+    end
+
+    local bar = barInfo.frame
+    if not bar then return end
+
+    local auraPreview = bar._barAuraActivePreview
+    local pandemicPreview = bar._pandemicPreview
+    local auraActive = auraPresent or auraPreview or pandemicPreview
+    bar._auraActive = auraActive or nil
+
+    if not auraActive then
+        bar._inPandemic = nil
+        bar._pandemicGraceStart = nil
+        bar._pandemicGraceSuppressed = nil
+        ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
+        return
+    end
+
+    local inCombat = InCombatLockdown()
+    local auraVisualsEnabled = HasCustomAuraBarAuraVisuals(cabConfig)
+    local auraCombatAllowed = not cabConfig.auraGlowCombatOnly or inCombat
+    local pandemicEnabled = cabConfig.showPandemicGlow == true
+    local pandemicCombatAllowed = not cabConfig.pandemicGlowCombatOnly or inCombat
+
+    local wantAuraColor
+    if pandemicPreview then
+        wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
+    elseif auraPreview then
+        wantAuraColor = cabConfig.barAuraColor or DEFAULT_BAR_AURA_COLOR
+    elseif auraPresent then
+        if bar._inPandemic and pandemicEnabled and pandemicCombatAllowed then
+            wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
+        elseif auraVisualsEnabled and auraCombatAllowed then
+            wantAuraColor = cabConfig.barAuraColor or DEFAULT_BAR_AURA_COLOR
+        end
+    end
+
+    if bar._barAuraColor ~= wantAuraColor then
+        bar._barAuraColor = wantAuraColor
+        if not wantAuraColor and not bar._barColorShiftActive then
+            local baseColor = cabConfig.barColor or {0.5, 0.5, 1}
+            bar:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+        end
+    end
+    if wantAuraColor and not bar._barColorShiftActive then
+        bar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4] or 1)
+    end
+
+    local showBarAuraEffect = auraPreview
+        or pandemicPreview
+        or auraVisualsEnabled
+        or pandemicEnabled
+    if showBarAuraEffect and not bar.barAuraEffect then
+        bar.barAuraEffect = CreateGlowContainer(bar, 32, false)
+    end
+
+    local pandemicActive = pandemicPreview
+        or (auraPresent and bar._inPandemic and pandemicEnabled and pandemicCombatAllowed)
+    local effectShow = auraPreview
+        or pandemicPreview
+        or (auraPresent and (pandemicActive or (auraVisualsEnabled and auraCombatAllowed)))
+    if bar.barAuraEffect then
+        SetBarAuraEffect(bar, effectShow, pandemicActive or false)
+    end
+
+    local auraActiveForPulse = auraPreview
+        or (auraVisualsEnabled and auraPresent and auraCombatAllowed)
+
+    local wantPulse
+    if (pandemicPreview or pandemicActive) and cabConfig.pandemicBarPulseEnabled then
+        wantPulse = "pandemic"
+    elseif auraActiveForPulse and cabConfig.barAuraPulseEnabled then
+        wantPulse = "aura"
+    end
+    if wantPulse then
+        bar._barPulseActive = true
+        bar._barPulseSpeed = (wantPulse == "pandemic")
+            and (cabConfig.pandemicBarPulseSpeed or 0.5)
+            or (cabConfig.barAuraPulseSpeed or 0.5)
+    elseif bar._barPulseActive then
+        bar._barPulseActive = nil
+        bar._barPulseSpeed = nil
+        local fillTexture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+        if fillTexture and fillTexture.SetAlpha then
+            fillTexture:SetAlpha(1)
+        end
+    end
+
+    local wantColorShift
+    if (pandemicPreview or pandemicActive) and cabConfig.pandemicBarColorShiftEnabled then
+        wantColorShift = "pandemic"
+    elseif auraActiveForPulse and cabConfig.barAuraColorShiftEnabled then
+        wantColorShift = "aura"
+    end
+    if wantColorShift then
+        bar._barColorShiftActive = true
+        bar._barCSBaseColor = wantAuraColor or cabConfig.barColor or {0.5, 0.5, 1, 1}
+        if wantColorShift == "pandemic" then
+            bar._barCSShiftColor = cabConfig.pandemicBarColorShiftColor or {1, 1, 1, 1}
+            bar._barCSSpeed = cabConfig.pandemicBarColorShiftSpeed or 0.5
+        else
+            bar._barCSShiftColor = cabConfig.barAuraColorShiftColor or {1, 1, 1, 1}
+            bar._barCSSpeed = cabConfig.barAuraColorShiftSpeed or 0.5
+        end
+    elseif bar._barColorShiftActive then
+        bar._barColorShiftActive = nil
+        bar._barCSBaseColor = nil
+        bar._barCSShiftColor = nil
+        bar._barCSSpeed = nil
+        local resetColor = wantAuraColor or cabConfig.barColor or {0.5, 0.5, 1}
+        bar:SetStatusBarColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4] or 1)
+    end
 end
 
 local function IsIndependentCustomAuraUnlocked(barInfo)
@@ -1361,6 +1574,10 @@ local function UpdateCustomAuraBar(barInfo)
     local isActive = cabConfig.trackingMode == "active"
     local useDrain = isActive
     local needsDuration = useDrain or cabConfig.showDurationText
+    local bar = barInfo.barType == "custom_continuous" and barInfo.frame or nil
+    local auraPreview = bar and bar._barAuraActivePreview
+    local pandemicPreview = bar and bar._pandemicPreview
+    local indicatorPreview = isActive and (auraPreview or pandemicPreview)
     local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(cabConfig.spellID)
     local auraUnit = viewerFrame and viewerFrame.auraDataUnit or "player"
     local instId = viewerFrame and viewerFrame.auraInstanceID
@@ -1380,11 +1597,55 @@ local function UpdateCustomAuraBar(barInfo)
         end
     end
 
+    if indicatorPreview and not auraPresent then
+        auraPresent = true
+        applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
+        stacks = 1
+    end
+
+    if isActive and bar then
+        if auraPresent then
+            bar._auraInstanceID = instId
+            bar._auraUnit = auraUnit
+        else
+            bar._auraInstanceID = nil
+            bar._auraUnit = nil
+        end
+
+        local inPandemic = false
+        if pandemicPreview then
+            inPandemic = true
+        elseif auraPresent and cabConfig.showPandemicGlow == true and viewerFrame then
+            local pi = viewerFrame.PandemicIcon
+            if bar._pandemicGraceSuppressed then
+                bar._pandemicGraceSuppressed = nil
+                bar._pandemicGraceStart = nil
+            elseif pi and pi:IsVisible() then
+                inPandemic = true
+                bar._pandemicGraceStart = nil
+            elseif bar._inPandemic then
+                local now = GetTime()
+                if not bar._pandemicGraceStart then
+                    bar._pandemicGraceStart = now
+                end
+                if now - bar._pandemicGraceStart <= 0.3 then
+                    inPandemic = true
+                else
+                    bar._pandemicGraceStart = nil
+                end
+            end
+        else
+            bar._pandemicGraceStart = nil
+            bar._pandemicGraceSuppressed = nil
+        end
+        bar._inPandemic = inPandemic or nil
+    end
+
     -- Hide When Inactive: hide the bar frame when aura is absent.
     -- Independent bars are forced visible while unlocked so users can drag/place them.
     if cabConfig.hideWhenInactive then
         local forceVisibleForPlacement = barInfo._isIndependent and IsIndependentCustomAuraUnlocked(barInfo)
-        local shouldShow = auraPresent or forceVisibleForPlacement
+        local shouldShow = auraPresent or forceVisibleForPlacement or auraPreview or pandemicPreview
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
         if wasShown ~= shouldShow then
@@ -1392,7 +1653,12 @@ local function UpdateCustomAuraBar(barInfo)
                 layoutDirty = true
             end
         end
-        if not shouldShow then return end
+        if not shouldShow then
+            if isActive then
+                UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, false)
+            end
+            return
+        end
     end
 
     local maxStacks = cabConfig.maxStacks or 1
@@ -1404,6 +1670,8 @@ local function UpdateCustomAuraBar(barInfo)
             bar:SetMinMaxValues(0, 1)
             if durationObj then
                 bar:SetValue(durationObj:GetRemainingPercent())  -- secret-safe, 1->0 drain
+            elseif indicatorPreview then
+                bar:SetValue(CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
             else
                 -- No DurationObject (indefinite aura or aura absent)
                 bar:SetValue(stacks)  -- 1 if active (full), 0 if absent (empty)
@@ -1437,6 +1705,8 @@ local function UpdateCustomAuraBar(barInfo)
                 else
                     bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
                 end
+            elseif indicatorPreview then
+                bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig.decimalTimers))
             else
                 bar.text:SetText("")
             end
@@ -1458,6 +1728,12 @@ local function UpdateCustomAuraBar(barInfo)
             else
                 bar.stackText:SetText("")
             end
+        end
+
+        if isActive then
+            UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
+        else
+            ClearCustomAuraBarIndicatorState(barInfo, true)
         end
 
     elseif barInfo.barType == "custom_segmented" then
@@ -1526,6 +1802,7 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
 
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
+        bar.style = cabConfig
         local isVertical = bar._isVertical == true
         bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
         if bar.thresholdOverlay then
@@ -1632,6 +1909,7 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
         local barInfo = resourceBarFrames[i]
         if barInfo and barInfo.frame then
             owner:ClearIndependentCustomAuraRuntimeState(barInfo.frame)
+            ClearCustomAuraBarIndicatorState(barInfo, true)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
             barInfo.frame:Hide()
@@ -1718,6 +1996,7 @@ local function PrepareCustomAuraBar(
 
     if needsRecreate then
         if barInfo and barInfo.frame then
+            ClearCustomAuraBarIndicatorState(barInfo, true)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
             barInfo.frame:Hide()
@@ -1986,10 +2265,16 @@ local function OnUpdate(self, elapsed)
                 or barInfo.barType == "custom_segmented"
                 or barInfo.barType == "custom_overlay" then
                 UpdateCustomAuraBar(barInfo)
+                if barInfo.barType == "custom_continuous" then
+                    AnimateCustomAuraBarIndicator(barInfo.frame)
+                end
             end
         elseif barInfo.frame and barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
             -- Frame hidden by hideWhenInactive; still update so it can re-show when aura returns
             UpdateCustomAuraBar(barInfo)
+            if barInfo.barType == "custom_continuous" then
+                AnimateCustomAuraBarIndicator(barInfo.frame)
+            end
         end
     end
 
@@ -2058,6 +2343,56 @@ local function EnableEventFrame()
                 if unit == "player" then
                     CooldownCompanion:ApplyResourceBars()
                 end
+            elseif event == "UNIT_AURA" then
+                local unit, updateInfo = ...
+                if unit ~= "player" and unit ~= "target" then return end
+                if not updateInfo then return end
+
+                local removedIDs = updateInfo.removedAuraInstanceIDs
+                local updatedIDs = updateInfo.updatedAuraInstanceIDs
+                if not removedIDs and not updatedIDs then return end
+
+                for _, barInfo in ipairs(resourceBarFrames) do
+                    local bar = barInfo and barInfo.frame
+                    local cabConfig = barInfo and barInfo.cabConfig
+                    if barInfo and barInfo.barType == "custom_continuous"
+                        and cabConfig and cabConfig.trackingMode == "active"
+                        and bar and bar._auraInstanceID and bar._auraUnit == unit then
+                        if removedIDs then
+                            for _, instId in ipairs(removedIDs) do
+                                if bar._auraInstanceID == instId then
+                                    bar._auraInstanceID = nil
+                                    bar._inPandemic = nil
+                                    bar._pandemicGraceStart = nil
+                                    break
+                                end
+                            end
+                        end
+                        if updatedIDs and bar._auraInstanceID then
+                            for _, instId in ipairs(updatedIDs) do
+                                if bar._auraInstanceID == instId then
+                                    bar._inPandemic = nil
+                                    bar._pandemicGraceStart = nil
+                                    bar._pandemicGraceSuppressed = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            elseif event == "PLAYER_TARGET_CHANGED" then
+                for _, barInfo in ipairs(resourceBarFrames) do
+                    local bar = barInfo and barInfo.frame
+                    local cabConfig = barInfo and barInfo.cabConfig
+                    if barInfo and barInfo.barType == "custom_continuous"
+                        and cabConfig and cabConfig.trackingMode == "active"
+                        and bar and bar._auraUnit == "target" then
+                        bar._auraInstanceID = nil
+                        bar._inPandemic = nil
+                        bar._pandemicGraceStart = nil
+                        bar._pandemicGraceSuppressed = nil
+                    end
+                end
             end
         end)
     end
@@ -2065,6 +2400,8 @@ local function EnableEventFrame()
     -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
     -- but RegisterUnitEvent with "player" filter has negligible overhead for others
     eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
+    eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+    eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 end
 
 local function DisableEventFrame()
@@ -2677,6 +3014,7 @@ function CooldownCompanion:RevertResourceBars()
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame then
             ClearIndependentRuntimeState(barInfo.frame)
+            ClearCustomAuraBarIndicatorState(barInfo, true)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
             barInfo.frame:Hide()
@@ -2692,6 +3030,8 @@ function CooldownCompanion:RevertResourceBars()
     HideIndependentWrapperFrame()
 
     isPreviewActive = false
+    wipe(customAuraBarActivePreviewTokens)
+    wipe(customAuraBarPandemicPreviewTokens)
     activeResources = {}
 end
 
@@ -2705,6 +3045,61 @@ function CooldownCompanion:GetSpecLayoutOrder()
     local settings = GetResourceBarSettings()
     if not settings then return nil end
     return GetSpecLayoutOrder(settings)
+end
+
+local function RefreshCustomAuraBarPreviewState(cabConfig, previewKey, show)
+    local anyUpdated = false
+
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.cabConfig == cabConfig and barInfo.frame then
+            barInfo.frame[previewKey] = show or nil
+            UpdateCustomAuraBar(barInfo)
+            if barInfo.barType == "custom_continuous" then
+                AnimateCustomAuraBarIndicator(barInfo.frame)
+            end
+            anyUpdated = true
+        end
+    end
+
+    if anyUpdated and layoutDirty then
+        layoutDirty = false
+        RelayoutBars()
+        CooldownCompanion:RepositionCastBar()
+    end
+end
+
+function CooldownCompanion:PlayCustomAuraBarActivePreview(cabConfig, durationSeconds)
+    if not cabConfig then return end
+
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then duration = 3 end
+
+    local token = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
+    customAuraBarActivePreviewTokens[cabConfig] = token
+
+    RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", true)
+
+    C_Timer.After(duration, function()
+        if customAuraBarActivePreviewTokens[cabConfig] ~= token then return end
+        RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", false)
+    end)
+end
+
+function CooldownCompanion:PlayCustomAuraBarPandemicPreview(cabConfig, durationSeconds)
+    if not cabConfig then return end
+
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then duration = 3 end
+
+    local token = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
+    customAuraBarPandemicPreviewTokens[cabConfig] = token
+
+    RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", true)
+
+    C_Timer.After(duration, function()
+        if customAuraBarPandemicPreviewTokens[cabConfig] ~= token then return end
+        RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", false)
+    end)
 end
 
 function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
@@ -2941,6 +3336,7 @@ ApplyPreviewData = function()
                 local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
                 local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
                 local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
+                ClearCustomAuraBarIndicatorState(barInfo, false)
                 local previewValue
                 if isActive then
                     barInfo.frame:SetMinMaxValues(0, 1)
