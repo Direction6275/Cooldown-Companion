@@ -20,7 +20,7 @@ local formatEditorFrame = nil
 -- Token list for insert buttons
 local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon", "br"}
 
--- Tokens available as conditional targets (excludes always-present tokens: name, status, icon)
+-- Tokens available as conditional targets.
 local COND_TOKEN_LIST = {}
 local COND_TOKEN_ORDER = {"time", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "aura", "keybind", "pandemic", "proc", "unusable", "oor", "incombat"}
 for _, t in ipairs(COND_TOKEN_ORDER) do
@@ -145,18 +145,6 @@ local function ValidateFormat(segments)
     for _, seg in ipairs(segments) do
         if seg.type == "token" and seg.unknown then
             warnings[#warnings + 1] = "{" .. seg.value .. "} is not a recognized token"
-        end
-    end
-
-    -- Always-present conditional warnings
-    local ALWAYS_PRESENT = { name = true, status = true, icon = true }
-    for _, seg in ipairs(segments) do
-        if seg.type == "cond_start" and ALWAYS_PRESENT[seg.value] then
-            if seg.negated then
-                warnings[#warnings + 1] = "{!" .. seg.value .. "} is always false \xe2\x80\x94 " .. seg.value .. " is always available"
-            else
-                warnings[#warnings + 1] = "{?" .. seg.value .. "} is always true \xe2\x80\x94 " .. seg.value .. " is always available"
-            end
         end
     end
 
@@ -318,8 +306,7 @@ local function IsAuraOnlyPreviewTarget(previewTarget)
 end
 
 local function EvaluateMockPresence(tokenName, mockState)
-    if tokenName == "name" then return true
-    elseif tokenName == "time" then return mockState.time and mockState.time > 0
+    if tokenName == "time" then return mockState.time and mockState.time > 0
     elseif tokenName == "charges" then return mockState.hasCharges == true
     elseif tokenName == "maxcharges" then
         if not mockState.hasCharges then return false end
@@ -335,8 +322,6 @@ local function EvaluateMockPresence(tokenName, mockState)
     elseif tokenName == "stacks" then return mockState.stacks and mockState.stacks > 0
     elseif tokenName == "aura" then return mockState.auraTime and mockState.auraTime > 0
     elseif tokenName == "keybind" then return mockState.keybind and mockState.keybind ~= ""
-    elseif tokenName == "status" then return true
-    elseif tokenName == "icon" then return mockState.icon ~= nil
     elseif tokenName == "pandemic" then return mockState.pandemic == true
     elseif tokenName == "proc" then return mockState.proc == true
     elseif tokenName == "unusable" then return mockState.unusable == true

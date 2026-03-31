@@ -235,9 +235,7 @@ end
 -- Used by conditional sections ({?token}...{/token}).
 ------------------------------------------------------------------------
 local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
-    if tokenName == "name" then
-        return true  -- spell/item always has a name
-    elseif tokenName == "time" then
+    if tokenName == "time" then
         return timeIsSecret or (timeRemaining and timeRemaining > 0)
     elseif tokenName == "charges" then
         return button.buttonData.hasCharges == true
@@ -276,10 +274,6 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData)
         return kb and kb ~= ""
-    elseif tokenName == "status" then
-        return true  -- always resolves to Ready/time/Active
-    elseif tokenName == "icon" then
-        return button.icon and button.icon:GetTexture() ~= nil
     elseif tokenName == "pandemic" then
         return button._inPandemic == true
     elseif tokenName == "proc" then
