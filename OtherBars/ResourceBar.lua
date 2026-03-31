@@ -154,6 +154,7 @@ local savedContainerAlpha = nil
 -- Per-frame animation state for custom aura bar effects
 local cabAnimFrame = nil          -- forward declaration; created at load, shown/hidden on demand
 local cabEffectPreviewTokens = {} -- per-bar preview invalidation tokens
+local cabPreviewCounter = 0       -- monotonic counter so tokens survive table wipes
 local cabScratchColor = {0, 0, 0, 1} -- reusable table for per-frame color interpolation (avoids allocation in OnUpdate)
 
 -- Fallback color constants (avoid per-tick table allocation when config keys are nil)
@@ -1486,8 +1487,12 @@ local function UpdateCustomAuraBar(barInfo)
             end
         end
         if not shouldShow then
+            -- Restore bar color if pandemic/effect override was active
+            if barInfo._cabBarColorOverride then
+                SetCustomAuraBarColor(barInfo, cabConfig.barColor or DEFAULT_CAB_BAR_COLOR)
+            end
             -- Clear indicator effects so cabAnimFrame can stop
-            if barInfo._cabPulseActive or barInfo._cabColorShiftActive or barInfo._cabPixelGlowKey then
+            if barInfo._cabPulseActive or barInfo._cabColorShiftActive or barInfo._cabPixelGlowKey or barInfo._cabBarColorOverride then
                 ClearCustomAuraBarEffects(barInfo)
                 MaybeHideCabAnimFrame()
             end
@@ -3355,7 +3360,8 @@ function CooldownCompanion:PlayCustomAuraBarEffectPreview(cabIndex, context, dur
     local duration = tonumber(durationSeconds) or 3
     if duration <= 0 then duration = 3 end
 
-    local token = (cabEffectPreviewTokens[cabIndex] or 0) + 1
+    cabPreviewCounter = cabPreviewCounter + 1
+    local token = cabPreviewCounter
     cabEffectPreviewTokens[cabIndex] = token
 
     local targetPowerType = CUSTOM_AURA_BAR_BASE + cabIndex - 1
