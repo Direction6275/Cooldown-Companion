@@ -1635,13 +1635,36 @@ local function UpdateCustomAuraBar(barInfo)
         end
     elseif isActive then
         -- Active tracking mode: pandemic detection + aura active
+        -- Grace window: PandemicIcon lives on a pool-managed CDM child frame.
+        -- During RefreshLayout, child frames are recycled and re-acquired, which
+        -- briefly invalidates PandemicIcon (nil or stale).  Hold pandemic state
+        -- for 0.1s to absorb recycling dropouts.  Instance-ID change (aura refresh)
+        -- suppresses grace so pandemic clears instantly on recast.
         local inPandemic = false
-        if auraPresent and cabConfig.cabPandemicEnabled and viewerFrame then
-            local pi = viewerFrame.PandemicIcon
-            if pi and pi:IsVisible() then
+        if auraPresent and cabConfig.cabPandemicEnabled then
+            local pi = viewerFrame and viewerFrame.PandemicIcon
+            local instChanged = viewerFrame and (instId ~= barInfo._cabLastInstId)
+            if viewerFrame then barInfo._cabLastInstId = instId end
+
+            if instChanged and barInfo._cabInPandemic then
+                -- Aura refreshed while in pandemic: suppress grace, clear immediately
+                barInfo._cabPandemicGraceStart = nil
+            elseif pi and pi:IsVisible() then
                 inPandemic = true
+                barInfo._cabPandemicGraceStart = nil
+            elseif barInfo._cabInPandemic then
+                -- PandemicIcon not visible or viewerFrame nil: grace hold
+                if not barInfo._cabPandemicGraceStart then
+                    barInfo._cabPandemicGraceStart = GetTime()
+                end
+                if GetTime() - barInfo._cabPandemicGraceStart <= 0.1 then
+                    inPandemic = true
+                else
+                    barInfo._cabPandemicGraceStart = nil
+                end
             end
         end
+        barInfo._cabInPandemic = inPandemic
 
         -- Pandemic replaces aura active
         if inPandemic and (not cabConfig.cabPandemicCombatOnly or inCombat) then
