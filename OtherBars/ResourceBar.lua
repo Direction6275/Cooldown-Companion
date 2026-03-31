@@ -1487,8 +1487,8 @@ local function UpdateCustomAuraBar(barInfo)
             end
         end
         if not shouldShow then
-            -- Restore bar color if pandemic/effect override was active
-            if barInfo._cabBarColorOverride then
+            -- Restore bar color if pandemic override or color shift was mid-interpolation
+            if barInfo._cabBarColorOverride or barInfo._cabColorShiftActive then
                 SetCustomAuraBarColor(barInfo, cabConfig.barColor or DEFAULT_CAB_BAR_COLOR)
             end
             -- Clear indicator effects so cabAnimFrame can stop
