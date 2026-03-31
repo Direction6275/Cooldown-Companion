@@ -18,7 +18,7 @@ local AddColorPicker = ST._AddColorPicker
 local formatEditorFrame = nil
 
 -- Token list for insert buttons
-local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon"}
+local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon", "br"}
 
 -- Tokens available as conditional targets (excludes always-present tokens: name, status, icon)
 local COND_TOKEN_LIST = {}
@@ -454,6 +454,8 @@ local function PreviewSubstitute(segments, style, mockState)
                 if mockState.icon then
                     parts[#parts + 1] = string.format("|T%s:0|t", tostring(mockState.icon))
                 end
+            elseif token == "br" then
+                parts[#parts + 1] = "\n"
             end
             if pulseDepth > 0 and #parts > prevPartCount then
                 pulseActive = true
@@ -749,7 +751,6 @@ local function OpenFormatEditor(style, groupId, opts)
             rowGroup:AddChild(content)
 
             local preview, hasPulse = PreviewSubstitute(segments, currentStyle, mock.state)
-            preview = preview:gsub("\n", " ")
             content:SetText(preview)
 
             contentLabels[i] = content
@@ -827,6 +828,7 @@ local function OpenFormatEditor(style, groupId, opts)
         {"|cff00ff00{keybind}|r  Keybind text", 1, 1, 1},
         {"|cff00ff00{status}|r  Shows ready, cooldown, or aura automatically", 1, 1, 1},
         {"|cff00ff00{icon}|r  Inline spell icon", 1, 1, 1},
+        {"|cff00ff00{br}|r  Insert a manual line break", 1, 1, 1},
     }, tokenHeading)
     tokenHeading.right:ClearAllPoints()
     tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)

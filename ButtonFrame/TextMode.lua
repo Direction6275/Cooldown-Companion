@@ -63,6 +63,23 @@ local KNOWN_TOKENS = {
     keybind = true,
     status = true,
     icon = true,
+    br = true,
+}
+
+local KNOWN_CONDITIONAL_TOKENS = {
+    time = true,
+    charges = true,
+    maxcharges = true,
+    missingcharges = true,
+    zerocharges = true,
+    stacks = true,
+    aura = true,
+    pandemic = true,
+    proc = true,
+    unusable = true,
+    oor = true,
+    available = true,
+    incombat = true,
 }
 
 local KNOWN_EFFECTS = {
@@ -103,7 +120,7 @@ local function ParseFormatString(fmt)
         local condPrefix = inner:sub(1, 1)
         if condPrefix == "?" or condPrefix == "!" then
             local condToken = inner:sub(2)
-            if KNOWN_TOKENS[condToken] then
+            if KNOWN_CONDITIONAL_TOKENS[condToken] then
                 segments[#segments + 1] = {
                     type = "cond_start",
                     value = condToken,
@@ -116,7 +133,7 @@ local function ParseFormatString(fmt)
         -- Conditional / effect end: {/token} or {/effect}
         elseif condPrefix == "/" then
             local condToken = inner:sub(2)
-            if KNOWN_TOKENS[condToken] then
+            if KNOWN_CONDITIONAL_TOKENS[condToken] then
                 segments[#segments + 1] = { type = "cond_end", value = condToken }
             elseif KNOWN_EFFECTS[condToken] then
                 segments[#segments + 1] = { type = "effect_end", value = condToken }
@@ -478,6 +495,8 @@ local function SubstituteTokens(button, segments, style, effectState)
                 if iconTex then
                     parts[#parts + 1] = string_format("|T%s:0|t", tostring(iconTex))
                 end
+            elseif token == "br" then
+                parts[#parts + 1] = "\n"
             end
 
             -- Mark pulse active when a token emitted content inside pulse region
