@@ -2375,6 +2375,26 @@ local function EnableEventFrame()
                 if unit == "player" then
                     CooldownCompanion:ApplyResourceBars()
                 end
+            elseif event == "UNIT_AURA" then
+                -- Force immediate pandemic re-evaluation when the tracked aura
+                -- refreshes, so the color transition happens in the same frame
+                -- as the event instead of waiting for the next 30Hz tick.
+                local unit, updateInfo = ...
+                if unit == "player" and updateInfo then
+                    local updatedIDs = updateInfo.updatedAuraInstanceIDs
+                    if updatedIDs then
+                        for _, barInfo in ipairs(resourceBarFrames) do
+                            if barInfo._cabInPandemic and barInfo._cabLastInstId then
+                                for _, uid in ipairs(updatedIDs) do
+                                    if barInfo._cabLastInstId == uid then
+                                        UpdateCustomAuraBar(barInfo)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end)
     end
@@ -2382,6 +2402,8 @@ local function EnableEventFrame()
     -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
     -- but RegisterUnitEvent with "player" filter has negligible overhead for others
     eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
+    -- UNIT_AURA: instant pandemic clear on aura refresh (no 30Hz tick delay)
+    eventFrame:RegisterUnitEvent("UNIT_AURA", "player")
 end
 
 local function DisableEventFrame()
