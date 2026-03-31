@@ -619,11 +619,13 @@ local function GetButtonDimensions(group)
         if GetEffectiveTextHeight then
             local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
             for _, buttonData in ipairs(group.buttons or {}) do
-                local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
-                local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
-                local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
-                w = math_max(w, effectiveStyle.textWidth or 200)
-                maxHeight = math_max(maxHeight, buttonHeight)
+                if CooldownCompanion:IsButtonUsable(buttonData) then
+                    local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
+                    local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
+                    local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
+                    w = math_max(w, effectiveStyle.textWidth or 200)
+                    maxHeight = math_max(maxHeight, buttonHeight)
+                end
             end
             h = maxHeight
         else

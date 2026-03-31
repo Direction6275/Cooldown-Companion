@@ -344,13 +344,11 @@ local function SubstituteTokens(button, segments, style, effectState)
     local durationIsSecret = false
     if button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
-        if rem then
-            if issecretvalue(rem) then
-                durationIsSecret = true
-                durationRemaining = rem
-            elseif rem > 0 then
-                durationRemaining = rem
-            end
+        if button._durationObj:HasSecretValues() then
+            durationIsSecret = true
+            durationRemaining = rem
+        elseif rem and rem > 0 then
+            durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
         local now = GetTime()

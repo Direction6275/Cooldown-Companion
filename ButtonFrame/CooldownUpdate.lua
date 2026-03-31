@@ -85,6 +85,14 @@ local scratchParent = CreateFrame("Frame")
 scratchParent:Hide()
 local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
 
+local function DurationObjectShowsCooldown(durationObj)
+    if not durationObj then return false end
+    scratchCooldown:SetCooldownFromDurationObject(durationObj)
+    local shown = scratchCooldown:IsShown()
+    scratchCooldown:SetCooldown(0, 0)
+    return shown
+end
+
 -- GCD-only detection: is the spell's cooldown just the global cooldown?
 -- NeverSecret path uses direct field comparison (precise at GCD boundaries).
 -- Secret path uses isOnGCD + _gcdActive (coarser, avoids secret arithmetic).
@@ -341,7 +349,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         button._auraInstanceID = viewerInstId
                         button._auraUnit = unit
                         auraOverrideActive = true
-                        auraHasTimer = MergeAuraTimerState(auraHasTimer, auraData)
+                        auraHasTimer = DurationObjectShowsCooldown(durationObj)
                         fetchOk = true
                     end
                 end
@@ -452,7 +460,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             button._auraUnit = "player"
                         end
                         auraOverrideActive = true
-                        auraHasTimer = MergeAuraTimerState(auraHasTimer, auraData)
+                        auraHasTimer = DurationObjectShowsCooldown(durationObj)
                         fetchOk = true
                     end
                 end
@@ -465,12 +473,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not auraOverrideActive and button._auraInstanceID then
             local durationObj = C_UnitAuras.GetAuraDuration(auraUnit, button._auraInstanceID)
             if durationObj then
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, button._auraInstanceID)
                 button._durationObj = durationObj
                 button._viewerBar = nil
                 button.cooldown:SetCooldownFromDurationObject(durationObj)
                 auraOverrideActive = true
-                auraHasTimer = MergeAuraTimerState(auraHasTimer, auraData)
+                auraHasTimer = DurationObjectShowsCooldown(durationObj)
                 fetchOk = true
             end
         end
