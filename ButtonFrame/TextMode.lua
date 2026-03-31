@@ -75,6 +75,7 @@ local KNOWN_CONDITIONAL_TOKENS = {
     zerocharges = true,
     stacks = true,
     aura = true,
+    keybind = true,
     pandemic = true,
     proc = true,
     unusable = true,
