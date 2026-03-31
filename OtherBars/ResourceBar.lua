@@ -1463,6 +1463,7 @@ local function UpdateCustomAuraBar(barInfo)
 
     -- Hide When Inactive: hide the bar frame when aura is absent.
     -- Independent bars are forced visible while unlocked so users can drag/place them.
+    -- Effect previews also force visibility so config panel previews work on inactive bars.
     if cabConfig.hideWhenInactive then
         local forceVisibleForPlacement = barInfo._isIndependent and IsIndependentCustomAuraUnlocked(barInfo)
         local shouldShow = auraPresent or forceVisibleForPlacement or barInfo._cabEffectPreview
@@ -1732,7 +1733,7 @@ local function UpdateCustomAuraBar(barInfo)
 
     -- Register/deregister per-frame animation handler
     local nowAnimating = barInfo._cabPulseActive or barInfo._cabColorShiftActive
-    if cabAnimFrame and (nowAnimating ~= (wasAnimating or false)) then
+    if cabAnimFrame and nowAnimating ~= wasAnimating then
         if nowAnimating then
             cabAnimFrame:Show()
         else
@@ -1754,8 +1755,12 @@ end
 ------------------------------------------------------------------------
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
-    -- Clear pixel glow key so next UpdateCustomAuraBar re-applies with current config values
-    barInfo._cabPixelGlowKey = nil
+    -- Stop active pixel glow before clearing key — prevents orphaned glow if the user
+    -- disables the effect (next UpdateCustomAuraBar would see no key transition and skip stop)
+    if barInfo._cabPixelGlowKey then
+        StopCustomAuraPixelGlow(barInfo.frame, barInfo._cabPixelGlowKey)
+        barInfo._cabPixelGlowKey = nil
+    end
     local barColor = cabConfig.barColor or DEFAULT_CAB_BAR_COLOR
     local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
     local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
