@@ -18,9 +18,9 @@ local AddColorPicker = ST._AddColorPicker
 local formatEditorFrame = nil
 
 -- Token list for insert buttons
-local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon"}
+local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon", "br"}
 
--- Tokens available as conditional targets (excludes always-present tokens: name, status, icon)
+-- Tokens available as conditional targets.
 local COND_TOKEN_LIST = {}
 local COND_TOKEN_ORDER = {"time", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "aura", "keybind", "pandemic", "proc", "unusable", "oor", "incombat"}
 for _, t in ipairs(COND_TOKEN_ORDER) do
@@ -145,18 +145,6 @@ local function ValidateFormat(segments)
     for _, seg in ipairs(segments) do
         if seg.type == "token" and seg.unknown then
             warnings[#warnings + 1] = "{" .. seg.value .. "} is not a recognized token"
-        end
-    end
-
-    -- Always-present conditional warnings
-    local ALWAYS_PRESENT = { name = true, status = true, icon = true }
-    for _, seg in ipairs(segments) do
-        if seg.type == "cond_start" and ALWAYS_PRESENT[seg.value] then
-            if seg.negated then
-                warnings[#warnings + 1] = "{!" .. seg.value .. "} is always false \xe2\x80\x94 " .. seg.value .. " is always available"
-            else
-                warnings[#warnings + 1] = "{?" .. seg.value .. "} is always true \xe2\x80\x94 " .. seg.value .. " is always available"
-            end
         end
     end
 
@@ -310,9 +298,15 @@ local function WrapPreviewColor(text, color)
         text)
 end
 
+local function IsAuraOnlyPreviewTarget(previewTarget)
+    return type(previewTarget) == "table"
+        and previewTarget.type == "spell"
+        and previewTarget.addedAs == "aura"
+        and previewTarget.auraTracking == true
+end
+
 local function EvaluateMockPresence(tokenName, mockState)
-    if tokenName == "name" then return true
-    elseif tokenName == "time" then return mockState.time and mockState.time > 0
+    if tokenName == "time" then return mockState.time and mockState.time > 0
     elseif tokenName == "charges" then return mockState.hasCharges == true
     elseif tokenName == "maxcharges" then
         if not mockState.hasCharges then return false end
@@ -328,8 +322,6 @@ local function EvaluateMockPresence(tokenName, mockState)
     elseif tokenName == "stacks" then return mockState.stacks and mockState.stacks > 0
     elseif tokenName == "aura" then return mockState.auraTime and mockState.auraTime > 0
     elseif tokenName == "keybind" then return mockState.keybind and mockState.keybind ~= ""
-    elseif tokenName == "status" then return true
-    elseif tokenName == "icon" then return mockState.icon ~= nil
     elseif tokenName == "pandemic" then return mockState.pandemic == true
     elseif tokenName == "proc" then return mockState.proc == true
     elseif tokenName == "unusable" then return mockState.unusable == true
@@ -363,6 +355,7 @@ local function PreviewSubstitute(segments, style, mockState)
     local pulseDepth = 0
     local pulseActive = false
     local auraActive = mockState.auraTime and mockState.auraTime > 0
+    local auraOnly = mockState.auraOnly == true
     local timeVal = mockState.time
     local auraVal = mockState.auraTime
 
@@ -445,6 +438,8 @@ local function PreviewSubstitute(segments, style, mockState)
                     else
                         parts[#parts + 1] = WrapPreviewColor("Active", colorOverride or auraColor)
                     end
+                elseif auraOnly then
+                    -- Aura-only entries do not have a ready/cooldown fallback.
                 elseif timeVal and timeVal > 0 then
                     parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style.decimalTimers), colorOverride or cdColor)
                 else
@@ -454,6 +449,8 @@ local function PreviewSubstitute(segments, style, mockState)
                 if mockState.icon then
                     parts[#parts + 1] = string.format("|T%s:0|t", tostring(mockState.icon))
                 end
+            elseif token == "br" then
+                parts[#parts + 1] = "\n"
             end
             if pulseDepth > 0 and #parts > prevPartCount then
                 pulseActive = true
@@ -538,10 +535,11 @@ local AURA_STATE_TRIGGERS = {
     aura = true, status = true, stacks = true, pandemic = true,
 }
 
-local function BuildMockStates(style, segments)
+local function BuildMockStates(style, segments, previewTarget)
     local name = GetPreviewName()
     local icon = GetPreviewIcon()
     local states = {}
+    local auraOnly = IsAuraOnlyPreviewTarget(previewTarget)
 
     if not segments then return states end
 
@@ -555,36 +553,39 @@ local function BuildMockStates(style, segments)
         if AURA_STATE_TRIGGERS[token] then showAura = true end
     end
 
-    if showCDStates then
+    if showCDStates and not auraOnly then
         states[#states + 1] = {
             label = WrapPreviewColor("Ready:", style.textReadyColor or {0.2, 1.0, 0.2, 1}),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
         states[#states + 1] = {
             label = WrapPreviewColor("Cooldown:", style.textCooldownColor or {1, 0.3, 0.3, 1}),
-            state = { name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            state = { name = name, time = 83, charges = 1, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
     end
     if showAura then
         states[#states + 1] = {
             label = WrapPreviewColor("Aura:", style.textAuraColor or {0, 0.925, 1, 1}),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 3, auraTime = 12.3, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
     end
 
     -- Fallback: if no base rows but format has value tokens, show a generic preview
     if #states == 0 then
-        local hasValueToken = false
+        local hasPreviewContent = false
         for _, seg in ipairs(segments) do
             if seg.type == "token" and not seg.unknown then
-                hasValueToken = true
+                hasPreviewContent = true
+                break
+            elseif seg.type == "literal" and seg.value and seg.value:match("%S") then
+                hasPreviewContent = true
                 break
             end
         end
-        if hasValueToken then
+        if hasPreviewContent then
             states[#states + 1] = {
                 label = WrapPreviewColor("Preview:", EXTRA_ROW_COLOR),
-                state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+                state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
             }
         end
     end
@@ -593,37 +594,37 @@ local function BuildMockStates(style, segments)
     if used["zerocharges"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Zero Charges:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 83, charges = 0, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon },
+            state = { name = name, time = 83, charges = 0, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, auraOnly = auraOnly },
         }
     end
     if used["proc"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Proc:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, proc = true, auraOnly = auraOnly },
         }
     end
     if used["pandemic"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Pandemic:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 1, auraTime = 4.5, keybind = "F1", icon = icon, pandemic = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 1, auraTime = 4.5, keybind = "F1", icon = icon, pandemic = true, auraOnly = auraOnly },
         }
     end
     if used["unusable"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Unusable:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, unusable = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, unusable = true, auraOnly = auraOnly },
         }
     end
     if used["oor"] then
         states[#states + 1] = {
             label = WrapPreviewColor("Out of Range:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, oor = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, oor = true, auraOnly = auraOnly },
         }
     end
     if used["incombat"] then
         states[#states + 1] = {
             label = WrapPreviewColor("In Combat:", EXTRA_ROW_COLOR),
-            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, incombat = true },
+            state = { name = name, time = 0, charges = 3, maxCharges = 3, hasCharges = true, stacks = 0, auraTime = 0, keybind = "F1", icon = icon, incombat = true, auraOnly = auraOnly },
         }
     end
 
@@ -650,6 +651,7 @@ local function OpenFormatEditor(style, groupId, opts)
     window:SetHeight(600)
     window:SetLayout("List")
     window:EnableResize(false)
+    window:PauseLayout()
     formatEditorFrame = window
     CS.formatEditorFrame = window
 
@@ -713,6 +715,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local previewContainer = AceGUI:Create("SimpleGroup")
     previewContainer:SetFullWidth(true)
     previewContainer:SetLayout("List")
+    previewContainer:SetAutoAdjustHeight(true)
     window:AddChild(previewContainer)
 
     -- ================================================================
@@ -723,18 +726,30 @@ local function OpenFormatEditor(style, groupId, opts)
 
     local function UpdateDisplay()
         local segments = ParseFormatString(currentRawText)
-        local mockStates = BuildMockStates(currentStyle, segments)
+        local mockStates = BuildMockStates(currentStyle, segments, currentFormatTarget)
 
         -- Rebuild preview rows
+        previewContainer:PauseLayout()
         previewContainer:ReleaseChildren()
+        previewContainer:SetHeight(0)
         local contentLabels = {}
         local pulseFlags = {}
         local anyPulse = false
+
+        if #mockStates == 0 then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetFullWidth(true)
+            emptyLabel:SetFontObject(GameFontDisableSmall)
+            emptyLabel:SetJustifyH("CENTER")
+            emptyLabel:SetText("|cff888888Nothing to preview|r")
+            previewContainer:AddChild(emptyLabel)
+        end
 
         for i, mock in ipairs(mockStates) do
             local rowGroup = AceGUI:Create("SimpleGroup")
             rowGroup:SetFullWidth(true)
             rowGroup:SetLayout("Flow")
+            rowGroup:SetAutoAdjustHeight(true)
             previewContainer:AddChild(rowGroup)
 
             local prefix = AceGUI:Create("Label")
@@ -749,13 +764,14 @@ local function OpenFormatEditor(style, groupId, opts)
             rowGroup:AddChild(content)
 
             local preview, hasPulse = PreviewSubstitute(segments, currentStyle, mock.state)
-            preview = preview:gsub("\n", " ")
             content:SetText(preview)
 
             contentLabels[i] = content
             pulseFlags[i] = hasPulse
             if hasPulse then anyPulse = true end
         end
+        previewContainer:ResumeLayout()
+        previewContainer:DoLayout()
 
         -- Install or remove pulse animation OnUpdate
         local rowCount = #mockStates
@@ -785,6 +801,8 @@ local function OpenFormatEditor(style, groupId, opts)
         else
             warningLabel:SetText("")
         end
+
+        window:DoLayout()
     end
 
     -- Initial preview
@@ -827,6 +845,7 @@ local function OpenFormatEditor(style, groupId, opts)
         {"|cff00ff00{keybind}|r  Keybind text", 1, 1, 1},
         {"|cff00ff00{status}|r  Shows ready, cooldown, or aura automatically", 1, 1, 1},
         {"|cff00ff00{icon}|r  Inline spell icon", 1, 1, 1},
+        {"|cff00ff00{br}|r  Insert a manual line break", 1, 1, 1},
     }, tokenHeading)
     tokenHeading.right:ClearAllPoints()
     tokenHeading.right:SetPoint("RIGHT", tokenHeading.frame, "RIGHT", -3, 0)
@@ -835,6 +854,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local tokenGroup = AceGUI:Create("SimpleGroup")
     tokenGroup:SetFullWidth(true)
     tokenGroup:SetLayout("Flow")
+    tokenGroup:SetAutoAdjustHeight(true)
     window:AddChild(tokenGroup)
 
     for _, tokenName in ipairs(TOKEN_LIST) do
@@ -876,6 +896,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local effectGroup = AceGUI:Create("SimpleGroup")
     effectGroup:SetFullWidth(true)
     effectGroup:SetLayout("Flow")
+    effectGroup:SetAutoAdjustHeight(true)
     window:AddChild(effectGroup)
 
     local pulseBtn = AceGUI:Create("Button")
@@ -919,6 +940,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local colorGroup = AceGUI:Create("SimpleGroup")
     colorGroup:SetFullWidth(true)
     colorGroup:SetLayout("Flow")
+    colorGroup:SetAutoAdjustHeight(true)
     window:AddChild(colorGroup)
 
     for _, colorName in ipairs({"cooldown", "ready", "active", "custom"}) do
@@ -980,6 +1002,7 @@ local function OpenFormatEditor(style, groupId, opts)
     local condGroup = AceGUI:Create("SimpleGroup")
     condGroup:SetFullWidth(true)
     condGroup:SetLayout("Flow")
+    condGroup:SetAutoAdjustHeight(true)
     window:AddChild(condGroup)
 
     local condDropdown = AceGUI:Create("Dropdown")
@@ -1029,6 +1052,8 @@ local function OpenFormatEditor(style, groupId, opts)
     saveBtn.frame:SetHeight(24)
     saveBtn.frame:Show()
     window._saveBtn = saveBtn
+    window:ResumeLayout()
+    window:DoLayout()
 
     -- ================================================================
     -- LIVE EDIT CALLBACKS

@@ -33,8 +33,13 @@ local TOKEN_HELP_TEXT = table.concat({
     "|cff00ff00{stacks}|r  Aura stacks or item count",
     "|cff00ff00{aura}|r  Aura duration remaining",
     "|cff00ff00{keybind}|r  Keybind text",
-    "|cff00ff00{status}|r  Shows ready, cooldown, or aura automatically",
+    "|cff00ff00{status}|r  Shows ready/cooldown/aura, or aura-only state for aura entries",
     "|cff00ff00{icon}|r  Inline spell icon texture",
+    "|cff00ff00{br}|r  Manual line break",
+    "  |cff888888{?aura} checks whether the aura is active, even if it has no timer|r",
+    "",
+    "|cffffffffConditional-Only Tokens:|r",
+    "",
     "|cff00ff00{missingcharges}|r  |cff888888(conditional only)|r Recharging with charges left",
     "|cff00ff00{zerocharges}|r  |cff888888(conditional only)|r All charges spent",
     "|cff00ff00{pandemic}|r  |cff888888(conditional only)|r Aura in pandemic window",
@@ -47,6 +52,7 @@ local TOKEN_HELP_TEXT = table.concat({
     "  Ready (green) when off CD",
     "  Cooldown time (red) when on CD",
     "  Aura time (cyan) when aura active",
+    "  Aura entries stay blank when inactive instead of showing Ready",
 }, "\n")
 
 -- Syntax colors for summary (matching FormatEditor.lua)
@@ -228,6 +234,8 @@ local function BuildTextAppearanceTab(container, group, style)
         {"Wrap text in |cff44bbff{color}|r...|cff44bbff{/color}|r tags to", 1, 1, 1, true},
         {"override its color, or |cffcc44ff{pulse}|r...|cffcc44ff{/pulse}|r", 1, 1, 1, true},
         {"for a pulsing alpha effect.", 1, 1, 1, true},
+        " ",
+        {"Use |cff00ff00{br}|r to force a new line within one entry.", 1, 1, 1, true},
         " ",
         {"Click |cffffffffEdit Format|r to open the full editor", 1, 1, 1, true},
         {"with token lists, insertion buttons, and live preview.", 1, 1, 1, true},

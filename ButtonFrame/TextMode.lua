@@ -38,6 +38,14 @@ local DEFAULT_CD_COLOR = {1, 0.3, 0.3, 1}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
+local DEFAULT_TEXT_FORMAT = "{name}  {status}"
+
+local function IsAuraOnlyEntry(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.addedAs == "aura"
+        and buttonData.auraTracking == true
+end
 
 ------------------------------------------------------------------------
 -- FORMAT STRING PARSER
@@ -63,6 +71,24 @@ local KNOWN_TOKENS = {
     keybind = true,
     status = true,
     icon = true,
+    br = true,
+}
+
+local KNOWN_CONDITIONAL_TOKENS = {
+    time = true,
+    charges = true,
+    maxcharges = true,
+    missingcharges = true,
+    zerocharges = true,
+    stacks = true,
+    aura = true,
+    keybind = true,
+    pandemic = true,
+    proc = true,
+    unusable = true,
+    oor = true,
+    available = true,
+    incombat = true,
 }
 
 local KNOWN_EFFECTS = {
@@ -103,7 +129,7 @@ local function ParseFormatString(fmt)
         local condPrefix = inner:sub(1, 1)
         if condPrefix == "?" or condPrefix == "!" then
             local condToken = inner:sub(2)
-            if KNOWN_TOKENS[condToken] then
+            if KNOWN_CONDITIONAL_TOKENS[condToken] then
                 segments[#segments + 1] = {
                     type = "cond_start",
                     value = condToken,
@@ -116,7 +142,7 @@ local function ParseFormatString(fmt)
         -- Conditional / effect end: {/token} or {/effect}
         elseif condPrefix == "/" then
             local condToken = inner:sub(2)
-            if KNOWN_TOKENS[condToken] then
+            if KNOWN_CONDITIONAL_TOKENS[condToken] then
                 segments[#segments + 1] = { type = "cond_end", value = condToken }
             elseif KNOWN_EFFECTS[condToken] then
                 segments[#segments + 1] = { type = "effect_end", value = condToken }
@@ -150,6 +176,42 @@ local function HasAnyEffects(segments)
     return false
 end
 
+local function EstimateFormatLineCount(segments)
+    local lines = 1
+    for _, seg in ipairs(segments) do
+        if seg.type == "token" and not seg.unknown and seg.value == "br" then
+            lines = lines + 1
+        elseif seg.type == "literal" and seg.value and seg.value ~= "" then
+            local _, literalBreaks = seg.value:gsub("\n", "\n")
+            lines = lines + literalBreaks
+        end
+    end
+    return lines
+end
+
+local function GetEffectiveTextHeight(style, formatString)
+    local fmt = formatString or style.textFormat or DEFAULT_TEXT_FORMAT
+    local baseHeight = style.textHeight or 20
+    local segments = ParseFormatString(fmt)
+    local lineCount = EstimateFormatLineCount(segments)
+    if lineCount <= 1 then
+        return baseHeight, false
+    end
+
+    local fontSize = style.textFontSize or 12
+    local minHeight = math_floor(lineCount * fontSize + 4 + 0.5)
+    return math.max(baseHeight, minHeight), true
+end
+
+local function ApplyTextLayout(button, style, formatString)
+    local width = style.textWidth or 200
+    local height, isMultiline = GetEffectiveTextHeight(style, formatString)
+
+    button:SetSize(width, height)
+    button.textString:SetJustifyV(isMultiline and "TOP" or "MIDDLE")
+    button.textString:SetWordWrap(isMultiline)
+end
+
 local function ComputePulse(now)
     return 0.7 + 0.3 * math_sin(now * 2 * math_pi)
 end
@@ -173,9 +235,7 @@ end
 -- Used by conditional sections ({?token}...{/token}).
 ------------------------------------------------------------------------
 local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
-    if tokenName == "name" then
-        return true  -- spell/item always has a name
-    elseif tokenName == "time" then
+    if tokenName == "time" then
         return timeIsSecret or (timeRemaining and timeRemaining > 0)
     elseif tokenName == "charges" then
         return button.buttonData.hasCharges == true
@@ -210,14 +270,10 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
         if stackText and (issecretvalue(stackText) or stackText ~= "") then return true end
         return button._itemCount and button._itemCount > 0
     elseif tokenName == "aura" then
-        return auraIsSecret or (auraRemaining and auraRemaining > 0)
+        return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
         local kb = CooldownCompanion:GetKeybindText(button.buttonData)
         return kb and kb ~= ""
-    elseif tokenName == "status" then
-        return true  -- always resolves to Ready/time/Active
-    elseif tokenName == "icon" then
-        return button.icon and button.icon:GetTexture() ~= nil
     elseif tokenName == "pandemic" then
         return button._inPandemic == true
     elseif tokenName == "proc" then
@@ -269,9 +325,11 @@ local function SubstituteTokens(button, segments, style, effectState)
     local chargeZero = style.chargeFontColorZero or DEFAULT_WHITE
 
     -- Gather live state
+    local auraOnlyEntry = IsAuraOnlyEntry(buttonData)
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local auraActive = button._auraActive
+    local auraHasTimer = button._auraHasTimer == true
     local onCooldown = button._cooldownDeferred or (button.cooldown and button.cooldown:IsShown())
 
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
@@ -280,13 +338,11 @@ local function SubstituteTokens(button, segments, style, effectState)
     local durationIsSecret = false
     if button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
-        if rem then
-            if issecretvalue(rem) then
-                durationIsSecret = true
-                durationRemaining = rem
-            elseif rem > 0 then
-                durationRemaining = rem
-            end
+        if button._durationObj:HasSecretValues() then
+            durationIsSecret = true
+            durationRemaining = rem
+        elseif rem and rem > 0 then
+            durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
         local now = GetTime()
@@ -428,13 +484,13 @@ local function SubstituteTokens(button, segments, style, effectState)
                 end
 
             elseif token == "aura" then
-                if auraIsSecret then
+                if auraHasTimer and auraIsSecret then
                     if not secretValue then
                         secretValue = auraRemaining
                         secretColorToken = "aura"
                     end
                     parts[#parts + 1] = WrapColor("%AURA%", colorOverride or auraColor)
-                elseif auraRemaining then
+                elseif auraHasTimer and auraRemaining then
                     parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
                 end
 
@@ -446,7 +502,9 @@ local function SubstituteTokens(button, segments, style, effectState)
 
             elseif token == "status" then
                 if auraActive then
-                    if auraIsSecret then
+                    if not auraHasTimer then
+                        parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
+                    elseif auraIsSecret then
                         if not secretValue then
                             secretValue = auraRemaining
                             secretColorToken = "aura"
@@ -457,6 +515,8 @@ local function SubstituteTokens(button, segments, style, effectState)
                     else
                         parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
+                elseif auraOnlyEntry then
+                    -- Aura-only entries do not have a ready/cooldown fallback.
                 elseif timeIsSecret then
                     if not secretValue then
                         secretValue = timeRemaining
@@ -478,6 +538,8 @@ local function SubstituteTokens(button, segments, style, effectState)
                 if iconTex then
                     parts[#parts + 1] = string_format("|T%s:0|t", tostring(iconTex))
                 end
+            elseif token == "br" then
+                parts[#parts + 1] = "\n"
             end
 
             -- Mark pulse active when a token emitted content inside pulse region
@@ -615,10 +677,6 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
-    local w = newStyle.textWidth or 200
-    local h = newStyle.textHeight or 20
-
-    button:SetSize(w, h)
 
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
@@ -658,8 +716,9 @@ local function UpdateTextStyle(button, newStyle)
     button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
 
     -- Re-parse format string
-    local fmt = button.buttonData.textFormat or newStyle.textFormat or "{name}  {status}"
+    local fmt = button.buttonData.textFormat or newStyle.textFormat or DEFAULT_TEXT_FORMAT
     button._textSegments = ParseFormatString(fmt)
+    ApplyTextLayout(button, newStyle, fmt)
 
     -- Install or remove effect animation OnUpdate
     InstallEffectOnUpdate(button)
@@ -670,8 +729,9 @@ end
 -- CREATE TEXT FRAME
 ------------------------------------------------------------------------
 function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
+    local fmt = buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT
     local w = style.textWidth or 200
-    local h = style.textHeight or 20
+    local h = GetEffectiveTextHeight(style, fmt)
 
     -- Main frame
     local button = CreateFrame("Frame", parent:GetName() .. "Text" .. index, parent)
@@ -706,8 +766,6 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
 
     local align = style.textAlignment or "LEFT"
     button.textString:SetJustifyH(align)
-    button.textString:SetJustifyV("MIDDLE")
-    button.textString:SetWordWrap(false)
 
     -- Text shadow
     if style.textShadow then
@@ -759,8 +817,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     end
 
     -- Parse format string
-    local fmt = buttonData.textFormat or style.textFormat or "{name}  {status}"
     button._textSegments = ParseFormatString(fmt)
+    ApplyTextLayout(button, style, fmt)
 
     -- Install effect animation if format uses effect tags
     InstallEffectOnUpdate(button)
@@ -808,3 +866,4 @@ ST._UpdateTextDisplay = UpdateTextDisplay
 ST._UpdateTextStyle = UpdateTextStyle
 ST._ParseFormatString = ParseFormatString
 ST._HasAnyEffects = HasAnyEffects
+ST._GetEffectiveTextHeight = GetEffectiveTextHeight
