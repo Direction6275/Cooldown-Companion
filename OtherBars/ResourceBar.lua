@@ -1485,7 +1485,14 @@ local function UpdateCustomAuraBar(barInfo)
                 layoutDirty = true
             end
         end
-        if not shouldShow then return end
+        if not shouldShow then
+            -- Clear indicator effects so cabAnimFrame can stop
+            if barInfo._cabPulseActive or barInfo._cabColorShiftActive or barInfo._cabPixelGlowKey then
+                ClearCustomAuraBarEffects(barInfo)
+                MaybeHideCabAnimFrame()
+            end
+            return
+        end
     end
 
     local maxStacks = cabConfig.maxStacks or 1
@@ -3358,6 +3365,7 @@ function CooldownCompanion:PlayCustomAuraBarEffectPreview(cabIndex, context, dur
             -- Force the bar visible during preview (hideWhenInactive bars)
             if barInfo.frame and not barInfo.frame:IsShown() then
                 barInfo.frame:Show()
+                if not barInfo._isIndependent then layoutDirty = true end
             end
             UpdateCustomAuraBar(barInfo)
             break
