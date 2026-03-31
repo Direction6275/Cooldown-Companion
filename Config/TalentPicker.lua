@@ -398,7 +398,7 @@ local function CreateNodeButton(parent, index)
     btn.highlight:SetColorTexture(1, 1, 1, 0.15)
 
     btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if self._spellID then
             GameTooltip:SetSpellByID(self._spellID)
         elseif self._talentName then
@@ -448,7 +448,7 @@ local function CreateChoiceButton(parent)
     btn.highlight:SetColorTexture(1, 1, 1, 0.15)
 
     btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if self._spellID then
             GameTooltip:SetSpellByID(self._spellID)
         elseif self._talentName then

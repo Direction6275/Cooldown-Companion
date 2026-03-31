@@ -47,7 +47,7 @@ local function AttachCollapseButton(heading, isCollapsed, onClickFn)
 
     btn:SetScript("OnClick", onClickFn)
     btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:AddLine(isCollapsed and "Expand" or "Collapse")
         GameTooltip:Show()
     end)
@@ -131,7 +131,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     end)
 
     btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:AddLine(isExpanded and "Hide advanced settings" or "Show advanced settings")
         GameTooltip:Show()
     end)
@@ -178,7 +178,7 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
         else
@@ -219,7 +219,7 @@ local function CreateRevertButton(headingWidget, buttonData, sectionId)
     icon:SetAtlas("common-search-clearbutton")
 
     revertBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
         GameTooltip:AddLine("Revert " .. (sectionDef and sectionDef.label or sectionId) .. " to group defaults")
         GameTooltip:Show()
@@ -270,7 +270,7 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
         else
@@ -310,6 +310,47 @@ local function MeasureInfoTooltipLineWidth(text, isHeader)
     return fs:GetUnboundedStringWidth()
 end
 
+local function ShowInfoTooltip(owner, tooltipLines, anchor)
+    ResetInfoTooltipWidth()
+    GameTooltip:SetOwner(owner, anchor or "ANCHOR_CURSOR")
+    for _, line in ipairs(tooltipLines) do
+        if type(line) == "table" then
+            GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
+        else
+            GameTooltip:AddLine(line)
+        end
+    end
+    GameTooltip:Show()
+
+    -- Expand tooltip width to fit the widest non-wrapping line.
+    -- Wrapping lines don't drive width directly but enforce a
+    -- comfortable minimum so wrapped text isn't cramped.
+    local pad = 20
+    local wrapFloor = 250
+    local maxW = 0
+    local hasWrap = false
+    for i, entry in ipairs(tooltipLines) do
+        local isWrapping = type(entry) == "table" and entry[5]
+        if isWrapping then
+            hasWrap = true
+        else
+            local text = type(entry) == "table" and entry[1] or entry
+            local w = MeasureInfoTooltipLineWidth(text, i == 1)
+            if w > maxW then maxW = w end
+        end
+    end
+    if hasWrap and maxW < wrapFloor then maxW = wrapFloor end
+    if maxW > 0 then
+        GameTooltip:SetMinimumWidth(maxW + pad)
+        GameTooltip:Show()
+    end
+end
+
+local function HideInfoTooltip()
+    ResetInfoTooltipWidth()
+    GameTooltip:Hide()
+end
+
 -- Creates a (?) info button anchored to a frame. Replaces the repeated
 -- CreateFrame→SetSize→SetPoint→CreateTexture→SetAtlas→tooltip pattern.
 --
@@ -323,48 +364,15 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
     local btn = CreateFrame("Button", nil, parentFrame)
     btn:SetSize(16, 16)
     btn:SetPoint(anchorPoint, anchorFrame, anchorRelPoint, xOff, yOff)
+    btn._isInfoTooltip = true
     local icon = btn:CreateTexture(nil, "OVERLAY")
     icon:SetSize(12, 12)
     icon:SetPoint("CENTER")
     icon:SetAtlas("QuestRepeatableTurnin")
     btn:SetScript("OnEnter", function(self)
-        ResetInfoTooltipWidth()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        for _, line in ipairs(tooltipLines) do
-            if type(line) == "table" then
-                GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
-            else
-                GameTooltip:AddLine(line)
-            end
-        end
-        GameTooltip:Show()
-        -- Expand tooltip width to fit the widest non-wrapping line.
-        -- Wrapping lines don't drive width directly but enforce a
-        -- comfortable minimum so wrapped text isn't cramped.
-        local pad = 20
-        local wrapFloor = 250
-        local maxW = 0
-        local hasWrap = false
-        for i, entry in ipairs(tooltipLines) do
-            local isWrapping = type(entry) == "table" and entry[5]
-            if isWrapping then
-                hasWrap = true
-            else
-                local text = type(entry) == "table" and entry[1] or entry
-                local w = MeasureInfoTooltipLineWidth(text, i == 1)
-                if w > maxW then maxW = w end
-            end
-        end
-        if hasWrap and maxW < wrapFloor then maxW = wrapFloor end
-        if maxW > 0 then
-            GameTooltip:SetMinimumWidth(maxW + pad)
-            GameTooltip:Show()
-        end
+        ShowInfoTooltip(self, tooltipLines, "ANCHOR_CURSOR")
     end)
-    btn:SetScript("OnLeave", function()
-        ResetInfoTooltipWidth()
-        GameTooltip:Hide()
-    end)
+    btn:SetScript("OnLeave", HideInfoTooltip)
 
     if cleanup.SetCallback then
         -- AceGUI widget: chain OnRelease cleanup so existing handlers (e.g.
@@ -387,6 +395,46 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
     end
 
     return btn
+end
+
+local function AttachCheckboxTooltip(widget, tooltipLines)
+    if not widget or not widget.frame then return end
+
+    local frame = widget.frame
+    local prevOnEnter = widget.events and widget.events["OnEnter"]
+    local prevOnLeave = widget.events and widget.events["OnLeave"]
+    local prevOnRelease = widget.events and widget.events["OnRelease"]
+    local prevMotionWhileDisabled = frame.GetMotionScriptsWhileDisabled and frame:GetMotionScriptsWhileDisabled()
+
+    if frame.SetMotionScriptsWhileDisabled then
+        frame:SetMotionScriptsWhileDisabled(true)
+    end
+
+    widget:SetCallback("OnEnter", function(cbWidget, event, ...)
+        if prevOnEnter then
+            prevOnEnter(cbWidget, event, ...)
+        end
+        if CooldownCompanion.db.profile.hideInfoButtons or CS.browseMode then
+            return
+        end
+        ShowInfoTooltip(cbWidget.frame, tooltipLines, "ANCHOR_CURSOR")
+    end)
+
+    widget:SetCallback("OnLeave", function(cbWidget, event, ...)
+        if prevOnLeave then
+            prevOnLeave(cbWidget, event, ...)
+        end
+        HideInfoTooltip()
+    end)
+
+    widget:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(widget, "OnRelease")
+        end
+        if frame.SetMotionScriptsWhileDisabled then
+            frame:SetMotionScriptsWhileDisabled(prevMotionWhileDisabled and true or false)
+        end
+    end)
 end
 
 ------------------------------------------------------------------------
@@ -442,21 +490,10 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
 
     local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout)
 
-    -- (?) tooltip for compact mode — anchor shifts when advanced toggle is visible
-    local compactAnchor, compactRelPoint, compactXOff
-    if group.compactLayout then
-        compactAnchor = compactAdvBtn
-        compactRelPoint = "RIGHT"
-        compactXOff = 4
-    else
-        compactAnchor = compactCb.checkbg
-        compactRelPoint = "RIGHT"
-        compactXOff = compactCb.text:GetStringWidth() + 6
-    end
-    CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", compactRelPoint, compactXOff, 0, {
+    AttachCheckboxTooltip(compactCb, {
         "Compact Mode",
         {"When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    })
 
     if compactAdvExpanded and group.compactLayout then
         local growthDirectionDrop = AceGUI:Create("Dropdown")
@@ -669,7 +706,7 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     btn:Show()
 
     btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:SetText("Copy " .. label .. " Settings")
         GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
         GameTooltip:Show()
@@ -858,6 +895,7 @@ ST._CreatePromoteButton = CreatePromoteButton
 ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateInfoButton = CreateInfoButton
+ST._AttachCheckboxTooltip = AttachCheckboxTooltip
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
@@ -1011,10 +1049,10 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         end)
         container:AddChild(mouseoverCb)
 
-        CreateInfoButton(mouseoverCb.frame, mouseoverCb.text, "LEFT", "RIGHT", 4, 0, {
+        AttachCheckboxTooltip(mouseoverCb, {
             "Mouseover",
             {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
-        }, tabInfoBtns)
+        })
 
         local fadeCb = AceGUI:Create("CheckBox")
         fadeCb:SetLabel("Custom Fade Settings")

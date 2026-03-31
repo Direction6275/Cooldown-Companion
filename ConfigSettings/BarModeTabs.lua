@@ -13,6 +13,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
+local AttachCheckboxTooltip = ST._AttachCheckboxTooltip
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
@@ -268,10 +269,10 @@ local function BuildBarAppearanceTab(container, group, style)
         container:AddChild(flipTimeCheck)
 
         -- (?) tooltip for Flip Time Text
-        CreateInfoButton(flipTimeCheck.frame, flipTimeCheck.checkbg, "LEFT", "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(flipTimeCheck, {
             "Flip Time Text",
             {"Applies to all time-based text, including cooldown time, aura time, and ready text.", 1, 1, 1, true},
-        }, flipTimeCheck)
+        })
 
         AddFontControls(container, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
         AddColorPicker(container, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
@@ -390,20 +391,20 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(decimalCheck)
 
-    CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(decimalCheck, {
         "Show Decimal Point",
         {"Shows one decimal place on duration text", 1, 1, 1, true},
         {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
-    }, decimalCheck)
+    })
 
     -- Compact Mode toggle + Max Visible Buttons slider
     BuildCompactModeControls(container, group, tabInfoButtons)
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    -- Apply "Hide CDC Tooltips" to informational tab buttons only
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
+            if btn._isInfoTooltip then btn:Hide() end
         end
     end
 end
@@ -557,10 +558,10 @@ local function BuildBarEffectsTab(container, group, style)
         CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
     end
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    -- Apply "Hide CDC Tooltips" to informational tab buttons only
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
+            if btn._isInfoTooltip then btn:Hide() end
         end
     end
 end

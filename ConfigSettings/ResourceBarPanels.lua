@@ -25,7 +25,6 @@ local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
-local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
@@ -590,10 +589,10 @@ local function BuildBarHeightControls(container, settings)
     end)
     container:AddChild(customHeightsCb)
 
-    CreateInfoButton(customHeightsCb.frame, customHeightsCb.checkbg, "LEFT", "RIGHT", customHeightsCb.text:GetStringWidth() + 4, 0, {
+    ST._AttachCheckboxTooltip(customHeightsCb, {
         "Custom Resource Bar Heights",
         {"When enabled, each resource can have its own bar height. Click the advanced settings toggle for a resource in Column 1 to configure its individual height.", 1, 1, 1, true},
-    }, customHeightsCb)
+    })
 end
 
 ST._BuildBarHeightControls = BuildBarHeightControls
@@ -901,7 +900,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local colorInfoBtn = CreateInfoButton(colorHeading.frame, colorCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Per-Resource Colors",
         {"These color settings are per-specialization. Switch specs to configure different colors.", 1, 1, 1, true},
-    }, colorHeading)
+    }, CS.tabInfoButtons)
 
     colorHeading.right:ClearAllPoints()
     colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
@@ -1093,7 +1092,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         {"Segmented resources: recolor when current value is at/above a configured threshold.", 1, 1, 1, true},
         " ",
         {"Continuous resources: draw a static marker by percent or absolute value.", 1, 1, 1, true},
-    }, thresholdHeading)
+    }, CS.tabInfoButtons)
 
     thresholdHeading.right:ClearAllPoints()
     thresholdHeading.right:SetPoint("RIGHT", thresholdHeading.frame, "RIGHT", -3, 0)
@@ -1900,7 +1899,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     end)
                     container:AddChild(activeAuraCb)
 
-                    local activeAuraAdvExpanded = AddAdvancedToggle(activeAuraCb, "rbCabActiveAura_" .. capturedIdx, tabInfoButtons, activeAuraEnabled)
+    local activeAuraAdvExpanded = AddAdvancedToggle(activeAuraCb, "rbCabActiveAura_" .. capturedIdx, CS.tabInfoButtons, activeAuraEnabled)
                     if activeAuraAdvExpanded and activeAuraEnabled then
                         local activeAuraCombatCb = AceGUI:Create("CheckBox")
                         activeAuraCombatCb:SetLabel("Show Only In Combat")
@@ -1940,7 +1939,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     end)
                     container:AddChild(pandemicCb)
 
-                    local pandemicAdvExpanded = AddAdvancedToggle(pandemicCb, "rbCabPandemic_" .. capturedIdx, tabInfoButtons, pandemicEnabled)
+    local pandemicAdvExpanded = AddAdvancedToggle(pandemicCb, "rbCabPandemic_" .. capturedIdx, CS.tabInfoButtons, pandemicEnabled)
                     if pandemicAdvExpanded and pandemicEnabled then
                         local pandemicCombatCb = AceGUI:Create("CheckBox")
                         pandemicCombatCb:SetLabel("Show Only In Combat")
@@ -2001,16 +2000,16 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     end)
                     container:AddChild(glowCb)
 
-                    local glowAdvExpanded, glowAdvBtn = AddAdvancedToggle(glowCb, "maxStacksIndicator", tabInfoButtons, cab.maxStacksGlowEnabled == true)
+                    local glowAdvExpanded, glowAdvBtn = AddAdvancedToggle(glowCb, "maxStacksIndicator", CS.tabInfoButtons, cab.maxStacksGlowEnabled == true)
 
-                    CreateInfoButton(glowCb.frame, glowAdvBtn, "LEFT", "RIGHT", 4, 0, {
+                    ST._AttachCheckboxTooltip(glowCb, {
                         "Max Stack Indicator",
                         {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
                         " ",
                         {"The indicator covers the entire resource bar and appears automatically when your buff reaches its maximum stack count.", 1, 1, 1, true},
                         " ",
                         {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
-                    }, glowCb)
+                    })
 
                     if glowAdvExpanded and cab.maxStacksGlowEnabled then
                         -- Preview (ephemeral, not saved)
@@ -2104,7 +2103,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
                     -- Overlay Color tooltip (?) — use SetDescription for AceGUI-safe approach
                     cpOverlay:SetCallback("OnEnter", function(widget)
-                        GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+                        GameTooltip:SetOwner(widget.frame, "ANCHOR_CURSOR")
                         GameTooltip:AddLine("Overlay Color")
                         GameTooltip:AddLine("Number of bar segments equals half the max stacks. Overlay color activates once base segments are full.", 1, 1, 1, true)
                         GameTooltip:Show()
@@ -2203,11 +2202,11 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         end)
                         container:AddChild(decimalCheck)
 
-                        CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+                        ST._AttachCheckboxTooltip(decimalCheck, {
                             "Show Decimal Point",
                             {"Shows one decimal place on duration text", 1, 1, 1, true},
                             {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
-                        }, decimalCheck)
+                        })
                     end
 
                     local stackAdvExpanded = AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedIdx, rbCabTextAdvBtns, showStack)
@@ -2304,7 +2303,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
                     "Talent Conditions",
                     {"Show or hide this custom aura bar based on which talents you have selected. If you add multiple conditions, all of them must pass.", 1, 1, 1, true},
-                }, tabInfoButtons)
+                }, CS.tabInfoButtons)
                 talentHeading.right:ClearAllPoints()
                 talentHeading.right:SetPoint("RIGHT", talentHeading.frame, "RIGHT", -3, 0)
                 talentHeading.right:SetPoint("LEFT", talentInfoBtn, "RIGHT", 4, 0)

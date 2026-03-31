@@ -13,6 +13,7 @@ local BuildHeroTalentSubTreeCheckboxes = ST._BuildHeroTalentSubTreeCheckboxes
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local CreateInfoButton = ST._CreateInfoButton
+local AttachCheckboxTooltip = ST._AttachCheckboxTooltip
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 local HasTooltipCooldown = ST.HasTooltipCooldown
@@ -514,10 +515,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end)
         scroll:AddChild(fallbackOnCDCb)
 
-        CreateInfoButton(fallbackOnCDCb.frame, fallbackOnCDCb.checkbg, "LEFT", "RIGHT", fallbackOnCDCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(fallbackOnCDCb, {
             "Use Baseline Alpha Fallback",
             {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     -- Hide While Not On Cooldown
@@ -552,10 +553,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end)
         scroll:AddChild(fallbackNotOnCDCb)
 
-        CreateInfoButton(fallbackNotOnCDCb.frame, fallbackNotOnCDCb.checkbg, "LEFT", "RIGHT", fallbackNotOnCDCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(fallbackNotOnCDCb, {
             "Use Baseline Alpha Fallback",
             {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     end -- not allPassive and not allNoCooldown
@@ -577,10 +578,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     scroll:AddChild(hideUnusableCb)
 
     -- (?) tooltip
-    CreateInfoButton(hideUnusableCb.frame, hideUnusableCb.checkbg, "LEFT", "RIGHT", hideUnusableCb.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(hideUnusableCb, {
         "Hide While Unusable",
         {"Uses the same logic as unusable dimming, but completely hides the button instead of dimming it.", 1, 1, 1, true},
-    }, infoButtons)
+    })
 
     -- Baseline Alpha Fallback (nested under hideWhileUnusable)
     local showFallbackUnusable
@@ -597,10 +598,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end)
         scroll:AddChild(fallbackUnusableCb)
 
-        CreateInfoButton(fallbackUnusableCb.frame, fallbackUnusableCb.checkbg, "LEFT", "RIGHT", fallbackUnusableCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(fallbackUnusableCb, {
             "Use Baseline Alpha Fallback",
             {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
     end -- not allNeverUnusable
 
@@ -640,10 +641,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             end)
             scroll:AddChild(fallbackNoProcCb)
 
-            CreateInfoButton(fallbackNoProcCb.frame, fallbackNoProcCb.checkbg, "LEFT", "RIGHT", fallbackNoProcCb.text:GetStringWidth() + 4, 0, {
+            AttachCheckboxTooltip(fallbackNoProcCb, {
                 "Use Baseline Alpha Fallback",
                 {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-            }, infoButtons)
+            })
         end
     end
 
@@ -688,10 +689,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             scroll:AddChild(fallbackZeroChargesCb)
 
             -- (?) tooltip
-            CreateInfoButton(fallbackZeroChargesCb.frame, fallbackZeroChargesCb.checkbg, "LEFT", "RIGHT", fallbackZeroChargesCb.text:GetStringWidth() + 4, 0, {
+            AttachCheckboxTooltip(fallbackZeroChargesCb, {
                 "Use Baseline Alpha Fallback",
                 {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-            }, infoButtons)
+            })
         end
 
         -- Desaturate While At Zero Charges
@@ -763,10 +764,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 scroll:AddChild(fallbackZeroStacksCb)
 
                 -- (?) tooltip
-                CreateInfoButton(fallbackZeroStacksCb.frame, fallbackZeroStacksCb.checkbg, "LEFT", "RIGHT", fallbackZeroStacksCb.text:GetStringWidth() + 4, 0, {
+                AttachCheckboxTooltip(fallbackZeroStacksCb, {
                     "Use Baseline Alpha Fallback",
                     {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-                }, infoButtons)
+                })
             end
 
             -- Desaturate While At Zero Stacks
@@ -821,10 +822,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             scroll:AddChild(fallbackNotEquippedCb)
 
             -- (?) tooltip
-            CreateInfoButton(fallbackNotEquippedCb.frame, fallbackNotEquippedCb.checkbg, "LEFT", "RIGHT", fallbackNotEquippedCb.text:GetStringWidth() + 4, 0, {
+            AttachCheckboxTooltip(fallbackNotEquippedCb, {
                 "Use Baseline Alpha Fallback",
                 {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-            }, infoButtons)
+            })
         end
     end
 
@@ -872,10 +873,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     scroll:AddChild(hideAuraCb)
 
     -- (?) tooltip
-    CreateInfoButton(hideAuraCb.frame, hideAuraCb.checkbg, "LEFT", "RIGHT", hideAuraCb.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(hideAuraCb, {
         "Hide While Aura Active",
         {"Requires Aura Tracking to be enabled above.", 1, 1, 1, true},
-    }, infoButtons)
+    })
 
     -- Shared: is hideWhileAuraActive enabled? (used by pandemic + fallback sub-options)
     local showFallbackAuraActive
@@ -911,10 +912,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(pandemicCb)
 
         -- (?) tooltip
-        CreateInfoButton(pandemicCb.frame, pandemicCb.checkbg, "LEFT", "RIGHT", pandemicCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(pandemicCb, {
             "Except in Pandemic",
             {"Shows the button during the pandemic window (last ~30% of the debuff duration) so you know when to reapply.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     -- Baseline Alpha Fallback (only shown when hideWhileAuraActive is checked)
@@ -930,10 +931,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(fallbackAuraCb)
 
         -- (?) tooltip
-        CreateInfoButton(fallbackAuraCb.frame, fallbackAuraCb.checkbg, "LEFT", "RIGHT", fallbackAuraCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(fallbackAuraCb, {
             "Use Baseline Alpha Fallback",
             {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     -- Hide While Aura Not Active
@@ -973,10 +974,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     scroll:AddChild(hideNoAuraCb)
 
     -- (?) tooltip
-    CreateInfoButton(hideNoAuraCb.frame, hideNoAuraCb.checkbg, "LEFT", "RIGHT", hideNoAuraCb.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(hideNoAuraCb, {
         "Hide While Aura Not Active",
         {"Requires Aura Tracking to be enabled above.", 1, 1, 1, true},
-    }, infoButtons)
+    })
 
     -- Baseline Alpha Fallback (only shown when hideWhileAuraNotActive is checked)
     local showFallbackAuraNotActive
@@ -994,10 +995,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(fallbackCb)
 
         -- (?) tooltip
-        CreateInfoButton(fallbackCb.frame, fallbackCb.checkbg, "LEFT", "RIGHT", fallbackCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(fallbackCb, {
             "Use Baseline Alpha Fallback",
             {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     -- Saturate While Aura Not Active (passive aura entries only — inverted toggle)
@@ -1015,10 +1016,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(satNoAuraCb)
 
         -- (?) tooltip
-        CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(satNoAuraCb, {
             "Saturate While Aura Not Active",
             {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     -- Desaturate While Aura Not Active (non-passive aura entries)
@@ -1055,10 +1056,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         scroll:AddChild(desatNoAuraCb)
 
         -- (?) tooltip
-        CreateInfoButton(desatNoAuraCb.frame, desatNoAuraCb.checkbg, "LEFT", "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(desatNoAuraCb, {
             "Desaturate While Aura Not Active",
             {"Requires Aura Tracking to be enabled above.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     -- Warning: aura-based toggles enabled but auraTracking is off

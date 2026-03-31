@@ -52,7 +52,7 @@ local function EnsureRowBadge(frame, key, atlas, iconSize)
         badge.icon:SetAllPoints()
         badge:SetScript("OnEnter", function(self)
             if not self._cdcTooltipText then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
             GameTooltip:AddLine(
                 self._cdcTooltipText,
                 self._cdcTooltipR or 1,
@@ -2139,7 +2139,7 @@ local function RefreshColumn2()
                         OpenAutoAddFlow()
                     end)
                     autoAddBtn:SetCallback("OnEnter", function(widget)
-                        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+                        GameTooltip:SetOwner(widget.frame, "ANCHOR_CURSOR")
                         GameTooltip:AddLine("Auto Add")
                         GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
                         GameTooltip:Show()

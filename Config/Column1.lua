@@ -1491,7 +1491,7 @@ local function RefreshColumn1(preserveDrag)
                 if not CS.browseBadge then
                     local badge = CreateFrame("Button", nil, UIParent)
                     badge:SetScript("OnEnter", function(self)
-                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
                         GameTooltip:SetText("Browse Other Characters")
                         GameTooltip:AddLine("View and copy groups from other characters on this profile.", 1, 1, 1, true)
                         GameTooltip:Show()

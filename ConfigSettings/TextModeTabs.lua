@@ -11,6 +11,7 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local CreateInfoButton = ST._CreateInfoButton
+local AttachCheckboxTooltip = ST._AttachCheckboxTooltip
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local CreatePromoteButton = ST._CreatePromoteButton
@@ -172,11 +173,11 @@ local function BuildTextAppearanceTab(container, group, style)
     end)
     container:AddChild(decimalCheck)
 
-    CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(decimalCheck, {
         "Show Decimal Point",
         {"Shows one decimal place on duration text", 1, 1, 1, true},
         {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
-    }, decimalCheck)
+    })
 
     local headerCb = AceGUI:Create("CheckBox")
     headerCb:SetLabel("Show Group Header")

@@ -10,6 +10,7 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreatePromoteButton = ST._CreatePromoteButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
+local AttachCheckboxTooltip = ST._AttachCheckboxTooltip
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
@@ -397,11 +398,11 @@ local function BuildLayoutTab(container)
     end)
     container:AddChild(strataToggle)
 
-    CreateInfoButton(strataToggle.frame, strataToggle.checkbg, "LEFT", "RIGHT", strataToggle.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(strataToggle, {
         "Custom Icon Strata",
         {"Controls the draw order of visual layers on each icon: Cooldown Swipe, Aura/Pandemic Glow, Ready Glow, Text Overlay, Assisted Highlight, and Proc Glow.", 1, 1, 1, true},
         {"Layer 6 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    })
 
     if customStrataEnabled then
         CS.InitPendingStrataOrder(CS.selectedGroup)
@@ -484,10 +485,10 @@ local function BuildLayoutTab(container)
 
     end -- not strataCollapsed
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    -- Apply "Hide CDC Tooltips" to informational tab buttons only
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
+            if btn._isInfoTooltip then btn:Hide() end
         end
     end
 end
@@ -686,10 +687,10 @@ local function BuildEffectsTab(container)
 
     local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyEnableCb, "readyGlow", tabInfoButtons, style.readyGlowStyle and style.readyGlowStyle ~= "none")
     local readyPromoteBtn = CreateCheckboxPromoteButton(readyEnableCb, readyAdvBtn, "readyGlow", group, style)
-    CreateInfoButton(readyEnableCb.frame, readyPromoteBtn, "LEFT", "RIGHT", 4, 0, {
+    AttachCheckboxTooltip(readyEnableCb, {
         "Ready Glow",
         {"Adds a glow effect around buttons whose spells or items are off cooldown and ready to use.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    })
 
     if readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none" then
     local readyCombatCb = AceGUI:Create("CheckBox")
@@ -759,10 +760,10 @@ local function BuildEffectsTab(container)
 
     local kphAdvExpanded, kphAdvBtn = AddAdvancedToggle(kphEnableCb, "keyPressHighlight", tabInfoButtons, style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none")
     local kphPromoteBtn = CreateCheckboxPromoteButton(kphEnableCb, kphAdvBtn, "keyPressHighlight", group, style)
-    CreateInfoButton(kphEnableCb.frame, kphPromoteBtn, "LEFT", "RIGHT", 4, 0, {
+    AttachCheckboxTooltip(kphEnableCb, {
         "Key Press Highlight",
         {"Shows a glow overlay on buttons while their action bar keybind is physically held down.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    })
 
     if kphAdvExpanded and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none" then
     local kphCombatCb = AceGUI:Create("CheckBox")
@@ -954,10 +955,10 @@ local function BuildEffectsTab(container)
     end)
     end -- assistedAdvExpanded
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    -- Apply "Hide CDC Tooltips" to informational tab buttons only
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
+            if btn._isInfoTooltip then btn:Hide() end
         end
     end
 end
@@ -1118,7 +1119,7 @@ local function BuildAppearanceTab(container)
         CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
             "Shared Position",
             {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
-        }, cdAnchorDrop)
+        }, tabInfoButtons)
 
         AddOffsetSliders(container, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle)
 
@@ -1163,13 +1164,10 @@ local function BuildAppearanceTab(container)
     local auraTextAdvExpanded, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false)
     local auraTextPromoteBtn = CreateCheckboxPromoteButton(auraTextCb, auraTextAdvBtn, "auraText", group, style)
 
-    local auraPosInfo = CreateInfoButton(auraTextCb.frame, auraTextPromoteBtn, "LEFT", "RIGHT", 4, 0, {
+    AttachCheckboxTooltip(auraTextCb, {
         "Shared Position",
         {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' in advanced settings to use independent positions.", 1, 1, 1, true},
-    }, auraTextCb)
-    if style.showAuraText == false then
-        auraPosInfo:Hide()
-    end
+    })
 
     if style.showAuraText ~= false and auraTextAdvExpanded then
         AddFontControls(container, style, "auraText", { size = 12 }, refreshStyle)
@@ -1186,10 +1184,10 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(sepPosCb)
 
-        CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(sepPosCb, {
             "Separate Text Positions",
             {"When enabled, aura duration text and cooldown text use independent positions. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
-        }, sepPosCb)
+        })
 
         if style.separateTextPositions then
             AddAnchorDropdown(container, style, "auraTextAnchor", "TOPLEFT", refreshStyle)
@@ -1364,22 +1362,22 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(masqueCb)
 
-        CreateInfoButton(masqueCb.frame, masqueCb.checkbg, "LEFT", "RIGHT", masqueCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(masqueCb, {
             "Masque Skinning",
             {"Uses the Masque addon to apply custom button skins to this group. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true},
             " ",
             {"Overridden Settings:", 1, 0.82, 0},
             {"Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
-        }, tabInfoButtons)
+        })
         end -- not masqueCollapsed
     end
 
     BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
+    -- Apply "Hide CDC Tooltips" to informational tab buttons only
     if CooldownCompanion.db.profile.hideInfoButtons then
         for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
+            if btn._isInfoTooltip then btn:Hide() end
         end
     end
 end

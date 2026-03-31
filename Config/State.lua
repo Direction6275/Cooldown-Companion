@@ -202,6 +202,9 @@ ST._configState = {
     autoAddFlowState = nil,
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
+    -- Holds raw inline controls that need manual cleanup before AceGUI
+    -- recycles their parent widgets. Informational controls are marked with
+    -- _isInfoTooltip so Hide CDC Tooltips can target only those widgets.
     tabInfoButtons = {},
     appearanceTabElements = {},
     resourceBarPanelActive = false,

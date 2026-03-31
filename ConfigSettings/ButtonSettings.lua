@@ -11,6 +11,7 @@ local CreatePromoteButton = ST._CreatePromoteButton
 local CreateRevertButton = ST._CreateRevertButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
+local AttachCheckboxTooltip = ST._AttachCheckboxTooltip
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local HasTooltipCooldown = ST.HasTooltipCooldown
 local AddColorPicker = ST._AddColorPicker
@@ -359,7 +360,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             {"When enabled, the cooldown swipe shows the remaining buff duration on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true},
         }
     end
-    CreateInfoButton(auraCb.frame, auraCb.checkbg, "LEFT", "RIGHT", auraCb.text:GetStringWidth() + 4, 0, auraWarnLines, infoButtons)
+    AttachCheckboxTooltip(auraCb, auraWarnLines)
     end -- not buttonData.isPassive
 
     -- Spell ID Override row (hidden for passive aura buttons)
@@ -413,7 +414,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end)
     end)
     pickCDMBtn:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_CURSOR")
         GameTooltip:AddLine("Pick from Cooldown Manager")
         GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Spell ID Override.", 1, 1, 1, true)
         GameTooltip:Show()
@@ -486,7 +487,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         if CS.UpdateCdmDisplayIcon then CS.UpdateCdmDisplayIcon() end
     end)
     hideCdmBtn:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_CURSOR")
         GameTooltip:AddLine("Toggle CDM Display")
         GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen. Aura tracking will continue to work regardless.", 1, 1, 1, true)
         GameTooltip:Show()
@@ -570,11 +571,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         end)
         scroll:AddChild(auraIconCb)
-        CreateInfoButton(auraIconCb.frame, auraIconCb.checkbg, "LEFT", "RIGHT",
-            auraIconCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(auraIconCb, {
             "Show Aura Icon",
             {"When enabled, the button icon changes to show the tracked aura's icon while the aura is active. When the aura expires, the normal spell icon is restored.\n\nUseful when the tracked aura has a different icon than the ability itself.", 1, 1, 1, true},
-        }, infoButtons)
+        })
     end
 
     end -- not auraCollapsed

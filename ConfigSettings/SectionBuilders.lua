@@ -11,6 +11,7 @@ local CreatePromoteButton = ST._CreatePromoteButton
 local CreateRevertButton = ST._CreateRevertButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
+local AttachCheckboxTooltip = ST._AttachCheckboxTooltip
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
@@ -53,13 +54,13 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
         end)
         container:AddChild(decimalCheck)
 
-        CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(decimalCheck, {
             "Show Decimal Point",
             {"Shows one decimal place on duration text", 1, 1, 1, true},
             {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
             " ",
             {"Bar and text mode only.", 0.7, 0.7, 0.7, true},
-        }, decimalCheck)
+        })
 
         local cdAnchorDrop = AddAnchorDropdown(container, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback)
 
@@ -67,7 +68,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
         CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
             "Shared Position",
             {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
-        }, cdAnchorDrop)
+        }, tabInfoButtons)
 
         AddOffsetSliders(container, styleTable, "cooldownTextXOffset", "cooldownTextYOffset", {}, refreshCallback)
 
@@ -87,10 +88,10 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
     container:AddChild(auraTextCb)
 
     -- (?) tooltip for shared positioning note
-    CreateInfoButton(auraTextCb.frame, auraTextCb.checkbg, "LEFT", "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0, {
+    AttachCheckboxTooltip(auraTextCb, {
         "Shared Position",
         {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
-    }, auraTextCb)
+    })
 
     if styleTable.showAuraText ~= false then
         AddFontControls(container, styleTable, "auraText", {}, refreshCallback)
@@ -107,10 +108,10 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
         end)
         container:AddChild(sepPosCb)
 
-        CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
+        AttachCheckboxTooltip(sepPosCb, {
             "Separate Text Positions",
             {"When enabled, aura duration text and cooldown text use independent positions. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
-        }, sepPosCb)
+        })
 
         if styleTable.separateTextPositions then
             AddAnchorDropdown(container, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback)

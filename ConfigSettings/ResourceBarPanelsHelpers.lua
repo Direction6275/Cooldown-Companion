@@ -770,7 +770,7 @@ local function BuildResourceAuraOverlaySection(container, settings)
         {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
         " ",
         {"These settings are per-specialization. Switch specs to configure different aura overlays.", 1, 1, 1, true},
-    }, auraHeading)
+    }, tabInfoButtons)
 
     auraHeading.right:ClearAllPoints()
     auraHeading.right:SetPoint("RIGHT", auraHeading.frame, "RIGHT", -3, 0)

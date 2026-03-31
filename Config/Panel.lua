@@ -346,7 +346,7 @@ local function CreateConfigPanel()
         end
     end)
     cdmBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:AddLine("Cooldown Manager")
         GameTooltip:AddLine("Open the Blizzard Cooldown Manager settings panel", 1, 1, 1, true)
         GameTooltip:Show()
@@ -384,7 +384,7 @@ local function CreateConfigPanel()
         UpdateCdmDisplayIcon()
     end)
     cdmDisplayBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:AddLine("Toggle CDM Display")
         GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen. Aura tracking will continue to work regardless.", 1, 1, 1, true)
         GameTooltip:Show()
@@ -421,7 +421,9 @@ local function CreateConfigPanel()
                     if val then btn:Hide() else btn:Show() end
                 end
                 for _, btn in ipairs(CS.tabInfoButtons) do
-                    if val then btn:Hide() else btn:Show() end
+                    if btn._isInfoTooltip then
+                        if val then btn:Hide() else btn:Show() end
+                    end
                 end
                 for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
                     if val then btn:Hide() else btn:Show() end
@@ -648,7 +650,7 @@ local function CreateConfigPanel()
     modeValueText = modeToggleButton.text
 
     modeToggleButton.frame:HookScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:AddLine("Switch Settings Mode")
         GameTooltip:AddLine(modeToggleTooltipText, 1, 1, 1, true)
         GameTooltip:Show()
@@ -683,7 +685,7 @@ local function CreateConfigPanel()
     groupInfoIcon:SetPoint("CENTER")
     groupInfoIcon:SetAtlas("QuestRepeatableTurnin")
     groupInfoBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if CS.resourceBarPanelActive then
             GameTooltip:AddLine("Bars & Frames")
             GameTooltip:AddLine("Use the tabs to switch between Resources, Cast Bar, and Unit Frames.", 1, 1, 1)
@@ -735,7 +737,7 @@ local function CreateConfigPanel()
     infoIcon:SetPoint("CENTER")
     infoIcon:SetAtlas("QuestRepeatableTurnin")
     infoBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:AddLine("Panels")
         GameTooltip:AddLine("A panel controls dimensions, display mode, and layout for all entries inside it. Every entry needs a panel, even if it's just one.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
@@ -776,7 +778,7 @@ local function CreateConfigPanel()
     bsInfoIcon:SetPoint("CENTER")
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if CS.resourceBarPanelActive then
             GameTooltip:AddLine("Custom Aura Bars")
             GameTooltip:AddLine("Track any buff or debuff as a resource-style bar.", 1, 1, 1)
@@ -820,7 +822,7 @@ local function CreateConfigPanel()
     settingsInfoIcon:SetPoint("CENTER")
     settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         if CS.resourceBarPanelActive then
             GameTooltip:AddLine("Layout & Order")
             GameTooltip:AddLine("Control the stacking position and order of all active bars.", 1, 1, 1)
