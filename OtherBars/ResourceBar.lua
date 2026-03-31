@@ -3377,6 +3377,7 @@ function CooldownCompanion:PlayCustomAuraBarEffectPreview(cabIndex, context, dur
                 break
             end
         end
+        MaybeHideCabAnimFrame()
     end)
 end
 
