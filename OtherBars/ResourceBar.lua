@@ -1465,7 +1465,7 @@ local function UpdateCustomAuraBar(barInfo)
     -- Independent bars are forced visible while unlocked so users can drag/place them.
     if cabConfig.hideWhenInactive then
         local forceVisibleForPlacement = barInfo._isIndependent and IsIndependentCustomAuraUnlocked(barInfo)
-        local shouldShow = auraPresent or forceVisibleForPlacement
+        local shouldShow = auraPresent or forceVisibleForPlacement or barInfo._cabEffectPreview
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
         if wasShown ~= shouldShow then
@@ -1754,6 +1754,8 @@ end
 ------------------------------------------------------------------------
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
+    -- Clear pixel glow key so next UpdateCustomAuraBar re-applies with current config values
+    barInfo._cabPixelGlowKey = nil
     local barColor = cabConfig.barColor or DEFAULT_CAB_BAR_COLOR
     local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
     local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
