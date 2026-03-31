@@ -123,8 +123,11 @@ end
 -- A spell is "never unusable" only if it has no resource cost AND no usage
 -- requirements (form/stance/etc). Spells like Mangle (zero cost, requires
 -- Bear Form) correctly return false here — their toggle remains visible.
+local WHIRLING_DRAGON_PUNCH_SPELL_ID = 152175
+
 local function IsNeverUnusableButton(bd)
     if not bd or bd.type ~= "spell" then return false end
+    if bd.id == WHIRLING_DRAGON_PUNCH_SPELL_ID then return false end
     if bd._castCountCandidate then return false end
     local costs = C_Spell.GetSpellPowerCost(bd.id)
     if costs and #costs > 0 then return false end
