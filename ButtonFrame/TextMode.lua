@@ -38,6 +38,7 @@ local DEFAULT_CD_COLOR = {1, 0.3, 0.3, 1}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
+local DEFAULT_TEXT_FORMAT = "{name}  {status}"
 
 ------------------------------------------------------------------------
 -- FORMAT STRING PARSER
@@ -181,16 +182,17 @@ local function EstimateFormatLineCount(segments)
 end
 
 local function GetEffectiveTextHeight(style, formatString)
-    local fmt = formatString or style.textFormat or "{name}  {status}"
+    local fmt = formatString or style.textFormat or DEFAULT_TEXT_FORMAT
+    local baseHeight = style.textHeight or 20
     local segments = ParseFormatString(fmt)
     local lineCount = EstimateFormatLineCount(segments)
     if lineCount <= 1 then
-        return style.textHeight or 20, false
+        return baseHeight, false
     end
 
     local fontSize = style.textFontSize or 12
     local minHeight = math_floor(lineCount * fontSize + 4 + 0.5)
-    return math.max(style.textHeight or 20, minHeight), true
+    return math.max(baseHeight, minHeight), true
 end
 
 local function ApplyTextLayout(button, style, formatString)
@@ -708,7 +710,7 @@ local function UpdateTextStyle(button, newStyle)
     button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
 
     -- Re-parse format string
-    local fmt = button.buttonData.textFormat or newStyle.textFormat or "{name}  {status}"
+    local fmt = button.buttonData.textFormat or newStyle.textFormat or DEFAULT_TEXT_FORMAT
     button._textSegments = ParseFormatString(fmt)
     ApplyTextLayout(button, newStyle, fmt)
 
@@ -721,8 +723,9 @@ end
 -- CREATE TEXT FRAME
 ------------------------------------------------------------------------
 function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
+    local fmt = buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT
     local w = style.textWidth or 200
-    local h = GetEffectiveTextHeight(style, buttonData.textFormat or style.textFormat or "{name}  {status}")
+    local h = GetEffectiveTextHeight(style, fmt)
 
     -- Main frame
     local button = CreateFrame("Frame", parent:GetName() .. "Text" .. index, parent)
@@ -808,7 +811,6 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     end
 
     -- Parse format string
-    local fmt = buttonData.textFormat or style.textFormat or "{name}  {status}"
     button._textSegments = ParseFormatString(fmt)
     ApplyTextLayout(button, style, fmt)
 
