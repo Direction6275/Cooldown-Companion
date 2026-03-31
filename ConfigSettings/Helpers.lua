@@ -294,6 +294,22 @@ end
 ------------------------------------------------------------------------
 -- INFO BUTTON HELPER
 ------------------------------------------------------------------------
+local tooltipMeasureFrame = CreateFrame("Frame", nil, UIParent)
+tooltipMeasureFrame:Hide()
+
+local tooltipMeasureHeader = tooltipMeasureFrame:CreateFontString(nil, "ARTWORK", "GameTooltipHeaderText")
+local tooltipMeasureBody = tooltipMeasureFrame:CreateFontString(nil, "ARTWORK", "GameTooltipText")
+
+local function ResetInfoTooltipWidth()
+    GameTooltip:SetMinimumWidth(0)
+end
+
+local function MeasureInfoTooltipLineWidth(text, isHeader)
+    local fs = isHeader and tooltipMeasureHeader or tooltipMeasureBody
+    fs:SetText(text or "")
+    return fs:GetUnboundedStringWidth()
+end
+
 -- Creates a (?) info button anchored to a frame. Replaces the repeated
 -- CreateFrame→SetSize→SetPoint→CreateTexture→SetAtlas→tooltip pattern.
 --
@@ -312,6 +328,7 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
     icon:SetPoint("CENTER")
     icon:SetAtlas("QuestRepeatableTurnin")
     btn:SetScript("OnEnter", function(self)
+        ResetInfoTooltipWidth()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         for _, line in ipairs(tooltipLines) do
             if type(line) == "table" then
@@ -328,17 +345,14 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
         local wrapFloor = 250
         local maxW = 0
         local hasWrap = false
-        for i = 1, GameTooltip:NumLines() do
-            local entry = tooltipLines[i]
+        for i, entry in ipairs(tooltipLines) do
             local isWrapping = type(entry) == "table" and entry[5]
             if isWrapping then
                 hasWrap = true
             else
-                local fs = _G["GameTooltipTextLeft" .. i]
-                if fs then
-                    local w = fs:GetUnboundedStringWidth()
-                    if w > maxW then maxW = w end
-                end
+                local text = type(entry) == "table" and entry[1] or entry
+                local w = MeasureInfoTooltipLineWidth(text, i == 1)
+                if w > maxW then maxW = w end
             end
         end
         if hasWrap and maxW < wrapFloor then maxW = wrapFloor end
@@ -347,7 +361,10 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
             GameTooltip:Show()
         end
     end)
-    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    btn:SetScript("OnLeave", function()
+        ResetInfoTooltipWidth()
+        GameTooltip:Hide()
+    end)
 
     if cleanup.SetCallback then
         -- AceGUI widget: chain OnRelease cleanup so existing handlers (e.g.
