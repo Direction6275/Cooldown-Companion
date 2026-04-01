@@ -314,6 +314,7 @@ end
 local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchContext)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
+    local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
 
     local isBatch = batchContext ~= nil
     local isItem
@@ -452,6 +453,64 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 widget:SetValue(val)  -- sync visual state for non-refreshing callbacks
             end
         end)
+    end
+
+    local function IsAuraTrackingReadyForButton(bd)
+        if not bd or bd.auraTracking ~= true then
+            return false
+        end
+        local viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(bd)
+        return CooldownCompanion:IsAuraTrackingReady(bd, cdmEnabled, viewerFrame)
+    end
+
+    local function AnySelectedMatch(predicate)
+        for idx in pairs(CS.selectedButtons) do
+            local bd = group.buttons[idx]
+            if bd and predicate(bd) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function AllSelectedMatch(predicate)
+        local anySelected = false
+        for idx in pairs(CS.selectedButtons) do
+            local bd = group.buttons[idx]
+            if bd then
+                anySelected = true
+                if not predicate(bd) then
+                    return false
+                end
+            end
+        end
+        return anySelected
+    end
+
+    local function AllSelectedMatchFiltered(filterFn, predicate)
+        local anyMatched = false
+        for idx in pairs(CS.selectedButtons) do
+            local bd = group.buttons[idx]
+            if bd and filterFn(bd) then
+                anyMatched = true
+                if not predicate(bd) then
+                    return false
+                end
+            end
+        end
+        return anyMatched
+    end
+
+    local function HasAuraVisibilityRule(bd)
+        return bd and (
+            bd.hideWhileAuraNotActive
+            or bd.hideWhileAuraActive
+            or bd.useBaselineAlphaFallback
+            or bd.useBaselineAlphaFallbackAuraActive
+            or bd.hideAuraActiveExceptPandemic
+            or bd.saturateWhileAuraNotActive
+            or bd.desaturateWhileAuraNotActive
+        )
     end
 
     local heading = AceGUI:Create("Heading")
@@ -830,257 +889,199 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     -- Hide While Aura Active (not applicable for items)
     if not isItem then
-    -- Batch: disable aura toggles if no selected button has auraTracking
-    local auraDisabled
-    if isBatch then auraDisabled = not AnySelectedHas(group, "auraTracking")
-    else auraDisabled = not buttonData.auraTracking end
-    local hideAuraVal
-    if isBatch then hideAuraVal = GetBatchFieldValue(group, "hideWhileAuraActive")
-    else hideAuraVal = buttonData.hideWhileAuraActive end
-    local hideAuraCb = AceGUI:Create("CheckBox")
-    hideAuraCb:SetLabel("Hide While Aura Active")
-    -- When auraDisabled in batch: use unfiltered reads so stale data is visible
-    if isBatch and auraDisabled then
-        SetCheckboxValue(hideAuraCb, "hideWhileAuraActive")
-    else
-        SetCheckboxValue(hideAuraCb, "hideWhileAuraActive", FilterAuraTracking)
-    end
-    hideAuraCb:SetFullWidth(true)
-    if auraDisabled then
+        local anyAuraTrackingEnabled
+        local allAuraTrackingReady
         if isBatch then
-            if hideAuraVal == false then hideAuraCb:SetDisabled(true) end
+            anyAuraTrackingEnabled = AnySelectedHas(group, "auraTracking")
+            allAuraTrackingReady = AllSelectedMatchFiltered(FilterAuraTracking, IsAuraTrackingReadyForButton)
         else
-            if not hideAuraVal then hideAuraCb:SetDisabled(true) end
+            anyAuraTrackingEnabled = buttonData.auraTracking == true
+            allAuraTrackingReady = IsAuraTrackingReadyForButton(buttonData)
         end
-    end
-    WrapBatchCallback(hideAuraCb, function(widget, event, val)
-        if isBatch and auraDisabled then
-            -- Stale cleanup: clear this field + dependents on ALL selected buttons
-            ApplyToSelected("hideWhileAuraActive", nil)
-            ApplyToSelected("useBaselineAlphaFallbackAuraActive", nil)
-            ApplyToSelected("hideAuraActiveExceptPandemic", nil)
-            CooldownCompanion:RefreshConfigPanel()
-            return
-        end
-        ApplyToAuraTracking("hideWhileAuraActive", val or nil)
-        if val then
-            ApplyToAuraTracking("hideWhileAuraNotActive", nil)
-            ApplyToAuraTracking("useBaselineAlphaFallback", nil)
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(hideAuraCb)
 
-    -- (?) tooltip
-    CreateInfoButton(hideAuraCb.frame, hideAuraCb.checkbg, "LEFT", "RIGHT", hideAuraCb.text:GetStringWidth() + 4, 0, {
-        "Hide While Aura Active",
-        {"Requires Aura Tracking to be enabled above.", 1, 1, 1, true},
-    }, infoButtons)
-
-    -- Shared: is hideWhileAuraActive enabled? (used by pandemic + fallback sub-options)
-    local showFallbackAuraActive
-    if isBatch then showFallbackAuraActive = AnySelectedHasFiltered(group, "hideWhileAuraActive", FilterAuraTracking)
-    else showFallbackAuraActive = buttonData.hideWhileAuraActive end
-
-    -- Except in Pandemic (only for target aura tracking)
-    local isTargetAura
-    if isBatch then
-        isTargetAura = false
-        for idx in pairs(CS.selectedButtons) do
-            local bd = group.buttons[idx]
-            if bd and bd.auraTracking and bd.auraUnit == "target" then
-                isTargetAura = true
-                break
-            end
-        end
-    else
-        isTargetAura = buttonData.auraUnit == "target"
-    end
-    if isTargetAura then
-        local pandemicCb = AceGUI:Create("CheckBox")
-        pandemicCb:SetLabel("Except in Pandemic")
-        SetCheckboxValue(pandemicCb, "hideAuraActiveExceptPandemic", FilterTargetAuraTracking)
-        pandemicCb:SetFullWidth(true)
-        ApplyCheckboxIndent(pandemicCb, 20)
-        if not showFallbackAuraActive then
-            pandemicCb:SetDisabled(true)
-        end
-        WrapBatchCallback(pandemicCb, function(widget, event, val)
-            ApplyToTargetAuraTracking("hideAuraActiveExceptPandemic", val or nil)
-        end)
-        scroll:AddChild(pandemicCb)
-
-        -- (?) tooltip
-        CreateInfoButton(pandemicCb.frame, pandemicCb.checkbg, "LEFT", "RIGHT", pandemicCb.text:GetStringWidth() + 4, 0, {
-            "Except in Pandemic",
-            {"Shows the button during the pandemic window (last ~30% of the debuff duration) so you know when to reapply.", 1, 1, 1, true},
-        }, infoButtons)
-    end
-
-    -- Baseline Alpha Fallback (only shown when hideWhileAuraActive is checked)
-    if showFallbackAuraActive then
-        local fallbackAuraCb = AceGUI:Create("CheckBox")
-        fallbackAuraCb:SetLabel("Use Baseline Alpha Fallback")
-        SetCheckboxValue(fallbackAuraCb, "useBaselineAlphaFallbackAuraActive", FilterAuraTracking)
-        fallbackAuraCb:SetFullWidth(true)
-        ApplyCheckboxIndent(fallbackAuraCb, 20)
-        WrapBatchCallback(fallbackAuraCb, function(widget, event, val)
-            ApplyToAuraTracking("useBaselineAlphaFallbackAuraActive", val or nil)
-        end)
-        scroll:AddChild(fallbackAuraCb)
-
-        -- (?) tooltip
-        CreateInfoButton(fallbackAuraCb.frame, fallbackAuraCb.checkbg, "LEFT", "RIGHT", fallbackAuraCb.text:GetStringWidth() + 4, 0, {
-            "Use Baseline Alpha Fallback",
-            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
-    end
-
-    -- Hide While Aura Not Active
-    local hideNoAuraVal
-    if isBatch then hideNoAuraVal = GetBatchFieldValue(group, "hideWhileAuraNotActive")
-    else hideNoAuraVal = buttonData.hideWhileAuraNotActive end
-    local hideNoAuraCb = AceGUI:Create("CheckBox")
-    hideNoAuraCb:SetLabel("Hide While Aura Not Active")
-    if isBatch and auraDisabled then
-        SetCheckboxValue(hideNoAuraCb, "hideWhileAuraNotActive")
-    else
-        SetCheckboxValue(hideNoAuraCb, "hideWhileAuraNotActive", FilterAuraTracking)
-    end
-    hideNoAuraCb:SetFullWidth(true)
-    if auraDisabled then
-        if isBatch then
-            if hideNoAuraVal == false then hideNoAuraCb:SetDisabled(true) end
-        else
-            if not hideNoAuraVal then hideNoAuraCb:SetDisabled(true) end
-        end
-    end
-    WrapBatchCallback(hideNoAuraCb, function(widget, event, val)
-        if isBatch and auraDisabled then
-            ApplyToSelected("hideWhileAuraNotActive", nil)
-            ApplyToSelected("useBaselineAlphaFallback", nil)
-            CooldownCompanion:RefreshConfigPanel()
-            return
-        end
-        ApplyToAuraTracking("hideWhileAuraNotActive", val or nil)
-        if val then
-            ApplyToAuraTracking("hideWhileAuraActive", nil)
-            ApplyToAuraTracking("useBaselineAlphaFallbackAuraActive", nil)
-            ApplyToAuraTracking("hideAuraActiveExceptPandemic", nil)
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(hideNoAuraCb)
-
-    -- (?) tooltip
-    CreateInfoButton(hideNoAuraCb.frame, hideNoAuraCb.checkbg, "LEFT", "RIGHT", hideNoAuraCb.text:GetStringWidth() + 4, 0, {
-        "Hide While Aura Not Active",
-        {"Requires Aura Tracking to be enabled above.", 1, 1, 1, true},
-    }, infoButtons)
-
-    -- Baseline Alpha Fallback (only shown when hideWhileAuraNotActive is checked)
-    local showFallbackAuraNotActive
-    if isBatch then showFallbackAuraNotActive = AnySelectedHasFiltered(group, "hideWhileAuraNotActive", FilterAuraTracking)
-    else showFallbackAuraNotActive = buttonData.hideWhileAuraNotActive end
-    if showFallbackAuraNotActive then
-        local fallbackCb = AceGUI:Create("CheckBox")
-        fallbackCb:SetLabel("Use Baseline Alpha Fallback")
-        SetCheckboxValue(fallbackCb, "useBaselineAlphaFallback", FilterAuraTracking)
-        fallbackCb:SetFullWidth(true)
-        ApplyCheckboxIndent(fallbackCb, 20)
-        WrapBatchCallback(fallbackCb, function(widget, event, val)
-            ApplyToAuraTracking("useBaselineAlphaFallback", val or nil)
-        end)
-        scroll:AddChild(fallbackCb)
-
-        -- (?) tooltip
-        CreateInfoButton(fallbackCb.frame, fallbackCb.checkbg, "LEFT", "RIGHT", fallbackCb.text:GetStringWidth() + 4, 0, {
-            "Use Baseline Alpha Fallback",
-            {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
-        }, infoButtons)
-    end
-
-    -- Saturate While Aura Not Active (passive aura entries only — inverted toggle)
-    local anyPassiveAura
-    if isBatch then anyPassiveAura = AnySelectedHas(group, "isPassive")
-    else anyPassiveAura = buttonData.isPassive end
-    if anyPassiveAura then
-        local satNoAuraCb = AceGUI:Create("CheckBox")
-        satNoAuraCb:SetLabel("Saturate While Aura Not Active")
-        SetCheckboxValue(satNoAuraCb, "saturateWhileAuraNotActive", FilterAuraTracking)
-        satNoAuraCb:SetFullWidth(true)
-        WrapBatchCallback(satNoAuraCb, function(widget, event, val)
-            ApplyToAuraTracking("saturateWhileAuraNotActive", val or nil)
-        end)
-        scroll:AddChild(satNoAuraCb)
-
-        -- (?) tooltip
-        CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
-            "Saturate While Aura Not Active",
-            {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
-        }, infoButtons)
-    end
-
-    -- Desaturate While Aura Not Active (non-passive aura entries)
-    local allPassiveAura
-    if isBatch then allPassiveAura = AllSelectedAre(group, "isPassive")
-    else allPassiveAura = buttonData.isPassive end
-    if not allPassiveAura then
-        local desatNoAuraVal
-        if isBatch then desatNoAuraVal = GetBatchFieldValue(group, "desaturateWhileAuraNotActive")
-        else desatNoAuraVal = buttonData.desaturateWhileAuraNotActive end
-        local desatNoAuraCb = AceGUI:Create("CheckBox")
-        desatNoAuraCb:SetLabel("Desaturate While Aura Not Active")
-        if isBatch and auraDisabled then
-            SetCheckboxValue(desatNoAuraCb, "desaturateWhileAuraNotActive")
-        else
-            SetCheckboxValue(desatNoAuraCb, "desaturateWhileAuraNotActive", FilterAuraTracking)
-        end
-        desatNoAuraCb:SetFullWidth(true)
-        if auraDisabled then
-            if isBatch then
-                if desatNoAuraVal == false then desatNoAuraCb:SetDisabled(true) end
-            else
-                if not desatNoAuraVal then desatNoAuraCb:SetDisabled(true) end
-            end
-        end
-        WrapBatchCallback(desatNoAuraCb, function(widget, event, val)
-            if isBatch and auraDisabled then
-                ApplyToSelected("desaturateWhileAuraNotActive", nil)
+        if allAuraTrackingReady then
+            local hideAuraCb = AceGUI:Create("CheckBox")
+            hideAuraCb:SetLabel("Hide While Aura Active")
+            SetCheckboxValue(hideAuraCb, "hideWhileAuraActive", FilterAuraTracking)
+            hideAuraCb:SetFullWidth(true)
+            WrapBatchCallback(hideAuraCb, function(widget, event, val)
+                ApplyToAuraTracking("hideWhileAuraActive", val or nil)
+                if val then
+                    ApplyToAuraTracking("hideWhileAuraNotActive", nil)
+                    ApplyToAuraTracking("useBaselineAlphaFallback", nil)
+                end
                 CooldownCompanion:RefreshConfigPanel()
-                return
+            end)
+            scroll:AddChild(hideAuraCb)
+
+            CreateInfoButton(hideAuraCb.frame, hideAuraCb.checkbg, "LEFT", "RIGHT", hideAuraCb.text:GetStringWidth() + 4, 0, {
+                "Hide While Aura Active",
+                {"Requires Aura Tracking to be active and ready above.", 1, 1, 1, true},
+            }, infoButtons)
+
+            local showFallbackAuraActive
+            if isBatch then
+                showFallbackAuraActive = AnySelectedHasFiltered(group, "hideWhileAuraActive", FilterAuraTracking)
+            else
+                showFallbackAuraActive = buttonData.hideWhileAuraActive
             end
-            ApplyToAuraTracking("desaturateWhileAuraNotActive", val or nil)
-        end)
-        scroll:AddChild(desatNoAuraCb)
 
-        -- (?) tooltip
-        CreateInfoButton(desatNoAuraCb.frame, desatNoAuraCb.checkbg, "LEFT", "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0, {
-            "Desaturate While Aura Not Active",
-            {"Requires Aura Tracking to be enabled above.", 1, 1, 1, true},
-        }, infoButtons)
-    end
+            local isTargetAura
+            if isBatch then
+                isTargetAura = AnySelectedMatch(function(bd)
+                    return FilterTargetAuraTracking(bd) and IsAuraTrackingReadyForButton(bd)
+                end)
+            else
+                isTargetAura = buttonData.auraUnit == "target"
+            end
+            if isTargetAura then
+                local pandemicCb = AceGUI:Create("CheckBox")
+                pandemicCb:SetLabel("Except in Pandemic")
+                SetCheckboxValue(pandemicCb, "hideAuraActiveExceptPandemic", FilterTargetAuraTracking)
+                pandemicCb:SetFullWidth(true)
+                ApplyCheckboxIndent(pandemicCb, 20)
+                if not showFallbackAuraActive then
+                    pandemicCb:SetDisabled(true)
+                end
+                WrapBatchCallback(pandemicCb, function(widget, event, val)
+                    ApplyToTargetAuraTracking("hideAuraActiveExceptPandemic", val or nil)
+                end)
+                scroll:AddChild(pandemicCb)
 
-    -- Warning: aura-based toggles enabled but auraTracking is off
-    local hasAuraToggle, hasAuraTracking
-    if isBatch then
-        hasAuraToggle = AnySelectedHas(group, "hideWhileAuraNotActive") or AnySelectedHas(group, "hideWhileAuraActive")
-        hasAuraTracking = AnySelectedHas(group, "auraTracking")
-    else
-        hasAuraToggle = buttonData.hideWhileAuraNotActive or buttonData.hideWhileAuraActive
-        hasAuraTracking = buttonData.auraTracking
-    end
-    if not isItem and hasAuraToggle and not hasAuraTracking then
-        local warnSpacer = AceGUI:Create("Label")
-        warnSpacer:SetText(" ")
-        warnSpacer:SetFullWidth(true)
-        scroll:AddChild(warnSpacer)
+                CreateInfoButton(pandemicCb.frame, pandemicCb.checkbg, "LEFT", "RIGHT", pandemicCb.text:GetStringWidth() + 4, 0, {
+                    "Except in Pandemic",
+                    {"Shows the button during the pandemic window (last ~30% of the debuff duration) so you know when to reapply.", 1, 1, 1, true},
+                }, infoButtons)
+            end
 
-        local warnLabel = AceGUI:Create("Label")
-        warnLabel:SetText("|cffff8800Warning: Aura Tracking is not enabled. Enable it above for aura-based visibility to take effect.|r")
-        warnLabel:SetFullWidth(true)
-        scroll:AddChild(warnLabel)
-    end
+            if showFallbackAuraActive then
+                local fallbackAuraCb = AceGUI:Create("CheckBox")
+                fallbackAuraCb:SetLabel("Use Baseline Alpha Fallback")
+                SetCheckboxValue(fallbackAuraCb, "useBaselineAlphaFallbackAuraActive", FilterAuraTracking)
+                fallbackAuraCb:SetFullWidth(true)
+                ApplyCheckboxIndent(fallbackAuraCb, 20)
+                WrapBatchCallback(fallbackAuraCb, function(widget, event, val)
+                    ApplyToAuraTracking("useBaselineAlphaFallbackAuraActive", val or nil)
+                end)
+                scroll:AddChild(fallbackAuraCb)
+
+                CreateInfoButton(fallbackAuraCb.frame, fallbackAuraCb.checkbg, "LEFT", "RIGHT", fallbackAuraCb.text:GetStringWidth() + 4, 0, {
+                    "Use Baseline Alpha Fallback",
+                    {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+                }, infoButtons)
+            end
+
+            local hideNoAuraCb = AceGUI:Create("CheckBox")
+            hideNoAuraCb:SetLabel("Hide While Aura Not Active")
+            SetCheckboxValue(hideNoAuraCb, "hideWhileAuraNotActive", FilterAuraTracking)
+            hideNoAuraCb:SetFullWidth(true)
+            WrapBatchCallback(hideNoAuraCb, function(widget, event, val)
+                ApplyToAuraTracking("hideWhileAuraNotActive", val or nil)
+                if val then
+                    ApplyToAuraTracking("hideWhileAuraActive", nil)
+                    ApplyToAuraTracking("useBaselineAlphaFallbackAuraActive", nil)
+                    ApplyToAuraTracking("hideAuraActiveExceptPandemic", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(hideNoAuraCb)
+
+            CreateInfoButton(hideNoAuraCb.frame, hideNoAuraCb.checkbg, "LEFT", "RIGHT", hideNoAuraCb.text:GetStringWidth() + 4, 0, {
+                "Hide While Aura Not Active",
+                {"Requires Aura Tracking to be active and ready above.", 1, 1, 1, true},
+            }, infoButtons)
+
+            local showFallbackAuraNotActive
+            if isBatch then
+                showFallbackAuraNotActive = AnySelectedHasFiltered(group, "hideWhileAuraNotActive", FilterAuraTracking)
+            else
+                showFallbackAuraNotActive = buttonData.hideWhileAuraNotActive
+            end
+            if showFallbackAuraNotActive then
+                local fallbackCb = AceGUI:Create("CheckBox")
+                fallbackCb:SetLabel("Use Baseline Alpha Fallback")
+                SetCheckboxValue(fallbackCb, "useBaselineAlphaFallback", FilterAuraTracking)
+                fallbackCb:SetFullWidth(true)
+                ApplyCheckboxIndent(fallbackCb, 20)
+                WrapBatchCallback(fallbackCb, function(widget, event, val)
+                    ApplyToAuraTracking("useBaselineAlphaFallback", val or nil)
+                end)
+                scroll:AddChild(fallbackCb)
+
+                CreateInfoButton(fallbackCb.frame, fallbackCb.checkbg, "LEFT", "RIGHT", fallbackCb.text:GetStringWidth() + 4, 0, {
+                    "Use Baseline Alpha Fallback",
+                    {"Instead of fully hiding, show the button dimmed at the group's baseline alpha. The button keeps its layout position.", 1, 1, 1, true},
+                }, infoButtons)
+            end
+
+            local anyPassiveAura
+            if isBatch then anyPassiveAura = AnySelectedHas(group, "isPassive")
+            else anyPassiveAura = buttonData.isPassive end
+            if anyPassiveAura then
+                local satNoAuraCb = AceGUI:Create("CheckBox")
+                satNoAuraCb:SetLabel("Saturate While Aura Not Active")
+                SetCheckboxValue(satNoAuraCb, "saturateWhileAuraNotActive", FilterAuraTracking)
+                satNoAuraCb:SetFullWidth(true)
+                WrapBatchCallback(satNoAuraCb, function(widget, event, val)
+                    ApplyToAuraTracking("saturateWhileAuraNotActive", val or nil)
+                end)
+                scroll:AddChild(satNoAuraCb)
+
+                CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
+                    "Saturate While Aura Not Active",
+                    {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
+                }, infoButtons)
+            end
+
+            local allPassiveAura
+            if isBatch then allPassiveAura = AllSelectedAre(group, "isPassive")
+            else allPassiveAura = buttonData.isPassive end
+            if not allPassiveAura then
+                local desatNoAuraCb = AceGUI:Create("CheckBox")
+                desatNoAuraCb:SetLabel("Desaturate While Aura Not Active")
+                SetCheckboxValue(desatNoAuraCb, "desaturateWhileAuraNotActive", FilterAuraTracking)
+                desatNoAuraCb:SetFullWidth(true)
+                WrapBatchCallback(desatNoAuraCb, function(widget, event, val)
+                    ApplyToAuraTracking("desaturateWhileAuraNotActive", val or nil)
+                end)
+                scroll:AddChild(desatNoAuraCb)
+
+                CreateInfoButton(desatNoAuraCb.frame, desatNoAuraCb.checkbg, "LEFT", "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0, {
+                    "Desaturate While Aura Not Active",
+                    {"Requires Aura Tracking to be active and ready above.", 1, 1, 1, true},
+                }, infoButtons)
+            end
+        end
+
+        local hasAuraVisibilityRules
+        if isBatch then
+            hasAuraVisibilityRules = AnySelectedMatch(HasAuraVisibilityRule)
+        else
+            hasAuraVisibilityRules = HasAuraVisibilityRule(buttonData)
+        end
+
+        local auraWarningText
+        if anyAuraTrackingEnabled and not allAuraTrackingReady then
+            if hasAuraVisibilityRules then
+                auraWarningText = "|cffff8800Aura Tracking is enabled but not ready yet. Finish the setup above before these saved aura-based visibility settings can take effect.|r"
+            else
+                auraWarningText = "|cffff8800Aura Tracking is enabled but not ready yet. Finish the setup above to unlock aura-based visibility settings.|r"
+            end
+        elseif hasAuraVisibilityRules and not anyAuraTrackingEnabled then
+            auraWarningText = "|cffff8800Warning: Aura Tracking is not enabled. Any saved aura-based visibility settings are paused until it is enabled again.|r"
+        end
+
+        if auraWarningText then
+            local warnSpacer = AceGUI:Create("Label")
+            warnSpacer:SetText(" ")
+            warnSpacer:SetFullWidth(true)
+            scroll:AddChild(warnSpacer)
+
+            local warnLabel = AceGUI:Create("Label")
+            warnLabel:SetText(auraWarningText)
+            warnLabel:SetFullWidth(true)
+            scroll:AddChild(warnLabel)
+        end
     end -- not isItem
 
     end -- not visCollapsed

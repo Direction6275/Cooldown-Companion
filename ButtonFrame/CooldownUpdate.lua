@@ -298,6 +298,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
     local auraHasTimer = button._auraHasTimer == true
+    local auraTrackingReady = buttonData.isPassive == true
     -- Capture and clear event-driven removal flag (set by OnUnitAura when
     -- removedAuraInstanceIDs confirms the aura is gone).  Used to bypass the
     -- grace hold, which otherwise can't detect expiry in combat (secret values).
@@ -308,6 +309,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local auraUnit = button._auraUnit or configUnit
 
         local viewerFrame
+        local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
 
         -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
         -- untainted code that matches spell IDs to auras during combat and
@@ -361,7 +363,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         end
-        if not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
+        auraTrackingReady = CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
+        if auraTrackingReady and not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
             local viewerInstId = viewerFrame.auraInstanceID
             if viewerInstId then
                 local unit = viewerFrame.auraDataUnit or auraUnit
@@ -469,7 +472,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
         -- the viewer path has no auraInstanceID (form-variant spells like
         -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
-        if not auraOverrideActive and configUnit == "player" then
+        if auraTrackingReady and not auraOverrideActive and configUnit == "player" then
             local baseId = C_Spell.GetBaseSpell(buttonData.id)
             -- Try base spell first (buff is applied as base), then _auraSpellID
             local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
@@ -500,7 +503,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- combat and the instance ID persists until OnUnitAura removal clears it.
         -- Target-debuff tracking intentionally skips this fallback because a stale
         -- target auraInstanceID can survive brief viewer churn and show ghost time.
-        if not auraOverrideActive and configUnit == "player" and button._auraInstanceID then
+        if auraTrackingReady and not auraOverrideActive and configUnit == "player" and button._auraInstanceID then
             local cachedUnit = button._auraUnit or configUnit
             if cachedUnit == configUnit then
                 local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(cachedUnit, button._auraInstanceID)
@@ -671,7 +674,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
         -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
-        if buttonData.auraTracking or buttonData.isPassive then
+        if button._auraTrackingReady or buttonData.isPassive then
             if auraOverrideActive and viewerFrame then
                 button._auraStackText = GetViewerAuraStackText(viewerFrame)
             else
@@ -766,6 +769,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
     end
+    button._auraTrackingReady = auraTrackingReady
 
     if buttonData.isPassive and not auraOverrideActive then
         button.cooldown:Hide()
@@ -942,7 +946,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- baseSpellID suppress secrets to prevent a stuck "0" after the
         -- override fades in combat.
         if buttonData._castCountCandidate and buttonData.type == "spell"
-                and not (buttonData.auraTracking and button.style and button.style.showAuraStackText ~= false)
+                and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false)
                 and button.style and button.style.showChargeText then
             button._chargeText = nil
             local castCount = C_Spell.GetSpellCastCount(cooldownSpellId or buttonData.id)
@@ -955,7 +959,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.count:SetText("")
             end
         elseif buttonData._castCountCandidate and buttonData.type == "spell"
-                and not (buttonData.auraTracking and button.style and button.style.showAuraStackText ~= false) then
+                and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
             -- showChargeText disabled: ensure cast-count text is cleared.
             button.count:SetText("")
         elseif button._chargeText ~= nil then
@@ -1198,7 +1202,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura stack count display (aura-tracking spells with stackable auras)
     -- Text is a secret value in combat — pass through directly to SetText.
     -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
-    if button.auraStackCount and (buttonData.auraTracking or buttonData.isPassive)
+    if button.auraStackCount and (button._auraTrackingReady or buttonData.isPassive)
        and (style.showAuraStackText ~= false) then
         if button._auraActive then
             button.auraStackCount:SetText(button._auraStackText or "")

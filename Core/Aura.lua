@@ -171,6 +171,98 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    if buttonData.isPassive then
+        return true
+    end
+
+    if buttonData.auraTracking ~= true then
+        return false
+    end
+
+    if cdmEnabled == nil then
+        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    end
+    if cdmEnabled ~= true then
+        return false
+    end
+
+    return viewerFrame ~= nil
+end
+
+function CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
+    if not buttonData or buttonData.type ~= "spell" then return nil end
+
+    local viewerFrame
+    if buttonData.cdmChildSlot then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
+        if IsBuffViewerChild(slotChild) then
+            viewerFrame = slotChild
+        end
+    end
+
+    if not viewerFrame and buttonData.auraSpellID then
+        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+            local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+            if IsBuffViewerChild(candidate) then
+                viewerFrame = candidate
+            end
+            if viewerFrame then break end
+        end
+    end
+
+    if not viewerFrame then
+        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+        if resolvedAuraId and resolvedAuraId ~= 0 then
+            local resolvedChild = CooldownCompanion.viewerAuraFrames[resolvedAuraId]
+            if IsBuffViewerChild(resolvedChild) then
+                viewerFrame = resolvedChild
+            end
+        end
+        if not viewerFrame then
+            local idChild = CooldownCompanion.viewerAuraFrames[buttonData.id]
+            if IsBuffViewerChild(idChild) then
+                viewerFrame = idChild
+            end
+        end
+    end
+
+    if not viewerFrame then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        if allChildren and allChildren[1] and IsBuffViewerChild(allChildren[1]) then
+            viewerFrame = allChildren[1]
+        end
+    end
+
+    if not viewerFrame then
+        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+        if overrideBuffs then
+            for id in overrideBuffs:gmatch("%d+") do
+                local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+                if IsBuffViewerChild(candidate) then
+                    viewerFrame = candidate
+                end
+                if viewerFrame then break end
+            end
+        end
+    end
+
+    if not viewerFrame then
+        local fallback = CooldownCompanion:FindViewerChildForSpell(buttonData.id)
+        if IsBuffViewerChild(fallback) then
+            CooldownCompanion.viewerAuraFrames[buttonData.id] = fallback
+            viewerFrame = fallback
+        end
+    end
+
+    return viewerFrame
+end
+
 -- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
 -- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
 -- Both Eclipse forms map to both buff IDs so whichever buff is active gets tracked.

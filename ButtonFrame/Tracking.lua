@@ -194,7 +194,7 @@ end
 -- Shared by icon-mode and bar-mode display paths.
 local function EvaluateDesaturation(button, buttonData, style)
     local wantDesat = false
-    if buttonData.auraTracking then
+    if button._auraTrackingReady == true then
         if buttonData.isPassive then
             wantDesat = not buttonData.saturateWhileAuraNotActive and not button._auraActive
         else
