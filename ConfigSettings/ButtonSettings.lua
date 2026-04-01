@@ -344,7 +344,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     -- Track buff/debuff duration toggle (hidden for passives — forced on)
     if not buttonData.isPassive then
     local auraCb = AceGUI:Create("CheckBox")
-    local auraLabel = "Track Aura Duration"
+    local auraLabel = "Aura Tracking"
     local auraActive = auraConfigReady
     auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
     auraCb:SetLabel(auraLabel)

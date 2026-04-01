@@ -1067,8 +1067,6 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             else
                 auraWarningText = "|cffff8800Aura Tracking is enabled but not ready yet. Finish the setup above to unlock aura-based visibility settings.|r"
             end
-        elseif hasAuraVisibilityRules and not anyAuraTrackingEnabled then
-            auraWarningText = "|cffff8800Warning: Aura Tracking is not enabled. Any saved aura-based visibility settings are paused until it is enabled again.|r"
         end
 
         if auraWarningText then
