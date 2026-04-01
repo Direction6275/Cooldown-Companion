@@ -459,8 +459,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(auraUnitDrop)
-    CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.frame, "TOPLEFT", "TOPLEFT",
-        auraUnitDrop.label:GetStringWidth() + 4, -2, {
+    CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT",
+        4, 0, {
         "Aura Unit",
         {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
     }, infoButtons)
