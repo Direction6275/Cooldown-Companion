@@ -257,6 +257,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
+    button._auraTrackingReady = buttonData.isPassive == true
     button._showingAuraIcon = false
     button._auraViewerFrame = nil
     button._lastViewerTexId = nil
@@ -678,7 +679,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         if button._procGlowPreview then
             showProc = true
         elseif style.procGlowStyle ~= "none" and buttonData.type == "spell"
-               and not buttonData.isPassive and not buttonData.auraTracking
+               and not buttonData.isPassive and not (button._auraTrackingReady == true)
                and (not style.procGlowCombatOnly or inCombat) then
             showProc = procOverlayActive and true or false
         end
@@ -704,7 +705,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
             showAuraGlow = true
         elseif style.auraGlowInvert then
             -- Invert mode: show glow when tracked aura is MISSING
-            if buttonData.auraTracking and button._auraSpellID and not button._auraActive then
+            if button._auraTrackingReady == true and button._auraSpellID and not button._auraActive then
                 if (auraIndicatorEnabled or style.auraGlowStyle ~= "none")
                    and (not style.auraGlowCombatOnly or inCombat) then
                     if button._auraUnit == "target" then

@@ -64,6 +64,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
 
     -- Phase 1: Evaluate each hide condition and accumulate active reasons as bits.
     local hideReasons = 0
+    local auraTrackingReady = button._auraTrackingReady == true
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
     -- _cooldownDeferred: treat deferred cooldowns (timer not yet started) as "on CD".
@@ -105,12 +106,12 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     end
 
     -- Check hideWhileAuraNotActive
-    if buttonData.hideWhileAuraNotActive and not auraOverrideActive then
+    if auraTrackingReady and buttonData.hideWhileAuraNotActive and not auraOverrideActive then
         hideReasons = bit_bor(hideReasons, HIDE_AURA_NOT_ACTIVE)
     end
 
     -- Check hideWhileAuraActive
-    if buttonData.hideWhileAuraActive and auraOverrideActive then
+    if auraTrackingReady and buttonData.hideWhileAuraActive and auraOverrideActive then
         if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
             hideReasons = bit_bor(hideReasons, HIDE_AURA_ACTIVE)
         end

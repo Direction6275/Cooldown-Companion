@@ -93,16 +93,10 @@ end
 function CooldownCompanion:ClearAuraUnit(unitToken)
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
+            local configUnit = bd.auraUnit or "player"
             local shouldClear = button._auraUnit == unitToken
-            -- _auraUnit defaults to "player" even for debuff-tracking buttons
-            -- whose viewer frame has auraDataUnit == "target".  Check the viewer
-            -- map as a fallback so target-switch clears actually reach them.
-            if not shouldClear and unitToken == "target" then
-                local f = button._auraSpellID and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-                if not f and not bd.auraSpellID then
-                    f = self:ResolveBuffViewerFrameForSpell(bd.id)
-                end
-                shouldClear = f and f.auraDataUnit == "target"
+            if not shouldClear and configUnit == unitToken then
+                shouldClear = true
             end
             if shouldClear then
                 button._auraInstanceID = nil
@@ -110,6 +104,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 button._inPandemic = false
                 button._targetSwitchAt = nil
                 button._targetSwitchDataReceived = nil
+                button._auraUnit = configUnit
             end
         end
     end)
@@ -128,19 +123,15 @@ function CooldownCompanion:OnTargetChanged()
     local now = GetTime()
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
+            local configUnit = bd.auraUnit or "player"
             local isTarget = button._auraUnit == "target"
-            if not isTarget then
-                local f = button._auraSpellID and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-                if not f and not bd.auraSpellID then
-                    f = self:ResolveBuffViewerFrameForSpell(bd.id)
-                end
-                isTarget = f and f.auraDataUnit == "target"
-            end
+                or configUnit == "target"
             if isTarget then
                 button._auraInstanceID = nil
                 button._inPandemic = false
                 button._targetSwitchAt = now
                 button._targetSwitchDataReceived = nil
+                button._auraUnit = "target"
             end
         end
     end)
@@ -178,6 +169,117 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return baseId
     end
     return nil
+end
+
+function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    if buttonData.isPassive then
+        return true
+    end
+
+    if buttonData.auraTracking ~= true then
+        return false
+    end
+
+    if cdmEnabled == nil then
+        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    end
+    if cdmEnabled ~= true then
+        return false
+    end
+
+    return viewerFrame ~= nil
+end
+
+function CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, viewerFrame)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    if buttonData.auraTracking ~= true then
+        return false
+    end
+
+    if cdmEnabled == nil then
+        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    end
+    if cdmEnabled ~= true then
+        return false
+    end
+
+    return viewerFrame ~= nil
+end
+
+function CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
+    if not buttonData or buttonData.type ~= "spell" then return nil end
+
+    local viewerFrame
+    if buttonData.cdmChildSlot then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
+        if IsBuffViewerChild(slotChild) then
+            viewerFrame = slotChild
+        end
+    end
+
+    if not viewerFrame and buttonData.auraSpellID then
+        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+            local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+            if IsBuffViewerChild(candidate) then
+                viewerFrame = candidate
+            end
+            if viewerFrame then break end
+        end
+    end
+
+    if not viewerFrame then
+        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+        if resolvedAuraId and resolvedAuraId ~= 0 then
+            local resolvedChild = CooldownCompanion.viewerAuraFrames[resolvedAuraId]
+            if IsBuffViewerChild(resolvedChild) then
+                viewerFrame = resolvedChild
+            end
+        end
+        if not viewerFrame then
+            local idChild = CooldownCompanion.viewerAuraFrames[buttonData.id]
+            if IsBuffViewerChild(idChild) then
+                viewerFrame = idChild
+            end
+        end
+    end
+
+    if not viewerFrame then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        if allChildren and allChildren[1] and IsBuffViewerChild(allChildren[1]) then
+            viewerFrame = allChildren[1]
+        end
+    end
+
+    if not viewerFrame then
+        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+        if overrideBuffs then
+            for id in overrideBuffs:gmatch("%d+") do
+                local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
+                if IsBuffViewerChild(candidate) then
+                    viewerFrame = candidate
+                end
+                if viewerFrame then break end
+            end
+        end
+    end
+
+    if not viewerFrame then
+        local fallback = CooldownCompanion:FindViewerChildForSpell(buttonData.id)
+        if IsBuffViewerChild(fallback) then
+            CooldownCompanion.viewerAuraFrames[buttonData.id] = fallback
+            viewerFrame = fallback
+        end
+    end
+
+    return viewerFrame
 end
 
 -- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs

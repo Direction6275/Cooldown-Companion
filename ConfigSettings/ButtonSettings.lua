@@ -77,6 +77,22 @@ local function BuildSortedSoundOptionOrder(soundOptions)
     return order
 end
 
+local function IsValidAuraUnit(unit)
+    return unit == "player" or unit == "target"
+end
+
+local function GetDefaultAuraUnit(isHarmful)
+    return isHarmful and "target" or "player"
+end
+
+local function EnsureAuraUnitChoice(buttonData, isHarmful, unit)
+    if IsValidAuraUnit(unit) then
+        buttonData.auraUnit = unit
+    elseif not IsValidAuraUnit(buttonData.auraUnit) then
+        buttonData.auraUnit = GetDefaultAuraUnit(isHarmful)
+    end
+end
+
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local soundHeading = AceGUI:Create("Heading")
     soundHeading:SetText("Sound Alerts")
@@ -216,15 +232,25 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
+    local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+
     -- Only treat as aura-capable if CDM is enabled and viewer is from BuffIcon or BuffBar.
     -- When CDM is disabled, viewer children persist with stale data and cannot be trusted.
     -- (Essential and Utility viewers track cooldowns only, not auras)
     local hasViewerFrame = false
-    if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+    if viewerFrame and cdmEnabled then
         local parent = viewerFrame:GetParent()
         local parentName = parent and parent:GetName()
         hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
     end
+    local function ComputeAuraConfigReady()
+        return CooldownCompanion:IsAuraTrackingConfigReady(
+            buttonData,
+            cdmEnabled,
+            hasViewerFrame and viewerFrame or nil
+        )
+    end
+    local auraConfigReady = ComputeAuraConfigReady()
 
     -- Determine if this spell could theoretically track a buff/debuff.
     -- Query the CDM's authoritative category lists for TrackedBuff and TrackedBar.
@@ -250,12 +276,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     local canTrackAura = hasViewerFrame
         or buffTrackableSpells[buttonData.id]
         or (buttonData.auraSpellID and buttonData.auraSpellID ~= "")
-
-    if not canTrackAura and buttonData.type == "spell" then
-        if CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id] then
-            canTrackAura = true
-        end
-    end
+        or (buttonData.type == "spell" and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id])
 
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
@@ -264,11 +285,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         if overrideBuffs and not buttonData.auraSpellID then
             buttonData.auraSpellID = overrideBuffs
         end
-        if isHarmful then
-            buttonData.auraUnit = "target"
-        else
-            buttonData.auraUnit = nil
-        end
+        EnsureAuraUnitChoice(buttonData, isHarmful)
+        auraConfigReady = ComputeAuraConfigReady()
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end
 
@@ -321,25 +339,16 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     -- Track buff/debuff duration toggle (hidden for passives — forced on)
     if not buttonData.isPassive then
     local auraCb = AceGUI:Create("CheckBox")
-    local auraLabel = "Track Aura Duration"
-    local auraActive = hasViewerFrame and buttonData.auraTracking == true
+    local auraLabel = "Aura Tracking"
+    local auraActive = auraConfigReady
     auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
     auraCb:SetLabel(auraLabel)
     auraCb:SetValue(buttonData.auraTracking == true)
     auraCb:SetFullWidth(true)
-    if not hasViewerFrame then
-        auraCb:SetDisabled(true)
-    end
     auraCb:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.auraTracking = val and true or false
         if val then
-            if isHarmful then
-                if not buttonData.auraUnit or buttonData.auraUnit == "player" then
-                    buttonData.auraUnit = "target"
-                end
-            elseif buttonData.type == "spell" then
-                buttonData.auraUnit = nil
-            end
+            EnsureAuraUnitChoice(buttonData, isHarmful)
         end
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
@@ -347,32 +356,45 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(auraCb)
 
     -- (?) tooltip for aura tracking
-    local auraWarnLines
-    if isHarmful then
-        auraWarnLines = {
-            "Debuff Tracking",
-            {"When enabled, the cooldown swipe shows the remaining debuff or DoT duration on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true},
-        }
-    else
-        auraWarnLines = {
-            "Buff Tracking",
-            {"When enabled, the cooldown swipe shows the remaining buff duration on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true},
-        }
-    end
+    local auraWarnLines = {
+        isHarmful and "Debuff Tracking" or "Buff Tracking",
+        {"When enabled, the cooldown swipe shows the remaining tracked aura duration instead of the spell's cooldown. Use Aura Unit to decide whether that aura should be read from Player or Target.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player and target auras are supported.", 1, 1, 1, true},
+    }
     CreateInfoButton(auraCb.frame, auraCb.checkbg, "LEFT", "RIGHT", auraCb.text:GetStringWidth() + 4, 0, auraWarnLines, infoButtons)
     end -- not buttonData.isPassive
 
+    local showAuraDetails = buttonData.isPassive or buttonData.auraTracking == true
+
+    if showAuraDetails then
+    local function StartAuraSpellOverridePicker()
+        local grp = CS.selectedGroup
+        local btn = CS.selectedButton
+        CS.StartPickCDM(function(spellID)
+            if CS.configFrame then
+                CS.configFrame.frame:Show()
+            end
+            if spellID then
+                local groups = CooldownCompanion.db.profile.groups
+                local g = groups[grp]
+                if g and g.buttons and g.buttons[btn] then
+                    g.buttons[btn].auraSpellID = tostring(spellID)
+                    if g.buttons[btn].auraTracking then
+                        EnsureAuraUnitChoice(g.buttons[btn], isHarmful)
+                    end
+                end
+            end
+            CooldownCompanion:RefreshGroupFrame(grp)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+
     -- Spell ID Override row (hidden for passive aura buttons)
     if not buttonData.isPassive then
-    local overrideRow = AceGUI:Create("SimpleGroup")
-    overrideRow:SetFullWidth(true)
-    overrideRow:SetLayout("Flow")
-
     local auraEditBox = AceGUI:Create("EditBox")
     if auraEditBox.editbox.Instructions then auraEditBox.editbox.Instructions:Hide() end
     auraEditBox:SetLabel("Spell ID Override")
     auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
-    auraEditBox:SetRelativeWidth(0.70)
+    auraEditBox:SetFullWidth(true)
     auraEditBox:SetCallback("OnEnterPressed", function(widget, event, text)
         text = text:gsub("%s", "")
         if text ~= "" then
@@ -385,75 +407,63 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end
         end
         buttonData.auraSpellID = text ~= "" and text or nil
+        if buttonData.auraTracking then
+            EnsureAuraUnitChoice(buttonData, isHarmful)
+        end
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    overrideRow:AddChild(auraEditBox)
+    scroll:AddChild(auraEditBox)
 
-    local pickCDMBtn = AceGUI:Create("Button")
-    pickCDMBtn:SetText("Pick CDM")
-    pickCDMBtn:SetRelativeWidth(0.30)
-    pickCDMBtn:SetCallback("OnClick", function()
-        local grp = CS.selectedGroup
-        local btn = CS.selectedButton
-        CS.StartPickCDM(function(spellID)
-            -- Re-show config panel
-            if CS.configFrame then
-                CS.configFrame.frame:Show()
-            end
-            if spellID then
-                local groups = CooldownCompanion.db.profile.groups
-                local g = groups[grp]
-                if g and g.buttons and g.buttons[btn] then
-                    g.buttons[btn].auraSpellID = tostring(spellID)
-                end
-            end
-            CooldownCompanion:RefreshGroupFrame(grp)
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-    end)
-    pickCDMBtn:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-        GameTooltip:AddLine("Pick from Cooldown Manager")
-        GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Spell ID Override.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    pickCDMBtn:SetCallback("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    overrideRow:AddChild(pickCDMBtn)
-
-    scroll:AddChild(overrideRow)
-
-    -- (?) tooltip for override
     CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {
         "Spell ID Override",
-        {"Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas for multiple IDs (e.g. 48517,48518 for both Eclipse forms).\n\nYou can also click \"Pick CDM\" to visually select a spell from the Cooldown Manager.", 1, 1, 1, true},
+        {"Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas for multiple IDs (e.g. 48517,48518 for both Eclipse forms).\n\nUse \"Pick CDM\" below to visually select a spell from the Cooldown Manager.", 1, 1, 1, true},
     }, infoButtons)
-
-    -- Nudge Pick CDM button down to align with editbox
-    pickCDMBtn.frame:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-        if yOfs then
-            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-        end
-    end)
 
     local overrideCdmSpacer = AceGUI:Create("Label")
     overrideCdmSpacer:SetText(" ")
     overrideCdmSpacer:SetFullWidth(true)
     scroll:AddChild(overrideCdmSpacer)
+
+    if not IsValidAuraUnit(buttonData.auraUnit) then
+        buttonData.auraUnit = GetDefaultAuraUnit(isHarmful)
+    end
+
+    local auraUnitDrop = AceGUI:Create("Dropdown")
+    auraUnitDrop:SetLabel("Aura Unit")
+    auraUnitDrop:SetList({
+        player = "Player",
+        target = "Target",
+    }, {"player", "target"})
+    auraUnitDrop:SetValue(buttonData.auraUnit)
+    auraUnitDrop:SetFullWidth(true)
+    auraUnitDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        if val ~= "player" and val ~= "target" then
+            return
+        end
+        EnsureAuraUnitChoice(buttonData, isHarmful, val)
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(auraUnitDrop)
+    CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT",
+        4, 0, {
+        "Aura Unit",
+        {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
+    }, infoButtons)
+
+    local auraUnitSpacer = AceGUI:Create("Label")
+    auraUnitSpacer:SetText(" ")
+    auraUnitSpacer:SetFullWidth(true)
+    scroll:AddChild(auraUnitSpacer)
     end -- not buttonData.isPassive (Spell ID Override)
 
-    -- Cooldown Manager controls (always visible for spells)
-    local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
     local cdmToggleBtn = AceGUI:Create("Button")
     cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
     cdmToggleBtn:SetFullWidth(true)
     cdmToggleBtn:SetCallback("OnClick", function()
-        local current = GetCVarBool("cooldownViewerEnabled")
-        SetCVar("cooldownViewerEnabled", current and "0" or "1")
+        local current = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+        C_CVar.SetCVar("cooldownViewerEnabled", current and "0" or "1")
         CooldownCompanion:RefreshConfigPanel()
         if not current then
             C_Timer.After(0.2, function()
@@ -470,42 +480,40 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     local openCdmBtn = AceGUI:Create("Button")
     openCdmBtn:SetText("CDM Settings")
-    openCdmBtn:SetRelativeWidth(0.5)
+    openCdmBtn:SetRelativeWidth(buttonData.isPassive and 1.0 or 0.5)
     openCdmBtn:SetCallback("OnClick", function()
-        CooldownViewerSettings:TogglePanel()
+        if CooldownViewerSettings then
+            CooldownViewerSettings:TogglePanel()
+        end
     end)
     cdmRow:AddChild(openCdmBtn)
 
-    local db = CooldownCompanion.db
-    local hideCdmBtn = AceGUI:Create("Button")
-    hideCdmBtn:SetText("CDM Display")
-    hideCdmBtn:SetRelativeWidth(0.5)
-    hideCdmBtn:SetCallback("OnClick", function()
-        db.profile.cdmHidden = not db.profile.cdmHidden
-        CooldownCompanion:ApplyCdmAlpha()
-        if CS.UpdateCdmDisplayIcon then CS.UpdateCdmDisplayIcon() end
-    end)
-    hideCdmBtn:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-        GameTooltip:AddLine("Toggle CDM Display")
-        GameTooltip:AddLine("This only toggles the visibility of the Cooldown Manager on your screen. Aura tracking will continue to work regardless.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    hideCdmBtn:SetCallback("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    cdmRow:AddChild(hideCdmBtn)
+    if not buttonData.isPassive then
+        local pickCDMBtn = AceGUI:Create("Button")
+        pickCDMBtn:SetText("Pick CDM")
+        pickCDMBtn:SetRelativeWidth(0.5)
+        pickCDMBtn:SetCallback("OnClick", StartAuraSpellOverridePicker)
+        pickCDMBtn:SetCallback("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+            GameTooltip:AddLine("Pick from Cooldown Manager")
+            GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Spell ID Override.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        pickCDMBtn:SetCallback("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        cdmRow:AddChild(pickCDMBtn)
+    end
 
     scroll:AddChild(cdmRow)
 
-    -- Aura tracking status confirmation (always visible for spells)
     local auraStatusSpacer1 = AceGUI:Create("Label")
     auraStatusSpacer1:SetText(" ")
     auraStatusSpacer1:SetFullWidth(true)
     scroll:AddChild(auraStatusSpacer1)
 
     local auraStatusLabel = AceGUI:Create("Label")
-    if buttonData.auraTracking and cdmEnabled and hasViewerFrame then
+    if auraConfigReady then
         auraStatusLabel:SetText("|cff00ff00Aura tracking is active and ready.|r")
     else
         auraStatusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
@@ -531,7 +539,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
 
     if canTrackAura then
-
     if not hasViewerFrame then
         local auraDisabledLabel = AceGUI:Create("Label")
         auraDisabledLabel:SetText("|cff888888This spell has a trackable aura in the Cooldown Manager, but it has not been added as a tracked buff or debuff yet. Add it in the CDM to enable aura tracking.|r")
@@ -544,22 +551,15 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
 
     if hasViewerFrame and buttonData.auraTracking then
-            -- Aura unit: harmful spells track on target, non-harmful track on player.
-            -- Viewer only supports player + target, so no dropdown is needed for spells.
-            if isHarmful then
-                -- Migrate any legacy auraUnit to "target"
-                if not buttonData.auraUnit or (buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target") then
-                    buttonData.auraUnit = "target"
-                end
-            elseif buttonData.type == "spell" then
-                -- Non-harmful spell: always tracks on player
-                buttonData.auraUnit = nil
+            -- Migrate any legacy/invalid auraUnit to the spell-type default,
+            -- but preserve explicit player/target choices regardless of spell.
+            if not IsValidAuraUnit(buttonData.auraUnit) then
+                buttonData.auraUnit = GetDefaultAuraUnit(isHarmful)
             end
 
     end -- hasViewerFrame and auraTracking
     end -- canTrackAura
 
-    -- Show Aura Icon toggle (spells with aura tracking only — passive auras already show their own icon)
     if buttonData.auraTracking and not buttonData.isPassive then
         local auraIconCb = AceGUI:Create("CheckBox")
         auraIconCb:SetLabel("Show Aura Icon")
@@ -576,6 +576,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             {"When enabled, the button icon changes to show the tracked aura's icon while the aura is active. When the aura expires, the normal spell icon is restored.\n\nUseful when the tracked aura has a different icon than the ability itself.", 1, 1, 1, true},
         }, infoButtons)
     end
+    end -- showAuraDetails
 
     end -- not auraCollapsed
 
