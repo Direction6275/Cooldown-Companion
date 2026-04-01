@@ -77,6 +77,22 @@ local function BuildSortedSoundOptionOrder(soundOptions)
     return order
 end
 
+local function IsValidAuraUnit(unit)
+    return unit == "player" or unit == "target"
+end
+
+local function GetDefaultAuraUnit(isHarmful)
+    return isHarmful and "target" or "player"
+end
+
+local function EnsureAuraUnitChoice(buttonData, isHarmful, unit)
+    if IsValidAuraUnit(unit) then
+        buttonData.auraUnit = unit
+    elseif not IsValidAuraUnit(buttonData.auraUnit) then
+        buttonData.auraUnit = GetDefaultAuraUnit(isHarmful)
+    end
+end
+
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local soundHeading = AceGUI:Create("Heading")
     soundHeading:SetText("Sound Alerts")
@@ -264,11 +280,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         if overrideBuffs and not buttonData.auraSpellID then
             buttonData.auraSpellID = overrideBuffs
         end
-        if isHarmful then
-            buttonData.auraUnit = "target"
-        else
-            buttonData.auraUnit = nil
-        end
+        EnsureAuraUnitChoice(buttonData, isHarmful)
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end
 
@@ -333,13 +345,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraCb:SetCallback("OnValueChanged", function(widget, event, val)
         buttonData.auraTracking = val and true or false
         if val then
-            if isHarmful then
-                if not buttonData.auraUnit or buttonData.auraUnit == "player" then
-                    buttonData.auraUnit = "target"
-                end
-            elseif buttonData.type == "spell" then
-                buttonData.auraUnit = nil
-            end
+            EnsureAuraUnitChoice(buttonData, isHarmful)
         end
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
@@ -351,12 +357,12 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if isHarmful then
         auraWarnLines = {
             "Debuff Tracking",
-            {"When enabled, the cooldown swipe shows the remaining debuff or DoT duration on your target instead of the spell's cooldown. When the debuff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true},
+            {"When enabled, the cooldown swipe shows the remaining tracked aura duration instead of the spell's cooldown. Use Aura Unit to decide whether that aura should be read from Player or Target.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player and target auras are supported.", 1, 1, 1, true},
         }
     else
         auraWarnLines = {
             "Buff Tracking",
-            {"When enabled, the cooldown swipe shows the remaining buff duration on yourself instead of the spell's cooldown. When the buff expires, the normal cooldown display resumes.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player buffs and target debuffs are supported.", 1, 1, 1, true},
+            {"When enabled, the cooldown swipe shows the remaining tracked aura duration instead of the spell's cooldown. Use Aura Unit to decide whether that aura should be read from Player or Target.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player and target auras are supported.", 1, 1, 1, true},
         }
     end
     CreateInfoButton(auraCb.frame, auraCb.checkbg, "LEFT", "RIGHT", auraCb.text:GetStringWidth() + 4, 0, auraWarnLines, infoButtons)
@@ -385,6 +391,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end
         end
         buttonData.auraSpellID = text ~= "" and text or nil
+        if buttonData.auraTracking then
+            EnsureAuraUnitChoice(buttonData, isHarmful)
+        end
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -406,6 +415,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
                 local g = groups[grp]
                 if g and g.buttons and g.buttons[btn] then
                     g.buttons[btn].auraSpellID = tostring(spellID)
+                    if g.buttons[btn].auraTracking then
+                        EnsureAuraUnitChoice(g.buttons[btn], isHarmful)
+                    end
                 end
             end
             CooldownCompanion:RefreshGroupFrame(grp)
@@ -444,6 +456,40 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     overrideCdmSpacer:SetText(" ")
     overrideCdmSpacer:SetFullWidth(true)
     scroll:AddChild(overrideCdmSpacer)
+
+    if buttonData.auraTracking then
+        if not IsValidAuraUnit(buttonData.auraUnit) then
+            buttonData.auraUnit = GetDefaultAuraUnit(isHarmful)
+        end
+
+        local auraUnitDrop = AceGUI:Create("Dropdown")
+        auraUnitDrop:SetLabel("Aura Unit")
+        auraUnitDrop:SetList({
+            player = "Player",
+            target = "Target",
+        }, {"player", "target"})
+        auraUnitDrop:SetValue(buttonData.auraUnit)
+        auraUnitDrop:SetFullWidth(true)
+        auraUnitDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if val ~= "player" and val ~= "target" then
+                return
+            end
+            EnsureAuraUnitChoice(buttonData, isHarmful, val)
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(auraUnitDrop)
+        CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.frame, "TOPLEFT", "TOPLEFT",
+            auraUnitDrop.label:GetStringWidth() + 4, -2, {
+            "Aura Unit",
+            {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
+        }, infoButtons)
+
+        local auraUnitSpacer = AceGUI:Create("Label")
+        auraUnitSpacer:SetText(" ")
+        auraUnitSpacer:SetFullWidth(true)
+        scroll:AddChild(auraUnitSpacer)
+    end
     end -- not buttonData.isPassive (Spell ID Override)
 
     -- Cooldown Manager controls (always visible for spells)
@@ -544,16 +590,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
 
     if hasViewerFrame and buttonData.auraTracking then
-            -- Aura unit: harmful spells track on target, non-harmful track on player.
-            -- Viewer only supports player + target, so no dropdown is needed for spells.
-            if isHarmful then
-                -- Migrate any legacy auraUnit to "target"
-                if not buttonData.auraUnit or (buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target") then
-                    buttonData.auraUnit = "target"
-                end
-            elseif buttonData.type == "spell" then
-                -- Non-harmful spell: always tracks on player
-                buttonData.auraUnit = nil
+            -- Migrate any legacy/invalid auraUnit to the spell-type default,
+            -- but preserve explicit player/target choices regardless of spell.
+            if not IsValidAuraUnit(buttonData.auraUnit) then
+                buttonData.auraUnit = GetDefaultAuraUnit(isHarmful)
             end
 
     end -- hasViewerFrame and auraTracking

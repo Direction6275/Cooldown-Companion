@@ -93,16 +93,10 @@ end
 function CooldownCompanion:ClearAuraUnit(unitToken)
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
+            local configUnit = bd.auraUnit or "player"
             local shouldClear = button._auraUnit == unitToken
-            -- _auraUnit defaults to "player" even for debuff-tracking buttons
-            -- whose viewer frame has auraDataUnit == "target".  Check the viewer
-            -- map as a fallback so target-switch clears actually reach them.
-            if not shouldClear and unitToken == "target" then
-                local f = button._auraSpellID and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-                if not f and not bd.auraSpellID then
-                    f = self:ResolveBuffViewerFrameForSpell(bd.id)
-                end
-                shouldClear = f and f.auraDataUnit == "target"
+            if not shouldClear and configUnit == unitToken then
+                shouldClear = true
             end
             if shouldClear then
                 button._auraInstanceID = nil
@@ -110,6 +104,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 button._inPandemic = false
                 button._targetSwitchAt = nil
                 button._targetSwitchDataReceived = nil
+                button._auraUnit = configUnit
             end
         end
     end)
@@ -128,19 +123,15 @@ function CooldownCompanion:OnTargetChanged()
     local now = GetTime()
     self:ForEachButton(function(button, bd)
         if bd.auraTracking or bd.isPassive then
+            local configUnit = bd.auraUnit or "player"
             local isTarget = button._auraUnit == "target"
-            if not isTarget then
-                local f = button._auraSpellID and self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-                if not f and not bd.auraSpellID then
-                    f = self:ResolveBuffViewerFrameForSpell(bd.id)
-                end
-                isTarget = f and f.auraDataUnit == "target"
-            end
+                or configUnit == "target"
             if isTarget then
                 button._auraInstanceID = nil
                 button._inPandemic = false
                 button._targetSwitchAt = now
                 button._targetSwitchDataReceived = nil
+                button._auraUnit = "target"
             end
         end
     end)
