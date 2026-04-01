@@ -276,12 +276,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     local canTrackAura = hasViewerFrame
         or buffTrackableSpells[buttonData.id]
         or (buttonData.auraSpellID and buttonData.auraSpellID ~= "")
-
-    if not canTrackAura and buttonData.type == "spell" then
-        if CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id] then
-            canTrackAura = true
-        end
-    end
+        or (buttonData.type == "spell" and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id])
 
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
@@ -361,18 +356,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(auraCb)
 
     -- (?) tooltip for aura tracking
-    local auraWarnLines
-    if isHarmful then
-        auraWarnLines = {
-            "Debuff Tracking",
-            {"When enabled, the cooldown swipe shows the remaining tracked aura duration instead of the spell's cooldown. Use Aura Unit to decide whether that aura should be read from Player or Target.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player and target auras are supported.", 1, 1, 1, true},
-        }
-    else
-        auraWarnLines = {
-            "Buff Tracking",
-            {"When enabled, the cooldown swipe shows the remaining tracked aura duration instead of the spell's cooldown. Use Aura Unit to decide whether that aura should be read from Player or Target.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player and target auras are supported.", 1, 1, 1, true},
-        }
-    end
+    local auraWarnLines = {
+        isHarmful and "Debuff Tracking" or "Buff Tracking",
+        {"When enabled, the cooldown swipe shows the remaining tracked aura duration instead of the spell's cooldown. Use Aura Unit to decide whether that aura should be read from Player or Target.\n\nThis spell must be tracked as a Buff or Debuff in the Blizzard Cooldown Manager (not just as a Cooldown). The CDM must be active but does not need to be visible.\n\nOnly player and target auras are supported.", 1, 1, 1, true},
+    }
     CreateInfoButton(auraCb.frame, auraCb.checkbg, "LEFT", "RIGHT", auraCb.text:GetStringWidth() + 4, 0, auraWarnLines, infoButtons)
     end -- not buttonData.isPassive
 
