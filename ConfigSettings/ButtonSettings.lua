@@ -232,15 +232,25 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
+    local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+
     -- Only treat as aura-capable if CDM is enabled and viewer is from BuffIcon or BuffBar.
     -- When CDM is disabled, viewer children persist with stale data and cannot be trusted.
     -- (Essential and Utility viewers track cooldowns only, not auras)
     local hasViewerFrame = false
-    if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+    if viewerFrame and cdmEnabled then
         local parent = viewerFrame:GetParent()
         local parentName = parent and parent:GetName()
         hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
     end
+    local function ComputeAuraConfigReady()
+        return CooldownCompanion:IsAuraTrackingConfigReady(
+            buttonData,
+            cdmEnabled,
+            hasViewerFrame and viewerFrame or nil
+        )
+    end
+    local auraConfigReady = ComputeAuraConfigReady()
 
     -- Determine if this spell could theoretically track a buff/debuff.
     -- Query the CDM's authoritative category lists for TrackedBuff and TrackedBar.
@@ -281,6 +291,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             buttonData.auraSpellID = overrideBuffs
         end
         EnsureAuraUnitChoice(buttonData, isHarmful)
+        auraConfigReady = ComputeAuraConfigReady()
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end
 
@@ -334,7 +345,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if not buttonData.isPassive then
     local auraCb = AceGUI:Create("CheckBox")
     local auraLabel = "Track Aura Duration"
-    local auraActive = hasViewerFrame and buttonData.auraTracking == true
+    local auraActive = auraConfigReady
     auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
     auraCb:SetLabel(auraLabel)
     auraCb:SetValue(buttonData.auraTracking == true)
@@ -460,7 +471,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(auraUnitSpacer)
     end -- not buttonData.isPassive (Spell ID Override)
 
-    local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
     local cdmToggleBtn = AceGUI:Create("Button")
     cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
     cdmToggleBtn:SetFullWidth(true)
@@ -516,7 +526,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     scroll:AddChild(auraStatusSpacer1)
 
     local auraStatusLabel = AceGUI:Create("Label")
-    if buttonData.auraTracking and cdmEnabled and hasViewerFrame then
+    if auraConfigReady then
         auraStatusLabel:SetText("|cff00ff00Aura tracking is active and ready.|r")
     else
         auraStatusLabel:SetText("|cffff0000Aura tracking is not ready.|r")

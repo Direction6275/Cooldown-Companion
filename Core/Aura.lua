@@ -194,6 +194,25 @@ function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFra
     return viewerFrame ~= nil
 end
 
+function CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, viewerFrame)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    if buttonData.auraTracking ~= true then
+        return false
+    end
+
+    if cdmEnabled == nil then
+        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    end
+    if cdmEnabled ~= true then
+        return false
+    end
+
+    return viewerFrame ~= nil
+end
+
 function CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
     if not buttonData or buttonData.type ~= "spell" then return nil end
 

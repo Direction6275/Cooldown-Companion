@@ -110,9 +110,9 @@ local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4, badge5, ba
     PlaceRowBadge(frame, badge6, offsetX)
 end
 
-local function IsAuraTrackingReady(buttonData, cdmEnabled)
+local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
     local viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
-    return CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
+    return CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, viewerFrame)
 end
 
 ------------------------------------------------------------------------
@@ -1624,7 +1624,7 @@ local function RefreshColumn2()
                         if buttonData.auraTracking then
                             auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
                             auraBadge:SetFrameLevel(rowBadgeLevel)
-                            local auraReady = IsAuraTrackingReady(buttonData, cdmEnabled)
+                            local auraReady = IsAuraTrackingConfigReady(buttonData, cdmEnabled)
                             if auraReady then
                                 auraBadge.icon:SetVertexColor(1, 1, 1, 1)
                                 SetRowBadgeTooltip(auraBadge, "Aura tracking: Active", 0.2, 1, 0.2)
