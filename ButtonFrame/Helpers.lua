@@ -64,6 +64,14 @@ local CAST_COUNT_SPELL_FAMILIES = {
             [399491] = true, -- Sheilun's Gift cast-count spell
         },
     },
+    [322101] = {
+        buttons = {
+            [322101] = true, -- Expel Harm
+        },
+        spells = {
+            [322101] = true,
+        },
+    },
 }
 
 local function GetCastCountFamily(buttonData)

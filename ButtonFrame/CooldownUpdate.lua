@@ -1096,9 +1096,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._mainCDShown = (button._currentReadableCharges == 0)
         elseif buttonData.type == "spell" and buttonData._hasDisplayCount then
             -- Secret display counts do not expose a readable number in combat for
-            -- some use-count spells. When that happens, use the display-count
-            -- fallback seeded in Tracking.lua instead of guessing from cooldowns.
-            button._mainCDShown = (button._displayCountZeroUsabilityFallback == true)
+            -- some use-count spells. Do not guess zero-state from unrelated
+            -- usability signals; leave the zero-state unknown instead.
+            button._mainCDShown = false
         elseif buttonData.type == "spell" and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject

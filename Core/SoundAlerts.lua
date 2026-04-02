@@ -15,7 +15,10 @@ local next = next
 local type = type
 local tostring = tostring
 local tonumber = tonumber
-local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+
+local function UsesChargeBehavior(buttonData)
+    return CooldownCompanion.UsesChargeBehavior(buttonData)
+end
 
 local SOUND_NONE_KEY = "None"
 local DEFAULT_SOUND_CHANNEL = "Master"

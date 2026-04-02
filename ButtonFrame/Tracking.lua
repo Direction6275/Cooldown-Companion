@@ -105,15 +105,10 @@ local function UpdateDisplayCountTracking(button, buttonData, spellID)
     if cur ~= nil then
         button._chargeRecharging = (maxCharges ~= nil and cur < maxCharges) or false
     elseif secretDisplayCount then
-        -- Best-effort zero-state fallback for display-count spells in restricted
-        -- content: some use-count spells hide the number behind a secret value,
-        -- but IsSpellUsable still tracks whether any uses remain. Scope this
-        -- only to display-count spells; cast-count spells use a separate path.
-        local isUsable = C_Spell.IsSpellUsable(querySpellID)
-        button._displayCountZeroUsabilityFallback = (isUsable == false)
-        -- Treat zero-state as the "recharging" side of the old charge-like state
-        -- machine so zero -> usable transitions still trigger availability logic.
-        button._chargeRecharging = (isUsable == false)
+        -- Do not infer zero/non-zero state from spell usability when the display
+        -- count itself is secret. Usability can fail for unrelated reasons
+        -- (costs, reactives, etc.), so treat the zero-state as unknown.
+        button._chargeRecharging = false
     else
         button._chargeRecharging = false
     end

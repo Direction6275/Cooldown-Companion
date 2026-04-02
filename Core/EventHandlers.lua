@@ -120,6 +120,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     end
                 end
                 local hasRealCharges = buttonData.hasCharges and true or nil
+                local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
                 buttonData._castCountCandidate = nil
                 buttonData._castCountConfirmed = nil
                 buttonData._castCountSeeded = nil
@@ -169,6 +170,12 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         else
                             buttonData._hasDisplayCount = nil
                         end
+                    elseif hadDisplayCountBehavior then
+                        -- Preserve legacy display-count classification when the
+                        -- API is secret during refresh (e.g. /reload into combat)
+                        -- so the button does not temporarily fall out of the
+                        -- count-bearing path until the value becomes readable.
+                        buttonData._hasDisplayCount = true
                     end
                     -- Auto-enable count text when a spell exposes a readable display count.
                     if buttonData._hasDisplayCount and buttonData.showChargeText == nil then
