@@ -22,12 +22,50 @@ local function Trim(text)
 end
 
 local BOLD_COLOR = "FFD100"
+local ITALIC_COLOR = "9FD5E8"
+local BOLD_ITALIC_COLOR = "FFE7A3"
+
+local function WrapInlineColor(text, color)
+    return "|cff" .. color .. text .. "|r"
+end
 
 local function ProcessInlineFormatting(text)
     if not text or text == "" then
         return text
     end
-    return text:gsub("%*%*(.-)%*%*", "|cff" .. BOLD_COLOR .. "%1|r")
+
+    text = text:gsub("%*%*%*(.-)%*%*%*", function(inner)
+        return WrapInlineColor(inner, BOLD_ITALIC_COLOR)
+    end)
+    text = text:gsub("%*%*(.-)%*%*", function(inner)
+        return WrapInlineColor(inner, BOLD_COLOR)
+    end)
+    text = text:gsub("%*(.-)%*", function(inner)
+        return WrapInlineColor(inner, ITALIC_COLOR)
+    end)
+
+    return text
+end
+
+local function GetIndentWidth(leading)
+    local width = 0
+    for i = 1, #leading do
+        local ch = leading:sub(i, i)
+        if ch == "\t" then
+            width = width + 2
+        else
+            width = width + 1
+        end
+    end
+    return width
+end
+
+local function GetListDepth(leading)
+    local width = GetIndentWidth(leading or "")
+    if width <= 0 then
+        return 0
+    end
+    return math.floor((width + 1) / 2)
 end
 
 local function BuildOrderedIndex()
@@ -112,25 +150,35 @@ local function ParseMarkdown(markdown)
         else
             local heading3 = trimmed:match("^###%s+(.+)$")
             local heading2 = trimmed:match("^##%s+(.+)$")
-            local bullet = trimmed:match("^%-%s+(.+)$")
+            local bulletIndent, bullet = line:match("^(%s*)[-*]%s+(.+)$")
+            local orderedIndent, orderedNumber, orderedBullet = line:match("^(%s*)(%d+)%.%s+(.+)$")
 
             if heading3 then
                 FlushParagraph()
                 tokens[#tokens + 1] = {
                     type = "heading3",
-                    text = Trim(heading3),
+                    text = ProcessInlineFormatting(Trim(heading3)),
                 }
             elseif heading2 then
                 FlushParagraph()
                 tokens[#tokens + 1] = {
                     type = "heading2",
-                    text = Trim(heading2),
+                    text = ProcessInlineFormatting(Trim(heading2)),
                 }
             elseif bullet then
                 FlushParagraph()
                 tokens[#tokens + 1] = {
                     type = "bullet",
+                    depth = GetListDepth(bulletIndent),
                     text = ProcessInlineFormatting(Trim(bullet)),
+                }
+            elseif orderedBullet then
+                FlushParagraph()
+                tokens[#tokens + 1] = {
+                    type = "ordered_bullet",
+                    depth = GetListDepth(orderedIndent),
+                    index = tonumber(orderedNumber) or 1,
+                    text = ProcessInlineFormatting(Trim(orderedBullet)),
                 }
             else
                 paragraphLines[#paragraphLines + 1] = trimmed

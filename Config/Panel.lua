@@ -824,6 +824,14 @@ local function CreateConfigPanel()
         changelogScroll:AddChild(label)
     end
 
+    local function BuildChangelogListPrefix(depth, orderedIndex)
+        local indent = string.rep("    ", math.max(0, tonumber(depth) or 0))
+        if orderedIndex then
+            return indent .. "|cff4EC9B0" .. tostring(orderedIndex) .. ".|r  "
+        end
+        return indent .. "|cff4EC9B0\226\128\162|r  "
+    end
+
     local function UpdateChangelogFontButtons()
         local changelog = ST._Changelog
         local fontSize = (changelog and changelog.GetFontSize and changelog.GetFontSize()) or 13
@@ -1059,7 +1067,20 @@ local function CreateConfigPanel()
                         renderedAny = true
                     elseif tokenType == "bullet" then
                         FlushVersionDivider(10)
-                        AddChangelogLabel("|cff4EC9B0\226\128\162|r  " .. text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
+                        local bulletColor = {0.96, 0.96, 0.96}
+                        if (tonumber(token.depth) or 0) > 0 then
+                            bulletColor = {0.70, 0.87, 0.95}
+                        end
+                        AddChangelogLabel(BuildChangelogListPrefix(token.depth) .. text, bodyFontPath, bodySize, bodyFontFlags, bulletColor)
+                        AddChangelogSpacer(5)
+                        renderedAny = true
+                    elseif tokenType == "ordered_bullet" then
+                        FlushVersionDivider(10)
+                        local orderedColor = {0.96, 0.96, 0.96}
+                        if (tonumber(token.depth) or 0) > 0 then
+                            orderedColor = {0.70, 0.87, 0.95}
+                        end
+                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, token.index) .. text, bodyFontPath, bodySize, bodyFontFlags, orderedColor)
                         AddChangelogSpacer(5)
                         renderedAny = true
                     else
