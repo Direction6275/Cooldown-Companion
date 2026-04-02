@@ -10,6 +10,9 @@ local rawData = ST._changelogData or {}
 local orderedVersions = {}
 local versionIndex = {}
 local parsedCache = {}
+local DEFAULT_FONT_SIZE = 13
+local MIN_FONT_SIZE = 11
+local MAX_FONT_SIZE = 18
 
 local function Trim(text)
     text = tostring(text or "")
@@ -36,6 +39,25 @@ BuildOrderedIndex()
 
 local function GetAddonVersion()
     return C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "unknown"
+end
+
+local function IsUnresolvedVersionToken(version)
+    return type(version) == "string" and version:match("^@.+@$") ~= nil
+end
+
+local function ClampFontSize(size)
+    size = tonumber(size)
+    if not size then
+        return DEFAULT_FONT_SIZE
+    end
+    size = math.floor(size + 0.5)
+    if size < MIN_FONT_SIZE then
+        return MIN_FONT_SIZE
+    end
+    if size > MAX_FONT_SIZE then
+        return MAX_FONT_SIZE
+    end
+    return size
 end
 
 local function GetChangelogState()
@@ -118,6 +140,22 @@ function Changelog.GetAddonVersion()
     return GetAddonVersion()
 end
 
+function Changelog.GetDisplayAddonVersion()
+    local version = GetAddonVersion()
+    if IsUnresolvedVersionToken(version) then
+        return "dev"
+    end
+    return version
+end
+
+function Changelog.GetOrderedVersions()
+    local versions = {}
+    for i, version in ipairs(orderedVersions) do
+        versions[i] = version
+    end
+    return versions
+end
+
 function Changelog.HasEntry(version)
     version = tostring(version or "")
     return version ~= "" and rawData.entries and rawData.entries[version] ~= nil
@@ -183,6 +221,31 @@ function Changelog.MarkSeen(version)
     end
 
     state.lastSeenVersion = version
+end
+
+function Changelog.GetFontSize()
+    local state = GetChangelogState()
+    return ClampFontSize(state and state.fontSize or nil)
+end
+
+function Changelog.SetFontSize(size)
+    local state = GetChangelogState()
+    if not state then
+        return DEFAULT_FONT_SIZE
+    end
+
+    local clamped = ClampFontSize(size)
+    state.fontSize = clamped
+    return clamped
+end
+
+function Changelog.AdjustFontSize(delta)
+    delta = tonumber(delta) or 0
+    return Changelog.SetFontSize(Changelog.GetFontSize() + delta)
+end
+
+function Changelog.GetFontSizeBounds()
+    return MIN_FONT_SIZE, MAX_FONT_SIZE
 end
 
 ST._GetAddonVersion = GetAddonVersion

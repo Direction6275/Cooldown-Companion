@@ -10,6 +10,7 @@ local defaults = {
         characterInfo = {},  -- [charKey] = { classFilename, classID }
         changelog = {
             lastSeenVersion = nil,
+            fontSize = 13,
         },
     },
     profile = {

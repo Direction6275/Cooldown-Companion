@@ -31,8 +31,12 @@ local function GetAddonVersionText()
 end
 
 local function GetVersionFooterText()
-    local version = tostring(GetAddonVersionText() or "unknown")
-    if version ~= "" and not version:match("^[Vv@]") then
+    local version = GetAddonVersionText()
+    if ST._Changelog and ST._Changelog.GetDisplayAddonVersion then
+        version = ST._Changelog.GetDisplayAddonVersion()
+    end
+    version = tostring(version or "unknown")
+    if version ~= "" and version ~= "unknown" and version ~= "dev" and not version:match("^[Vv]") then
         version = "v" .. version
     end
     return version .. "  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default")
@@ -743,133 +747,214 @@ local function CreateConfigPanel()
     colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 11)
 
     -- Bundled changelog overlay (kept separate from column refreshes).
-    local changelogBlocks = {}
-    local changelogVersionLabel
-    local changelogScrollFrame
-    local changelogScrollChild
-    local changelogPrevBtn
-    local changelogNextBtn
+    local changelogContainer
+    local changelogScroll
+    local changelogVersionDrop
+    local changelogFontDownBtn
+    local changelogFontUpBtn
+    local changelogCloseBtn
+    local changelogOverlayBackground
+    local changelogHeaderBand
+    local changelogHeaderDivider
+    local changelogDropdownUpdating = false
+    local changelogScrollStatus = {}
+    local CHANGELOG_DROPDOWN_WIDTH = 140
+    local CHANGELOG_TEXT_BUTTON_WIDTH = 72
+    local CHANGELOG_CLOSE_BUTTON_WIDTH = 72
 
-    local function AcquireChangelogBlock(index)
-        local block = changelogBlocks[index]
-        if not block then
-            block = changelogScrollChild:CreateFontString(nil, "ARTWORK")
-            block:SetJustifyH("LEFT")
-            block:SetJustifyV("TOP")
-            block:SetWordWrap(true)
-            changelogBlocks[index] = block
-        end
-        block:Show()
-        return block
+    local function SaveChangelogScroll()
+        local status = changelogScroll and (changelogScroll.status or changelogScroll.localstatus)
+        return {
+            offset = tonumber(status and status.offset) or 0,
+            scrollvalue = tonumber(status and status.scrollvalue) or 0,
+        }
     end
 
-    local function GetChangelogBlockSpacing(tokenType)
-        if tokenType == "heading2" then
-            return 14
-        elseif tokenType == "heading3" then
-            return 10
-        elseif tokenType == "bullet" then
-            return 8
+    local function RestoreChangelogScroll(saved)
+        if not changelogScroll then
+            return
         end
-        return 10
+        changelogScroll:SetScroll(tonumber(saved and saved.scrollvalue) or 0)
+        changelogScroll:FixScroll()
     end
 
-    local function ApplyChangelogBlockStyle(block, tokenType)
-        if tokenType == "heading2" then
-            block:SetFontObject(GameFontNormalLarge)
-            block:SetTextColor(1, 0.82, 0)
-        elseif tokenType == "heading3" then
-            block:SetFontObject(GameFontNormal)
-            block:SetTextColor(1, 0.92, 0.65)
+    local function AddChangelogSpacer(height)
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(height)
+        spacer.noAutoHeight = true
+        changelogScroll:AddChild(spacer)
+    end
+
+    local function AddChangelogLabel(text, fontPath, fontSize, fontFlags, color)
+        local label = AceGUI:Create("Label")
+        label:SetText(text)
+        label:SetFullWidth(true)
+        label:SetJustifyH("LEFT")
+        label:SetJustifyV("TOP")
+        label:SetFont(fontPath, fontSize, fontFlags or "")
+        if color then
+            label:SetColor(color[1], color[2], color[3])
+        end
+        changelogScroll:AddChild(label)
+    end
+
+    local function UpdateChangelogFontButtons()
+        local changelog = ST._Changelog
+        local fontSize = (changelog and changelog.GetFontSize and changelog.GetFontSize()) or 13
+        local minSize, maxSize = 11, 18
+        if changelog and changelog.GetFontSizeBounds then
+            minSize, maxSize = changelog.GetFontSizeBounds()
+        end
+        if changelogFontDownBtn then
+            changelogFontDownBtn:SetDisabled(fontSize <= minSize)
+        end
+        if changelogFontUpBtn then
+            changelogFontUpBtn:SetDisabled(fontSize >= maxSize)
+        end
+    end
+
+    local function UpdateChangelogVersionDropdown(selectedVersion)
+        if not changelogVersionDrop then
+            return
+        end
+
+        local changelog = ST._Changelog
+        local orderedVersions = (changelog and changelog.GetOrderedVersions and changelog.GetOrderedVersions()) or {}
+        local versionList = {}
+        for _, version in ipairs(orderedVersions) do
+            versionList[version] = version
+        end
+
+        changelogDropdownUpdating = true
+        changelogVersionDrop:SetList(versionList, orderedVersions)
+        changelogVersionDrop:SetDisabled(#orderedVersions == 0)
+        if #orderedVersions > 0 then
+            local value = selectedVersion
+            if not value or not versionList[value] then
+                value = orderedVersions[1]
+            end
+            changelogVersionDrop:SetValue(value)
         else
-            block:SetFontObject(GameFontHighlightSmall)
-            block:SetTextColor(0.96, 0.96, 0.96)
+            changelogVersionDrop:SetText("No entries")
         end
+        changelogDropdownUpdating = false
     end
 
-    local function SetChangelogNavButtonEnabled(button, enabled)
-        if enabled then
-            button:Enable()
-            button:SetAlpha(1)
-        else
-            button:Disable()
-            button:SetAlpha(0.45)
-        end
-    end
+    changelogContainer = AceGUI:Create("InlineGroup")
+    changelogContainer:SetTitle("Changelog")
+    changelogContainer:SetLayout("Fill")
+    changelogContainer.frame:SetParent(colParent)
+    changelogContainer.frame:ClearAllPoints()
+    changelogContainer.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
+    changelogContainer.frame:SetPoint("BOTTOMRIGHT", colParent, "BOTTOMRIGHT", 0, 0)
+    changelogContainer.frame:SetFrameLevel(colParent:GetFrameLevel() + 20)
+    changelogContainer.frame:Hide()
+    changelogOverlay = changelogContainer.frame
+    changelogOverlayBackground = changelogOverlay:CreateTexture(nil, "BACKGROUND")
+    changelogOverlayBackground:SetColorTexture(0.05, 0.08, 0.10, 1)
+    changelogOverlayBackground:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 2, -2)
+    changelogOverlayBackground:SetPoint("BOTTOMRIGHT", changelogOverlay, "BOTTOMRIGHT", -2, 2)
+    changelogHeaderBand = changelogOverlay:CreateTexture(nil, "BORDER")
+    changelogHeaderBand:SetColorTexture(0.09, 0.14, 0.18, 1)
+    changelogHeaderBand:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 2, -2)
+    changelogHeaderBand:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -2, -2)
+    changelogHeaderBand:SetHeight(46)
+    changelogHeaderDivider = changelogOverlay:CreateTexture(nil, "ARTWORK")
+    changelogHeaderDivider:SetColorTexture(0.25, 0.55, 0.65, 0.9)
+    changelogHeaderDivider:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 10, -48)
+    changelogHeaderDivider:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -10, -48)
+    changelogHeaderDivider:SetHeight(1)
 
-    local function CreateChangelogButton(parent, label, width, onClick)
-        local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-        button:SetSize(width, 22)
-        button:SetText(label)
-        button:SetScript("OnClick", onClick)
-        return button
-    end
+    changelogScroll = AceGUI:Create("ScrollFrame")
+    changelogScroll:SetLayout("List")
+    changelogScroll:SetStatusTable(changelogScrollStatus)
+    changelogContainer:AddChild(changelogScroll)
 
-    changelogOverlay = CreateFrame("Frame", nil, colParent, "BackdropTemplate")
-    changelogOverlay:SetAllPoints()
-    changelogOverlay:SetFrameLevel(colParent:GetFrameLevel() + 20)
-    changelogOverlay:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    changelogOverlay:SetBackdropColor(0.05, 0.06, 0.08, 0.98)
-    changelogOverlay:SetBackdropBorderColor(0.25, 0.27, 0.31, 1)
-    changelogOverlay:EnableMouse(true)
-    changelogOverlay:Hide()
-    changelogOverlay:SetScript("OnShow", UpdateChangelogBtnHighlight)
-    changelogOverlay:SetScript("OnHide", UpdateChangelogBtnHighlight)
-
-    local changelogTitle = changelogOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    changelogTitle:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 18, -16)
-    changelogTitle:SetText("Changelog")
-    changelogTitle:SetTextColor(1, 0.82, 0)
-
-    changelogVersionLabel = changelogOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    changelogVersionLabel:SetPoint("TOPLEFT", changelogTitle, "BOTTOMLEFT", 0, -5)
-    changelogVersionLabel:SetTextColor(1, 1, 1)
-
-    local changelogCloseBtn = CreateChangelogButton(changelogOverlay, CLOSE, 72, function()
+    changelogCloseBtn = AceGUI:Create("Button")
+    changelogCloseBtn:SetText(CLOSE)
+    changelogCloseBtn:SetWidth(CHANGELOG_CLOSE_BUTTON_WIDTH)
+    changelogCloseBtn:SetHeight(22)
+    changelogCloseBtn:SetCallback("OnClick", function()
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
         end
     end)
-    changelogCloseBtn:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -18, -16)
+    changelogCloseBtn.frame:SetParent(changelogOverlay)
+    changelogCloseBtn.frame:ClearAllPoints()
+    changelogCloseBtn.frame:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -18, -15)
+    changelogCloseBtn.frame:Show()
 
-    changelogNextBtn = CreateChangelogButton(changelogOverlay, "Newer", 72, function()
-        if frame._changelogNextVersion and frame.RenderChangelogOverlay then
-            frame.RenderChangelogOverlay(frame._changelogNextVersion)
+    changelogFontUpBtn = AceGUI:Create("Button")
+    changelogFontUpBtn:SetText("Text +")
+    changelogFontUpBtn:SetWidth(CHANGELOG_TEXT_BUTTON_WIDTH)
+    changelogFontUpBtn:SetHeight(22)
+    changelogFontUpBtn:SetCallback("OnClick", function()
+        local changelog = ST._Changelog
+        if changelog and changelog.AdjustFontSize then
+            changelog.AdjustFontSize(1)
         end
-    end)
-    changelogNextBtn:SetPoint("RIGHT", changelogCloseBtn, "LEFT", -6, 0)
-
-    changelogPrevBtn = CreateChangelogButton(changelogOverlay, "Older", 72, function()
-        if frame._changelogPreviousVersion and frame.RenderChangelogOverlay then
-            frame.RenderChangelogOverlay(frame._changelogPreviousVersion)
-        end
-    end)
-    changelogPrevBtn:SetPoint("RIGHT", changelogNextBtn, "LEFT", -6, 0)
-
-    local changelogDivider = changelogOverlay:CreateTexture(nil, "ARTWORK")
-    changelogDivider:SetColorTexture(1, 1, 1, 0.08)
-    changelogDivider:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 16, -60)
-    changelogDivider:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -16, -60)
-    changelogDivider:SetHeight(1)
-
-    changelogScrollFrame = CreateFrame("ScrollFrame", nil, changelogOverlay, "UIPanelScrollFrameTemplate")
-    changelogScrollFrame:SetPoint("TOPLEFT", changelogDivider, "BOTTOMLEFT", 0, -12)
-    changelogScrollFrame:SetPoint("BOTTOMRIGHT", changelogOverlay, "BOTTOMRIGHT", -28, 16)
-
-    changelogScrollChild = CreateFrame("Frame", nil, changelogScrollFrame)
-    changelogScrollChild:SetSize(1, 1)
-    changelogScrollFrame:SetScrollChild(changelogScrollChild)
-    changelogScrollChild:SetWidth(math.max(changelogScrollFrame:GetWidth() or 0, 1))
-    changelogScrollFrame:HookScript("OnSizeChanged", function(self, width)
-        changelogScrollChild:SetWidth(math.max(width or 0, 1))
-        if changelogOverlay:IsShown() and frame.RenderChangelogOverlay and frame._changelogCurrentVersion then
+        if frame.RenderChangelogOverlay then
             frame.RenderChangelogOverlay(frame._changelogCurrentVersion, true)
         end
     end)
+    changelogFontUpBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Increase Text Size")
+        GameTooltip:AddLine("Increase changelog text size.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    changelogFontUpBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    changelogFontUpBtn.frame:SetParent(changelogOverlay)
+    changelogFontUpBtn.frame:ClearAllPoints()
+    changelogFontUpBtn.frame:SetPoint("RIGHT", changelogCloseBtn.frame, "LEFT", -4, 0)
+    changelogFontUpBtn.frame:Show()
+
+    changelogFontDownBtn = AceGUI:Create("Button")
+    changelogFontDownBtn:SetText("Text -")
+    changelogFontDownBtn:SetWidth(CHANGELOG_TEXT_BUTTON_WIDTH)
+    changelogFontDownBtn:SetHeight(22)
+    changelogFontDownBtn:SetCallback("OnClick", function()
+        local changelog = ST._Changelog
+        if changelog and changelog.AdjustFontSize then
+            changelog.AdjustFontSize(-1)
+        end
+        if frame.RenderChangelogOverlay then
+            frame.RenderChangelogOverlay(frame._changelogCurrentVersion, true)
+        end
+    end)
+    changelogFontDownBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Decrease Text Size")
+        GameTooltip:AddLine("Decrease changelog text size.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    changelogFontDownBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    changelogFontDownBtn.frame:SetParent(changelogOverlay)
+    changelogFontDownBtn.frame:ClearAllPoints()
+    changelogFontDownBtn.frame:SetPoint("RIGHT", changelogFontUpBtn.frame, "LEFT", -4, 0)
+    changelogFontDownBtn.frame:Show()
+
+    changelogVersionDrop = AceGUI:Create("Dropdown")
+    changelogVersionDrop:SetLabel("")
+    changelogVersionDrop:SetWidth(CHANGELOG_DROPDOWN_WIDTH)
+    changelogVersionDrop:SetPulloutWidth(CHANGELOG_DROPDOWN_WIDTH)
+    changelogVersionDrop:SetCallback("OnValueChanged", function(_, _, value)
+        if changelogDropdownUpdating or type(value) ~= "string" or value == "" then
+            return
+        end
+        if frame.RenderChangelogOverlay then
+            frame.RenderChangelogOverlay(value)
+        end
+    end)
+    changelogVersionDrop.frame:SetParent(changelogOverlay)
+    changelogVersionDrop.frame:ClearAllPoints()
+    changelogVersionDrop.frame:SetPoint("TOPRIGHT", changelogFontDownBtn.frame, "TOPLEFT", -8, 0)
+    changelogVersionDrop.frame:Show()
 
     local function RenderChangelogOverlay(version, preserveScroll)
         local changelog = ST._Changelog
@@ -878,74 +963,72 @@ local function CreateConfigPanel()
             activeVersion = changelog.GetNewestVersion()
         end
 
-        local currentScroll = 0
-        if preserveScroll then
-            currentScroll = changelogScrollFrame:GetVerticalScroll() or 0
-        end
+        local savedScroll = preserveScroll and SaveChangelogScroll() or nil
+        local bodyFontPath, _, bodyFontFlags = GameFontHighlightSmall:GetFont()
+        local headingFontPath, _, headingFontFlags = GameFontNormal:GetFont()
+        local bodySize = (changelog and changelog.GetFontSize and changelog.GetFontSize()) or 13
+        local heading2Size = bodySize + 4
+        local heading3Size = bodySize + 2
 
         frame._changelogCurrentVersion = activeVersion
-        frame._changelogPreviousVersion = activeVersion and changelog and changelog.GetPreviousVersion(activeVersion) or nil
-        frame._changelogNextVersion = activeVersion and changelog and changelog.GetNextVersion(activeVersion) or nil
+        frame._changelogPreviousVersion = nil
+        frame._changelogNextVersion = nil
 
-        local blockWidth = math.max((changelogScrollChild:GetWidth() or 0) - 32, 220)
-        local usedBlocks = 0
-        local yOffset = -8
-
-        local function AddBlock(tokenType, text)
-            usedBlocks = usedBlocks + 1
-            local block = AcquireChangelogBlock(usedBlocks)
-            block:ClearAllPoints()
-            ApplyChangelogBlockStyle(block, tokenType)
-            block:SetWidth(blockWidth)
-            block:SetText(text)
-            block:SetPoint("TOPLEFT", changelogScrollChild, "TOPLEFT", 16, yOffset)
-            local blockHeight = math.ceil(block:GetStringHeight() or 0)
-            if blockHeight < 1 then
-                blockHeight = 12
-            end
-            yOffset = yOffset - blockHeight - GetChangelogBlockSpacing(tokenType)
-        end
+        changelogScroll:PauseLayout()
+        changelogScroll:ReleaseChildren()
 
         if activeVersion and changelog and changelog.HasEntry(activeVersion) then
-            changelogVersionLabel:SetText("Version " .. activeVersion)
             local tokens = changelog.GetRenderTokens(activeVersion) or {}
             if #tokens == 0 then
-                AddBlock("paragraph", "No release notes were bundled for this version.")
+                AddChangelogSpacer(6)
+                AddChangelogLabel("No release notes were bundled for this version.", bodyFontPath, bodySize, bodyFontFlags, {0.92, 0.92, 0.92})
             else
+                AddChangelogSpacer(6)
                 for _, token in ipairs(tokens) do
                     local tokenType = token.type or "paragraph"
                     local text = token.text or ""
-                    if tokenType == "bullet" then
-                        text = "- " .. text
+                    if tokenType == "heading2" then
+                        AddChangelogLabel(text, headingFontPath, heading2Size, headingFontFlags, {1, 0.82, 0})
+                        AddChangelogSpacer(6)
+                    elseif tokenType == "heading3" then
+                        AddChangelogLabel(text, headingFontPath, heading3Size, headingFontFlags, {1, 0.92, 0.65})
+                        AddChangelogSpacer(4)
+                    elseif tokenType == "bullet" then
+                        AddChangelogLabel("- " .. text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
+                        AddChangelogSpacer(3)
+                    else
+                        AddChangelogLabel(text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
+                        AddChangelogSpacer(5)
                     end
-                    AddBlock(tokenType, text)
                 end
             end
         else
-            changelogVersionLabel:SetText("No bundled release notes")
-            AddBlock("paragraph", "No bundled changelog entries are available for this build yet.")
+            AddChangelogSpacer(6)
+            AddChangelogLabel("No bundled changelog entries are available for this build yet.", bodyFontPath, bodySize, bodyFontFlags, {0.92, 0.92, 0.92})
         end
 
-        for i = usedBlocks + 1, #changelogBlocks do
-            changelogBlocks[i]:Hide()
-            changelogBlocks[i]:SetText("")
-        end
+        AddChangelogSpacer(4)
+        changelogScroll:ResumeLayout()
+        changelogScroll:DoLayout()
 
-        changelogScrollChild:SetHeight(math.max(changelogScrollFrame:GetHeight() or 0, -yOffset + 16))
-        SetChangelogNavButtonEnabled(changelogPrevBtn, frame._changelogPreviousVersion ~= nil)
-        SetChangelogNavButtonEnabled(changelogNextBtn, frame._changelogNextVersion ~= nil)
+        UpdateChangelogVersionDropdown(activeVersion)
+        UpdateChangelogFontButtons()
 
-        if preserveScroll then
-            local maxScroll = math.max((changelogScrollChild:GetHeight() or 0) - (changelogScrollFrame:GetHeight() or 0), 0)
-            changelogScrollFrame:SetVerticalScroll(math.min(currentScroll, maxScroll))
+        if savedScroll then
+            RestoreChangelogScroll(savedScroll)
         else
-            changelogScrollFrame:SetVerticalScroll(0)
+            changelogScroll:SetScroll(0)
+            changelogScroll:FixScroll()
         end
     end
 
     frame.RenderChangelogOverlay = RenderChangelogOverlay
     frame.HideChangelogOverlay = function()
+        if changelogVersionDrop and changelogVersionDrop.open and changelogVersionDrop.pullout then
+            changelogVersionDrop.pullout:Close()
+        end
         changelogOverlay:Hide()
+        UpdateChangelogBtnHighlight()
     end
     frame.OpenChangelogOverlay = function(version, opts)
         local changelog = ST._Changelog
@@ -957,7 +1040,7 @@ local function CreateConfigPanel()
 
         changelogOverlay:Show()
         changelogOverlay:Raise()
-        changelogScrollChild:SetWidth(math.max(changelogScrollFrame:GetWidth() or 0, 1))
+        UpdateChangelogBtnHighlight()
         RenderChangelogOverlay(targetVersion)
 
         if opts and opts.autoOpen and targetVersion and changelog then
