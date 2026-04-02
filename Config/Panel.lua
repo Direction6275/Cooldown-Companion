@@ -753,14 +753,15 @@ local function CreateConfigPanel()
     local changelogFontDownBtn
     local changelogFontUpBtn
     local changelogCloseBtn
-    local changelogOverlayBackground
-    local changelogHeaderBand
-    local changelogHeaderDivider
     local changelogDropdownUpdating = false
     local changelogScrollStatus = {}
     local CHANGELOG_DROPDOWN_WIDTH = 140
     local CHANGELOG_TEXT_BUTTON_WIDTH = 72
     local CHANGELOG_CLOSE_BUTTON_WIDTH = 72
+    local CHANGELOG_CONTROL_ROW_INSET_Y = 12
+    local CHANGELOG_CONTROL_ROW_RESERVE = 38
+    local changelogContentParent
+    local changelogContentTopY = -10
 
     local function SaveChangelogScroll()
         local status = changelogScroll and (changelogScroll.status or changelogScroll.localstatus)
@@ -783,7 +784,28 @@ local function CreateConfigPanel()
         spacer:SetFullWidth(true)
         spacer:SetHeight(height)
         spacer.noAutoHeight = true
+        -- Hide stale divider texture if this widget was recycled from a previous divider use
+        if spacer.frame._changelogDividerTex then
+            spacer.frame._changelogDividerTex:Hide()
+        end
         changelogScroll:AddChild(spacer)
+    end
+
+    local function AddChangelogDivider()
+        local divider = AceGUI:Create("SimpleGroup")
+        divider:SetFullWidth(true)
+        divider:SetHeight(1)
+        divider.noAutoHeight = true
+        if not divider.frame._changelogDividerTex then
+            local tex = divider.frame:CreateTexture(nil, "ARTWORK")
+            tex:SetPoint("TOPLEFT", divider.frame, "TOPLEFT", 0, 0)
+            tex:SetPoint("TOPRIGHT", divider.frame, "TOPRIGHT", 0, 0)
+            tex:SetHeight(1)
+            divider.frame._changelogDividerTex = tex
+        end
+        divider.frame._changelogDividerTex:SetColorTexture(0.35, 0.35, 0.35, 0.4)
+        divider.frame._changelogDividerTex:Show()
+        changelogScroll:AddChild(divider)
     end
 
     local function AddChangelogLabel(text, fontPath, fontSize, fontFlags, color)
@@ -851,25 +873,23 @@ local function CreateConfigPanel()
     changelogContainer.frame:SetFrameLevel(colParent:GetFrameLevel() + 20)
     changelogContainer.frame:Hide()
     changelogOverlay = changelogContainer.frame
-    changelogOverlayBackground = changelogOverlay:CreateTexture(nil, "BACKGROUND")
-    changelogOverlayBackground:SetColorTexture(0.05, 0.08, 0.10, 1)
-    changelogOverlayBackground:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 2, -2)
-    changelogOverlayBackground:SetPoint("BOTTOMRIGHT", changelogOverlay, "BOTTOMRIGHT", -2, 2)
-    changelogHeaderBand = changelogOverlay:CreateTexture(nil, "BORDER")
-    changelogHeaderBand:SetColorTexture(0.09, 0.14, 0.18, 1)
-    changelogHeaderBand:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 2, -2)
-    changelogHeaderBand:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -2, -2)
-    changelogHeaderBand:SetHeight(46)
-    changelogHeaderDivider = changelogOverlay:CreateTexture(nil, "ARTWORK")
-    changelogHeaderDivider:SetColorTexture(0.25, 0.55, 0.65, 0.9)
-    changelogHeaderDivider:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 10, -48)
-    changelogHeaderDivider:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -10, -48)
-    changelogHeaderDivider:SetHeight(1)
+
+    local changelogHiddenFrames = {}
 
     changelogScroll = AceGUI:Create("ScrollFrame")
     changelogScroll:SetLayout("List")
     changelogScroll:SetStatusTable(changelogScrollStatus)
     changelogContainer:AddChild(changelogScroll)
+
+    -- Reserve a bottom band for the control row while letting changelog content start at the normal top position.
+    if changelogContainer.content then
+        changelogContentParent = changelogContainer.content:GetParent()
+        local _, _, _, _, origY = changelogContainer.content:GetPoint(1)
+        changelogContentTopY = origY or -10
+        changelogContainer.content:ClearAllPoints()
+        changelogContainer.content:SetPoint("TOPLEFT", changelogContentParent, "TOPLEFT", 10, changelogContentTopY)
+        changelogContainer.content:SetPoint("BOTTOMRIGHT", changelogContentParent, "BOTTOMRIGHT", -10, CHANGELOG_CONTROL_ROW_RESERVE)
+    end
 
     changelogCloseBtn = AceGUI:Create("Button")
     changelogCloseBtn:SetText(CLOSE)
@@ -882,7 +902,7 @@ local function CreateConfigPanel()
     end)
     changelogCloseBtn.frame:SetParent(changelogOverlay)
     changelogCloseBtn.frame:ClearAllPoints()
-    changelogCloseBtn.frame:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -18, -15)
+    changelogCloseBtn.frame:SetPoint("BOTTOMRIGHT", changelogContentParent or changelogOverlay, "BOTTOMRIGHT", -10, CHANGELOG_CONTROL_ROW_INSET_Y)
     changelogCloseBtn.frame:Show()
 
     changelogFontUpBtn = AceGUI:Create("Button")
@@ -909,7 +929,7 @@ local function CreateConfigPanel()
     end)
     changelogFontUpBtn.frame:SetParent(changelogOverlay)
     changelogFontUpBtn.frame:ClearAllPoints()
-    changelogFontUpBtn.frame:SetPoint("RIGHT", changelogCloseBtn.frame, "LEFT", -4, 0)
+    changelogFontUpBtn.frame:SetPoint("RIGHT", changelogCloseBtn.frame, "LEFT", -2, 0)
     changelogFontUpBtn.frame:Show()
 
     changelogFontDownBtn = AceGUI:Create("Button")
@@ -936,7 +956,7 @@ local function CreateConfigPanel()
     end)
     changelogFontDownBtn.frame:SetParent(changelogOverlay)
     changelogFontDownBtn.frame:ClearAllPoints()
-    changelogFontDownBtn.frame:SetPoint("RIGHT", changelogFontUpBtn.frame, "LEFT", -4, 0)
+    changelogFontDownBtn.frame:SetPoint("RIGHT", changelogFontUpBtn.frame, "LEFT", -2, 0)
     changelogFontDownBtn.frame:Show()
 
     changelogVersionDrop = AceGUI:Create("Dropdown")
@@ -953,7 +973,7 @@ local function CreateConfigPanel()
     end)
     changelogVersionDrop.frame:SetParent(changelogOverlay)
     changelogVersionDrop.frame:ClearAllPoints()
-    changelogVersionDrop.frame:SetPoint("TOPRIGHT", changelogFontDownBtn.frame, "TOPLEFT", -8, 0)
+    changelogVersionDrop.frame:SetPoint("RIGHT", changelogFontDownBtn.frame, "LEFT", -6, 0)
     changelogVersionDrop.frame:Show()
 
     local function RenderChangelogOverlay(version, preserveScroll)
@@ -969,6 +989,11 @@ local function CreateConfigPanel()
         local bodySize = (changelog and changelog.GetFontSize and changelog.GetFontSize()) or 13
         local heading2Size = bodySize + 4
         local heading3Size = bodySize + 2
+        local versionFontSize = heading2Size + 2
+        local estimatedVersionHeight = versionFontSize + 8
+        local versionBandHeight = math.max(54, versionFontSize + 26)
+        local versionTopSpacer = math.max(6, math.floor((versionBandHeight - estimatedVersionHeight) * 0.5))
+        local versionBottomSpacer = math.max(6, versionBandHeight - estimatedVersionHeight - versionTopSpacer)
 
         frame._changelogCurrentVersion = activeVersion
         frame._changelogPreviousVersion = nil
@@ -978,32 +1003,72 @@ local function CreateConfigPanel()
         changelogScroll:ReleaseChildren()
 
         if activeVersion and changelog and changelog.HasEntry(activeVersion) then
+            -- Version label at the top of the content
+            AddChangelogSpacer(versionTopSpacer)
+            AddChangelogLabel("v" .. activeVersion, headingFontPath, versionFontSize, headingFontFlags, {1, 0.82, 0})
+            AddChangelogSpacer(versionBottomSpacer)
+
+            local pendingVersionDivider = true
+            local function FlushVersionDivider(spacerAfter)
+                if not pendingVersionDivider then
+                    return false
+                end
+                AddChangelogDivider()
+                if spacerAfter and spacerAfter > 0 then
+                    AddChangelogSpacer(spacerAfter)
+                end
+                pendingVersionDivider = false
+                return true
+            end
+
             local tokens = changelog.GetRenderTokens(activeVersion) or {}
             if #tokens == 0 then
-                AddChangelogSpacer(6)
+                FlushVersionDivider(10)
                 AddChangelogLabel("No release notes were bundled for this version.", bodyFontPath, bodySize, bodyFontFlags, {0.92, 0.92, 0.92})
             else
-                AddChangelogSpacer(6)
+                local renderedAny = false
                 for _, token in ipairs(tokens) do
                     local tokenType = token.type or "paragraph"
                     local text = token.text or ""
                     if tokenType == "heading2" then
+                        if FlushVersionDivider(12) then
+                        elseif renderedAny then
+                            AddChangelogSpacer(10)
+                            AddChangelogDivider()
+                            AddChangelogSpacer(12)
+                        else
+                            AddChangelogSpacer(10)
+                        end
                         AddChangelogLabel(text, headingFontPath, heading2Size, headingFontFlags, {1, 0.82, 0})
-                        AddChangelogSpacer(6)
+                        AddChangelogSpacer(8)
+                        renderedAny = true
                     elseif tokenType == "heading3" then
+                        if FlushVersionDivider(10) then
+                        elseif renderedAny then
+                            AddChangelogSpacer(8)
+                            AddChangelogDivider()
+                            AddChangelogSpacer(10)
+                        else
+                            AddChangelogSpacer(10)
+                        end
                         AddChangelogLabel(text, headingFontPath, heading3Size, headingFontFlags, {1, 0.92, 0.65})
-                        AddChangelogSpacer(4)
+                        AddChangelogSpacer(6)
+                        renderedAny = true
                     elseif tokenType == "bullet" then
-                        AddChangelogLabel("- " .. text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
-                        AddChangelogSpacer(3)
-                    else
-                        AddChangelogLabel(text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
+                        FlushVersionDivider(10)
+                        AddChangelogLabel("|cff4EC9B0\226\128\162|r  " .. text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
                         AddChangelogSpacer(5)
+                        renderedAny = true
+                    else
+                        FlushVersionDivider(10)
+                        AddChangelogLabel(text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
+                        AddChangelogSpacer(6)
+                        renderedAny = true
                     end
                 end
             end
         else
-            AddChangelogSpacer(6)
+            AddChangelogSpacer(10)
             AddChangelogLabel("No bundled changelog entries are available for this build yet.", bodyFontPath, bodySize, bodyFontFlags, {0.92, 0.92, 0.92})
         end
 
@@ -1028,6 +1093,10 @@ local function CreateConfigPanel()
             changelogVersionDrop.pullout:Close()
         end
         changelogOverlay:Hide()
+        for child in pairs(changelogHiddenFrames) do
+            child:Show()
+        end
+        wipe(changelogHiddenFrames)
         UpdateChangelogBtnHighlight()
     end
     frame.OpenChangelogOverlay = function(version, opts)
@@ -1038,6 +1107,13 @@ local function CreateConfigPanel()
             targetVersion = changelog and changelog.GetNewestVersion() or nil
         end
 
+        wipe(changelogHiddenFrames)
+        for _, child in ipairs({colParent:GetChildren()}) do
+            if child ~= changelogOverlay and child:IsShown() then
+                changelogHiddenFrames[child] = true
+                child:Hide()
+            end
+        end
         changelogOverlay:Show()
         changelogOverlay:Raise()
         UpdateChangelogBtnHighlight()

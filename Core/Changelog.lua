@@ -21,6 +21,15 @@ local function Trim(text)
     return text
 end
 
+local BOLD_COLOR = "FFD100"
+
+local function ProcessInlineFormatting(text)
+    if not text or text == "" then
+        return text
+    end
+    return text:gsub("%*%*(.-)%*%*", "|cff" .. BOLD_COLOR .. "%1|r")
+end
+
 local function BuildOrderedIndex()
     orderedVersions = {}
     versionIndex = {}
@@ -87,7 +96,7 @@ local function ParseMarkdown(markdown)
         if text ~= "" then
             tokens[#tokens + 1] = {
                 type = "paragraph",
-                text = text,
+                text = ProcessInlineFormatting(text),
             }
         end
     end
@@ -121,7 +130,7 @@ local function ParseMarkdown(markdown)
                 FlushParagraph()
                 tokens[#tokens + 1] = {
                     type = "bullet",
-                    text = Trim(bullet),
+                    text = ProcessInlineFormatting(Trim(bullet)),
                 }
             else
                 paragraphLines[#paragraphLines + 1] = trimmed
