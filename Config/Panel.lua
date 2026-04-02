@@ -604,6 +604,9 @@ local function CreateConfigPanel()
             if not InCombatLockdown() then
                 self:SetPropagateKeyboardInput(false)
             end
+            if frame.HideChangelogOverlay then
+                frame.HideChangelogOverlay()
+            end
             self:Hide()
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
@@ -1860,6 +1863,9 @@ function CooldownCompanion:ToggleConfig()
 
     -- If minimized, close everything and reset state
     if CS.configFrame._miniFrame and CS.configFrame._miniFrame:IsShown() then
+        if CS.configFrame.HideChangelogOverlay then
+            CS.configFrame.HideChangelogOverlay()
+        end
         CS.configFrame._miniFrame:Hide()
         return
     end
