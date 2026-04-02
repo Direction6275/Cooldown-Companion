@@ -11,7 +11,6 @@ local ipairs = ipairs
 local tonumber = tonumber
 local table_sort = table.sort
 local table_remove = table.remove
-
 local GROUP_SETTING_PRESET_MODES = {
     icons = true,
     bars = true,
@@ -801,6 +800,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             local mc = chargeInfo.maxCharges
             if mc > 1 then
                 group.buttons[buttonIndex].hasCharges = true
+                group.buttons[buttonIndex]._hasDisplayCount = nil
                 group.buttons[buttonIndex].showChargeText = true
                 group.buttons[buttonIndex].maxCharges = mc
 
@@ -814,18 +814,24 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 end
             end
         else
-            -- No charge data: check if spell has a readable non-zero cast
-            -- count right now (e.g. Mana Tea with existing stacks).  If not,
-            -- SPELL_UPDATE_USES will flag it when stacks first appear.
-            local castCount = C_Spell.GetSpellCastCount(chargeQueryID)
-            if not issecretvalue(castCount) and castCount and castCount > 0 then
-                group.buttons[buttonIndex]._castCountCandidate = true
-                if chargeQueryID == id then
-                    group.buttons[buttonIndex]._castCountSelf = true
+            local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
+            if not issecretvalue(rawDisplayCount) then
+                local displayCount = tonumber(rawDisplayCount)
+                if displayCount ~= nil then
+                    group.buttons[buttonIndex]._hasDisplayCount = true
+                    group.buttons[buttonIndex].showChargeText = true
+                    if displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
+                        group.buttons[buttonIndex].maxCharges = displayCount
+                    end
+                else
+                    group.buttons[buttonIndex]._hasDisplayCount = nil
                 end
             end
-            -- Ensure RefreshChargeFlags evaluates this spell on charge events
-            -- even if it has 0 stacks right now.
+            group.buttons[buttonIndex]._castCountCandidate = nil
+            group.buttons[buttonIndex]._castCountConfirmed = nil
+            group.buttons[buttonIndex]._castCountSeeded = nil
+            group.buttons[buttonIndex]._castCountSelf = nil
+            group.buttons[buttonIndex]._castCountEventSpellID = nil
             self._hasDisplayCountCandidates = true
         end
     end

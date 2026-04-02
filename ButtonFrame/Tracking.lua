@@ -82,6 +82,53 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     return charges
 end
 
+-- Display/use-count tracking for spells that share the charge-style behavior
+-- without using the real charge API (e.g. brez pools).
+local function UpdateDisplayCountTracking(button, buttonData, spellID)
+    local querySpellID = spellID or buttonData.id
+    local rawDisplayCount = C_Spell.GetSpellDisplayCount(querySpellID)
+    local secretDisplayCount = issecretvalue(rawDisplayCount)
+    local cur
+    if not secretDisplayCount then
+        cur = tonumber(rawDisplayCount)
+    end
+
+    button._currentReadableCharges = cur
+    button._chargeCountReadable = (cur ~= nil)
+    button._displayCountZeroUsabilityFallback = nil
+
+    if cur and cur > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = cur
+    end
+
+    local maxCharges = buttonData.maxCharges
+    if cur ~= nil then
+        button._chargeRecharging = (maxCharges ~= nil and cur < maxCharges) or false
+    elseif secretDisplayCount then
+        -- Best-effort zero-state fallback for display-count spells in restricted
+        -- content: some use-count spells hide the number behind a secret value,
+        -- but IsSpellUsable still tracks whether any uses remain. Scope this
+        -- only to display-count spells; cast-count spells use a separate path.
+        local isUsable = C_Spell.IsSpellUsable(querySpellID)
+        button._displayCountZeroUsabilityFallback = (isUsable == false)
+        -- Treat zero-state as the "recharging" side of the old charge-like state
+        -- machine so zero -> usable transitions still trigger availability logic.
+        button._chargeRecharging = (isUsable == false)
+    else
+        button._chargeRecharging = false
+    end
+    button._chargeDurationObj = nil
+    button._chargesSpent = nil
+
+    local showChargeText = button.style and button.style.showChargeText
+    if not showChargeText then
+        button.count:SetText("")
+    else
+        button._chargeText = nil
+        button.count:SetText(rawDisplayCount or "")
+    end
+end
+
 -- Item charge tracking (e.g. Hellstone): simpler than spells, no secret values.
 -- Reads charge count via C_Item.GetItemCount with includeUses, updates text display.
 local function UpdateItemChargeTracking(button, buttonData)
@@ -227,6 +274,7 @@ end
 
 -- Exports
 ST._UpdateChargeTracking = UpdateChargeTracking
+ST._UpdateDisplayCountTracking = UpdateDisplayCountTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking
 ST._UpdateIconTint = UpdateIconTint
 ST._EvaluateDesaturation = EvaluateDesaturation

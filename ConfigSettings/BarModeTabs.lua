@@ -280,7 +280,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Show Charge Text toggle
     local chargeTextCb = AceGUI:Create("CheckBox")
-    chargeTextCb:SetLabel("Show Charge Text")
+    chargeTextCb:SetLabel("Show Count Text (Charges/Uses)")
     chargeTextCb:SetValue(style.showChargeText ~= false)
     chargeTextCb:SetFullWidth(true)
     chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)

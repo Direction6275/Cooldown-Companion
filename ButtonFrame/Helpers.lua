@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 -- Localize frequently-used globals
 local ipairs = ipairs
 local math_floor = math.floor
+local pairs = pairs
 local string_format = string.format
 
 -- Color constants
@@ -41,6 +42,77 @@ local function ApplyFontStyle(region, source, prefix, defaultSize)
     region:SetTextColor(color[1], color[2], color[3], color[4])
 end
 CooldownCompanion.ApplyFontStyle = ApplyFontStyle
+
+-- Cast-count text is intentionally explicit rather than auto-discovered.
+-- Blizzard's cast-count/use APIs also fire for proc/override families
+-- like Execute/Thunder Clap, which makes generic detection unreliable.
+local CAST_COUNT_SPELL_FAMILIES = {
+    [115294] = {
+        buttons = {
+            [115294] = true, -- Mana Tea
+        },
+        spells = {
+            [115294] = true,
+        },
+    },
+    [116670] = {
+        buttons = {
+            [116670] = true, -- Vivify button that displays Sheilun's Gift count
+        },
+        spells = {
+            [116670] = true,
+            [399491] = true, -- Sheilun's Gift cast-count spell
+        },
+    },
+}
+
+local function GetCastCountFamily(buttonData)
+    if not buttonData then return nil end
+    for _, family in pairs(CAST_COUNT_SPELL_FAMILIES) do
+        if family.buttons[buttonData.id] then
+            return family
+        end
+    end
+    return nil
+end
+
+local function HasCastCountText(buttonData)
+    return GetCastCountFamily(buttonData) ~= nil
+end
+CooldownCompanion.HasCastCountText = HasCastCountText
+
+local function GetCastCountSpellID(buttonData, currentSpellID)
+    local family = GetCastCountFamily(buttonData)
+    if not family then return nil end
+
+    if currentSpellID and family.spells[currentSpellID] then
+        return currentSpellID
+    end
+
+    if family.spells[buttonData.id] then
+        return buttonData.id
+    end
+
+    return nil
+end
+CooldownCompanion.GetCastCountSpellID = GetCastCountSpellID
+
+local function UsesChargeBehavior(buttonData)
+    return buttonData
+        and (buttonData.hasCharges == true or buttonData._hasDisplayCount == true)
+        or false
+end
+CooldownCompanion.UsesChargeBehavior = UsesChargeBehavior
+
+-- Count text intentionally shares the charge font lane for real charges,
+-- Blizzard display/use counts, and spell cast-count stacks.
+local function UsesChargeTextLane(buttonData)
+    if not buttonData then return false end
+    return UsesChargeBehavior(buttonData)
+        or HasCastCountText(buttonData)
+        or buttonData.isPassive == true
+end
+CooldownCompanion.UsesChargeTextLane = UsesChargeTextLane
 
 -- Position a region in the icon area of a bar button.
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.

@@ -18,6 +18,8 @@ local ApplyStrataOrder = ST._ApplyStrataOrder
 local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local FitHighlightFrame = ST._FitHighlightFrame
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -49,6 +51,31 @@ local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
+
+local function ApplyCountTextStyle(button, style)
+    if not button or not button.count then return end
+    local buttonData = button.buttonData
+    button.count:ClearAllPoints()
+    if buttonData and UsesChargeTextLane(buttonData) then
+        ApplyFontStyle(button.count, style, "charge")
+
+        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
+        local chargeXOffset = style.chargeXOffset or -2
+        local chargeYOffset = style.chargeYOffset or 2
+        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+    elseif buttonData and buttonData.type == "item"
+       and not IsItemEquippable(buttonData) then
+        ApplyFontStyle(button.count, buttonData, "itemCount")
+
+        local itemAnchor = buttonData.itemCountAnchor or "BOTTOMRIGHT"
+        local itemXOffset = buttonData.itemCountXOffset or -2
+        local itemYOffset = buttonData.itemCountYOffset or 2
+        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
+    else
+        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+    button._countTextLaneStyled = buttonData and UsesChargeTextLane(buttonData) or false
+end
 
 function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local width, height
@@ -196,25 +223,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
+    button.buttonData = buttonData
 
-    -- Apply custom count text font/anchor settings from effective style
-    if buttonData.hasCharges or buttonData.isPassive then
-        ApplyFontStyle(button.count, style, "charge")
-
-        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = style.chargeXOffset or -2
-        local chargeYOffset = style.chargeYOffset or 2
-        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
-    elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        ApplyFontStyle(button.count, buttonData, "itemCount")
-
-        local itemAnchor = buttonData.itemCountAnchor or "BOTTOMRIGHT"
-        local itemXOffset = buttonData.itemCountXOffset or -2
-        local itemYOffset = buttonData.itemCountYOffset or 2
-        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
-    else
-        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
-    end
+    ApplyCountTextStyle(button, style)
 
     -- Aura stack count text — separate FontString for aura stacks, independent of charge text
     if buttonData.auraTracking or buttonData.isPassive then
@@ -244,7 +255,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     ApplyStrataOrder(button, style.strataOrder)
 
     -- Store button data
-    button.buttonData = buttonData
     button.index = index
     button.style = style
 
@@ -545,7 +555,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
-    if buttonData.hasCharges and buttonData.hideCooldownWithCharges and not button._auraActive then
+    if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges and not button._auraActive then
         local hasChargesRemaining = (button._zeroChargesConfirmed == false)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
@@ -872,25 +882,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._cdTextHidden = nil
 
     -- Update count text font/anchor settings from effective style
-    button.count:ClearAllPoints()
-    if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        ApplyFontStyle(button.count, style, "charge")
-
-        local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
-        local chargeXOffset = style.chargeXOffset or -2
-        local chargeYOffset = style.chargeYOffset or 2
-        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
-    elseif button.buttonData and button.buttonData.type == "item"
-       and not IsItemEquippable(button.buttonData) then
-        ApplyFontStyle(button.count, button.buttonData, "itemCount")
-
-        local itemAnchor = button.buttonData.itemCountAnchor or "BOTTOMRIGHT"
-        local itemXOffset = button.buttonData.itemCountXOffset or -2
-        local itemYOffset = button.buttonData.itemCountYOffset or 2
-        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
-    else
-        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
-    end
+    ApplyCountTextStyle(button, style)
 
     -- Update aura stack count font/anchor settings
     if button.auraStackCount then
@@ -1111,3 +1103,4 @@ end)
 
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
+ST._ApplyIconCountTextStyle = ApplyCountTextStyle
