@@ -23,6 +23,21 @@ local RefreshColumn4 = ST._RefreshColumn4
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
 
+local function GetAddonVersionText()
+    if ST._GetAddonVersion then
+        return ST._GetAddonVersion()
+    end
+    return "unknown"
+end
+
+local function GetVersionFooterText()
+    local version = tostring(GetAddonVersionText() or "unknown")
+    if version ~= "" and not version:match("^[Vv@]") then
+        version = "v" .. version
+    end
+    return version .. "  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default")
+end
+
 local function SetPrimaryMode(mode, opts)
     if SetConfigPrimaryMode then
         return SetConfigPrimaryMode(mode, opts)
@@ -73,6 +88,23 @@ local function ResetConfigForProfileChange()
     end
     CooldownCompanion:StopCastBarPreview()
     CooldownCompanion:StopResourceBarPreview()
+end
+
+local function MaybeAutoOpenChangelog()
+    local changelog = ST._Changelog
+    if not changelog then
+        return
+    end
+
+    local configFrame = CS.configFrame
+    if not (configFrame and configFrame.OpenChangelogOverlay) then
+        return
+    end
+
+    local shouldOpen, version = changelog.ShouldAutoOpen()
+    if shouldOpen then
+        configFrame.OpenChangelogOverlay(version, { autoOpen = true })
+    end
 end
 
 -- File-local aliases for buttonSettingsScroll (only needed within this file)
@@ -141,7 +173,7 @@ local function CreateConfigPanel()
     end
     local versionText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     versionText:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 20, 25)
-    versionText:SetText("v1.10  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default"))
+    versionText:SetText(GetVersionFooterText())
     versionText:SetTextColor(1, 0.82, 0)
 
     -- Prevent AceGUI from releasing on close - just hide
@@ -154,6 +186,9 @@ local function CreateConfigPanel()
     local isCollapsing = false
     content:HookScript("OnHide", function()
         if isCollapsing then return end
+        if frame.HideChangelogOverlay then
+            frame.HideChangelogOverlay()
+        end
         -- If talent picker is open when panel closes, clean up its raw frames
         -- (RefreshConfigPanel inside CloseTalentPicker is guarded by IsShown, so it's safe)
         if CS.talentPickerMode then
@@ -391,11 +426,51 @@ local function CreateConfigPanel()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Gear button — left of CDM Display
+    local changelogOverlay
+    local changelogBtn
+    local changelogBtnBorder = nil
+    local function UpdateChangelogBtnHighlight()
+        if changelogOverlay and changelogOverlay:IsShown() then
+            if not changelogBtnBorder then
+                changelogBtnBorder = changelogBtn:CreateTexture(nil, "OVERLAY")
+                changelogBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                changelogBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                changelogBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            changelogBtnBorder:Show()
+        elseif changelogBtnBorder then
+            changelogBtnBorder:Hide()
+        end
+    end
+
+    -- Changelog button — left of Gear
+    changelogBtn = CreateFrame("Button", nil, content)
+    changelogBtn:SetSize(18, 18)
+    local changelogIcon = changelogBtn:CreateTexture(nil, "ARTWORK")
+    changelogIcon:SetAtlas("poi-workorders", false)
+    changelogIcon:SetAllPoints()
+    changelogBtn:SetHighlightAtlas("poi-workorders")
+    changelogBtn:GetHighlightTexture():SetAlpha(0.3)
+    changelogBtn:SetScript("OnClick", function()
+        CloseDropDownMenus()
+        if frame.ToggleChangelogOverlay then
+            frame.ToggleChangelogOverlay()
+        end
+    end)
+    changelogBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("View Changelog")
+        GameTooltip:AddLine("Open the bundled release notes for the latest and older versions.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    changelogBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Gear button — left of Collapse
     local gearBtn = CreateFrame("Button", nil, content)
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
-    cdmBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
+    changelogBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
+    cdmBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
@@ -666,6 +741,236 @@ local function CreateConfigPanel()
     local colParent = CreateFrame("Frame", nil, contentFrame)
     colParent:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -11)
     colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 11)
+
+    -- Bundled changelog overlay (kept separate from column refreshes).
+    local changelogBlocks = {}
+    local changelogVersionLabel
+    local changelogScrollFrame
+    local changelogScrollChild
+    local changelogPrevBtn
+    local changelogNextBtn
+
+    local function AcquireChangelogBlock(index)
+        local block = changelogBlocks[index]
+        if not block then
+            block = changelogScrollChild:CreateFontString(nil, "ARTWORK")
+            block:SetJustifyH("LEFT")
+            block:SetJustifyV("TOP")
+            block:SetWordWrap(true)
+            changelogBlocks[index] = block
+        end
+        block:Show()
+        return block
+    end
+
+    local function GetChangelogBlockSpacing(tokenType)
+        if tokenType == "heading2" then
+            return 14
+        elseif tokenType == "heading3" then
+            return 10
+        elseif tokenType == "bullet" then
+            return 8
+        end
+        return 10
+    end
+
+    local function ApplyChangelogBlockStyle(block, tokenType)
+        if tokenType == "heading2" then
+            block:SetFontObject(GameFontNormalLarge)
+            block:SetTextColor(1, 0.82, 0)
+        elseif tokenType == "heading3" then
+            block:SetFontObject(GameFontNormal)
+            block:SetTextColor(1, 0.92, 0.65)
+        else
+            block:SetFontObject(GameFontHighlightSmall)
+            block:SetTextColor(0.96, 0.96, 0.96)
+        end
+    end
+
+    local function SetChangelogNavButtonEnabled(button, enabled)
+        if enabled then
+            button:Enable()
+            button:SetAlpha(1)
+        else
+            button:Disable()
+            button:SetAlpha(0.45)
+        end
+    end
+
+    local function CreateChangelogButton(parent, label, width, onClick)
+        local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        button:SetSize(width, 22)
+        button:SetText(label)
+        button:SetScript("OnClick", onClick)
+        return button
+    end
+
+    changelogOverlay = CreateFrame("Frame", nil, colParent, "BackdropTemplate")
+    changelogOverlay:SetAllPoints()
+    changelogOverlay:SetFrameLevel(colParent:GetFrameLevel() + 20)
+    changelogOverlay:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    changelogOverlay:SetBackdropColor(0.05, 0.06, 0.08, 0.98)
+    changelogOverlay:SetBackdropBorderColor(0.25, 0.27, 0.31, 1)
+    changelogOverlay:EnableMouse(true)
+    changelogOverlay:Hide()
+    changelogOverlay:SetScript("OnShow", UpdateChangelogBtnHighlight)
+    changelogOverlay:SetScript("OnHide", UpdateChangelogBtnHighlight)
+
+    local changelogTitle = changelogOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    changelogTitle:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 18, -16)
+    changelogTitle:SetText("Changelog")
+    changelogTitle:SetTextColor(1, 0.82, 0)
+
+    changelogVersionLabel = changelogOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    changelogVersionLabel:SetPoint("TOPLEFT", changelogTitle, "BOTTOMLEFT", 0, -5)
+    changelogVersionLabel:SetTextColor(1, 1, 1)
+
+    local changelogCloseBtn = CreateChangelogButton(changelogOverlay, CLOSE, 72, function()
+        if frame.HideChangelogOverlay then
+            frame.HideChangelogOverlay()
+        end
+    end)
+    changelogCloseBtn:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -18, -16)
+
+    changelogNextBtn = CreateChangelogButton(changelogOverlay, "Newer", 72, function()
+        if frame._changelogNextVersion and frame.RenderChangelogOverlay then
+            frame.RenderChangelogOverlay(frame._changelogNextVersion)
+        end
+    end)
+    changelogNextBtn:SetPoint("RIGHT", changelogCloseBtn, "LEFT", -6, 0)
+
+    changelogPrevBtn = CreateChangelogButton(changelogOverlay, "Older", 72, function()
+        if frame._changelogPreviousVersion and frame.RenderChangelogOverlay then
+            frame.RenderChangelogOverlay(frame._changelogPreviousVersion)
+        end
+    end)
+    changelogPrevBtn:SetPoint("RIGHT", changelogNextBtn, "LEFT", -6, 0)
+
+    local changelogDivider = changelogOverlay:CreateTexture(nil, "ARTWORK")
+    changelogDivider:SetColorTexture(1, 1, 1, 0.08)
+    changelogDivider:SetPoint("TOPLEFT", changelogOverlay, "TOPLEFT", 16, -60)
+    changelogDivider:SetPoint("TOPRIGHT", changelogOverlay, "TOPRIGHT", -16, -60)
+    changelogDivider:SetHeight(1)
+
+    changelogScrollFrame = CreateFrame("ScrollFrame", nil, changelogOverlay, "UIPanelScrollFrameTemplate")
+    changelogScrollFrame:SetPoint("TOPLEFT", changelogDivider, "BOTTOMLEFT", 0, -12)
+    changelogScrollFrame:SetPoint("BOTTOMRIGHT", changelogOverlay, "BOTTOMRIGHT", -28, 16)
+
+    changelogScrollChild = CreateFrame("Frame", nil, changelogScrollFrame)
+    changelogScrollChild:SetSize(1, 1)
+    changelogScrollFrame:SetScrollChild(changelogScrollChild)
+    changelogScrollChild:SetWidth(math.max(changelogScrollFrame:GetWidth() or 0, 1))
+    changelogScrollFrame:HookScript("OnSizeChanged", function(self, width)
+        changelogScrollChild:SetWidth(math.max(width or 0, 1))
+        if changelogOverlay:IsShown() and frame.RenderChangelogOverlay and frame._changelogCurrentVersion then
+            frame.RenderChangelogOverlay(frame._changelogCurrentVersion, true)
+        end
+    end)
+
+    local function RenderChangelogOverlay(version, preserveScroll)
+        local changelog = ST._Changelog
+        local activeVersion = version
+        if activeVersion and changelog and not changelog.HasEntry(activeVersion) then
+            activeVersion = changelog.GetNewestVersion()
+        end
+
+        local currentScroll = 0
+        if preserveScroll then
+            currentScroll = changelogScrollFrame:GetVerticalScroll() or 0
+        end
+
+        frame._changelogCurrentVersion = activeVersion
+        frame._changelogPreviousVersion = activeVersion and changelog and changelog.GetPreviousVersion(activeVersion) or nil
+        frame._changelogNextVersion = activeVersion and changelog and changelog.GetNextVersion(activeVersion) or nil
+
+        local blockWidth = math.max((changelogScrollChild:GetWidth() or 0) - 32, 220)
+        local usedBlocks = 0
+        local yOffset = -8
+
+        local function AddBlock(tokenType, text)
+            usedBlocks = usedBlocks + 1
+            local block = AcquireChangelogBlock(usedBlocks)
+            block:ClearAllPoints()
+            ApplyChangelogBlockStyle(block, tokenType)
+            block:SetWidth(blockWidth)
+            block:SetText(text)
+            block:SetPoint("TOPLEFT", changelogScrollChild, "TOPLEFT", 16, yOffset)
+            local blockHeight = math.ceil(block:GetStringHeight() or 0)
+            if blockHeight < 1 then
+                blockHeight = 12
+            end
+            yOffset = yOffset - blockHeight - GetChangelogBlockSpacing(tokenType)
+        end
+
+        if activeVersion and changelog and changelog.HasEntry(activeVersion) then
+            changelogVersionLabel:SetText("Version " .. activeVersion)
+            local tokens = changelog.GetRenderTokens(activeVersion) or {}
+            if #tokens == 0 then
+                AddBlock("paragraph", "No release notes were bundled for this version.")
+            else
+                for _, token in ipairs(tokens) do
+                    local tokenType = token.type or "paragraph"
+                    local text = token.text or ""
+                    if tokenType == "bullet" then
+                        text = "- " .. text
+                    end
+                    AddBlock(tokenType, text)
+                end
+            end
+        else
+            changelogVersionLabel:SetText("No bundled release notes")
+            AddBlock("paragraph", "No bundled changelog entries are available for this build yet.")
+        end
+
+        for i = usedBlocks + 1, #changelogBlocks do
+            changelogBlocks[i]:Hide()
+            changelogBlocks[i]:SetText("")
+        end
+
+        changelogScrollChild:SetHeight(math.max(changelogScrollFrame:GetHeight() or 0, -yOffset + 16))
+        SetChangelogNavButtonEnabled(changelogPrevBtn, frame._changelogPreviousVersion ~= nil)
+        SetChangelogNavButtonEnabled(changelogNextBtn, frame._changelogNextVersion ~= nil)
+
+        if preserveScroll then
+            local maxScroll = math.max((changelogScrollChild:GetHeight() or 0) - (changelogScrollFrame:GetHeight() or 0), 0)
+            changelogScrollFrame:SetVerticalScroll(math.min(currentScroll, maxScroll))
+        else
+            changelogScrollFrame:SetVerticalScroll(0)
+        end
+    end
+
+    frame.RenderChangelogOverlay = RenderChangelogOverlay
+    frame.HideChangelogOverlay = function()
+        changelogOverlay:Hide()
+    end
+    frame.OpenChangelogOverlay = function(version, opts)
+        local changelog = ST._Changelog
+        local targetVersion = version
+
+        if not (changelog and targetVersion and changelog.HasEntry(targetVersion)) then
+            targetVersion = changelog and changelog.GetNewestVersion() or nil
+        end
+
+        changelogOverlay:Show()
+        changelogOverlay:Raise()
+        changelogScrollChild:SetWidth(math.max(changelogScrollFrame:GetWidth() or 0, 1))
+        RenderChangelogOverlay(targetVersion)
+
+        if opts and opts.autoOpen and targetVersion and changelog then
+            changelog.MarkSeen(targetVersion)
+        end
+    end
+    frame.ToggleChangelogOverlay = function()
+        if changelogOverlay:IsShown() then
+            frame.HideChangelogOverlay()
+        else
+            frame.OpenChangelogOverlay()
+        end
+    end
 
     -- Column 1: Groups (AceGUI InlineGroup)
     local col1 = AceGUI:Create("InlineGroup")
@@ -1156,6 +1461,7 @@ local function CreateConfigPanel()
     frame.versionText = versionText
     frame.modeStatusRow = modeStatusRow
     frame.profileGear = profileGear
+    frame.changelogOverlay = changelogOverlay
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
@@ -1258,7 +1564,7 @@ function CooldownCompanion:RefreshConfigPanel()
     if CS.configFrame.profileBar:IsShown() then
         RefreshProfileBar(CS.configFrame.profileBar)
     end
-    CS.configFrame.versionText:SetText("v1.10  |  " .. (self.db:GetCurrentProfile() or "Default"))
+    CS.configFrame.versionText:SetText(GetVersionFooterText())
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
     end
@@ -1384,7 +1690,11 @@ function CooldownCompanion:ToggleConfig()
         SetPrimaryMode("buttons", { skipRefresh = true })
         -- Defer first refresh until after column layout is computed (next frame)
         C_Timer.After(0, function()
+            if not (CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:IsShown()) then
+                return
+            end
             CooldownCompanion:RefreshConfigPanel()
+            MaybeAutoOpenChangelog()
         end)
         return -- AceGUI Frame is already shown on creation
     end
@@ -1401,6 +1711,7 @@ function CooldownCompanion:ToggleConfig()
         SetPrimaryMode("buttons", { skipRefresh = true })
         CS.configFrame.frame:Show()
         self:RefreshConfigPanel()
+        MaybeAutoOpenChangelog()
     end
 end
 
