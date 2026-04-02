@@ -23,6 +23,8 @@ local SetBarAreaPoints = ST._SetBarAreaPoints
 local AnchorBarCountText = ST._AnchorBarCountText
 local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
@@ -225,6 +227,39 @@ local function UpdateBarFill(button)
     end
 end
 
+local function ApplyBarCountTextStyle(button, style)
+    if not button or not button.count then return end
+    local buttonData = button.buttonData
+    local showIcon = style.showBarIcon ~= false
+    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
+    local defXOff = showIcon and -2 or 0
+    local defYOff = 2
+
+    if buttonData and UsesChargeTextLane(buttonData) then
+        ApplyFontStyle(button.count, style, "charge")
+        local chargeAnchor, chargeXOffset, chargeYOffset
+        if showIcon then
+            chargeAnchor = style.chargeAnchor or defAnchor
+            chargeXOffset = style.chargeXOffset or defXOff
+            chargeYOffset = style.chargeYOffset or defYOff
+        else
+            chargeAnchor = "CENTER"
+            chargeXOffset = 0
+            chargeYOffset = 0
+        end
+        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
+    elseif buttonData and buttonData.type == "item" and not IsItemEquippable(buttonData) then
+        ApplyFontStyle(button.count, buttonData, "itemCount")
+        local itemAnchor = buttonData.itemCountAnchor or defAnchor
+        local itemXOffset = buttonData.itemCountXOffset or defXOff
+        local itemYOffset = buttonData.itemCountYOffset or defYOff
+        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
+    else
+        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
+    end
+    button._countTextLaneStyled = buttonData and UsesChargeTextLane(buttonData) or false
+end
+
 -- Update bar-specific display elements (colors, desaturation, aura effects).
 -- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
 local function UpdateBarDisplay(button)
@@ -264,7 +299,7 @@ local function UpdateBarDisplay(button)
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
     if onCooldown and not button.buttonData.isPassive then
-        if button.buttonData.hasCharges and not button._zeroChargesConfirmed then
+        if UsesChargeBehavior(button.buttonData) and not button._zeroChargesConfirmed then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
         else
             wantCdColor = style.barCooldownColor
@@ -310,7 +345,7 @@ local function UpdateBarDisplay(button)
             button._barCdColor = nil
             local resetColor
             if onCooldown then
-                if button.buttonData.hasCharges and not button._zeroChargesConfirmed then
+                if UsesChargeBehavior(button.buttonData) and not button._zeroChargesConfirmed then
                     resetColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
                 else
                     resetColor = style.barCooldownColor
@@ -665,33 +700,10 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button.overlayFrame:EnableMouse(false)
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
+    button.buttonData = buttonData
 
-    -- Apply charge/item count font settings and anchor to icon or bar center
-    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
-    local defXOff = showIcon and -2 or 0
-    local defYOff = 2
-    if buttonData.hasCharges or buttonData.isPassive then
-        ApplyFontStyle(button.count, style, "charge")
-        local chargeAnchor, chargeXOffset, chargeYOffset
-        if showIcon then
-            chargeAnchor = style.chargeAnchor or defAnchor
-            chargeXOffset = style.chargeXOffset or defXOff
-            chargeYOffset = style.chargeYOffset or defYOff
-        else
-            chargeAnchor = "CENTER"
-            chargeXOffset = 0
-            chargeYOffset = 0
-        end
-        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
-    elseif buttonData.type == "item" and not IsItemEquippable(buttonData) then
-        ApplyFontStyle(button.count, buttonData, "itemCount")
-        local itemAnchor = buttonData.itemCountAnchor or defAnchor
-        local itemXOffset = buttonData.itemCountXOffset or defXOff
-        local itemYOffset = buttonData.itemCountYOffset or defYOff
-        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
-    else
-        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
-    end
+    -- Apply count text font/anchor settings
+    ApplyBarCountTextStyle(button, style)
 
     -- Aura stack count text — separate FontString for aura stacks, independent of charge text
     if buttonData.auraTracking or buttonData.isPassive then
@@ -709,7 +721,6 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     end
 
     -- Store button data
-    button.buttonData = buttonData
     button.index = index
     button.style = style
 
@@ -1029,32 +1040,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update charge/item count font and anchor to icon or bar center
-    local defAnchor = showIcon and "BOTTOMRIGHT" or "BOTTOM"
-    local defXOff = showIcon and -2 or 0
-    local defYOff = 2
-    if button.buttonData and (button.buttonData.hasCharges or button.buttonData.isPassive) then
-        ApplyFontStyle(button.count, newStyle, "charge")
-        local chargeAnchor, chargeXOffset, chargeYOffset
-        if showIcon then
-            chargeAnchor = newStyle.chargeAnchor or defAnchor
-            chargeXOffset = newStyle.chargeXOffset or defXOff
-            chargeYOffset = newStyle.chargeYOffset or defYOff
-        else
-            chargeAnchor = "CENTER"
-            chargeXOffset = 0
-            chargeYOffset = 0
-        end
-        AnchorBarCountText(button, showIcon, chargeAnchor, chargeXOffset, chargeYOffset)
-    elseif button.buttonData and button.buttonData.type == "item"
-       and not IsItemEquippable(button.buttonData) then
-        ApplyFontStyle(button.count, button.buttonData, "itemCount")
-        local itemAnchor = button.buttonData.itemCountAnchor or defAnchor
-        local itemXOffset = button.buttonData.itemCountXOffset or defXOff
-        local itemYOffset = button.buttonData.itemCountYOffset or defYOff
-        AnchorBarCountText(button, showIcon, itemAnchor, itemXOffset, itemYOffset)
-    else
-        AnchorBarCountText(button, showIcon, defAnchor, defXOff, defYOff)
-    end
+    ApplyBarCountTextStyle(button, newStyle)
 
     -- Update aura stack count font/anchor settings
     if button.auraStackCount then
@@ -1120,3 +1106,4 @@ end
 
 -- Exports
 ST._UpdateBarDisplay = UpdateBarDisplay
+ST._ApplyBarCountTextStyle = ApplyBarCountTextStyle

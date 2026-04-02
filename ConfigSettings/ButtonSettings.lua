@@ -18,6 +18,7 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from SectionBuilders.lua (used by BuildOverridesTab)
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -590,7 +591,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     if not group then return end
 
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
-    if buttonData.hasCharges then return end
+    if UsesChargeBehavior(buttonData) then return end
 
     local itemHeading = AceGUI:Create("Heading")
     itemHeading:SetText("Item Settings")
@@ -1383,7 +1384,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
 
     -- Detect no-cooldown spells to skip irrelevant override sections
     local isNoCooldownSpell = false
-    if buttonData.type == "spell" and not buttonData.isPassive and not buttonData.hasCharges then
+    if buttonData.type == "spell" and not buttonData.isPassive and not UsesChargeBehavior(buttonData) then
         local baseCd = GetSpellBaseCooldown(buttonData.id)
         isNoCooldownSpell = (not baseCd or baseCd == 0) and not HasTooltipCooldown(buttonData.id)
     end

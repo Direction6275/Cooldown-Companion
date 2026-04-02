@@ -16,6 +16,10 @@ local type = type
 local tostring = tostring
 local tonumber = tonumber
 
+local function UsesChargeBehavior(buttonData)
+    return CooldownCompanion.UsesChargeBehavior(buttonData)
+end
+
 local SOUND_NONE_KEY = "None"
 local DEFAULT_SOUND_CHANNEL = "Master"
 local BLIZZARD_SOUNDKIT_KEY_PREFIX = "__blz_soundkit:"
@@ -296,7 +300,7 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, s
 
     -- For charge-based spells, merge Charge Gained into Available so users
     -- configure one sound that plays for any charge gain (including max).
-    if buttonData and buttonData.hasCharges then
+    if UsesChargeBehavior(buttonData) then
         if scopedEvents.chargeGained then
             scopedEvents.available = true
         end
@@ -342,7 +346,7 @@ end
 function CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
     local events = cfg and cfg.events
-    if events and buttonData and buttonData.hasCharges and eventKey == "available" then
+    if events and UsesChargeBehavior(buttonData) and eventKey == "available" then
         local merged = events.available or events.chargeGained
         if merged then
             return merged
@@ -360,11 +364,11 @@ function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundN
     local cfg = self:GetButtonSoundAlertConfig(buttonData, true)
     local events = cfg.events
 
-    if buttonData and buttonData.hasCharges and eventKey == "chargeGained" then
+    if UsesChargeBehavior(buttonData) and eventKey == "chargeGained" then
         eventKey = "available"
     end
 
-    if buttonData and buttonData.hasCharges and eventKey == "available" then
+    if UsesChargeBehavior(buttonData) and eventKey == "available" then
         if not soundName or soundName == SOUND_NONE_KEY then
             events.available = nil
             events.chargeGained = nil
@@ -444,7 +448,7 @@ function CooldownCompanion:GetSoundAlertEventLabel(eventKey)
 end
 
 function CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey)
-    if buttonData and buttonData.hasCharges and eventKey == "available" then
+    if UsesChargeBehavior(buttonData) and eventKey == "available" then
         return CHARGE_AVAILABLE_MERGED_LABEL
     end
     return self:GetSoundAlertEventLabel(eventKey)
@@ -514,13 +518,13 @@ function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
 end
 
 function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
-    if buttonData and buttonData.hasCharges and eventKey == "chargeGained" then
+    if UsesChargeBehavior(buttonData) and eventKey == "chargeGained" then
         eventKey = "available"
     end
 
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
     local soundName = cfg and cfg.events and cfg.events[eventKey]
-    if (not soundName) and buttonData and buttonData.hasCharges and eventKey == "available" then
+    if (not soundName) and UsesChargeBehavior(buttonData) and eventKey == "available" then
         soundName = cfg and cfg.events and cfg.events.chargeGained
     end
     if not soundName then return false end
@@ -541,9 +545,9 @@ function CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData, spell
 
     local enabledEvents = {}
     for _, eventKey in ipairs(SOUND_ALERT_EVENT_ORDER) do
-        if not (buttonData and buttonData.hasCharges and eventKey == "chargeGained") then
+        if not (UsesChargeBehavior(buttonData) and eventKey == "chargeGained") then
             local soundName = cfg.events[eventKey]
-            if buttonData and buttonData.hasCharges and eventKey == "available" and not soundName then
+            if UsesChargeBehavior(buttonData) and eventKey == "available" and not soundName then
                 soundName = cfg.events.chargeGained
             end
             if validEvents[eventKey] and soundName and soundName ~= SOUND_NONE_KEY then
@@ -598,7 +602,7 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
     end
 
     if enabledEvents.available then
-        if buttonData.hasCharges then
+        if UsesChargeBehavior(buttonData) then
             local gainedCharge = false
             if currentCharges and button._sndPrevCharges and currentCharges > button._sndPrevCharges then
                 gainedCharge = true
@@ -619,7 +623,7 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
             if gainedCharge then
                 self:PlayButtonSoundAlertEvent(buttonData, "available")
             end
-        elseif (not buttonData.hasCharges) and button._sndPrevCooldownActive and not cooldownActive then
+        elseif (not UsesChargeBehavior(buttonData)) and button._sndPrevCooldownActive and not cooldownActive then
             self:PlayButtonSoundAlertEvent(buttonData, "available")
         end
     end

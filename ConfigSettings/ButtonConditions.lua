@@ -17,6 +17,7 @@ local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 local HasTooltipCooldown = ST.HasTooltipCooldown
 local HasUsageRequirement = ST.HasUsageRequirement
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -69,7 +70,7 @@ local function FilterTargetAuraTracking(bd)
     return bd.auraTracking == true and bd.auraUnit == "target"
 end
 local function FilterChargeCapable(bd)
-    if not bd.hasCharges then return false end
+    if not UsesChargeBehavior(bd) then return false end
     if bd.type == "spell" then return true end
     if bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
     return false
@@ -104,7 +105,7 @@ end
 
 -- Returns true if a button has no real cooldown (GCD-only spell)
 local function IsNoCooldownSpell(bd)
-    if not bd or bd.type ~= "spell" or bd.isPassive or bd.hasCharges then return false end
+    if not bd or bd.type ~= "spell" or bd.isPassive or UsesChargeBehavior(bd) then return false end
     local baseCd = GetSpellBaseCooldown(bd.id)
     return (not baseCd or baseCd == 0) and not HasTooltipCooldown(bd.id)
 end
@@ -124,11 +125,12 @@ end
 -- requirements (form/stance/etc). Spells like Mangle (zero cost, requires
 -- Bear Form) correctly return false here — their toggle remains visible.
 local WHIRLING_DRAGON_PUNCH_SPELL_ID = 152175
+local HasCastCountText = CooldownCompanion.HasCastCountText
 
 local function IsNeverUnusableButton(bd)
     if not bd or bd.type ~= "spell" then return false end
     if bd.id == WHIRLING_DRAGON_PUNCH_SPELL_ID then return false end
-    if bd._castCountCandidate then return false end
+    if HasCastCountText(bd) then return false end
     local costs = C_Spell.GetSpellPowerCost(bd.id)
     if costs and #costs > 0 then return false end
     return not HasUsageRequirement(bd.id)
@@ -168,6 +170,14 @@ local function AnySelectedChargeCapable(group)
         if bd and FilterChargeCapable(bd) then return true end
     end
     return false
+end
+
+local function AllSelectedChargeCapable(group)
+    for idx in pairs(CS.selectedButtons) do
+        local bd = group.buttons[idx]
+        if bd and not FilterChargeCapable(bd) then return false end
+    end
+    return true
 end
 
 ------------------------------------------------------------------------
@@ -712,7 +722,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- Batch: show if any selected button is charge-capable
     local showChargeSection
     if isBatch then showChargeSection = AnySelectedChargeCapable(group)
-    else showChargeSection = buttonData.hasCharges and (buttonData.type == "spell" or (isItem and not CooldownCompanion.IsItemEquippable(buttonData))) end
+    else showChargeSection = UsesChargeBehavior(buttonData) and (buttonData.type == "spell" or (isItem and not CooldownCompanion.IsItemEquippable(buttonData))) end
     if showChargeSection then
         -- Hide While At Zero Charges
         local hideZeroChargesCb = AceGUI:Create("CheckBox")
@@ -787,8 +797,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     if showStackSection then
         -- Batch: show stacks section if any selected lacks charges (stack-based items)
         local hasStacks
-        if isBatch then hasStacks = not AllSelectedAre(group, "hasCharges")
-        else hasStacks = not buttonData.hasCharges end
+        if isBatch then hasStacks = not AllSelectedChargeCapable(group)
+        else hasStacks = not UsesChargeBehavior(buttonData) end
         if hasStacks then
             -- Hide While At Zero Stacks
             local hideZeroStacksCb = AceGUI:Create("CheckBox")

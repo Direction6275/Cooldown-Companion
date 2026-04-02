@@ -17,6 +17,7 @@ local math_pi = math.pi
 local string_format = string.format
 local table_concat = table.concat
 local issecretvalue = issecretvalue
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from Helpers
 local ApplyEdgePositions = ST._ApplyEdgePositions
@@ -238,9 +239,9 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     if tokenName == "time" then
         return timeIsSecret or (timeRemaining and timeRemaining > 0)
     elseif tokenName == "charges" then
-        return button.buttonData.hasCharges == true
+        return UsesChargeBehavior(button.buttonData)
     elseif tokenName == "maxcharges" then
-        if not button.buttonData.hasCharges then return false end
+        if not UsesChargeBehavior(button.buttonData) then return false end
         if button._chargeCountReadable == true then
             local cur = button._currentReadableCharges
             local mc = button.buttonData.maxCharges
@@ -249,7 +250,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
             return not button._chargeRecharging
         end
     elseif tokenName == "missingcharges" then
-        if not button.buttonData.hasCharges then return false end
+        if not UsesChargeBehavior(button.buttonData) then return false end
         if button._chargeCountReadable == true then
             local cur = button._currentReadableCharges
             local mc = button.buttonData.maxCharges
@@ -258,7 +259,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
             return button._chargeRecharging and not button._zeroChargesConfirmed
         end
     elseif tokenName == "zerocharges" then
-        if not button.buttonData.hasCharges then return false end
+        if not UsesChargeBehavior(button.buttonData) then return false end
         if button._chargeCountReadable == true then
             local cur = button._currentReadableCharges
             return cur ~= nil and cur == 0

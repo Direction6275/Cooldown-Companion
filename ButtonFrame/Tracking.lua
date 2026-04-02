@@ -82,6 +82,48 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     return charges
 end
 
+-- Display/use-count tracking for spells that share the charge-style behavior
+-- without using the real charge API (e.g. brez pools).
+local function UpdateDisplayCountTracking(button, buttonData, spellID)
+    local querySpellID = spellID or buttonData.id
+    local rawDisplayCount = C_Spell.GetSpellDisplayCount(querySpellID)
+    local secretDisplayCount = issecretvalue(rawDisplayCount)
+    local cur
+    if not secretDisplayCount then
+        cur = tonumber(rawDisplayCount)
+    end
+
+    button._currentReadableCharges = cur
+    button._chargeCountReadable = (cur ~= nil)
+    button._displayCountZeroUsabilityFallback = nil
+
+    if cur and cur > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = cur
+    end
+
+    local maxCharges = buttonData.maxCharges
+    if cur ~= nil then
+        button._chargeRecharging = (maxCharges ~= nil and cur < maxCharges) or false
+    elseif secretDisplayCount then
+        -- Do not infer zero/non-zero state from spell usability when the display
+        -- count itself is secret. Usability can fail for unrelated reasons
+        -- (costs, reactives, etc.), so treat the zero-state as unknown.
+        button._chargeRecharging = false
+    else
+        button._chargeRecharging = false
+    end
+    button._chargeDurationObj = nil
+    button._chargesSpent = nil
+
+    local showChargeText = button.style and button.style.showChargeText
+    if not showChargeText then
+        button.count:SetText("")
+    else
+        button._chargeText = nil
+        button.count:SetText(rawDisplayCount or "")
+    end
+end
+
 -- Item charge tracking (e.g. Hellstone): simpler than spells, no secret values.
 -- Reads charge count via C_Item.GetItemCount with includeUses, updates text display.
 local function UpdateItemChargeTracking(button, buttonData)
@@ -227,6 +269,7 @@ end
 
 -- Exports
 ST._UpdateChargeTracking = UpdateChargeTracking
+ST._UpdateDisplayCountTracking = UpdateDisplayCountTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking
 ST._UpdateIconTint = UpdateIconTint
 ST._EvaluateDesaturation = EvaluateDesaturation

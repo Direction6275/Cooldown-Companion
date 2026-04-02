@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 local bit_band = bit.band
 local bit_bor  = bit.bor
@@ -69,7 +70,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
     -- _cooldownDeferred: treat deferred cooldowns (timer not yet started) as "on CD".
     if buttonData.hideWhileOnCooldown and not button._noCooldown then
-        if buttonData.hasCharges then
+        if UsesChargeBehavior(buttonData) then
             if button._mainCDShown or button._chargeRecharging then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
@@ -88,7 +89,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
 
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
     if buttonData.hideWhileNotOnCooldown and not button._noCooldown then
-        if buttonData.hasCharges then
+        if UsesChargeBehavior(buttonData) then
             if not button._mainCDShown and not button._chargeRecharging then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end

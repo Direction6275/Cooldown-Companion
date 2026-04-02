@@ -37,13 +37,16 @@ local HasTooltipCooldown = ST.HasTooltipCooldown
 
 -- Imports from Tracking
 local UpdateChargeTracking = ST._UpdateChargeTracking
+local UpdateDisplayCountTracking = ST._UpdateDisplayCountTracking
 local UpdateItemChargeTracking = ST._UpdateItemChargeTracking
 
 -- Imports from IconMode
+local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
 local UpdateIconModeVisuals = ST._UpdateIconModeVisuals
 local UpdateIconModeGlows = ST._UpdateIconModeGlows
 
 -- Imports from BarMode
+local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
 local UpdateBarDisplay = ST._UpdateBarDisplay
 local IsConfigButtonForceVisible = ST.IsConfigButtonForceVisible
 
@@ -52,6 +55,10 @@ local UpdateTextDisplay = ST._UpdateTextDisplay
 
 -- IsItemEquippable from Helpers (exported on CooldownCompanion)
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
+local HasCastCountText = CooldownCompanion.HasCastCountText
+local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local TARGET_SWITCH_SAFETY_CAP = 0.60
 
 local function AuraDataHasTimer(auraData)
@@ -221,10 +228,22 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
+    local usesChargeBehavior = UsesChargeBehavior(buttonData)
+    local useChargeTextLane = UsesChargeTextLane(buttonData)
     local now = GetTime()
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
     local wasAuraActive = button._auraActive == true
+
+    if button.count and button._countTextLaneStyled ~= useChargeTextLane then
+        if button._isBar then
+            ApplyBarCountTextStyle(button, style)
+        elseif not button._isText then
+            ApplyIconCountTextStyle(button, style)
+        else
+            button._countTextLaneStyled = useChargeTextLane
+        end
+    end
 
     -- For transforming spells (e.g. Command Demon → pet ability), use the
     -- current override spell for cooldown queries. _displaySpellId is set
@@ -232,7 +251,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Lazy-cache no-cooldown detection for spells (GCD-only, no real CD).
     -- Computed once (nil → true/false), reset in UpdateButtonStyle on respec.
     if button._noCooldown == nil then
-        if buttonData.type == "spell" and not buttonData.isPassive and not buttonData.hasCharges then
+        if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
             local baseCd = GetSpellBaseCooldown(buttonData.id)
             button._noCooldown = (not baseCd or baseCd == 0) and not HasTooltipCooldown(buttonData.id)
         else
@@ -865,7 +884,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- GetSpellCooldown returned nil: fall back to action-slot probe.
                 -- Covers vehicle bar, override bar, and rare ContextuallySecret
                 -- spells whose spell-level API is unavailable in combat.
-                if not buttonData.hasCharges and buttonData._cooldownSecrecy ~= 0 then
+                if not usesChargeBehavior and buttonData._cooldownSecrecy ~= 0 then
                     actionSlotCooldownShown, actionSlotDurationObj =
                         ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
                     if actionSlotDurationObj then
@@ -926,7 +945,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- even if the spell also has a per-cast cooldown lockout.
     local charges
     if buttonData.hasCharges and buttonData.type == "spell" then
+        button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
+    elseif buttonData._hasDisplayCount and buttonData.type == "spell" then
+        UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
     elseif not buttonData.hasCharges then
         -- hasCharges cleared: wipe stale charge state.
         button._currentReadableCharges = nil
@@ -936,31 +958,49 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargeDurationObj = nil
         button._chargesSpent = nil
         button._chargeText = nil
+        button._displayCountZeroUsabilityFallback = nil
         if buttonData.type == "spell" then
             button.count:SetText("")
         end
-        -- Cast-count display for non-charge spells (e.g. Mana Tea stacks).
-        -- Secret cast counts are passed through when an active spell override
-        -- is providing them (isOverride) OR the spell itself has genuine cast
-        -- counts (_castCountSelf).  Base spells flagged only via an override's
-        -- baseSpellID suppress secrets to prevent a stuck "0" after the
-        -- override fades in combat.
-        if buttonData._castCountCandidate and buttonData.type == "spell"
+        -- Shared count-text lane for non-charge spells:
+        --   1) Blizzard display/use counts (e.g. pooled/shared uses)
+        --   2) Cast-count stacks (e.g. Mana Tea)
+        -- Both intentionally reuse the charge-text font/toggle without driving
+        -- charge-specific cooldown logic.
+        if buttonData.type == "spell"
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false)
                 and button.style and button.style.showChargeText then
-            button._chargeText = nil
-            local castCount = C_Spell.GetSpellCastCount(cooldownSpellId or buttonData.id)
-            local isOverride = cooldownSpellId and cooldownSpellId ~= buttonData.id
-            if issecretvalue(castCount) and (isOverride or buttonData._castCountSelf) then
-                button.count:SetText(castCount)
-            elseif not issecretvalue(castCount) and castCount and castCount > 0 then
-                button.count:SetText(castCount)
-            else
+            local displayCountShown = false
+            local hasCastCountText = HasCastCountText(buttonData)
+            if buttonData._hasDisplayCount then
+                local displayCount = button.count:GetText()
+                if issecretvalue(displayCount) then
+                    displayCountShown = true
+                elseif displayCount and displayCount ~= "" then
+                    displayCountShown = true
+                end
+            end
+
+            if not displayCountShown and hasCastCountText then
+                -- Cast-count text is only shown for explicitly supported
+                -- spell families. Use the current live spell/override path
+                -- when it belongs to that family.
+                button._chargeText = nil
+                local castCountSpellID = GetCastCountSpellID(buttonData, cooldownSpellId)
+                local castCount = castCountSpellID and C_Spell.GetSpellCastCount(castCountSpellID)
+                if castCountSpellID and issecretvalue(castCount) then
+                    button.count:SetText(castCount)
+                elseif castCountSpellID and not issecretvalue(castCount) and castCount and castCount > 0 then
+                    button.count:SetText(castCount)
+                else
+                    button.count:SetText("")
+                end
+            elseif not displayCountShown then
                 button.count:SetText("")
             end
-        elseif buttonData._castCountCandidate and buttonData.type == "spell"
+        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData)) and buttonData.type == "spell"
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
-            -- showChargeText disabled: ensure cast-count text is cleared.
+            -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
         elseif button._chargeText ~= nil then
             button._chargeText = nil
@@ -1040,7 +1080,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- is active.  Filter GCD so only real cooldown reads as true.
     -- Item and readable-spell paths are always safe. Restricted-spell fallbacks
     -- that depend on button.cooldown or isGCDOnly are gated on not auraOverrideActive.
-    if buttonData.hasCharges then
+    if usesChargeBehavior then
         -- Default to non-zero each tick; set true only when a current probe confirms zero.
         button._mainCDShown = false
         if buttonData.type == "item" then
@@ -1054,7 +1094,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Prevents short lockout cooldowns (e.g., dragonriding flyout abilities)
             -- from being misclassified as "zero charges".
             button._mainCDShown = (button._currentReadableCharges == 0)
-        elseif buttonData.type == "spell" then
+        elseif buttonData.type == "spell" and buttonData._hasDisplayCount then
+            -- Secret display counts do not expose a readable number in combat for
+            -- some use-count spells. Do not guess zero-state from unrelated
+            -- usability signals; leave the zero-state unknown instead.
+            button._mainCDShown = false
+        elseif buttonData.type == "spell" and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
             -- which is NOT charge-aware (isActive = isEnabled and startTime > 0
@@ -1078,7 +1123,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Canonical zero-charge state for downstream visuals/visibility.
     -- _mainCDShown is the raw "main cooldown sweep shown" signal; suppress zero
     -- while we have explicit cast-history evidence that not all charges are spent.
-    if buttonData.hasCharges then
+    if usesChargeBehavior then
         -- Seed _chargesSpent when recharging without cast history (e.g. after
         -- /reload mid-recharge).  Defaults to maxCharges ("all spent") so the
         -- heuristic below does not suppress genuine zero-charge signals.
@@ -1090,6 +1135,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
            and buttonData.type == "spell"
+           and buttonData.hasCharges
            and button._chargeCountReadable ~= true then
             -- Heuristic: suppress zero-charge when cast history says charges remain.
             -- Applies to both the action bar probe and isActive fallback paths.
@@ -1115,7 +1161,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.type == "item" then
         button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
             or button._cooldownDeferred or false
-    elseif buttonData.hasCharges then
+    elseif usesChargeBehavior then
         button._desatCooldownActive = (button._zeroChargesConfirmed == true)
     else
         if actionSlotCooldownShown ~= nil and spellCooldownInfo == nil then
@@ -1216,7 +1262,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
         local cc
         local cur = button._currentReadableCharges
-        if button._chargeCountReadable == true and cur ~= nil and buttonData.maxCharges then
+        if usesChargeBehavior and button._chargeCountReadable == true and cur ~= nil and buttonData.maxCharges then
             if cur == 0 then
                 cc = style.chargeFontColorZero or DEFAULT_WHITE
             elseif cur < buttonData.maxCharges then
@@ -1224,7 +1270,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             else
                 cc = style.chargeFontColor or DEFAULT_WHITE
             end
-        else
+        elseif usesChargeBehavior then
             -- Restricted mode: charges unreadable via C_Spell.
             -- Use canonical zero state derived from _mainCDShown + cast history.
             if not button._chargeRecharging then
@@ -1234,8 +1280,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             else
                 cc = style.chargeFontColorMissing or DEFAULT_WHITE      -- MISSING (recharging)
             end
+        elseif UsesChargeTextLane(buttonData) then
+            cc = style.chargeFontColor or DEFAULT_WHITE
         end
-        button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        if cc then
+            button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        end
     end
 
     -- Per-button sound alerts (Blizzard-scoped events, CDM-valid only).
@@ -1247,7 +1297,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local maxCharges
             local chargeRecharging = false
             local chargeCooldownStartTime
-            if buttonData.hasCharges then
+            if usesChargeBehavior then
                 if button._currentReadableCharges ~= nil then
                     currentCharges = button._currentReadableCharges
                 elseif charges and charges.currentCharges ~= nil
@@ -1269,7 +1319,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
 
             local cooldownActive
-            if buttonData.hasCharges then
+            if usesChargeBehavior then
                 -- Charge spells: cooldown-active means zero available charges.
                 if currentCharges ~= nil then
                     cooldownActive = (currentCharges == 0)

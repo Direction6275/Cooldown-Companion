@@ -120,9 +120,14 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     end
                 end
                 local hasRealCharges = buttonData.hasCharges and true or nil
+                local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
+                buttonData._castCountCandidate = nil
+                buttonData._castCountConfirmed = nil
+                buttonData._castCountSeeded = nil
+                buttonData._castCountSelf = nil
+                buttonData._castCountEventSpellID = nil
                 if chargeInfo then
-                    buttonData._castCountCandidate = nil
-                    buttonData._castCountSelf = nil
+                    buttonData._hasDisplayCount = nil
                     local mc = chargeInfo.maxCharges
                     if mc > 1 then
                         hasRealCharges = true
@@ -152,41 +157,28 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     -- chargeInfo nil: check if spell has "use count" (brez shared
                     -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
                     -- "N" when the pool is active.
+                    hasRealCharges = nil
                     self._hasDisplayCountCandidates = true
-                    -- Promote or demote cast-count candidate based on readable
-                    -- cast count.  SPELL_UPDATE_USES is the primary authority
-                    -- for identification (Lifecycle.lua), but we clear stale
-                    -- flags here when a readable zero is observed.  Clearing is
-                    -- safe: at 0 stacks the display is suppressed anyway, and
-                    -- SPELL_UPDATE_USES will re-flag the spell when stacks
-                    -- return.
-                    local castCount = C_Spell.GetSpellCastCount(buttonData.id)
-                    if not issecretvalue(castCount) and castCount and castCount > 0 then
-                        buttonData._castCountCandidate = true
-                        buttonData._castCountSelf = true
-                    elseif not issecretvalue(castCount) then
-                        buttonData._castCountCandidate = nil
-                        buttonData._castCountSelf = nil
-                    end
-                    local rawDisplayCount = C_Spell.GetSpellDisplayCount(buttonData.id)
+                    local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
                     if not issecretvalue(rawDisplayCount) then
                         local displayCount = tonumber(rawDisplayCount)
-                        if displayCount and displayCount > 0 then
-                            hasRealCharges = true
+                        if displayCount ~= nil then
+                            buttonData._hasDisplayCount = true
                             if displayCount > (buttonData.maxCharges or 0) then
                                 buttonData.maxCharges = displayCount
                             end
-                        elseif displayCount == 0 then
-                            -- Pool active but all charges spent; keep charge mode
-                            -- so zero-state color/visibility still applies.
-                            hasRealCharges = true
                         else
-                            -- tonumber("") => nil: pool truly inactive.
-                            hasRealCharges = nil
+                            buttonData._hasDisplayCount = nil
                         end
+                    elseif hadDisplayCountBehavior then
+                        -- Preserve legacy display-count classification when the
+                        -- API is secret during refresh (e.g. /reload into combat)
+                        -- so the button does not temporarily fall out of the
+                        -- count-bearing path until the value becomes readable.
+                        buttonData._hasDisplayCount = true
                     end
-                    -- Auto-enable charge text when first detected as display-count.
-                    if hasRealCharges and buttonData.showChargeText == nil then
+                    -- Auto-enable count text when a spell exposes a readable display count.
+                    if buttonData._hasDisplayCount and buttonData.showChargeText == nil then
                         buttonData.showChargeText = true
                     end
                 end
