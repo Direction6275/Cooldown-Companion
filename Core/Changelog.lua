@@ -13,6 +13,7 @@ local parsedCache = {}
 local DEFAULT_FONT_SIZE = 13
 local MIN_FONT_SIZE = 11
 local MAX_FONT_SIZE = 18
+local MAX_RECENT_DROPDOWN_VERSIONS = 5
 
 local function Trim(text)
     text = tostring(text or "")
@@ -45,6 +46,25 @@ local function ProcessInlineFormatting(text)
     end)
 
     return text
+end
+
+local function ExtractBulletStyle(text)
+    text = Trim(text)
+    if text == "" then
+        return text, false
+    end
+
+    local bangText = text:match("^!%s+(.+)$")
+    if bangText then
+        return Trim(bangText), true
+    end
+
+    local bracketBangText = text:match("^%[!%]%s+(.+)$")
+    if bracketBangText then
+        return Trim(bracketBangText), true
+    end
+
+    return text, false
 end
 
 local function GetIndentWidth(leading)
@@ -167,18 +187,22 @@ local function ParseMarkdown(markdown)
                 }
             elseif bullet then
                 FlushParagraph()
+                local bulletText, bulletImportant = ExtractBulletStyle(bullet)
                 tokens[#tokens + 1] = {
                     type = "bullet",
                     depth = GetListDepth(bulletIndent),
-                    text = ProcessInlineFormatting(Trim(bullet)),
+                    important = bulletImportant,
+                    text = ProcessInlineFormatting(bulletText),
                 }
             elseif orderedBullet then
                 FlushParagraph()
+                local orderedText, orderedImportant = ExtractBulletStyle(orderedBullet)
                 tokens[#tokens + 1] = {
                     type = "ordered_bullet",
                     depth = GetListDepth(orderedIndent),
                     index = tonumber(orderedNumber) or 1,
-                    text = ProcessInlineFormatting(Trim(orderedBullet)),
+                    important = orderedImportant,
+                    text = ProcessInlineFormatting(orderedText),
                 }
             else
                 paragraphLines[#paragraphLines + 1] = trimmed
@@ -210,6 +234,23 @@ function Changelog.GetOrderedVersions()
     for i, version in ipairs(orderedVersions) do
         versions[i] = version
     end
+    return versions
+end
+
+function Changelog.GetDropdownVersions(selectedVersion)
+    local versions = {}
+    local seen = {}
+
+    for i = 1, math.min(MAX_RECENT_DROPDOWN_VERSIONS, #orderedVersions) do
+        local version = orderedVersions[i]
+        versions[#versions + 1] = version
+        seen[version] = true
+    end
+
+    if Changelog.HasEntry(selectedVersion) and not seen[selectedVersion] then
+        versions[#versions + 1] = selectedVersion
+    end
+
     return versions
 end
 

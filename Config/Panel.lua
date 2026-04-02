@@ -451,9 +451,9 @@ local function CreateConfigPanel()
     changelogBtn = CreateFrame("Button", nil, content)
     changelogBtn:SetSize(18, 18)
     local changelogIcon = changelogBtn:CreateTexture(nil, "ARTWORK")
-    changelogIcon:SetAtlas("poi-workorders", false)
+    changelogIcon:SetAtlas("lorewalking-map-icon", false)
     changelogIcon:SetAllPoints()
-    changelogBtn:SetHighlightAtlas("poi-workorders")
+    changelogBtn:SetHighlightAtlas("lorewalking-map-icon")
     changelogBtn:GetHighlightTexture():SetAlpha(0.3)
     changelogBtn:SetScript("OnClick", function()
         CloseDropDownMenus()
@@ -824,8 +824,11 @@ local function CreateConfigPanel()
         changelogScroll:AddChild(label)
     end
 
-    local function BuildChangelogListPrefix(depth, orderedIndex)
+    local function BuildChangelogListPrefix(depth, orderedIndex, isImportant)
         local indent = string.rep("    ", math.max(0, tonumber(depth) or 0))
+        if isImportant then
+            return indent .. "|cffFFB347!|r  "
+        end
         if orderedIndex then
             return indent .. "|cff4EC9B0" .. tostring(orderedIndex) .. ".|r  "
         end
@@ -853,7 +856,8 @@ local function CreateConfigPanel()
         end
 
         local changelog = ST._Changelog
-        local orderedVersions = (changelog and changelog.GetOrderedVersions and changelog.GetOrderedVersions()) or {}
+        local orderedVersions = (changelog and changelog.GetDropdownVersions and changelog.GetDropdownVersions(selectedVersion))
+            or ((changelog and changelog.GetOrderedVersions and changelog.GetOrderedVersions()) or {})
         local versionList = {}
         for _, version in ipairs(orderedVersions) do
             versionList[version] = version
@@ -1068,19 +1072,23 @@ local function CreateConfigPanel()
                     elseif tokenType == "bullet" then
                         FlushVersionDivider(10)
                         local bulletColor = {0.96, 0.96, 0.96}
-                        if (tonumber(token.depth) or 0) > 0 then
+                        if token.important then
+                            bulletColor = {1.00, 0.91, 0.67}
+                        elseif (tonumber(token.depth) or 0) > 0 then
                             bulletColor = {0.70, 0.87, 0.95}
                         end
-                        AddChangelogLabel(BuildChangelogListPrefix(token.depth) .. text, bodyFontPath, bodySize, bodyFontFlags, bulletColor)
+                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, nil, token.important) .. text, bodyFontPath, bodySize, bodyFontFlags, bulletColor)
                         AddChangelogSpacer(5)
                         renderedAny = true
                     elseif tokenType == "ordered_bullet" then
                         FlushVersionDivider(10)
                         local orderedColor = {0.96, 0.96, 0.96}
-                        if (tonumber(token.depth) or 0) > 0 then
+                        if token.important then
+                            orderedColor = {1.00, 0.91, 0.67}
+                        elseif (tonumber(token.depth) or 0) > 0 then
                             orderedColor = {0.70, 0.87, 0.95}
                         end
-                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, token.index) .. text, bodyFontPath, bodySize, bodyFontFlags, orderedColor)
+                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, token.index, token.important) .. text, bodyFontPath, bodySize, bodyFontFlags, orderedColor)
                         AddChangelogSpacer(5)
                         renderedAny = true
                     else
