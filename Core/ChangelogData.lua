@@ -7,10 +7,31 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.10.27",
         "1.10.26",
         "1.10.25",
     },
     entries = {
+        ["1.10.27"] = {
+            markdown = [[
+## New Features
+
+- **Built-in changelog viewer:** You can now open bundled release notes directly from the config panel, browse older versions, and adjust the viewer text size for easier reading.
+
+## Polish | QoL
+
+- **Aura unit selection for tracked spells:** Aura-tracked spells can now explicitly watch either your Player or Target auras, making buff and debuff tracking easier to set up when the default target is not the one you want.
+  - ! *Please double-check any entries that attach auras to spells to make sure the selected target is correct. This change was needed to help protect aura tracking from reading the wrong duration.*
+
+- **Clearer aura tracking setup:** Aura tracking now gives more direct active or inactive feedback, clearer guidance when Blizzard Cooldown Manager setup is missing, and cleaner labels in the spell settings panel.
+
+## Bug Fixes
+
+- **Fixed inconsistent count text behavior:** Supported icon and bar count text should now behave more consistently instead of mixing charge-style and other count displays in the wrong situations.
+
+- **Whirling Dragon Punch fix:** Whirling Dragon Punch now supports the unusable-state toggle so it can follow the same visibility and dimming rules as other supported buttons.
+]],
+        },
         ["1.10.26"] = {
             markdown = [[
 ## Bug Fixes

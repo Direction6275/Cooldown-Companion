@@ -13,6 +13,7 @@ local parsedCache = {}
 local DEFAULT_FONT_SIZE = 13
 local MIN_FONT_SIZE = 11
 local MAX_FONT_SIZE = 18
+local MAX_RECENT_DROPDOWN_VERSIONS = 5
 
 local function Trim(text)
     text = tostring(text or "")
@@ -22,12 +23,81 @@ local function Trim(text)
 end
 
 local BOLD_COLOR = "FFD100"
+local ITALIC_COLOR = "9FD5E8"
+local BOLD_ITALIC_COLOR = "FFE7A3"
+
+local function WrapInlineColor(text, color)
+    return "|cff" .. color .. text .. "|r"
+end
 
 local function ProcessInlineFormatting(text)
     if not text or text == "" then
         return text
     end
-    return text:gsub("%*%*(.-)%*%*", "|cff" .. BOLD_COLOR .. "%1|r")
+
+    text = text:gsub("%*%*%*(.-)%*%*%*", function(inner)
+        return WrapInlineColor(inner, BOLD_ITALIC_COLOR)
+    end)
+    text = text:gsub("%*%*(.-)%*%*", function(inner)
+        return WrapInlineColor(inner, BOLD_COLOR)
+    end)
+    text = text:gsub("%*(.-)%*", function(inner)
+        return WrapInlineColor(inner, ITALIC_COLOR)
+    end)
+
+    return text
+end
+
+local function StripInlineMarkdownFormatting(text)
+    if not text or text == "" then
+        return text
+    end
+
+    text = text:gsub("%*%*%*(.-)%*%*%*", "%1")
+    text = text:gsub("%*%*(.-)%*%*", "%1")
+    text = text:gsub("%*(.-)%*", "%1")
+
+    return text
+end
+
+local function ExtractBulletStyle(text)
+    text = Trim(text)
+    if text == "" then
+        return text, false
+    end
+
+    local bangText = text:match("^!%s+(.+)$")
+    if bangText then
+        return Trim(bangText), true
+    end
+
+    local bracketBangText = text:match("^%[!%]%s+(.+)$")
+    if bracketBangText then
+        return Trim(bracketBangText), true
+    end
+
+    return text, false
+end
+
+local function GetIndentWidth(leading)
+    local width = 0
+    for i = 1, #leading do
+        local ch = leading:sub(i, i)
+        if ch == "\t" then
+            width = width + 2
+        else
+            width = width + 1
+        end
+    end
+    return width
+end
+
+local function GetListDepth(leading)
+    local width = GetIndentWidth(leading or "")
+    if width <= 0 then
+        return 0
+    end
+    return math.floor((width + 1) / 2)
 end
 
 local function BuildOrderedIndex()
@@ -112,25 +182,39 @@ local function ParseMarkdown(markdown)
         else
             local heading3 = trimmed:match("^###%s+(.+)$")
             local heading2 = trimmed:match("^##%s+(.+)$")
-            local bullet = trimmed:match("^%-%s+(.+)$")
+            local bulletIndent, bullet = line:match("^(%s*)[-*]%s+(.+)$")
+            local orderedIndent, orderedNumber, orderedBullet = line:match("^(%s*)(%d+)%.%s+(.+)$")
 
             if heading3 then
                 FlushParagraph()
                 tokens[#tokens + 1] = {
                     type = "heading3",
-                    text = Trim(heading3),
+                    text = ProcessInlineFormatting(Trim(heading3)),
                 }
             elseif heading2 then
                 FlushParagraph()
                 tokens[#tokens + 1] = {
                     type = "heading2",
-                    text = Trim(heading2),
+                    text = ProcessInlineFormatting(Trim(heading2)),
                 }
             elseif bullet then
                 FlushParagraph()
+                local bulletText, bulletImportant = ExtractBulletStyle(bullet)
                 tokens[#tokens + 1] = {
                     type = "bullet",
-                    text = ProcessInlineFormatting(Trim(bullet)),
+                    depth = GetListDepth(bulletIndent),
+                    important = bulletImportant,
+                    text = bulletImportant and StripInlineMarkdownFormatting(bulletText) or ProcessInlineFormatting(bulletText),
+                }
+            elseif orderedBullet then
+                FlushParagraph()
+                local orderedText, orderedImportant = ExtractBulletStyle(orderedBullet)
+                tokens[#tokens + 1] = {
+                    type = "ordered_bullet",
+                    depth = GetListDepth(orderedIndent),
+                    index = tonumber(orderedNumber) or 1,
+                    important = orderedImportant,
+                    text = orderedImportant and StripInlineMarkdownFormatting(orderedText) or ProcessInlineFormatting(orderedText),
                 }
             else
                 paragraphLines[#paragraphLines + 1] = trimmed
@@ -162,6 +246,23 @@ function Changelog.GetOrderedVersions()
     for i, version in ipairs(orderedVersions) do
         versions[i] = version
     end
+    return versions
+end
+
+function Changelog.GetDropdownVersions(selectedVersion)
+    local versions = {}
+    local seen = {}
+
+    for i = 1, math.min(MAX_RECENT_DROPDOWN_VERSIONS, #orderedVersions) do
+        local version = orderedVersions[i]
+        versions[#versions + 1] = version
+        seen[version] = true
+    end
+
+    if Changelog.HasEntry(selectedVersion) and not seen[selectedVersion] then
+        versions[#versions + 1] = selectedVersion
+    end
+
     return versions
 end
 
@@ -215,6 +316,10 @@ function Changelog.ShouldAutoOpen()
 
     local state = GetChangelogState()
     local lastSeenVersion = state and state.lastSeenVersion or nil
+    if lastSeenVersion == nil and state and not (CooldownCompanion and CooldownCompanion._hadSavedVariables) then
+        state.lastSeenVersion = version
+        return false, version
+    end
     return lastSeenVersion ~= version, version
 end
 
