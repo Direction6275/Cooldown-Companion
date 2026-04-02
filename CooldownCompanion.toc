@@ -46,6 +46,8 @@ Core\SpellQueries.lua
 Core\Utils.lua
 Core\Init.lua
 Core\Defaults.lua
+Core\ChangelogData.lua
+Core\Changelog.lua
 Core\ScopedSettings.lua
 Core\SoundAlerts.lua
 Core\StyleOverrides.lua

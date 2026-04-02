@@ -36,7 +36,7 @@ local function BuildDiagnosticSnapshot()
         specID, specName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
     end
     local buildVersion, _, _, interfaceVersion = GetBuildInfo()
-    local addonVersion = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "unknown"
+    local addonVersion = (ST._GetAddonVersion and ST._GetAddonVersion()) or "unknown"
 
     local totalButtons = 0
     local groupCount = 0

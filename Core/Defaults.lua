@@ -8,6 +8,10 @@ local ADDON_NAME, ST = ...
 local defaults = {
     global = {
         characterInfo = {},  -- [charKey] = { classFilename, classID }
+        changelog = {
+            lastSeenVersion = nil,
+            fontSize = 13,
+        },
     },
     profile = {
         minimap = {
