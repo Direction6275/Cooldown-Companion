@@ -48,6 +48,8 @@ local cdmAlphaGuard = {}
 ST._cdmAlphaGuard = cdmAlphaGuard
 
 function CooldownCompanion:OnInitialize()
+    self._hadSavedVariables = type(_G.CooldownCompanionDB) == "table"
+
     -- Initialize database
     self.db = LibStub("AceDB-3.0"):New("CooldownCompanionDB", defaults, true)
     wipe(self.db.profile.showAdvanced)

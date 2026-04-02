@@ -304,6 +304,10 @@ function Changelog.ShouldAutoOpen()
 
     local state = GetChangelogState()
     local lastSeenVersion = state and state.lastSeenVersion or nil
+    if lastSeenVersion == nil and state and not (CooldownCompanion and CooldownCompanion._hadSavedVariables) then
+        state.lastSeenVersion = version
+        return false, version
+    end
     return lastSeenVersion ~= version, version
 end
 
