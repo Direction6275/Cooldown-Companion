@@ -48,6 +48,18 @@ local function ProcessInlineFormatting(text)
     return text
 end
 
+local function StripInlineMarkdownFormatting(text)
+    if not text or text == "" then
+        return text
+    end
+
+    text = text:gsub("%*%*%*(.-)%*%*%*", "%1")
+    text = text:gsub("%*%*(.-)%*%*", "%1")
+    text = text:gsub("%*(.-)%*", "%1")
+
+    return text
+end
+
 local function ExtractBulletStyle(text)
     text = Trim(text)
     if text == "" then
@@ -192,7 +204,7 @@ local function ParseMarkdown(markdown)
                     type = "bullet",
                     depth = GetListDepth(bulletIndent),
                     important = bulletImportant,
-                    text = ProcessInlineFormatting(bulletText),
+                    text = bulletImportant and StripInlineMarkdownFormatting(bulletText) or ProcessInlineFormatting(bulletText),
                 }
             elseif orderedBullet then
                 FlushParagraph()
@@ -202,7 +214,7 @@ local function ParseMarkdown(markdown)
                     depth = GetListDepth(orderedIndent),
                     index = tonumber(orderedNumber) or 1,
                     important = orderedImportant,
-                    text = ProcessInlineFormatting(orderedText),
+                    text = orderedImportant and StripInlineMarkdownFormatting(orderedText) or ProcessInlineFormatting(orderedText),
                 }
             else
                 paragraphLines[#paragraphLines + 1] = trimmed
