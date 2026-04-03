@@ -7,11 +7,19 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.10.28",
         "1.10.27",
         "1.10.26",
         "1.10.25",
     },
     entries = {
+        ["1.10.28"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Badge Lua Fix:** Disabled panel headers in the config view should now keep their own status badge correctly instead of sharing or losing it when the list refreshes.
+]],
+        },
         ["1.10.27"] = {
             markdown = [[
 ## New Features
