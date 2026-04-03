@@ -17,6 +17,7 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
+local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
 local TryAdd = ST._TryAdd
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
@@ -121,6 +122,9 @@ end
 local function RefreshColumn2()
     if not CS.col2Scroll then return end
     local col2 = CS.configFrame and CS.configFrame.col2
+    if ClearCol2AnimatedPreview then
+        ClearCol2AnimatedPreview()
+    end
 
     -- Clear per-panel drop targets (rebuilt if we enter the panel render loop)
     CS._panelDropTargets = {}
@@ -928,6 +932,7 @@ local function RefreshColumn2()
 
         -- Metadata for cross-panel drag detection
         local col2RenderedRows = {}
+        local col2PanelMetas = {}
 
         -- Reset per-panel drop targets (rebuilt in the loop below)
         CS._panelDropTargets = {}
@@ -937,6 +942,13 @@ local function RefreshColumn2()
             local panelId = panelInfo.groupId
             local panel = panelInfo.group
             local isCollapsed = CS.collapsedPanels[panelId]
+            local panelMeta = {
+                panelId = panelId,
+                group = panel,
+                isCollapsed = isCollapsed and true or false,
+                displayMode = panel.displayMode,
+                buttonRows = {},
+            }
 
             -- Class-colored accent separator between panels
             if panelIndex > 1 then
@@ -969,6 +981,8 @@ local function RefreshColumn2()
             panelContainer:SetFullWidth(true)
             CompactUntitledInlineGroupConfig(panelContainer)
             CS.col2Scroll:AddChild(panelContainer)
+            panelMeta.panelWidget = panelContainer
+            panelMeta.panelFrame = panelContainer.frame
 
             -- Per-panel drop highlight overlay (pooled on underlying frame to survive AceGUI recycling)
             do
@@ -1511,6 +1525,15 @@ local function RefreshColumn2()
 
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
+                panelMeta.headerWidget = header
+                panelMeta.headerFrame = header.frame
+                panelMeta.headerText = headerText
+                panelMeta.headerColor = {
+                    (header.label and select(1, header.label:GetTextColor())) or 1,
+                    (header.label and select(2, header.label:GetTextColor())) or 1,
+                    (header.label and select(3, header.label:GetTextColor())) or 1,
+                }
+                panelMeta.count = btnCount
 
             -- Button list for this panel (skip if collapsed)
             if not isCollapsed then
@@ -1970,10 +1993,19 @@ local function RefreshColumn2()
 
                     panelContainer:AddChild(entry)
                     table.insert(col2RenderedRows, { kind = "button", panelId = panelId, buttonIndex = i, widget = entry })
+                    table.insert(panelMeta.buttonRows, {
+                        buttonIndex = i,
+                        widget = entry,
+                        frame = entry.frame,
+                        text = entryName or ("Unknown " .. buttonData.type),
+                        icon = GetButtonIcon(buttonData),
+                        usable = usable,
+                    })
                 end -- button loop
 
                 -- Inline add editbox (visible only when this panel is the active add target)
                 if CS.addingToPanelId == panelId then
+                    panelMeta.hasInlineAdd = true
                     local inputBox = AceGUI:Create("EditBox")
                     if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
                     inputBox:SetLabel("")
@@ -2061,9 +2093,11 @@ local function RefreshColumn2()
                     panelContainer:AddChild(addRow)
                 end
             end -- not collapsed
+            table.insert(col2PanelMetas, panelMeta)
         end -- panel loop
 
         CS.lastCol2RenderedRows = col2RenderedRows
+        CS.lastCol2PanelMetas = col2PanelMetas
 
         CS.col2Scroll:DoLayout()
 

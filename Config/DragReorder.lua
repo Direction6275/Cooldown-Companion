@@ -10,9 +10,15 @@ local CS = ST._configState
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
+local EnsureCol2PreviewHost = ST._EnsureCol2PreviewHost
+local ClearCol2PreviewHost = ST._ClearCol2PreviewHost
 
 -- File-local constants
 local DRAG_THRESHOLD = 8
+local PREVIEW_ANIM_DURATION = 0.10
+local PREVIEW_PANEL_INSET = 8
+local PREVIEW_ROW_TEXT_RIGHT_PAD = 8
+local PREVIEW_DEFAULT_ROW_HEIGHT = 32
 
 ------------------------------------------------------------------------
 -- Drag indicator helpers
@@ -194,6 +200,691 @@ local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
         ind:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -1)
     end
     ind:Show()
+end
+
+------------------------------------------------------------------------
+-- Column 2 animated preview helpers
+------------------------------------------------------------------------
+local function Clamp(value, minValue, maxValue)
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function Interpolate(a, b, t)
+    return a + (b - a) * t
+end
+
+local function EaseInOut(t)
+    return t * t * (3 - 2 * t)
+end
+
+local function GetRelativeRect(frame, parent)
+    if not (frame and parent and frame:IsShown() and parent:IsShown()) then
+        return nil
+    end
+    local left, top = frame:GetLeft(), frame:GetTop()
+    local parentLeft, parentTop = parent:GetLeft(), parent:GetTop()
+    local width, height = frame:GetWidth(), frame:GetHeight()
+    if not (left and top and parentLeft and parentTop and width and height) then
+        return nil
+    end
+    return left - parentLeft, parentTop - top, width, height
+end
+
+local function CopyPreviewRow(row)
+    return {
+        key = row.key,
+        buttonIndex = row.buttonIndex,
+        x = row.x,
+        y = row.y,
+        width = row.width,
+        height = row.height,
+        text = row.text,
+        icon = row.icon,
+        usable = row.usable,
+    }
+end
+
+local function CopyPreviewPanel(panel)
+    local copy = {
+        panelId = panel.panelId,
+        name = panel.name,
+        x = panel.x,
+        y = panel.y,
+        width = panel.width,
+        height = panel.height,
+        extraHeight = panel.extraHeight,
+        firstRowOffset = panel.firstRowOffset,
+        rowGap = panel.rowGap,
+        defaultRowHeight = panel.defaultRowHeight,
+        gapAfter = panel.gapAfter,
+        isCollapsed = panel.isCollapsed,
+        displayMode = panel.displayMode,
+        enabled = panel.enabled,
+        locked = panel.locked,
+        count = panel.count,
+        headerColor = panel.headerColor,
+        header = {
+            x = panel.header.x,
+            y = panel.header.y,
+            width = panel.header.width,
+            height = panel.header.height,
+        },
+        rows = {},
+    }
+    for i, row in ipairs(panel.rows) do
+        copy.rows[i] = CopyPreviewRow(row)
+    end
+    return copy
+end
+
+local function BuildCol2BasePreviewLayout()
+    local panelMetas = CS.lastCol2PanelMetas
+    local content = CS.col2Scroll and CS.col2Scroll.content
+    if not (panelMetas and content and content:IsShown()) then
+        return nil
+    end
+
+    local panels = {}
+    local byId = {}
+
+    for _, meta in ipairs(panelMetas) do
+        local x, y, width, height = GetRelativeRect(meta.panelFrame, content)
+        if x and y then
+            local panel = {
+                panelId = meta.panelId,
+                name = (meta.group and meta.group.name) or ("Panel " .. meta.panelId),
+                x = x,
+                y = y,
+                width = width,
+                height = height,
+                isCollapsed = meta.isCollapsed and true or false,
+                displayMode = meta.displayMode or "icons",
+                enabled = not (meta.group and meta.group.enabled == false),
+                locked = meta.group and meta.group.locked == false,
+                count = meta.count or #meta.buttonRows,
+                headerColor = meta.headerColor,
+                rows = {},
+            }
+
+            local hx, hy, hw, hh = GetRelativeRect(meta.headerFrame, meta.panelFrame)
+            panel.header = {
+                x = hx or PREVIEW_PANEL_INSET,
+                y = hy or 6,
+                width = hw or math.max(40, width - (PREVIEW_PANEL_INSET * 2)),
+                height = hh or 32,
+            }
+
+            local totalRowHeight = 0
+            local totalRowGap = 0
+            local previousRow
+            for _, rowMeta in ipairs(meta.buttonRows) do
+                local rx, ry, rw, rh = GetRelativeRect(rowMeta.frame, meta.panelFrame)
+                local row = {
+                    key = tostring(meta.panelId) .. ":" .. tostring(rowMeta.buttonIndex),
+                    buttonIndex = rowMeta.buttonIndex,
+                    x = rx or PREVIEW_PANEL_INSET,
+                    y = ry or ((panel.header.y + panel.header.height) + 4),
+                    width = rw or math.max(40, width - (PREVIEW_PANEL_INSET * 2)),
+                    height = rh or PREVIEW_DEFAULT_ROW_HEIGHT,
+                    text = rowMeta.text,
+                    icon = rowMeta.icon,
+                    usable = rowMeta.usable,
+                }
+                totalRowHeight = totalRowHeight + row.height
+                if previousRow then
+                    totalRowGap = totalRowGap + math.max(0, row.y - (previousRow.y + previousRow.height))
+                end
+                previousRow = row
+                table.insert(panel.rows, row)
+            end
+
+            local rowCount = #panel.rows
+            panel.rowGap = rowCount > 1 and math.floor((totalRowGap / (rowCount - 1)) + 0.5) or 2
+            panel.firstRowOffset = panel.rows[1] and panel.rows[1].y or (panel.header.y + panel.header.height + 4)
+            panel.defaultRowHeight = panel.rows[1] and panel.rows[1].height or PREVIEW_DEFAULT_ROW_HEIGHT
+            panel.extraHeight = math.max(
+                panel.header.y + panel.header.height + 4,
+                height - totalRowHeight - math.max(0, rowCount - 1) * panel.rowGap
+            )
+
+            panels[#panels + 1] = panel
+            byId[panel.panelId] = panel
+        end
+    end
+
+    for i, panel in ipairs(panels) do
+        local nextPanel = panels[i + 1]
+        if nextPanel then
+            panel.gapAfter = math.max(0, nextPanel.y - (panel.y + panel.height))
+        else
+            panel.gapAfter = 0
+        end
+    end
+
+    return {
+        panels = panels,
+        byId = byId,
+        startOffset = panels[1] and panels[1].y or 0,
+    }
+end
+
+local function BuildPreviewSlotOffsets(panel, rowCount)
+    local offsets = {}
+    for i = 1, rowCount do
+        if panel.rows[i] then
+            offsets[i] = panel.rows[i].y
+        elseif i == 1 then
+            offsets[i] = panel.firstRowOffset
+        else
+            local prevHeight = offsets[i - 1] and ((panel.rows[i - 1] and panel.rows[i - 1].height) or panel.defaultRowHeight) or panel.defaultRowHeight
+            offsets[i] = offsets[i - 1] + prevHeight + panel.rowGap
+        end
+    end
+    return offsets
+end
+
+local function AcquirePreviewPanelFrame(preview, index)
+    local panelProxy = preview.panels[index]
+    if panelProxy then
+        panelProxy.used = true
+        return panelProxy
+    end
+
+    local frame = CreateFrame("Frame", nil, preview.root, "BackdropTemplate")
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    frame:SetBackdropColor(0.08, 0.09, 0.12, 0.96)
+    frame:SetBackdropBorderColor(0.20, 0.22, 0.28, 1)
+    frame:SetClipsChildren(true)
+    frame:Hide()
+
+    local glow = frame:CreateTexture(nil, "BORDER")
+    glow:SetAllPoints()
+    glow:SetColorTexture(0.22, 0.58, 0.88, 0.18)
+    glow:Hide()
+    frame._cdcGlow = glow
+
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    title:SetJustifyH("CENTER")
+    title:SetWordWrap(false)
+    frame._cdcTitle = title
+
+    local modeBadge = frame:CreateTexture(nil, "ARTWORK")
+    modeBadge:SetSize(16, 16)
+    frame._cdcModeBadge = modeBadge
+
+    panelProxy = {
+        frame = frame,
+        rows = {},
+        used = true,
+    }
+    preview.panels[index] = panelProxy
+    return panelProxy
+end
+
+local function AcquirePreviewRowFrame(panelProxy, index)
+    local rowProxy = panelProxy.rows[index]
+    if rowProxy then
+        rowProxy.used = true
+        return rowProxy
+    end
+
+    local frame = CreateFrame("Frame", nil, panelProxy.frame)
+    frame:Hide()
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(1, 1, 1, 0.02)
+    frame._cdcBg = bg
+
+    local icon = frame:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(24, 24)
+    icon:SetPoint("LEFT", frame, "LEFT", 6, 0)
+    frame._cdcIcon = icon
+
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+    label:SetPoint("RIGHT", frame, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    frame._cdcLabel = label
+
+    rowProxy = {
+        frame = frame,
+        used = true,
+    }
+    panelProxy.rows[index] = rowProxy
+    return rowProxy
+end
+
+local function ApplyPreviewFrameGeometry(frame, x, y, width, height, alpha)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", frame:GetParent(), "TOPLEFT", x, -y)
+    frame:SetSize(width, height)
+    frame:SetAlpha(alpha or 1)
+    frame._cdcDisplayX = x
+    frame._cdcDisplayY = y
+    frame._cdcDisplayW = width
+    frame._cdcDisplayH = height
+    frame._cdcDisplayA = alpha or 1
+end
+
+local function QueuePreviewTween(preview, frame, x, y, width, height, alpha, duration)
+    local currentX = frame._cdcDisplayX
+    local currentY = frame._cdcDisplayY
+    local currentW = frame._cdcDisplayW
+    local currentH = frame._cdcDisplayH
+    local currentA = frame._cdcDisplayA
+
+    if not currentX then
+        ApplyPreviewFrameGeometry(frame, x, y, width, height, alpha)
+        return
+    end
+
+    if math.abs(currentX - x) < 0.5
+        and math.abs(currentY - y) < 0.5
+        and math.abs(currentW - width) < 0.5
+        and math.abs(currentH - height) < 0.5
+        and math.abs((currentA or 1) - (alpha or 1)) < 0.02 then
+        ApplyPreviewFrameGeometry(frame, x, y, width, height, alpha)
+        preview.tweens[frame] = nil
+        return
+    end
+
+    preview.tweens[frame] = {
+        sx = currentX,
+        sy = currentY,
+        sw = currentW,
+        sh = currentH,
+        sa = currentA or 1,
+        tx = x,
+        ty = y,
+        tw = width,
+        th = height,
+        ta = alpha or 1,
+        t0 = GetTime(),
+        dur = duration or PREVIEW_ANIM_DURATION,
+    }
+end
+
+local function UpdatePreviewGhost(preview)
+    if not (preview and preview.ghost and preview.ghost:IsShown()) then
+        return
+    end
+    local scale = UIParent:GetEffectiveScale()
+    local cursorX, cursorY = GetCursorPosition()
+    cursorX = cursorX / scale
+    cursorY = cursorY / scale
+    preview.ghost:ClearAllPoints()
+    preview.ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX + 14, cursorY - 14)
+end
+
+local function TickCol2Preview(preview)
+    local activeTween = false
+    local now = GetTime()
+
+    for frame, tween in pairs(preview.tweens) do
+        local progress = Clamp((now - tween.t0) / tween.dur, 0, 1)
+        local eased = EaseInOut(progress)
+        ApplyPreviewFrameGeometry(
+            frame,
+            Interpolate(tween.sx, tween.tx, eased),
+            Interpolate(tween.sy, tween.ty, eased),
+            Interpolate(tween.sw, tween.tw, eased),
+            Interpolate(tween.sh, tween.th, eased),
+            Interpolate(tween.sa, tween.ta, eased)
+        )
+        if progress >= 1 then
+            preview.tweens[frame] = nil
+        else
+            activeTween = true
+        end
+    end
+
+    UpdatePreviewGhost(preview)
+
+    if not activeTween and not preview.ghostActive then
+        preview.root:SetScript("OnUpdate", nil)
+    end
+end
+
+local function SetCol2BaseFramesHidden(hidden)
+    local preview = hidden and EnsureCol2PreviewHost() or CS.col2Preview
+    local content = CS.col2Scroll and CS.col2Scroll.content
+    if not (preview and content) then
+        return
+    end
+
+    if hidden then
+        for _, frame in ipairs({ content:GetChildren() }) do
+            if frame ~= preview.root and preview.hiddenFrames[frame] == nil then
+                preview.hiddenFrames[frame] = frame:GetAlpha()
+                frame:SetAlpha(0)
+            end
+        end
+    else
+        for frame, alpha in pairs(preview.hiddenFrames) do
+            if frame and frame.SetAlpha then
+                frame:SetAlpha(alpha)
+            end
+            preview.hiddenFrames[frame] = nil
+        end
+    end
+end
+
+local function BuildCursorPreviewRow()
+    local cursorType = GetCursorInfo()
+    if not cursorType then
+        return nil
+    end
+
+    local label = "Drop here"
+    if cursorType == "item" then
+        label = "Drop item here"
+    elseif cursorType == "petaction" then
+        label = "Drop pet action here"
+    elseif cursorType == "spell" then
+        label = "Drop spell here"
+    end
+
+    return {
+        key = "cursor-preview-row",
+        buttonIndex = 0,
+        x = PREVIEW_PANEL_INSET,
+        y = 0,
+        width = 0,
+        height = PREVIEW_DEFAULT_ROW_HEIGHT,
+        text = label,
+        icon = 134400,
+        usable = true,
+    }
+end
+
+local function BuildCol2PreviewModel(source)
+    local base = BuildCol2BasePreviewLayout()
+    if not base then
+        return nil
+    end
+
+    local panels = {}
+    local byId = {}
+    for i, panel in ipairs(base.panels) do
+        panels[i] = CopyPreviewPanel(panel)
+        byId[panels[i].panelId] = panels[i]
+    end
+
+    if source and source.kind == "panel" then
+        local dropTarget = source.dropTarget
+        if dropTarget then
+            local sourceIndex
+            for i, panel in ipairs(panels) do
+                if panel.panelId == source.sourcePanelId then
+                    sourceIndex = i
+                    break
+                end
+            end
+            if sourceIndex then
+                local insertIndex = dropTarget.targetIndex
+                if insertIndex > sourceIndex then
+                    insertIndex = insertIndex - 1
+                end
+                if insertIndex ~= sourceIndex then
+                    local moved = table.remove(panels, sourceIndex)
+                    table.insert(panels, insertIndex, moved)
+                end
+            end
+        end
+    elseif source and source.kind == "button" then
+        local sourcePanel = byId[source.groupId]
+        local dropTarget = source.dropTarget
+        if sourcePanel then
+            local movedRow = table.remove(sourcePanel.rows, source.sourceIndex)
+            sourcePanel.count = #sourcePanel.rows
+            if movedRow then
+                if dropTarget then
+                    local targetPanel = byId[dropTarget.targetPanelId]
+                    if targetPanel then
+                        if targetPanel.isCollapsed then
+                            targetPanel.count = (targetPanel.count or #targetPanel.rows) + 1
+                            targetPanel.collapsedAccent = true
+                        else
+                            local insertIndex = dropTarget.targetIndex or (#targetPanel.rows + 1)
+                            if targetPanel.panelId == sourcePanel.panelId and insertIndex > source.sourceIndex then
+                                insertIndex = insertIndex - 1
+                            end
+                            insertIndex = Clamp(insertIndex, 1, #targetPanel.rows + 1)
+                            table.insert(targetPanel.rows, insertIndex, movedRow)
+                            targetPanel.count = #targetPanel.rows
+                        end
+                    end
+                else
+                    table.insert(sourcePanel.rows, source.sourceIndex, movedRow)
+                    sourcePanel.count = #sourcePanel.rows
+                end
+            end
+        end
+    elseif source and source.kind == "cursor" then
+        local targetPanel = byId[source.targetPanelId]
+        if targetPanel then
+            targetPanel.count = (targetPanel.count or #targetPanel.rows) + 1
+            if targetPanel.isCollapsed then
+                targetPanel.collapsedAccent = true
+            else
+                local previewRow = BuildCursorPreviewRow()
+                if previewRow then
+                    local templateRow = targetPanel.rows[1]
+                    if templateRow then
+                        previewRow.x = templateRow.x
+                        previewRow.width = templateRow.width
+                        previewRow.height = templateRow.height
+                    else
+                        previewRow.x = PREVIEW_PANEL_INSET
+                        previewRow.width = math.max(60, targetPanel.width - (PREVIEW_PANEL_INSET * 2))
+                    end
+                    table.insert(targetPanel.rows, previewRow)
+                end
+            end
+        end
+    end
+
+    local currentY = base.startOffset
+    for _, panel in ipairs(panels) do
+        local rowCount = #panel.rows
+        local rowGaps = math.max(0, rowCount - 1) * panel.rowGap
+        local totalRowHeight = 0
+        for _, row in ipairs(panel.rows) do
+            totalRowHeight = totalRowHeight + (row.height or panel.defaultRowHeight)
+        end
+
+        panel.previewHeight = panel.isCollapsed and panel.height or (panel.extraHeight + totalRowHeight + rowGaps)
+        panel.previewY = currentY
+
+        local slotOffsets = BuildPreviewSlotOffsets(panel, rowCount)
+        for i, row in ipairs(panel.rows) do
+            row.previewY = slotOffsets[i]
+        end
+
+        currentY = currentY + panel.previewHeight + (panel.gapAfter or 0)
+    end
+
+    return panels
+end
+
+local function UpdateCol2Ghost(preview, source, panels)
+    if not (preview and preview.ghost) then
+        return
+    end
+
+    preview.ghostActive = false
+    if not source or source.kind == "cursor" then
+        preview.ghost:Hide()
+        return
+    end
+
+    if source.kind == "panel" then
+        for _, panel in ipairs(panels) do
+            if panel.panelId == source.sourcePanelId then
+                preview.ghost:SetSize(panel.width, panel.height)
+                preview.ghost.label:SetText(panel.name)
+                preview.ghost.icon:Hide()
+                preview.ghost:Show()
+                preview.ghostActive = true
+                break
+            end
+        end
+    elseif source.kind == "button" then
+        local base = BuildCol2BasePreviewLayout()
+        local sourcePanel = base and base.byId and base.byId[source.groupId]
+        local row = sourcePanel and sourcePanel.rows and sourcePanel.rows[source.sourceIndex]
+        if row then
+            preview.ghost:SetSize(row.width, row.height)
+            preview.ghost.label:SetText(row.text or "")
+            if row.icon then
+                preview.ghost.icon:SetTexture(row.icon)
+                preview.ghost.icon:Show()
+            else
+                preview.ghost.icon:Hide()
+            end
+            preview.ghost:Show()
+            preview.ghostActive = true
+        else
+            preview.ghost:Hide()
+        end
+    else
+        preview.ghost:Hide()
+    end
+
+    if not preview.ghostActive then
+        preview.ghost:Hide()
+    end
+end
+
+local ClearCol2AnimatedPreview
+
+local function RenderCol2AnimatedPreview(source)
+    local panels = BuildCol2PreviewModel(source)
+    if not panels or #panels == 0 then
+        ClearCol2AnimatedPreview()
+        return
+    end
+
+    local preview = EnsureCol2PreviewHost()
+    if not preview then
+        return
+    end
+
+    SetCol2BaseFramesHidden(true)
+    preview.root:Show()
+
+    for _, panelProxy in ipairs(preview.panels) do
+        panelProxy.used = false
+        for _, rowProxy in ipairs(panelProxy.rows) do
+            rowProxy.used = false
+        end
+    end
+
+    for panelIndex, panel in ipairs(panels) do
+        local panelProxy = AcquirePreviewPanelFrame(preview, panelIndex)
+        local panelFrame = panelProxy.frame
+        panelFrame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + panelIndex)
+        panelFrame._cdcGlow:SetShown(panel.collapsedAccent == true)
+
+        if panel.displayMode == "bars" then
+            panelFrame._cdcModeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
+            panelFrame._cdcModeBadge:Show()
+        elseif panel.displayMode == "text" then
+            panelFrame._cdcModeBadge:SetAtlas("poi-workorders", false)
+            panelFrame._cdcModeBadge:Show()
+        else
+            panelFrame._cdcModeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
+            panelFrame._cdcModeBadge:Show()
+        end
+
+        panelFrame._cdcTitle:SetText(panel.name .. " |cff666666(" .. tostring(panel.count or #panel.rows) .. ")|r")
+        if not panel.enabled then
+            panelFrame._cdcTitle:SetTextColor(0.55, 0.55, 0.55)
+        elseif panel.headerColor then
+            panelFrame._cdcTitle:SetTextColor(panel.headerColor[1] or 1, panel.headerColor[2] or 1, panel.headerColor[3] or 1)
+        else
+            panelFrame._cdcTitle:SetTextColor(1, 1, 1)
+        end
+        panelFrame._cdcTitle:ClearAllPoints()
+        panelFrame._cdcTitle:SetPoint("TOP", panelFrame, "TOP", 0, -(panel.header.y + (panel.header.height / 2)))
+        panelFrame._cdcModeBadge:ClearAllPoints()
+        panelFrame._cdcModeBadge:SetPoint("RIGHT", panelFrame._cdcTitle, "LEFT", -4, 0)
+
+        QueuePreviewTween(
+            preview,
+            panelFrame,
+            panel.x,
+            panel.previewY,
+            panel.width,
+            panel.previewHeight,
+            1,
+            PREVIEW_ANIM_DURATION
+        )
+        panelFrame:Show()
+
+        for rowIndex, row in ipairs(panel.rows) do
+            local rowProxy = AcquirePreviewRowFrame(panelProxy, rowIndex)
+            rowProxy.frame._cdcLabel:SetText(row.text or "")
+            rowProxy.frame._cdcLabel:SetTextColor(row.usable == false and 0.55 or 1, row.usable == false and 0.55 or 1, row.usable == false and 0.55 or 1)
+            rowProxy.frame._cdcIcon:SetTexture(row.icon or 134400)
+            if rowProxy.frame._cdcIcon.SetDesaturated then
+                rowProxy.frame._cdcIcon:SetDesaturated(row.usable == false)
+            end
+
+            QueuePreviewTween(
+                preview,
+                rowProxy.frame,
+                row.x,
+                row.previewY,
+                row.width,
+                row.height,
+                1,
+                PREVIEW_ANIM_DURATION
+            )
+            rowProxy.frame:Show()
+        end
+
+        for _, rowProxy in ipairs(panelProxy.rows) do
+            if not rowProxy.used then
+                rowProxy.frame:Hide()
+            end
+        end
+    end
+
+    for _, panelProxy in ipairs(preview.panels) do
+        if not panelProxy.used then
+            panelProxy.frame:Hide()
+        end
+    end
+
+    UpdateCol2Ghost(preview, source, panels)
+    preview.root:SetScript("OnUpdate", function()
+        TickCol2Preview(preview)
+    end)
+end
+
+ClearCol2AnimatedPreview = function()
+    SetCol2BaseFramesHidden(false)
+    ClearCol2PreviewHost()
+end
+
+local function UpdateCol2CursorPreview(targetPanelId)
+    if not targetPanelId then
+        ClearCol2AnimatedPreview()
+        return
+    end
+    RenderCol2AnimatedPreview({
+        kind = "cursor",
+        targetPanelId = targetPanelId,
+    })
 end
 
 ------------------------------------------------------------------------
@@ -740,6 +1431,7 @@ local function CancelDrag()
         end
     end
     CS.dragState = nil
+    ClearCol2AnimatedPreview()
     HideDragIndicator()
     ResetDragIndicatorStyle()
     if CS.dragTracker then
@@ -971,6 +1663,7 @@ local function StartDragTracking()
         end
         if CS.dragState.phase == "active" then
             if CS.dragState.col1RenderedRows then
+                ClearCol2AnimatedPreview()
                 -- Column 1 folder-aware drop detection
                 local effectiveKind = CS.dragState.kind == "multi-group" and "group" or CS.dragState.kind
                 local dropTarget = GetCol1DropTarget(cursorY, CS.dragState.col1RenderedRows, effectiveKind, CS.dragState.sourceSection)
@@ -992,26 +1685,34 @@ local function StartDragTracking()
                 local dropTarget = GetCol2PanelDropTarget(cursorY, CS.dragState.panelDropTargets)
                 CS.dragState.dropTarget = dropTarget
                 if dropTarget then
-                    ResetDragIndicatorStyle()
-                    ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
+                    HideDragIndicator()
+                    RenderCol2AnimatedPreview({
+                        kind = "panel",
+                        sourcePanelId = CS.dragState.sourcePanelId,
+                        dropTarget = dropTarget,
+                    })
                 else
                     HideDragIndicator()
+                    ClearCol2AnimatedPreview()
                 end
             elseif CS.dragState.col2RenderedRows then
                 -- Column 2 cross-panel drop detection
                 local dropTarget = GetCol2DropTarget(cursorY, CS.dragState.col2RenderedRows)
                 CS.dragState.dropTarget = dropTarget
                 if dropTarget then
-                    ResetDragIndicatorStyle()
-                    if dropTarget.action == "append-to-collapsed" then
-                        ShowFolderDropOverlay(dropTarget.anchorFrame, CS.dragState.scrollWidget)
-                    else
-                        ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
-                    end
+                    HideDragIndicator()
+                    RenderCol2AnimatedPreview({
+                        kind = "button",
+                        groupId = CS.dragState.groupId,
+                        sourceIndex = CS.dragState.sourceIndex,
+                        dropTarget = dropTarget,
+                    })
                 else
                     HideDragIndicator()
+                    ClearCol2AnimatedPreview()
                 end
             else
+                ClearCol2AnimatedPreview()
                 local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
                     CS.dragState.scrollWidget, cursorY,
                     CS.dragState.childOffset or 0,
@@ -1043,3 +1744,5 @@ ST._ShowFolderDropOverlay = ShowFolderDropOverlay
 ST._ResetDragIndicatorStyle = ResetDragIndicatorStyle
 ST._PerformCrossPanelMove = PerformCrossPanelMove
 ST._StripButtonOverrides = StripButtonOverrides
+ST._UpdateCol2CursorPreview = UpdateCol2CursorPreview
+ST._ClearCol2AnimatedPreview = ClearCol2AnimatedPreview

@@ -172,6 +172,8 @@ ST._configState = {
     dragTracker = nil,
     showPhantomSections = false,
     lastCol1RenderedRows = nil,
+    lastCol2PanelMetas = nil,
+    col2Preview = nil,
 
     -- Pending strata order state
     pendingStrataOrder = nil,
@@ -1084,6 +1086,105 @@ local function CreateTextButton(parent, text, width, height, onClick)
 end
 
 ------------------------------------------------------------------------
+-- Shared helper: persistent overlay host for column-2 drag/drop previews
+------------------------------------------------------------------------
+local function EnsureCol2PreviewHost()
+    local preview = CS.col2Preview
+    if not preview then
+        preview = {
+            panels = {},
+            hiddenFrames = {},
+            tweens = {},
+        }
+        CS.col2Preview = preview
+    end
+
+    if not preview.root then
+        local root = CreateFrame("Frame", nil, UIParent)
+        root:SetFrameStrata("FULLSCREEN_DIALOG")
+        root:EnableMouse(false)
+        root:SetClipsChildren(false)
+        root:Hide()
+        preview.root = root
+    end
+
+    if not preview.ghost then
+        local ghost = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        ghost:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        ghost:SetBackdropColor(0.10, 0.115, 0.16, 0.92)
+        ghost:SetBackdropBorderColor(0.24, 0.27, 0.33, 1)
+        ghost:SetFrameStrata("TOOLTIP")
+        ghost:EnableMouse(false)
+        ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
+        ghost.icon:SetSize(24, 24)
+        ghost.icon:SetPoint("LEFT", ghost, "LEFT", 8, 0)
+        ghost.label = ghost:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        ghost.label:SetPoint("LEFT", ghost.icon, "RIGHT", 8, 0)
+        ghost.label:SetPoint("RIGHT", ghost, "RIGHT", -8, 0)
+        ghost.label:SetJustifyH("LEFT")
+        ghost:Hide()
+        preview.ghost = ghost
+    end
+
+    local content = CS.col2Scroll and CS.col2Scroll.content
+    if content then
+        preview.root:SetParent(content)
+        preview.root:ClearAllPoints()
+        preview.root:SetAllPoints(content)
+        preview.root:SetFrameLevel((content:GetFrameLevel() or 1) + 100)
+    else
+        preview.root:SetParent(UIParent)
+    end
+
+    return preview
+end
+
+local function ClearCol2PreviewHost()
+    local preview = CS.col2Preview
+    if not preview then
+        return
+    end
+
+    if preview.hiddenFrames then
+        for frame, alpha in pairs(preview.hiddenFrames) do
+            if frame and frame.SetAlpha then
+                frame:SetAlpha(alpha)
+            end
+            preview.hiddenFrames[frame] = nil
+        end
+    end
+
+    if preview.panels then
+        for _, panel in ipairs(preview.panels) do
+            if panel.frame then
+                panel.frame:Hide()
+            end
+        end
+    end
+
+    if preview.tweens then
+        for frame in pairs(preview.tweens) do
+            preview.tweens[frame] = nil
+        end
+    end
+
+    if preview.root then
+        preview.root:Hide()
+        preview.root:SetScript("OnUpdate", nil)
+    end
+
+    if preview.ghost then
+        preview.ghost:Hide()
+    end
+
+    preview.ghostActive = false
+end
+
+------------------------------------------------------------------------
 -- Helper: Embed an AceGUI widget into a raw frame
 ------------------------------------------------------------------------
 local function EmbedWidget(widget, parent, x, y, width, widgetList)
@@ -1363,6 +1464,8 @@ ST._SetupGroupRowIndicators = SetupGroupRowIndicators
 ST._SetupFolderRowIndicators = SetupFolderRowIndicators
 ST._CreateScrollFrame = CreateScrollFrame
 ST._CreateTextButton = CreateTextButton
+ST._EnsureCol2PreviewHost = EnsureCol2PreviewHost
+ST._ClearCol2PreviewHost = ClearCol2PreviewHost
 ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
 ST._GetGroupIcon = GetGroupIcon
