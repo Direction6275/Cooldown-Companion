@@ -983,6 +983,12 @@ local function RefreshColumn2()
             CS.col2Scroll:AddChild(panelContainer)
             panelMeta.panelWidget = panelContainer
             panelMeta.panelFrame = panelContainer.frame
+            if panelContainer.frame.GetBackdropColor then
+                panelMeta.backdropColor = { panelContainer.frame:GetBackdropColor() }
+            end
+            if panelContainer.frame.GetBackdropBorderColor then
+                panelMeta.borderColor = { panelContainer.frame:GetBackdropBorderColor() }
+            end
 
             -- Per-panel drop highlight overlay (pooled on underlying frame to survive AceGUI recycling)
             do
@@ -2000,6 +2006,12 @@ local function RefreshColumn2()
                         text = entryName or ("Unknown " .. buttonData.type),
                         icon = GetButtonIcon(buttonData),
                         usable = usable,
+                        textColor = {
+                            (entry.label and select(1, entry.label:GetTextColor())) or 1,
+                            (entry.label and select(2, entry.label:GetTextColor())) or 1,
+                            (entry.label and select(3, entry.label:GetTextColor())) or 1,
+                        },
+                        imageSize = entry.image and select(1, entry.image:GetSize()) or 32,
                     })
                 end -- button loop
 

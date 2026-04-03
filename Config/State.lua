@@ -1182,6 +1182,8 @@ local function ClearCol2PreviewHost()
     end
 
     preview.ghostActive = false
+    preview.mode = nil
+    preview.compactEntries = nil
 end
 
 ------------------------------------------------------------------------
