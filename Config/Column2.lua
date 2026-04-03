@@ -395,10 +395,10 @@ local function RefreshColumn2()
             modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
 
             -- Disabled badge (shown when panel is individually disabled)
-            local disabledBadge = header.frame._cdcDisabledBadge
+            local disabledBadge = header.frame._cdcHeaderDisabledBadge
             if not disabledBadge then
                 disabledBadge = header.frame:CreateTexture(nil, "OVERLAY")
-                header.frame._cdcDisabledBadge = disabledBadge
+                header.frame._cdcHeaderDisabledBadge = disabledBadge
             end
             disabledBadge:SetSize(16, 16)
             disabledBadge:ClearAllPoints()
@@ -1070,10 +1070,10 @@ local function RefreshColumn2()
                 end
 
                 -- Disabled badge (shown when panel is individually disabled)
-                local disabledBadge = header.frame._cdcDisabledBadge
+                local disabledBadge = header.frame._cdcHeaderDisabledBadge
                 if not disabledBadge then
                     disabledBadge = header.frame:CreateTexture(nil, "OVERLAY")
-                    header.frame._cdcDisabledBadge = disabledBadge
+                    header.frame._cdcHeaderDisabledBadge = disabledBadge
                 end
                 disabledBadge:SetSize(16, 16)
                 disabledBadge:ClearAllPoints()
