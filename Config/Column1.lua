@@ -478,8 +478,10 @@ local function RefreshColumn1(preserveDrag)
         end
 
         local sawLoaded, sawUnloaded = false, false
+        local seenSelected = {}
         for _, row in ipairs(col1RenderedRows) do
             if row.kind == "container" and CS.selectedGroups[row.id] then
+                seenSelected[row.id] = true
                 if row.loadBucket == "unloaded" then
                     sawUnloaded = true
                 elseif row.loadBucket ~= "aux" and row.loadBucket ~= "marker" then
@@ -487,6 +489,25 @@ local function RefreshColumn1(preserveDrag)
                 end
                 if sawLoaded and sawUnloaded then
                     return "mixed"
+                end
+            end
+        end
+
+        -- Selected groups can stop rendering when their folder is collapsed.
+        -- Fall back to live container activity so hidden selections still affect
+        -- the drag bucket classification.
+        for containerId in pairs(CS.selectedGroups) do
+            if not seenSelected[containerId] then
+                local container = db.groupContainers[containerId]
+                if container then
+                    if IsContainerInactive(containerId, container) then
+                        sawUnloaded = true
+                    else
+                        sawLoaded = true
+                    end
+                    if sawLoaded and sawUnloaded then
+                        return "mixed"
+                    end
                 end
             end
         end

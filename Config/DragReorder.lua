@@ -24,6 +24,7 @@ local PREVIEW_ANIM_DURATION = 0.08
 local PREVIEW_PANEL_INSET = 8
 local PREVIEW_ROW_TEXT_RIGHT_PAD = 8
 local PREVIEW_DEFAULT_ROW_HEIGHT = 32
+local COL1_HIT_X_PAD = 6
 
 ------------------------------------------------------------------------
 -- Drag indicator helpers
@@ -1242,6 +1243,7 @@ local function BuildCol1BasePreviewLayout()
                 layoutOnly = rowMeta.layoutOnly and true or false,
                 ownerKind = rowMeta.ownerKind,
                 ownerId = rowMeta.ownerId,
+                ownerFolderId = rowMeta.ownerFolderId,
             }
         end
     end
@@ -1978,6 +1980,57 @@ local function UpdateCol1Ghost(preview, model)
 end
 
 local ClearCol1AnimatedPreview
+local FindCol1SectionDividerTarget
+
+local function ShouldAnimateCol1PreviewForDrop(sourceLoadBucket, dropTarget)
+    if not dropTarget then
+        return false
+    end
+
+    if sourceLoadBucket == "mixed" or sourceLoadBucket == "unloaded" then
+        return true
+    end
+
+    local targetRow = dropTarget.targetRow
+    if targetRow and (targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded") then
+        return false
+    end
+
+    return true
+end
+
+local function ShouldShowCol1StaticReorderIndicator(sourceLoadBucket, dropTarget)
+    if not dropTarget then
+        return false
+    end
+
+    if dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after" then
+        return false
+    end
+
+    if sourceLoadBucket == "loaded" then
+        return false
+    end
+
+    return true
+end
+
+local function ResolveCol1LoadedUnloadedPlaceholderTarget(renderedRows, sourceLoadBucket, dropTarget)
+    if sourceLoadBucket ~= "loaded" or not dropTarget then
+        return nil
+    end
+
+    if dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after" then
+        return nil
+    end
+
+    local targetRow = dropTarget.targetRow
+    if not targetRow or (targetRow.kind ~= "unloaded-divider" and targetRow.loadBucket ~= "unloaded") then
+        return nil
+    end
+
+    return FindCol1SectionDividerTarget(renderedRows, targetRow.section)
+end
 
 local function RenderCol1AnimatedPreview(source)
     local model = BuildCol1PreviewModel(source)
@@ -2281,6 +2334,36 @@ local function GetCol1DropFrame(rowMeta)
     return rowMeta and rowMeta.widget and rowMeta.widget.frame
 end
 
+local function GetCol1HorizontalBounds(scrollWidget, renderedRows)
+    local content = scrollWidget and scrollWidget.content
+    if content and content.IsShown and content:IsShown() then
+        local left, right = content:GetLeft(), content:GetRight()
+        if left and right then
+            return left, right
+        end
+    end
+
+    for _, rowMeta in ipairs(renderedRows or {}) do
+        local frame = GetCol1DropFrame(rowMeta)
+        if frame and frame:IsShown() then
+            local left, right = frame:GetLeft(), frame:GetRight()
+            if left and right then
+                return left, right
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function IsCursorWithinHorizontalBounds(cursorX, left, right, pad)
+    if not (cursorX and left and right) then
+        return false
+    end
+    pad = pad or 0
+    return cursorX >= (left + pad) and cursorX <= (right - pad)
+end
+
 local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
     local frame = GetCol1DropFrame(rowMeta)
     if not (rowMeta and frame and frame:IsShown()) then
@@ -2301,7 +2384,21 @@ local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
     return result
 end
 
-local function FindCol1SectionDividerTarget(renderedRows, section)
+local function FindCol1FolderDropTarget(renderedRows, section, folderId)
+    if not folderId then
+        return nil
+    end
+
+    for i, candidate in ipairs(renderedRows or {}) do
+        if candidate.section == section and candidate.kind == "folder" and candidate.id == folderId then
+            return BuildCol1DropResult("into-folder", i, candidate, { targetFolderId = folderId })
+        end
+    end
+
+    return nil
+end
+
+FindCol1SectionDividerTarget = function(renderedRows, section)
     for i, rowMeta in ipairs(renderedRows or {}) do
         if rowMeta.section == section and rowMeta.kind == "unloaded-divider" then
             return BuildCol1DropResult("reorder-before", i, rowMeta)
@@ -2381,14 +2478,14 @@ local function ResolveCol1AuxBlockTarget(renderedRows, rowIndex, rowMeta, source
     if not rowMeta then
         return nil
     end
+    if sourceLoadBucket == "unloaded" then
+        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, rowIndex + 1)
+    end
     if rowMeta.ownerFolderId
         and (sourceKind == "group" or sourceKind == "folder-group")
         and sourceFolderId ~= rowMeta.ownerFolderId
     then
-        return nil
-    end
-    if sourceLoadBucket == "unloaded" then
-        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, rowIndex + 1)
+        return FindCol1FolderDropTarget(renderedRows, rowMeta.section, rowMeta.ownerFolderId)
     end
     local nextTarget = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
     if nextTarget then
@@ -2444,43 +2541,58 @@ local function ResolveCol1MixedSectionTarget(renderedRows, rowMeta, rowIndex, so
         or FindCol1SectionDividerTarget(renderedRows, targetSection)
 end
 
-local function GetCol1DropTarget(cursorY, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket)
+local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket)
     if not renderedRows or #renderedRows == 0 then return nil end
     local sourceIsMixed = IsCol1MixedDragSource(sourceLoadBucket)
     local sourceIsUnloaded = IsCol1UnloadedDragSource(sourceLoadBucket)
+    local contentLeft, contentRight = GetCol1HorizontalBounds(scrollWidget, renderedRows)
+    if not IsCursorWithinHorizontalBounds(cursorX, contentLeft, contentRight, COL1_HIT_X_PAD) then
+        return nil
+    end
 
     for i, rowMeta in ipairs(renderedRows) do
         local frame = GetCol1DropFrame(rowMeta)
         if frame and frame:IsShown() then
+            local left, right = frame:GetLeft(), frame:GetRight()
             local top = frame:GetTop()
             local bottom = frame:GetBottom()
-            if top and bottom and cursorY <= top and cursorY >= bottom then
+            if top and bottom
+                and IsCursorWithinHorizontalBounds(cursorX, left, right, COL1_HIT_X_PAD)
+                and cursorY <= top
+                and cursorY >= bottom
+            then
                 local height = top - bottom
                 -- If hovering over a folder header and dragging a group, use 3-zone detection
-                if rowMeta.kind == "folder" and rowMeta.acceptsDrop and (sourceKind == "group" or sourceKind == "folder-group") then
+                if rowMeta.kind == "folder" and (sourceKind == "group" or sourceKind == "folder-group") then
+                    local topZone = top - height * 0.25
+                    local bottomZone = bottom + height * 0.25
+                    local inCenterZone = cursorY <= topZone and cursorY >= bottomZone
+
+                    if inCenterZone then
+                        return BuildCol1DropResult("into-folder", i, rowMeta, { targetFolderId = rowMeta.id })
+                    end
+
                     if sourceIsMixed then
-                        local topZone = top - height * 0.25
-                        local bottomZone = bottom + height * 0.25
-                        if cursorY <= topZone and cursorY >= bottomZone then
-                            return BuildCol1DropResult("into-folder", i, rowMeta, { targetFolderId = rowMeta.id })
-                        end
                         if cursorY > topZone then
                             return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
                         end
                         return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-after")
                     end
-                    if sourceIsUnloaded then
+
+                    -- Unloaded sources should still reorder within the unloaded block when
+                    -- hovering loaded folders, but unloaded folders themselves use the same
+                    -- edge-zone behavior as loaded folders.
+                    if sourceIsUnloaded and rowMeta.loadBucket ~= "unloaded" then
                         return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
                     end
-                    local topZone = top - height * 0.25
-                    local bottomZone = bottom + height * 0.25
+
                     if cursorY > topZone then
                         return BuildCol1DropResult("reorder-before", i, rowMeta)
                     elseif cursorY < bottomZone then
                         return BuildCol1DropResult("reorder-after", i, rowMeta)
-                    else
-                        return BuildCol1DropResult("into-folder", i, rowMeta, { targetFolderId = rowMeta.id })
                     end
+
+                    return BuildCol1DropResult("into-folder", i, rowMeta, { targetFolderId = rowMeta.id })
                 elseif IsExternalFolderChildTarget(rowMeta, sourceKind, sourceFolderId) then
                     return nil
                 elseif rowMeta.kind == "aux-block" then
@@ -3446,7 +3558,9 @@ local function StartDragTracking()
                 -- Column 1 folder-aware drop detection
                 local effectiveKind = CS.dragState.kind == "multi-group" and "group" or CS.dragState.kind
                 local dropTarget = GetCol1DropTarget(
+                    cursorX,
                     cursorY,
+                    CS.dragState.scrollWidget,
                     CS.dragState.col1RenderedRows,
                     effectiveKind,
                     CS.dragState.sourceSection,
@@ -3457,7 +3571,8 @@ local function StartDragTracking()
                 if dropTarget then
                     ResetDragIndicatorStyle()
                     HideDragIndicator()
-                    if not RenderCol1AnimatedPreview({
+                    local shouldAnimatePreview = ShouldAnimateCol1PreviewForDrop(CS.dragState.sourceLoadBucket, dropTarget)
+                    if not shouldAnimatePreview or not RenderCol1AnimatedPreview({
                         kind = CS.dragState.kind,
                         sourceGroupId = CS.dragState.sourceGroupId,
                         sourceGroupIds = CS.dragState.sourceGroupIds,
@@ -3465,12 +3580,23 @@ local function StartDragTracking()
                         dropTarget = dropTarget,
                     }) then
                         ClearCol1AnimatedPreview()
+                        local unloadedPlaceholderTarget = ResolveCol1LoadedUnloadedPlaceholderTarget(
+                            CS.dragState.col1RenderedRows,
+                            CS.dragState.sourceLoadBucket,
+                            dropTarget
+                        )
                         if dropTarget.action == "into-folder" then
                             ShowFolderDropOverlay(dropTarget.anchorFrame, CS.dragState.scrollWidget)
-                        elseif dropTarget.action == "reorder-before" then
+                        elseif unloadedPlaceholderTarget then
+                            HideDragIndicator()
+                        elseif ShouldShowCol1StaticReorderIndicator(CS.dragState.sourceLoadBucket, dropTarget)
+                            and dropTarget.action == "reorder-before"
+                        then
                             ShowDragIndicator(dropTarget.anchorFrame, true, CS.dragState.scrollWidget)
-                        else
+                        elseif ShouldShowCol1StaticReorderIndicator(CS.dragState.sourceLoadBucket, dropTarget) then
                             ShowDragIndicator(dropTarget.anchorFrame, false, CS.dragState.scrollWidget)
+                        else
+                            HideDragIndicator()
                         end
                     end
                 else
