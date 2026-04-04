@@ -323,6 +323,28 @@ local function GetRelativeRect(frame, parent)
     return left - parentLeft, parentTop - top, width, height
 end
 
+local function ApplyRelativeRect(region, parent, rect)
+    if not (region and parent and rect and rect.width and rect.height) then
+        return false
+    end
+
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", parent, "TOPLEFT", rect.x or 0, -(rect.y or 0))
+    region:SetPoint(
+        "BOTTOMRIGHT",
+        parent,
+        "TOPLEFT",
+        (rect.x or 0) + rect.width,
+        -((rect.y or 0) + rect.height)
+    )
+    return true
+end
+
+local function BuildPreviewHeaderText(panel)
+    return (panel.name or ("Panel " .. tostring(panel.panelId))) ..
+        " |cff666666(" .. tostring(panel.count or #panel.rows) .. ")|r"
+end
+
 local function CopyPreviewRow(row)
     return {
         key = row.key,
@@ -336,6 +358,18 @@ local function CopyPreviewRow(row)
         usable = row.usable,
         textColor = row.textColor,
         imageSize = row.imageSize,
+        iconRect = row.iconRect and {
+            x = row.iconRect.x,
+            y = row.iconRect.y,
+            width = row.iconRect.width,
+            height = row.iconRect.height,
+        } or nil,
+        labelRect = row.labelRect and {
+            x = row.labelRect.x,
+            y = row.labelRect.y,
+            width = row.labelRect.width,
+            height = row.labelRect.height,
+        } or nil,
         isGap = row.isGap,
     }
 end
@@ -368,6 +402,18 @@ local function CopyPreviewPanel(panel)
             y = panel.header.y,
             width = panel.header.width,
             height = panel.header.height,
+            labelRect = panel.header.labelRect and {
+                x = panel.header.labelRect.x,
+                y = panel.header.labelRect.y,
+                width = panel.header.labelRect.width,
+                height = panel.header.labelRect.height,
+            } or nil,
+            modeBadgeRect = panel.header.modeBadgeRect and {
+                x = panel.header.modeBadgeRect.x,
+                y = panel.header.modeBadgeRect.y,
+                width = panel.header.modeBadgeRect.width,
+                height = panel.header.modeBadgeRect.height,
+            } or nil,
         },
         rows = {},
     }
@@ -415,6 +461,18 @@ local function BuildCol2BasePreviewLayout()
                 y = hy or 6,
                 width = hw or math.max(40, width - (PREVIEW_PANEL_INSET * 2)),
                 height = hh or 32,
+                labelRect = (function()
+                    local lx, ly, lw, lh = GetRelativeRect(meta.headerWidget and meta.headerWidget.label, meta.panelFrame)
+                    if lx then
+                        return { x = lx, y = ly, width = lw, height = lh }
+                    end
+                end)(),
+                modeBadgeRect = (function()
+                    local bx, by, bw, bh = GetRelativeRect(meta.headerWidget and meta.headerWidget._cdcModeBadge, meta.panelFrame)
+                    if bx then
+                        return { x = bx, y = by, width = bw, height = bh }
+                    end
+                end)(),
             }
 
             local totalRowHeight = 0
@@ -434,6 +492,18 @@ local function BuildCol2BasePreviewLayout()
                     usable = rowMeta.usable,
                     textColor = rowMeta.textColor,
                     imageSize = rowMeta.imageSize,
+                    iconRect = (function()
+                        local ix, iy, iw, ih = GetRelativeRect(rowMeta.widget and rowMeta.widget.image, rowMeta.frame)
+                        if ix then
+                            return { x = ix, y = iy, width = iw, height = ih }
+                        end
+                    end)(),
+                    labelRect = (function()
+                        local lx, ly, lw, lh = GetRelativeRect(rowMeta.widget and rowMeta.widget.label, rowMeta.frame)
+                        if lx then
+                            return { x = lx, y = ly, width = lw, height = lh }
+                        end
+                    end)(),
                 }
                 totalRowHeight = totalRowHeight + row.height
                 if previousRow then
@@ -927,11 +997,13 @@ local function RenderCol2AnimatedPreview(source)
                 panelFrame._cdcTitle:ClearAllPoints()
                 panelFrame._cdcTitle:SetPoint("CENTER", panelFrame, "CENTER", 8, 0)
             else
-                panelFrame._cdcTitle:ClearAllPoints()
-                panelFrame._cdcTitle:SetPoint("TOP", panelFrame, "TOP", 0, -(panel.header.y + (panel.header.height / 2)))
+                if not ApplyRelativeRect(panelFrame._cdcTitle, panelFrame, panel.header.labelRect) then
+                    panelFrame._cdcTitle:ClearAllPoints()
+                    panelFrame._cdcTitle:SetPoint("TOP", panelFrame, "TOP", 0, -(panel.header.y + (panel.header.height / 2)))
+                end
             end
             ApplyPreviewModeBadge(panelFrame._cdcModeBadge, panel.displayMode)
-            panelFrame._cdcTitle:SetText(panel.name .. " |cff666666(" .. tostring(panel.count or #panel.rows) .. ")|r")
+            panelFrame._cdcTitle:SetText(BuildPreviewHeaderText(panel))
             if not panel.enabled then
                 panelFrame._cdcTitle:SetTextColor(0.55, 0.55, 0.55)
             elseif panel.headerColor then
@@ -939,8 +1011,20 @@ local function RenderCol2AnimatedPreview(source)
             else
                 panelFrame._cdcTitle:SetTextColor(1, 1, 1)
             end
-            panelFrame._cdcModeBadge:ClearAllPoints()
-            panelFrame._cdcModeBadge:SetPoint("RIGHT", panelFrame._cdcTitle, "LEFT", -4, 0)
+            if model.mode == PREVIEW_MODE_PANEL_COMPACT then
+                panelFrame._cdcModeBadge:ClearAllPoints()
+                panelFrame._cdcModeBadge:SetPoint("RIGHT", panelFrame._cdcTitle, "LEFT", -4, 0)
+            else
+                local textW = panelFrame._cdcTitle:GetStringWidth()
+                panelFrame._cdcModeBadge:ClearAllPoints()
+                panelFrame._cdcModeBadge:SetPoint(
+                    "RIGHT",
+                    panelFrame._cdcTitle,
+                    "CENTER",
+                    -(textW / 2) - 2,
+                    0
+                )
+            end
 
             if model.mode == PREVIEW_MODE_PANEL_COMPACT then
                 QueuePreviewTween(
@@ -982,11 +1066,20 @@ local function RenderCol2AnimatedPreview(source)
                     else
                         rowProxy.frame._cdcLabel:SetTextColor(row.usable == false and 0.55 or 1, row.usable == false and 0.55 or 1, row.usable == false and 0.55 or 1)
                     end
-                    rowProxy.frame._cdcIcon:SetSize(row.imageSize or 32, row.imageSize or 32)
+                    rowProxy.frame._cdcIcon:ClearAllPoints()
+                    if not ApplyRelativeRect(rowProxy.frame._cdcIcon, rowProxy.frame, row.iconRect) then
+                        rowProxy.frame._cdcIcon:SetPoint("LEFT", rowProxy.frame, "LEFT", 0, 0)
+                        rowProxy.frame._cdcIcon:SetSize(row.imageSize or 32, row.imageSize or 32)
+                    end
                     rowProxy.frame._cdcIcon:SetTexture(row.icon or 134400)
                     rowProxy.frame._cdcIcon:SetShown(row.icon ~= nil)
                     if rowProxy.frame._cdcIcon.SetDesaturated then
                         rowProxy.frame._cdcIcon:SetDesaturated(row.usable == false)
+                    end
+                    if not ApplyRelativeRect(rowProxy.frame._cdcLabel, rowProxy.frame, row.labelRect) then
+                        rowProxy.frame._cdcLabel:ClearAllPoints()
+                        rowProxy.frame._cdcLabel:SetPoint("LEFT", rowProxy.frame._cdcIcon, "RIGHT", 8, 0)
+                        rowProxy.frame._cdcLabel:SetPoint("RIGHT", rowProxy.frame, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
                     end
 
                     QueuePreviewTween(
