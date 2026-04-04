@@ -22,6 +22,8 @@ local RefreshColumn3 = ST._RefreshColumn3
 local RefreshColumn4 = ST._RefreshColumn4
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
+local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
+local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -1496,16 +1498,27 @@ local function CreateConfigPanel()
 
         local targets = CS._panelDropTargets
         if not targets or #targets == 0 then
+            if ClearCol2AnimatedPreview then
+                ClearCol2AnimatedPreview()
+            end
             self:Hide()
             return
         end
 
+        local hoveredPanelId = nil
         for _, entry in ipairs(targets) do
             if entry.frame:IsMouseOver() then
+                hoveredPanelId = entry.panelId
+                entry.overlay:SetAlpha(0.01)
                 entry.overlay:Show()
             else
+                entry.overlay:SetAlpha(1)
                 entry.overlay:Hide()
             end
+        end
+
+        if UpdateCol2CursorPreview then
+            UpdateCol2CursorPreview(hoveredPanelId)
         end
     end)
     dropScanFrame:Hide()
@@ -1514,8 +1527,12 @@ local function CreateConfigPanel()
         local targets = CS._panelDropTargets
         if targets then
             for _, entry in ipairs(targets) do
+                entry.overlay:SetAlpha(1)
                 entry.overlay:Hide()
             end
+        end
+        if ClearCol2AnimatedPreview then
+            ClearCol2AnimatedPreview()
         end
     end
 
