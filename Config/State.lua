@@ -173,6 +173,7 @@ ST._configState = {
     showPhantomSections = false,
     lastCol1RenderedRows = nil,
     lastCol2PanelMetas = nil,
+    col1Preview = nil,
     col2Preview = nil,
 
     -- Pending strata order state
@@ -818,6 +819,8 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
+    if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
+    if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry.frame:SetScript("OnMouseUp", nil)
     entry.frame:SetScript("OnReceiveDrag", nil)
     entry.frame._cdcOnMouseDown = nil
@@ -1025,6 +1028,146 @@ local function SetupFolderRowIndicators(entry, folder)
     end
 end
 
+local function EnsureColumn1MarkerParts(frame)
+    if not frame._cdcMarkerLeft then
+        local left = frame:CreateTexture(nil, "ARTWORK")
+        left:SetHeight(1)
+        frame._cdcMarkerLeft = left
+    end
+    if not frame._cdcMarkerRight then
+        local right = frame:CreateTexture(nil, "ARTWORK")
+        right:SetHeight(1)
+        frame._cdcMarkerRight = right
+    end
+end
+
+local function ClearColumn1MarkerAppearance(target)
+    local frame = target and target.frame
+    if not frame then
+        return
+    end
+    if frame._cdcMarkerLeft then
+        frame._cdcMarkerLeft:Hide()
+        frame._cdcMarkerLeft:ClearAllPoints()
+    end
+    if frame._cdcMarkerRight then
+        frame._cdcMarkerRight:Hide()
+        frame._cdcMarkerRight:ClearAllPoints()
+    end
+end
+
+local function ApplyColumn1MarkerAppearance(target, opts)
+    opts = opts or {}
+    local frame = target and target.frame
+    local label = target and (target.label or target._cdcLabel)
+    if not (frame and label) then
+        return
+    end
+
+    ClearColumn1MarkerAppearance(target)
+    EnsureColumn1MarkerParts(frame)
+
+    if frame._cdcBadges then
+        for _, badge in ipairs(frame._cdcBadges) do
+            badge:Hide()
+        end
+    end
+
+    local text = opts.text or ""
+    local color = opts.color or { 0.8, 0.8, 0.8 }
+    local inset = opts.inset or 8
+    local gap = opts.gap or 6
+    local lineAlpha = opts.lineAlpha or 0.55
+    local lineYOffset = opts.lineYOffset or 0
+
+    label:SetText(text)
+    if label.SetFontObject then
+        label:SetFontObject(GameFontHighlight)
+    end
+    if label.SetWordWrap then
+        label:SetWordWrap(false)
+    end
+    label:SetJustifyH("CENTER")
+    label:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1)
+    label:ClearAllPoints()
+    label:SetPoint("CENTER", frame, "CENTER", opts.textOffsetX or 0, opts.textOffsetY or 0)
+    if label.SetWidth then
+        local frameWidth = frame.GetWidth and frame:GetWidth() or 0
+        local desiredWidth = math.max(1, (label.GetStringWidth and label:GetStringWidth() or 0) + 2)
+        if frameWidth > 0 then
+            desiredWidth = math.min(desiredWidth, math.max(1, frameWidth - ((inset + gap) * 2)))
+        end
+        label:SetWidth(desiredWidth)
+    end
+
+    if target.image then
+        target.image:Hide()
+    end
+    if target._cdcIcon then
+        target._cdcIcon:Hide()
+    end
+
+    frame._cdcMarkerLeft:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, lineAlpha)
+    frame._cdcMarkerLeft:ClearAllPoints()
+    frame._cdcMarkerRight:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, lineAlpha)
+    frame._cdcMarkerRight:ClearAllPoints()
+    local frameWidth = frame.GetWidth and frame:GetWidth() or 0
+    local textWidth = label.GetStringWidth and label:GetStringWidth() or 0
+    local textOffsetX = opts.textOffsetX or 0
+    if frameWidth > 0 and textWidth > 0 then
+        local centerX = (frameWidth / 2) + textOffsetX
+        local leftWidth = math.max(0, centerX - (textWidth / 2) - gap - inset)
+        local rightStart = centerX + (textWidth / 2) + gap
+        local rightWidth = math.max(0, frameWidth - inset - rightStart)
+
+        frame._cdcMarkerLeft:SetPoint("LEFT", frame, "LEFT", inset, lineYOffset)
+        frame._cdcMarkerLeft:SetWidth(leftWidth)
+        frame._cdcMarkerLeft:Show()
+
+        frame._cdcMarkerRight:SetPoint("LEFT", frame, "LEFT", rightStart, lineYOffset)
+        frame._cdcMarkerRight:SetWidth(rightWidth)
+        frame._cdcMarkerRight:Show()
+    else
+        frame._cdcMarkerLeft:SetPoint("LEFT", frame, "LEFT", inset, lineYOffset)
+        frame._cdcMarkerLeft:SetPoint("RIGHT", label, "LEFT", -gap, lineYOffset)
+        frame._cdcMarkerLeft:SetPoint("CENTER", frame, "CENTER", 0, lineYOffset)
+        frame._cdcMarkerLeft:Show()
+
+        frame._cdcMarkerRight:SetPoint("LEFT", label, "RIGHT", gap, lineYOffset)
+        frame._cdcMarkerRight:SetPoint("RIGHT", frame, "RIGHT", -inset, lineYOffset)
+        frame._cdcMarkerRight:SetPoint("CENTER", frame, "CENTER", 0, lineYOffset)
+        frame._cdcMarkerRight:Show()
+    end
+end
+
+local function SetupColumn1MarkerRow(widget, opts)
+    if not widget then
+        return
+    end
+    if not widget._cdcMarkerReleaseHooked then
+        local previousOnRelease = widget.OnRelease
+        widget.OnRelease = function(self, ...)
+            ClearColumn1MarkerAppearance(self)
+            if previousOnRelease then
+                previousOnRelease(self, ...)
+            end
+        end
+        widget._cdcMarkerReleaseHooked = true
+    end
+    if widget.SetFullWidth then
+        widget:SetFullWidth(true)
+    end
+    if widget.SetHeight then
+        widget:SetHeight((opts and opts.height) or 18)
+    elseif widget.frame and widget.frame.SetHeight then
+        widget.frame:SetHeight((opts and opts.height) or 18)
+    end
+    if widget.SetText then
+        widget:SetText((opts and opts.text) or "")
+    end
+    ApplyColumn1MarkerAppearance(widget, opts)
+end
+
 ------------------------------------------------------------------------
 -- Helper: Create a scroll frame inside a parent
 ------------------------------------------------------------------------
@@ -1086,17 +1229,19 @@ local function CreateTextButton(parent, text, width, height, onClick)
 end
 
 ------------------------------------------------------------------------
--- Shared helper: persistent overlay host for column-2 drag/drop previews
+-- Shared helper: persistent overlay host for column drag/drop previews
 ------------------------------------------------------------------------
-local function EnsureCol2PreviewHost()
-    local preview = CS.col2Preview
+local function EnsureColumnPreviewHost(previewKey, scrollWidget)
+    local preview = CS[previewKey]
     if not preview then
         preview = {
+            rows = {},
             panels = {},
             hiddenFrames = {},
+            hiddenRegions = {},
             tweens = {},
         }
-        CS.col2Preview = preview
+        CS[previewKey] = preview
     end
 
     if not preview.root then
@@ -1130,7 +1275,7 @@ local function EnsureCol2PreviewHost()
         preview.ghost = ghost
     end
 
-    local content = CS.col2Scroll and CS.col2Scroll.content
+    local content = scrollWidget and scrollWidget.content
     if content then
         preview.root:SetParent(content)
         preview.root:ClearAllPoints()
@@ -1143,8 +1288,8 @@ local function EnsureCol2PreviewHost()
     return preview
 end
 
-local function ClearCol2PreviewHost()
-    local preview = CS.col2Preview
+local function ClearColumnPreviewHost(previewKey)
+    local preview = CS[previewKey]
     if not preview then
         return
     end
@@ -1155,6 +1300,23 @@ local function ClearCol2PreviewHost()
                 frame:SetAlpha(alpha)
             end
             preview.hiddenFrames[frame] = nil
+        end
+    end
+
+    if preview.hiddenRegions then
+        for region, alpha in pairs(preview.hiddenRegions) do
+            if region and region.SetAlpha then
+                region:SetAlpha(alpha)
+            end
+            preview.hiddenRegions[region] = nil
+        end
+    end
+
+    if preview.rows then
+        for _, row in ipairs(preview.rows) do
+            if row.frame then
+                row.frame:Hide()
+            end
         end
     end
 
@@ -1184,6 +1346,22 @@ local function ClearCol2PreviewHost()
     preview.ghostActive = false
     preview.mode = nil
     preview.compactEntries = nil
+end
+
+local function EnsureCol1PreviewHost()
+    return EnsureColumnPreviewHost("col1Preview", CS.col1Scroll)
+end
+
+local function EnsureCol2PreviewHost()
+    return EnsureColumnPreviewHost("col2Preview", CS.col2Scroll)
+end
+
+local function ClearCol1PreviewHost()
+    ClearColumnPreviewHost("col1Preview")
+end
+
+local function ClearCol2PreviewHost()
+    ClearColumnPreviewHost("col2Preview")
 end
 
 ------------------------------------------------------------------------
@@ -1224,9 +1402,10 @@ local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, spec
     end
     local disableToggles = opts.disableToggles and true or false
 
-    if not (specsSource and specsSource[specId] and configID) then return end
+    local created = {}
+    if not (specsSource and specsSource[specId] and configID) then return created end
     local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
-    if not subTreeIDs then return end
+    if not subTreeIDs then return created end
     for _, subTreeID in ipairs(subTreeIDs) do
         local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
         if subTreeInfo then
@@ -1258,6 +1437,7 @@ local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, spec
                 end)
             end
             container:AddChild(htCb)
+            created[#created + 1] = htCb
             ApplyCheckboxIndent(htCb, indentOffset)
             if subTreeInfo.iconElementID then
                 htCb:SetImage(136235)
@@ -1266,6 +1446,7 @@ local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, spec
             end
         end
     end
+    return created
 end
 
 ------------------------------------------------------------------------
@@ -1464,9 +1645,13 @@ ST._CleanRecycledEntry = CleanRecycledEntry
 ST._AcquireBadge = AcquireBadge
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
 ST._SetupFolderRowIndicators = SetupFolderRowIndicators
+ST._ApplyColumn1MarkerAppearance = ApplyColumn1MarkerAppearance
+ST._SetupColumn1MarkerRow = SetupColumn1MarkerRow
 ST._CreateScrollFrame = CreateScrollFrame
 ST._CreateTextButton = CreateTextButton
+ST._EnsureCol1PreviewHost = EnsureCol1PreviewHost
 ST._EnsureCol2PreviewHost = EnsureCol2PreviewHost
+ST._ClearCol1PreviewHost = ClearCol1PreviewHost
 ST._ClearCol2PreviewHost = ClearCol2PreviewHost
 ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon

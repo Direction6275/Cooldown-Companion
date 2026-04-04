@@ -14,6 +14,7 @@ local BuildHeroTalentSubTreeCheckboxes = ST._BuildHeroTalentSubTreeCheckboxes
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
+local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
 local GetGroupIcon = ST._GetGroupIcon
 local GetContainerIcon = ST._GetContainerIcon
 local GetFolderIcon = ST._GetFolderIcon
@@ -354,6 +355,27 @@ local function RefreshColumn1(preserveDrag)
     -- Track all rendered rows for drag system: sequential index -> metadata
     local col1RenderedRows = {}
 
+    local function TrackRenderedRow(meta)
+        col1RenderedRows[#col1RenderedRows + 1] = meta
+        return meta
+    end
+
+    local function AddAuxWidget(widget, sectionTag, ownerKind, ownerId, ownerFolderId)
+        CS.col1Scroll:AddChild(widget)
+        TrackRenderedRow({
+            kind = "aux-block",
+            widget = widget,
+            section = sectionTag,
+            loadBucket = "aux",
+            acceptsDrop = false,
+            previewProxy = false,
+            layoutOnly = true,
+            ownerKind = ownerKind,
+            ownerId = ownerId,
+            ownerFolderId = ownerFolderId,
+        })
+    end
+
     -- Build top-level items for a section (folders + loose containers), sorted by order
     local function BuildSectionItems(section, sectionContainerIds)
         -- Collect folders for this section
@@ -450,8 +472,33 @@ local function RefreshColumn1(preserveDrag)
         return true
     end
 
+    local function ResolveSelectedDragLoadBucket(defaultBucket)
+        if not next(CS.selectedGroups) then
+            return defaultBucket or "loaded"
+        end
+
+        local sawLoaded, sawUnloaded = false, false
+        for _, row in ipairs(col1RenderedRows) do
+            if row.kind == "container" and CS.selectedGroups[row.id] then
+                if row.loadBucket == "unloaded" then
+                    sawUnloaded = true
+                elseif row.loadBucket ~= "aux" and row.loadBucket ~= "marker" then
+                    sawLoaded = true
+                end
+                if sawLoaded and sawUnloaded then
+                    return "mixed"
+                end
+            end
+        end
+
+        if sawUnloaded and not sawLoaded then
+            return "unloaded"
+        end
+        return defaultBucket or "loaded"
+    end
+
     -- Helper: render a single container row (reused by both sections)
-    local function RenderContainerRow(containerId, inFolder, sectionTag)
+    local function RenderContainerRow(containerId, inFolder, sectionTag, loadBucket)
         local container = db.groupContainers[containerId]
         if not container then return end
 
@@ -495,8 +542,31 @@ local function RefreshColumn1(preserveDrag)
 
         SetupGroupRowIndicators(entry, container)
 
-        -- Neutralize built-in OnClick so mousedown doesn't fire
-        entry:SetCallback("OnClick", function() end)
+        entry:SetCallback("OnClick", function(widget, event, mouseButton)
+            if mouseButton == "LeftButton"
+                and not IsShiftKeyDown()
+                and not IsControlKeyDown()
+                and not GetCursorInfo()
+            then
+                local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
+                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                CS.dragState = {
+                    kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
+                    phase = "pending",
+                    sourceGroupId = containerId,
+                    sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
+                    sourceSection = sectionTag,
+                    sourceFolderId = inFolder and container.folderId or nil,
+                    sourceLoadBucket = isMulti and ResolveSelectedDragLoadBucket(loadBucket) or (loadBucket or "loaded"),
+                    scrollWidget = CS.col1Scroll,
+                    widget = entry,
+                    startX = cursorX,
+                    startY = cursorY,
+                    col1RenderedRows = col1RenderedRows,
+                }
+                StartDragTracking()
+            end
+        end)
 
         -- Handle clicks via OnMouseUp
         entry.frame:SetScript("OnMouseUp", function(self, button)
@@ -865,15 +935,17 @@ local function RefreshColumn1(preserveDrag)
         entry.frame._cdcInFolder = inFolder and container.folderId or nil
         entry.frame._cdcSection = sectionTag
 
-        -- Track in rendered rows list
-        local rowIndex = #col1RenderedRows + 1
-        col1RenderedRows[rowIndex] = {
+        TrackRenderedRow({
             kind = "container",
             id = containerId,
             widget = entry,
             inFolder = inFolder and container.folderId or nil,
             section = sectionTag,
-        }
+            loadBucket = loadBucket or "loaded",
+            acceptsDrop = (loadBucket or "loaded") ~= "unloaded",
+            previewDraggable = true,
+            previewProxy = true,
+        })
 
         -- Inline spec filter panel (expanded via Shift+Left-click)
         if CS.specExpandedGroupId == containerId then
@@ -918,7 +990,7 @@ local function RefreshColumn1(preserveDrag)
                         CooldownCompanion:RefreshConfigPanel()
                     end)
                 end
-                CS.col1Scroll:AddChild(cb)
+                AddAuxWidget(cb, sectionTag, "container", containerId, inFolder and container.folderId or nil)
                 ApplyCheckboxIndent(cb, inFolder and 12 or 0)
 
                 local htOpts = nil
@@ -937,7 +1009,21 @@ local function RefreshColumn1(preserveDrag)
                     CooldownCompanion:RefreshContainerPanels(containerId)
                     CooldownCompanion:RefreshConfigPanel()
                 end
-                BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId, htOpts)
+                local heroWidgets = BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId, htOpts)
+                for _, heroWidget in ipairs(heroWidgets or {}) do
+                    TrackRenderedRow({
+                        kind = "aux-block",
+                        widget = heroWidget,
+                        section = sectionTag,
+                        loadBucket = "aux",
+                        acceptsDrop = false,
+                        previewProxy = false,
+                        layoutOnly = true,
+                        ownerKind = "container",
+                        ownerId = containerId,
+                        ownerFolderId = inFolder and container.folderId or nil,
+                    })
+                end
             end
 
             local playerSpecIds = {}
@@ -980,7 +1066,7 @@ local function RefreshColumn1(preserveDrag)
                             CooldownCompanion:RefreshContainerPanels(containerId)
                             CooldownCompanion:RefreshConfigPanel()
                         end)
-                        CS.col1Scroll:AddChild(fcb)
+                        AddAuxWidget(fcb, sectionTag, "container", containerId, inFolder and container.folderId or nil)
                         ApplyCheckboxIndent(fcb, inFolder and 12 or 0)
                     end
                 end
@@ -1012,36 +1098,7 @@ local function RefreshColumn1(preserveDrag)
                     CooldownCompanion:RefreshContainerPanels(containerId)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                CS.col1Scroll:AddChild(clearBtn)
-            end
-        end
-
-        -- Hold-click drag reorder via handler-table HookScript pattern
-        local entryFrame = entry.frame
-        if not entryFrame._cdcDragHooked then
-            entryFrame._cdcDragHooked = true
-            entryFrame:HookScript("OnMouseDown", function(self, mouseBtn)
-                if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
-            end)
-        end
-        entryFrame._cdcOnMouseDown = function(self, button)
-            if button == "LeftButton" and not IsShiftKeyDown() and not IsControlKeyDown() then
-                local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
-                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
-                CS.dragState = {
-                    kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
-                    phase = "pending",
-                    sourceGroupId = containerId,
-                    sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
-                    sourceSection = sectionTag,
-                    sourceFolderId = inFolder and container.folderId or nil,
-                    scrollWidget = CS.col1Scroll,
-                    widget = entry,
-                    startX = cursorX,
-                    startY = cursorY,
-                    col1RenderedRows = col1RenderedRows,
-                }
-                StartDragTracking()
+                AddAuxWidget(clearBtn, sectionTag, "container", containerId, inFolder and container.folderId or nil)
             end
         end
 
@@ -1068,7 +1125,7 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: render a folder header row
-    local function RenderFolderRow(folderId, sectionTag, childContainerIds)
+    local function RenderFolderRow(folderId, sectionTag, childContainerIds, loadBucket)
         local folder = db.folders[folderId]
         if not folder then return end
 
@@ -1101,17 +1158,35 @@ local function RefreshColumn1(preserveDrag)
         entry.frame._cdcFolderId = folderId
         entry.frame._cdcSection = sectionTag
 
-        -- Track in rendered rows list
-        local rowIndex = #col1RenderedRows + 1
-        col1RenderedRows[rowIndex] = {
+        TrackRenderedRow({
             kind = "folder",
             id = folderId,
             widget = entry,
             section = sectionTag,
-        }
+            loadBucket = loadBucket or "loaded",
+            acceptsDrop = (loadBucket or "loaded") ~= "unloaded",
+            previewDraggable = true,
+            previewProxy = true,
+        })
 
-        -- Neutralize built-in OnClick so mousedown doesn't fire
-        entry:SetCallback("OnClick", function() end)
+        entry:SetCallback("OnClick", function(widget, event, mouseButton)
+            if mouseButton == "LeftButton" and not IsShiftKeyDown() and not GetCursorInfo() then
+                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                CS.dragState = {
+                    kind = "folder",
+                    phase = "pending",
+                    sourceFolderId = folderId,
+                    sourceSection = sectionTag,
+                    sourceLoadBucket = loadBucket or "loaded",
+                    scrollWidget = CS.col1Scroll,
+                    widget = entry,
+                    startX = cursorX,
+                    startY = cursorY,
+                    col1RenderedRows = col1RenderedRows,
+                }
+                StartDragTracking()
+            end
+        end)
 
         -- Handle clicks via OnMouseUp
         entry.frame:SetScript("OnMouseUp", function(self, button)
@@ -1323,34 +1398,9 @@ local function RefreshColumn1(preserveDrag)
             end
         end)
 
-        -- Drag support for folder header
-        local entryFrame = entry.frame
-        if not entryFrame._cdcDragHooked then
-            entryFrame._cdcDragHooked = true
-            entryFrame:HookScript("OnMouseDown", function(self, mouseBtn)
-                if self._cdcOnMouseDown then self._cdcOnMouseDown(self, mouseBtn) end
-            end)
-        end
-        entryFrame._cdcOnMouseDown = function(self, button)
-            if button == "LeftButton" and not IsShiftKeyDown() then
-                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
-                CS.dragState = {
-                    kind = "folder",
-                    phase = "pending",
-                    sourceFolderId = folderId,
-                    sourceSection = sectionTag,
-                    scrollWidget = CS.col1Scroll,
-                    widget = entry,
-                    startX = cursorX,
-                    startY = cursorY,
-                    col1RenderedRows = col1RenderedRows,
-                }
-                StartDragTracking()
-            end
-        end
     end
 
-    local function RenderFolderSpecPanel(folderId)
+    local function RenderFolderSpecPanel(folderId, sectionTag)
         local folder = db.folders[folderId]
         if not folder then return end
 
@@ -1380,7 +1430,7 @@ local function RefreshColumn1(preserveDrag)
             cb:SetCallback("OnValueChanged", function(widget, event, value)
                 CooldownCompanion:SetFolderSpecs(folderId, BuildFolderSpecs(specId, value))
             end)
-            CS.col1Scroll:AddChild(cb)
+            AddAuxWidget(cb, sectionTag, "folder", folderId, folderId)
             ApplyCheckboxIndent(cb, 12)
 
             if configID and folder.specs and folder.specs[specId] then
@@ -1396,7 +1446,7 @@ local function RefreshColumn1(preserveDrag)
                             htCb:SetCallback("OnValueChanged", function(widget, event, value)
                                 CooldownCompanion:SetFolderHeroTalent(folderId, subTreeID, value)
                             end)
-                            CS.col1Scroll:AddChild(htCb)
+                            AddAuxWidget(htCb, sectionTag, "folder", folderId, folderId)
                             ApplyCheckboxIndent(htCb, htIndent)
                             if subTreeInfo.iconElementID then
                                 htCb:SetImage(136235)
@@ -1437,7 +1487,7 @@ local function RefreshColumn1(preserveDrag)
                     fcb:SetCallback("OnValueChanged", function(widget, event, value)
                         CooldownCompanion:SetFolderSpecs(folderId, BuildFolderSpecs(specId, value))
                     end)
-                    CS.col1Scroll:AddChild(fcb)
+                    AddAuxWidget(fcb, sectionTag, "folder", folderId, folderId)
                     ApplyCheckboxIndent(fcb, 12)
                 end
             end
@@ -1449,11 +1499,11 @@ local function RefreshColumn1(preserveDrag)
         clearBtn:SetCallback("OnClick", function()
             CooldownCompanion:SetFolderSpecs(folderId, nil)
         end)
-        CS.col1Scroll:AddChild(clearBtn)
+        AddAuxWidget(clearBtn, sectionTag, "folder", folderId, folderId)
     end
 
     -- Render a section (global or character)
-    local function RenderSection(section, sectionGroupIds, headingText)
+    local function RenderSection(section, sectionGroupIds, headingText, headingColor)
         local items, folderChildContainers = BuildSectionItems(section, sectionGroupIds)
 
         -- Partition into loaded (active) and unloaded (inactive)
@@ -1476,19 +1526,13 @@ local function RefreshColumn1(preserveDrag)
         local isEmpty = #loadedItems == 0 and #unloadedItems == 0
         if isEmpty and not CS.showPhantomSections then return end
 
-        local heading = AceGUI:Create("Heading")
-        heading:SetText(headingText)
+        local heading = AceGUI:Create("Label")
         heading:SetFullWidth(true)
+        heading:SetHeight(18)
 
         if section == "char" then
-            local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-            if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
-
-            -- Browse badge: inline atlas in heading text so the line breaks around it
             local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
             if #browseChars > 0 then
-                heading:SetText(headingText .. "  |A:BattleBar-SwapPetIcon:14:14|a")
-
                 -- Invisible clickable overlay for tooltip + click
                 if not CS.browseBadge then
                     local badge = CreateFrame("Button", nil, UIParent)
@@ -1519,30 +1563,49 @@ local function RefreshColumn1(preserveDrag)
             end
         end
         CS.col1Scroll:AddChild(heading)
+        SetupColumn1MarkerRow(heading, {
+            text = headingText,
+            color = headingColor,
+        })
+
+        TrackRenderedRow({
+            kind = "section-header",
+            widget = heading,
+            section = section,
+            loadBucket = "marker",
+            acceptsDrop = false,
+            keepVisibleDuringPreview = true,
+            previewProxy = true,
+            isMarker = true,
+        })
 
         if isEmpty and CS.showPhantomSections then
             local placeholder = AceGUI:Create("Label")
             placeholder:SetText("|cff888888Drop here to move|r")
             placeholder:SetFullWidth(true)
             CS.col1Scroll:AddChild(placeholder)
-            local rowIndex = #col1RenderedRows + 1
-            col1RenderedRows[rowIndex] = {
+            TrackRenderedRow({
                 kind = "phantom",
                 widget = placeholder,
                 section = section,
-            }
+                loadBucket = "marker",
+                acceptsDrop = true,
+                keepVisibleDuringPreview = true,
+                previewProxy = false,
+                layoutOnly = true,
+            })
             return
         end
 
         -- Class color for accent bars
         local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
-        local function RenderItems(itemList)
+        local function RenderItems(itemList, loadBucket)
             for _, item in ipairs(itemList) do
                 if item.kind == "folder" then
-                    RenderFolderRow(item.id, section, folderChildContainers[item.id])
+                    RenderFolderRow(item.id, section, folderChildContainers[item.id], loadBucket)
                     if CS.specExpandedFolderId == item.id then
-                        RenderFolderSpecPanel(item.id)
+                        RenderFolderSpecPanel(item.id, section)
                     end
                     -- If expanded, render children with accent bar
                     if not CS.collapsedFolders[item.id] then
@@ -1550,7 +1613,7 @@ local function RefreshColumn1(preserveDrag)
                         if children and #children > 0 then
                             local firstEntry, lastEntry
                             for _, cid in ipairs(children) do
-                                local entry = RenderContainerRow(cid, true, section)
+                                local entry = RenderContainerRow(cid, true, section, loadBucket)
                                 if entry then
                                     if not firstEntry then firstEntry = entry end
                                     lastEntry = entry
@@ -1574,21 +1637,36 @@ local function RefreshColumn1(preserveDrag)
                         end
                     end
                 elseif item.kind == "container" then
-                    RenderContainerRow(item.id, false, section)
+                    RenderContainerRow(item.id, false, section, loadBucket)
                 end
             end
         end
 
-        RenderItems(loadedItems)
+        RenderItems(loadedItems, "loaded")
 
-        if #loadedItems > 0 and #unloadedItems > 0 then
-            local sep = AceGUI:Create("Heading")
-            sep:SetText("")
+        if #unloadedItems > 0 then
+            local sep = AceGUI:Create("Label")
             sep:SetFullWidth(true)
+            sep:SetHeight(18)
             CS.col1Scroll:AddChild(sep)
+            SetupColumn1MarkerRow(sep, {
+                text = "Unloaded Groups",
+                color = { 0.53, 0.53, 0.53 },
+            })
+
+            TrackRenderedRow({
+                kind = "unloaded-divider",
+                widget = sep,
+                section = section,
+                loadBucket = "marker",
+                acceptsDrop = false,
+                keepVisibleDuringPreview = true,
+                previewProxy = true,
+                isMarker = true,
+            })
         end
 
-        RenderItems(unloadedItems)
+        RenderItems(unloadedItems, "unloaded")
     end
 
     -- Split containers into global and character-owned
@@ -1615,7 +1693,7 @@ local function RefreshColumn1(preserveDrag)
             end
         end
         if hasGlobalContent or CS.showPhantomSections then
-            RenderSection("global", globalIds, "|cff66aaff" .. "Global Groups" .. "|r")
+            RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
         end
     end
 
@@ -1630,7 +1708,13 @@ local function RefreshColumn1(preserveDrag)
         end
     end
     if hasCharContent or CS.showPhantomSections then
-        RenderSection("char", charIds, charName .. "'s Groups")
+        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        RenderSection(
+            "char",
+            charIds,
+            charName .. "'s Groups",
+            cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 }
+        )
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows
