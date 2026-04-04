@@ -90,6 +90,10 @@ local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
+local StartDragTracking = ST._StartDragTracking
+local GetDragIndicator = ST._GetDragIndicator
+local HideDragIndicator = ST._HideDragIndicator
+local ResetDragIndicatorStyle = ST._ResetDragIndicatorStyle
 
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
@@ -2437,6 +2441,11 @@ end
 ------------------------------------------------------------------------
 
 local function BuildLayoutOrderPanel(container)
+    if ST._BuildLayoutOrderPreviewPanel then
+        ST._BuildLayoutOrderPreviewPanel(container)
+        return
+    end
+
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local cbSettings = CooldownCompanion:GetCastBarSettings()
     local isVerticalLayout = IsResourceBarVerticalConfig(rbSettings)

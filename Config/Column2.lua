@@ -1206,18 +1206,50 @@ local function RefreshColumn2()
                 end
 
                 header:SetCallback("OnClick", function(widget, event, mouseButton)
+                    if mouseButton == "LeftButton"
+                        and panelCount > 1
+                        and not IsControlKeyDown()
+                        and not GetCursorInfo() then
+                        local cursorX, cursorY = GetScaledCursorPosition(CS.col2Scroll)
+                        CS.dragState = {
+                            kind = "panel",
+                            phase = "pending",
+                            sourcePanelId = panelId,
+                            containerId = CS.selectedContainer,
+                            scrollWidget = CS.col2Scroll,
+                            startX = cursorX,
+                            startY = cursorY,
+                            panelDropTargets = CS._panelDropTargets,
+                        }
+                        if CS.lastCol2RenderedRows then
+                            for _, row in ipairs(CS.lastCol2RenderedRows) do
+                                if row.kind == "header" and row.panelId == panelId then
+                                    CS.dragState.widget = row.widget
+                                    break
+                                end
+                            end
+                        end
+                        StartDragTracking()
+                    end
+                end)
+
+                -- Right-click context menu on mouseup (InteractiveLabel fires OnClick
+                -- on mousedown which conflicts with UIDropDownMenu's mouseup behavior)
+                local ctxPanelId = panelId
+                local ctxPanel = panel
+                header.frame:SetScript("OnMouseUp", function(self, mouseButton)
+                    if CS.dragState and CS.dragState.phase == "active" then return end
                     if mouseButton == "LeftButton" then
                         local now = GetTime()
                         local lastClick = CS.panelClickTimes[panelId] or 0
                         CS.panelClickTimes[panelId] = now
                         if (now - lastClick) < 0.3 then
-                            -- Double-click: toggle collapse/expand
                             CS.panelClickTimes[panelId] = 0
                             CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId] or nil
                             CooldownCompanion:RefreshConfigPanel()
                             return
                         end
-                        -- Ctrl+Click: toggle panel multi-select
+
                         if IsControlKeyDown() then
                             if CS.selectedPanels[panelId] then
                                 CS.selectedPanels[panelId] = nil
@@ -1234,10 +1266,8 @@ local function RefreshColumn2()
                             CooldownCompanion:RefreshConfigPanel()
                             return
                         end
-                        -- Single-click: select or deselect this panel, clear multi-select
+
                         wipe(CS.selectedPanels)
-                        -- If a button is selected within this panel, just clear the button
-                        -- selection (transition to panel settings) rather than deselecting.
                         if CS.selectedGroup == panelId and not CS.selectedButton then
                             CS.selectedGroup = nil
                         else
@@ -1246,31 +1276,8 @@ local function RefreshColumn2()
                         CS.selectedButton = nil
                         wipe(CS.selectedButtons)
                         CooldownCompanion:RefreshConfigPanel()
-                        -- Pending drag for panel reorder (multi-panel containers only).
-                        -- Set up AFTER refresh so widget refs are current and CancelDrag()
-                        -- (called inside RefreshConfigPanel) doesn't clear our state.
-                        if panelCount > 1 and not GetCursorInfo() then
-                            CS.dragState = {
-                                kind = "panel",
-                                phase = "pending",
-                                sourcePanelId = panelId,
-                                containerId = CS.selectedContainer,
-                                scrollWidget = CS.col2Scroll,
-                                startY = GetScaledCursorPosition(CS.col2Scroll),
-                                panelDropTargets = CS._panelDropTargets,
-                            }
-                            if CS.lastCol2RenderedRows then
-                                for _, row in ipairs(CS.lastCol2RenderedRows) do
-                                    if row.kind == "header" and row.panelId == panelId then
-                                        CS.dragState.widget = row.widget
-                                        break
-                                    end
-                                end
-                            end
-                            StartDragTracking()
-                        end
+                        return
                     elseif mouseButton == "MiddleButton" then
-                        -- Toggle panel anchor lock
                         if panel.locked == false then
                             panel.locked = nil
                             CooldownCompanion:Print(panel.name .. " locked.")
@@ -1280,15 +1287,11 @@ local function RefreshColumn2()
                         end
                         CooldownCompanion:RefreshGroupFrame(panelId)
                         CooldownCompanion:RefreshConfigPanel()
+                        return
+                    elseif mouseButton ~= "RightButton" then
+                        return
                     end
-                end)
 
-                -- Right-click context menu on mouseup (InteractiveLabel fires OnClick
-                -- on mousedown which conflicts with UIDropDownMenu's mouseup behavior)
-                local ctxPanelId = panelId
-                local ctxPanel = panel
-                header.frame:SetScript("OnMouseUp", function(self, mouseButton)
-                    if mouseButton ~= "RightButton" then return end
                     if not CS.panelContextMenu then
                         CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
                     end
@@ -1691,6 +1694,7 @@ local function RefreshColumn2()
                                 CS.selectedButton = nil
                                 wipe(CS.selectedButtons)
                             end
+                            local cursorX, cursorY = GetScaledCursorPosition(CS.col2Scroll)
                             CS.dragState = {
                                 kind = "button",
                                 phase = "pending",
@@ -1698,7 +1702,8 @@ local function RefreshColumn2()
                                 groupId = panelId,
                                 scrollWidget = CS.col2Scroll,
                                 widget = entry,
-                                startY = GetScaledCursorPosition(CS.col2Scroll),
+                                startX = cursorX,
+                                startY = cursorY,
                                 col2RenderedRows = col2RenderedRows,
                             }
                             StartDragTracking()

@@ -41,11 +41,26 @@ local function HideDragIndicator()
     if CS.dragIndicator then CS.dragIndicator:Hide() end
 end
 
+local function GetDragScaleFrame(scrollWidget)
+    if not scrollWidget then
+        return UIParent
+    end
+    return scrollWidget.frame or scrollWidget
+end
+
+local function GetScaledCursorCoordinates(scrollWidget)
+    local cursorX, cursorY = GetCursorPosition()
+    local scaleFrame = GetDragScaleFrame(scrollWidget)
+    local scale = (scaleFrame and scaleFrame.GetEffectiveScale and scaleFrame:GetEffectiveScale()) or 1
+    return cursorX / scale, cursorY / scale
+end
+
 local function GetScaledCursorPosition(scrollWidget)
-    local _, cursorY = GetCursorPosition()
-    local scale = scrollWidget.frame:GetEffectiveScale()
-    cursorY = cursorY / scale
-    return cursorY
+    return GetScaledCursorCoordinates(scrollWidget)
+end
+
+local function GetRawCursorCoordinates()
+    return GetCursorPosition()
 end
 
 local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
@@ -231,7 +246,14 @@ local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
         return
     end
     local ind = GetDragIndicator()
-    local width = parentScrollWidget.content:GetWidth() or 100
+    local width
+    if parentScrollWidget and parentScrollWidget.content then
+        width = parentScrollWidget.content:GetWidth()
+    else
+        local scaleFrame = GetDragScaleFrame(parentScrollWidget)
+        width = scaleFrame and scaleFrame:GetWidth()
+    end
+    width = width or 100
     ind:SetWidth(width)
     ind:ClearAllPoints()
     if anchorAbove then
@@ -1137,6 +1159,29 @@ local function PerformPanelReorder(sourcePanelId, dropIndex, panelDropTargets)
     end
 end
 
+local function IsPanelReorderNoOp(sourcePanelId, dropIndex, panelDropTargets)
+    if not (sourcePanelId and dropIndex and panelDropTargets) then
+        return true
+    end
+
+    local sourceIndex
+    for i, entry in ipairs(panelDropTargets) do
+        if entry.panelId == sourcePanelId then
+            sourceIndex = i
+            break
+        end
+    end
+    if not sourceIndex then
+        return true
+    end
+
+    if dropIndex > sourceIndex then
+        dropIndex = dropIndex - 1
+    end
+
+    return sourceIndex == dropIndex
+end
+
 ------------------------------------------------------------------------
 -- Group reorder
 ------------------------------------------------------------------------
@@ -1592,14 +1637,28 @@ end
 ------------------------------------------------------------------------
 -- Drag lifecycle
 ------------------------------------------------------------------------
+local function SetDraggedWidgetAlpha(widget, alpha)
+    if not widget then return end
+    if widget.frame and widget.frame.SetAlpha then
+        widget.frame:SetAlpha(alpha)
+    elseif widget.SetAlpha then
+        widget:SetAlpha(alpha)
+    end
+end
+
 local function CancelDrag()
     if CS.dragState then
+        if CS.dragState.kind == "layout-slot"
+            and CS.dragState.layoutDrag
+            and CS.dragState.layoutDrag.onCancel then
+            CS.dragState.layoutDrag.onCancel(CS.dragState)
+        end
         if CS.dragState.dimmedWidgets then
             for _, w in ipairs(CS.dragState.dimmedWidgets) do
-                w.frame:SetAlpha(1)
+                SetDraggedWidgetAlpha(w, 1)
             end
         elseif CS.dragState.widget then
-            CS.dragState.widget.frame:SetAlpha(1)
+            SetDraggedWidgetAlpha(CS.dragState.widget, 1)
         end
     end
     CS.dragState = nil
@@ -1623,6 +1682,18 @@ local function FinishDrag()
         return
     end
     local state = CS.dragState
+    if state.kind == "layout-slot" then
+        local cursorX, cursorY = GetRawCursorCoordinates()
+        if state.layoutDrag and state.layoutDrag.resolveDropTarget then
+            state.dropTarget = state.layoutDrag.resolveDropTarget(cursorX, cursorY, state)
+        end
+        if state.layoutDrag and state.layoutDrag.applyDrop then
+            state.layoutDrag.applyDrop(state)
+        end
+        CancelDrag()
+        ResetDragIndicatorStyle()
+        return
+    end
     CS.showPhantomSections = false  -- clear before CancelDrag to avoid redundant deferred refresh
     CancelDrag()
     ResetDragIndicatorStyle()
@@ -1692,7 +1763,12 @@ local function FinishDrag()
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "panel" then
         local dropTarget = state.dropTarget
-        if dropTarget then
+        local changed = dropTarget and not IsPanelReorderNoOp(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
+        if changed then
+            wipe(CS.selectedPanels)
+            CS.selectedGroup = state.sourcePanelId
+            CS.selectedButton = nil
+            wipe(CS.selectedButtons)
             PerformPanelReorder(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
             -- Refresh all affected panel frames
             for _, entry in ipairs(state.panelDropTargets) do
@@ -1761,21 +1837,33 @@ local function StartDragTracking()
             end
             return
         end
-        local cursorY = GetScaledCursorPosition(CS.dragState.scrollWidget)
+        local cursorX, cursorY
+        if CS.dragState.kind == "layout-slot" then
+            cursorX, cursorY = GetRawCursorCoordinates()
+        else
+            cursorX, cursorY = GetScaledCursorCoordinates(CS.dragState.scrollWidget)
+        end
         if CS.dragState.phase == "pending" then
-            if math.abs(cursorY - CS.dragState.startY) > DRAG_THRESHOLD then
+            local deltaY = math.abs(cursorY - (CS.dragState.startY or cursorY))
+            local deltaX = math.abs(cursorX - (CS.dragState.startX or cursorX))
+            if deltaY > DRAG_THRESHOLD or deltaX > DRAG_THRESHOLD then
                 CS.dragState.phase = "active"
+                if CS.dragState.kind == "layout-slot"
+                    and CS.dragState.layoutDrag
+                    and CS.dragState.layoutDrag.onActivate then
+                    CS.dragState.layoutDrag.onActivate(CS.dragState)
+                end
                 -- Dim source widget(s)
                 if CS.dragState.kind == "multi-group" and CS.dragState.sourceGroupIds then
                     CS.dragState.dimmedWidgets = {}
                     for _, row in ipairs(CS.dragState.col1RenderedRows) do
                         if row.kind == "container" and CS.dragState.sourceGroupIds[row.id] then
-                            row.widget.frame:SetAlpha(0.4)
+                            SetDraggedWidgetAlpha(row.widget, 0.4)
                             table.insert(CS.dragState.dimmedWidgets, row.widget)
                         end
                     end
                 elseif CS.dragState.widget then
-                    CS.dragState.widget.frame:SetAlpha(0.4)
+                    SetDraggedWidgetAlpha(CS.dragState.widget, 0.4)
                 end
                 -- Check if we need phantom sections for cross-section drops
                 if CS.dragState.col1RenderedRows and not CS.showPhantomSections then
@@ -1812,7 +1900,7 @@ local function StartDragTracking()
                             CS.dragState.dimmedWidgets = {}
                             for _, row in ipairs(CS.dragState.col1RenderedRows) do
                                 if row.kind == "container" and savedSourceGroupIds[row.id] then
-                                    row.widget.frame:SetAlpha(0.4)
+                                    SetDraggedWidgetAlpha(row.widget, 0.4)
                                     table.insert(CS.dragState.dimmedWidgets, row.widget)
                                 end
                             end
@@ -1820,11 +1908,11 @@ local function StartDragTracking()
                             for _, row in ipairs(CS.dragState.col1RenderedRows) do
                                 if savedKind == "folder" and row.kind == "folder" and row.id == savedSourceFolderId then
                                     CS.dragState.widget = row.widget
-                                    row.widget.frame:SetAlpha(0.4)
+                                    SetDraggedWidgetAlpha(row.widget, 0.4)
                                     break
                                 elseif (savedKind == "group" or savedKind == "folder-group") and row.kind == "container" and row.id == savedSourceGroupId then
                                     CS.dragState.widget = row.widget
-                                    row.widget.frame:SetAlpha(0.4)
+                                    SetDraggedWidgetAlpha(row.widget, 0.4)
                                     break
                                 end
                             end
@@ -1834,7 +1922,20 @@ local function StartDragTracking()
             end
         end
         if CS.dragState.phase == "active" then
-            if CS.dragState.col1RenderedRows then
+            if CS.dragState.kind == "layout-slot" then
+                local dropTarget = CS.dragState.layoutDrag
+                    and CS.dragState.layoutDrag.resolveDropTarget
+                    and CS.dragState.layoutDrag.resolveDropTarget(cursorX, cursorY, CS.dragState)
+                CS.dragState.dropTarget = dropTarget
+                ClearCol2AnimatedPreview()
+                if CS.dragState.layoutDrag and CS.dragState.layoutDrag.onUpdate then
+                    CS.dragState.layoutDrag.onUpdate(CS.dragState, cursorX, cursorY, dropTarget)
+                elseif dropTarget and CS.dragState.layoutDrag.showIndicator then
+                    CS.dragState.layoutDrag.showIndicator(dropTarget)
+                else
+                    HideDragIndicator()
+                end
+            elseif CS.dragState.col1RenderedRows then
                 ClearCol2AnimatedPreview()
                 -- Column 1 folder-aware drop detection
                 local effectiveKind = CS.dragState.kind == "multi-group" and "group" or CS.dragState.kind

@@ -21,7 +21,7 @@ local function RefreshColumn4(container)
         container._browsePlaceholder:Hide()
     end
 
-    -- Resource Bar panel mode: show Layout & Order panel instead of group settings
+    -- Resource Bar panel mode: show Layout & Order preview instead of group settings
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
             container.placeholderLabel:Hide()
@@ -35,19 +35,23 @@ local function RefreshColumn4(container)
         if container.customAuraScroll then
             container.customAuraScroll.frame:Hide()
         end
-        if not container.layoutOrderScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(container)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-            container.layoutOrderScroll = scroll
+        if container.layoutOrderScroll then
+            container.layoutOrderScroll.frame:Hide()
         end
-        container.layoutOrderScroll:ReleaseChildren()
-        container.layoutOrderScroll.frame:Show()
-        ST._BuildLayoutOrderPanel(container.layoutOrderScroll)
+        if not container.layoutOrderHost then
+            local host = CreateFrame("Frame", nil, container)
+            host:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            host:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            host:SetClipsChildren(false)
+            host:Hide()
+            container.layoutOrderHost = host
+        end
+        container.layoutOrderHost:Show()
+        ST._BuildLayoutOrderPanel(container.layoutOrderHost)
         return
+    end
+    if container.layoutOrderHost then
+        container.layoutOrderHost:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then

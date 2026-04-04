@@ -69,6 +69,90 @@ local function GetAnchorOffset(point, width, height)
     return 0, 0
 end
 
+local function ApplyUnsafeAnchorVisualFallback(frame, anchor, relativeFrame)
+    if not (frame and anchor and relativeFrame and relativeFrame.GetCenter and relativeFrame.GetSize) then
+        return false
+    end
+
+    local rcx, rcy = relativeFrame:GetCenter()
+    local rw, rh = relativeFrame:GetSize()
+    if not (rcx and rcy and rw and rh) then
+        return false
+    end
+
+    local desiredPoint = anchor.point or "CENTER"
+    local desiredRelPoint = anchor.relativePoint or "CENTER"
+    local offsetX = anchor.x or 0
+    local offsetY = anchor.y or 0
+    local rax, ray = GetAnchorOffset(desiredRelPoint, rw, rh)
+
+    frame:ClearAllPoints()
+    frame:SetPoint(desiredPoint, UIParent, "BOTTOMLEFT", rcx + rax + offsetX, rcy + ray + offsetY)
+    return true
+end
+
+local function ParseAddonAnchorFrameName(frameName)
+    if type(frameName) ~= "string" then return nil end
+
+    local groupId = frameName:match("^CooldownCompanionGroup(%d+)$")
+    if groupId then
+        return "group", tonumber(groupId)
+    end
+
+    local containerId = frameName:match("^CooldownCompanionContainer(%d+)$")
+    if containerId then
+        return "container", tonumber(containerId)
+    end
+end
+
+local function WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKind, targetFrame, visited, depth)
+    if not targetFrame or targetFrame == UIParent then return false end
+
+    depth = depth or 0
+    if depth > 24 then return false end
+
+    visited = visited or {}
+    if visited[targetFrame] then return false end
+    visited[targetFrame] = true
+
+    local targetKind, targetId = ParseAddonAnchorFrameName(targetFrame:GetName())
+    if targetKind and targetId and self:WouldCreateCircularAnchor(sourceId, targetId, targetKind, sourceKind) then
+        return true
+    end
+
+    local pointIndex = 1
+    while true do
+        local point, relativeFrame = targetFrame:GetPoint(pointIndex)
+        if not point then break end
+        if relativeFrame
+            and relativeFrame ~= targetFrame
+            and relativeFrame.GetPoint
+            and WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKind, relativeFrame, visited, depth + 1) then
+            return true
+        end
+        pointIndex = pointIndex + 1
+    end
+
+    return false
+end
+
+local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
+    if not relativeTo or relativeTo == "UIParent" then
+        return nil, "ui-parent"
+    end
+
+    local relativeFrame = _G[relativeTo]
+    if not relativeFrame then
+        return nil, "missing"
+    end
+
+    if WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKind or "group", relativeFrame) then
+        return nil, "unsafe"
+    end
+
+    return relativeFrame, "ok"
+end
+
 local function NormalizeCompactGrowthDirection(growthDirection)
     if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
         return "start"
@@ -445,7 +529,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 
     local relativeTo = anchor.relativeTo
     if relativeTo and relativeTo ~= "UIParent" then
-        local relativeFrame = _G[relativeTo]
+        local relativeFrame, anchorState = ResolveSafeAnchorTarget(self, frame.groupId, "group", relativeTo)
         if relativeFrame then
             frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
             UpdateCoordLabel(frame, anchor.x, anchor.y)
@@ -455,7 +539,8 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             self:SetupAlphaSync(frame, relativeFrame)
             return
         else
-            -- Target frame doesn't exist — panels fall back to container before UIParent
+            -- Unsafe or missing target: use a temporary visual fallback without
+            -- rewriting the saved anchor. Panels prefer their container first.
             local containerName = GetPanelContainerFrameName(frame.groupId)
             if containerName then
                 local containerFrame = _G[containerName]
@@ -469,9 +554,11 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
                     return
                 end
             end
-            -- If forceCenter, reset to center
+            -- If the target is merely missing, allow force-center recovery.
+            -- Unsafe external targets should stay preserved until the user
+            -- intentionally changes them.
             -- Otherwise use saved position relative to UIParent
-            if forceCenter then
+            if forceCenter and anchorState ~= "unsafe" then
                 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
                 -- Update the saved anchor to reflect the centered position
                 local group = self.db.profile.groups[frame.groupId]
@@ -556,8 +643,13 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     -- Determine the reference frame and its dimensions
     local relativeTo = group.anchor.relativeTo
     local relFrame
+    local anchorState
     if relativeTo and relativeTo ~= "UIParent" then
-        relFrame = _G[relativeTo]
+        relFrame, anchorState = ResolveSafeAnchorTarget(self, groupId, "group", relativeTo)
+    end
+    if anchorState == "unsafe" then
+        self:AnchorGroupFrame(frame, group.anchor)
+        return
     end
     if not relFrame then
         -- Panels: try container frame before UIParent
@@ -1017,16 +1109,17 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
 end
 
-function CooldownCompanion:WouldCreateCircularAnchor(sourceGroupId, targetId, targetKind)
+function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetKind, sourceKind)
     local groups = self.db.profile.groups
     if not groups then return false end
     local containers = self.db.profile.groupContainers or {}
     local visited = {}
     -- Track both the kind and id to avoid conflating group/container ID spaces
+    sourceKind = sourceKind or "group"
     local currentKind = targetKind or "group"
     local currentId = targetId
     while currentId do
-        if currentKind == "group" and currentId == sourceGroupId then return true end
+        if currentKind == sourceKind and currentId == sourceId then return true end
         local visitKey = currentKind .. ":" .. currentId
         if visited[visitKey] then return false end
         visited[visitKey] = true
@@ -1121,6 +1214,12 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     local targetFrame = _G[targetFrameName]
     if not targetFrame then
         self:Print("Frame '" .. targetFrameName .. "' not found.")
+        return false
+    end
+
+    local targetKind = ParseAddonAnchorFrameName(targetFrameName)
+    if not targetKind and WouldFrameDependencyCreateCircularAnchor(self, groupId, "group", targetFrame) then
+        self:Print("Cannot anchor: target frame depends on a Cooldown Companion frame.")
         return false
     end
 
@@ -1413,18 +1512,26 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
         return
     end
     frame._anchorDirty = nil
-    frame:ClearAllPoints()
 
     local relativeTo = anchor.relativeTo
     if relativeTo and relativeTo ~= "UIParent" then
-        local relativeFrame = _G[relativeTo]
+        local relativeFrame, anchorState = ResolveSafeAnchorTarget(self, frame.containerId, "container", relativeTo)
         if relativeFrame then
+            frame:ClearAllPoints()
             frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
             UpdateCoordLabel(frame, anchor.x, anchor.y)
             return
         end
+        if anchorState == "unsafe" then
+            local unsafeFrame = _G[relativeTo]
+            if ApplyUnsafeAnchorVisualFallback(frame, anchor, unsafeFrame) then
+                UpdateCoordLabel(frame, anchor.x, anchor.y)
+            end
+            return
+        end
     end
 
+    frame:ClearAllPoints()
     frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
     UpdateCoordLabel(frame, anchor.x, anchor.y)
 end
@@ -1439,8 +1546,13 @@ function CooldownCompanion:SaveContainerPosition(containerId)
 
     local relativeTo = container.anchor.relativeTo
     local relFrame
+    local anchorState
     if relativeTo and relativeTo ~= "UIParent" then
-        relFrame = _G[relativeTo]
+        relFrame, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
+    end
+    if anchorState == "unsafe" then
+        self:AnchorContainerFrame(frame, container.anchor)
+        return
     end
     if not relFrame then
         relFrame = UIParent
