@@ -1512,6 +1512,7 @@ local function CreateConfigPanel()
                 entry.overlay:SetAlpha(0.01)
                 entry.overlay:Show()
             else
+                entry.overlay:SetAlpha(1)
                 entry.overlay:Hide()
             end
         end
@@ -1526,6 +1527,7 @@ local function CreateConfigPanel()
         local targets = CS._panelDropTargets
         if targets then
             for _, entry in ipairs(targets) do
+                entry.overlay:SetAlpha(1)
                 entry.overlay:Hide()
             end
         end

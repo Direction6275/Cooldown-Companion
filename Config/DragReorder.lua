@@ -263,6 +263,31 @@ local function EaseInOut(t)
     return t * t * (3 - 2 * t)
 end
 
+local function ApplyPreviewBackdrop(frame, bg, border)
+    if bg then
+        frame:SetBackdropColor(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.2)
+    else
+        frame:SetBackdropColor(0, 0, 0, 0.22)
+    end
+
+    if border then
+        frame:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0, border[4] or 0.58)
+    else
+        frame:SetBackdropBorderColor(0, 0, 0, 0.58)
+    end
+end
+
+local function ApplyPreviewModeBadge(texture, displayMode)
+    if displayMode == "bars" then
+        texture:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
+    elseif displayMode == "text" then
+        texture:SetAtlas("poi-workorders", false)
+    else
+        texture:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
+    end
+    texture:Show()
+end
+
 local function GetRelativeRect(frame, parent)
     if not (frame and parent and frame:IsShown() and parent:IsShown()) then
         return nil
@@ -730,11 +755,7 @@ local function BuildCol2PreviewModel(source)
             elseif targetPanel then
                 insertIndex = Clamp(insertIndex, 1, #targetPanel.rows + 1)
                 table.insert(targetPanel.rows, insertIndex, BuildGapRow(movedRow, "gap:" .. tostring(movedRow.key or source.sourceIndex)))
-                if targetPanel.panelId ~= sourcePanel.panelId then
-                    targetPanel.count = #targetPanel.rows
-                else
-                    targetPanel.count = #targetPanel.rows
-                end
+                targetPanel.count = #targetPanel.rows
             end
         end
 
@@ -792,32 +813,14 @@ local function UpdateCol2Ghost(preview, source, model)
     if source.kind == "panel" then
         local panel = model and model.draggedPanel
         if panel then
-            local bg = panel.backdropColor
-            local border = panel.borderColor
-            if bg then
-                preview.ghost:SetBackdropColor(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.2)
-            else
-                preview.ghost:SetBackdropColor(0, 0, 0, 0.22)
-            end
-            if border then
-                preview.ghost:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0, border[4] or 0.58)
-            else
-                preview.ghost:SetBackdropBorderColor(0, 0, 0, 0.58)
-            end
+            ApplyPreviewBackdrop(preview.ghost, panel.backdropColor, panel.borderColor)
             preview.ghost:SetSize(panel.width, panel.compactHeight or panel.header.height)
             preview.ghost.label:SetText(panel.name .. " |cff666666(" .. tostring(panel.count or 0) .. ")|r")
             preview.ghost.icon:SetSize(16, 16)
             preview.ghost.icon:SetPoint("LEFT", preview.ghost, "LEFT", 10, 0)
             preview.ghost.label:SetPoint("LEFT", preview.ghost.icon, "RIGHT", 8, 0)
             preview.ghost.label:SetPoint("RIGHT", preview.ghost, "RIGHT", -10, 0)
-            if panel.displayMode == "bars" then
-                preview.ghost.icon:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
-            elseif panel.displayMode == "text" then
-                preview.ghost.icon:SetAtlas("poi-workorders", false)
-            else
-                preview.ghost.icon:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
-            end
-            preview.ghost.icon:Show()
+            ApplyPreviewModeBadge(preview.ghost.icon, panel.displayMode)
             preview.ghost:Show()
             preview.ghostActive = true
         end
@@ -897,47 +900,15 @@ local function RenderCol2AnimatedPreview(source)
             local panelProxy = AcquirePreviewPanelFrame(preview, proxyIndex)
             local panelFrame = panelProxy.frame
             panelFrame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + proxyIndex)
+            ApplyPreviewBackdrop(panelFrame, panel.backdropColor, panel.borderColor)
             if model.mode == PREVIEW_MODE_PANEL_COMPACT then
-                local bg = panel.backdropColor
-                local border = panel.borderColor
-                if bg then
-                    panelFrame:SetBackdropColor(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.2)
-                else
-                    panelFrame:SetBackdropColor(0, 0, 0, 0.22)
-                end
-                if border then
-                    panelFrame:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0, border[4] or 0.58)
-                else
-                    panelFrame:SetBackdropBorderColor(0, 0, 0, 0.58)
-                end
                 panelFrame._cdcTitle:ClearAllPoints()
                 panelFrame._cdcTitle:SetPoint("CENTER", panelFrame, "CENTER", 8, 0)
             else
-                local bg = panel.backdropColor
-                local border = panel.borderColor
-                if bg then
-                    panelFrame:SetBackdropColor(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.2)
-                else
-                    panelFrame:SetBackdropColor(0, 0, 0, 0.22)
-                end
-                if border then
-                    panelFrame:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0, border[4] or 0.58)
-                else
-                    panelFrame:SetBackdropBorderColor(0, 0, 0, 0.58)
-                end
                 panelFrame._cdcTitle:ClearAllPoints()
                 panelFrame._cdcTitle:SetPoint("TOP", panelFrame, "TOP", 0, -(panel.header.y + (panel.header.height / 2)))
             end
-            if panel.displayMode == "bars" then
-                panelFrame._cdcModeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
-                panelFrame._cdcModeBadge:Show()
-            elseif panel.displayMode == "text" then
-                panelFrame._cdcModeBadge:SetAtlas("poi-workorders", false)
-                panelFrame._cdcModeBadge:Show()
-            else
-                panelFrame._cdcModeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
-                panelFrame._cdcModeBadge:Show()
-            end
+            ApplyPreviewModeBadge(panelFrame._cdcModeBadge, panel.displayMode)
             panelFrame._cdcTitle:SetText(panel.name .. " |cff666666(" .. tostring(panel.count or #panel.rows) .. ")|r")
             if not panel.enabled then
                 panelFrame._cdcTitle:SetTextColor(0.55, 0.55, 0.55)

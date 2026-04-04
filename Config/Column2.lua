@@ -1016,6 +1016,7 @@ local function RefreshColumn2()
                     pf._cdcDropOverlay = overlay
                 end
                 overlay:SetFrameLevel(pf:GetFrameLevel() + 10)
+                overlay:SetAlpha(1)
                 overlay._cdcText:SetText("|cffAADDFFDrop here|r")
                 overlay:Hide()
 
