@@ -2110,6 +2110,8 @@ local function PrepareCustomAuraBar(
     return barInfo, isIndependentCustomAura
 end
 
+RB.PrepareCustomAuraBar = PrepareCustomAuraBar
+
 ------------------------------------------------------------------------
 -- Live recolor for custom aura bars (called from config color picker)
 ------------------------------------------------------------------------
@@ -2546,6 +2548,10 @@ local function StyleSegmentedBar(holder, powerType, settings)
     end
     StyleSegmentedText(holder, powerType, settings)
 end
+
+RB.StyleContinuousBar = StyleContinuousBar
+RB.StyleSegmentedText = StyleSegmentedText
+RB.StyleSegmentedBar = StyleSegmentedBar
 
 function CooldownCompanion:ApplyResourceBars()
     local settings = GetResourceBarSettings()
@@ -3233,8 +3239,10 @@ end
 -- Preview mode
 ------------------------------------------------------------------------
 
-ApplyPreviewData = function()
-    local settings = GetResourceBarSettings()
+local function ApplyPreviewDataToBar(barInfo, settings)
+    if not (barInfo and barInfo.frame and barInfo.frame:IsShown()) then
+        return
+    end
 
     local function ApplyResourceAuraLanePreview(barInfo, previewRatio)
         local powerType = barInfo.powerType
@@ -3266,168 +3274,177 @@ ApplyPreviewData = function()
         ApplyResourceAuraStackSegments(barInfo.frame, settings, previewStacks, auraMaxStacks, auraColor)
     end
 
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame and barInfo.frame:IsShown() then
-            ClearResourceAuraVisuals(barInfo.frame)
-            if barInfo.barType == "continuous" then
-                barInfo.frame:SetMinMaxValues(0, 100)
-                barInfo.frame:SetValue(65)
-                if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    local textFormat = barInfo.frame._textFormat
-                    if textFormat == "current" then
-                        barInfo.frame.text:SetText("65")
-                    elseif textFormat == "percent" then
-                        barInfo.frame.text:SetText("65")
-                    else
-                        barInfo.frame.text:SetText("65 / 100")
-                    end
-                end
-            elseif barInfo.barType == "segmented" then
-                local n = #barInfo.frame.segments
-                local filled = math_floor(n * 0.6)
-                for i, seg in ipairs(barInfo.frame.segments) do
-                    if i <= filled then
-                        seg:SetValue(1)
-                    elseif i == filled + 1 then
-                        seg:SetValue(0.5)
-                    else
-                        seg:SetValue(0)
-                    end
-                end
-                ApplyResourceAuraLanePreview(barInfo, 0.5)
-                SetSegmentedText(barInfo.frame, filled + 0.5, n)
-            elseif barInfo.barType == "stagger_continuous" then
-                -- Preview at 45% stagger (yellow zone)
-                barInfo.frame:SetMinMaxValues(0, 100)
-                barInfo.frame:SetValue(45)
-                local _, yellowColor = GetResourceColors(101, settings)
-                barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
-                barInfo.frame.brightnessOverlay:Hide()
-                if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    local textFormat = barInfo.frame._textFormat
-                    if textFormat == "current" then
-                        barInfo.frame.text:SetText("45")
-                    elseif textFormat == "percent" then
-                        barInfo.frame.text:SetText("45%")
-                    else
-                        barInfo.frame.text:SetText("45 / 100")
-                    end
-                end
-            elseif barInfo.barType == "mw_segmented" then
-                -- Preview at 7 stacks (all 5 base full, 2 overlay full)
-                local half = #barInfo.frame.segments
-                local previewStacks = 7
-                for i = 1, half do
-                    barInfo.frame.segments[i]:SetValue(previewStacks)
-                    barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
-                    if previewStacks > (half + i - 1) then
-                        barInfo.frame.overlaySegments[i]:SetAlpha(1)
-                    else
-                        barInfo.frame.overlaySegments[i]:SetAlpha(0)
-                    end
-                end
-                ApplyResourceAuraLanePreview(barInfo, 0.5)
-                SetSegmentedText(barInfo.frame, previewStacks, mwMaxStacks)
-            elseif barInfo.barType == "custom_continuous" then
-                local cabConfig = barInfo.cabConfig
-                local isActive = cabConfig and cabConfig.trackingMode == "active"
-                local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-                local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
-                local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
-                ClearCustomAuraBarIndicatorState(barInfo, false)
-                local previewValue
-                if isActive then
-                    barInfo.frame:SetMinMaxValues(0, 1)
-                    previewValue = indicatorPreview and 1 or 0.65
-                    barInfo.frame:SetValue(previewValue)
+    ClearResourceAuraVisuals(barInfo.frame)
+    if barInfo.barType == "continuous" then
+        barInfo.frame:SetMinMaxValues(0, 100)
+        barInfo.frame:SetValue(65)
+        if barInfo.frame.text and barInfo.frame.text:IsShown() then
+            local textFormat = barInfo.frame._textFormat
+            if textFormat == "current" then
+                barInfo.frame.text:SetText("65")
+            elseif textFormat == "percent" then
+                barInfo.frame.text:SetText("65")
+            else
+                barInfo.frame.text:SetText("65 / 100")
+            end
+        end
+    elseif barInfo.barType == "segmented" then
+        local n = #barInfo.frame.segments
+        local filled = math_floor(n * 0.6)
+        for i, seg in ipairs(barInfo.frame.segments) do
+            if i <= filled then
+                seg:SetValue(1)
+            elseif i == filled + 1 then
+                seg:SetValue(0.5)
+            else
+                seg:SetValue(0)
+            end
+        end
+        ApplyResourceAuraLanePreview(barInfo, 0.5)
+        SetSegmentedText(barInfo.frame, filled + 0.5, n)
+    elseif barInfo.barType == "stagger_continuous" then
+        barInfo.frame:SetMinMaxValues(0, 100)
+        barInfo.frame:SetValue(45)
+        local _, yellowColor = GetResourceColors(101, settings)
+        barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
+        barInfo.frame.brightnessOverlay:Hide()
+        if barInfo.frame.text and barInfo.frame.text:IsShown() then
+            local textFormat = barInfo.frame._textFormat
+            if textFormat == "current" then
+                barInfo.frame.text:SetText("45")
+            elseif textFormat == "percent" then
+                barInfo.frame.text:SetText("45%")
+            else
+                barInfo.frame.text:SetText("45 / 100")
+            end
+        end
+    elseif barInfo.barType == "mw_segmented" then
+        local half = #barInfo.frame.segments
+        local previewStacks = math_min(mwMaxStacks, math_max(1, math_floor((mwMaxStacks * 0.7) + 0.5)))
+        if mwMaxStacks > 5 then
+            previewStacks = math_min(mwMaxStacks, math_max(previewStacks, 7))
+        end
+        for i = 1, half do
+            barInfo.frame.segments[i]:SetValue(previewStacks)
+            barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+            if previewStacks > (half + i - 1) then
+                barInfo.frame.overlaySegments[i]:SetAlpha(1)
+            else
+                barInfo.frame.overlaySegments[i]:SetAlpha(0)
+            end
+        end
+        ApplyResourceAuraLanePreview(barInfo, 0.5)
+        SetSegmentedText(barInfo.frame, previewStacks, mwMaxStacks)
+    elseif barInfo.barType == "custom_continuous" then
+        local cabConfig = barInfo.cabConfig
+        local isActive = cabConfig and cabConfig.trackingMode == "active"
+        local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+        local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+        local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
+        ClearCustomAuraBarIndicatorState(barInfo, false)
+        local previewValue
+        if isActive then
+            barInfo.frame:SetMinMaxValues(0, 1)
+            previewValue = indicatorPreview and 1 or 0.65
+            barInfo.frame:SetValue(previewValue)
+        else
+            barInfo.frame:SetMinMaxValues(0, maxStacks)
+            previewValue = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.65)
+            barInfo.frame:SetValue(previewValue)
+        end
+        if barInfo.frame.thresholdOverlay then
+            if thresholdEnabled then
+                SetCustomAuraMaxThresholdRange(barInfo.frame.thresholdOverlay, maxStacks)
+                barInfo.frame.thresholdOverlay:SetValue(previewValue or 0)
+                barInfo.frame.thresholdOverlay:Show()
+            else
+                barInfo.frame.thresholdOverlay:SetValue(0)
+                barInfo.frame.thresholdOverlay:Hide()
+            end
+        end
+        if barInfo.frame.text and barInfo.frame.text:IsShown() then
+            barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
+        end
+        if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
+            if isActive then
+                barInfo.frame.stackText:SetFormattedText("%d", 3)
+            else
+                local stackTextFormat = NormalizeCustomAuraStackTextFormat(cabConfig and cabConfig.stackTextFormat)
+                if stackTextFormat == "current" then
+                    barInfo.frame.stackText:SetFormattedText("%d", previewValue)
                 else
-                    barInfo.frame:SetMinMaxValues(0, maxStacks)
-                    previewValue = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.65)
-                    barInfo.frame:SetValue(previewValue)
-                end
-                if barInfo.frame.thresholdOverlay then
-                    if thresholdEnabled then
-                        SetCustomAuraMaxThresholdRange(barInfo.frame.thresholdOverlay, maxStacks)
-                        barInfo.frame.thresholdOverlay:SetValue(previewValue or 0)
-                        barInfo.frame.thresholdOverlay:Show()
-                    else
-                        barInfo.frame.thresholdOverlay:SetValue(0)
-                        barInfo.frame.thresholdOverlay:Hide()
-                    end
-                end
-                if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                    barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
-                end
-                if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
-                    if isActive then
-                        barInfo.frame.stackText:SetFormattedText("%d", 3)
-                    else
-                        local stackTextFormat = NormalizeCustomAuraStackTextFormat(cabConfig and cabConfig.stackTextFormat)
-                        if stackTextFormat == "current" then
-                            barInfo.frame.stackText:SetFormattedText("%d", previewValue)
-                        else
-                            barInfo.frame.stackText:SetFormattedText("%d / %d", previewValue, maxStacks)
-                        end
-                    end
-                end
-                -- Max stacks indicator preview (continuous)
-                if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                    barInfo._maxStacksIndicator:SetValue(maxStacks)
-                end
-            elseif barInfo.barType == "custom_segmented" then
-                local cabConfig = barInfo.cabConfig
-                local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-                local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
-                local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
-                local n = #barInfo.frame.segments
-                local fill = indicatorPreview and n or math.ceil(n * 0.6)
-                -- Segments have MinMax(i-1, i); C-level clamping handles fill/empty
-                for _, seg in ipairs(barInfo.frame.segments) do
-                    seg:SetValue(fill)
-                end
-                if barInfo.frame.thresholdSegments then
-                    for _, seg in ipairs(barInfo.frame.thresholdSegments) do
-                        if thresholdEnabled then
-                            SetCustomAuraMaxThresholdRange(seg, maxStacks)
-                            seg:SetValue(fill)
-                            seg:Show()
-                        else
-                            seg:SetValue(0)
-                            seg:Hide()
-                        end
-                    end
-                end
-                -- Max stacks indicator preview (segmented)
-                if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                    barInfo._maxStacksIndicator:SetValue(maxStacks)
-                end
-            elseif barInfo.barType == "custom_overlay" then
-                local cabConfig = barInfo.cabConfig
-                local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-                local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
-                local previewStacks = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.7)
-                local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
-                local half = barInfo.halfSegments or 1
-                for i = 1, half do
-                    barInfo.frame.segments[i]:SetValue(previewStacks)
-                    barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
-                    if barInfo.frame.thresholdSegments and barInfo.frame.thresholdSegments[i] then
-                        local seg = barInfo.frame.thresholdSegments[i]
-                        if thresholdEnabled then
-                            SetCustomAuraMaxThresholdRange(seg, maxStacks)
-                            seg:SetValue(previewStacks)
-                            seg:Show()
-                        else
-                            seg:SetValue(0)
-                            seg:Hide()
-                        end
-                    end
-                end
-                -- Max stacks indicator preview (overlay)
-                if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                    barInfo._maxStacksIndicator:SetValue(maxStacks)
+                    barInfo.frame.stackText:SetFormattedText("%d / %d", previewValue, maxStacks)
                 end
             end
+        end
+        if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
+            barInfo._maxStacksIndicator:SetValue(maxStacks)
+        end
+    elseif barInfo.barType == "custom_segmented" then
+        local cabConfig = barInfo.cabConfig
+        local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+        local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+        local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
+        local n = #barInfo.frame.segments
+        local fill = indicatorPreview and n or math.ceil(n * 0.6)
+        for _, seg in ipairs(barInfo.frame.segments) do
+            seg:SetValue(fill)
+        end
+        if barInfo.frame.thresholdSegments then
+            for _, seg in ipairs(barInfo.frame.thresholdSegments) do
+                if thresholdEnabled then
+                    SetCustomAuraMaxThresholdRange(seg, maxStacks)
+                    seg:SetValue(fill)
+                    seg:Show()
+                else
+                    seg:SetValue(0)
+                    seg:Hide()
+                end
+            end
+        end
+        if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
+            barInfo._maxStacksIndicator:SetValue(maxStacks)
+        end
+    elseif barInfo.barType == "custom_overlay" then
+        local cabConfig = barInfo.cabConfig
+        local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+        local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
+        local previewStacks = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.7)
+        local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+        local half = barInfo.halfSegments or 1
+        for i = 1, half do
+            barInfo.frame.segments[i]:SetValue(previewStacks)
+            barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+            if barInfo.frame.thresholdSegments and barInfo.frame.thresholdSegments[i] then
+                local seg = barInfo.frame.thresholdSegments[i]
+                if thresholdEnabled then
+                    SetCustomAuraMaxThresholdRange(seg, maxStacks)
+                    seg:SetValue(previewStacks)
+                    seg:Show()
+                else
+                    seg:SetValue(0)
+                    seg:Hide()
+                end
+            end
+        end
+        if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
+            barInfo._maxStacksIndicator:SetValue(maxStacks)
+        end
+    end
+end
+
+RB.ApplyPreviewBarState = ApplyPreviewDataToBar
+RB.GetMWMaxStacks = function()
+    return mwMaxStacks
+end
+RB.StyleCustomAuraBar = StyleCustomAuraBar
+
+ApplyPreviewData = function()
+    local settings = GetResourceBarSettings()
+
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.frame and barInfo.frame:IsShown() then
+            ApplyPreviewDataToBar(barInfo, settings)
         end
     end
 end

@@ -1027,7 +1027,7 @@ local function RefreshColumn1(preserveDrag)
         entryFrame._cdcOnMouseDown = function(self, button)
             if button == "LeftButton" and not IsShiftKeyDown() and not IsControlKeyDown() then
                 local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
-                local cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
                 CS.dragState = {
                     kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
                     phase = "pending",
@@ -1037,6 +1037,7 @@ local function RefreshColumn1(preserveDrag)
                     sourceFolderId = inFolder and container.folderId or nil,
                     scrollWidget = CS.col1Scroll,
                     widget = entry,
+                    startX = cursorX,
                     startY = cursorY,
                     col1RenderedRows = col1RenderedRows,
                 }
@@ -1332,7 +1333,7 @@ local function RefreshColumn1(preserveDrag)
         end
         entryFrame._cdcOnMouseDown = function(self, button)
             if button == "LeftButton" and not IsShiftKeyDown() then
-                local cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
                 CS.dragState = {
                     kind = "folder",
                     phase = "pending",
@@ -1340,6 +1341,7 @@ local function RefreshColumn1(preserveDrag)
                     sourceSection = sectionTag,
                     scrollWidget = CS.col1Scroll,
                     widget = entry,
+                    startX = cursorX,
                     startY = cursorY,
                     col1RenderedRows = col1RenderedRows,
                 }

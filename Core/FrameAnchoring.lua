@@ -152,6 +152,36 @@ local function RestoreFrameAnchors(frame, anchors)
     end
 end
 
+local function WouldFrameDependOn(sourceFrame, dependencyFrame, visited, depth)
+    if not sourceFrame or not dependencyFrame then return false end
+    if sourceFrame == dependencyFrame then return true end
+
+    depth = depth or 0
+    if depth > 24 then return false end
+
+    visited = visited or {}
+    if visited[sourceFrame] then return false end
+    visited[sourceFrame] = true
+
+    local pointIndex = 1
+    while true do
+        local point, relativeFrame = sourceFrame:GetPoint(pointIndex)
+        if not point then break end
+        if relativeFrame == dependencyFrame then
+            return true
+        end
+        if relativeFrame
+            and relativeFrame ~= sourceFrame
+            and relativeFrame.GetPoint
+            and WouldFrameDependOn(relativeFrame, dependencyFrame, visited, depth + 1) then
+            return true
+        end
+        pointIndex = pointIndex + 1
+    end
+
+    return false
+end
+
 ------------------------------------------------------------------------
 -- Apply
 ------------------------------------------------------------------------
@@ -188,6 +218,12 @@ function CooldownCompanion:ApplyFrameAnchoring()
 
     local playerFrame, targetFrame = GetUnitFrames(settings)
     if not playerFrame and not targetFrame then
+        self:RevertFrameAnchoring()
+        return
+    end
+
+    if (playerFrame and WouldFrameDependOn(groupFrame, playerFrame))
+        or (targetFrame and WouldFrameDependOn(groupFrame, targetFrame)) then
         self:RevertFrameAnchoring()
         return
     end

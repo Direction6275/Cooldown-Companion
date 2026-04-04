@@ -93,6 +93,7 @@ ConfigSettings\Helpers.lua
 ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
+ConfigSettings\ResourceBarLayoutOrderPreview.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\ButtonSettings.lua
