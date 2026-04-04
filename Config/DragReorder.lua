@@ -132,36 +132,76 @@ local function GetCol2DropTarget(cursorY, renderedRows)
                             anchorAbove = false,
                         }
                     else
-                        -- Expanded header: top half → append to previous panel, bottom half → insert at pos 1
-                        if cursorY > mid then
-                            local prevPanelId = FindPreviousPanelId(renderedRows, i)
-                            if prevPanelId then
-                                return {
-                                    action = "append",
-                                    targetPanelId = prevPanelId,
-                                    targetIndex = nil, -- will resolve to #buttons+1
-                                    anchorFrame = frame,
-                                    anchorAbove = true,
-                                }
-                            end
-                            -- No previous panel (first header) → insert at pos 1 of this panel
-                            return {
-                                action = "insert",
-                                targetPanelId = rowMeta.panelId,
-                                targetIndex = 1,
-                                anchorFrame = frame,
-                                anchorAbove = false,
-                            }
-                        else
-                            return {
-                                action = "insert",
-                                targetPanelId = rowMeta.panelId,
-                                targetIndex = 1,
-                                anchorFrame = frame,
-                                anchorAbove = false,
-                            }
-                        end
+                        return {
+                            action = "insert",
+                            targetPanelId = rowMeta.panelId,
+                            targetIndex = 1,
+                            anchorFrame = frame,
+                            anchorAbove = true,
+                        }
                     end
+                end
+            end
+        end
+    end
+
+    -- Cursor is in a vertical gap between visible rows/panels.
+    for i = 1, #renderedRows - 1 do
+        local prevMeta = renderedRows[i]
+        local nextMeta = renderedRows[i + 1]
+        local prevFrame = prevMeta.widget and prevMeta.widget.frame
+        local nextFrame = nextMeta.widget and nextMeta.widget.frame
+        if prevFrame and nextFrame and prevFrame:IsShown() and nextFrame:IsShown() then
+            local prevBottom = prevFrame:GetBottom()
+            local nextTop = nextFrame:GetTop()
+            if prevBottom and nextTop and cursorY <= prevBottom and cursorY >= nextTop then
+                local gapMid = (prevBottom + nextTop) / 2
+                if nextMeta.kind == "header" and prevMeta.panelId ~= nextMeta.panelId then
+                    if cursorY > gapMid then
+                        return {
+                            action = "append",
+                            targetPanelId = prevMeta.panelId,
+                            targetIndex = nil,
+                            anchorFrame = prevFrame,
+                            anchorAbove = false,
+                        }
+                    end
+
+                    if nextMeta.isCollapsed then
+                        return {
+                            action = "append-to-collapsed",
+                            targetPanelId = nextMeta.panelId,
+                            targetIndex = nil,
+                            anchorFrame = nextFrame,
+                            anchorAbove = true,
+                        }
+                    end
+
+                    return {
+                        action = "insert",
+                        targetPanelId = nextMeta.panelId,
+                        targetIndex = 1,
+                        anchorFrame = nextFrame,
+                        anchorAbove = true,
+                    }
+                end
+
+                if nextMeta.kind == "button" then
+                    return {
+                        action = "insert",
+                        targetPanelId = nextMeta.panelId,
+                        targetIndex = nextMeta.buttonIndex,
+                        anchorFrame = nextFrame,
+                        anchorAbove = true,
+                    }
+                elseif nextMeta.kind == "header" then
+                    return {
+                        action = nextMeta.isCollapsed and "append-to-collapsed" or "insert",
+                        targetPanelId = nextMeta.panelId,
+                        targetIndex = nextMeta.isCollapsed and nil or 1,
+                        anchorFrame = nextFrame,
+                        anchorAbove = true,
+                    }
                 end
             end
         end
@@ -752,8 +792,18 @@ local function UpdateCol2Ghost(preview, source, model)
     if source.kind == "panel" then
         local panel = model and model.draggedPanel
         if panel then
-            preview.ghost:SetBackdropColor(0, 0, 0, 0.08)
-            preview.ghost:SetBackdropBorderColor(0, 0, 0, 0.72)
+            local bg = panel.backdropColor
+            local border = panel.borderColor
+            if bg then
+                preview.ghost:SetBackdropColor(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.2)
+            else
+                preview.ghost:SetBackdropColor(0, 0, 0, 0.22)
+            end
+            if border then
+                preview.ghost:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0, border[4] or 0.58)
+            else
+                preview.ghost:SetBackdropBorderColor(0, 0, 0, 0.58)
+            end
             preview.ghost:SetSize(panel.width, panel.compactHeight or panel.header.height)
             preview.ghost.label:SetText(panel.name .. " |cff666666(" .. tostring(panel.count or 0) .. ")|r")
             preview.ghost.icon:SetSize(16, 16)
@@ -848,8 +898,18 @@ local function RenderCol2AnimatedPreview(source)
             local panelFrame = panelProxy.frame
             panelFrame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + proxyIndex)
             if model.mode == PREVIEW_MODE_PANEL_COMPACT then
-                panelFrame:SetBackdropColor(0, 0, 0, 0.08)
-                panelFrame:SetBackdropBorderColor(0, 0, 0, 0.72)
+                local bg = panel.backdropColor
+                local border = panel.borderColor
+                if bg then
+                    panelFrame:SetBackdropColor(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.2)
+                else
+                    panelFrame:SetBackdropColor(0, 0, 0, 0.22)
+                end
+                if border then
+                    panelFrame:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0, border[4] or 0.58)
+                else
+                    panelFrame:SetBackdropBorderColor(0, 0, 0, 0.58)
+                end
                 panelFrame._cdcTitle:ClearAllPoints()
                 panelFrame._cdcTitle:SetPoint("CENTER", panelFrame, "CENTER", 8, 0)
             else
@@ -963,7 +1023,6 @@ local function RenderCol2AnimatedPreview(source)
             panelProxy.frame:Hide()
         end
     end
-
     UpdateCol2Ghost(preview, source, model)
     preview.root:SetScript("OnUpdate", function()
         TickCol2Preview(preview)
