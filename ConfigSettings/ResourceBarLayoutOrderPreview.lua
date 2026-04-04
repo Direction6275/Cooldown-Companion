@@ -1270,12 +1270,12 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         icon:SetTexture(liveIcon or slot.icon or LAYOUT_PREVIEW_ICON_FALLBACK)
         if settings.iconFlipSide then
             iconFrame:ClearAllPoints()
-            iconFrame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
-            barLeft = iconSize + iconGap
-        else
-            iconFrame:ClearAllPoints()
             iconFrame:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
             barRight = -(iconSize + iconGap)
+        else
+            iconFrame:ClearAllPoints()
+            iconFrame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
+            barLeft = iconSize + iconGap
         end
     else
         iconFrame:Hide()
