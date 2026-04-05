@@ -1581,6 +1581,42 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
 end
 
 
+local function ConfigureInlineEditBoxInstructions(editBoxWidget, placeholderText, currentValue)
+    local editFrame = editBoxWidget.editbox
+    local instructions = editFrame._cdcInstructions
+    if not instructions then
+        instructions = editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        instructions:SetPoint("LEFT", editFrame, "LEFT", 0, 0)
+        instructions:SetPoint("RIGHT", editFrame, "RIGHT", 0, 0)
+        instructions:SetTextColor(0.5, 0.5, 0.5)
+        editFrame._cdcInstructions = instructions
+    end
+
+    instructions:SetText(placeholderText)
+    if (currentValue or "") ~= "" then
+        instructions:Hide()
+    else
+        instructions:Show()
+    end
+
+    local prevOnRelease = editBoxWidget.events and editBoxWidget.events["OnRelease"]
+    editBoxWidget:SetCallback("OnRelease", function(widget)
+        if prevOnRelease then
+            prevOnRelease(widget, "OnRelease")
+        end
+        instructions:Hide()
+        instructions:SetText("")
+    end)
+
+    editBoxWidget:SetCallback("OnTextChanged", function(widget, event, text)
+        if text == "" then
+            instructions:Show()
+        else
+            instructions:Hide()
+        end
+    end)
+end
+
 local function BuildCustomNameSection(scroll, buttonData)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group or group.displayMode ~= "bars" then return end
@@ -1594,43 +1630,72 @@ local function BuildCustomNameSection(scroll, buttonData)
     local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
     local customNameCollapsed = CS.collapsedSections[customNameKey]
 
-    local customNameCollapseBtn = AttachCollapseButton(customNameHeading, customNameCollapsed, function()
+    AttachCollapseButton(customNameHeading, customNameCollapsed, function()
         CS.collapsedSections[customNameKey] = not CS.collapsedSections[customNameKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
 
-
     if not customNameCollapsed then
-    local customNameBox = AceGUI:Create("EditBox")
-    customNameBox:SetLabel("")
-    customNameBox:SetText(buttonData.customName or "")
-    customNameBox:SetFullWidth(true)
-    customNameBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        text = strtrim(text)
-        buttonData.customName = text ~= "" and text or nil
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    scroll:AddChild(customNameBox)
+        local customNameBox = AceGUI:Create("EditBox")
+        customNameBox:SetLabel("")
+        customNameBox:SetText(buttonData.customName or "")
+        customNameBox:SetFullWidth(true)
+        customNameBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            text = strtrim(text)
+            buttonData.customName = text ~= "" and text or nil
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        scroll:AddChild(customNameBox)
 
-    local editFrame = customNameBox.editbox
-    editFrame.Instructions = editFrame.Instructions or editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    editFrame.Instructions:SetPoint("LEFT", editFrame, "LEFT", 0, 0)
-    editFrame.Instructions:SetPoint("RIGHT", editFrame, "RIGHT", 0, 0)
-    editFrame.Instructions:SetText("add custom name here, leave blank for default")
-    editFrame.Instructions:SetTextColor(0.5, 0.5, 0.5)
-    if (buttonData.customName or "") ~= "" then
-        editFrame.Instructions:Hide()
-    else
-        editFrame.Instructions:Show()
-    end
-    customNameBox:SetCallback("OnTextChanged", function(widget, event, text)
-        if text == "" then
-            editFrame.Instructions:Show()
-        else
-            editFrame.Instructions:Hide()
-        end
-    end)
+        ConfigureInlineEditBoxInstructions(
+            customNameBox,
+            "add custom name here, leave blank for default",
+            buttonData.customName
+        )
     end -- not customNameCollapsed
+end
+
+local function BuildCustomKeybindSection(scroll, buttonData)
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group or group.displayMode ~= "icons" then return end
+
+    local effectiveStyle = CooldownCompanion:GetEffectiveStyle(group.style or {}, buttonData)
+    if not (effectiveStyle and effectiveStyle.showKeybindText) then
+        return
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Custom Keybind Text")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local collapseKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customkeybind"
+    local isCollapsed = CS.collapsedSections[collapseKey]
+
+    AttachCollapseButton(heading, isCollapsed, function()
+        CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not isCollapsed then
+        local customKeybindBox = AceGUI:Create("EditBox")
+        customKeybindBox:SetLabel("")
+        customKeybindBox:SetText(buttonData.customKeybindText or "")
+        customKeybindBox:SetFullWidth(true)
+        customKeybindBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            text = strtrim(text)
+            buttonData.customKeybindText = text ~= "" and text or nil
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        scroll:AddChild(customKeybindBox)
+
+        ConfigureInlineEditBoxInstructions(
+            customKeybindBox,
+            "add custom keybind text here, leave blank for default",
+            buttonData.customKeybindText
+        )
+    end
 end
 
 -- Expose for Config.lua
@@ -1641,5 +1706,6 @@ ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
 ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
 ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect
 ST._BuildCustomNameSection = BuildCustomNameSection
+ST._BuildCustomKeybindSection = BuildCustomKeybindSection
 ST._BuildOverridesTab = BuildOverridesTab
 ST._BuildSpellSoundAlertsTab = BuildSpellSoundAlertsTab
