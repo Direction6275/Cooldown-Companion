@@ -1178,11 +1178,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local host = EnsureAuraTextureHost(button)
     local relativeFrame = UIParent
     local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
-    local visibilityAlpha = 1
-    if not isUnlocked and not isEditing and not hasPreviewSelection and not isConfigForceVisible then
-        visibilityAlpha = button._rawVisibilityAlphaOverride or 1
-    end
-    local alpha = Clamp(baseAlpha * visibilityAlpha, 0, 1)
+    local alpha = Clamp(baseAlpha, 0, 1)
     local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
     local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
     local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
