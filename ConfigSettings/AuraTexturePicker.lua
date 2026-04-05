@@ -51,8 +51,7 @@ local function FindEntryForSelection(entries, selection)
 
     for _, entry in ipairs(entries or {}) do
         if entry.sourceType == selection.sourceType
-            and entry.sourceValue == selection.sourceValue
-            and (entry.locationType or 0) == (selection.locationType or 0) then
+            and entry.sourceValue == selection.sourceValue then
             return entry
         end
     end
@@ -273,7 +272,6 @@ local function OpenAuraTexturePicker(opts)
         if not selectedEntry or not FindEntryForSelection(entries, {
             sourceType = selectedEntry.sourceType,
             sourceValue = selectedEntry.sourceValue,
-            locationType = selectedEntry.locationType,
         }) then
             selectedEntry = matchedSelected
         end

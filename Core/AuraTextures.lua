@@ -58,11 +58,15 @@ local LOCATION_LABELS = {
     [LOCATION_BOTTOM] = "Bottom",
     [LOCATION_TOPLEFT] = "Top Left",
     [LOCATION_TOPRIGHT] = "Top Right",
-    [LOCATION_LEFTOUTSIDE] = "Left Outside",
-    [LOCATION_RIGHTOUTSIDE] = "Right Outside",
     [LOCATION_LEFTRIGHT] = "Left + Right",
     [LOCATION_TOPBOTTOM] = "Top + Bottom",
     [LOCATION_LEFTRIGHTOUTSIDE] = "Left + Right Outside",
+}
+
+local TEXTURE_LAYOUT_LABELS = {
+    [LOCATION_CENTER] = "Single",
+    [LOCATION_LEFTRIGHT] = "Left + Right",
+    [LOCATION_TOPBOTTOM] = "Top + Bottom",
 }
 
 local LOCATION_DIMENSIONS = {
@@ -100,18 +104,14 @@ local FILTER_OPTIONS = {
 
 local LOCATION_ORDER = {
     LOCATION_CENTER,
-    LOCATION_LEFT,
-    LOCATION_RIGHT,
-    LOCATION_TOP,
-    LOCATION_BOTTOM,
-    LOCATION_TOPLEFT,
-    LOCATION_TOPRIGHT,
-    LOCATION_LEFTOUTSIDE,
-    LOCATION_RIGHTOUTSIDE,
     LOCATION_LEFTRIGHT,
     LOCATION_TOPBOTTOM,
-    LOCATION_LEFTRIGHTOUTSIDE,
 }
+
+local DEFAULT_TEXTURE_PAIR_SPACING = 0
+local LEGACY_OUTSIDE_PAIR_SPACING = 0.15
+local MIN_TEXTURE_PAIR_SPACING = -5
+local MAX_TEXTURE_PAIR_SPACING = 5
 
 local function CopyColor(color)
     if type(color) ~= "table" then
@@ -160,14 +160,17 @@ local function NormalizeAnchorPoint(anchor)
     return anchor
 end
 
-local function NormalizeLocationType(locationType)
-    if type(locationType) ~= "number" then
-        return LOCATION_CENTER
+local function NormalizeTextureLayout(locationType)
+    if locationType == LOCATION_LEFTRIGHT then
+        return LOCATION_LEFTRIGHT, DEFAULT_TEXTURE_PAIR_SPACING
     end
-    if LOCATION_DIMENSIONS[locationType] then
-        return locationType
+    if locationType == LOCATION_TOPBOTTOM then
+        return LOCATION_TOPBOTTOM, DEFAULT_TEXTURE_PAIR_SPACING
     end
-    return LOCATION_CENTER
+    if locationType == LOCATION_LEFTRIGHTOUTSIDE then
+        return LOCATION_LEFTRIGHT, LEGACY_OUTSIDE_PAIR_SPACING
+    end
+    return LOCATION_CENTER, DEFAULT_TEXTURE_PAIR_SPACING
 end
 
 local function BuildRecentOverlayKey(fileDataID, locationType, scale, r, g, b)
@@ -183,7 +186,8 @@ local function BuildRecentOverlayKey(fileDataID, locationType, scale, r, g, b)
 end
 
 local function BuildLocationSubtitle(locationType)
-    return LOCATION_LABELS[NormalizeLocationType(locationType)] or "Center"
+    local normalizedLocationType = NormalizeTextureLayout(locationType)
+    return TEXTURE_LAYOUT_LABELS[normalizedLocationType] or "Single"
 end
 
 local function GetAtlasSearchCache()
@@ -263,7 +267,14 @@ local function NormalizeAuraTextureSettings(settings)
     settings.xOffset = nil
     settings.yOffset = nil
     settings.color = CopyColor(settings.color) or { 1, 1, 1, 1 }
-    settings.locationType = NormalizeLocationType(settings.locationType)
+    local normalizedLocationType, defaultPairSpacing = NormalizeTextureLayout(settings.locationType)
+    settings.locationType = normalizedLocationType
+    local rawPairSpacing = tonumber(settings.pairSpacing)
+    if rawPairSpacing == nil then
+        settings.pairSpacing = defaultPairSpacing
+    else
+        settings.pairSpacing = Clamp(rawPairSpacing, MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING)
+    end
     settings.width = tonumber(settings.width) or nil
     settings.height = tonumber(settings.height) or nil
 
@@ -287,7 +298,7 @@ end
 function CooldownCompanion:GetTexturePanelLocationOptions()
     local options = {}
     for _, locationType in ipairs(LOCATION_ORDER) do
-        options[locationType] = LOCATION_LABELS[locationType]
+        options[locationType] = TEXTURE_LAYOUT_LABELS[locationType]
     end
     return options, LOCATION_ORDER
 end
@@ -311,6 +322,8 @@ function CooldownCompanion:GetTexturePanelSettings(groupOrId, createIfMissing)
             return nil
         end
         group.textureSettings = {
+            locationType = LOCATION_CENTER,
+            pairSpacing = DEFAULT_TEXTURE_PAIR_SPACING,
             point = "CENTER",
             relativePoint = "CENTER",
             relativeTo = UI_PARENT_NAME,
@@ -330,13 +343,14 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
     settings.sourceType = entry.sourceType
     settings.sourceValue = entry.sourceValue
     settings.label = entry.label
-    settings.locationType = entry.locationType or LOCATION_CENTER
+    settings.locationType = NormalizeTextureLayout(settings.locationType)
     settings.width = entry.width
     settings.height = entry.height
     settings.color = CopyColor(entry.color) or { 1, 1, 1, 1 }
     settings.blendMode = NormalizeBlendMode(entry.blendMode or settings.blendMode)
     settings.scale = Clamp(settings.scale or 1, 0.25, 4)
     settings.alpha = Clamp(settings.alpha or 1, 0.05, 1)
+    settings.pairSpacing = Clamp(settings.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING, MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING)
     settings.point = NormalizeAnchorPoint(settings.point or "CENTER")
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint or "CENTER")
     settings.relativeTo = UI_PARENT_NAME
@@ -363,7 +377,8 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
         x = base and base.x or 0,
         y = base and base.y or 0,
         color = CopyColor(base and base.color) or CopyColor(entry.color) or { 1, 1, 1, 1 },
-        locationType = entry.locationType or LOCATION_CENTER,
+        locationType = base and base.locationType or LOCATION_CENTER,
+        pairSpacing = base and base.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING,
         width = entry.width,
         height = entry.height,
     }
@@ -415,7 +430,7 @@ function CooldownCompanion:RecordRecentAuraTextureOverlay(spellID, fileDataID, l
         label = spellName .. " Proc Overlay",
         sourceType = "file",
         sourceValue = fileDataID,
-        locationType = NormalizeLocationType(locationType),
+        locationType = NormalizeTextureLayout(locationType),
         color = {
             Clamp((tonumber(r) or 255) / 255, 0, 1),
             Clamp((tonumber(g) or 255) / 255, 0, 1),
@@ -460,7 +475,7 @@ function CooldownCompanion:GetRecentAuraTextureEntries()
                 category = "Recent Proc Overlays",
                 sourceType = "file",
                 sourceValue = entry.sourceValue,
-                locationType = NormalizeLocationType(entry.locationType),
+                locationType = (NormalizeTextureLayout(entry.locationType)),
                 color = CopyColor(entry.color) or { 1, 1, 1, 1 },
                 blendMode = NormalizeBlendMode(entry.blendMode),
                 subtitle = tostring(entry.spellID or "?") .. "  |  File " .. tostring(entry.sourceValue) .. "  |  " .. BuildLocationSubtitle(entry.locationType),
@@ -554,13 +569,12 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
 end
 
 local function ResolveTextureDimensions(settings)
-    if settings.width and settings.height and settings.width > 0 and settings.height > 0 then
-        return settings.width * settings.scale, settings.height * settings.scale
-    end
-
     local dims = LOCATION_DIMENSIONS[settings.locationType] or LOCATION_DIMENSIONS[LOCATION_CENTER]
-    return DEFAULT_TEXTURE_SIZE * dims.width * settings.scale,
-        DEFAULT_TEXTURE_SIZE * dims.height * settings.scale
+    local baseWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
+    local baseHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
+
+    return baseWidth * dims.width * settings.scale,
+        baseHeight * dims.height * settings.scale
 end
 
 local function ApplyTextureSource(texture, settings)
@@ -945,34 +959,37 @@ end
 
 local function GetStandaloneLayout(settings, width, height)
     local dims = LOCATION_DIMENSIONS[settings.locationType] or LOCATION_DIMENSIONS[LOCATION_CENTER]
-    local outsideGap = math_max(width * 0.15, 8)
+    local pairSpacing = settings.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING
+
+    local function GetHorizontalSpan(pieceWidth, gap)
+        local primaryLeft = (-(gap / 2)) - pieceWidth
+        local primaryRight = -(gap / 2)
+        local secondaryLeft = gap / 2
+        local secondaryRight = secondaryLeft + pieceWidth
+        return math_max(primaryRight, secondaryRight) - math_min(primaryLeft, secondaryLeft)
+    end
+
+    local function GetVerticalSpan(pieceHeight, gap)
+        local bottomBottom = (-(gap / 2)) - pieceHeight
+        local bottomTop = -(gap / 2)
+        local topBottom = gap / 2
+        local topTop = topBottom + pieceHeight
+        return math_max(bottomTop, topTop) - math_min(bottomBottom, topBottom)
+    end
 
     if dims.layout == "pair_horizontal" then
-        return dims, width * 2, height, 0
-    end
-    if dims.layout == "pair_horizontal_outside" then
-        return dims, (width * 2) + outsideGap, height, outsideGap
+        local gap = width * pairSpacing
+        return dims, GetHorizontalSpan(width, gap), height, gap
     end
     if dims.layout == "pair_vertical" then
-        return dims, width, height * 2, 0
-    end
-    if settings.locationType == LOCATION_LEFT or settings.locationType == LOCATION_RIGHT then
-        return dims, width * 2, height, 0
-    end
-    if settings.locationType == LOCATION_TOP or settings.locationType == LOCATION_BOTTOM then
-        return dims, width, height * 2, 0
-    end
-    if settings.locationType == LOCATION_TOPLEFT or settings.locationType == LOCATION_TOPRIGHT then
-        return dims, width * 2, height * 2, 0
-    end
-    if settings.locationType == LOCATION_LEFTOUTSIDE or settings.locationType == LOCATION_RIGHTOUTSIDE then
-        return dims, (width * 2) + outsideGap, height, outsideGap
+        local gap = height * pairSpacing
+        return dims, width, GetVerticalSpan(height, gap), gap
     end
 
     return dims, width, height, 0
 end
 
-local function LayoutSingleTexture(host, settings, dims, width, height, alpha, gap)
+local function LayoutSingleTexture(host, settings, dims, width, height, alpha)
     local primary = host.primaryTexture
     local secondary = host.secondaryTexture
     if not primary or not secondary then
@@ -982,14 +999,7 @@ local function LayoutSingleTexture(host, settings, dims, width, height, alpha, g
     primary:ClearAllPoints()
     primary:SetSize(width, height)
 
-    local xOffset = 0
-    if settings.locationType == LOCATION_LEFTOUTSIDE then
-        xOffset = -(gap / 2)
-    elseif settings.locationType == LOCATION_RIGHTOUTSIDE then
-        xOffset = gap / 2
-    end
-
-    primary:SetPoint(dims.point, host, dims.relPoint, xOffset, 0)
+    primary:SetPoint(dims.point, host, dims.relPoint, 0, 0)
     secondary:Hide()
 
     if not ApplyTextureSource(primary, settings) then
@@ -1031,7 +1041,7 @@ local function LayoutHorizontalPair(host, settings, width, height, alpha, gap)
     return shownPrimary or shownSecondary
 end
 
-local function LayoutVerticalPair(host, settings, width, height, alpha)
+local function LayoutVerticalPair(host, settings, width, height, alpha, gap)
     local primary = host.primaryTexture
     local secondary = host.secondaryTexture
     if not primary or not secondary then
@@ -1042,8 +1052,8 @@ local function LayoutVerticalPair(host, settings, width, height, alpha)
     secondary:ClearAllPoints()
     primary:SetSize(width, height)
     secondary:SetSize(width, height)
-    primary:SetPoint("BOTTOM", host, "CENTER", 0, 0)
-    secondary:SetPoint("TOP", host, "CENTER", 0, 0)
+    primary:SetPoint("BOTTOM", host, "CENTER", 0, -(gap / 2))
+    secondary:SetPoint("TOP", host, "CENTER", 0, gap / 2)
 
     local shownPrimary = ApplyTextureSource(primary, settings)
     local shownSecondary = ApplyTextureSource(secondary, settings)
@@ -1183,10 +1193,10 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     host:Show()
 
     local shown
-    if dims.layout == "pair_horizontal" or dims.layout == "pair_horizontal_outside" then
+    if dims.layout == "pair_horizontal" then
         shown = LayoutHorizontalPair(host, settings, width, height, alpha, gap)
     elseif dims.layout == "pair_vertical" then
-        shown = LayoutVerticalPair(host, settings, width, height, alpha)
+        shown = LayoutVerticalPair(host, settings, width, height, alpha, gap)
     else
         shown = LayoutSingleTexture(host, settings, dims, width, height, alpha, gap)
     end

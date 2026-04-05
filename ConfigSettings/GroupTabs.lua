@@ -3,6 +3,7 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local C_Texture_GetAtlasExists = C_Texture.GetAtlasExists
+local math_abs = math.abs
 local math_max = math.max
 local math_min = math.min
 local tonumber = tonumber
@@ -82,34 +83,18 @@ local TEXTURE_BLEND_ORDER = {
 local TEXTURE_PREVIEW_WIDTH = 240
 local TEXTURE_PREVIEW_HEIGHT = 132
 local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
+local MIN_TEXTURE_PAIR_SPACING = -5
+local MAX_TEXTURE_PAIR_SPACING = 5
 
 local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
 local PREVIEW_LOCATION_CENTER = SCREEN_LOCATION.Center or 0
-local PREVIEW_LOCATION_LEFT = SCREEN_LOCATION.Left or 1
-local PREVIEW_LOCATION_RIGHT = SCREEN_LOCATION.Right or 2
-local PREVIEW_LOCATION_TOP = SCREEN_LOCATION.Top or 3
-local PREVIEW_LOCATION_BOTTOM = SCREEN_LOCATION.Bottom or 4
-local PREVIEW_LOCATION_TOPLEFT = SCREEN_LOCATION.TopLeft or 5
-local PREVIEW_LOCATION_TOPRIGHT = SCREEN_LOCATION.TopRight or 6
-local PREVIEW_LOCATION_LEFTOUTSIDE = SCREEN_LOCATION.LeftOutside or 7
-local PREVIEW_LOCATION_RIGHTOUTSIDE = SCREEN_LOCATION.RightOutside or 8
 local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
 local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
-local PREVIEW_LOCATION_LEFTRIGHTOUTSIDE = SCREEN_LOCATION.LeftRightOutside or 11
 
 local TEXTURE_PREVIEW_LAYOUTS = {
     [PREVIEW_LOCATION_CENTER] = { width = 1.0, height = 1.0, layout = "single", point = "CENTER", relPoint = "CENTER" },
-    [PREVIEW_LOCATION_LEFT] = { width = 0.5, height = 1.0, layout = "single", point = "RIGHT", relPoint = "CENTER" },
-    [PREVIEW_LOCATION_RIGHT] = { width = 0.5, height = 1.0, layout = "single", point = "LEFT", relPoint = "CENTER" },
-    [PREVIEW_LOCATION_TOP] = { width = 1.0, height = 0.5, layout = "single", point = "BOTTOM", relPoint = "CENTER" },
-    [PREVIEW_LOCATION_BOTTOM] = { width = 1.0, height = 0.5, layout = "single", point = "TOP", relPoint = "CENTER", flipV = true },
-    [PREVIEW_LOCATION_TOPLEFT] = { width = 0.5, height = 0.5, layout = "single", point = "BOTTOMRIGHT", relPoint = "TOPLEFT" },
-    [PREVIEW_LOCATION_TOPRIGHT] = { width = 0.5, height = 0.5, layout = "single", point = "BOTTOMLEFT", relPoint = "TOPRIGHT", flipH = true },
-    [PREVIEW_LOCATION_LEFTOUTSIDE] = { width = 0.5, height = 1.0, layout = "single", point = "RIGHT", relPoint = "LEFT", outside = true },
-    [PREVIEW_LOCATION_RIGHTOUTSIDE] = { width = 0.5, height = 1.0, layout = "single", point = "LEFT", relPoint = "RIGHT", outside = true, flipH = true },
     [PREVIEW_LOCATION_LEFTRIGHT] = { width = 0.5, height = 1.0, layout = "pair_horizontal" },
     [PREVIEW_LOCATION_TOPBOTTOM] = { width = 1.0, height = 0.5, layout = "pair_vertical" },
-    [PREVIEW_LOCATION_LEFTRIGHTOUTSIDE] = { width = 0.5, height = 1.0, layout = "pair_horizontal_outside" },
 }
 
 local function ApplyTexturePreviewSource(texture, settings)
@@ -178,16 +163,33 @@ local function UpdateTexturePanelPreview(preview, settings)
     local baseHeight = (tonumber(settings.height) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
     local pieceWidth = baseWidth * (layout.width or 1)
     local pieceHeight = baseHeight * (layout.height or 1)
-    local gap = math_max(pieceWidth * 0.15, 8)
+    local pairSpacing = tonumber(settings.pairSpacing) or 0
+    local gap = 0
     local totalWidth = pieceWidth
     local totalHeight = pieceHeight
 
+    local function GetHorizontalSpan(width, offsetGap)
+        local primaryLeft = (-(offsetGap / 2)) - width
+        local primaryRight = -(offsetGap / 2)
+        local secondaryLeft = offsetGap / 2
+        local secondaryRight = secondaryLeft + width
+        return math_max(primaryRight, secondaryRight) - math_min(primaryLeft, secondaryLeft)
+    end
+
+    local function GetVerticalSpan(height, offsetGap)
+        local bottomBottom = (-(offsetGap / 2)) - height
+        local bottomTop = -(offsetGap / 2)
+        local topBottom = offsetGap / 2
+        local topTop = topBottom + height
+        return math_max(bottomTop, topTop) - math_min(bottomBottom, topBottom)
+    end
+
     if layout.layout == "pair_horizontal" then
-        totalWidth = pieceWidth * 2
-    elseif layout.layout == "pair_horizontal_outside" then
-        totalWidth = (pieceWidth * 2) + gap
+        gap = pieceWidth * pairSpacing
+        totalWidth = GetHorizontalSpan(pieceWidth, gap)
     elseif layout.layout == "pair_vertical" then
-        totalHeight = pieceHeight * 2
+        gap = pieceHeight * pairSpacing
+        totalHeight = GetVerticalSpan(pieceHeight, gap)
     end
 
     local maxWidth = TEXTURE_PREVIEW_WIDTH - 20
@@ -209,7 +211,7 @@ local function UpdateTexturePanelPreview(preview, settings)
     primary:SetSize(pieceWidth, pieceHeight)
     secondary:SetSize(pieceWidth, pieceHeight)
 
-    if layout.layout == "pair_horizontal" or layout.layout == "pair_horizontal_outside" then
+    if layout.layout == "pair_horizontal" then
         primary:SetPoint("RIGHT", preview.anchor, "CENTER", -(gap / 2), 0)
         secondary:SetPoint("LEFT", preview.anchor, "CENTER", gap / 2, 0)
 
@@ -226,8 +228,8 @@ local function UpdateTexturePanelPreview(preview, settings)
     end
 
     if layout.layout == "pair_vertical" then
-        primary:SetPoint("BOTTOM", preview.anchor, "CENTER", 0, 0)
-        secondary:SetPoint("TOP", preview.anchor, "CENTER", 0, 0)
+        primary:SetPoint("BOTTOM", preview.anchor, "CENTER", 0, -(gap / 2))
+        secondary:SetPoint("TOP", preview.anchor, "CENTER", 0, gap / 2)
 
         if ApplyTexturePreviewSource(primary, settings) then
             ApplyTexturePreviewVisual(primary, settings, alpha, false, false)
@@ -241,19 +243,106 @@ local function UpdateTexturePanelPreview(preview, settings)
         return
     end
 
-    local xOffset = 0
-    if settings.locationType == PREVIEW_LOCATION_LEFTOUTSIDE then
-        xOffset = -(gap / 2)
-    elseif settings.locationType == PREVIEW_LOCATION_RIGHTOUTSIDE then
-        xOffset = gap / 2
-    end
-
-    primary:SetPoint(layout.point or "CENTER", preview.anchor, layout.relPoint or "CENTER", xOffset, 0)
+    primary:SetPoint(layout.point or "CENTER", preview.anchor, layout.relPoint or "CENTER", 0, 0)
     if ApplyTexturePreviewSource(primary, settings) then
         ApplyTexturePreviewVisual(primary, settings, alpha, layout.flipH, layout.flipV)
         shownPrimary = true
     end
     preview.placeholder:SetShown(not shownPrimary)
+end
+
+local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
+    if not sliderWidget or not sliderWidget.slider or type(applyValue) ~= "function" then
+        return
+    end
+
+    local sliderFrame = sliderWidget.slider
+    sliderWidget._ccApplyLiveTextureValue = applyValue
+    sliderWidget._ccLastLiveTextureValue = nil
+
+    local function pushValue(widget, value)
+        if not widget then
+            return
+        end
+
+        value = tonumber(value)
+        if value == nil then
+            return
+        end
+
+        local lastValue = widget._ccLastLiveTextureValue
+        if lastValue ~= nil and math_abs(lastValue - value) < 0.0001 then
+            return
+        end
+
+        widget._ccLastLiveTextureValue = value
+
+        local liveApply = widget._ccApplyLiveTextureValue
+        if type(liveApply) == "function" then
+            liveApply(value)
+        end
+    end
+
+    sliderWidget:SetCallback("OnValueChanged", function(widget, _, value)
+        pushValue(widget, value)
+    end)
+
+    sliderWidget:SetCallback("OnMouseUp", function(widget, _, value)
+        pushValue(widget, value)
+        sliderFrame:SetScript("OnUpdate", nil)
+        sliderFrame._ccLiveTextureSliderActive = nil
+        widget._ccLastLiveTextureValue = nil
+    end)
+
+    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
+    sliderWidget:SetCallback("OnRelease", function(widget, event)
+        sliderFrame:SetScript("OnUpdate", nil)
+        sliderFrame._ccLiveTextureSliderActive = nil
+        widget._ccApplyLiveTextureValue = nil
+        widget._ccLastLiveTextureValue = nil
+        if prevOnRelease then
+            prevOnRelease(widget, event)
+        end
+    end)
+
+    if sliderFrame._ccLiveTextureSliderHooked then
+        return
+    end
+
+    sliderFrame._ccLiveTextureSliderHooked = true
+
+    sliderFrame:HookScript("OnMouseDown", function(frame)
+        frame._ccLiveTextureSliderActive = true
+        frame:SetScript("OnUpdate", function(self)
+            if not self._ccLiveTextureSliderActive then
+                self:SetScript("OnUpdate", nil)
+                return
+            end
+
+            local widget = self.obj
+            if widget then
+                pushValue(widget, widget:GetValue())
+            end
+        end)
+    end)
+
+    sliderFrame:HookScript("OnMouseUp", function(frame)
+        frame._ccLiveTextureSliderActive = nil
+        frame:SetScript("OnUpdate", nil)
+        local widget = frame.obj
+        if widget then
+            widget._ccLastLiveTextureValue = nil
+        end
+    end)
+
+    sliderFrame:HookScript("OnHide", function(frame)
+        frame._ccLiveTextureSliderActive = nil
+        frame:SetScript("OnUpdate", nil)
+        local widget = frame.obj
+        if widget then
+            widget._ccLastLiveTextureValue = nil
+        end
+    end)
 end
 
 local function GetTexturePanelCommitCallback(group)
@@ -269,7 +358,6 @@ local function GetTexturePanelCommitCallback(group)
             liveSettings.sourceType = nil
             liveSettings.sourceValue = nil
             liveSettings.label = nil
-            liveSettings.locationType = nil
             liveSettings.width = nil
             liveSettings.height = nil
         end
@@ -1292,7 +1380,13 @@ local function BuildAppearanceTab(container)
             if previewWidget then
                 UpdateTexturePanelPreview(previewWidget, settings)
             end
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+            local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+            if button then
+                CooldownCompanion:UpdateAuraTextureVisual(button)
+            else
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+            end
         end
 
         local heading = AceGUI:Create("Heading")
@@ -1435,8 +1529,23 @@ local function BuildAppearanceTab(container)
         locationDrop:SetCallback("OnValueChanged", function(_, _, value)
             settings.locationType = tonumber(value) or 0
             RefreshTextureVisual()
+            CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(locationDrop)
+
+        if settings.locationType == PREVIEW_LOCATION_LEFTRIGHT or settings.locationType == PREVIEW_LOCATION_TOPBOTTOM then
+            local spacingSlider = AceGUI:Create("Slider")
+            spacingSlider:SetLabel("Pair Spacing")
+            spacingSlider:SetSliderValues(MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING, 0.01)
+            spacingSlider:SetValue(settings.pairSpacing or 0)
+            spacingSlider:SetFullWidth(true)
+            AttachLiveTextureSliderRefresh(spacingSlider, function(value)
+                settings.pairSpacing = value
+                RefreshTextureVisual()
+            end)
+            HookSliderEditBox(spacingSlider)
+            container:AddChild(spacingSlider)
+        end
 
         local blendDrop = AceGUI:Create("Dropdown")
         blendDrop:SetLabel("Blend Mode")
@@ -1454,7 +1563,7 @@ local function BuildAppearanceTab(container)
         scaleSlider:SetSliderValues(0.25, 4, 0.05)
         scaleSlider:SetValue(settings.scale or 1)
         scaleSlider:SetFullWidth(true)
-        scaleSlider:SetCallback("OnValueChanged", function(_, _, value)
+        AttachLiveTextureSliderRefresh(scaleSlider, function(value)
             settings.scale = value
             RefreshTextureVisual()
         end)
@@ -1466,7 +1575,7 @@ local function BuildAppearanceTab(container)
         alphaSlider:SetSliderValues(0.05, 1, 0.05)
         alphaSlider:SetValue(settings.alpha or 1)
         alphaSlider:SetFullWidth(true)
-        alphaSlider:SetCallback("OnValueChanged", function(_, _, value)
+        AttachLiveTextureSliderRefresh(alphaSlider, function(value)
             settings.alpha = value
             RefreshTextureVisual()
         end)
