@@ -1085,6 +1085,19 @@ local function IsTexturePanelEditingButton(button)
     return pickerWindow and pickerWindow._targetGroupId == button._groupId
 end
 
+local function IsTexturePanelConfigForceVisible(button)
+    if not button then
+        return false
+    end
+
+    local group = button._groupId and ResolveGroup(button._groupId) or nil
+    if not CooldownCompanion:IsTexturePanelGroup(group) then
+        return false
+    end
+
+    return ST.IsConfigButtonForceVisible(button)
+end
+
 local function ResolveActiveAuraTextureSettings(button)
     local preview = button._auraTexturePreviewSelection
     if type(preview) == "table" then
@@ -1120,17 +1133,23 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     local settings = ResolveActiveAuraTextureSettings(button)
     local isEditing = IsTexturePanelEditingButton(button)
+    local isConfigForceVisible = IsTexturePanelConfigForceVisible(button)
     local isUnlocked = group and group.locked == false
+    local hasPreviewSelection = type(button._auraTexturePreviewSelection) == "table"
     local showTexture = false
 
     if settings then
-        if type(button._auraTexturePreviewSelection) == "table" then
+        if hasPreviewSelection then
             showTexture = true
         elseif isEditing then
             showTexture = true
+        elseif isConfigForceVisible then
+            showTexture = true
         elseif isUnlocked then
             showTexture = true
-        elseif button:GetParent() and button:GetParent():IsShown() and not button._visibilityHidden then
+        elseif button:GetParent()
+            and button:GetParent():IsShown()
+            and not (button._rawVisibilityHidden == true) then
             showTexture = true
         end
     end
@@ -1146,7 +1165,12 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     local host = EnsureAuraTextureHost(button)
     local relativeFrame = UIParent
-    local alpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
+    local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
+    local visibilityAlpha = 1
+    if not isUnlocked and not isEditing and not hasPreviewSelection and not isConfigForceVisible then
+        visibilityAlpha = button._rawVisibilityAlphaOverride or 1
+    end
+    local alpha = Clamp(baseAlpha * visibilityAlpha, 0, 1)
     local width, height = ResolveTextureDimensions(settings)
     local dims, totalWidth, totalHeight, gap = GetStandaloneLayout(settings, width, height)
 
