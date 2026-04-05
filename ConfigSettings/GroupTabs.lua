@@ -2,6 +2,10 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
+local C_Texture_GetAtlasExists = C_Texture.GetAtlasExists
+local math_max = math.max
+local math_min = math.min
+local tonumber = tonumber
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -68,14 +72,189 @@ local BuildTextAppearanceTab = ST._BuildTextAppearanceTab
 local TEXTURE_BLEND_OPTIONS = {
     ADD = "Add",
     BLEND = "Blend",
-    MOD = "Modulate",
 }
 
 local TEXTURE_BLEND_ORDER = {
     "ADD",
     "BLEND",
-    "MOD",
 }
+
+local TEXTURE_PREVIEW_WIDTH = 240
+local TEXTURE_PREVIEW_HEIGHT = 132
+local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
+
+local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
+local PREVIEW_LOCATION_CENTER = SCREEN_LOCATION.Center or 0
+local PREVIEW_LOCATION_LEFT = SCREEN_LOCATION.Left or 1
+local PREVIEW_LOCATION_RIGHT = SCREEN_LOCATION.Right or 2
+local PREVIEW_LOCATION_TOP = SCREEN_LOCATION.Top or 3
+local PREVIEW_LOCATION_BOTTOM = SCREEN_LOCATION.Bottom or 4
+local PREVIEW_LOCATION_TOPLEFT = SCREEN_LOCATION.TopLeft or 5
+local PREVIEW_LOCATION_TOPRIGHT = SCREEN_LOCATION.TopRight or 6
+local PREVIEW_LOCATION_LEFTOUTSIDE = SCREEN_LOCATION.LeftOutside or 7
+local PREVIEW_LOCATION_RIGHTOUTSIDE = SCREEN_LOCATION.RightOutside or 8
+local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
+local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
+local PREVIEW_LOCATION_LEFTRIGHTOUTSIDE = SCREEN_LOCATION.LeftRightOutside or 11
+
+local TEXTURE_PREVIEW_LAYOUTS = {
+    [PREVIEW_LOCATION_CENTER] = { width = 1.0, height = 1.0, layout = "single", point = "CENTER", relPoint = "CENTER" },
+    [PREVIEW_LOCATION_LEFT] = { width = 0.5, height = 1.0, layout = "single", point = "RIGHT", relPoint = "CENTER" },
+    [PREVIEW_LOCATION_RIGHT] = { width = 0.5, height = 1.0, layout = "single", point = "LEFT", relPoint = "CENTER" },
+    [PREVIEW_LOCATION_TOP] = { width = 1.0, height = 0.5, layout = "single", point = "BOTTOM", relPoint = "CENTER" },
+    [PREVIEW_LOCATION_BOTTOM] = { width = 1.0, height = 0.5, layout = "single", point = "TOP", relPoint = "CENTER", flipV = true },
+    [PREVIEW_LOCATION_TOPLEFT] = { width = 0.5, height = 0.5, layout = "single", point = "BOTTOMRIGHT", relPoint = "TOPLEFT" },
+    [PREVIEW_LOCATION_TOPRIGHT] = { width = 0.5, height = 0.5, layout = "single", point = "BOTTOMLEFT", relPoint = "TOPRIGHT", flipH = true },
+    [PREVIEW_LOCATION_LEFTOUTSIDE] = { width = 0.5, height = 1.0, layout = "single", point = "RIGHT", relPoint = "LEFT", outside = true },
+    [PREVIEW_LOCATION_RIGHTOUTSIDE] = { width = 0.5, height = 1.0, layout = "single", point = "LEFT", relPoint = "RIGHT", outside = true, flipH = true },
+    [PREVIEW_LOCATION_LEFTRIGHT] = { width = 0.5, height = 1.0, layout = "pair_horizontal" },
+    [PREVIEW_LOCATION_TOPBOTTOM] = { width = 1.0, height = 0.5, layout = "pair_vertical" },
+    [PREVIEW_LOCATION_LEFTRIGHTOUTSIDE] = { width = 0.5, height = 1.0, layout = "pair_horizontal_outside" },
+}
+
+local function ApplyTexturePreviewSource(texture, settings)
+    if not texture or type(settings) ~= "table" then
+        return false
+    end
+
+    if settings.sourceType == "atlas" then
+        if type(settings.sourceValue) ~= "string" or not C_Texture_GetAtlasExists(settings.sourceValue) then
+            texture:Hide()
+            return false
+        end
+        texture:SetAtlas(settings.sourceValue, false)
+        texture:Show()
+        return true
+    end
+
+    if settings.sourceType == "file" and settings.sourceValue ~= nil then
+        texture:SetTexture(settings.sourceValue)
+        texture:Show()
+        return true
+    end
+
+    texture:Hide()
+    return false
+end
+
+local function ApplyTexturePreviewVisual(texture, settings, alpha, flipH, flipV)
+    if not texture or type(settings) ~= "table" then
+        return
+    end
+
+    local color = settings.color or { 1, 1, 1, 1 }
+    texture:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha or 1)
+    texture:SetBlendMode(settings.blendMode or "ADD")
+
+    local left = flipH and 1 or 0
+    local right = flipH and 0 or 1
+    local top = flipV and 1 or 0
+    local bottom = flipV and 0 or 1
+    texture:SetTexCoord(left, right, top, bottom)
+end
+
+local function UpdateTexturePanelPreview(preview, settings)
+    if type(preview) ~= "table" then
+        return
+    end
+
+    local hasTexture = type(settings) == "table"
+        and settings.sourceType ~= nil
+        and settings.sourceValue ~= nil
+
+    preview.nameLabel:SetText(hasTexture and (settings.label or tostring(settings.sourceValue)) or "No texture selected")
+    preview.placeholder:SetShown(not hasTexture)
+    preview.primary:Hide()
+    preview.secondary:Hide()
+
+    if not hasTexture then
+        return
+    end
+
+    local layout = TEXTURE_PREVIEW_LAYOUTS[settings.locationType or PREVIEW_LOCATION_CENTER]
+        or TEXTURE_PREVIEW_LAYOUTS[PREVIEW_LOCATION_CENTER]
+    local scale = tonumber(settings.scale) or 1
+    local baseWidth = (tonumber(settings.width) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
+    local baseHeight = (tonumber(settings.height) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
+    local pieceWidth = baseWidth * (layout.width or 1)
+    local pieceHeight = baseHeight * (layout.height or 1)
+    local gap = math_max(pieceWidth * 0.15, 8)
+    local totalWidth = pieceWidth
+    local totalHeight = pieceHeight
+
+    if layout.layout == "pair_horizontal" then
+        totalWidth = pieceWidth * 2
+    elseif layout.layout == "pair_horizontal_outside" then
+        totalWidth = (pieceWidth * 2) + gap
+    elseif layout.layout == "pair_vertical" then
+        totalHeight = pieceHeight * 2
+    end
+
+    local maxWidth = TEXTURE_PREVIEW_WIDTH - 20
+    local maxHeight = TEXTURE_PREVIEW_HEIGHT - 20
+    local fit = math_min(maxWidth / math_max(totalWidth, 1), maxHeight / math_max(totalHeight, 1), 1)
+    pieceWidth = math_max(8, pieceWidth * fit)
+    pieceHeight = math_max(8, pieceHeight * fit)
+    gap = gap * fit
+
+    local color = settings.color or { 1, 1, 1, 1 }
+    local alpha = math_min(math_max((color[4] or 1) * (settings.alpha or 1), 0.05), 1)
+    local primary = preview.primary
+    local secondary = preview.secondary
+    local shownPrimary = false
+    local shownSecondary = false
+
+    primary:ClearAllPoints()
+    secondary:ClearAllPoints()
+    primary:SetSize(pieceWidth, pieceHeight)
+    secondary:SetSize(pieceWidth, pieceHeight)
+
+    if layout.layout == "pair_horizontal" or layout.layout == "pair_horizontal_outside" then
+        primary:SetPoint("RIGHT", preview.anchor, "CENTER", -(gap / 2), 0)
+        secondary:SetPoint("LEFT", preview.anchor, "CENTER", gap / 2, 0)
+
+        if ApplyTexturePreviewSource(primary, settings) then
+            ApplyTexturePreviewVisual(primary, settings, alpha, false, false)
+            shownPrimary = true
+        end
+        if ApplyTexturePreviewSource(secondary, settings) then
+            ApplyTexturePreviewVisual(secondary, settings, alpha, true, false)
+            shownSecondary = true
+        end
+        preview.placeholder:SetShown(not (shownPrimary or shownSecondary))
+        return
+    end
+
+    if layout.layout == "pair_vertical" then
+        primary:SetPoint("BOTTOM", preview.anchor, "CENTER", 0, 0)
+        secondary:SetPoint("TOP", preview.anchor, "CENTER", 0, 0)
+
+        if ApplyTexturePreviewSource(primary, settings) then
+            ApplyTexturePreviewVisual(primary, settings, alpha, false, false)
+            shownPrimary = true
+        end
+        if ApplyTexturePreviewSource(secondary, settings) then
+            ApplyTexturePreviewVisual(secondary, settings, alpha, false, true)
+            shownSecondary = true
+        end
+        preview.placeholder:SetShown(not (shownPrimary or shownSecondary))
+        return
+    end
+
+    local xOffset = 0
+    if settings.locationType == PREVIEW_LOCATION_LEFTOUTSIDE then
+        xOffset = -(gap / 2)
+    elseif settings.locationType == PREVIEW_LOCATION_RIGHTOUTSIDE then
+        xOffset = gap / 2
+    end
+
+    primary:SetPoint(layout.point or "CENTER", preview.anchor, layout.relPoint or "CENTER", xOffset, 0)
+    if ApplyTexturePreviewSource(primary, settings) then
+        ApplyTexturePreviewVisual(primary, settings, alpha, layout.flipH, layout.flipV)
+        shownPrimary = true
+    end
+    preview.placeholder:SetShown(not shownPrimary)
+end
 
 local function GetTexturePanelCommitCallback(group)
     return function(selection)
@@ -86,7 +265,6 @@ local function GetTexturePanelCommitCallback(group)
 
         if selection then
             CooldownCompanion:ApplyTexturePanelEntry(liveSettings, selection)
-            liveSettings.enabled = true
         else
             liveSettings.sourceType = nil
             liveSettings.sourceValue = nil
@@ -94,8 +272,9 @@ local function GetTexturePanelCommitCallback(group)
             liveSettings.locationType = nil
             liveSettings.width = nil
             liveSettings.height = nil
-            liveSettings.enabled = false
         end
+
+        liveSettings.enabled = nil
 
         CooldownCompanion:RefreshAllAuraTextureVisuals()
         CooldownCompanion:RefreshConfigPanel()
@@ -1108,7 +1287,11 @@ local function BuildAppearanceTab(container)
 
         local groupId = CS.selectedGroup
         local buttonData = group.buttons and group.buttons[1] or nil
+        local previewWidget = nil
         local function RefreshTextureVisual()
+            if previewWidget then
+                UpdateTexturePanelPreview(previewWidget, settings)
+            end
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
 
@@ -1122,15 +1305,13 @@ local function BuildAppearanceTab(container)
             "Texture Panel",
             {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
             " ",
-            {"Its single entry decides when the texture appears, using the same familiar trigger and visibility-rule model as icon panels.", 1, 1, 1, true},
-            " ",
-            {"The texture browser uses Blizzard-first sources: the starter library, recently captured proc overlays, and atlas search.", 1, 1, 1, true},
+            {"Its single entry decides when that texture appears.", 1, 1, 1, true},
         }, tabInfoButtons)
 
         if not buttonData then
             local emptyLabel = AceGUI:Create("Label")
             emptyLabel:SetFullWidth(true)
-            emptyLabel:SetText("|cff888888This panel can hold one entry. Add a spell or aura entry in Column 2 first, then the texture browser will open automatically.|r")
+            emptyLabel:SetText("|cff888888Add one entry in Column 2 first. The texture browser will open after that.|r")
             container:AddChild(emptyLabel)
 
             if CS.pendingTexturePickerOpen == CS.selectedGroup then
@@ -1139,53 +1320,94 @@ local function BuildAppearanceTab(container)
             return
         end
 
-        local triggerLabel = AceGUI:Create("Label")
-        triggerLabel:SetFullWidth(true)
-        triggerLabel:SetText("|cff00ff98Trigger Entry:|r " .. (buttonData.name or "Unnamed Entry"))
-        container:AddChild(triggerLabel)
-
-        local currentLabel = AceGUI:Create("Label")
-        currentLabel:SetFullWidth(true)
         local selectionLabel = CooldownCompanion:GetTexturePanelSelectionLabel(group)
-        if selectionLabel then
-            currentLabel:SetText("|cff00ff98Selected Texture:|r " .. selectionLabel)
-        else
-            currentLabel:SetText("|cff888888Selected Texture: none yet|r")
-        end
-        container:AddChild(currentLabel)
+
+        local previewGroup = AceGUI:Create("SimpleGroup")
+        previewGroup:SetFullWidth(true)
+        previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 10)
+        previewGroup:SetLayout("Fill")
+        container:AddChild(previewGroup)
+
+        local previewFrame = CreateFrame("Frame", nil, previewGroup.frame, "BackdropTemplate")
+        previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
+        previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, TEXTURE_PREVIEW_HEIGHT)
+        previewFrame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        previewFrame:SetBackdropColor(0.05, 0.08, 0.10, 0.95)
+        previewFrame:SetBackdropBorderColor(0.18, 0.35, 0.45, 0.95)
+        appearanceTabElements[#appearanceTabElements + 1] = previewFrame
+
+        local previewInset = CreateFrame("Frame", nil, previewFrame)
+        previewInset:SetPoint("TOPLEFT", previewFrame, "TOPLEFT", 8, -8)
+        previewInset:SetPoint("BOTTOMRIGHT", previewFrame, "BOTTOMRIGHT", -8, 8)
+
+        local previewShade = previewInset:CreateTexture(nil, "BACKGROUND")
+        previewShade:SetAllPoints()
+        previewShade:SetColorTexture(0, 0, 0, 0.42)
+
+        local previewAnchor = CreateFrame("Frame", nil, previewInset)
+        previewAnchor:SetPoint("CENTER")
+        previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 20, TEXTURE_PREVIEW_HEIGHT - 20)
+
+        local previewPrimary = previewInset:CreateTexture(nil, "ARTWORK")
+        local previewSecondary = previewInset:CreateTexture(nil, "ARTWORK")
+
+        local placeholder = previewInset:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        placeholder:SetPoint("CENTER")
+        placeholder:SetJustifyH("CENTER")
+        placeholder:SetText("No texture selected")
+        placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
+
+        local previewName = AceGUI:Create("Label")
+        previewName:SetFullWidth(true)
+        previewName.label:SetFontObject(GameFontHighlight)
+        previewName.label:SetJustifyH("CENTER")
+        container:AddChild(previewName)
+
+        previewWidget = {
+            primary = previewPrimary,
+            secondary = previewSecondary,
+            placeholder = placeholder,
+            anchor = previewAnchor,
+            nameLabel = previewName,
+        }
+        UpdateTexturePanelPreview(previewWidget, settings)
 
         local helpLabel = AceGUI:Create("Label")
         helpLabel:SetFullWidth(true)
-        helpLabel:SetText("|cff888888This panel's entry controls when the texture shows. Use the button row in Column 2 if you want to edit that entry's visibility rules. The controls here are only for the texture itself.|r")
+        helpLabel:SetText("|cff888888The entry controls when this shows. These controls only change the texture itself.|r")
         container:AddChild(helpLabel)
 
+        local actionRow = AceGUI:Create("SimpleGroup")
+        actionRow:SetFullWidth(true)
+        actionRow:SetLayout("Flow")
+        container:AddChild(actionRow)
+
         local browseBtn = AceGUI:Create("Button")
-        browseBtn:SetText(selectionLabel and "Browse / Change Texture" or "Browse Blizzard Textures")
-        browseBtn:SetFullWidth(true)
+        browseBtn:SetText("Browse / Change")
+        browseBtn:SetRelativeWidth(0.49)
         browseBtn:SetCallback("OnClick", function()
             OpenOrRebindTexturePanelPicker(group, settings, true)
         end)
-        container:AddChild(browseBtn)
+        actionRow:AddChild(browseBtn)
 
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Texture")
+        clearBtn:SetText("Clear")
         clearBtn:SetDisabled(not selectionLabel)
-        clearBtn:SetFullWidth(true)
+        clearBtn:SetRelativeWidth(0.49)
         clearBtn:SetCallback("OnClick", function()
             CooldownCompanion:ClearAllAuraTexturePickerPreviews()
             GetTexturePanelCommitCallback(group)(nil)
         end)
-        container:AddChild(clearBtn)
-
-        local libraryNote = AceGUI:Create("Label")
-        libraryNote:SetFullWidth(true)
-        libraryNote:SetText("|cff888888Recent proc overlays are learned automatically while you play. Atlas search is available when you want to browse deeper Blizzard art without hand-curating it first.|r")
-        container:AddChild(libraryNote)
+        actionRow:AddChild(clearBtn)
 
         if not selectionLabel then
             local emptyStateLabel = AceGUI:Create("Label")
             emptyStateLabel:SetFullWidth(true)
-            emptyStateLabel:SetText("|cff888888Pick a texture first. After that, the rest of the texture display controls will appear here.|r")
+            emptyStateLabel:SetText("|cff888888Pick a texture to show the rest of the display controls.|r")
             container:AddChild(emptyStateLabel)
 
             local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
@@ -1203,16 +1425,6 @@ local function BuildAppearanceTab(container)
             RefreshTextureVisual()
             return
         end
-
-        local enableCb = AceGUI:Create("CheckBox")
-        enableCb:SetLabel("Enable Texture Panel")
-        enableCb:SetValue(settings.enabled == true)
-        enableCb:SetFullWidth(true)
-        enableCb:SetCallback("OnValueChanged", function(_, _, value)
-            settings.enabled = value == true
-            RefreshTextureVisual()
-        end)
-        container:AddChild(enableCb)
 
         local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
         local locationDrop = AceGUI:Create("Dropdown")

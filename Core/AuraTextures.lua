@@ -135,7 +135,7 @@ end
 
 local function NormalizeBlendMode(mode)
     local normalized = type(mode) == "string" and string_upper(mode) or "ADD"
-    if normalized == "BLEND" or normalized == "ADD" or normalized == "MOD" or normalized == "ALPHAKEY" or normalized == "DISABLE" then
+    if normalized == "BLEND" or normalized == "ADD" then
         return normalized
     end
     return "ADD"
@@ -246,10 +246,10 @@ local function NormalizeAuraTextureSettings(settings)
         return nil
     end
 
-    settings.enabled = settings.enabled == true
     settings.sourceType = settings.sourceType == "atlas" and "atlas" or (settings.sourceType == "file" and "file" or nil)
     settings.label = type(settings.label) == "string" and settings.label or nil
     settings.sourceValue = settings.sourceValue
+    settings.enabled = settings.sourceType ~= nil and settings.sourceValue ~= nil
     settings.mode = settings.mode == "replace" and "replace" or "overlay"
     settings.scale = Clamp(settings.scale or 1, 0.25, 4)
     settings.alpha = Clamp(settings.alpha or 1, 0.05, 1)
@@ -335,7 +335,6 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
     settings.height = entry.height
     settings.color = CopyColor(entry.color) or { 1, 1, 1, 1 }
     settings.blendMode = NormalizeBlendMode(entry.blendMode or settings.blendMode)
-    settings.enabled = true
     settings.scale = Clamp(settings.scale or 1, 0.25, 4)
     settings.alpha = Clamp(settings.alpha or 1, 0.05, 1)
     settings.point = NormalizeAnchorPoint(settings.point or "CENTER")
@@ -352,7 +351,6 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
 
     local base = type(baseSettings) == "table" and NormalizeAuraTextureSettings(baseSettings) or nil
     local selection = {
-        enabled = true,
         sourceType = entry.sourceType,
         sourceValue = entry.sourceValue,
         label = entry.label,
