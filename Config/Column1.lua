@@ -322,7 +322,6 @@ local function RefreshColumn1(preserveDrag)
 
     -- Cross-character browse mode: render browse UI instead of normal groups
     if CS.browseMode then
-        if CS.browseBadge then CS.browseBadge:Hide() end
         CancelDrag()
         RenderBrowseMode()
         return
@@ -535,13 +534,17 @@ local function RefreshColumn1(preserveDrag)
         end
 
         entry:SetText(displayName)
-        if not inFolder and IsValidIconTexture(container.manualIcon) then
+        local showManualIcon = not inFolder and IsValidIconTexture(container.manualIcon)
+        if showManualIcon then
             entry:SetImage(container.manualIcon)
             entry:SetImageSize(32, 32)
         else
             entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
             entry:SetImageSize(inFolder and 13 or 1, 30)
-            entry.image:SetAlpha(0)
+        end
+        if entry.image then
+            entry.image:Show()
+            entry.image:SetAlpha(showManualIcon and 1 or 0)
         end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
@@ -1162,6 +1165,10 @@ local function RefreshColumn1(preserveDrag)
         entry:SetText(folder.name .. collapseTag)
         entry:SetImage(GetFolderIcon(folderId, db))
         entry:SetImageSize(32, 32)
+        if entry.image then
+            entry.image:Show()
+            entry.image:SetAlpha(1)
+        end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         local allChildrenInactive = IsFolderFullyInactive(folderId, childContainerIds)
@@ -1555,39 +1562,6 @@ local function RefreshColumn1(preserveDrag)
         local heading = AceGUI:Create("Label")
         heading:SetFullWidth(true)
         heading:SetHeight(18)
-
-        if section == "char" then
-            local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
-            if #browseChars > 0 then
-                -- Invisible clickable overlay for tooltip + click
-                if not CS.browseBadge then
-                    local badge = CreateFrame("Button", nil, UIParent)
-                    badge:SetScript("OnEnter", function(self)
-                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                        GameTooltip:SetText("Browse Other Characters")
-                        GameTooltip:AddLine("View and copy groups from other characters on this profile.", 1, 1, 1, true)
-                        GameTooltip:Show()
-                    end)
-                    badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                    badge:SetScript("OnClick", function()
-                        CS.browseMode = true
-                        CS.browseCharKey = nil
-                        CS.browseContainerId = nil
-                        ClearSelection()
-                        wipe(CS.selectedGroups)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                    CS.browseBadge = badge
-                end
-                CS.browseBadge:SetParent(heading.frame)
-                CS.browseBadge:ClearAllPoints()
-                CS.browseBadge:SetPoint("RIGHT", heading.label, "RIGHT", 0, 0)
-                CS.browseBadge:SetSize(16, heading.label:GetHeight() or 16)
-                CS.browseBadge:Show()
-            else
-                if CS.browseBadge then CS.browseBadge:Hide() end
-            end
-        end
         CS.col1Scroll:AddChild(heading)
         SetupColumn1MarkerRow(heading, {
             text = useUnloadedOnlyHeading and "Unloaded Groups" or headingText,

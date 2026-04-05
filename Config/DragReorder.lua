@@ -1892,10 +1892,6 @@ local function SetCol1BaseFramesHidden(hidden, source)
                 end
             end
         end
-        if CS.browseBadge and preview.hiddenFrames[CS.browseBadge] == nil and CS.browseBadge:IsShown() then
-            preview.hiddenFrames[CS.browseBadge] = CS.browseBadge:GetAlpha()
-            CS.browseBadge:SetAlpha(0)
-        end
         for _, region in ipairs(CS.folderAccentBars or {}) do
             if region and region.SetAlpha and preview.hiddenRegions[region] == nil then
                 preview.hiddenRegions[region] = region:GetAlpha()

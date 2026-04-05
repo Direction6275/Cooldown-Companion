@@ -825,9 +825,12 @@ local function CleanRecycledEntry(entry)
     entry.frame:SetScript("OnReceiveDrag", nil)
     entry.frame._cdcOnMouseDown = nil
     entry.frame._cdcLastClickTime = nil
-    entry.image:SetAlpha(1)
-    if entry.image and entry.image.SetDesaturated then
-        entry.image:SetDesaturated(false)
+    if entry.image then
+        entry.image:Show()
+        entry.image:SetAlpha(1)
+        if entry.image.SetDesaturated then
+            entry.image:SetDesaturated(false)
+        end
     end
 end
 
