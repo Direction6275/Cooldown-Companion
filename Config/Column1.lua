@@ -1702,6 +1702,7 @@ local function RefreshColumn1(preserveDrag)
 
     -- Split containers into global and character-owned
     local containers = db.groupContainers or {}
+    local showNewUserEmptyState = not next(containers) and not next(db.folders)
     local globalIds = {}
     local charIds = {}
     for id, container in pairs(containers) do
@@ -1712,42 +1713,71 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
-    -- Render sections
-    local hasGlobalContent = #globalIds > 0
-    if not hasGlobalContent then
-        for _, folder in pairs(db.folders) do
-            if folder.section == "global" then
-                hasGlobalContent = true
-                break
+    if showNewUserEmptyState then
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(20)
+        spacer.noAutoHeight = true
+        CS.col1Scroll:AddChild(spacer)
+
+        local header = AceGUI:Create("Label")
+        header:SetText("Every setup starts with a group.")
+        header:SetFullWidth(true)
+        header:SetJustifyH("CENTER")
+        header:SetFont((GameFontNormal:GetFont()), 15, "")
+        CS.col1Scroll:AddChild(header)
+
+        local descSpacer = AceGUI:Create("SimpleGroup")
+        descSpacer:SetFullWidth(true)
+        descSpacer:SetHeight(6)
+        descSpacer.noAutoHeight = true
+        CS.col1Scroll:AddChild(descSpacer)
+
+        local desc = AceGUI:Create("Label")
+        desc:SetText("A group holds one or more panels so you can organize related cooldowns together. Use the buttons below to create your first group.")
+        desc:SetFullWidth(true)
+        desc:SetJustifyH("CENTER")
+        desc:SetFont((GameFontNormal:GetFont()), 12, "")
+        desc:SetColor(0.7, 0.7, 0.7)
+        CS.col1Scroll:AddChild(desc)
+    else
+        -- Render sections
+        local hasGlobalContent = #globalIds > 0
+        if not hasGlobalContent then
+            for _, folder in pairs(db.folders) do
+                if folder.section == "global" then
+                    hasGlobalContent = true
+                    break
+                end
             end
         end
-    end
 
-    if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
-        if hasGlobalContent or CS.showPhantomSections then
-            RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
-        end
-    end
-
-    local charName = charKey:match("^(.-)%s*%-") or charKey
-    local hasCharContent = #charIds > 0
-    if not hasCharContent then
-        for _, folder in pairs(db.folders) do
-            if folder.section == "char" and (not folder.createdBy or folder.createdBy == charKey) then
-                hasCharContent = true
-                break
+        if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
+            if hasGlobalContent or CS.showPhantomSections then
+                RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
             end
         end
-    end
-    if hasCharContent or CS.showPhantomSections then
-        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-        RenderSection(
-            "char",
-            charIds,
-            charName .. "'s Groups",
-            cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
-            { preferUnloadedHeading = not hasGlobalContent }
-        )
+
+        local charName = charKey:match("^(.-)%s*%-") or charKey
+        local hasCharContent = #charIds > 0
+        if not hasCharContent then
+            for _, folder in pairs(db.folders) do
+                if folder.section == "char" and (not folder.createdBy or folder.createdBy == charKey) then
+                    hasCharContent = true
+                    break
+                end
+            end
+        end
+        if hasCharContent or CS.showPhantomSections then
+            local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+            RenderSection(
+                "char",
+                charIds,
+                charName .. "'s Groups",
+                cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
+                { preferUnloadedHeading = not hasGlobalContent }
+            )
+        end
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows
