@@ -2679,7 +2679,7 @@ local function ResolveCol1FolderBlockHoverTarget(
     return BuildCol1FolderBlockDropResult(renderedRows, folderId, "into-folder")
 end
 
-local function ResolveCol1FolderDragBlockHoverTarget(renderedRows, folderId, cursorY)
+local function ResolveCol1FolderDragBlockHoverTarget(renderedRows, folderId, cursorY, previousDropTarget)
     local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
     if not blockInfo or not cursorY or cursorY > blockInfo.top or cursorY < blockInfo.bottom then
         return nil
@@ -2687,6 +2687,14 @@ local function ResolveCol1FolderDragBlockHoverTarget(renderedRows, folderId, cur
 
     local mid = (blockInfo.top + blockInfo.bottom) / 2
     local action = cursorY > mid and "reorder-before" or "reorder-after"
+    local hysteresis = math.min(18, math.max(8, (blockInfo.top - blockInfo.bottom) * 0.12))
+    if previousDropTarget
+        and previousDropTarget.folderBlockId == folderId
+        and (previousDropTarget.action == "reorder-before" or previousDropTarget.action == "reorder-after")
+        and math.abs(cursorY - mid) <= hysteresis
+    then
+        action = previousDropTarget.action
+    end
     return BuildCol1FolderReorderBlockTarget(renderedRows, folderId, action)
 end
 
@@ -2902,7 +2910,7 @@ local function ResolvePreviousFolderBlockBoundaryTarget(renderedRows, rowIndex, 
     )
 end
 
-local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket)
+local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket, previousDropTarget)
     if not renderedRows or #renderedRows == 0 then return nil end
     local sourceIsMixed = IsCol1MixedDragSource(sourceLoadBucket)
     local sourceIsUnloaded = IsCol1UnloadedDragSource(sourceLoadBucket)
@@ -2939,7 +2947,8 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                 local folderBlockTarget = ResolveCol1FolderDragBlockHoverTarget(
                     renderedRows,
                     rowMeta.id,
-                    cursorY
+                    cursorY,
+                    previousDropTarget
                 )
                 if folderBlockTarget then
                     return folderBlockTarget
@@ -3949,7 +3958,8 @@ local function StartDragTracking()
                     effectiveKind,
                     CS.dragState.sourceSection,
                     CS.dragState.sourceFolderId,
-                    CS.dragState.sourceLoadBucket
+                    CS.dragState.sourceLoadBucket,
+                    CS.dragState.dropTarget
                 )
                 CS.dragState.dropTarget = dropTarget
                 if dropTarget then
