@@ -476,6 +476,16 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
 
+    if displayMode == "textures" then
+        db.groups[groupId].textureSettings = {
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+            x = 0,
+            y = 0,
+        }
+    end
+
     self:CreateGroupFrame(groupId)
     return groupId
 end
@@ -560,8 +570,24 @@ end
 function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+
+    if newMode == "textures" and #group.buttons > 1 then
+        self:Print("Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.")
+        return false
+    end
+
     group.displayMode = newMode
+    if newMode == "bars" or newMode == "text" then
+        group.style.orientation = "vertical"
+    end
+    if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
+        self:ToggleGroupMasque(groupId, false)
+    end
+    if newMode == "textures" then
+        self:GetTexturePanelSettings(group, true)
+    end
     self:RefreshGroupFrame(groupId)
+    return true
 end
 
 ------------------------------------------------------------------------
@@ -745,6 +771,11 @@ end
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+
+    if group.displayMode == "textures" and #group.buttons >= 1 then
+        self:Print("Texture Panels can only hold one entry. Remove the current entry first if you want to replace it.")
+        return nil
+    end
 
     -- Resolve spell transforms to base spell ID so the override chain can
     -- freely reach all variant forms at runtime.  Skip for items (no spell

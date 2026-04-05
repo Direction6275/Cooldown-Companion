@@ -310,6 +310,8 @@ local function ApplyPreviewModeBadge(texture, displayMode)
         texture:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
     elseif displayMode == "text" then
         texture:SetAtlas("poi-workorders", false)
+    elseif displayMode == "textures" then
+        texture:SetTexture(134400)
     else
         texture:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
     end

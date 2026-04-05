@@ -232,16 +232,19 @@ local function RefreshColumn3()
 
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         local isTextMode = group and group.displayMode == "text"
+        local isTextureMode = group and group.displayMode == "textures"
         local tabs = { { value = "appearance", text = "Appearance" } }
-        if not isTextMode then
+        if not isTextMode and not isTextureMode then
             tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
         end
         tabs[#tabs + 1] = { value = "layout", text = "Layout" }
         tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
         col3Normal._panelTabGroup:SetTabs(tabs)
 
-        -- Migrate stale tab / text-mode redirect
-        if isTextMode and CS.panelSettingsTab == "effects" then CS.panelSettingsTab = "appearance" end
+        -- Migrate stale tab / mode redirects
+        if (isTextMode or isTextureMode) and CS.panelSettingsTab == "effects" then
+            CS.panelSettingsTab = "appearance"
+        end
 
         -- Save scroll state before SelectTab releases the old ScrollFrame
         local savedOffset, savedScrollvalue

@@ -31,6 +31,9 @@ local defaults = {
             icons = {},
             bars = {},
         },
+        auraTextureLibrary = {
+            recentProcOverlays = {},
+        },
         groups = {
             --[[
                 [groupId] = {

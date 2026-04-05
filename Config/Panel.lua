@@ -200,12 +200,16 @@ local function CreateConfigPanel()
         if CS.talentPickerMode then
             CooldownCompanion:CloseTalentPicker()
         end
+        if CS.CancelPickAuraTexture then
+            CS.CancelPickAuraTexture()
+        end
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
         CooldownCompanion:ClearAllReadyGlowPreviews()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
+        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         CooldownCompanion:StopCastBarPreview()
         CloseDropDownMenus()
         CS.HideAutocomplete()

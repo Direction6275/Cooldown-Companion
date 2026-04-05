@@ -65,6 +65,62 @@ local BuildBarEffectsTab = ST._BuildBarEffectsTab
 -- Imports from TextModeTabs.lua
 local BuildTextAppearanceTab = ST._BuildTextAppearanceTab
 
+local TEXTURE_BLEND_OPTIONS = {
+    ADD = "Add",
+    BLEND = "Blend",
+    MOD = "Modulate",
+}
+
+local TEXTURE_BLEND_ORDER = {
+    "ADD",
+    "BLEND",
+    "MOD",
+}
+
+local function GetTexturePanelCommitCallback(group)
+    return function(selection)
+        local liveSettings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        if not liveSettings then
+            return
+        end
+
+        if selection then
+            CooldownCompanion:ApplyTexturePanelEntry(liveSettings, selection)
+            liveSettings.enabled = true
+        else
+            liveSettings.sourceType = nil
+            liveSettings.sourceValue = nil
+            liveSettings.label = nil
+            liveSettings.locationType = nil
+            liveSettings.width = nil
+            liveSettings.height = nil
+            liveSettings.enabled = false
+        end
+
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function OpenOrRebindTexturePanelPicker(group, settings, forceOpen)
+    if not (group and group.buttons and group.buttons[1] and CS.StartPickAuraTexture) then
+        return
+    end
+
+    local pickerOpts = {
+        groupId = CS.selectedGroup,
+        buttonIndex = 1,
+        initialSelection = settings and settings.sourceType and settings or nil,
+        callback = GetTexturePanelCommitCallback(group),
+    }
+
+    if forceOpen or not (CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen()) then
+        CS.StartPickAuraTexture(pickerOpts)
+    elseif CS.RebindPickAuraTexture then
+        CS.RebindPickAuraTexture(pickerOpts)
+    end
+end
+
 local function BuildLayoutTab(container)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
@@ -77,6 +133,57 @@ local function BuildLayoutTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    if group.displayMode == "textures" then
+        local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        if not settings then
+            return
+        end
+
+        local function RefreshTextureVisual()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Texture Position")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
+
+        local intro = AceGUI:Create("Label")
+        intro:SetFullWidth(true)
+        intro:SetText("This panel's texture is a standalone screen element. Drag it directly while this tab is open, or use the controls below for exact placement.")
+        container:AddChild(intro)
+
+        AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, "Texture Point")
+        AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
+        AddOffsetSliders(container, settings, "x", "y", {
+            x = 0,
+            y = 0,
+            range = 2000,
+            step = 1,
+        }, RefreshTextureVisual)
+
+        local resetBtn = AceGUI:Create("Button")
+        resetBtn:SetText("Reset Position")
+        resetBtn:SetFullWidth(true)
+        resetBtn:SetCallback("OnClick", function()
+            settings.point = "CENTER"
+            settings.relativePoint = "CENTER"
+            settings.relativeTo = "UIParent"
+            settings.x = 0
+            settings.y = 0
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(resetBtn)
+
+        if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+            OpenOrRebindTexturePanelPicker(group, settings, false)
+        end
+        RefreshTextureVisual()
+        return
+    end
 
     -- ================================================================
     -- Anchor to Frame (editbox + pick button row)
@@ -518,6 +625,14 @@ local function BuildEffectsTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    if group.displayMode == "textures" then
+        local label = AceGUI:Create("Label")
+        label:SetText("|cff888888Texture Panels do not use the Indicators tab. Their trigger rules live on the single entry, and their visual controls live in Appearance and Layout.|r")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
 
     -- Branch for bar mode
     if group.displayMode == "bars" then
@@ -984,6 +1099,185 @@ local function BuildAppearanceTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    if group.displayMode == "textures" then
+        local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        if not settings then
+            return
+        end
+
+        local groupId = CS.selectedGroup
+        local buttonData = group.buttons and group.buttons[1] or nil
+        local function RefreshTextureVisual()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Texture Panel")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
+
+        CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+            "Texture Panel",
+            {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
+            " ",
+            {"Its single entry decides when the texture appears, using the same familiar trigger and visibility-rule model as icon panels.", 1, 1, 1, true},
+            " ",
+            {"The texture browser uses Blizzard-first sources: the starter library, recently captured proc overlays, and atlas search.", 1, 1, 1, true},
+        }, tabInfoButtons)
+
+        if not buttonData then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetFullWidth(true)
+            emptyLabel:SetText("|cff888888This panel can hold one entry. Add a spell or aura entry in Column 2 first, then the texture browser will open automatically.|r")
+            container:AddChild(emptyLabel)
+
+            if CS.pendingTexturePickerOpen == CS.selectedGroup then
+                CS.pendingTexturePickerOpen = nil
+            end
+            return
+        end
+
+        local triggerLabel = AceGUI:Create("Label")
+        triggerLabel:SetFullWidth(true)
+        triggerLabel:SetText("|cff00ff98Trigger Entry:|r " .. (buttonData.name or "Unnamed Entry"))
+        container:AddChild(triggerLabel)
+
+        local currentLabel = AceGUI:Create("Label")
+        currentLabel:SetFullWidth(true)
+        local selectionLabel = CooldownCompanion:GetTexturePanelSelectionLabel(group)
+        if selectionLabel then
+            currentLabel:SetText("|cff00ff98Selected Texture:|r " .. selectionLabel)
+        else
+            currentLabel:SetText("|cff888888Selected Texture: none yet|r")
+        end
+        container:AddChild(currentLabel)
+
+        local helpLabel = AceGUI:Create("Label")
+        helpLabel:SetFullWidth(true)
+        helpLabel:SetText("|cff888888This panel's entry controls when the texture shows. Use the button row in Column 2 if you want to edit that entry's visibility rules. The controls here are only for the texture itself.|r")
+        container:AddChild(helpLabel)
+
+        local browseBtn = AceGUI:Create("Button")
+        browseBtn:SetText(selectionLabel and "Browse / Change Texture" or "Browse Blizzard Textures")
+        browseBtn:SetFullWidth(true)
+        browseBtn:SetCallback("OnClick", function()
+            OpenOrRebindTexturePanelPicker(group, settings, true)
+        end)
+        container:AddChild(browseBtn)
+
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear Texture")
+        clearBtn:SetDisabled(not selectionLabel)
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+            GetTexturePanelCommitCallback(group)(nil)
+        end)
+        container:AddChild(clearBtn)
+
+        local libraryNote = AceGUI:Create("Label")
+        libraryNote:SetFullWidth(true)
+        libraryNote:SetText("|cff888888Recent proc overlays are learned automatically while you play. Atlas search is available when you want to browse deeper Blizzard art without hand-curating it first.|r")
+        container:AddChild(libraryNote)
+
+        if not selectionLabel then
+            local emptyStateLabel = AceGUI:Create("Label")
+            emptyStateLabel:SetFullWidth(true)
+            emptyStateLabel:SetText("|cff888888Pick a texture first. After that, the rest of the texture display controls will appear here.|r")
+            container:AddChild(emptyStateLabel)
+
+            local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
+            if shouldOpenPicker then
+                CS.pendingTexturePickerOpen = nil
+                C_Timer.After(0, function()
+                    if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
+                        OpenOrRebindTexturePanelPicker(group, settings, true)
+                    end
+                end)
+            elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+                OpenOrRebindTexturePanelPicker(group, settings, false)
+            end
+
+            RefreshTextureVisual()
+            return
+        end
+
+        local enableCb = AceGUI:Create("CheckBox")
+        enableCb:SetLabel("Enable Texture Panel")
+        enableCb:SetValue(settings.enabled == true)
+        enableCb:SetFullWidth(true)
+        enableCb:SetCallback("OnValueChanged", function(_, _, value)
+            settings.enabled = value == true
+            RefreshTextureVisual()
+        end)
+        container:AddChild(enableCb)
+
+        local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
+        local locationDrop = AceGUI:Create("Dropdown")
+        locationDrop:SetLabel("Texture Layout")
+        locationDrop:SetList(locationOptions, locationOrder)
+        locationDrop:SetValue(settings.locationType or 0)
+        locationDrop:SetFullWidth(true)
+        locationDrop:SetCallback("OnValueChanged", function(_, _, value)
+            settings.locationType = tonumber(value) or 0
+            RefreshTextureVisual()
+        end)
+        container:AddChild(locationDrop)
+
+        local blendDrop = AceGUI:Create("Dropdown")
+        blendDrop:SetLabel("Blend Mode")
+        blendDrop:SetList(TEXTURE_BLEND_OPTIONS, TEXTURE_BLEND_ORDER)
+        blendDrop:SetValue(settings.blendMode or "ADD")
+        blendDrop:SetFullWidth(true)
+        blendDrop:SetCallback("OnValueChanged", function(_, _, value)
+            settings.blendMode = value or "ADD"
+            RefreshTextureVisual()
+        end)
+        container:AddChild(blendDrop)
+
+        local scaleSlider = AceGUI:Create("Slider")
+        scaleSlider:SetLabel("Texture Scale")
+        scaleSlider:SetSliderValues(0.25, 4, 0.05)
+        scaleSlider:SetValue(settings.scale or 1)
+        scaleSlider:SetFullWidth(true)
+        scaleSlider:SetCallback("OnValueChanged", function(_, _, value)
+            settings.scale = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(scaleSlider)
+        container:AddChild(scaleSlider)
+
+        local alphaSlider = AceGUI:Create("Slider")
+        alphaSlider:SetLabel("Texture Alpha")
+        alphaSlider:SetSliderValues(0.05, 1, 0.05)
+        alphaSlider:SetValue(settings.alpha or 1)
+        alphaSlider:SetFullWidth(true)
+        alphaSlider:SetCallback("OnValueChanged", function(_, _, value)
+            settings.alpha = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(alphaSlider)
+        container:AddChild(alphaSlider)
+
+        AddColorPicker(container, settings, "color", "Texture Color", { 1, 1, 1, 1 }, true, RefreshTextureVisual, RefreshTextureVisual)
+
+        local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
+        if shouldOpenPicker then
+            CS.pendingTexturePickerOpen = nil
+            C_Timer.After(0, function()
+                if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
+                    OpenOrRebindTexturePanelPicker(group, settings, true)
+                end
+            end)
+        elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+            OpenOrRebindTexturePanelPicker(group, settings, false)
+        end
+
+        RefreshTextureVisual()
+        return
+    end
 
     -- Branch for text mode
     if group.displayMode == "text" then

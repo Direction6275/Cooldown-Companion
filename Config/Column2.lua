@@ -116,6 +116,30 @@ local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
     return CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, viewerFrame)
 end
 
+local function CanTexturePanelAcceptEntry(group)
+    return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
+end
+
+local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGroupId, entryData)
+    local targetGroup = db and db.groups and db.groups[targetGroupId]
+    if not targetGroup then
+        return false
+    end
+    if not CanTexturePanelAcceptEntry(targetGroup) then
+        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+        return false
+    end
+
+    table.insert(targetGroup.buttons, entryData)
+    table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
+    CooldownCompanion:RefreshGroupFrame(targetGroupId)
+    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+    CS.selectedButton = nil
+    wipe(CS.selectedButtons)
+    CooldownCompanion:RefreshConfigPanel()
+    return true
+end
+
 ------------------------------------------------------------------------
 -- COLUMN 2: Panels
 ------------------------------------------------------------------------
@@ -388,6 +412,8 @@ local function RefreshColumn2()
                 modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
             elseif panel.displayMode == "text" then
                 modeBadge:SetAtlas("poi-workorders", false)
+            elseif panel.displayMode == "textures" then
+                modeBadge:SetTexture(134400)
             else
                 modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
             end
@@ -794,7 +820,7 @@ local function RefreshColumn2()
         if CS.col2ButtonBar then
             CS.col2ButtonBar:Show()
             local barW = CS.col2ButtonBar:GetWidth() or 300
-            local thirdW = (barW - 6) / 3
+            local panelBtnWidth = (barW - 9) / 4
 
             local iconPanelBtn = AceGUI:Create("Button")
             iconPanelBtn:SetText("Icon Panel")
@@ -810,7 +836,7 @@ local function RefreshColumn2()
             iconPanelBtn.frame:SetParent(CS.col2ButtonBar)
             iconPanelBtn.frame:ClearAllPoints()
             iconPanelBtn.frame:SetPoint("TOPLEFT", CS.col2ButtonBar, "TOPLEFT", 0, -1)
-            iconPanelBtn.frame:SetWidth(thirdW)
+            iconPanelBtn.frame:SetWidth(panelBtnWidth)
             iconPanelBtn.frame:SetHeight(28)
             iconPanelBtn.frame:Show()
             table.insert(CS.col2BarWidgets, iconPanelBtn)
@@ -837,7 +863,7 @@ local function RefreshColumn2()
             barPanelBtn.frame:SetParent(CS.col2ButtonBar)
             barPanelBtn.frame:ClearAllPoints()
             barPanelBtn.frame:SetPoint("LEFT", iconPanelBtn.frame, "RIGHT", 3, 0)
-            barPanelBtn.frame:SetWidth(thirdW)
+            barPanelBtn.frame:SetWidth(panelBtnWidth)
             barPanelBtn.frame:SetHeight(28)
             barPanelBtn.frame:Show()
             table.insert(CS.col2BarWidgets, barPanelBtn)
@@ -864,16 +890,42 @@ local function RefreshColumn2()
             textPanelBtn.frame:SetParent(CS.col2ButtonBar)
             textPanelBtn.frame:ClearAllPoints()
             textPanelBtn.frame:SetPoint("LEFT", barPanelBtn.frame, "RIGHT", 3, 0)
-            textPanelBtn.frame:SetWidth(thirdW)
+            textPanelBtn.frame:SetWidth(panelBtnWidth)
             textPanelBtn.frame:SetHeight(28)
             textPanelBtn.frame:Show()
             table.insert(CS.col2BarWidgets, textPanelBtn)
 
+            local texturePanelBtn = AceGUI:Create("Button")
+            texturePanelBtn:SetText("Texture Panel")
+            texturePanelBtn:SetCallback("OnClick", function()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "textures")
+                if newPanelId then
+                    CS.selectedGroup = newPanelId
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
+                    CS.addingToPanelId = newPanelId
+                    CS.pendingEditBoxFocus = true
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            texturePanelBtn.frame:SetParent(CS.col2ButtonBar)
+            texturePanelBtn.frame:ClearAllPoints()
+            texturePanelBtn.frame:SetPoint("LEFT", textPanelBtn.frame, "RIGHT", 3, 0)
+            texturePanelBtn.frame:SetWidth(panelBtnWidth)
+            texturePanelBtn.frame:SetHeight(28)
+            texturePanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, texturePanelBtn)
+
             -- Dynamic equal-width resize for panel buttons
-            CS.col2ButtonBar._topRowBtns = {iconPanelBtn.frame, barPanelBtn.frame, textPanelBtn.frame}
+            CS.col2ButtonBar._topRowBtns = {
+                iconPanelBtn.frame,
+                barPanelBtn.frame,
+                textPanelBtn.frame,
+                texturePanelBtn.frame,
+            }
             CS.col2ButtonBar:SetScript("OnSizeChanged", function(self, w)
                 if self._topRowBtns then
-                    local tw = (w - 6) / 3
+                    local tw = (w - 9) / 4
                     for _, f in ipairs(self._topRowBtns) do
                         f:SetWidth(tw)
                     end
@@ -1062,6 +1114,8 @@ local function RefreshColumn2()
                     modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
                 elseif panel.displayMode == "text" then
                     modeBadge:SetAtlas("poi-workorders", false)
+                elseif panel.displayMode == "textures" then
+                    modeBadge:SetTexture(134400)
                 else
                     modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
                 end
@@ -1342,6 +1396,7 @@ local function RefreshColumn2()
                                 { mode = "icons", label = "Icons" },
                                 { mode = "bars", label = "Bars" },
                                 { mode = "text", label = "Text" },
+                                { mode = "textures", label = "Textures" },
                             }
                             for _, m in ipairs(switchModes) do
                                 if ctxPanel.displayMode ~= m.mode then
@@ -1351,15 +1406,15 @@ local function RefreshColumn2()
                                     local targetMode = m.mode
                                     info.func = function()
                                         CloseDropDownMenus()
-                                        ctxPanel.displayMode = targetMode
-                                        if targetMode == "bars" or targetMode == "text" then
-                                            ctxPanel.style.orientation = "vertical"
+                                        if CooldownCompanion:ChangePanelDisplayMode(ctxPanelId, targetMode) then
+                                            if targetMode == "textures" then
+                                                CS.pendingTexturePickerOpen = ctxPanelId
+                                                CS.selectedGroup = ctxPanelId
+                                                CS.selectedButton = nil
+                                                wipe(CS.selectedButtons)
+                                            end
+                                            CooldownCompanion:RefreshConfigPanel()
                                         end
-                                        if targetMode ~= "icons" and ctxPanel.masqueEnabled then
-                                            CooldownCompanion:ToggleGroupMasque(ctxPanelId, false)
-                                        end
-                                        CooldownCompanion:RefreshGroupFrame(ctxPanelId)
-                                        CooldownCompanion:RefreshConfigPanel()
                                     end
                                     UIDropDownMenu_AddButton(info, level)
                                 end
@@ -1518,7 +1573,12 @@ local function RefreshColumn2()
                 addBtn.icon:SetAtlas(isAdding and "common-icon-minus" or "common-icon-plus", false)
                 addBtn.icon:SetVertexColor(0.3, 0.8, 0.3)
                 local addBtnPanelId = panelId
+                local addBtnTextureFull = panel.displayMode == "textures" and btnCount >= 1
                 addBtn:SetScript("OnClick", function()
+                    if addBtnTextureFull then
+                        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+                        return
+                    end
                     if CS.addingToPanelId == addBtnPanelId then
                         CS.addingToPanelId = nil
                     else
@@ -1531,7 +1591,7 @@ local function RefreshColumn2()
                     end
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                addBtn:Show()
+                addBtn:SetShown(not addBtnTextureFull)
 
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
@@ -1836,7 +1896,9 @@ local function RefreshColumn2()
                                     local containers = db.groupContainers or {}
                                     local folderGroups, looseGroups = {}, {}
                                     for id, group in pairs(db.groups) do
-                                        if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                                        if id ~= sourceGroupId
+                                            and CooldownCompanion:IsGroupVisibleToCurrentChar(id)
+                                            and CanTexturePanelAcceptEntry(group) then
                                             local gName = group.name or ("Group " .. id)
                                             local cid = group.parentContainerId
                                             local ctr = cid and containers[cid]
@@ -1869,14 +1931,9 @@ local function RefreshColumn2()
                                             info.text = g.name
                                             info.notCheckable = true
                                             info.func = function()
-                                                table.insert(db.groups[g.id].buttons, entryData)
-                                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                                CooldownCompanion:RefreshGroupFrame(g.id)
-                                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                                CS.selectedButton = nil
-                                                wipe(CS.selectedButtons)
-                                                CooldownCompanion:RefreshConfigPanel()
-                                                CloseDropDownMenus()
+                                                if MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, g.id, entryData) then
+                                                    CloseDropDownMenus()
+                                                end
                                             end
                                             UIDropDownMenu_AddButton(info, level)
                                         end
@@ -1895,14 +1952,9 @@ local function RefreshColumn2()
                                             info.text = g.name
                                             info.notCheckable = true
                                             info.func = function()
-                                                table.insert(db.groups[g.id].buttons, entryData)
-                                                table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                                CooldownCompanion:RefreshGroupFrame(g.id)
-                                                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                                CS.selectedButton = nil
-                                                wipe(CS.selectedButtons)
-                                                CooldownCompanion:RefreshConfigPanel()
-                                                CloseDropDownMenus()
+                                                if MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, g.id, entryData) then
+                                                    CloseDropDownMenus()
+                                                end
                                             end
                                             UIDropDownMenu_AddButton(info, level)
                                         end
@@ -1928,7 +1980,9 @@ local function RefreshColumn2()
                                 local containers = db.groupContainers or {}
                                 local folderGroups, looseGroups = {}, {}
                                 for id, group in pairs(db.groups) do
-                                    if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                                    if id ~= sourceGroupId
+                                        and CooldownCompanion:IsGroupVisibleToCurrentChar(id)
+                                        and CanTexturePanelAcceptEntry(group) then
                                         local gName = group.name or ("Group " .. id)
                                         local cid = group.parentContainerId
                                         local ctr = cid and containers[cid]
@@ -1960,14 +2014,9 @@ local function RefreshColumn2()
                                         local info = UIDropDownMenu_CreateInfo()
                                         info.text = g.name
                                         info.func = function()
-                                            table.insert(db.groups[g.id].buttons, entryData)
-                                            table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                            CooldownCompanion:RefreshGroupFrame(g.id)
-                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                            CS.selectedButton = nil
-                                            wipe(CS.selectedButtons)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                            CloseDropDownMenus()
+                                            if MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, g.id, entryData) then
+                                                CloseDropDownMenus()
+                                            end
                                         end
                                         UIDropDownMenu_AddButton(info, level)
                                     end
@@ -1985,14 +2034,9 @@ local function RefreshColumn2()
                                         local info = UIDropDownMenu_CreateInfo()
                                         info.text = g.name
                                         info.func = function()
-                                            table.insert(db.groups[g.id].buttons, entryData)
-                                            table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-                                            CooldownCompanion:RefreshGroupFrame(g.id)
-                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                            CS.selectedButton = nil
-                                            wipe(CS.selectedButtons)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                            CloseDropDownMenus()
+                                            if MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, g.id, entryData) then
+                                                CloseDropDownMenus()
+                                            end
                                         end
                                         UIDropDownMenu_AddButton(info, level)
                                     end
@@ -2022,7 +2066,7 @@ local function RefreshColumn2()
                 end -- button loop
 
                 -- Inline add editbox (visible only when this panel is the active add target)
-                if CS.addingToPanelId == panelId then
+                if CS.addingToPanelId == panelId and not (panel.displayMode == "textures" and btnCount >= 1) then
                     panelMeta.hasInlineAdd = true
                     local inputBox = AceGUI:Create("EditBox")
                     if inputBox.editbox.Instructions then inputBox.editbox.Instructions:Hide() end
@@ -2035,10 +2079,14 @@ local function RefreshColumn2()
                         CS.HideAutocomplete()
                         CS.newInput = text
                         if CS.newInput ~= "" and CS.addingToPanelId then
-                            CS.selectedGroup = CS.addingToPanelId
+                            local addTargetGroupId = CS.addingToPanelId
+                            CS.selectedGroup = addTargetGroupId
                             if TryAdd(CS.newInput) then
                                 CS.newInput = ""
-                                CS.pendingEditBoxFocus = true  -- re-focus for rapid successive adds
+                                local targetGroup = CooldownCompanion.db.profile.groups[addTargetGroupId]
+                                if not (targetGroup and targetGroup.displayMode == "textures") then
+                                    CS.pendingEditBoxFocus = true  -- re-focus for rapid successive adds
+                                end
                                 CooldownCompanion:RefreshConfigPanel()
                             end
                         end
@@ -2077,36 +2125,42 @@ local function RefreshColumn2()
 
                     local manualAddBtn = AceGUI:Create("Button")
                     manualAddBtn:SetText("Manual Add")
-                    manualAddBtn:SetRelativeWidth(0.49)
+                    manualAddBtn:SetRelativeWidth(panel.displayMode == "textures" and 1 or 0.49)
                     manualAddBtn:SetCallback("OnClick", function()
                         if CS.newInput ~= "" and CS.addingToPanelId then
-                            CS.selectedGroup = CS.addingToPanelId
+                            local addTargetGroupId = CS.addingToPanelId
+                            CS.selectedGroup = addTargetGroupId
                             if TryAdd(CS.newInput) then
                                 CS.newInput = ""
-                                CS.pendingEditBoxFocus = true  -- re-focus for rapid successive adds
+                                local targetGroup = CooldownCompanion.db.profile.groups[addTargetGroupId]
+                                if not (targetGroup and targetGroup.displayMode == "textures") then
+                                    CS.pendingEditBoxFocus = true  -- re-focus for rapid successive adds
+                                end
                                 CooldownCompanion:RefreshConfigPanel()
                             end
                         end
                     end)
                     addRow:AddChild(manualAddBtn)
 
-                    local autoAddBtn = AceGUI:Create("Button")
-                    autoAddBtn:SetText("Auto Add")
-                    autoAddBtn:SetRelativeWidth(0.49)
-                    autoAddBtn:SetCallback("OnClick", function()
-                        CS.selectedGroup = CS.addingToPanelId
-                        OpenAutoAddFlow()
-                    end)
-                    autoAddBtn:SetCallback("OnEnter", function(widget)
-                        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-                        GameTooltip:AddLine("Auto Add")
-                        GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
-                        GameTooltip:Show()
-                    end)
-                    autoAddBtn:SetCallback("OnLeave", function()
-                        GameTooltip:Hide()
-                    end)
-                    addRow:AddChild(autoAddBtn)
+                    if panel.displayMode ~= "textures" then
+                        local autoAddBtn = AceGUI:Create("Button")
+                        autoAddBtn:SetText("Auto Add")
+                        autoAddBtn:SetRelativeWidth(0.49)
+                        autoAddBtn:SetCallback("OnClick", function()
+                            CS.selectedGroup = CS.addingToPanelId
+                            OpenAutoAddFlow()
+                        end)
+                        autoAddBtn:SetCallback("OnEnter", function(widget)
+                            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+                            GameTooltip:AddLine("Auto Add")
+                            GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
+                            GameTooltip:Show()
+                        end)
+                        autoAddBtn:SetCallback("OnLeave", function()
+                            GameTooltip:Hide()
+                        end)
+                        addRow:AddChild(autoAddBtn)
+                    end
 
                     panelContainer:AddChild(addRow)
                 end

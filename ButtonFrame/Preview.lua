@@ -379,3 +379,42 @@ end
 function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
     ClearAllPreviews(self, "_keyPressHighlightPreview", "_keyPressHighlightActive", nil, kphPreviewTokens, nil, nil, false)
 end
+
+--------------------------------------------------------------------------------
+-- Aura Texture Picker Preview
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetAuraTexturePickerPreview(groupId, buttonIndex, selection)
+    local frame = self.groupFrames[groupId]
+    if not frame then
+        return
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._auraTexturePreviewSelection = selection and CopyTable(selection) or nil
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+            return
+        end
+    end
+end
+
+function CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            local hadPreview = button._auraTexturePreviewSelection ~= nil
+            if hadPreview then
+                button._auraTexturePreviewSelection = nil
+            end
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+        end
+    end
+end

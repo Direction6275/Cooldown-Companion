@@ -10,6 +10,7 @@ local CS = ST._configState
 local issecretvalue = issecretvalue
 local canaccessvalue = canaccessvalue
 local bit_band = bit and bit.band
+local math_max = math.max
 
 -- File-local state
 local pickFrameOverlay = nil
@@ -17,6 +18,11 @@ local pickFrameCallback = nil
 local pickFrameSourceGroupId = nil
 local pickCDMOverlay = nil
 local pickCDMCallback = nil
+local pickAuraTextureOverlay = nil
+local pickAuraTextureCallback = nil
+local AURA_TEXTURE_FILTER_LIBRARY = "library"
+local AURA_TEXTURE_FILTER_RECENT = "recent"
+local AURA_TEXTURE_FILTER_ATLASES = "atlases"
 
 ------------------------------------------------------------------------
 -- Secret-safe value helpers
@@ -827,6 +833,470 @@ local function StartPickCDM(callback)
         end)
     else
         pickCDMOverlay:Show()
+    end
+end
+
+------------------------------------------------------------------------
+-- Aura texture picker
+------------------------------------------------------------------------
+
+local function FinishPickAuraTexture(selection)
+    if pickAuraTextureOverlay then
+        pickAuraTextureOverlay:Hide()
+    end
+    CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+    local cb = pickAuraTextureCallback
+    pickAuraTextureCallback = nil
+    if cb then
+        cb(selection)
+    end
+end
+
+local function CancelPickAuraTexture()
+    if pickAuraTextureOverlay and pickAuraTextureOverlay:IsShown() then
+        FinishPickAuraTexture(nil)
+        return
+    end
+    CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+    pickAuraTextureCallback = nil
+end
+
+local function ApplyAuraTextureRowIcon(icon, entry)
+    if not icon then
+        return
+    end
+
+    icon:SetTexCoord(0, 1, 0, 1)
+    icon:SetBlendMode("ADD")
+    icon:SetVertexColor(1, 1, 1, 1)
+
+    if entry.sourceType == "atlas" and type(entry.sourceValue) == "string" and C_Texture.GetAtlasExists(entry.sourceValue) then
+        icon:SetAtlas(entry.sourceValue, false)
+        return
+    end
+
+    if entry.sourceType == "file" and type(entry.sourceValue) == "number" then
+        icon:SetTexture(entry.sourceValue)
+        local color = entry.color
+        if type(color) == "table" then
+            icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+        return
+    end
+
+    icon:SetTexture(134400)
+end
+
+local function StartPickAuraTexture(opts)
+    opts = type(opts) == "table" and opts or {}
+    pickAuraTextureCallback = opts.callback
+    local initialSelection = type(opts.initialSelection) == "table" and opts.initialSelection or nil
+
+    if not pickAuraTextureOverlay then
+        local overlay = CreateFrame("Frame", "CooldownCompanionPickAuraTextureOverlay", UIParent)
+        overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+        overlay:SetFrameLevel(105)
+        overlay:SetAllPoints(UIParent)
+        overlay:EnableMouse(true)
+        overlay:EnableKeyboard(true)
+
+        local bg = overlay:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.18)
+        overlay.bg = bg
+
+        local panel = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+        panel:SetPoint("CENTER", overlay, "CENTER", 260, -5)
+        panel:SetSize(980, 640)
+        overlay.panel = panel
+
+        local function ApplyPanelBackdrop()
+            local source = CS.configFrame and CS.configFrame.frame
+            local copied = false
+            if source and source.GetBackdrop and panel.SetBackdrop then
+                local backdrop = source:GetBackdrop()
+                if backdrop then
+                    local copy = {}
+                    for key, value in pairs(backdrop) do
+                        if type(value) == "table" then
+                            copy[key] = {}
+                            for subKey, subValue in pairs(value) do
+                                copy[key][subKey] = subValue
+                            end
+                        else
+                            copy[key] = value
+                        end
+                    end
+                    panel:SetBackdrop(copy)
+                    copied = true
+                    if source.GetBackdropColor and panel.SetBackdropColor then
+                        panel:SetBackdropColor(source:GetBackdropColor())
+                    end
+                    if source.GetBackdropBorderColor and panel.SetBackdropBorderColor then
+                        panel:SetBackdropBorderColor(source:GetBackdropBorderColor())
+                    end
+                end
+            end
+
+            if not copied then
+                panel:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                panel:SetBackdropColor(0.05, 0.08, 0.10, 0.96)
+                panel:SetBackdropBorderColor(0.2, 0.45, 0.55, 0.9)
+            end
+        end
+        ApplyPanelBackdrop()
+        overlay.ApplyPanelBackdrop = ApplyPanelBackdrop
+
+        local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -12)
+        title:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -40, -12)
+        title:SetJustifyH("CENTER")
+        title:SetText("Browse Aura Textures")
+        overlay.title = title
+
+        local closeBtn = CreateFrame("Button", nil, panel)
+        closeBtn:SetSize(19, 19)
+        closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
+        local closeIcon = closeBtn:CreateTexture(nil, "ARTWORK")
+        closeIcon:SetAtlas("common-icon-redx", false)
+        closeIcon:SetAllPoints()
+        closeBtn:SetHighlightAtlas("common-icon-redx")
+        closeBtn:GetHighlightTexture():SetAlpha(0.3)
+        closeBtn:SetScript("OnClick", function()
+            FinishPickAuraTexture(nil)
+        end)
+        panel.closeBtn = closeBtn
+
+        local topSeparator = panel:CreateTexture(nil, "BORDER")
+        topSeparator:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -34)
+        topSeparator:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -34)
+        topSeparator:SetHeight(1)
+        topSeparator:SetColorTexture(0.25, 0.55, 0.65, 0.9)
+
+        local searchLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        searchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -52)
+        searchLabel:SetText("Search")
+
+        local searchBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+        searchBox:SetAutoFocus(false)
+        searchBox:SetSize(360, 26)
+        searchBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -72)
+        searchBox:SetScript("OnEscapePressed", function(self)
+            self:ClearFocus()
+        end)
+        overlay.searchBox = searchBox
+
+        local filterLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        filterLabel:SetPoint("TOPLEFT", searchBox, "TOPRIGHT", 24, 12)
+        filterLabel:SetText("Source")
+
+        local filterDrop = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
+        filterDrop:SetPoint("TOPLEFT", searchBox, "TOPRIGHT", 8, 10)
+        UIDropDownMenu_SetWidth(filterDrop, 180)
+        overlay.filterDrop = filterDrop
+
+        local statusLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        statusLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -106)
+        statusLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -106)
+        statusLabel:SetJustifyH("LEFT")
+        statusLabel:SetText("")
+        overlay.statusLabel = statusLabel
+
+        local listScroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+        listScroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -126)
+        listScroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -32, 62)
+        overlay.listScroll = listScroll
+
+        local listContent = CreateFrame("Frame", nil, listScroll)
+        listContent:SetSize(1, 1)
+        listScroll:SetScrollChild(listContent)
+        overlay.listContent = listContent
+        overlay.rows = {}
+        overlay.rowHeight = 44
+        overlay.rowIconSize = 28
+        overlay.filterValue = AURA_TEXTURE_FILTER_LIBRARY
+        overlay.searchText = ""
+        overlay.selectedKey = nil
+        overlay.selectedEntry = nil
+
+        local selectionLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        selectionLabel:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 18, 20)
+        selectionLabel:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -250, 20)
+        selectionLabel:SetJustifyH("LEFT")
+        selectionLabel:SetText("Select a texture to preview it on the chosen aura button.")
+        overlay.selectionLabel = selectionLabel
+
+        local confirmBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+        confirmBtn:SetSize(120, 24)
+        confirmBtn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -18, 18)
+        confirmBtn:SetText("Use Texture")
+        confirmBtn:SetEnabled(false)
+        panel.confirmBtn = confirmBtn
+        overlay.confirmBtn = confirmBtn
+
+        local cancelBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+        cancelBtn:SetSize(90, 24)
+        cancelBtn:SetPoint("RIGHT", confirmBtn, "LEFT", -8, 0)
+        cancelBtn:SetText("Cancel")
+        cancelBtn:SetScript("OnClick", function()
+            FinishPickAuraTexture(nil)
+        end)
+
+        local function SetSelectedEntry(entry)
+            overlay.selectedEntry = entry
+            overlay.selectedKey = entry and entry.key or nil
+            confirmBtn:SetEnabled(entry ~= nil)
+
+            if entry then
+                overlay.selectionLabel:SetText((entry.label or "Texture") .. "  |  " .. (entry.subtitle or entry.category or ""))
+                if CS.selectedGroup and CS.selectedButton then
+                    CooldownCompanion:SetAuraTexturePickerPreview(
+                        CS.selectedGroup,
+                        CS.selectedButton,
+                        CooldownCompanion:CreateAuraTextureSelection(entry)
+                    )
+                end
+            else
+                overlay.selectionLabel:SetText("Select a texture to preview it on the chosen aura button.")
+                CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+            end
+
+            if overlay.RefreshRows then
+                overlay.RefreshRows()
+            end
+        end
+
+        confirmBtn:SetScript("OnClick", function()
+            if overlay.selectedEntry then
+                FinishPickAuraTexture(CooldownCompanion:CreateAuraTextureSelection(overlay.selectedEntry))
+            end
+        end)
+
+        local function AcquireRow(index)
+            local row = overlay.rows[index]
+            if row then
+                return row
+            end
+
+            row = CreateFrame("Button", nil, listContent, "BackdropTemplate")
+            row:SetHeight((overlay.rowHeight or 44) - 2)
+            row:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                edgeSize = 8,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 },
+            })
+            row:SetBackdropColor(0, 0, 0, 0)
+            row:SetBackdropBorderColor(0, 0, 0, 0)
+
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetPoint("LEFT", row, "LEFT", 10, 0)
+            icon:SetSize(overlay.rowIconSize or 28, overlay.rowIconSize or 28)
+            row.icon = icon
+
+            local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            text:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -2)
+            text:SetPoint("TOPRIGHT", row, "TOPRIGHT", -8, -2)
+            text:SetJustifyH("LEFT")
+            row.text = text
+
+            local subText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            subText:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -3)
+            subText:SetPoint("TOPRIGHT", row, "TOPRIGHT", -8, -18)
+            subText:SetJustifyH("LEFT")
+            subText:SetTextColor(0.72, 0.82, 0.92)
+            row.subText = subText
+
+            row:SetScript("OnEnter", function(self)
+                if overlay.selectedKey == self.entryKey then
+                    return
+                end
+                self:SetBackdropColor(0.12, 0.18, 0.28, 0.45)
+                self:SetBackdropBorderColor(0.35, 0.60, 0.85, 0.65)
+            end)
+            row:SetScript("OnLeave", function(self)
+                if overlay.selectedKey == self.entryKey then
+                    return
+                end
+                self:SetBackdropColor(0, 0, 0, 0)
+                self:SetBackdropBorderColor(0, 0, 0, 0)
+            end)
+            row:SetScript("OnClick", function(self)
+                SetSelectedEntry(self.entry)
+            end)
+
+            overlay.rows[index] = row
+            return row
+        end
+
+        local function RefreshRows()
+            local entries = overlay.entries or {}
+            local rowHeight = overlay.rowHeight or 44
+            local listWidth = listScroll:GetWidth()
+            if not listWidth or listWidth <= 0 then
+                listWidth = 930
+            end
+            listContent:SetSize(listWidth, math_max(1, #entries * rowHeight))
+
+            for index, entry in ipairs(entries) do
+                local row = AcquireRow(index)
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", listContent, "TOPLEFT", 0, -((index - 1) * rowHeight))
+                row:SetPoint("TOPRIGHT", listContent, "TOPRIGHT", 0, -((index - 1) * rowHeight))
+                row.entry = entry
+                row.entryKey = entry.key
+                row.text:SetText(entry.label or "Texture")
+                row.subText:SetText(entry.subtitle or entry.category or "")
+                ApplyAuraTextureRowIcon(row.icon, entry)
+
+                if overlay.selectedKey == entry.key then
+                    row:SetBackdropColor(0.18, 0.26, 0.38, 0.65)
+                    row:SetBackdropBorderColor(0.45, 0.78, 1, 0.85)
+                else
+                    row:SetBackdropColor(0, 0, 0, 0)
+                    row:SetBackdropBorderColor(0, 0, 0, 0)
+                end
+
+                row:Show()
+            end
+
+            for index = #entries + 1, #overlay.rows do
+                overlay.rows[index]:Hide()
+            end
+        end
+        overlay.RefreshRows = RefreshRows
+
+        local function RefreshEntries()
+            overlay.searchText = searchBox:GetText() or ""
+            overlay.entries = CooldownCompanion:GetAuraTexturePickerEntries(overlay.searchText, overlay.filterValue)
+
+            if overlay.filterValue == AURA_TEXTURE_FILTER_ATLASES and #(strtrim(overlay.searchText or "")) < 2 then
+                overlay.statusLabel:SetText("Type at least 2 characters to search Blizzard atlases.")
+            elseif #overlay.entries == 0 then
+                overlay.statusLabel:SetText("No textures matched the current search.")
+            else
+                overlay.statusLabel:SetText("Showing " .. tostring(#overlay.entries) .. " textures.")
+            end
+
+            local keepSelected = false
+            if overlay.selectedKey then
+                for _, entry in ipairs(overlay.entries) do
+                    if entry.key == overlay.selectedKey then
+                        keepSelected = true
+                        break
+                    end
+                end
+            end
+            if not keepSelected then
+                SetSelectedEntry(nil)
+            end
+
+            RefreshRows()
+        end
+        overlay.RefreshEntries = RefreshEntries
+
+        searchBox:SetScript("OnTextChanged", function()
+            RefreshEntries()
+        end)
+
+        local filterList, filterOrder = CooldownCompanion:GetAuraTexturePickerFilters()
+        overlay.filterList = filterList
+        overlay.filterOrder = filterOrder
+        UIDropDownMenu_Initialize(filterDrop, function(_, level)
+            if level ~= 1 then
+                return
+            end
+            for _, value in ipairs(filterOrder) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = filterList[value]
+                info.checked = overlay.filterValue == value
+                info.func = function()
+                    overlay.filterValue = value
+                    UIDropDownMenu_SetText(filterDrop, filterList[value])
+                    RefreshEntries()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end)
+        UIDropDownMenu_SetText(filterDrop, filterList[AURA_TEXTURE_FILTER_LIBRARY])
+
+        overlay:SetScript("OnMouseDown", function(self, button)
+            if button == "RightButton" then
+                FinishPickAuraTexture(nil)
+            end
+        end)
+        overlay:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:SetPropagateKeyboardInput(false)
+                FinishPickAuraTexture(nil)
+            else
+                self:SetPropagateKeyboardInput(true)
+            end
+        end)
+
+        pickAuraTextureOverlay = overlay
+    end
+
+    pickAuraTextureOverlay.selectedKey = nil
+    pickAuraTextureOverlay.selectedEntry = nil
+    pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_LIBRARY
+    pickAuraTextureOverlay.entries = {}
+    pickAuraTextureOverlay.selectionLabel:SetText("Select a texture to preview it on the chosen aura button.")
+    UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_LIBRARY])
+    pickAuraTextureOverlay.confirmBtn:SetEnabled(false)
+    pickAuraTextureOverlay.searchBox:SetText("")
+    if pickAuraTextureOverlay.ApplyPanelBackdrop then
+        pickAuraTextureOverlay.ApplyPanelBackdrop()
+    end
+    pickAuraTextureOverlay:Show()
+    if pickAuraTextureOverlay.listScroll then
+        pickAuraTextureOverlay.listScroll:SetVerticalScroll(0)
+    end
+    if pickAuraTextureOverlay.RefreshEntries then
+        pickAuraTextureOverlay.RefreshEntries()
+    end
+
+    if initialSelection and initialSelection.sourceType == "atlas" and type(initialSelection.sourceValue) == "string" then
+        pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_ATLASES
+        UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_ATLASES])
+        pickAuraTextureOverlay.searchBox:SetText(initialSelection.sourceValue)
+    elseif initialSelection and initialSelection.sourceType == "file" then
+        pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_LIBRARY
+        UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_LIBRARY])
+        if initialSelection.label and initialSelection.label ~= "" then
+            pickAuraTextureOverlay.searchBox:SetText(initialSelection.label)
+        end
+    end
+
+    if initialSelection and initialSelection.sourceType and initialSelection.sourceValue ~= nil then
+        if pickAuraTextureOverlay.entries then
+            for _, entry in ipairs(pickAuraTextureOverlay.entries) do
+                local matches = entry.sourceType == initialSelection.sourceType
+                    and entry.sourceValue == initialSelection.sourceValue
+                    and (entry.locationType or 0) == (initialSelection.locationType or 0)
+                if matches then
+                    pickAuraTextureOverlay.selectedKey = entry.key
+                    pickAuraTextureOverlay.selectedEntry = entry
+                    pickAuraTextureOverlay.confirmBtn:SetEnabled(true)
+                    pickAuraTextureOverlay.selectionLabel:SetText((entry.label or "Texture") .. "  |  " .. (entry.subtitle or entry.category or ""))
+                    if CS.selectedGroup and CS.selectedButton then
+                        CooldownCompanion:SetAuraTexturePickerPreview(
+                            CS.selectedGroup,
+                            CS.selectedButton,
+                            CooldownCompanion:CreateAuraTextureSelection(entry)
+                        )
+                    end
+                    if pickAuraTextureOverlay.RefreshRows then
+                        pickAuraTextureOverlay.RefreshRows()
+                    end
+                    break
+                end
+            end
+        end
     end
 end
 

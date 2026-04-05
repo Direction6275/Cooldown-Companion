@@ -1457,7 +1457,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateTextDisplay(button)
     elseif button._isBar then
         UpdateBarDisplay(button)
+        CooldownCompanion:UpdateAuraTextureVisual(button)
     else
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
+        CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 end

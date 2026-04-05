@@ -920,6 +920,7 @@ local function RefreshColumn1(preserveDrag)
                             { mode = "icons", label = "Icon Panel" },
                             { mode = "bars", label = "Bar Panel" },
                             { mode = "text", label = "Text Panel" },
+                            { mode = "textures", label = "Texture Panel" },
                         }
                         for _, m in ipairs(modes) do
                             local info = UIDropDownMenu_CreateInfo()
