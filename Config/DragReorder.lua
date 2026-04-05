@@ -10,8 +10,13 @@ local CS = ST._configState
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
+local EnsureCol1PreviewHost = ST._EnsureCol1PreviewHost
+local ClearCol1PreviewHost = ST._ClearCol1PreviewHost
 local EnsureCol2PreviewHost = ST._EnsureCol2PreviewHost
 local ClearCol2PreviewHost = ST._ClearCol2PreviewHost
+local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
+local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
+local ApplyColumn1MarkerAppearance = ST._ApplyColumn1MarkerAppearance
 
 -- File-local constants
 local DRAG_THRESHOLD = 8
@@ -19,6 +24,7 @@ local PREVIEW_ANIM_DURATION = 0.08
 local PREVIEW_PANEL_INSET = 8
 local PREVIEW_ROW_TEXT_RIGHT_PAD = 8
 local PREVIEW_DEFAULT_ROW_HEIGHT = 32
+local COL1_HIT_X_PAD = 6
 
 ------------------------------------------------------------------------
 -- Drag indicator helpers
@@ -371,6 +377,7 @@ local function CopyPreviewRow(row)
             height = row.labelRect.height,
         } or nil,
         isGap = row.isGap,
+        isMarker = row.isMarker,
     }
 end
 
@@ -1120,6 +1127,1135 @@ ClearCol2AnimatedPreview = function()
     ClearCol2PreviewHost()
 end
 
+------------------------------------------------------------------------
+-- Column 1 animated preview helpers
+------------------------------------------------------------------------
+local PREVIEW_MODE_COL1_LIST = "col1_list_drag"
+
+local function CopyCol1PreviewRow(row)
+    return {
+        key = row.key,
+        originalIndex = row.originalIndex,
+        kind = row.kind,
+        id = row.id,
+        inFolder = row.inFolder,
+        section = row.section,
+        loadBucket = row.loadBucket,
+        acceptsDrop = row.acceptsDrop,
+        x = row.x,
+        y = row.y,
+        width = row.width,
+        height = row.height,
+        text = row.text,
+        textColor = row.textColor and {
+            row.textColor[1],
+            row.textColor[2],
+            row.textColor[3],
+        } or nil,
+        icon = row.icon,
+        iconAlpha = row.iconAlpha,
+        iconRect = row.iconRect and {
+            x = row.iconRect.x,
+            y = row.iconRect.y,
+            width = row.iconRect.width,
+            height = row.iconRect.height,
+        } or nil,
+        labelRect = row.labelRect and {
+            x = row.labelRect.x,
+            y = row.labelRect.y,
+            width = row.labelRect.width,
+            height = row.labelRect.height,
+        } or nil,
+        gapAfter = row.gapAfter,
+        isGap = row.isGap,
+        isMarker = row.isMarker,
+        previewProxy = row.previewProxy,
+        layoutOnly = row.layoutOnly,
+        ownerKind = row.ownerKind,
+        ownerId = row.ownerId,
+        ownerFolderId = row.ownerFolderId,
+    }
+end
+
+local function HideCol1PreviewBadges(frame)
+    if frame and frame._cdcBadges then
+        for _, badge in ipairs(frame._cdcBadges) do
+            badge:Hide()
+        end
+    end
+end
+
+local function BuildCol1BasePreviewLayout()
+    local renderedRows = CS.lastCol1RenderedRows
+    local content = CS.col1Scroll and CS.col1Scroll.content
+    if not (renderedRows and content and content:IsShown()) then
+        return nil
+    end
+
+    local rows = {}
+    for rowIndex, rowMeta in ipairs(renderedRows) do
+        local widget = rowMeta.widget
+        local frame = widget and widget.frame
+        local x, y, width, height = GetRelativeRect(frame, content)
+        if x and y then
+            local label = widget and widget.label
+            local image = widget and widget.image
+            local isMarker = rowMeta.isMarker
+            if isMarker == nil and rowMeta.keepVisibleDuringPreview then
+                isMarker = true
+            end
+
+            rows[#rows + 1] = {
+                key = table.concat({
+                    tostring(rowMeta.kind or "row"),
+                    tostring(rowMeta.id or rowIndex),
+                    tostring(rowIndex),
+                }, ":"),
+                originalIndex = rowIndex,
+                kind = rowMeta.kind,
+                id = rowMeta.id,
+                inFolder = rowMeta.inFolder,
+                section = rowMeta.section,
+                loadBucket = rowMeta.loadBucket,
+                acceptsDrop = rowMeta.acceptsDrop,
+                x = x,
+                y = y,
+                width = width,
+                height = height,
+                text = label and label.GetText and label:GetText() or "",
+                textColor = (function()
+                    if not (label and label.GetTextColor) then return nil end
+                    local r, g, b = label:GetTextColor()
+                    return {r or 1, g or 1, b or 1}
+                end)(),
+                icon = image and image.GetTexture and image:GetTexture() or nil,
+                iconAlpha = image and image.GetAlpha and image:GetAlpha() or 1,
+                iconRect = (function()
+                    local ix, iy, iw, ih = GetRelativeRect(image, frame)
+                    if ix then
+                        return {x = ix, y = iy, width = iw, height = ih}
+                    end
+                end)(),
+                labelRect = (function()
+                    local lx, ly, lw, lh = GetRelativeRect(label, frame)
+                    if lx then
+                        return {x = lx, y = ly, width = lw, height = lh}
+                    end
+                end)(),
+                gapAfter = 0,
+                isMarker = isMarker,
+                previewProxy = rowMeta.previewProxy ~= false,
+                layoutOnly = rowMeta.layoutOnly and true or false,
+                ownerKind = rowMeta.ownerKind,
+                ownerId = rowMeta.ownerId,
+                ownerFolderId = rowMeta.ownerFolderId,
+            }
+        end
+    end
+
+    for i, row in ipairs(rows) do
+        local nextRow = rows[i + 1]
+        if nextRow then
+            row.gapAfter = math.max(0, nextRow.y - (row.y + row.height))
+        else
+            row.gapAfter = 0
+        end
+    end
+
+    return {
+        rows = rows,
+        startOffset = rows[1] and rows[1].y or 0,
+    }
+end
+
+local function FindCol1FolderBlockRange(rows, folderId)
+    local headerIndex
+    for i, row in ipairs(rows) do
+        if row.kind == "folder" and row.id == folderId then
+            headerIndex = i
+            break
+        end
+    end
+    if not headerIndex then
+        return nil
+    end
+
+    local lastIndex = headerIndex
+    for i = headerIndex + 1, #rows do
+        local row = rows[i]
+        if row.kind == "container" and row.inFolder == folderId then
+            lastIndex = i
+        elseif row.kind == "aux-block" and row.ownerFolderId == folderId then
+            lastIndex = i
+        else
+            break
+        end
+    end
+    return headerIndex, lastIndex
+end
+
+local function FindCol1BaseRowAtOrAfterOriginalIndex(rows, originalIndex)
+    if not (rows and originalIndex) then
+        return nil
+    end
+    for _, row in ipairs(rows) do
+        if row.originalIndex >= originalIndex then
+            return row
+        end
+    end
+    return nil
+end
+
+local function FindCol1BaseRowBeforeOriginalIndex(rows, originalIndex)
+    if not (rows and originalIndex) then
+        return nil
+    end
+    local lastMatch
+    for _, row in ipairs(rows) do
+        if row.originalIndex < originalIndex then
+            lastMatch = row
+        else
+            break
+        end
+    end
+    return lastMatch
+end
+
+local function IsCol1AuxOwnedBySource(row, source)
+    if not (row and row.kind == "aux-block" and source) then
+        return false
+    end
+    if source.kind == "folder" then
+        return row.ownerFolderId == source.sourceFolderId
+    elseif source.kind == "multi-group" and source.sourceGroupIds then
+        return row.ownerKind == "container" and source.sourceGroupIds[row.ownerId]
+    else
+        return row.ownerKind == "container" and row.ownerId == source.sourceGroupId
+    end
+end
+
+local function BuildCol1DraggedRows(base, source)
+    local movedRows = {}
+    local movedIndexes = {}
+
+    if source.kind == "folder" then
+        local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, source.sourceFolderId)
+        if not firstIndex then
+            return nil
+        end
+        for i = firstIndex, lastIndex do
+            local row = base.rows[i]
+            movedRows[#movedRows + 1] = row
+            movedIndexes[row.originalIndex] = true
+        end
+    elseif source.kind == "multi-group" and source.sourceGroupIds then
+        for _, row in ipairs(base.rows) do
+            if (row.kind == "container" and source.sourceGroupIds[row.id])
+                or IsCol1AuxOwnedBySource(row, source)
+            then
+                movedRows[#movedRows + 1] = row
+                movedIndexes[row.originalIndex] = true
+            end
+        end
+    else
+        for _, row in ipairs(base.rows) do
+            if row.kind == "container" and row.id == source.sourceGroupId then
+                movedRows[#movedRows + 1] = row
+                movedIndexes[row.originalIndex] = true
+            elseif IsCol1AuxOwnedBySource(row, source) then
+                movedRows[#movedRows + 1] = row
+                movedIndexes[row.originalIndex] = true
+            end
+        end
+    end
+
+    if #movedRows == 0 then
+        return nil
+    end
+
+    local gapHeight
+    local contiguous = true
+    for i = 2, #movedRows do
+        if movedRows[i].originalIndex ~= (movedRows[i - 1].originalIndex + 1) then
+            contiguous = false
+            break
+        end
+    end
+    if contiguous then
+        local firstRow = movedRows[1]
+        local lastRow = movedRows[#movedRows]
+        gapHeight = math.max(
+            PREVIEW_DEFAULT_ROW_HEIGHT,
+            (lastRow.y + lastRow.height) - firstRow.y
+        )
+    else
+        gapHeight = 0
+        for i, row in ipairs(movedRows) do
+            gapHeight = gapHeight + row.height
+            if i < #movedRows then
+                gapHeight = gapHeight + math.max(row.gapAfter or 0, 2)
+            end
+        end
+    end
+
+    local ghostRow
+    local firstRow = movedRows[1]
+    if source.kind == "multi-group" and #movedRows > 1 then
+        local selectedCount = 0
+        if source.sourceGroupIds then
+            for _ in pairs(source.sourceGroupIds) do
+                selectedCount = selectedCount + 1
+            end
+        end
+        ghostRow = CopyCol1PreviewRow(firstRow)
+        ghostRow.text = tostring(math.max(1, selectedCount)) .. " groups"
+        ghostRow.height = math.max(firstRow.height, PREVIEW_DEFAULT_ROW_HEIGHT)
+    else
+        ghostRow = CopyCol1PreviewRow(firstRow)
+    end
+
+    return movedRows, movedIndexes, gapHeight, ghostRow
+end
+
+local IsUnloadedTopLevelDrop
+local ShouldIncludeCol1TopLevelOrderRow
+
+local function ResolveCol1GroupDropTargetFolderId(state, dropTarget)
+    if not dropTarget then
+        return nil
+    end
+
+    if dropTarget.folderBlockId then
+        if dropTarget.action == "into-folder" then
+            return dropTarget.folderBlockId
+        end
+        return nil
+    end
+
+    if dropTarget.action == "into-folder" then
+        return dropTarget.targetFolderId
+    end
+
+    if dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after" then
+        return nil
+    end
+
+    local targetRow = dropTarget.targetRow
+    if not targetRow or dropTarget.isBelowAll then
+        return nil
+    end
+
+    if targetRow.kind == "container" and targetRow.inFolder then
+        return targetRow.inFolder
+    end
+
+    return nil
+end
+
+local function FindCol1GroupSourcePosition(renderedRows, section, folderId, sourceContainerId, includeUnloaded)
+    local pos = 0
+    for _, row in ipairs(renderedRows or {}) do
+        if row.section == section then
+            if folderId then
+                if row.kind == "container" and row.inFolder == folderId then
+                    pos = pos + 1
+                    if row.id == sourceContainerId then
+                        return pos
+                    end
+                end
+            elseif ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
+                pos = pos + 1
+                if row.kind == "container" and row.id == sourceContainerId then
+                    return pos
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function BuildCol1GroupOrderItems(renderedRows, section, folderId, sourceContainerId, includeUnloaded)
+    local orderItems = {}
+    for _, row in ipairs(renderedRows or {}) do
+        if row.section == section then
+            if folderId then
+                if row.kind == "container" and row.inFolder == folderId and row.id ~= sourceContainerId then
+                    table.insert(orderItems, row.id)
+                end
+            elseif ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
+                if row.id ~= sourceContainerId then
+                    table.insert(orderItems, { kind = row.kind, id = row.id })
+                end
+            end
+        end
+    end
+    return orderItems
+end
+
+local function ResolveCol1GroupInsertPos(orderItems, dropTarget, folderId, includeUnloaded)
+    local targetRow = dropTarget and dropTarget.targetRow
+    if folderId then
+        local insertPos = #orderItems + 1
+        if targetRow and targetRow.kind == "container" then
+            for idx, cid in ipairs(orderItems) do
+                if cid == targetRow.id then
+                    insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                    break
+                end
+            end
+        end
+        return insertPos
+    end
+
+    local insertPos = includeUnloaded and 1 or (#orderItems + 1)
+    if targetRow and targetRow.kind ~= "unloaded-divider" then
+        insertPos = #orderItems + 1
+        for idx, item in ipairs(orderItems) do
+            if item.kind == targetRow.kind and item.id == targetRow.id then
+                insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                break
+            end
+        end
+    end
+    return insertPos
+end
+
+local function IsCol1GroupDropNoOp(state)
+    local dropTarget = state and state.dropTarget
+    if not dropTarget then
+        return true
+    end
+
+    local targetRow = dropTarget.targetRow
+    local targetSection = (targetRow and targetRow.section) or state.sourceSection
+    local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
+
+    if targetSection ~= state.sourceSection or targetFolderId ~= state.sourceFolderId then
+        return false
+    end
+
+    if dropTarget.action ~= "into-folder"
+        and dropTarget.action ~= "reorder-before"
+        and dropTarget.action ~= "reorder-after"
+    then
+        return false
+    end
+
+    if targetRow and targetRow.kind == "container" and targetRow.id == state.sourceGroupId then
+        return true
+    end
+
+    local renderedRows = state.col1RenderedRows
+    if not renderedRows then
+        return false
+    end
+
+    local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, targetFolderId)
+    local sourcePos = FindCol1GroupSourcePosition(
+        renderedRows,
+        targetSection,
+        targetFolderId,
+        state.sourceGroupId,
+        includeUnloaded
+    )
+    if not sourcePos then
+        return false
+    end
+
+    local orderItems = BuildCol1GroupOrderItems(
+        renderedRows,
+        targetSection,
+        targetFolderId,
+        state.sourceGroupId,
+        includeUnloaded
+    )
+    local insertPos = ResolveCol1GroupInsertPos(orderItems, dropTarget, targetFolderId, includeUnloaded)
+    return insertPos == sourcePos
+end
+
+local function FindCol1FolderSourcePosition(renderedRows, section, sourceFolderId, includeUnloaded)
+    local pos = 0
+    for _, row in ipairs(renderedRows or {}) do
+        if row.section == section and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
+            pos = pos + 1
+            if row.kind == "folder" and row.id == sourceFolderId then
+                return pos
+            end
+        end
+    end
+    return nil
+end
+
+local function BuildCol1FolderOrderItems(renderedRows, section, sourceFolderId, includeUnloaded)
+    local orderItems = {}
+    for _, row in ipairs(renderedRows or {}) do
+        if row.section == section and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
+            if row.id ~= sourceFolderId then
+                table.insert(orderItems, { kind = row.kind, id = row.id })
+            end
+        end
+    end
+    return orderItems
+end
+
+local function ResolveCol1FolderInsertPos(orderItems, dropTarget, targetRow, includeUnloaded)
+    local insertPos = includeUnloaded and 1 or (#orderItems + 1)
+    if targetRow and targetRow.kind ~= "unloaded-divider" then
+        insertPos = #orderItems + 1
+        for idx, item in ipairs(orderItems) do
+            local targetKind = targetRow.kind
+            local targetId = targetRow.id
+            if targetRow.inFolder then
+                targetKind = "folder"
+                targetId = targetRow.inFolder
+            end
+            if item.kind == targetKind and item.id == targetId then
+                insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                break
+            end
+        end
+    end
+    return insertPos
+end
+
+local function IsCol1FolderDropNoOp(state)
+    local dropTarget = state and state.dropTarget
+    if not dropTarget then
+        return true
+    end
+
+    if dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after" then
+        return false
+    end
+
+    local targetRow = dropTarget.targetRow
+    local targetSection = (targetRow and targetRow.section) or state.sourceSection
+    if targetSection ~= state.sourceSection then
+        return false
+    end
+
+    if targetRow and targetRow.kind == "folder" and targetRow.id == state.sourceFolderId then
+        return true
+    end
+
+    local renderedRows = state.col1RenderedRows
+    if not renderedRows then
+        return false
+    end
+
+    local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, nil)
+    local sourcePos = FindCol1FolderSourcePosition(renderedRows, targetSection, state.sourceFolderId, includeUnloaded)
+    if not sourcePos then
+        return false
+    end
+
+    local orderItems = BuildCol1FolderOrderItems(renderedRows, targetSection, state.sourceFolderId, includeUnloaded)
+    local insertPos = ResolveCol1FolderInsertPos(orderItems, dropTarget, targetRow, includeUnloaded)
+    return insertPos == sourcePos
+end
+
+local function ResolveCol1PreviewAnchor(base, source, dropTarget)
+    if not dropTarget then
+        return nil, nil
+    end
+    if dropTarget.isBelowAll then
+        return #base.rows + 1, base.rows[#base.rows]
+    end
+
+    local targetRow = dropTarget.targetRow
+    local targetIndex = dropTarget.rowIndex or 1
+
+    if targetRow and targetRow.kind == "folder" then
+        local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, targetRow.id)
+        if firstIndex then
+            if dropTarget.action == "reorder-before" then
+                return base.rows[firstIndex].originalIndex, base.rows[firstIndex]
+            end
+            return base.rows[lastIndex].originalIndex + 1, base.rows[firstIndex]
+        end
+    end
+
+    if targetRow and targetRow.kind == "unloaded-divider" then
+        return targetIndex, FindCol1BaseRowAtOrAfterOriginalIndex(base.rows, targetIndex) or FindCol1BaseRowBeforeOriginalIndex(base.rows, targetIndex)
+    end
+
+    if source.kind == "folder" and targetRow and targetRow.inFolder then
+        local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, targetRow.inFolder)
+        if firstIndex then
+            if dropTarget.action == "reorder-before" then
+                return base.rows[firstIndex].originalIndex, base.rows[firstIndex]
+            end
+            return base.rows[lastIndex].originalIndex + 1, base.rows[firstIndex]
+        end
+    end
+
+    if dropTarget.action == "reorder-before" then
+        return targetIndex, base.rows[targetIndex]
+    end
+    return targetIndex + 1, base.rows[targetIndex]
+end
+
+local function IsExternalFolderChildTarget(rowMeta, sourceKind, sourceFolderId)
+    if not (rowMeta and rowMeta.kind == "container" and rowMeta.inFolder) then
+        return false
+    end
+    if sourceKind ~= "group" and sourceKind ~= "folder-group" then
+        return false
+    end
+    return sourceFolderId ~= rowMeta.inFolder
+end
+
+local function BuildCol1PreviewModel(source)
+    if not source or not source.dropTarget then
+        return nil
+    end
+
+    local base = BuildCol1BasePreviewLayout()
+    if not base or not base.rows or #base.rows == 0 then
+        return nil
+    end
+
+    local movedRows, movedIndexes, gapHeight, ghostRow = BuildCol1DraggedRows(base, source)
+    if not movedRows then
+        return nil
+    end
+
+    local rows = {}
+    for _, row in ipairs(base.rows) do
+        if not movedIndexes[row.originalIndex]
+            and not IsCol1AuxOwnedBySource(row, source)
+        then
+            rows[#rows + 1] = CopyCol1PreviewRow(row)
+        end
+    end
+
+    local highlightRowKey
+    local highlightFolderId
+    local folderGapId
+    if source.dropTarget.action == "into-folder" then
+        highlightFolderId = source.dropTarget.folderBlockId or source.dropTarget.targetFolderId
+        if source.kind ~= "folder" then
+            folderGapId = highlightFolderId
+        end
+        if not highlightFolderId then
+            local targetOriginalIndex = source.dropTarget.rowIndex
+            local targetRow = FindCol1BaseRowAtOrAfterOriginalIndex(rows, targetOriginalIndex)
+            highlightRowKey = targetRow and targetRow.key or nil
+        else
+            local firstIndex, lastIndex = FindCol1FolderBlockRange(rows, highlightFolderId)
+            if firstIndex and lastIndex then
+                local template = rows[lastIndex] or rows[firstIndex] or movedRows[1]
+                table.insert(rows, lastIndex + 1, {
+                    key = "gap:folder:" .. tostring(highlightFolderId) .. ":append",
+                    isGap = true,
+                    x = (template and template.x) or PREVIEW_PANEL_INSET,
+                    width = (template and template.width) or math.max(120, ghostRow.width or 160),
+                    height = gapHeight,
+                    gapAfter = (template and template.gapAfter) or 0,
+                    folderAccentId = source.kind ~= "folder" and highlightFolderId or nil,
+                })
+            end
+        end
+    else
+        local anchorOriginalIndex, gapTemplate = ResolveCol1PreviewAnchor(base, source, source.dropTarget)
+        if not anchorOriginalIndex then
+            return nil
+        end
+
+        local insertIndex = #rows + 1
+        local targetRow = source.dropTarget.targetRow
+        for i, row in ipairs(rows) do
+            if row.originalIndex >= anchorOriginalIndex then
+                insertIndex = i
+                break
+            end
+        end
+
+        if targetRow and source.kind ~= "folder" then
+            if targetRow.kind == "container" and targetRow.inFolder then
+                folderGapId = targetRow.inFolder
+            end
+        end
+        local template = gapTemplate or movedRows[1]
+        table.insert(rows, insertIndex, {
+            key = "gap:" .. tostring(source.kind) .. ":" .. tostring(insertIndex),
+            isGap = true,
+            x = (template and template.x) or PREVIEW_PANEL_INSET,
+            width = (template and template.width) or math.max(120, ghostRow.width or 160),
+            height = gapHeight,
+            gapAfter = (template and template.gapAfter) or 0,
+            folderAccentId = folderGapId,
+        })
+    end
+
+    local currentY = base.startOffset
+    for _, row in ipairs(rows) do
+        if row.layoutOnly then
+            currentY = math.max(currentY, row.y)
+            row.previewY = row.y
+            currentY = math.max(currentY, row.y + row.height + (row.gapAfter or 0))
+        else
+            row.previewY = currentY
+            currentY = currentY + row.height + (row.gapAfter or 0)
+        end
+    end
+
+    return {
+        mode = PREVIEW_MODE_COL1_LIST,
+        rows = rows,
+        draggedRow = ghostRow,
+        highlightRowKey = highlightRowKey,
+        highlightFolderId = highlightFolderId,
+        suppressedAccentFolderId = source.kind == "folder" and source.sourceFolderId or nil,
+    }
+end
+
+local function AcquireCol1PreviewRowFrame(preview, key)
+    preview.rowByKey = preview.rowByKey or {}
+    local rowProxy = preview.rowByKey[key]
+    if rowProxy then
+        rowProxy.used = true
+        return rowProxy
+    end
+
+    local frame = CreateFrame("Frame", nil, preview.root, "BackdropTemplate")
+    frame:Hide()
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    frame:SetBackdropColor(0, 0, 0, 0)
+    frame:SetBackdropBorderColor(0, 0, 0, 0)
+
+    local icon = frame:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(32, 32)
+    icon:SetPoint("LEFT", frame, "LEFT", 0, 0)
+    frame._cdcIcon = icon
+
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+    label:SetPoint("RIGHT", frame, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    frame._cdcLabel = label
+
+    local leftLine = frame:CreateTexture(nil, "ARTWORK")
+    leftLine:SetHeight(1)
+    leftLine:Hide()
+    frame._cdcLeftLine = leftLine
+
+    local rightLine = frame:CreateTexture(nil, "ARTWORK")
+    rightLine:SetHeight(1)
+    rightLine:Hide()
+    frame._cdcRightLine = rightLine
+
+    rowProxy = {
+        frame = frame,
+        used = true,
+    }
+    preview.rowByKey[key] = rowProxy
+    preview.rows[#preview.rows + 1] = rowProxy
+    return rowProxy
+end
+
+local function AcquireCol1PreviewAccentBar(preview, index)
+    preview.accentBars = preview.accentBars or {}
+    local bar = preview.accentBars[index]
+    if not bar then
+        bar = preview.root:CreateTexture(nil, "ARTWORK")
+        preview.accentBars[index] = bar
+    end
+    return bar
+end
+
+local function RenderCol1PreviewAccentBars(preview, model)
+    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local suppressedAccentFolderId = model and model.suppressedAccentFolderId
+    local ranges = {}
+    if classColor and model and model.rows then
+        for _, row in ipairs(model.rows) do
+            local accentFolderId = nil
+            if row.kind == "container" and row.inFolder then
+                accentFolderId = row.inFolder
+            elseif row.isGap and row.folderAccentId then
+                accentFolderId = row.folderAccentId
+            end
+
+            if accentFolderId
+                and accentFolderId ~= suppressedAccentFolderId
+                and not row.layoutOnly
+            then
+                local range = ranges[accentFolderId]
+                if not range then
+                    range = {
+                        x = row.x,
+                        top = row.previewY,
+                        bottom = row.previewY + row.height,
+                    }
+                    ranges[accentFolderId] = range
+                else
+                    range.x = math.min(range.x, row.x)
+                    range.top = math.min(range.top, row.previewY)
+                    range.bottom = math.max(range.bottom, row.previewY + row.height)
+                end
+            end
+        end
+    end
+
+    local index = 0
+    for _, range in pairs(ranges) do
+        index = index + 1
+        local bar = AcquireCol1PreviewAccentBar(preview, index)
+        bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
+        bar:SetWidth(3)
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", preview.root, "TOPLEFT", range.x, -range.top)
+        bar:SetPoint("BOTTOMLEFT", preview.root, "TOPLEFT", range.x, -range.bottom)
+        bar:Show()
+    end
+
+    for i = index + 1, #(preview.accentBars or {}) do
+        preview.accentBars[i]:Hide()
+    end
+end
+
+local function SetDraggedFolderAccentBarHidden(source, hidden)
+    if not (source and source.kind == "folder" and source.sourceFolderId) then
+        return
+    end
+
+    local preview = EnsureCol1PreviewHost()
+    if not preview then
+        return
+    end
+
+    for _, region in ipairs(CS.folderAccentBars or {}) do
+        if region and region._cdcFolderId == source.sourceFolderId and region.SetAlpha then
+            if hidden then
+                if preview.hiddenRegions[region] == nil then
+                    preview.hiddenRegions[region] = region:GetAlpha()
+                    region:SetAlpha(0)
+                end
+            else
+                local alpha = preview.hiddenRegions[region]
+                if alpha ~= nil then
+                    region:SetAlpha(alpha)
+                    preview.hiddenRegions[region] = nil
+                end
+            end
+        end
+    end
+end
+
+local function SetCol1BaseFramesHidden(hidden, source)
+    local preview = hidden and EnsureCol1PreviewHost() or CS.col1Preview
+    local content = CS.col1Scroll and CS.col1Scroll.content
+    if not (preview and content) then
+        return
+    end
+
+    if hidden then
+        for _, rowMeta in ipairs(CS.lastCol1RenderedRows or {}) do
+            local frame = rowMeta.widget and rowMeta.widget.frame
+            if frame and frame ~= preview.root and preview.hiddenFrames[frame] == nil then
+                local shouldHide = rowMeta.previewProxy ~= false
+                if rowMeta.kind == "aux-block" then
+                    shouldHide = IsCol1AuxOwnedBySource(rowMeta, source)
+                end
+                if shouldHide then
+                    preview.hiddenFrames[frame] = frame:GetAlpha()
+                    frame:SetAlpha(0)
+                end
+            end
+        end
+        for _, region in ipairs(CS.folderAccentBars or {}) do
+            if region and region.SetAlpha and preview.hiddenRegions[region] == nil then
+                preview.hiddenRegions[region] = region:GetAlpha()
+                region:SetAlpha(0)
+            end
+        end
+    else
+        for frame, alpha in pairs(preview.hiddenFrames) do
+            if frame and frame.SetAlpha then
+                frame:SetAlpha(alpha)
+            end
+            preview.hiddenFrames[frame] = nil
+        end
+        for region, alpha in pairs(preview.hiddenRegions or {}) do
+            if region and region.SetAlpha then
+                region:SetAlpha(alpha)
+            end
+            preview.hiddenRegions[region] = nil
+        end
+    end
+end
+
+local function UpdateCol1Ghost(preview, model)
+    if not (preview and preview.ghost) then
+        return
+    end
+
+    local row = model and model.draggedRow
+    preview.ghostActive = false
+    if not row then
+        HideCol1PreviewBadges(preview.ghost)
+        preview.ghost:Hide()
+        return
+    end
+
+    preview.ghost:SetBackdropColor(0, 0, 0, 0)
+    preview.ghost:SetBackdropBorderColor(0, 0, 0, 0)
+    preview.ghost:SetSize(row.width or 160, row.height or PREVIEW_DEFAULT_ROW_HEIGHT)
+    preview.ghost.label:SetText(row.text or "")
+    if row.textColor then
+        preview.ghost.label:SetTextColor(row.textColor[1] or 1, row.textColor[2] or 1, row.textColor[3] or 1)
+    else
+        preview.ghost.label:SetTextColor(1, 1, 1)
+    end
+
+    if row.icon and (row.iconAlpha or 1) > 0.05 then
+        preview.ghost.icon:SetTexture(row.icon)
+        preview.ghost.icon:SetAlpha(row.iconAlpha or 1)
+        preview.ghost.icon:Show()
+        if not ApplyRelativeRect(preview.ghost.icon, preview.ghost, row.iconRect) then
+            preview.ghost.icon:ClearAllPoints()
+            preview.ghost.icon:SetPoint("LEFT", preview.ghost, "LEFT", 0, 0)
+            preview.ghost.icon:SetSize(
+                (row.iconRect and row.iconRect.width) or 32,
+                (row.iconRect and row.iconRect.height) or 32
+            )
+        end
+    else
+        preview.ghost.icon:Hide()
+    end
+
+    if not ApplyRelativeRect(preview.ghost.label, preview.ghost, row.labelRect) then
+        preview.ghost.label:ClearAllPoints()
+        if preview.ghost.icon:IsShown() then
+            preview.ghost.label:SetPoint("LEFT", preview.ghost.icon, "RIGHT", 8, 0)
+        else
+            preview.ghost.label:SetPoint("LEFT", preview.ghost, "LEFT", 8, 0)
+        end
+        preview.ghost.label:SetPoint("RIGHT", preview.ghost, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
+    end
+
+    HideCol1PreviewBadges(preview.ghost)
+    if row.kind == "container" then
+        local db = CooldownCompanion.db.profile
+        local container = db and db.groupContainers and db.groupContainers[row.id]
+        if container then
+            SetupGroupRowIndicators({ frame = preview.ghost }, container)
+        end
+    elseif row.kind == "folder" then
+        local db = CooldownCompanion.db.profile
+        local folder = db and db.folders and db.folders[row.id]
+        if folder then
+            SetupFolderRowIndicators({ frame = preview.ghost }, folder)
+        end
+    end
+
+    preview.ghost:Show()
+    preview.ghostActive = true
+end
+
+local ClearCol1AnimatedPreview
+local FindCol1SectionDividerTarget
+
+local function SectionHasLoadedCol1Rows(renderedRows, section)
+    for _, row in ipairs(renderedRows or {}) do
+        if row.section == section
+            and row.loadBucket == "loaded"
+            and (row.kind == "container" or row.kind == "folder")
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function ShouldAnimateCol1PreviewForDrop(sourceLoadBucket, dropTarget, renderedRows)
+    if not dropTarget then
+        return false
+    end
+
+    if sourceLoadBucket == "mixed" or sourceLoadBucket == "unloaded" then
+        return true
+    end
+
+    local targetRow = dropTarget.targetRow
+    if sourceLoadBucket == "loaded"
+        and targetRow
+        and targetRow.kind == "unloaded-divider"
+        and not SectionHasLoadedCol1Rows(renderedRows, targetRow.section)
+    then
+        return true
+    end
+
+    if targetRow and (targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded") then
+        return false
+    end
+
+    return true
+end
+
+local function ShouldShowCol1StaticReorderIndicator(sourceLoadBucket, dropTarget)
+    if not dropTarget then
+        return false
+    end
+
+    if dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after" then
+        return false
+    end
+
+    if sourceLoadBucket == "loaded" then
+        return false
+    end
+
+    return true
+end
+
+local function ResolveCol1LoadedUnloadedPlaceholderTarget(renderedRows, sourceLoadBucket, dropTarget)
+    if sourceLoadBucket ~= "loaded" or not dropTarget then
+        return nil
+    end
+
+    if dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after" then
+        return nil
+    end
+
+    local targetRow = dropTarget.targetRow
+    if not targetRow or (targetRow.kind ~= "unloaded-divider" and targetRow.loadBucket ~= "unloaded") then
+        return nil
+    end
+
+    return FindCol1SectionDividerTarget(renderedRows, targetRow.section)
+end
+
+local function RenderCol1AnimatedPreview(source)
+    local model = BuildCol1PreviewModel(source)
+    if not model or not model.rows or #model.rows == 0 then
+        ClearCol1AnimatedPreview()
+        return false
+    end
+
+    local preview = EnsureCol1PreviewHost()
+    if not preview then
+        return false
+    end
+
+    preview.mode = model.mode
+    SetCol1BaseFramesHidden(true, source)
+    preview.root:Show()
+
+    for _, rowProxy in ipairs(preview.rows) do
+        rowProxy.used = false
+    end
+
+    for _, row in ipairs(model.rows) do
+        if not row.isGap and not row.layoutOnly then
+            local rowProxy = AcquireCol1PreviewRowFrame(preview, row.key or tostring(row.originalIndex))
+            local frame = rowProxy.frame
+            local isMarker = row.isMarker and true or false
+            if model.highlightRowKey and model.highlightRowKey == row.key then
+                frame:SetBackdropColor(0.30, 0.52, 0.18, 0.18)
+                frame:SetBackdropBorderColor(0.54, 0.78, 0.28, 0.95)
+            else
+                frame:SetBackdropColor(0, 0, 0, 0)
+                frame:SetBackdropBorderColor(0, 0, 0, 0)
+            end
+            HideCol1PreviewBadges(frame)
+
+            if not isMarker and row.icon and (row.iconAlpha or 1) > 0.05 then
+                frame._cdcIcon:SetTexture(row.icon)
+                frame._cdcIcon:SetAlpha(row.iconAlpha or 1)
+                frame._cdcIcon:Show()
+                if not ApplyRelativeRect(frame._cdcIcon, frame, row.iconRect) then
+                    frame._cdcIcon:ClearAllPoints()
+                    frame._cdcIcon:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                    frame._cdcIcon:SetSize(32, 32)
+                end
+            else
+                frame._cdcIcon:Hide()
+            end
+
+            if isMarker then
+                ApplyColumn1MarkerAppearance({
+                    frame = frame,
+                    label = frame._cdcLabel,
+                    _cdcLabel = frame._cdcLabel,
+                    _cdcIcon = frame._cdcIcon,
+                }, {
+                    text = row.text,
+                    color = row.textColor,
+                })
+            else
+                frame._cdcLabel:SetText(row.text or "")
+                if row.textColor then
+                    frame._cdcLabel:SetTextColor(row.textColor[1] or 1, row.textColor[2] or 1, row.textColor[3] or 1)
+                else
+                    frame._cdcLabel:SetTextColor(1, 1, 1)
+                end
+                if not ApplyRelativeRect(frame._cdcLabel, frame, row.labelRect) then
+                    frame._cdcLabel:ClearAllPoints()
+                    if frame._cdcIcon:IsShown() then
+                        frame._cdcLabel:SetPoint("LEFT", frame._cdcIcon, "RIGHT", 8, 0)
+                    else
+                        frame._cdcLabel:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                    end
+                    frame._cdcLabel:SetPoint("RIGHT", frame, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
+                end
+                frame._cdcLeftLine:Hide()
+                frame._cdcRightLine:Hide()
+                if row.kind == "container" then
+                    local db = CooldownCompanion.db.profile
+                    local container = db and db.groupContainers and db.groupContainers[row.id]
+                    if container then
+                        SetupGroupRowIndicators({ frame = frame }, container)
+                    end
+                elseif row.kind == "folder" then
+                    local db = CooldownCompanion.db.profile
+                    local folder = db and db.folders and db.folders[row.id]
+                    if folder then
+                        SetupFolderRowIndicators({ frame = frame }, folder)
+                    end
+                end
+            end
+
+            QueuePreviewTween(
+                preview,
+                frame,
+                row.x,
+                row.previewY,
+                row.width,
+                row.height,
+                1,
+                PREVIEW_ANIM_DURATION
+            )
+            frame:Show()
+        end
+    end
+
+    for _, rowProxy in ipairs(preview.rows) do
+        if not rowProxy.used then
+            rowProxy.frame:Hide()
+        end
+    end
+
+    RenderCol1PreviewAccentBars(preview, model)
+    UpdateCol1Ghost(preview, model)
+    preview.root:SetScript("OnUpdate", function()
+        TickCol2Preview(preview)
+    end)
+    return true
+end
+
+ClearCol1AnimatedPreview = function()
+    SetCol1BaseFramesHidden(false)
+    SetDraggedFolderAccentBarHidden(CS.dragState, false)
+    ClearCol1PreviewHost()
+end
+
 local function UpdateCol2CursorPreview(targetPanelId)
     if not targetPanelId then
         ClearCol2AnimatedPreview()
@@ -1295,35 +2431,623 @@ end
 ------------------------------------------------------------------------
 -- Drop target detection for column 1 with folder support
 ------------------------------------------------------------------------
-local function GetCol1DropTarget(cursorY, renderedRows, sourceKind, sourceSection)
+local function GetCol1DropFrame(rowMeta)
+    return rowMeta and rowMeta.widget and rowMeta.widget.frame
+end
+
+local function GetCol1HorizontalBounds(scrollWidget, renderedRows)
+    local content = scrollWidget and scrollWidget.content
+    if content and content.IsShown and content:IsShown() then
+        local left, right = content:GetLeft(), content:GetRight()
+        if left and right then
+            return left, right
+        end
+    end
+
+    for _, rowMeta in ipairs(renderedRows or {}) do
+        local frame = GetCol1DropFrame(rowMeta)
+        if frame and frame:IsShown() then
+            local left, right = frame:GetLeft(), frame:GetRight()
+            if left and right then
+                return left, right
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function IsCursorWithinHorizontalBounds(cursorX, left, right, pad)
+    if not (cursorX and left and right) then
+        return false
+    end
+    pad = pad or 0
+    return cursorX >= (left + pad) and cursorX <= (right - pad)
+end
+
+local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
+    local frame = GetCol1DropFrame(rowMeta)
+    if not (rowMeta and frame and frame:IsShown()) then
+        return nil
+    end
+
+    local result = {
+        action = action,
+        rowIndex = rowIndex,
+        targetRow = rowMeta,
+        anchorFrame = frame,
+    }
+    if extra then
+        for key, value in pairs(extra) do
+            result[key] = value
+        end
+    end
+    return result
+end
+
+local function GetCol1FolderBlockIdForRow(rowMeta, sourceKind)
+    if sourceKind ~= "group" and sourceKind ~= "folder-group" then
+        return nil
+    end
+    if not rowMeta then
+        return nil
+    end
+
+    if rowMeta.kind == "folder" then
+        return rowMeta.id
+    end
+    if rowMeta.kind == "container" and rowMeta.inFolder then
+        return rowMeta.inFolder
+    end
+    if rowMeta.kind == "aux-block" and rowMeta.ownerFolderId then
+        return rowMeta.ownerFolderId
+    end
+
+    return nil
+end
+
+local function GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not folderId then
+        return nil
+    end
+
+    local firstIndex, lastIndex = FindCol1FolderBlockRange(renderedRows or {}, folderId)
+    if not firstIndex or not lastIndex then
+        return nil
+    end
+
+    local firstRow = renderedRows[firstIndex]
+    local lastRow = renderedRows[lastIndex]
+    local firstFrame = GetCol1DropFrame(firstRow)
+    local lastFrame = GetCol1DropFrame(lastRow)
+    if not (firstRow and lastRow and firstFrame and lastFrame and firstFrame:IsShown() and lastFrame:IsShown()) then
+        return nil
+    end
+
+    local top = firstFrame:GetTop()
+    local bottom = lastFrame:GetBottom()
+    if not (top and bottom) then
+        return nil
+    end
+
+    return {
+        folderId = folderId,
+        headerIndex = firstIndex,
+        firstIndex = firstIndex,
+        lastIndex = lastIndex,
+        headerRow = firstRow,
+        firstRow = firstRow,
+        lastRow = lastRow,
+        firstFrame = firstFrame,
+        lastFrame = lastFrame,
+        top = top,
+        bottom = bottom,
+    }
+end
+
+local function GetCol1FolderBlockEdgeInset(frame)
+    local height = frame and frame:GetHeight()
+    if not height or height <= 0 then
+        return 8
+    end
+    return math.min(14, math.max(8, height * 0.35))
+end
+
+local function BuildCol1FolderBlockDropResult(renderedRows, folderId, action, extra)
+    local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not blockInfo then
+        return nil
+    end
+
+    local result = BuildCol1DropResult(action, blockInfo.headerIndex, blockInfo.headerRow, {
+        targetFolderId = folderId,
+        folderBlockId = folderId,
+        folderBlockFirstRow = blockInfo.firstRow,
+        folderBlockLastRow = blockInfo.lastRow,
+        folderBlockFirstIndex = blockInfo.firstIndex,
+        folderBlockLastIndex = blockInfo.lastIndex,
+        folderBlockPosition = action == "into-folder" and "inside"
+            or (action == "reorder-before" and "before" or "after"),
+    })
+    if not result then
+        return nil
+    end
+
+    result.anchorFrame = action == "reorder-after" and blockInfo.lastFrame or blockInfo.firstFrame
+    if extra then
+        for key, value in pairs(extra) do
+            result[key] = value
+        end
+    end
+    return result
+end
+
+local function BuildCol1FolderReorderBlockTarget(renderedRows, folderId, action, extra)
+    local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not blockInfo then
+        return nil
+    end
+
+    local result = BuildCol1DropResult(action, blockInfo.headerIndex, blockInfo.headerRow, {
+        folderBlockId = folderId,
+        folderBlockFirstRow = blockInfo.firstRow,
+        folderBlockLastRow = blockInfo.lastRow,
+        folderBlockFirstIndex = blockInfo.firstIndex,
+        folderBlockLastIndex = blockInfo.lastIndex,
+        folderBlockPosition = action == "reorder-before" and "before" or "after",
+    })
+    if not result then
+        return nil
+    end
+
+    result.anchorFrame = action == "reorder-after" and blockInfo.lastFrame or blockInfo.firstFrame
+    if extra then
+        for key, value in pairs(extra) do
+            result[key] = value
+        end
+    end
+    return result
+end
+
+local function FindCol1FolderDropTarget(renderedRows, section, folderId)
+    if not folderId then
+        return nil
+    end
+
+    for _, candidate in ipairs(renderedRows or {}) do
+        if candidate.section == section and candidate.kind == "folder" and candidate.id == folderId then
+            return BuildCol1FolderBlockDropResult(renderedRows, folderId, "into-folder")
+        end
+    end
+
+    return nil
+end
+
+local function ResolveCol1FolderBlockDropTarget(renderedRows, rowMeta, sourceKind, action, extra)
+    local folderId = GetCol1FolderBlockIdForRow(rowMeta, sourceKind)
+    if not folderId then
+        return nil
+    end
+
+    return BuildCol1FolderBlockDropResult(renderedRows, folderId, action or "into-folder", extra)
+end
+
+local ResolveCol1FolderBlockBoundaryTarget
+
+local function ResolveCol1FolderBlockHoverTarget(
+    renderedRows,
+    folderId,
+    cursorY,
+    sourceKind,
+    sourceSection,
+    sourceFolderId,
+    sourceLoadBucket
+)
+    local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not blockInfo or not cursorY or cursorY > blockInfo.top or cursorY < blockInfo.bottom then
+        return nil
+    end
+
+    local topInset = GetCol1FolderBlockEdgeInset(blockInfo.firstFrame)
+    if cursorY >= (blockInfo.top - topInset) then
+        return ResolveCol1FolderBlockBoundaryTarget(
+            renderedRows,
+            blockInfo.headerRow,
+            sourceKind,
+            sourceSection,
+            sourceLoadBucket,
+            "reorder-before"
+        )
+    end
+
+    local bottomInset = GetCol1FolderBlockEdgeInset(blockInfo.lastFrame)
+    if cursorY <= (blockInfo.bottom + bottomInset) then
+        return ResolveCol1FolderBlockBoundaryTarget(
+            renderedRows,
+            blockInfo.headerRow,
+            sourceKind,
+            sourceSection,
+            sourceLoadBucket,
+            "reorder-after"
+        )
+    end
+
+    if sourceFolderId and sourceFolderId == folderId then
+        return nil
+    end
+
+    return BuildCol1FolderBlockDropResult(renderedRows, folderId, "into-folder")
+end
+
+local function ResolveCol1FolderDragBlockHoverTarget(renderedRows, folderId, cursorY, previousDropTarget)
+    local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not blockInfo or not cursorY or cursorY > blockInfo.top or cursorY < blockInfo.bottom then
+        return nil
+    end
+
+    local mid = (blockInfo.top + blockInfo.bottom) / 2
+    local action = cursorY > mid and "reorder-before" or "reorder-after"
+    local hysteresis = math.min(18, math.max(8, (blockInfo.top - blockInfo.bottom) * 0.12))
+    if previousDropTarget
+        and previousDropTarget.folderBlockId == folderId
+        and (previousDropTarget.action == "reorder-before" or previousDropTarget.action == "reorder-after")
+        and math.abs(cursorY - mid) <= hysteresis
+    then
+        action = previousDropTarget.action
+    end
+    return BuildCol1FolderReorderBlockTarget(renderedRows, folderId, action)
+end
+
+FindCol1SectionDividerTarget = function(renderedRows, section)
+    for i, rowMeta in ipairs(renderedRows or {}) do
+        if rowMeta.section == section and rowMeta.kind == "unloaded-divider" then
+            return BuildCol1DropResult("reorder-before", i, rowMeta)
+        end
+    end
+    return nil
+end
+
+local function FindFirstCol1UnloadedTargetInSection(renderedRows, section, startIndex)
+    for i = startIndex or 1, #(renderedRows or {}) do
+        local rowMeta = renderedRows[i]
+        if rowMeta.section ~= section then
+            if rowMeta.section then
+                break
+            end
+        elseif rowMeta.loadBucket == "unloaded" and (rowMeta.kind == "folder" or rowMeta.kind == "container") then
+            return BuildCol1DropResult("reorder-before", i, rowMeta)
+        end
+    end
+    return nil
+end
+
+local function FindLastCol1UnloadedTargetInSection(renderedRows, section, startIndex)
+    for i = startIndex or #(renderedRows or {}), 1, -1 do
+        local rowMeta = renderedRows[i]
+        if rowMeta.section ~= section then
+            if rowMeta.section then
+                break
+            end
+        elseif rowMeta.loadBucket == "unloaded" and (rowMeta.kind == "folder" or rowMeta.kind == "container") then
+            return BuildCol1DropResult("reorder-after", i, rowMeta)
+        end
+    end
+    return nil
+end
+
+local function ResolveCol1UnloadedSectionTarget(renderedRows, section, startIndex, preferLast)
+    if preferLast then
+        return FindLastCol1UnloadedTargetInSection(renderedRows, section, startIndex)
+            or FindCol1SectionDividerTarget(renderedRows, section)
+    end
+    return FindFirstCol1UnloadedTargetInSection(renderedRows, section, startIndex)
+        or FindCol1SectionDividerTarget(renderedRows, section)
+end
+
+local function FindFirstCol1DropTargetInSection(renderedRows, section, startIndex)
+    for i = startIndex or 1, #(renderedRows or {}) do
+        local rowMeta = renderedRows[i]
+        if rowMeta.section ~= section then
+            if rowMeta.section then
+                break
+            end
+        elseif rowMeta.kind == "unloaded-divider" then
+            return BuildCol1DropResult("reorder-before", i, rowMeta)
+        elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+            return BuildCol1DropResult("reorder-before", i, rowMeta)
+        end
+    end
+    return nil
+end
+
+local function FindLastCol1DropTargetInSection(renderedRows, section, startIndex)
+    for i = startIndex or #(renderedRows or {}), 1, -1 do
+        local rowMeta = renderedRows[i]
+        if rowMeta.section ~= section then
+            if rowMeta.section then
+                break
+            end
+        elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+            return BuildCol1DropResult("reorder-after", i, rowMeta)
+        end
+    end
+    return nil
+end
+
+local function ResolveCol1AuxBlockTarget(renderedRows, rowIndex, rowMeta, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket)
+    if not rowMeta then
+        return nil
+    end
+    if sourceLoadBucket == "unloaded" then
+        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, rowIndex + 1)
+    end
+    if rowMeta.ownerFolderId
+        and (sourceKind == "group" or sourceKind == "folder-group")
+    then
+        return BuildCol1FolderBlockDropResult(renderedRows, rowMeta.ownerFolderId, "into-folder")
+    end
+    local nextTarget = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
+    if nextTarget then
+        return nextTarget
+    end
+    return FindLastCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
+end
+
+local function IsCol1UnloadedDragSource(sourceLoadBucket)
+    return sourceLoadBucket == "unloaded"
+end
+
+local function IsCol1MixedDragSource(sourceLoadBucket)
+    return sourceLoadBucket == "mixed"
+end
+
+local function ResolveCol1MixedSectionTarget(renderedRows, rowMeta, rowIndex, sourceSection, action)
+    if not rowMeta then
+        return nil
+    end
+
+    local targetSection = rowMeta.section
+    if not targetSection then
+        return nil
+    end
+
+    if targetSection == sourceSection then
+        if rowMeta.kind == "section-header" then
+            return FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
+        end
+        if rowMeta.kind == "unloaded-divider" then
+            return FindCol1SectionDividerTarget(renderedRows, targetSection)
+        end
+        if rowMeta.kind == "phantom"
+            or rowMeta.kind == "folder"
+            or rowMeta.loadBucket == "unloaded"
+            or rowMeta.acceptsDrop
+        then
+            return BuildCol1DropResult(action or "reorder-before", rowIndex, rowMeta)
+        end
+        return nil
+    end
+
+    if rowMeta.kind == "phantom" then
+        return BuildCol1DropResult("reorder-before", rowIndex, rowMeta)
+    end
+
+    if rowMeta.kind == "unloaded-divider" then
+        return FindCol1SectionDividerTarget(renderedRows, targetSection)
+    end
+
+    return FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
+        or FindCol1SectionDividerTarget(renderedRows, targetSection)
+end
+
+ResolveCol1FolderBlockBoundaryTarget = function(renderedRows, rowMeta, sourceKind, sourceSection, sourceLoadBucket, action, extra)
+    local folderBlockTarget = ResolveCol1FolderBlockDropTarget(renderedRows, rowMeta, sourceKind, action, extra)
+    if not folderBlockTarget then
+        return nil
+    end
+
+    local targetRow = folderBlockTarget.targetRow
+    if not targetRow then
+        return folderBlockTarget
+    end
+
+    if IsCol1MixedDragSource(sourceLoadBucket) then
+        return ResolveCol1MixedSectionTarget(
+            renderedRows,
+            targetRow,
+            folderBlockTarget.rowIndex,
+            sourceSection,
+            action
+        )
+    end
+
+    if IsCol1UnloadedDragSource(sourceLoadBucket) then
+        if targetRow.loadBucket ~= "unloaded" then
+            local startIndex = action == "reorder-after"
+                and (folderBlockTarget.folderBlockLastIndex or folderBlockTarget.rowIndex)
+                or folderBlockTarget.rowIndex
+            return ResolveCol1UnloadedSectionTarget(
+                renderedRows,
+                targetRow.section,
+                startIndex,
+                action == "reorder-after"
+            )
+        end
+        return folderBlockTarget
+    end
+
+    if targetRow.loadBucket == "unloaded" then
+        return FindCol1SectionDividerTarget(renderedRows, targetRow.section)
+    end
+
+    return folderBlockTarget
+end
+
+local function ResolvePreviousFolderBlockBoundaryTarget(renderedRows, rowIndex, sourceKind, sourceSection, sourceLoadBucket, action, extra)
+    local previousRow = rowIndex and renderedRows and renderedRows[rowIndex - 1]
+    if not previousRow then
+        return nil
+    end
+
+    local previousFolderId = GetCol1FolderBlockIdForRow(previousRow, sourceKind)
+    if not previousFolderId then
+        return nil
+    end
+
+    local currentFolderId = GetCol1FolderBlockIdForRow(renderedRows[rowIndex], sourceKind)
+    if currentFolderId and currentFolderId == previousFolderId then
+        return nil
+    end
+
+    return ResolveCol1FolderBlockBoundaryTarget(
+        renderedRows,
+        previousRow,
+        sourceKind,
+        sourceSection,
+        sourceLoadBucket,
+        action,
+        extra
+    )
+end
+
+local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket, previousDropTarget)
     if not renderedRows or #renderedRows == 0 then return nil end
+    local sourceIsMixed = IsCol1MixedDragSource(sourceLoadBucket)
+    local sourceIsUnloaded = IsCol1UnloadedDragSource(sourceLoadBucket)
+    local contentLeft, contentRight = GetCol1HorizontalBounds(scrollWidget, renderedRows)
+    if not IsCursorWithinHorizontalBounds(cursorX, contentLeft, contentRight, COL1_HIT_X_PAD) then
+        return nil
+    end
+
+    if sourceKind == "group" or sourceKind == "folder-group" then
+        local seenFolderBlocks = {}
+        for _, rowMeta in ipairs(renderedRows) do
+            local folderId = GetCol1FolderBlockIdForRow(rowMeta, sourceKind)
+            if folderId and not seenFolderBlocks[folderId] then
+                seenFolderBlocks[folderId] = true
+                local folderBlockTarget = ResolveCol1FolderBlockHoverTarget(
+                    renderedRows,
+                    folderId,
+                    cursorY,
+                    sourceKind,
+                    sourceSection,
+                    sourceFolderId,
+                    sourceLoadBucket
+                )
+                if folderBlockTarget then
+                    return folderBlockTarget
+                end
+            end
+        end
+    elseif sourceKind == "folder" then
+        local seenFolderBlocks = {}
+        for _, rowMeta in ipairs(renderedRows) do
+            if rowMeta.kind == "folder" and rowMeta.id and not seenFolderBlocks[rowMeta.id] then
+                seenFolderBlocks[rowMeta.id] = true
+                local folderBlockTarget = ResolveCol1FolderDragBlockHoverTarget(
+                    renderedRows,
+                    rowMeta.id,
+                    cursorY,
+                    previousDropTarget
+                )
+                if folderBlockTarget then
+                    return folderBlockTarget
+                end
+            end
+        end
+    end
 
     for i, rowMeta in ipairs(renderedRows) do
-        local frame = rowMeta.widget and rowMeta.widget.frame
+        local frame = GetCol1DropFrame(rowMeta)
         if frame and frame:IsShown() then
+            local left, right = frame:GetLeft(), frame:GetRight()
             local top = frame:GetTop()
             local bottom = frame:GetBottom()
-            if top and bottom and cursorY <= top and cursorY >= bottom then
-                local height = top - bottom
-                -- If hovering over a folder header and dragging a group, use 3-zone detection
+            if top and bottom
+                and IsCursorWithinHorizontalBounds(cursorX, left, right, COL1_HIT_X_PAD)
+                and cursorY <= top
+                and cursorY >= bottom
+            then
                 if rowMeta.kind == "folder" and (sourceKind == "group" or sourceKind == "folder-group") then
-                    local topZone = top - height * 0.25
-                    local bottomZone = bottom + height * 0.25
-                    if cursorY > topZone then
-                        return { action = "reorder-before", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
-                    elseif cursorY < bottomZone then
-                        return { action = "reorder-after", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
-                    else
-                        return { action = "into-folder", rowIndex = i, targetRow = rowMeta, anchorFrame = frame, targetFolderId = rowMeta.id }
+                    return BuildCol1FolderBlockDropResult(renderedRows, rowMeta.id, "into-folder")
+                elseif IsExternalFolderChildTarget(rowMeta, sourceKind, sourceFolderId) then
+                    return ResolveCol1FolderBlockDropTarget(renderedRows, rowMeta, sourceKind, "into-folder")
+                elseif rowMeta.kind == "aux-block" then
+                    return ResolveCol1AuxBlockTarget(renderedRows, i, rowMeta, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket)
+                elseif rowMeta.kind == "section-header" then
+                    if sourceIsMixed then
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i + 1, sourceSection, "reorder-before")
                     end
-                else
-                    -- Standard 2-zone (above/below midpoint)
+                    if sourceIsUnloaded then
+                        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
+                    end
+                    return FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, i + 1)
+                elseif rowMeta.kind == "unloaded-divider" then
+                    if sourceIsMixed then
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
+                    end
+                    if sourceIsUnloaded then
+                        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
+                    end
+                    local previousFolderTarget = ResolvePreviousFolderBlockBoundaryTarget(
+                        renderedRows,
+                        i,
+                        sourceKind,
+                        sourceSection,
+                        sourceLoadBucket,
+                        "reorder-after"
+                    )
+                    if previousFolderTarget then
+                        return previousFolderTarget
+                    end
+                    return FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
+                elseif rowMeta.loadBucket == "unloaded" then
+                    if sourceIsMixed then
+                        local mid = (top + bottom) / 2
+                        if cursorY > mid then
+                            return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
+                        end
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-after")
+                    end
+                    if sourceIsUnloaded then
+                        local mid = (top + bottom) / 2
+                        if cursorY > mid then
+                            return BuildCol1DropResult("reorder-before", i, rowMeta)
+                        else
+                            return BuildCol1DropResult("reorder-after", i, rowMeta)
+                        end
+                    end
+                    local previousFolderTarget = ResolvePreviousFolderBlockBoundaryTarget(
+                        renderedRows,
+                        i,
+                        sourceKind,
+                        sourceSection,
+                        sourceLoadBucket,
+                        "reorder-after"
+                    )
+                    if previousFolderTarget then
+                        return previousFolderTarget
+                    end
+                    return FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
+                elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+                    if sourceIsMixed then
+                        local mid = (top + bottom) / 2
+                        if cursorY > mid then
+                            return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
+                        end
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-after")
+                    end
+                    if sourceIsUnloaded then
+                        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
+                    end
                     local mid = (top + bottom) / 2
                     if cursorY > mid then
-                        return { action = "reorder-before", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                        return BuildCol1DropResult("reorder-before", i, rowMeta)
                     else
-                        return { action = "reorder-after", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                        return BuildCol1DropResult("reorder-after", i, rowMeta)
                     end
+                else
+                    return nil
                 end
             end
         end
@@ -1332,35 +3056,194 @@ local function GetCol1DropTarget(cursorY, renderedRows, sourceKind, sourceSectio
     -- Cursor is in a gap between rows (e.g. between sections): find the first
     -- row whose top edge is below the cursor and target it with reorder-before.
     for i, rowMeta in ipairs(renderedRows) do
-        local frame = rowMeta.widget and rowMeta.widget.frame
+        local frame = GetCol1DropFrame(rowMeta)
         if frame and frame:IsShown() then
             local top = frame:GetTop()
             if top and cursorY > top then
-                return { action = "reorder-before", rowIndex = i, targetRow = rowMeta, anchorFrame = frame }
+                local folderBoundaryTarget = ResolveCol1FolderBlockBoundaryTarget(
+                    renderedRows,
+                    rowMeta,
+                    sourceKind,
+                    sourceSection,
+                    sourceLoadBucket,
+                    "reorder-before"
+                )
+                if folderBoundaryTarget then
+                    return folderBoundaryTarget
+                elseif rowMeta.kind == "section-header" then
+                    if sourceIsMixed then
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i + 1, sourceSection, "reorder-before")
+                    end
+                    if sourceIsUnloaded then
+                        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
+                    end
+                    return FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, i + 1)
+                elseif IsExternalFolderChildTarget(rowMeta, sourceKind, sourceFolderId) then
+                    return ResolveCol1FolderBlockBoundaryTarget(
+                        renderedRows,
+                        rowMeta,
+                        sourceKind,
+                        sourceSection,
+                        sourceLoadBucket,
+                        "reorder-before"
+                    )
+                elseif rowMeta.kind == "aux-block" then
+                    return ResolveCol1AuxBlockTarget(renderedRows, i, rowMeta, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket)
+                elseif rowMeta.kind == "unloaded-divider" then
+                    if sourceIsMixed then
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
+                    end
+                    if sourceIsUnloaded then
+                        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
+                    end
+                    return FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
+                elseif rowMeta.loadBucket == "unloaded" then
+                    if sourceIsMixed then
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
+                    end
+                    if sourceIsUnloaded then
+                        return BuildCol1DropResult("reorder-before", i, rowMeta)
+                    end
+                    return FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
+                elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+                    if sourceIsMixed then
+                        return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
+                    end
+                    if sourceIsUnloaded then
+                        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i)
+                    end
+                    return BuildCol1DropResult("reorder-before", i, rowMeta)
+                end
             end
         end
     end
 
     -- Below all rows: drop after the last row overall.
-    local lastRow = renderedRows[#renderedRows]
-    local lastRowIndex = #renderedRows
-    local lastFrame = lastRow and lastRow.widget and lastRow.widget.frame
-    if lastFrame and lastFrame:IsShown() then
-        return { action = "reorder-after", rowIndex = lastRowIndex, targetRow = lastRow, anchorFrame = lastFrame, isBelowAll = true }
+    for i = #renderedRows, 1, -1 do
+        local rowMeta = renderedRows[i]
+        local frame = GetCol1DropFrame(rowMeta)
+        if frame and frame:IsShown() then
+            local folderBoundaryTarget = ResolveCol1FolderBlockBoundaryTarget(
+                renderedRows,
+                rowMeta,
+                sourceKind,
+                sourceSection,
+                sourceLoadBucket,
+                "reorder-after",
+                { isBelowAll = true }
+            )
+            if folderBoundaryTarget then
+                return folderBoundaryTarget
+            elseif rowMeta.kind == "unloaded-divider" or rowMeta.loadBucket == "unloaded" then
+                if sourceIsMixed then
+                    return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-after")
+                end
+                if sourceIsUnloaded then
+                    return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i, true)
+                end
+                local dividerTarget = FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
+                if dividerTarget then
+                    return dividerTarget
+                end
+            elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+                if sourceIsMixed then
+                    return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-after")
+                end
+                if sourceIsUnloaded then
+                    return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i, true)
+                end
+                return BuildCol1DropResult("reorder-after", i, rowMeta, { isBelowAll = true })
+            end
+        end
     end
     return nil
 end
 
+IsUnloadedTopLevelDrop = function(state, dropTarget, targetFolderId)
+    if targetFolderId then
+        return false
+    end
+    if not IsCol1UnloadedDragSource(state and state.sourceLoadBucket) then
+        return false
+    end
+    local targetRow = dropTarget and dropTarget.targetRow
+    return targetRow and (targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded")
+end
+
+ShouldIncludeCol1TopLevelOrderRow = function(row, includeUnloaded)
+    if not row then
+        return false
+    end
+    if row.kind ~= "folder" and not (row.kind == "container" and not row.inFolder) then
+        return false
+    end
+    if includeUnloaded then
+        return row.loadBucket == "unloaded"
+    end
+    return row.loadBucket ~= "unloaded"
+end
+
+local function FindCol1TopLevelInsertPos(orderItems, targetRow, action, defaultPos)
+    local insertPos = defaultPos or (#orderItems + 1)
+    if not targetRow or targetRow.kind == "unloaded-divider" then
+        return insertPos
+    end
+    for idx, item in ipairs(orderItems) do
+        if item.kind == targetRow.kind and item.id == targetRow.id then
+            insertPos = action == "reorder-after" and idx + 1 or idx
+            break
+        end
+    end
+    return insertPos
+end
+
+local function AssignCol1TopLevelOrders(orderItems, db, specId, startOrder)
+    local nextOrder = startOrder or 1
+    for _, item in ipairs(orderItems) do
+        if item.kind == "folder" and db.folders[item.id] then
+            CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, nextOrder)
+            nextOrder = nextOrder + 1
+        elseif db.groupContainers[item.id] then
+            CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, nextOrder)
+            nextOrder = nextOrder + 1
+        end
+    end
+    return nextOrder
+end
+
+local function PartitionSelectedContainersByLoadBucket(sourceContainerIds, renderedRows, specId, db)
+    local loadBucketById = {}
+    for _, row in ipairs(renderedRows or {}) do
+        if row.kind == "container" and sourceContainerIds[row.id] then
+            loadBucketById[row.id] = row.loadBucket
+        end
+    end
+
+    local loaded, unloaded = {}, {}
+    for cid in pairs(sourceContainerIds or {}) do
+        local container = db.groupContainers[cid]
+        if container then
+            local item = {
+                kind = "group",
+                id = cid,
+                order = CooldownCompanion:GetOrderForSpec(container, specId, cid),
+            }
+            if loadBucketById[cid] == "unloaded" then
+                table.insert(unloaded, item)
+            else
+                table.insert(loaded, item)
+            end
+        end
+    end
+
+    table.sort(loaded, function(a, b) return a.order < b.order end)
+    table.sort(unloaded, function(a, b) return a.order < b.order end)
+    return loaded, unloaded
+end
+
 -- Show drag indicator for "into-folder" drops (highlight overlay on folder row)
-local function ShowFolderDropOverlay(anchorFrame, parentScrollWidget)
-    local ind = GetDragIndicator()
-    local width = parentScrollWidget.content:GetWidth() or 100
-    ind:SetWidth(width)
-    ind:SetHeight(anchorFrame:GetHeight() or 24)
-    ind:ClearAllPoints()
-    ind:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
-    ind.tex:SetColorTexture(0.4, 0.7, 0.2, 0.3)
-    ind:Show()
+local function ShowFolderDropOverlay(dropTarget, parentScrollWidget)
+    HideDragIndicator()
 end
 
 -- Reset drag indicator to default line style
@@ -1386,27 +3269,10 @@ local function ApplyCol1Drop(state)
         local container = db.groupContainers[sourceContainerId]
         if not container then return end
 
-        if dropTarget.action == "into-folder" then
-            -- Move container into the target folder
-            CooldownCompanion:MoveGroupToFolder(sourceContainerId, dropTarget.targetFolderId)
-        elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
+        if dropTarget.action == "into-folder" or dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             local targetRow = dropTarget.targetRow
-            if dropTarget.isBelowAll then
-                -- Dropped below all rows: always become top-level
-                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
-            elseif targetRow.kind == "container" and targetRow.inFolder then
-                -- If dropping on a row that's in a folder, join that folder
-                CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetRow.inFolder)
-            elseif targetRow.kind == "folder" then
-                -- Dropping before/after a folder header = top-level
-                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
-            elseif targetRow.kind == "phantom" then
-                -- Dropping on phantom section placeholder = top-level in that section
-                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
-            else
-                -- Dropping on a loose container = stay/become loose
-                CooldownCompanion:MoveGroupToFolder(sourceContainerId, nil)
-            end
+            local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
+            CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetFolderId)
 
             -- Cross-section move: toggle global/character status
             local targetSection = targetRow.section or state.sourceSection
@@ -1426,7 +3292,8 @@ local function ApplyCol1Drop(state)
             if renderedRows then
                 -- Build ordered list of items in the same parent (folder or top-level)
                 -- and reassign order values
-                local targetFolderId = container.folderId
+                targetFolderId = container.folderId
+                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, targetFolderId)
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
                     if row.section == section then
@@ -1437,7 +3304,7 @@ local function ApplyCol1Drop(state)
                             end
                         else
                             -- Top-level ordering: collect top-level items (folders + loose containers)
-                            if (row.kind == "folder") or (row.kind == "container" and not row.inFolder) then
+                            if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
                                 if row.id ~= sourceContainerId then
                                     table.insert(orderItems, { kind = row.kind, id = row.id })
                                 end
@@ -1466,11 +3333,14 @@ local function ApplyCol1Drop(state)
                     end
                 else
                     -- Top-level: find target position among mixed items
-                    insertPos = #orderItems + 1
-                    for idx, item in ipairs(orderItems) do
-                        if item.kind == dropTarget.targetRow.kind and item.id == dropTarget.targetRow.id then
-                            insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                            break
+                    insertPos = includeUnloaded and 1 or (#orderItems + 1)
+                    if dropTarget.targetRow.kind ~= "unloaded-divider" then
+                        insertPos = #orderItems + 1
+                        for idx, item in ipairs(orderItems) do
+                            if item.kind == dropTarget.targetRow.kind and item.id == dropTarget.targetRow.id then
+                                insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                                break
+                            end
                         end
                     end
                     table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
@@ -1492,18 +3362,7 @@ local function ApplyCol1Drop(state)
 
         local targetRow = dropTarget.targetRow
         -- Determine target folder and section
-        local targetFolderId = nil
-        if dropTarget.action == "into-folder" then
-            targetFolderId = dropTarget.targetFolderId
-        elseif dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
-            if dropTarget.isBelowAll then
-                targetFolderId = nil
-            elseif targetRow.kind == "container" and targetRow.inFolder then
-                targetFolderId = targetRow.inFolder
-            else
-                targetFolderId = nil
-            end
-        end
+        local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
 
         local targetSection = targetRow.section or state.sourceSection
 
@@ -1564,12 +3423,47 @@ local function ApplyCol1Drop(state)
                         CooldownCompanion:SetOrderForSpec(db.groupContainers[cid], specId, i)
                     end
                 end
+            elseif IsCol1MixedDragSource(state.sourceLoadBucket) then
+                local selectedLoaded, selectedUnloaded = PartitionSelectedContainersByLoadBucket(sourceContainerIds, renderedRows, specId, db)
+                local loadedOrderItems = {}
+                local unloadedOrderItems = {}
+                for _, row in ipairs(renderedRows) do
+                    if row.section == targetSection and not sourceContainerIds[row.id] then
+                        if ShouldIncludeCol1TopLevelOrderRow(row, false) then
+                            table.insert(loadedOrderItems, { kind = row.kind, id = row.id })
+                        elseif ShouldIncludeCol1TopLevelOrderRow(row, true) then
+                            table.insert(unloadedOrderItems, { kind = row.kind, id = row.id })
+                        end
+                    end
+                end
+
+                local targetIsUnloaded = targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded"
+                local loadedInsertPos
+                local unloadedInsertPos
+                if targetIsUnloaded then
+                    loadedInsertPos = #loadedOrderItems + 1
+                    unloadedInsertPos = FindCol1TopLevelInsertPos(unloadedOrderItems, targetRow, dropTarget.action, 1)
+                else
+                    loadedInsertPos = FindCol1TopLevelInsertPos(loadedOrderItems, targetRow, dropTarget.action, #loadedOrderItems + 1)
+                    unloadedInsertPos = 1
+                end
+
+                for i, item in ipairs(selectedLoaded) do
+                    table.insert(loadedOrderItems, loadedInsertPos + i - 1, { kind = item.kind, id = item.id })
+                end
+                for i, item in ipairs(selectedUnloaded) do
+                    table.insert(unloadedOrderItems, unloadedInsertPos + i - 1, { kind = item.kind, id = item.id })
+                end
+
+                local nextOrder = AssignCol1TopLevelOrders(loadedOrderItems, db, specId, 1)
+                AssignCol1TopLevelOrders(unloadedOrderItems, db, specId, nextOrder)
             else
                 -- Top-level ordering
+                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, targetFolderId)
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
                     if row.section == targetSection then
-                        if (row.kind == "folder") or (row.kind == "container" and not row.inFolder) then
+                        if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
                             if not sourceContainerIds[row.id] then
                                 table.insert(orderItems, { kind = row.kind, id = row.id })
                             end
@@ -1577,11 +3471,14 @@ local function ApplyCol1Drop(state)
                     end
                 end
 
-                local insertPos = #orderItems + 1
-                for idx, item in ipairs(orderItems) do
-                    if item.kind == targetRow.kind and item.id == targetRow.id then
-                        insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                        break
+                local insertPos = includeUnloaded and 1 or (#orderItems + 1)
+                if targetRow.kind ~= "unloaded-divider" then
+                    insertPos = #orderItems + 1
+                    for idx, item in ipairs(orderItems) do
+                        if item.kind == targetRow.kind and item.id == targetRow.id then
+                            insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                            break
+                        end
                     end
                 end
                 -- Insert all selected containers at the position
@@ -1627,27 +3524,32 @@ local function ApplyCol1Drop(state)
         -- Build top-level items for the section (excluding the source folder)
         local renderedRows = state.col1RenderedRows
         if renderedRows then
+            local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, nil)
             local orderItems = {}
             for _, row in ipairs(renderedRows) do
                 if row.section == section then
-                    if (row.kind == "folder" or (row.kind == "container" and not row.inFolder)) and row.id ~= sourceFolderId then
+                    if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded)
+                        and row.id ~= sourceFolderId then
                         table.insert(orderItems, { kind = row.kind, id = row.id })
                     end
                 end
             end
 
-            local insertPos = #orderItems + 1
-            for idx, item in ipairs(orderItems) do
-                local targetKind = targetRow.kind
-                local targetId = targetRow.id
-                -- If target is a group inside a folder, use the folder as anchor
-                if targetRow.inFolder then
-                    targetKind = "folder"
-                    targetId = targetRow.inFolder
-                end
-                if item.kind == targetKind and item.id == targetId then
-                    insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                    break
+            local insertPos = includeUnloaded and 1 or (#orderItems + 1)
+            if targetRow.kind ~= "unloaded-divider" then
+                insertPos = #orderItems + 1
+                for idx, item in ipairs(orderItems) do
+                    local targetKind = targetRow.kind
+                    local targetId = targetRow.id
+                    -- If target is a group inside a folder, use the folder as anchor
+                    if targetRow.inFolder then
+                        targetKind = "folder"
+                        targetId = targetRow.inFolder
+                    end
+                    if item.kind == targetKind and item.id == targetId then
+                        insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
+                        break
+                    end
                 end
             end
             table.insert(orderItems, insertPos, { kind = "folder", id = sourceFolderId })
@@ -1746,6 +3648,10 @@ local function CancelDrag()
             and CS.dragState.layoutDrag.onCancel then
             CS.dragState.layoutDrag.onCancel(CS.dragState)
         end
+    end
+    ClearCol1AnimatedPreview()
+    ClearCol2AnimatedPreview()
+    if CS.dragState then
         if CS.dragState.dimmedWidgets then
             for _, w in ipairs(CS.dragState.dimmedWidgets) do
                 SetDraggedWidgetAlpha(w, 1)
@@ -1755,7 +3661,6 @@ local function CancelDrag()
         end
     end
     CS.dragState = nil
-    ClearCol2AnimatedPreview()
     HideDragIndicator()
     ResetDragIndicatorStyle()
     if CS.dragTracker then
@@ -1801,6 +3706,14 @@ local function FinishDrag()
         -- Column 1 folder-aware drop
         -- Check for cross-section global→char with foreign specs
         local dropTarget = state.dropTarget
+        local changed = true
+        if dropTarget then
+            if state.kind == "group" or state.kind == "folder-group" then
+                changed = not IsCol1GroupDropNoOp(state)
+            elseif state.kind == "folder" then
+                changed = not IsCol1FolderDropNoOp(state)
+            end
+        end
         if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
             local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
             local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
@@ -1852,7 +3765,9 @@ local function FinishDrag()
                 end
             end
         end
-        ApplyCol1Drop(state)
+        if changed then
+            ApplyCol1Drop(state)
+        end
         CooldownCompanion:RefreshConfigPanel()
     elseif state.kind == "panel" then
         local dropTarget = state.dropTarget
@@ -1972,6 +3887,7 @@ local function StartDragTracking()
                         local savedSourceGroupIds = CS.dragState.sourceGroupIds
                         local savedSourceFolderId = CS.dragState.sourceFolderId
                         local savedSourceSection = CS.dragState.sourceSection
+                        local savedSourceLoadBucket = CS.dragState.sourceLoadBucket
                         local savedScrollWidget = CS.dragState.scrollWidget
                         local savedStartY = CS.dragState.startY
                         CS.showPhantomSections = true
@@ -1984,6 +3900,7 @@ local function StartDragTracking()
                             sourceGroupIds = savedSourceGroupIds,
                             sourceFolderId = savedSourceFolderId,
                             sourceSection = savedSourceSection,
+                            sourceLoadBucket = savedSourceLoadBucket,
                             scrollWidget = savedScrollWidget,
                             startY = savedStartY,
                             col1RenderedRows = CS.lastCol1RenderedRows,
@@ -2015,6 +3932,7 @@ local function StartDragTracking()
             end
         end
         if CS.dragState.phase == "active" then
+            SetDraggedFolderAccentBarHidden(CS.dragState, true)
             if CS.dragState.kind == "layout-slot" then
                 local dropTarget = CS.dragState.layoutDrag
                     and CS.dragState.layoutDrag.resolveDropTarget
@@ -2032,21 +3950,65 @@ local function StartDragTracking()
                 ClearCol2AnimatedPreview()
                 -- Column 1 folder-aware drop detection
                 local effectiveKind = CS.dragState.kind == "multi-group" and "group" or CS.dragState.kind
-                local dropTarget = GetCol1DropTarget(cursorY, CS.dragState.col1RenderedRows, effectiveKind, CS.dragState.sourceSection)
+                local dropTarget = GetCol1DropTarget(
+                    cursorX,
+                    cursorY,
+                    CS.dragState.scrollWidget,
+                    CS.dragState.col1RenderedRows,
+                    effectiveKind,
+                    CS.dragState.sourceSection,
+                    CS.dragState.sourceFolderId,
+                    CS.dragState.sourceLoadBucket,
+                    CS.dragState.dropTarget
+                )
                 CS.dragState.dropTarget = dropTarget
                 if dropTarget then
                     ResetDragIndicatorStyle()
-                    if dropTarget.action == "into-folder" then
-                        ShowFolderDropOverlay(dropTarget.anchorFrame, CS.dragState.scrollWidget)
-                    elseif dropTarget.action == "reorder-before" then
-                        ShowDragIndicator(dropTarget.anchorFrame, true, CS.dragState.scrollWidget)
-                    else
-                        ShowDragIndicator(dropTarget.anchorFrame, false, CS.dragState.scrollWidget)
+                    HideDragIndicator()
+                    local shouldAnimatePreview = ShouldAnimateCol1PreviewForDrop(
+                        CS.dragState.sourceLoadBucket,
+                        dropTarget,
+                        CS.dragState.col1RenderedRows
+                    )
+                    if not shouldAnimatePreview or not RenderCol1AnimatedPreview({
+                        kind = CS.dragState.kind,
+                        sourceGroupId = CS.dragState.sourceGroupId,
+                        sourceGroupIds = CS.dragState.sourceGroupIds,
+                        sourceFolderId = CS.dragState.sourceFolderId,
+                        dropTarget = dropTarget,
+                    }) then
+                        ClearCol1AnimatedPreview()
+                        local unloadedPlaceholderTarget = ResolveCol1LoadedUnloadedPlaceholderTarget(
+                            CS.dragState.col1RenderedRows,
+                            CS.dragState.sourceLoadBucket,
+                            dropTarget
+                        )
+                        if dropTarget.action == "into-folder" then
+                            HideDragIndicator()
+                        elseif unloadedPlaceholderTarget then
+                            HideDragIndicator()
+                        elseif ShouldShowCol1StaticReorderIndicator(
+                            CS.dragState.sourceLoadBucket,
+                            dropTarget
+                        )
+                            and dropTarget.action == "reorder-before"
+                        then
+                            ShowDragIndicator(dropTarget.anchorFrame, true, CS.dragState.scrollWidget)
+                        elseif ShouldShowCol1StaticReorderIndicator(
+                            CS.dragState.sourceLoadBucket,
+                            dropTarget
+                        ) then
+                            ShowDragIndicator(dropTarget.anchorFrame, false, CS.dragState.scrollWidget)
+                        else
+                            HideDragIndicator()
+                        end
                     end
                 else
+                    ClearCol1AnimatedPreview()
                     HideDragIndicator()
                 end
             elseif CS.dragState.panelDropTargets then
+                ClearCol1AnimatedPreview()
                 -- Panel reorder detection
                 local preview = CS.col2Preview
                 local dropTarget
@@ -2068,6 +4030,7 @@ local function StartDragTracking()
                     ClearCol2AnimatedPreview()
                 end
             elseif CS.dragState.col2RenderedRows then
+                ClearCol1AnimatedPreview()
                 -- Column 2 cross-panel drop detection
                 local dropTarget = GetCol2DropTarget(cursorY, CS.dragState.col2RenderedRows)
                 CS.dragState.dropTarget = dropTarget
@@ -2084,6 +4047,7 @@ local function StartDragTracking()
                     ClearCol2AnimatedPreview()
                 end
             else
+                ClearCol1AnimatedPreview()
                 ClearCol2AnimatedPreview()
                 local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
                     CS.dragState.scrollWidget, cursorY,
