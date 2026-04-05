@@ -85,17 +85,15 @@ local TEXTURE_PREVIEW_HEIGHT = 132
 local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
 local MIN_TEXTURE_PAIR_SPACING = -5
 local MAX_TEXTURE_PAIR_SPACING = 5
+local MIN_TEXTURE_ROTATION = -180
+local MAX_TEXTURE_ROTATION = 180
+local MIN_TEXTURE_STRETCH = -0.75
+local MAX_TEXTURE_STRETCH = 2
 
 local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
 local PREVIEW_LOCATION_CENTER = SCREEN_LOCATION.Center or 0
 local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
 local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
-
-local TEXTURE_PREVIEW_LAYOUTS = {
-    [PREVIEW_LOCATION_CENTER] = { width = 1.0, height = 1.0, layout = "single", point = "CENTER", relPoint = "CENTER" },
-    [PREVIEW_LOCATION_LEFTRIGHT] = { width = 0.5, height = 1.0, layout = "pair_horizontal" },
-    [PREVIEW_LOCATION_TOPBOTTOM] = { width = 1.0, height = 0.5, layout = "pair_vertical" },
-}
 
 local function ApplyTexturePreviewSource(texture, settings)
     if not texture or type(settings) ~= "table" then
@@ -122,7 +120,7 @@ local function ApplyTexturePreviewSource(texture, settings)
     return false
 end
 
-local function ApplyTexturePreviewVisual(texture, settings, alpha, flipH, flipV)
+local function ApplyTexturePreviewVisual(texture, settings, alpha, flipH, flipV, rotationRadians)
     if not texture or type(settings) ~= "table" then
         return
     end
@@ -136,6 +134,7 @@ local function ApplyTexturePreviewVisual(texture, settings, alpha, flipH, flipV)
     local top = flipV and 1 or 0
     local bottom = flipV and 0 or 1
     texture:SetTexCoord(left, right, top, bottom)
+    texture:SetRotation(rotationRadians or 0)
 end
 
 local function UpdateTexturePanelPreview(preview, settings)
@@ -156,99 +155,39 @@ local function UpdateTexturePanelPreview(preview, settings)
         return
     end
 
-    local layout = TEXTURE_PREVIEW_LAYOUTS[settings.locationType or PREVIEW_LOCATION_CENTER]
-        or TEXTURE_PREVIEW_LAYOUTS[PREVIEW_LOCATION_CENTER]
     local scale = tonumber(settings.scale) or 1
     local baseWidth = (tonumber(settings.width) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
     local baseHeight = (tonumber(settings.height) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
-    local pieceWidth = baseWidth * (layout.width or 1)
-    local pieceHeight = baseHeight * (layout.height or 1)
-    local pairSpacing = tonumber(settings.pairSpacing) or 0
-    local gap = 0
-    local totalWidth = pieceWidth
-    local totalHeight = pieceHeight
-
-    local function GetHorizontalSpan(width, offsetGap)
-        local primaryLeft = (-(offsetGap / 2)) - width
-        local primaryRight = -(offsetGap / 2)
-        local secondaryLeft = offsetGap / 2
-        local secondaryRight = secondaryLeft + width
-        return math_max(primaryRight, secondaryRight) - math_min(primaryLeft, secondaryLeft)
-    end
-
-    local function GetVerticalSpan(height, offsetGap)
-        local bottomBottom = (-(offsetGap / 2)) - height
-        local bottomTop = -(offsetGap / 2)
-        local topBottom = offsetGap / 2
-        local topTop = topBottom + height
-        return math_max(bottomTop, topTop) - math_min(bottomBottom, topBottom)
-    end
-
-    if layout.layout == "pair_horizontal" then
-        gap = pieceWidth * pairSpacing
-        totalWidth = GetHorizontalSpan(pieceWidth, gap)
-    elseif layout.layout == "pair_vertical" then
-        gap = pieceHeight * pairSpacing
-        totalHeight = GetVerticalSpan(pieceHeight, gap)
-    end
-
+    local geometry = CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHeight)
     local maxWidth = TEXTURE_PREVIEW_WIDTH - 20
     local maxHeight = TEXTURE_PREVIEW_HEIGHT - 20
-    local fit = math_min(maxWidth / math_max(totalWidth, 1), maxHeight / math_max(totalHeight, 1), 1)
-    pieceWidth = math_max(8, pieceWidth * fit)
-    pieceHeight = math_max(8, pieceHeight * fit)
-    gap = gap * fit
+    local fit = math_min(maxWidth / math_max(geometry.boundsWidth, 1), maxHeight / math_max(geometry.boundsHeight, 1), 1)
 
     local color = settings.color or { 1, 1, 1, 1 }
     local alpha = math_min(math_max((color[4] or 1) * (settings.alpha or 1), 0.05), 1)
     local primary = preview.primary
     local secondary = preview.secondary
-    local shownPrimary = false
-    local shownSecondary = false
+    local shown = false
+    local textures = { primary, secondary }
 
-    primary:ClearAllPoints()
-    secondary:ClearAllPoints()
-    primary:SetSize(pieceWidth, pieceHeight)
-    secondary:SetSize(pieceWidth, pieceHeight)
-
-    if layout.layout == "pair_horizontal" then
-        primary:SetPoint("RIGHT", preview.anchor, "CENTER", -(gap / 2), 0)
-        secondary:SetPoint("LEFT", preview.anchor, "CENTER", gap / 2, 0)
-
-        if ApplyTexturePreviewSource(primary, settings) then
-            ApplyTexturePreviewVisual(primary, settings, alpha, false, false)
-            shownPrimary = true
+    for index, texture in ipairs(textures) do
+        local piece = geometry.pieces[index]
+        texture:ClearAllPoints()
+        if not piece then
+            texture:Hide()
+        else
+            texture:SetSize(math_max(8, geometry.pieceWidth * fit), math_max(8, geometry.pieceHeight * fit))
+            texture:SetPoint("CENTER", preview.anchor, "CENTER", piece.centerX * fit, piece.centerY * fit)
+            if ApplyTexturePreviewSource(texture, settings) then
+                ApplyTexturePreviewVisual(texture, settings, alpha, piece.flipH, piece.flipV, geometry.rotationRadians)
+                shown = true
+            else
+                texture:Hide()
+            end
         end
-        if ApplyTexturePreviewSource(secondary, settings) then
-            ApplyTexturePreviewVisual(secondary, settings, alpha, true, false)
-            shownSecondary = true
-        end
-        preview.placeholder:SetShown(not (shownPrimary or shownSecondary))
-        return
     end
 
-    if layout.layout == "pair_vertical" then
-        primary:SetPoint("BOTTOM", preview.anchor, "CENTER", 0, -(gap / 2))
-        secondary:SetPoint("TOP", preview.anchor, "CENTER", 0, gap / 2)
-
-        if ApplyTexturePreviewSource(primary, settings) then
-            ApplyTexturePreviewVisual(primary, settings, alpha, false, false)
-            shownPrimary = true
-        end
-        if ApplyTexturePreviewSource(secondary, settings) then
-            ApplyTexturePreviewVisual(secondary, settings, alpha, false, true)
-            shownSecondary = true
-        end
-        preview.placeholder:SetShown(not (shownPrimary or shownSecondary))
-        return
-    end
-
-    primary:SetPoint(layout.point or "CENTER", preview.anchor, layout.relPoint or "CENTER", 0, 0)
-    if ApplyTexturePreviewSource(primary, settings) then
-        ApplyTexturePreviewVisual(primary, settings, alpha, layout.flipH, layout.flipV)
-        shownPrimary = true
-    end
-    preview.placeholder:SetShown(not shownPrimary)
+    preview.placeholder:SetShown(not shown)
 end
 
 local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
@@ -1569,6 +1508,42 @@ local function BuildAppearanceTab(container)
         end)
         HookSliderEditBox(scaleSlider)
         container:AddChild(scaleSlider)
+
+        local rotationSlider = AceGUI:Create("Slider")
+        rotationSlider:SetLabel("Rotation")
+        rotationSlider:SetSliderValues(MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION, 1)
+        rotationSlider:SetValue(settings.rotation or 0)
+        rotationSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(rotationSlider, function(value)
+            settings.rotation = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(rotationSlider)
+        container:AddChild(rotationSlider)
+
+        local stretchXSlider = AceGUI:Create("Slider")
+        stretchXSlider:SetLabel("Horizontal Stretch / Compress")
+        stretchXSlider:SetSliderValues(MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH, 0.05)
+        stretchXSlider:SetValue(settings.stretchX or 0)
+        stretchXSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(stretchXSlider, function(value)
+            settings.stretchX = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(stretchXSlider)
+        container:AddChild(stretchXSlider)
+
+        local stretchYSlider = AceGUI:Create("Slider")
+        stretchYSlider:SetLabel("Vertical Stretch / Compress")
+        stretchYSlider:SetSliderValues(MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH, 0.05)
+        stretchYSlider:SetValue(settings.stretchY or 0)
+        stretchYSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(stretchYSlider, function(value)
+            settings.stretchY = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(stretchYSlider)
+        container:AddChild(stretchYSlider)
 
         local alphaSlider = AceGUI:Create("Slider")
         alphaSlider:SetLabel("Texture Alpha")

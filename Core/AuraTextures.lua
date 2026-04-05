@@ -8,10 +8,14 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
 local ipairs = ipairs
+local math_abs = math.abs
+local math_cos = math.cos
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 local math_pi = math.pi
+local math_rad = math.rad
+local math_sin = math.sin
 local pairs = pairs
 local string_find = string.find
 local string_format = string.format
@@ -112,6 +116,10 @@ local DEFAULT_TEXTURE_PAIR_SPACING = 0
 local LEGACY_OUTSIDE_PAIR_SPACING = 0.15
 local MIN_TEXTURE_PAIR_SPACING = -5
 local MAX_TEXTURE_PAIR_SPACING = 5
+local MIN_TEXTURE_ROTATION = -180
+local MAX_TEXTURE_ROTATION = 180
+local MIN_TEXTURE_STRETCH = -0.75
+local MAX_TEXTURE_STRETCH = 2
 
 local function CopyColor(color)
     if type(color) ~= "table" then
@@ -171,6 +179,20 @@ local function NormalizeTextureLayout(locationType)
         return LOCATION_LEFTRIGHT, LEGACY_OUTSIDE_PAIR_SPACING
     end
     return LOCATION_CENTER, DEFAULT_TEXTURE_PAIR_SPACING
+end
+
+local function GetStretchMultiplier(value)
+    return math_max(0.05, 1 + (tonumber(value) or 0))
+end
+
+local function RotateOffset(x, y, radians)
+    if not radians or radians == 0 then
+        return x, y
+    end
+
+    local cosAngle = math_cos(radians)
+    local sinAngle = math_sin(radians)
+    return (x * cosAngle) - (y * sinAngle), (x * sinAngle) + (y * cosAngle)
 end
 
 local function BuildRecentOverlayKey(fileDataID, locationType, scale, r, g, b)
@@ -258,6 +280,9 @@ local function NormalizeAuraTextureSettings(settings)
     settings.scale = Clamp(settings.scale or 1, 0.25, 4)
     settings.alpha = Clamp(settings.alpha or 1, 0.05, 1)
     settings.blendMode = NormalizeBlendMode(settings.blendMode)
+    settings.rotation = Clamp(tonumber(settings.rotation) or 0, MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION)
+    settings.stretchX = Clamp(tonumber(settings.stretchX) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
+    settings.stretchY = Clamp(tonumber(settings.stretchY) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.point = NormalizeAnchorPoint(settings.point or settings.anchor)
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint)
     settings.relativeTo = UI_PARENT_NAME
@@ -324,6 +349,9 @@ function CooldownCompanion:GetTexturePanelSettings(groupOrId, createIfMissing)
         group.textureSettings = {
             locationType = LOCATION_CENTER,
             pairSpacing = DEFAULT_TEXTURE_PAIR_SPACING,
+            rotation = 0,
+            stretchX = 0,
+            stretchY = 0,
             point = "CENTER",
             relativePoint = "CENTER",
             relativeTo = UI_PARENT_NAME,
@@ -350,6 +378,9 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
     settings.blendMode = NormalizeBlendMode(entry.blendMode or settings.blendMode)
     settings.scale = Clamp(settings.scale or 1, 0.25, 4)
     settings.alpha = Clamp(settings.alpha or 1, 0.05, 1)
+    settings.rotation = Clamp(settings.rotation or 0, MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION)
+    settings.stretchX = Clamp(settings.stretchX or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
+    settings.stretchY = Clamp(settings.stretchY or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.pairSpacing = Clamp(settings.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING, MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING)
     settings.point = NormalizeAnchorPoint(settings.point or "CENTER")
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint or "CENTER")
@@ -371,6 +402,9 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
         scale = base and base.scale or entry.scale or 1,
         alpha = base and base.alpha or 1,
         blendMode = NormalizeBlendMode((base and base.blendMode) or entry.blendMode),
+        rotation = base and base.rotation or 0,
+        stretchX = base and base.stretchX or 0,
+        stretchY = base and base.stretchY or 0,
         point = base and base.point or "CENTER",
         relativePoint = base and base.relativePoint or "CENTER",
         relativeTo = UI_PARENT_NAME,
@@ -568,15 +602,6 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
     return entries
 end
 
-local function ResolveTextureDimensions(settings)
-    local dims = LOCATION_DIMENSIONS[settings.locationType] or LOCATION_DIMENSIONS[LOCATION_CENTER]
-    local baseWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
-    local baseHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
-
-    return baseWidth * dims.width * settings.scale,
-        baseHeight * dims.height * settings.scale
-end
-
 local function ApplyTextureSource(texture, settings)
     if settings.sourceType == "atlas" then
         if type(settings.sourceValue) ~= "string" or not C_Texture.GetAtlasExists(settings.sourceValue) then
@@ -596,7 +621,7 @@ local function ApplyTextureSource(texture, settings)
     return false
 end
 
-local function ApplyTextureVisual(texture, settings, alpha, flipH, flipV)
+local function ApplyTextureVisual(texture, settings, alpha, flipH, flipV, rotationRadians)
     local left, right, top, bottom = 0, 1, 0, 1
     if flipH then
         left, right = 1, 0
@@ -608,7 +633,100 @@ local function ApplyTextureVisual(texture, settings, alpha, flipH, flipV)
     texture:SetBlendMode(settings.blendMode)
     local color = settings.color or { 1, 1, 1, 1 }
     texture:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha)
+    texture:SetRotation(rotationRadians or 0)
     texture:Show()
+end
+
+function CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHeight)
+    local dims = LOCATION_DIMENSIONS[settings.locationType] or LOCATION_DIMENSIONS[LOCATION_CENTER]
+    local pieceWidth = math_max(1, (baseWidth or DEFAULT_TEXTURE_SIZE) * (dims.width or 1) * GetStretchMultiplier(settings.stretchX))
+    local pieceHeight = math_max(1, (baseHeight or DEFAULT_TEXTURE_SIZE) * (dims.height or 1) * GetStretchMultiplier(settings.stretchY))
+    local rotationRadians = math_rad(tonumber(settings.rotation) or 0)
+    local pairSpacing = tonumber(settings.pairSpacing) or DEFAULT_TEXTURE_PAIR_SPACING
+    local gap = 0
+    local pieces = {
+        { centerX = 0, centerY = 0, flipH = false, flipV = false },
+    }
+
+    if dims.layout == "pair_horizontal" then
+        gap = pieceWidth * pairSpacing
+        local centerOffset = (pieceWidth + gap) / 2
+        pieces = {
+            { centerX = -centerOffset, centerY = 0, flipH = false, flipV = false },
+            { centerX = centerOffset, centerY = 0, flipH = true, flipV = false },
+        }
+    elseif dims.layout == "pair_vertical" then
+        gap = pieceHeight * pairSpacing
+        local centerOffset = (pieceHeight + gap) / 2
+        pieces = {
+            { centerX = 0, centerY = -centerOffset, flipH = false, flipV = false },
+            { centerX = 0, centerY = centerOffset, flipH = false, flipV = true },
+        }
+    end
+
+    local rotatedPieceWidth = math_max(1, (math_abs(pieceWidth * math_cos(rotationRadians)) + math_abs(pieceHeight * math_sin(rotationRadians))))
+    local rotatedPieceHeight = math_max(1, (math_abs(pieceWidth * math_sin(rotationRadians)) + math_abs(pieceHeight * math_cos(rotationRadians))))
+    local minLeft, maxRight = nil, nil
+    local minBottom, maxTop = nil, nil
+
+    for _, piece in ipairs(pieces) do
+        local centerX, centerY = RotateOffset(piece.centerX, piece.centerY, rotationRadians)
+        piece.centerX = centerX
+        piece.centerY = centerY
+
+        local left = centerX - (rotatedPieceWidth / 2)
+        local right = centerX + (rotatedPieceWidth / 2)
+        local bottom = centerY - (rotatedPieceHeight / 2)
+        local top = centerY + (rotatedPieceHeight / 2)
+
+        minLeft = minLeft and math_min(minLeft, left) or left
+        maxRight = maxRight and math_max(maxRight, right) or right
+        minBottom = minBottom and math_min(minBottom, bottom) or bottom
+        maxTop = maxTop and math_max(maxTop, top) or top
+    end
+
+    return {
+        rotationRadians = rotationRadians,
+        pieceWidth = pieceWidth,
+        pieceHeight = pieceHeight,
+        rotatedPieceWidth = rotatedPieceWidth,
+        rotatedPieceHeight = rotatedPieceHeight,
+        boundsWidth = math_max(1, (maxRight or (rotatedPieceWidth / 2)) - (minLeft or -(rotatedPieceWidth / 2))),
+        boundsHeight = math_max(1, (maxTop or (rotatedPieceHeight / 2)) - (minBottom or -(rotatedPieceHeight / 2))),
+        pieces = pieces,
+        layout = dims.layout or "single",
+        gap = gap,
+    }
+end
+
+local function LayoutTexturePieces(host, settings, geometry, alpha)
+    local textures = {
+        host.primaryTexture,
+        host.secondaryTexture,
+    }
+    local shown = false
+
+    for index, texture in ipairs(textures) do
+        local piece = geometry.pieces[index]
+        if not texture or not piece then
+            if texture then
+                texture:Hide()
+            end
+        else
+            texture:ClearAllPoints()
+            texture:SetSize(geometry.pieceWidth, geometry.pieceHeight)
+            texture:SetPoint("CENTER", host, "CENTER", piece.centerX, piece.centerY)
+
+            if ApplyTextureSource(texture, settings) then
+                ApplyTextureVisual(texture, settings, alpha, piece.flipH, piece.flipV, geometry.rotationRadians)
+                shown = true
+            else
+                texture:Hide()
+            end
+        end
+    end
+
+    return shown
 end
 
 local function CreateAuraTextureOutline(host)
@@ -957,120 +1075,6 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     button.auraTextureHost = nil
 end
 
-local function GetStandaloneLayout(settings, width, height)
-    local dims = LOCATION_DIMENSIONS[settings.locationType] or LOCATION_DIMENSIONS[LOCATION_CENTER]
-    local pairSpacing = settings.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING
-
-    local function GetHorizontalSpan(pieceWidth, gap)
-        local primaryLeft = (-(gap / 2)) - pieceWidth
-        local primaryRight = -(gap / 2)
-        local secondaryLeft = gap / 2
-        local secondaryRight = secondaryLeft + pieceWidth
-        return math_max(primaryRight, secondaryRight) - math_min(primaryLeft, secondaryLeft)
-    end
-
-    local function GetVerticalSpan(pieceHeight, gap)
-        local bottomBottom = (-(gap / 2)) - pieceHeight
-        local bottomTop = -(gap / 2)
-        local topBottom = gap / 2
-        local topTop = topBottom + pieceHeight
-        return math_max(bottomTop, topTop) - math_min(bottomBottom, topBottom)
-    end
-
-    if dims.layout == "pair_horizontal" then
-        local gap = width * pairSpacing
-        return dims, GetHorizontalSpan(width, gap), height, gap
-    end
-    if dims.layout == "pair_vertical" then
-        local gap = height * pairSpacing
-        return dims, width, GetVerticalSpan(height, gap), gap
-    end
-
-    return dims, width, height, 0
-end
-
-local function LayoutSingleTexture(host, settings, dims, width, height, alpha)
-    local primary = host.primaryTexture
-    local secondary = host.secondaryTexture
-    if not primary or not secondary then
-        return false
-    end
-
-    primary:ClearAllPoints()
-    primary:SetSize(width, height)
-
-    primary:SetPoint(dims.point, host, dims.relPoint, 0, 0)
-    secondary:Hide()
-
-    if not ApplyTextureSource(primary, settings) then
-        primary:Hide()
-        return false
-    end
-
-    ApplyTextureVisual(primary, settings, alpha, dims.flipH, dims.flipV)
-    return true
-end
-
-local function LayoutHorizontalPair(host, settings, width, height, alpha, gap)
-    local primary = host.primaryTexture
-    local secondary = host.secondaryTexture
-    if not primary or not secondary then
-        return false
-    end
-
-    primary:ClearAllPoints()
-    secondary:ClearAllPoints()
-    primary:SetSize(width, height)
-    secondary:SetSize(width, height)
-    primary:SetPoint("RIGHT", host, "CENTER", -(gap / 2), 0)
-    secondary:SetPoint("LEFT", host, "CENTER", gap / 2, 0)
-
-    local shownPrimary = ApplyTextureSource(primary, settings)
-    local shownSecondary = ApplyTextureSource(secondary, settings)
-    if shownPrimary then
-        ApplyTextureVisual(primary, settings, alpha, false, false)
-    else
-        primary:Hide()
-    end
-    if shownSecondary then
-        ApplyTextureVisual(secondary, settings, alpha, true, false)
-    else
-        secondary:Hide()
-    end
-
-    return shownPrimary or shownSecondary
-end
-
-local function LayoutVerticalPair(host, settings, width, height, alpha, gap)
-    local primary = host.primaryTexture
-    local secondary = host.secondaryTexture
-    if not primary or not secondary then
-        return false
-    end
-
-    primary:ClearAllPoints()
-    secondary:ClearAllPoints()
-    primary:SetSize(width, height)
-    secondary:SetSize(width, height)
-    primary:SetPoint("BOTTOM", host, "CENTER", 0, -(gap / 2))
-    secondary:SetPoint("TOP", host, "CENTER", 0, gap / 2)
-
-    local shownPrimary = ApplyTextureSource(primary, settings)
-    local shownSecondary = ApplyTextureSource(secondary, settings)
-    if shownPrimary then
-        ApplyTextureVisual(primary, settings, alpha, false, false)
-    else
-        primary:Hide()
-    end
-    if shownSecondary then
-        ApplyTextureVisual(secondary, settings, alpha, false, true)
-    else
-        secondary:Hide()
-    end
-
-    return shownPrimary or shownSecondary
-end
-
 local function IsTexturePanelEditingButton(button)
     local CS = ST._configState
     if not CS or not CS.configFrame or not CS.configFrame.frame or not CS.configFrame.frame:IsShown() then
@@ -1179,27 +1183,21 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         visibilityAlpha = button._rawVisibilityAlphaOverride or 1
     end
     local alpha = Clamp(baseAlpha * visibilityAlpha, 0, 1)
-    local width, height = ResolveTextureDimensions(settings)
-    local dims, totalWidth, totalHeight, gap = GetStandaloneLayout(settings, width, height)
+    local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
+    local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
+    local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
 
     host:SetFrameStrata(button:GetFrameStrata())
     host:SetFrameLevel((button:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host)
-    host:SetSize(math_max(totalWidth, 1), math_max(totalHeight, 1))
+    host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
     if not host._isDragging then
         host:ClearAllPoints()
         host:SetPoint(settings.point, relativeFrame, settings.relativePoint, settings.x, settings.y)
     end
     host:Show()
 
-    local shown
-    if dims.layout == "pair_horizontal" then
-        shown = LayoutHorizontalPair(host, settings, width, height, alpha, gap)
-    elseif dims.layout == "pair_vertical" then
-        shown = LayoutVerticalPair(host, settings, width, height, alpha, gap)
-    else
-        shown = LayoutSingleTexture(host, settings, dims, width, height, alpha, gap)
-    end
+    local shown = LayoutTexturePieces(host, settings, geometry, alpha)
 
     if not shown then
         self:HideAuraTextureVisual(button)
