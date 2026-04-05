@@ -7,12 +7,34 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.11",
         "1.10.28",
         "1.10.27",
         "1.10.26",
         "1.10.25",
     },
     entries = {
+        ["1.11"] = {
+            markdown = [[
+## New Features
+
+- **Custom keybind text:** Icon buttons now support custom keybind text, letting you override what's shown in the keybind corner of any icon.
+
+## Polish | QoL
+
+- **Drag and Drop 2.0:** A top-to-bottom overhaul of drag-and-drop across the config, with animated previews and smarter drop targeting.
+  - **Column 1 drag-and-drop:** Sections, folders, and unloaded spells can now be reordered with refined drop targets and stable previews.
+  - **Column 2 drag-and-drop:** Panels now animate smoothly as you drag, with cleaner gap placement and preview opacity.
+  - **Resource bar layout and order:** Attached resource bars now support mirrored drag-and-drop reordering with a dedicated layout preview.
+  - ! **The browse other characters toggle has been moved to top right button cluster to accomodate the new drag-and-drop system**
+
+- **Column 1 onboarding:** First-time group setup and empty sections now show friendly placeholder text instead of being empty, with proper text wrapping in Column 1.
+
+## Bug Fixes
+
+- **Astral Power on non-Balance specs:** Astral Power is now hidden for druids that are not in their Balance spec.
+]],
+        },
         ["1.10.28"] = {
             markdown = [[
 ## Bug Fixes
