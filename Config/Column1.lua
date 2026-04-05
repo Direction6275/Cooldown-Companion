@@ -1524,7 +1524,7 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Render a section (global or character)
-    local function RenderSection(section, sectionGroupIds, headingText, headingColor)
+    local function RenderSection(section, sectionGroupIds, headingText, headingColor, options)
         local items, folderChildContainers = BuildSectionItems(section, sectionGroupIds)
 
         -- Partition into loaded (active) and unloaded (inactive)
@@ -1546,6 +1546,11 @@ local function RefreshColumn1(preserveDrag)
 
         local isEmpty = #loadedItems == 0 and #unloadedItems == 0
         if isEmpty and not CS.showPhantomSections then return end
+
+        local useUnloadedOnlyHeading = options
+            and options.preferUnloadedHeading
+            and #loadedItems == 0
+            and #unloadedItems > 0
 
         local heading = AceGUI:Create("Label")
         heading:SetFullWidth(true)
@@ -1585,8 +1590,8 @@ local function RefreshColumn1(preserveDrag)
         end
         CS.col1Scroll:AddChild(heading)
         SetupColumn1MarkerRow(heading, {
-            text = headingText,
-            color = headingColor,
+            text = useUnloadedOnlyHeading and "Unloaded Groups" or headingText,
+            color = useUnloadedOnlyHeading and { 0.53, 0.53, 0.53 } or headingColor,
         })
 
         TrackRenderedRow({
@@ -1602,7 +1607,12 @@ local function RefreshColumn1(preserveDrag)
 
         if isEmpty and CS.showPhantomSections then
             local placeholder = AceGUI:Create("Label")
-            placeholder:SetText("|cff888888Drop here to move|r")
+            if section == "global" then
+                placeholder:SetText("")
+                placeholder:SetHeight(18)
+            else
+                placeholder:SetText("|cff888888Drop here to move|r")
+            end
             placeholder:SetFullWidth(true)
             CS.col1Scroll:AddChild(placeholder)
             TrackRenderedRow({
@@ -1612,8 +1622,8 @@ local function RefreshColumn1(preserveDrag)
                 loadBucket = "marker",
                 acceptsDrop = true,
                 keepVisibleDuringPreview = true,
-                previewProxy = false,
-                layoutOnly = true,
+                previewProxy = true,
+                layoutOnly = section == "global",
             })
             return
         end
@@ -1665,7 +1675,7 @@ local function RefreshColumn1(preserveDrag)
 
         RenderItems(loadedItems, "loaded")
 
-        if #unloadedItems > 0 then
+        if #unloadedItems > 0 and not useUnloadedOnlyHeading then
             local sep = AceGUI:Create("Label")
             sep:SetFullWidth(true)
             sep:SetHeight(18)
@@ -1703,16 +1713,17 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Render sections
-    if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
-        local hasGlobalContent = #globalIds > 0
-        if not hasGlobalContent then
-            for _, folder in pairs(db.folders) do
-                if folder.section == "global" then
-                    hasGlobalContent = true
-                    break
-                end
+    local hasGlobalContent = #globalIds > 0
+    if not hasGlobalContent then
+        for _, folder in pairs(db.folders) do
+            if folder.section == "global" then
+                hasGlobalContent = true
+                break
             end
         end
+    end
+
+    if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
         if hasGlobalContent or CS.showPhantomSections then
             RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
         end
@@ -1734,7 +1745,8 @@ local function RefreshColumn1(preserveDrag)
             "char",
             charIds,
             charName .. "'s Groups",
-            cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 }
+            cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
+            { preferUnloadedHeading = not hasGlobalContent }
         )
     end
 

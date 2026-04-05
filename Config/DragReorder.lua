@@ -1200,6 +1200,11 @@ local function BuildCol1BasePreviewLayout()
         if x and y then
             local label = widget and widget.label
             local image = widget and widget.image
+            local isMarker = rowMeta.isMarker
+            if isMarker == nil and rowMeta.keepVisibleDuringPreview then
+                isMarker = true
+            end
+
             rows[#rows + 1] = {
                 key = table.concat({
                     tostring(rowMeta.kind or "row"),
@@ -1238,7 +1243,7 @@ local function BuildCol1BasePreviewLayout()
                     end
                 end)(),
                 gapAfter = 0,
-                isMarker = rowMeta.isMarker or (rowMeta.keepVisibleDuringPreview and true or nil),
+                isMarker = isMarker,
                 previewProxy = rowMeta.previewProxy ~= false,
                 layoutOnly = rowMeta.layoutOnly and true or false,
                 ownerKind = rowMeta.ownerKind,
@@ -1711,7 +1716,9 @@ local function BuildCol1PreviewModel(source)
 
     local rows = {}
     for _, row in ipairs(base.rows) do
-        if not movedIndexes[row.originalIndex] and not IsCol1AuxOwnedBySource(row, source) then
+        if not movedIndexes[row.originalIndex]
+            and not IsCol1AuxOwnedBySource(row, source)
+        then
             rows[#rows + 1] = CopyCol1PreviewRow(row)
         end
     end
@@ -1982,7 +1989,19 @@ end
 local ClearCol1AnimatedPreview
 local FindCol1SectionDividerTarget
 
-local function ShouldAnimateCol1PreviewForDrop(sourceLoadBucket, dropTarget)
+local function SectionHasLoadedCol1Rows(renderedRows, section)
+    for _, row in ipairs(renderedRows or {}) do
+        if row.section == section
+            and row.loadBucket == "loaded"
+            and (row.kind == "container" or row.kind == "folder")
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function ShouldAnimateCol1PreviewForDrop(sourceLoadBucket, dropTarget, renderedRows)
     if not dropTarget then
         return false
     end
@@ -1992,6 +2011,14 @@ local function ShouldAnimateCol1PreviewForDrop(sourceLoadBucket, dropTarget)
     end
 
     local targetRow = dropTarget.targetRow
+    if sourceLoadBucket == "loaded"
+        and targetRow
+        and targetRow.kind == "unloaded-divider"
+        and not SectionHasLoadedCol1Rows(renderedRows, targetRow.section)
+    then
+        return true
+    end
+
     if targetRow and (targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded") then
         return false
     end
@@ -3571,7 +3598,11 @@ local function StartDragTracking()
                 if dropTarget then
                     ResetDragIndicatorStyle()
                     HideDragIndicator()
-                    local shouldAnimatePreview = ShouldAnimateCol1PreviewForDrop(CS.dragState.sourceLoadBucket, dropTarget)
+                    local shouldAnimatePreview = ShouldAnimateCol1PreviewForDrop(
+                        CS.dragState.sourceLoadBucket,
+                        dropTarget,
+                        CS.dragState.col1RenderedRows
+                    )
                     if not shouldAnimatePreview or not RenderCol1AnimatedPreview({
                         kind = CS.dragState.kind,
                         sourceGroupId = CS.dragState.sourceGroupId,
@@ -3589,11 +3620,17 @@ local function StartDragTracking()
                             ShowFolderDropOverlay(dropTarget.anchorFrame, CS.dragState.scrollWidget)
                         elseif unloadedPlaceholderTarget then
                             HideDragIndicator()
-                        elseif ShouldShowCol1StaticReorderIndicator(CS.dragState.sourceLoadBucket, dropTarget)
+                        elseif ShouldShowCol1StaticReorderIndicator(
+                            CS.dragState.sourceLoadBucket,
+                            dropTarget
+                        )
                             and dropTarget.action == "reorder-before"
                         then
                             ShowDragIndicator(dropTarget.anchorFrame, true, CS.dragState.scrollWidget)
-                        elseif ShouldShowCol1StaticReorderIndicator(CS.dragState.sourceLoadBucket, dropTarget) then
+                        elseif ShouldShowCol1StaticReorderIndicator(
+                            CS.dragState.sourceLoadBucket,
+                            dropTarget
+                        ) then
                             ShowDragIndicator(dropTarget.anchorFrame, false, CS.dragState.scrollWidget)
                         else
                             HideDragIndicator()
