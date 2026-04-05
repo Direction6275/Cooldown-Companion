@@ -246,7 +246,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
-        local text = CooldownCompanion:GetKeybindText(buttonData)
+        local text = CooldownCompanion:GetDisplayedKeybindText(buttonData)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
@@ -902,7 +902,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
-        local text = CooldownCompanion:GetKeybindText(button.buttonData)
+        local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end

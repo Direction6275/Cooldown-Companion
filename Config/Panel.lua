@@ -1527,6 +1527,7 @@ local function CreateConfigPanel()
                 ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
             ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            ST._BuildCustomKeybindSection(scroll, buttonData)
             ST._BuildCustomNameSection(scroll, buttonData)
         elseif tab == "soundalerts" then
             ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)

@@ -27,6 +27,14 @@ local appearanceTabElements = CS.appearanceTabElements
 -- Each builder takes (container, styleTable, refreshCallback) and adds
 -- AceGUI widgets to the container, reading/writing values from styleTable.
 
+local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
+local KEYBIND_CUSTOM_TOOLTIP = {
+    "Show Keybind/Custom Text",
+    {"Shows detected keybind text on icon buttons by default.", 1, 1, 1, true},
+    " ",
+    {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
+}
+
 local function BuildCooldownTextControls(container, styleTable, refreshCallback)
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
@@ -141,7 +149,7 @@ end
 
 local function BuildKeybindTextControls(container, styleTable, refreshCallback)
     local kbCb = AceGUI:Create("CheckBox")
-    kbCb:SetLabel("Show Keybind Text")
+    kbCb:SetLabel(KEYBIND_CUSTOM_LABEL)
     kbCb:SetValue(styleTable.showKeybindText or false)
     kbCb:SetFullWidth(true)
     kbCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -150,6 +158,8 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(kbCb)
+
+    CreateInfoButton(kbCb.frame, kbCb.checkbg, "LEFT", "RIGHT", kbCb.text:GetStringWidth() + 4, 0, KEYBIND_CUSTOM_TOOLTIP, kbCb)
 
     if styleTable.showKeybindText then
         AddAnchorDropdown(container, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback)

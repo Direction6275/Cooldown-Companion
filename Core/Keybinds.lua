@@ -331,11 +331,25 @@ function CooldownCompanion:GetKeybindText(buttonData)
     return nil
 end
 
+-- Return the icon-only display text for keybind overlays.
+-- This intentionally leaves GetKeybindText unchanged so text-mode {keybind}
+-- tokens continue reflecting the detected action bar bind only.
+function CooldownCompanion:GetDisplayedKeybindText(buttonData)
+    if not buttonData then return nil end
+
+    local customText = buttonData.customKeybindText
+    if customText and customText ~= "" then
+        return customText
+    end
+
+    return self:GetKeybindText(buttonData)
+end
+
 -- Refresh keybind text and binding key caches on all buttons.
 function CooldownCompanion:OnKeybindsChanged()
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
-            local text = CooldownCompanion:GetKeybindText(buttonData)
+            local text = CooldownCompanion:GetDisplayedKeybindText(buttonData)
             button.keybindText:SetText(text or "")
             button.keybindText:SetShown(button.style.showKeybindText and text ~= nil)
         end

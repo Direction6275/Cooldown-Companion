@@ -50,6 +50,13 @@ local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
+local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
+local KEYBIND_CUSTOM_TOOLTIP = {
+    "Show Keybind/Custom Text",
+    {"Shows detected keybind text on icon buttons by default.", 1, 1, 1, true},
+    " ",
+    {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
+}
 
 -- Imports from BarModeTabs.lua
 local BuildBarAppearanceTab = ST._BuildBarAppearanceTab
@@ -1219,9 +1226,9 @@ local function BuildAppearanceTab(container)
         AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
     end -- auraStackAdvExpanded + showAuraStackText
 
-    -- Show Keybind Text toggle
+    -- Show Keybind/Custom Text toggle
     local kbCb = AceGUI:Create("CheckBox")
-    kbCb:SetLabel("Show Keybind Text")
+    kbCb:SetLabel(KEYBIND_CUSTOM_LABEL)
     kbCb:SetValue(style.showKeybindText or false)
     kbCb:SetFullWidth(true)
     kbCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1232,7 +1239,17 @@ local function BuildAppearanceTab(container)
     container:AddChild(kbCb)
 
     local kbAdvExpanded, kbAdvBtn = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText)
-    CreateCheckboxPromoteButton(kbCb, kbAdvBtn, "keybindText", group, style)
+    local kbPromoteBtn = CreateCheckboxPromoteButton(kbCb, kbAdvBtn, "keybindText", group, style)
+    local kbInfoAnchor = kbCb.checkbg
+    local kbInfoXOff = kbCb.text:GetStringWidth() + 4
+    if kbPromoteBtn and kbPromoteBtn:IsShown() then
+        kbInfoAnchor = kbPromoteBtn
+        kbInfoXOff = 4
+    elseif kbAdvBtn and kbAdvBtn:IsShown() then
+        kbInfoAnchor = kbAdvBtn
+        kbInfoXOff = 4
+    end
+    CreateInfoButton(kbCb.frame, kbInfoAnchor, "LEFT", "RIGHT", kbInfoXOff, 0, KEYBIND_CUSTOM_TOOLTIP, kbCb)
 
     if style.showKeybindText and kbAdvExpanded then
         -- Keybind uses a hardcoded 4-point anchor (not the full 9-point list)
