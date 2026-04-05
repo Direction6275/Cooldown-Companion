@@ -1147,9 +1147,22 @@ local function SetupColumn1MarkerRow(widget, opts)
     if not widget then
         return
     end
+    if not widget._cdcMarkerWidthHooked then
+        local previousOnWidthSet = widget.OnWidthSet
+        widget.OnWidthSet = function(self, width)
+            if previousOnWidthSet then
+                previousOnWidthSet(self, width)
+            end
+            if self._cdcMarkerOpts then
+                ApplyColumn1MarkerAppearance(self, self._cdcMarkerOpts)
+            end
+        end
+        widget._cdcMarkerWidthHooked = true
+    end
     if not widget._cdcMarkerReleaseHooked then
         local previousOnRelease = widget.OnRelease
         widget.OnRelease = function(self, ...)
+            self._cdcMarkerOpts = nil
             ClearColumn1MarkerAppearance(self)
             if previousOnRelease then
                 previousOnRelease(self, ...)
@@ -1168,6 +1181,7 @@ local function SetupColumn1MarkerRow(widget, opts)
     if widget.SetText then
         widget:SetText((opts and opts.text) or "")
     end
+    widget._cdcMarkerOpts = opts
     ApplyColumn1MarkerAppearance(widget, opts)
 end
 
