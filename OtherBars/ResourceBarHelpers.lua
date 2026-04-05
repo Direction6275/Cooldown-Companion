@@ -33,6 +33,7 @@ local CLASS_RESOURCES = RB.CLASS_RESOURCES
 local SPEC_RESOURCES = RB.SPEC_RESOURCES
 local DRUID_FORM_RESOURCES = RB.DRUID_FORM_RESOURCES
 local DRUID_DEFAULT_RESOURCES = RB.DRUID_DEFAULT_RESOURCES
+local DRUID_BALANCE_SPEC_ID = 102
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 
@@ -228,10 +229,18 @@ local function IsHealerSpec()
     return false
 end
 
+local function IsAstralPowerAvailableForCurrentDruidSpec()
+    return GetCurrentSpecID() == DRUID_BALANCE_SPEC_ID
+end
+
 local function GetDruidResources()
     local formID = GetShapeshiftFormID()
     if formID and DRUID_FORM_RESOURCES[formID] then
-        return DRUID_FORM_RESOURCES[formID]
+        local resources = DRUID_FORM_RESOURCES[formID]
+        if formID == 31 and not IsAstralPowerAvailableForCurrentDruidSpec() then
+            return DRUID_DEFAULT_RESOURCES
+        end
+        return resources
     end
     return DRUID_DEFAULT_RESOURCES
 end
@@ -570,6 +579,7 @@ RB.NormalizeCustomAuraIndependentVerticalFillDirection = NormalizeCustomAuraInde
 RB.IsCustomAuraBarIndependent = IsCustomAuraBarIndependent
 RB.NormalizeCustomAuraStackTextFormat = NormalizeCustomAuraStackTextFormat
 RB.IsHealerSpec = IsHealerSpec
+RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.GetDruidResources = GetDruidResources
 RB.DetermineActiveResources = DetermineActiveResources
 RB.GetResourceColors = GetResourceColors
