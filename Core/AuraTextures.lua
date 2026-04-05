@@ -11,6 +11,7 @@ local ipairs = ipairs
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
+local math_pi = math.pi
 local pairs = pairs
 local string_find = string.find
 local string_format = string.format
@@ -44,6 +45,10 @@ local MAX_ATLAS_SEARCH_RESULTS = 200
 local MAX_RECENT_OVERLAYS = 200
 local DEFAULT_TEXTURE_SIZE = 128
 local UI_PARENT_NAME = "UIParent"
+local NUDGE_BTN_SIZE = 12
+local NUDGE_GAP = 2
+local NUDGE_REPEAT_DELAY = 0.5
+local NUDGE_REPEAT_INTERVAL = 0.05
 
 local LOCATION_LABELS = {
     [LOCATION_CENTER] = "Center",
@@ -639,6 +644,221 @@ local function SetAuraTextureOutlineShown(host, shown)
     end
 end
 
+local function UpdateTextureHostCoordLabel(host, x, y)
+    if host and host.coordLabel and host.coordLabel.text then
+        host.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x or 0, y or 0))
+    end
+end
+
+local function SaveTextureHostPosition(host)
+    if not host then
+        return
+    end
+
+    local owner = host._ownerButton
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+    if not settings or not settings.sourceType then
+        return
+    end
+
+    local point, _, relPoint, x, y = host:GetPoint(1)
+    settings.point = NormalizeAnchorPoint(point)
+    settings.relativePoint = NormalizeAnchorPoint(relPoint)
+    settings.relativeTo = UI_PARENT_NAME
+    settings.x = math_floor(((x or 0) * 10) + 0.5) / 10
+    settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
+
+    UpdateTextureHostCoordLabel(host, settings.x, settings.y)
+    CooldownCompanion:UpdateAuraTextureVisual(owner)
+    if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function EnsureAuraTextureNudger(host)
+    if host.nudger then
+        return
+    end
+
+    local nudger = CreateFrame("Frame", nil, host.dragHandle, "BackdropTemplate")
+    nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
+    nudger:SetPoint("BOTTOM", host.dragHandle, "TOP", 0, 2)
+    nudger:SetFrameStrata(host.dragHandle:GetFrameStrata())
+    nudger:SetFrameLevel(host.dragHandle:GetFrameLevel() + 5)
+    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    ST.CreatePixelBorders(nudger)
+    nudger.buttons = {}
+
+    local directions = {
+        { atlas = "common-dropdown-icon-back", rotation = -math_pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },
+        { atlas = "common-dropdown-icon-next", rotation = -math_pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },
+        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },
+        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },
+    }
+
+    local function DoNudge(dx, dy)
+        host:AdjustPointsOffset(dx, dy)
+        local _, _, _, x, y = host:GetPoint()
+        local owner = host._ownerButton
+        local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+        local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+        if settings then
+            settings.x = math_floor((x or 0) * 10 + 0.5) / 10
+            settings.y = math_floor((y or 0) * 10 + 0.5) / 10
+        end
+        UpdateTextureHostCoordLabel(host, x, y)
+    end
+
+    for _, dir in ipairs(directions) do
+        local btn = CreateFrame("Button", nil, nudger)
+        btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
+        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
+        btn:EnableMouse(true)
+        nudger.buttons[#nudger.buttons + 1] = btn
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetAtlas(dir.atlas)
+        arrow:SetAllPoints()
+        arrow:SetRotation(dir.rotation)
+        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+        btn.arrow = arrow
+
+        btn:SetScript("OnEnter", function(self)
+            self.arrow:SetVertexColor(1, 1, 1, 1)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
+            if self.nudgeDelayTimer then
+                self.nudgeDelayTimer:Cancel()
+                self.nudgeDelayTimer = nil
+            end
+            if self.nudgeTicker then
+                self.nudgeTicker:Cancel()
+                self.nudgeTicker = nil
+            end
+            SaveTextureHostPosition(host)
+        end)
+
+        btn:SetScript("OnMouseDown", function(self)
+            DoNudge(dir.dx, dir.dy)
+            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
+                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
+                    DoNudge(dir.dx, dir.dy)
+                end)
+            end)
+        end)
+
+        btn:SetScript("OnMouseUp", function(self)
+            if self.nudgeDelayTimer then
+                self.nudgeDelayTimer:Cancel()
+                self.nudgeDelayTimer = nil
+            end
+            if self.nudgeTicker then
+                self.nudgeTicker:Cancel()
+                self.nudgeTicker = nil
+            end
+            SaveTextureHostPosition(host)
+        end)
+    end
+
+    host.nudger = nudger
+end
+
+local function EnsureAuraTextureDragHandle(host)
+    if host.dragHandle then
+        return
+    end
+
+    local dragHandle = CreateFrame("Frame", nil, host, "BackdropTemplate")
+    dragHandle:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 2)
+    dragHandle:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 2)
+    dragHandle:SetHeight(15)
+    dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    ST.CreatePixelBorders(dragHandle)
+    dragHandle:RegisterForDrag("LeftButton")
+    dragHandle:EnableMouse(true)
+
+    local text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("CENTER")
+    text:SetTextColor(1, 1, 1, 1)
+    dragHandle.text = text
+
+    local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
+    coordLabel:SetHeight(15)
+    coordLabel:SetPoint("TOPLEFT", dragHandle, "BOTTOMLEFT", 0, -2)
+    coordLabel:SetPoint("TOPRIGHT", dragHandle, "BOTTOMRIGHT", 0, -2)
+    coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    ST.CreatePixelBorders(coordLabel)
+    coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    coordLabel.text:SetPoint("CENTER")
+    coordLabel.text:SetTextColor(1, 1, 1, 1)
+
+    dragHandle:SetScript("OnDragStart", function()
+        if host._dragEnabled then
+            host._isDragging = true
+            host:StartMoving()
+        end
+    end)
+    dragHandle:SetScript("OnDragStop", function()
+        host._isDragging = nil
+        host:StopMovingOrSizing()
+        SaveTextureHostPosition(host)
+    end)
+    dragHandle:SetScript("OnMouseUp", function(_, button)
+        if button ~= "MiddleButton" then
+            return
+        end
+
+        local owner = host._ownerButton
+        local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+        if not group then
+            return
+        end
+
+        group.locked = nil
+        CooldownCompanion:RefreshGroupFrame(owner._groupId)
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        CooldownCompanion:Print((group.name or "Texture Panel") .. " locked.")
+    end)
+
+    host.dragHandle = dragHandle
+    host.coordLabel = coordLabel
+    EnsureAuraTextureNudger(host)
+end
+
+local function SyncAuraTextureControlLevels(host)
+    if not host then
+        return
+    end
+
+    local strata = host:GetFrameStrata()
+    local baseLevel = host:GetFrameLevel() or 1
+
+    if host.dragHandle then
+        host.dragHandle:SetFrameStrata(strata)
+        host.dragHandle:SetFrameLevel(baseLevel + 5)
+    end
+    if host.coordLabel then
+        host.coordLabel:SetFrameStrata(strata)
+        host.coordLabel:SetFrameLevel(baseLevel + 6)
+    end
+    if host.nudger then
+        host.nudger:SetFrameStrata(strata)
+        host.nudger:SetFrameLevel(baseLevel + 10)
+        for index, btn in ipairs(host.nudger.buttons or {}) do
+            btn:SetFrameStrata(strata)
+            btn:SetFrameLevel(baseLevel + 11 + index)
+        end
+    end
+end
+
 local function EnsureAuraTextureHost(button)
     if button.auraTextureHost then
         return button.auraTextureHost
@@ -647,7 +867,6 @@ local function EnsureAuraTextureHost(button)
     local host = CreateFrame("Frame", nil, UIParent)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
-    host:RegisterForDrag("LeftButton")
     host:EnableMouse(false)
     host:Hide()
     host._ownerButton = button
@@ -663,33 +882,18 @@ local function EnsureAuraTextureHost(button)
         if not self._dragEnabled then
             return
         end
+        self._isDragging = true
         self:StartMoving()
     end)
 
     host:SetScript("OnDragStop", function(self)
+        self._isDragging = nil
         self:StopMovingOrSizing()
-
-        local owner = self._ownerButton
-        local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-        local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
-        if not settings or not settings.sourceType then
-            return
-        end
-
-        local point, _, relPoint, x, y = self:GetPoint(1)
-        settings.point = NormalizeAnchorPoint(point)
-        settings.relativePoint = NormalizeAnchorPoint(relPoint)
-        settings.relativeTo = UI_PARENT_NAME
-        settings.x = math_floor(((x or 0) * 10) + 0.5) / 10
-        settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
-
-        CooldownCompanion:UpdateAuraTextureVisual(owner)
-        if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
-            CooldownCompanion:RefreshConfigPanel()
-        end
+        SaveTextureHostPosition(self)
     end)
 
     CreateAuraTextureOutline(host)
+    EnsureAuraTextureDragHandle(host)
     button.auraTextureHost = host
     return host
 end
@@ -700,11 +904,34 @@ function CooldownCompanion:HideAuraTextureVisual(button)
         return
     end
 
+    if host._isDragging then
+        host._isDragging = nil
+        host:StopMovingOrSizing()
+    end
     host.primaryTexture:Hide()
     host.secondaryTexture:Hide()
     host._dragEnabled = nil
     host:EnableMouse(false)
     SetAuraTextureOutlineShown(host, false)
+    if host.dragHandle then
+        host.dragHandle:Hide()
+    end
+    if host.coordLabel then
+        host.coordLabel:Hide()
+    end
+    if host.nudger then
+        for _, btn in ipairs(host.nudger.buttons or {}) do
+            if btn.nudgeDelayTimer then
+                btn.nudgeDelayTimer:Cancel()
+                btn.nudgeDelayTimer = nil
+            end
+            if btn.nudgeTicker then
+                btn.nudgeTicker:Cancel()
+                btn.nudgeTicker = nil
+            end
+        end
+        host.nudger:Hide()
+    end
     host:Hide()
 end
 
@@ -893,12 +1120,15 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     local settings = ResolveActiveAuraTextureSettings(button)
     local isEditing = IsTexturePanelEditingButton(button)
+    local isUnlocked = group and group.locked == false
     local showTexture = false
 
     if settings then
         if type(button._auraTexturePreviewSelection) == "table" then
             showTexture = true
         elseif isEditing then
+            showTexture = true
+        elseif isUnlocked then
             showTexture = true
         elseif button:GetParent() and button:GetParent():IsShown() and not button._visibilityHidden then
             showTexture = true
@@ -922,9 +1152,12 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     host:SetFrameStrata(button:GetFrameStrata())
     host:SetFrameLevel((button:GetFrameLevel() or 1) + 20)
+    SyncAuraTextureControlLevels(host)
     host:SetSize(math_max(totalWidth, 1), math_max(totalHeight, 1))
-    host:ClearAllPoints()
-    host:SetPoint(settings.point, relativeFrame, settings.relativePoint, settings.x, settings.y)
+    if not host._isDragging then
+        host:ClearAllPoints()
+        host:SetPoint(settings.point, relativeFrame, settings.relativePoint, settings.x, settings.y)
+    end
     host:Show()
 
     local shown
@@ -946,9 +1179,24 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local savedSettings = group and group.textureSettings or nil
-    host._dragEnabled = isEditing and type(savedSettings) == "table" and savedSettings.sourceType ~= nil
-    host:EnableMouse(host._dragEnabled == true)
-    SetAuraTextureOutlineShown(host, isEditing)
+    host._dragEnabled = isUnlocked and type(savedSettings) == "table" and savedSettings.sourceType ~= nil
+    host:EnableMouse(false)
+    SetAuraTextureOutlineShown(host, false)
+    if host.dragHandle and host.coordLabel then
+        host.dragHandle.text:SetText(group and group.name or "Texture Panel")
+        if host._isDragging then
+            local _, _, _, currentX, currentY = host:GetPoint()
+            UpdateTextureHostCoordLabel(host, currentX, currentY)
+        else
+            UpdateTextureHostCoordLabel(host, settings.x, settings.y)
+        end
+        local showHeader = host._dragEnabled == true
+        host.dragHandle:SetShown(showHeader)
+        host.coordLabel:SetShown(showHeader)
+        if host.nudger then
+            host.nudger:SetShown(showHeader)
+        end
+    end
     if button:GetAlpha() ~= 0 then
         button:SetAlpha(0)
         button._lastVisAlpha = 0
