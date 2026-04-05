@@ -193,6 +193,9 @@ local function RefreshColumn3()
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                 CS.panelSettingsTab = tab
+                if tab ~= "effects" then
+                    CooldownCompanion:ClearAllTextureIndicatorPreviews()
+                end
                 for _, btn in ipairs(CS.tabInfoButtons) do
                     btn:ClearAllPoints(); btn:Hide(); btn:SetParent(nil)
                 end
@@ -232,9 +235,8 @@ local function RefreshColumn3()
 
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         local isTextMode = group and group.displayMode == "text"
-        local isTextureMode = group and group.displayMode == "textures"
         local tabs = { { value = "appearance", text = "Appearance" } }
-        if not isTextMode and not isTextureMode then
+        if not isTextMode then
             tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
         end
         tabs[#tabs + 1] = { value = "layout", text = "Layout" }
@@ -242,7 +244,7 @@ local function RefreshColumn3()
         col3Normal._panelTabGroup:SetTabs(tabs)
 
         -- Migrate stale tab / mode redirects
-        if (isTextMode or isTextureMode) and CS.panelSettingsTab == "effects" then
+        if isTextMode and CS.panelSettingsTab == "effects" then
             CS.panelSettingsTab = "appearance"
         end
 

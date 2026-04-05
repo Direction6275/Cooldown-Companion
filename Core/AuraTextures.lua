@@ -7,6 +7,9 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
+local C_Item_IsUsableItem = C_Item.IsUsableItem
+local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
+local GetTime = GetTime
 local ipairs = ipairs
 local math_abs = math.abs
 local math_cos = math.cos
@@ -120,6 +123,64 @@ local MIN_TEXTURE_ROTATION = -180
 local MAX_TEXTURE_ROTATION = 180
 local MIN_TEXTURE_STRETCH = -0.75
 local MAX_TEXTURE_STRETCH = 2
+local TEXTURE_INDICATOR_EFFECT_NONE = "none"
+local TEXTURE_INDICATOR_EFFECT_PULSE = "pulse"
+local TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = "colorShift"
+local TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND = "shrinkExpand"
+local TEXTURE_INDICATOR_EFFECT_BOUNCE = "bounce"
+local MIN_TEXTURE_INDICATOR_SPEED = 0.1
+local MAX_TEXTURE_INDICATOR_SPEED = 2.0
+local DEFAULT_TEXTURE_INDICATOR_SPEED = 0.5
+local DEFAULT_TEXTURE_PULSE_ALPHA = 0.45
+local DEFAULT_TEXTURE_SHRINK_SCALE = 0.82
+local DEFAULT_TEXTURE_BOUNCE_PIXELS = 18
+
+local TEXTURE_INDICATOR_SECTION_ORDER = {
+    "proc",
+    "aura",
+    "pandemic",
+    "ready",
+    "unusable",
+}
+
+local TEXTURE_INDICATOR_DEFAULTS = {
+    proc = {
+        enabled = false,
+        effectType = TEXTURE_INDICATOR_EFFECT_PULSE,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+        color = { 1, 1, 1, 1 },
+        combatOnly = false,
+    },
+    aura = {
+        enabled = false,
+        effectType = TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+        color = { 1, 0.84, 0, 1 },
+        combatOnly = false,
+        invert = false,
+    },
+    pandemic = {
+        enabled = false,
+        effectType = TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+        color = { 1, 0.5, 0, 1 },
+        combatOnly = false,
+    },
+    ready = {
+        enabled = false,
+        effectType = TEXTURE_INDICATOR_EFFECT_BOUNCE,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+        color = { 0.2, 1, 0.2, 1 },
+        combatOnly = false,
+    },
+    unusable = {
+        enabled = false,
+        effectType = TEXTURE_INDICATOR_EFFECT_PULSE,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+        color = { 1, 0.35, 0.35, 1 },
+        combatOnly = false,
+    },
+}
 
 local function CopyColor(color)
     if type(color) ~= "table" then
@@ -147,6 +208,54 @@ local function NormalizeBlendMode(mode)
         return normalized
     end
     return "ADD"
+end
+
+local function NormalizeTextureIndicatorEffect(effectType)
+    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE
+        or effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
+        or effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND
+        or effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+        return effectType
+    end
+    return TEXTURE_INDICATOR_EFFECT_NONE
+end
+
+local function NormalizeTextureIndicatorSection(sectionKey, sectionData)
+    local defaults = TEXTURE_INDICATOR_DEFAULTS[sectionKey]
+    if not defaults then
+        return nil
+    end
+
+    sectionData = type(sectionData) == "table" and sectionData or {}
+    sectionData.enabled = sectionData.enabled == true
+    sectionData.effectType = NormalizeTextureIndicatorEffect(sectionData.effectType or defaults.effectType)
+    sectionData.speed = Clamp(tonumber(sectionData.speed) or defaults.speed or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    sectionData.color = CopyColor(sectionData.color) or CopyColor(defaults.color) or { 1, 1, 1, 1 }
+    sectionData.combatOnly = sectionData.combatOnly == true
+    if defaults.invert ~= nil then
+        sectionData.invert = sectionData.invert == true
+    else
+        sectionData.invert = nil
+    end
+
+    return sectionData
+end
+
+local function NormalizeTextureIndicatorStore(styleTable)
+    if type(styleTable) ~= "table" then
+        return nil
+    end
+
+    if type(styleTable.textureIndicators) ~= "table" then
+        styleTable.textureIndicators = {}
+    end
+
+    local store = styleTable.textureIndicators
+    for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
+        store[sectionKey] = NormalizeTextureIndicatorSection(sectionKey, store[sectionKey])
+    end
+
+    return store
 end
 
 local VALID_POINTS = {
@@ -361,6 +470,30 @@ function CooldownCompanion:GetTexturePanelSettings(groupOrId, createIfMissing)
     end
 
     return NormalizeAuraTextureSettings(group.textureSettings)
+end
+
+function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" then
+        return nil
+    end
+
+    if type(group.style) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.style = {}
+    end
+
+    if type(group.style.textureIndicators) ~= "table" and not createIfMissing then
+        return nil
+    end
+
+    return NormalizeTextureIndicatorStore(group.style)
+end
+
+function CooldownCompanion:GetTextureIndicatorSectionOrder()
+    return TEXTURE_INDICATOR_SECTION_ORDER
 end
 
 function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
@@ -700,6 +833,7 @@ function CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHe
 end
 
 local function LayoutTexturePieces(host, settings, geometry, alpha)
+    local visualRoot = host.visualRoot or host
     local textures = {
         host.primaryTexture,
         host.secondaryTexture,
@@ -715,7 +849,7 @@ local function LayoutTexturePieces(host, settings, geometry, alpha)
         else
             texture:ClearAllPoints()
             texture:SetSize(geometry.pieceWidth, geometry.pieceHeight)
-            texture:SetPoint("CENTER", host, "CENTER", piece.centerX, piece.centerY)
+            texture:SetPoint("CENTER", visualRoot, "CENTER", piece.centerX, piece.centerY)
 
             if ApplyTextureSource(texture, settings) then
                 ApplyTextureVisual(texture, settings, alpha, piece.flipH, piece.flipV, geometry.rotationRadians)
@@ -727,6 +861,317 @@ local function LayoutTexturePieces(host, settings, geometry, alpha)
     end
 
     return shown
+end
+
+local function SetTextureIndicatorBaseVisuals(host)
+    if not host then
+        return
+    end
+
+    local settings = host._activeTextureSettings
+    local geometry = host._activeTextureGeometry
+    if not settings or not geometry then
+        return
+    end
+
+    local color = settings.color or { 1, 1, 1, 1 }
+    local baseAlpha = Clamp((color[4] or 1) * (settings.alpha or 1), 0.05, 1)
+    local textures = {
+        host.primaryTexture,
+        host.secondaryTexture,
+    }
+
+    for index, texture in ipairs(textures) do
+        local piece = geometry.pieces[index]
+        if texture and piece and texture:IsShown() then
+            ApplyTextureVisual(texture, settings, baseAlpha, piece.flipH, piece.flipV, geometry.rotationRadians)
+        end
+    end
+
+    host._indicatorBaseAlpha = baseAlpha
+    host._indicatorBaseColor = CopyColor(color) or { 1, 1, 1, 1 }
+end
+
+local function StopTextureIndicatorAnimation(host, effectType)
+    if not host or not host.visualRoot or not host._textureIndicatorAnimations then
+        return
+    end
+
+    local animData = host._textureIndicatorAnimations[effectType]
+    if not animData or not animData.group then
+        return
+    end
+
+    animData.group:Stop()
+end
+
+local function EnsureTextureIndicatorAnimation(host, effectType)
+    if not host or not host.visualRoot then
+        return nil
+    end
+
+    host._textureIndicatorAnimations = host._textureIndicatorAnimations or {}
+    local existing = host._textureIndicatorAnimations[effectType]
+    if existing then
+        return existing
+    end
+
+    local visualRoot = host.visualRoot
+    local group = visualRoot:CreateAnimationGroup()
+    group:SetLooping("BOUNCE")
+
+    local animData = { group = group }
+    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
+        local alphaAnim = group:CreateAnimation("Alpha")
+        alphaAnim:SetFromAlpha(1)
+        alphaAnim:SetToAlpha(DEFAULT_TEXTURE_PULSE_ALPHA)
+        animData.alpha = alphaAnim
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
+        local scaleAnim = group:CreateAnimation("Scale")
+        scaleAnim:SetScaleFrom(1, 1)
+        scaleAnim:SetScaleTo(DEFAULT_TEXTURE_SHRINK_SCALE, DEFAULT_TEXTURE_SHRINK_SCALE)
+        scaleAnim:SetOrigin("CENTER", 0, 0)
+        animData.scale = scaleAnim
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+        local translation = group:CreateAnimation("Translation")
+        translation:SetOffset(0, DEFAULT_TEXTURE_BOUNCE_PIXELS)
+        animData.translation = translation
+    end
+
+    host._textureIndicatorAnimations[effectType] = animData
+    return animData
+end
+
+local function SetTextureIndicatorAnimation(host, effectType, active, speed, amplitude)
+    if not host or not host.visualRoot then
+        return
+    end
+
+    if not active then
+        StopTextureIndicatorAnimation(host, effectType)
+        if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
+            host.visualRoot:SetAlpha(1)
+        elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
+            host.visualRoot:SetScale(1)
+        elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+            host.visualRoot:ClearAllPoints()
+            host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+        end
+        return
+    end
+
+    local animData = EnsureTextureIndicatorAnimation(host, effectType)
+    if not animData then
+        return
+    end
+
+    speed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE and animData.alpha then
+        animData.alpha:SetDuration(speed)
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND and animData.scale then
+        animData.scale:SetDuration(speed)
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE and animData.translation then
+        animData.translation:SetDuration(speed)
+        animData.translation:SetOffset(0, amplitude or DEFAULT_TEXTURE_BOUNCE_PIXELS)
+    end
+
+    if not animData.group:IsPlaying() then
+        animData.group:Play()
+    end
+end
+
+local function StopTextureColorShift(host)
+    if not host then
+        return
+    end
+
+    host._textureColorShiftActive = nil
+    host:SetScript("OnUpdate", nil)
+    SetTextureIndicatorBaseVisuals(host)
+end
+
+local function StartTextureColorShift(host, shiftColor, speed)
+    if not host then
+        return
+    end
+
+    host._textureColorShiftActive = true
+    host._textureColorShiftColor = CopyColor(shiftColor) or { 1, 1, 1, 1 }
+    host._textureColorShiftSpeed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    local function updateFn(self)
+        if not self._textureColorShiftActive or not self._activeTextureSettings or not self._activeTextureGeometry then
+            StopTextureColorShift(self)
+            return
+        end
+
+        local baseColor = self._indicatorBaseColor or { 1, 1, 1, 1 }
+        local baseAlpha = self._indicatorBaseAlpha or 1
+        local shift = self._textureColorShiftColor or { 1, 1, 1, 1 }
+        local speedNow = self._textureColorShiftSpeed or DEFAULT_TEXTURE_INDICATOR_SPEED
+        local t = 0.5 + 0.5 * math_sin(GetTime() * 2 * math_pi / speedNow)
+        local shiftAlpha = Clamp((shift[4] or 1) * (self._activeTextureSettings.alpha or 1), 0.05, 1)
+        local alpha = baseAlpha + ((shiftAlpha - baseAlpha) * t)
+
+        local primaryTexture = self.primaryTexture
+        if primaryTexture and primaryTexture:IsShown() then
+            primaryTexture:SetVertexColor(
+                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
+                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
+                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
+                alpha
+            )
+        end
+
+        local secondaryTexture = self.secondaryTexture
+        if secondaryTexture and secondaryTexture:IsShown() then
+            secondaryTexture:SetVertexColor(
+                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
+                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
+                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
+                alpha
+            )
+        end
+    end
+    host:SetScript("OnUpdate", updateFn)
+    updateFn(host)
+end
+
+local function StopAllTextureIndicatorEffects(host)
+    if not host or not host.visualRoot then
+        return
+    end
+
+    StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_PULSE)
+    StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND)
+    StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_BOUNCE)
+    host.visualRoot:SetAlpha(1)
+    host.visualRoot:SetScale(1)
+    host.visualRoot:ClearAllPoints()
+    host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+    StopTextureColorShift(host)
+end
+
+local function IsTextureIndicatorSectionActive(button, sectionKey, config)
+    if not button or type(config) ~= "table" or not config.enabled then
+        return false
+    end
+
+    if sectionKey == "proc" and button._textureProcPreview then
+        return true
+    end
+    if sectionKey == "aura" and button._textureAuraPreview then
+        return true
+    end
+    if sectionKey == "pandemic" and button._texturePandemicPreview then
+        return true
+    end
+    if sectionKey == "ready" and button._textureReadyPreview then
+        return true
+    end
+    if sectionKey == "unusable" and button._textureUnusablePreview then
+        return true
+    end
+
+    if config.combatOnly and not InCombatLockdown() then
+        return false
+    end
+
+    if sectionKey == "proc" then
+        return button._procOverlayActive == true
+    end
+
+    if sectionKey == "aura" then
+        if button._auraTrackingReady ~= true or not button._auraSpellID then
+            return false
+        end
+        if config.invert then
+            if button._auraUnit == "target" and not UnitExists("target") then
+                return false
+            end
+            return button._auraActive ~= true
+        end
+        return button._auraActive == true
+    end
+
+    if sectionKey == "pandemic" then
+        return button._auraActive == true and button._inPandemic == true
+    end
+
+    if sectionKey == "ready" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.isPassive or button._noCooldown then
+            return false
+        end
+        return button._desatCooldownActive == false
+    end
+
+    if sectionKey == "unusable" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.isPassive then
+            return false
+        end
+        if buttonData.type == "spell" then
+            return not C_Spell_IsSpellUsable(buttonData.id)
+        end
+        if buttonData.type == "item" or buttonData.type == "equipitem" then
+            return not C_Item_IsUsableItem(buttonData.id)
+        end
+        return false
+    end
+
+    return false
+end
+
+local function ApplyTextureIndicatorEffects(host, button, group)
+    if not host or not button or type(group) ~= "table" then
+        return
+    end
+
+    local indicators = CooldownCompanion:GetTexturePanelIndicatorSettings(group)
+    if not indicators then
+        StopAllTextureIndicatorEffects(host)
+        return
+    end
+
+    local effectStates = {}
+    for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
+        local config = indicators[sectionKey]
+        if IsTextureIndicatorSectionActive(button, sectionKey, config) then
+            local effectType = NormalizeTextureIndicatorEffect(config.effectType)
+            if effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
+                effectStates[effectType] = config
+            end
+        end
+    end
+
+    local bounceAmplitude = math_max(6, math_min(DEFAULT_TEXTURE_BOUNCE_PIXELS, (host._activeTextureGeometry and host._activeTextureGeometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
+
+    SetTextureIndicatorAnimation(
+        host,
+        TEXTURE_INDICATOR_EFFECT_PULSE,
+        effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] ~= nil,
+        effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] and effectStates[TEXTURE_INDICATOR_EFFECT_PULSE].speed or nil
+    )
+    SetTextureIndicatorAnimation(
+        host,
+        TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
+        effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil,
+        effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND].speed or nil
+    )
+    SetTextureIndicatorAnimation(
+        host,
+        TEXTURE_INDICATOR_EFFECT_BOUNCE,
+        effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil,
+        effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE].speed or nil,
+        bounceAmplitude
+    )
+
+    local colorShift = effectStates[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
+    if colorShift then
+        StartTextureColorShift(host, colorShift.color, colorShift.speed)
+    else
+        StopTextureColorShift(host)
+    end
 end
 
 local function CreateAuraTextureOutline(host)
@@ -1001,8 +1446,13 @@ local function EnsureAuraTextureHost(button)
     host:Hide()
     host._ownerButton = button
 
-    local primary = host:CreateTexture(nil, "ARTWORK", nil, 1)
-    local secondary = host:CreateTexture(nil, "ARTWORK", nil, 1)
+    local visualRoot = CreateFrame("Frame", nil, host)
+    visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+    visualRoot:SetSize(1, 1)
+    host.visualRoot = visualRoot
+
+    local primary = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
+    local secondary = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
     primary:Hide()
     secondary:Hide()
     host.primaryTexture = primary
@@ -1034,12 +1484,15 @@ function CooldownCompanion:HideAuraTextureVisual(button)
         return
     end
 
+    StopAllTextureIndicatorEffects(host)
     if host._isDragging then
         host._isDragging = nil
         host:StopMovingOrSizing()
     end
     host.primaryTexture:Hide()
     host.secondaryTexture:Hide()
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host:EnableMouse(false)
     SetAuraTextureOutlineShown(host, false)
@@ -1089,7 +1542,7 @@ local function IsTexturePanelEditingButton(button)
         return false
     end
 
-    if CS.selectedButton == nil and (CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "layout") then
+    if CS.selectedButton == nil and (CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout") then
         return true
     end
 
@@ -1187,6 +1640,9 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     host:SetFrameLevel((button:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host)
     host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+    if host.visualRoot then
+        host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+    end
     if not host._isDragging then
         host:ClearAllPoints()
         host:SetPoint(settings.point, relativeFrame, settings.relativePoint, settings.x, settings.y)
@@ -1203,6 +1659,11 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         end
         return
     end
+
+    host._activeTextureSettings = settings
+    host._activeTextureGeometry = geometry
+    SetTextureIndicatorBaseVisuals(host)
+    ApplyTextureIndicatorEffects(host, button, group)
 
     local savedSettings = group and group.textureSettings or nil
     host._dragEnabled = isUnlocked and type(savedSettings) == "table" and savedSettings.sourceType ~= nil

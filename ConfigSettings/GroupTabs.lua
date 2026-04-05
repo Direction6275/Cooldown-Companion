@@ -89,6 +89,80 @@ local MIN_TEXTURE_ROTATION = -180
 local MAX_TEXTURE_ROTATION = 180
 local MIN_TEXTURE_STRETCH = -0.75
 local MAX_TEXTURE_STRETCH = 2
+local TEXTURE_INDICATOR_EFFECT_OPTIONS = {
+    pulse = "Pulse",
+    colorShift = "Color Shift",
+    shrinkExpand = "Shrink / Expand",
+    bounce = "Bounce",
+}
+local TEXTURE_INDICATOR_EFFECT_ORDER = {
+    "pulse",
+    "colorShift",
+    "shrinkExpand",
+    "bounce",
+}
+local TEXTURE_INDICATOR_SECTION_DEFS = {
+    proc = {
+        label = "Proc",
+        previewText = "Preview Proc Indicator (3s)",
+    },
+    aura = {
+        label = "Aura",
+        previewText = "Preview Aura Indicator (3s)",
+    },
+    pandemic = {
+        label = "Pandemic",
+        previewText = "Preview Pandemic Indicator (3s)",
+    },
+    ready = {
+        label = "Ready",
+        previewText = "Preview Ready Indicator (3s)",
+    },
+    unusable = {
+        label = "Unusable",
+        previewText = "Preview Unusable Indicator (3s)",
+    },
+}
+
+local function GetTextureIndicatorStore(group)
+    return CooldownCompanion:GetTexturePanelIndicatorSettings(group, true)
+end
+
+local function GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
+    local used = {}
+    if type(indicators) ~= "table" then
+        return used
+    end
+
+    for sectionKey, sectionData in pairs(indicators) do
+        if sectionKey ~= currentSectionKey and type(sectionData) == "table" and sectionData.enabled and type(sectionData.effectType) == "string" and sectionData.effectType ~= "none" then
+            used[sectionData.effectType] = true
+        end
+    end
+
+    return used
+end
+
+local function GetTextureIndicatorEffectList(indicators, currentSectionKey)
+    local used = GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
+    local list = {}
+    local order = {}
+    local current = indicators and indicators[currentSectionKey] and indicators[currentSectionKey].effectType or nil
+
+    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+        if effectKey == current or not used[effectKey] then
+            list[effectKey] = TEXTURE_INDICATOR_EFFECT_OPTIONS[effectKey]
+            order[#order + 1] = effectKey
+        end
+    end
+
+    return list, order
+end
+
+local function GetFirstAvailableTextureIndicatorEffect(indicators, currentSectionKey)
+    local _, order = GetTextureIndicatorEffectList(indicators, currentSectionKey)
+    return order[1]
+end
 
 local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
 local PREVIEW_LOCATION_CENTER = SCREEN_LOCATION.Center or 0
@@ -339,6 +413,8 @@ local function BuildLayoutTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    CooldownCompanion:ClearAllTextureIndicatorPreviews()
 
     if group.displayMode == "textures" then
         local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
@@ -813,6 +889,123 @@ local function BuildLayoutTab(container)
 end
 
 
+local function RefreshTextureIndicatorConfig()
+    CooldownCompanion:RefreshAllAuraTextureVisuals()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BuildTextureIndicatorSpeedSlider(container, config, label)
+    local slider = AceGUI:Create("Slider")
+    slider:SetLabel(label)
+    slider:SetSliderValues(0.1, 2.0, 0.05)
+    slider:SetValue(config.speed or 0.5)
+    slider:SetFullWidth(true)
+    slider:SetCallback("OnValueChanged", function(_, _, value)
+        config.speed = value
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+    end)
+    HookSliderEditBox(slider)
+    container:AddChild(slider)
+end
+
+local function BuildTextureIndicatorSection(container, group, indicators, sectionKey)
+    local config = indicators and indicators[sectionKey]
+    local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[sectionKey]
+    if not config or not sectionDef then
+        return
+    end
+
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel(sectionDef.label)
+    enableCb:SetValue(config.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(_, _, value)
+        if value then
+            local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
+            local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
+            local currentEffect = config.effectType
+            if currentEffect == "none" or usedEffects[currentEffect] then
+                if firstAvailable then
+                    config.effectType = firstAvailable
+                else
+                    config.enabled = false
+                    CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
+                    RefreshTextureIndicatorConfig()
+                    return
+                end
+            end
+        end
+
+        config.enabled = value == true
+        RefreshTextureIndicatorConfig()
+    end)
+    container:AddChild(enableCb)
+
+    local advKey = "textureIndicator_" .. sectionKey
+    local advExpanded = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled)
+
+    if not advExpanded or not config.enabled then
+        return
+    end
+
+    local combatCb = AceGUI:Create("CheckBox")
+    combatCb:SetLabel("Show Only In Combat")
+    combatCb:SetValue(config.combatOnly or false)
+    combatCb:SetFullWidth(true)
+    combatCb:SetCallback("OnValueChanged", function(_, _, value)
+        config.combatOnly = value == true
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+    end)
+    container:AddChild(combatCb)
+    ApplyCheckboxIndent(combatCb, 20)
+
+    if sectionKey == "aura" then
+        local invertCb = AceGUI:Create("CheckBox")
+        invertCb:SetLabel("Show When Missing")
+        invertCb:SetValue(config.invert or false)
+        invertCb:SetFullWidth(true)
+        invertCb:SetCallback("OnValueChanged", function(_, _, value)
+            config.invert = value == true
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end)
+        container:AddChild(invertCb)
+        ApplyCheckboxIndent(invertCb, 20)
+    end
+
+    local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
+    local effectDrop = AceGUI:Create("Dropdown")
+    effectDrop:SetLabel("Effect Type")
+    effectDrop:SetList(effectList, effectOrder)
+    effectDrop:SetValue(config.effectType)
+    effectDrop:SetFullWidth(true)
+    effectDrop:SetCallback("OnValueChanged", function(_, _, value)
+        config.effectType = value or "none"
+        RefreshTextureIndicatorConfig()
+    end)
+    container:AddChild(effectDrop)
+
+    if config.effectType == "colorShift" then
+        AddColorPicker(container, config, "color", "Shift Color", { 1, 1, 1, 1 }, true,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end)
+        BuildTextureIndicatorSpeedSlider(container, config, "Shift Duration")
+    elseif config.effectType == "pulse" then
+        BuildTextureIndicatorSpeedSlider(container, config, "Pulse Duration")
+    elseif config.effectType == "shrinkExpand" then
+        BuildTextureIndicatorSpeedSlider(container, config, "Cycle Duration")
+    elseif config.effectType == "bounce" then
+        BuildTextureIndicatorSpeedSlider(container, config, "Bounce Duration")
+    end
+
+    local previewBtn = AceGUI:Create("Button")
+    previewBtn:SetText(sectionDef.previewText)
+    previewBtn:SetFullWidth(true)
+    previewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, 3)
+    end)
+    container:AddChild(previewBtn)
+end
+
 local function BuildEffectsTab(container)
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -832,11 +1025,22 @@ local function BuildEffectsTab(container)
     if not group then return end
     local style = group.style
 
+    CooldownCompanion:ClearAllTextureIndicatorPreviews()
+
     if group.displayMode == "textures" then
-        local label = AceGUI:Create("Label")
-        label:SetText("|cff888888Texture Panels do not use the Indicators tab. Their trigger rules live on the single entry, and their visual controls live in Appearance and Layout.|r")
-        label:SetFullWidth(true)
-        container:AddChild(label)
+        local indicators = GetTextureIndicatorStore(group)
+        if not indicators then
+            return
+        end
+
+        local intro = AceGUI:Create("Label")
+        intro:SetFullWidth(true)
+        intro:SetText("|cff888888Each state can own one effect type. Different effects can stack, but the same effect type cannot be used twice.|r")
+        container:AddChild(intro)
+
+        for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
+            BuildTextureIndicatorSection(container, group, indicators, sectionKey)
+        end
         return
     end
 
@@ -1305,6 +1509,8 @@ local function BuildAppearanceTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    CooldownCompanion:ClearAllTextureIndicatorPreviews()
 
     if group.displayMode == "textures" then
         local settings = CooldownCompanion:GetTexturePanelSettings(group, true)

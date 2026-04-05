@@ -328,6 +328,13 @@ local defaults = {
             barAuraColorShiftEnabled = false,
             barAuraColorShiftSpeed = 0.5,
             barAuraColorShiftColor = {1, 1, 1, 1},
+            textureIndicators = {
+                proc = { enabled = false, effectType = "pulse", speed = 0.5, color = {1, 1, 1, 1}, combatOnly = false },
+                aura = { enabled = false, effectType = "colorShift", speed = 0.5, color = {1, 0.84, 0, 1}, combatOnly = false, invert = false },
+                pandemic = { enabled = false, effectType = "shrinkExpand", speed = 0.5, color = {1, 0.5, 0, 1}, combatOnly = false },
+                ready = { enabled = false, effectType = "bounce", speed = 0.5, color = {0.2, 1.0, 0.2, 1}, combatOnly = false },
+                unusable = { enabled = false, effectType = "pulse", speed = 0.5, color = {1, 0.35, 0.35, 1}, combatOnly = false },
+            },
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
             showKeybindText = false,

@@ -185,6 +185,9 @@ local function RefreshColumn4(container)
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             CS.selectedTab = tab
+            if tab ~= "effects" then
+                CooldownCompanion:ClearAllTextureIndicatorPreviews()
+            end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs
             for _, btn in ipairs(CS.tabInfoButtons) do
@@ -230,11 +233,10 @@ local function RefreshColumn4(container)
     -- Update tabs every refresh — hide Indicators for text mode (info lives in format editor)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isTextMode = group and group.displayMode == "text"
-    local isTextureMode = group and group.displayMode == "textures"
     local tabs = {
         { value = "appearance",      text = "Appearance" },
     }
-    if not isTextMode and not isTextureMode then
+    if not isTextMode then
         tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
     end
     tabs[#tabs + 1] = { value = "layout",          text = "Layout" }
@@ -255,7 +257,7 @@ local function RefreshColumn4(container)
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
     if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
     -- Text mode has no Indicators tab — redirect to Appearance
-    if (isTextMode or isTextureMode) and CS.selectedTab == "effects" then
+    if isTextMode and CS.selectedTab == "effects" then
         CS.selectedTab = "appearance"
     end
 
