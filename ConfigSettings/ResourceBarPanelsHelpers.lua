@@ -66,6 +66,7 @@ local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local CLASS_RESOURCES_CONFIG = RB.CLASS_RESOURCES_CONFIG
 local SPEC_RESOURCES_CONFIG = RB.SPEC_RESOURCES_CONFIG
+local IsAstralPowerAvailableForCurrentDruidSpec = RB.IsAstralPowerAvailableForCurrentDruidSpec
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 
@@ -190,9 +191,18 @@ local function GetConfigActiveResources()
         specID = C_SpecializationInfo.GetSpecializationInfo(specIdx)
     end
 
-    -- For Druid, show all possible resources (user can toggle each)
+    -- For Druid, only expose Astral Power while currently in Balance spec.
     if classID == 11 then
-        return CLASS_RESOURCES_CONFIG[11]
+        if IsAstralPowerAvailableForCurrentDruidSpec() then
+            return CLASS_RESOURCES_CONFIG[11]
+        end
+        local resources = {}
+        for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[11] or {}) do
+            if powerType ~= 8 then
+                resources[#resources + 1] = powerType
+            end
+        end
+        return resources
     end
 
     if specID and SPEC_RESOURCES_CONFIG[specID] then
