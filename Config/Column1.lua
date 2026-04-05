@@ -1635,6 +1635,7 @@ local function RefreshColumn1(preserveDrag)
                                 bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
                                 bar:SetWidth(3)
                                 bar:ClearAllPoints()
+                                bar._cdcFolderId = item.id
                                 bar:SetPoint("TOPLEFT", firstEntry.frame, "TOPLEFT", 0, 0)
                                 bar:SetPoint("BOTTOMLEFT", lastEntry.frame, "BOTTOMLEFT", 0, 0)
                                 bar:Show()

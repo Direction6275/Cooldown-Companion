@@ -1734,7 +1734,9 @@ local function BuildCol1PreviewModel(source)
     local folderGapId
     if source.dropTarget.action == "into-folder" then
         highlightFolderId = source.dropTarget.folderBlockId or source.dropTarget.targetFolderId
-        folderGapId = highlightFolderId
+        if source.kind ~= "folder" then
+            folderGapId = highlightFolderId
+        end
         if not highlightFolderId then
             local targetOriginalIndex = source.dropTarget.rowIndex
             local targetRow = FindCol1BaseRowAtOrAfterOriginalIndex(rows, targetOriginalIndex)
@@ -1750,7 +1752,7 @@ local function BuildCol1PreviewModel(source)
                     width = (template and template.width) or math.max(120, ghostRow.width or 160),
                     height = gapHeight,
                     gapAfter = (template and template.gapAfter) or 0,
-                    folderAccentId = highlightFolderId,
+                    folderAccentId = source.kind ~= "folder" and highlightFolderId or nil,
                 })
             end
         end
@@ -1769,7 +1771,7 @@ local function BuildCol1PreviewModel(source)
             end
         end
 
-        if targetRow then
+        if targetRow and source.kind ~= "folder" then
             if targetRow.kind == "container" and targetRow.inFolder then
                 folderGapId = targetRow.inFolder
             end
@@ -1804,6 +1806,7 @@ local function BuildCol1PreviewModel(source)
         draggedRow = ghostRow,
         highlightRowKey = highlightRowKey,
         highlightFolderId = highlightFolderId,
+        suppressedAccentFolderId = source.kind == "folder" and source.sourceFolderId or nil,
     }
 end
 
@@ -1868,6 +1871,7 @@ end
 
 local function RenderCol1PreviewAccentBars(preview, model)
     local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local suppressedAccentFolderId = model and model.suppressedAccentFolderId
     local ranges = {}
     if classColor and model and model.rows then
         for _, row in ipairs(model.rows) do
@@ -1878,7 +1882,10 @@ local function RenderCol1PreviewAccentBars(preview, model)
                 accentFolderId = row.folderAccentId
             end
 
-            if accentFolderId and not row.layoutOnly then
+            if accentFolderId
+                and accentFolderId ~= suppressedAccentFolderId
+                and not row.layoutOnly
+            then
                 local range = ranges[accentFolderId]
                 if not range then
                     range = {
@@ -1910,6 +1917,34 @@ local function RenderCol1PreviewAccentBars(preview, model)
 
     for i = index + 1, #(preview.accentBars or {}) do
         preview.accentBars[i]:Hide()
+    end
+end
+
+local function SetDraggedFolderAccentBarHidden(source, hidden)
+    if not (source and source.kind == "folder" and source.sourceFolderId) then
+        return
+    end
+
+    local preview = EnsureCol1PreviewHost()
+    if not preview then
+        return
+    end
+
+    for _, region in ipairs(CS.folderAccentBars or {}) do
+        if region and region._cdcFolderId == source.sourceFolderId and region.SetAlpha then
+            if hidden then
+                if preview.hiddenRegions[region] == nil then
+                    preview.hiddenRegions[region] = region:GetAlpha()
+                    region:SetAlpha(0)
+                end
+            else
+                local alpha = preview.hiddenRegions[region]
+                if alpha ~= nil then
+                    region:SetAlpha(alpha)
+                    preview.hiddenRegions[region] = nil
+                end
+            end
+        end
     end
 end
 
@@ -2217,6 +2252,7 @@ end
 
 ClearCol1AnimatedPreview = function()
     SetCol1BaseFramesHidden(false)
+    SetDraggedFolderAccentBarHidden(CS.dragState, false)
     ClearCol1PreviewHost()
 end
 
@@ -2546,6 +2582,33 @@ local function BuildCol1FolderBlockDropResult(renderedRows, folderId, action, ex
     return result
 end
 
+local function BuildCol1FolderReorderBlockTarget(renderedRows, folderId, action, extra)
+    local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not blockInfo then
+        return nil
+    end
+
+    local result = BuildCol1DropResult(action, blockInfo.headerIndex, blockInfo.headerRow, {
+        folderBlockId = folderId,
+        folderBlockFirstRow = blockInfo.firstRow,
+        folderBlockLastRow = blockInfo.lastRow,
+        folderBlockFirstIndex = blockInfo.firstIndex,
+        folderBlockLastIndex = blockInfo.lastIndex,
+        folderBlockPosition = action == "reorder-before" and "before" or "after",
+    })
+    if not result then
+        return nil
+    end
+
+    result.anchorFrame = action == "reorder-after" and blockInfo.lastFrame or blockInfo.firstFrame
+    if extra then
+        for key, value in pairs(extra) do
+            result[key] = value
+        end
+    end
+    return result
+end
+
 local function FindCol1FolderDropTarget(renderedRows, section, folderId)
     if not folderId then
         return nil
@@ -2614,6 +2677,17 @@ local function ResolveCol1FolderBlockHoverTarget(
     end
 
     return BuildCol1FolderBlockDropResult(renderedRows, folderId, "into-folder")
+end
+
+local function ResolveCol1FolderDragBlockHoverTarget(renderedRows, folderId, cursorY)
+    local blockInfo = GetCol1FolderBlockInfo(renderedRows, folderId)
+    if not blockInfo or not cursorY or cursorY > blockInfo.top or cursorY < blockInfo.bottom then
+        return nil
+    end
+
+    local mid = (blockInfo.top + blockInfo.bottom) / 2
+    local action = cursorY > mid and "reorder-before" or "reorder-after"
+    return BuildCol1FolderReorderBlockTarget(renderedRows, folderId, action)
 end
 
 FindCol1SectionDividerTarget = function(renderedRows, section)
@@ -2851,6 +2925,21 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                     sourceSection,
                     sourceFolderId,
                     sourceLoadBucket
+                )
+                if folderBlockTarget then
+                    return folderBlockTarget
+                end
+            end
+        end
+    elseif sourceKind == "folder" then
+        local seenFolderBlocks = {}
+        for _, rowMeta in ipairs(renderedRows) do
+            if rowMeta.kind == "folder" and rowMeta.id and not seenFolderBlocks[rowMeta.id] then
+                seenFolderBlocks[rowMeta.id] = true
+                local folderBlockTarget = ResolveCol1FolderDragBlockHoverTarget(
+                    renderedRows,
+                    rowMeta.id,
+                    cursorY
                 )
                 if folderBlockTarget then
                     return folderBlockTarget
@@ -3834,6 +3923,7 @@ local function StartDragTracking()
             end
         end
         if CS.dragState.phase == "active" then
+            SetDraggedFolderAccentBarHidden(CS.dragState, true)
             if CS.dragState.kind == "layout-slot" then
                 local dropTarget = CS.dragState.layoutDrag
                     and CS.dragState.layoutDrag.resolveDropTarget
