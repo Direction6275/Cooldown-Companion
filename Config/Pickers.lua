@@ -20,9 +20,10 @@ local pickCDMOverlay = nil
 local pickCDMCallback = nil
 local pickAuraTextureOverlay = nil
 local pickAuraTextureCallback = nil
-local AURA_TEXTURE_FILTER_LIBRARY = "library"
+local AURA_TEXTURE_FILTER_SYMBOLS = "symbols"
+local AURA_TEXTURE_FILTER_CLASS_AURAS = "classAuras"
+local AURA_TEXTURE_FILTER_OTHER = "other"
 local AURA_TEXTURE_FILTER_RECENT = "recent"
-local AURA_TEXTURE_FILTER_ATLASES = "atlases"
 
 ------------------------------------------------------------------------
 -- Secret-safe value helpers
@@ -992,7 +993,7 @@ local function StartPickAuraTexture(opts)
 
         local filterLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         filterLabel:SetPoint("TOPLEFT", searchBox, "TOPRIGHT", 24, 12)
-        filterLabel:SetText("Source")
+        filterLabel:SetText("Category")
 
         local filterDrop = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
         filterDrop:SetPoint("TOPLEFT", searchBox, "TOPRIGHT", 8, 10)
@@ -1018,7 +1019,7 @@ local function StartPickAuraTexture(opts)
         overlay.rows = {}
         overlay.rowHeight = 44
         overlay.rowIconSize = 28
-        overlay.filterValue = AURA_TEXTURE_FILTER_LIBRARY
+        overlay.filterValue = AURA_TEXTURE_FILTER_SYMBOLS
         overlay.searchText = ""
         overlay.selectedKey = nil
         overlay.selectedEntry = nil
@@ -1174,9 +1175,7 @@ local function StartPickAuraTexture(opts)
             overlay.searchText = searchBox:GetText() or ""
             overlay.entries = CooldownCompanion:GetAuraTexturePickerEntries(overlay.searchText, overlay.filterValue)
 
-            if overlay.filterValue == AURA_TEXTURE_FILTER_ATLASES and #(strtrim(overlay.searchText or "")) < 2 then
-                overlay.statusLabel:SetText("Type at least 2 characters to search Blizzard atlases.")
-            elseif #overlay.entries == 0 then
+            if #overlay.entries == 0 then
                 overlay.statusLabel:SetText("No textures matched the current search.")
             else
                 overlay.statusLabel:SetText("Showing " .. tostring(#overlay.entries) .. " textures.")
@@ -1222,7 +1221,7 @@ local function StartPickAuraTexture(opts)
                 UIDropDownMenu_AddButton(info, level)
             end
         end)
-        UIDropDownMenu_SetText(filterDrop, filterList[AURA_TEXTURE_FILTER_LIBRARY])
+        UIDropDownMenu_SetText(filterDrop, filterList[AURA_TEXTURE_FILTER_SYMBOLS])
 
         overlay:SetScript("OnMouseDown", function(self, button)
             if button == "RightButton" then
@@ -1243,10 +1242,10 @@ local function StartPickAuraTexture(opts)
 
     pickAuraTextureOverlay.selectedKey = nil
     pickAuraTextureOverlay.selectedEntry = nil
-    pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_LIBRARY
+    pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_SYMBOLS
     pickAuraTextureOverlay.entries = {}
     pickAuraTextureOverlay.selectionLabel:SetText("Select a texture to preview it on the chosen aura button.")
-    UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_LIBRARY])
+    UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_SYMBOLS])
     pickAuraTextureOverlay.confirmBtn:SetEnabled(false)
     pickAuraTextureOverlay.searchBox:SetText("")
     if pickAuraTextureOverlay.ApplyPanelBackdrop then
@@ -1260,15 +1259,13 @@ local function StartPickAuraTexture(opts)
         pickAuraTextureOverlay.RefreshEntries()
     end
 
-    if initialSelection and initialSelection.sourceType == "atlas" and type(initialSelection.sourceValue) == "string" then
-        pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_ATLASES
-        UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_ATLASES])
-        pickAuraTextureOverlay.searchBox:SetText(initialSelection.sourceValue)
-    elseif initialSelection and initialSelection.sourceType == "file" then
-        pickAuraTextureOverlay.filterValue = AURA_TEXTURE_FILTER_LIBRARY
-        UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[AURA_TEXTURE_FILTER_LIBRARY])
+    if initialSelection and initialSelection.sourceType then
+        pickAuraTextureOverlay.filterValue = CooldownCompanion:GetAuraTexturePickerFilterForSelection(initialSelection)
+        UIDropDownMenu_SetText(pickAuraTextureOverlay.filterDrop, pickAuraTextureOverlay.filterList[pickAuraTextureOverlay.filterValue])
         if initialSelection.label and initialSelection.label ~= "" then
             pickAuraTextureOverlay.searchBox:SetText(initialSelection.label)
+        elseif type(initialSelection.sourceValue) == "string" and initialSelection.sourceValue ~= "" then
+            pickAuraTextureOverlay.searchBox:SetText(initialSelection.sourceValue)
         end
     end
 

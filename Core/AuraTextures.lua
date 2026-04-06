@@ -45,10 +45,10 @@ local LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
 local LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
 local LOCATION_LEFTRIGHTOUTSIDE = SCREEN_LOCATION.LeftRightOutside or 11
 
-local FILTER_LIBRARY = "library"
+local FILTER_SYMBOLS = "symbols"
+local FILTER_CLASS_AURAS = "classAuras"
+local FILTER_OTHER = "other"
 local FILTER_RECENT = "recent"
-local FILTER_ATLASES = "atlases"
-local MAX_ATLAS_SEARCH_RESULTS = 200
 local MAX_RECENT_OVERLAYS = 200
 local DEFAULT_TEXTURE_SIZE = 128
 local UI_PARENT_NAME = "UIParent"
@@ -91,22 +91,73 @@ local LOCATION_DIMENSIONS = {
     [LOCATION_LEFTRIGHTOUTSIDE] = { width = 0.5, height = 1.0, layout = "pair_horizontal_outside" },
 }
 
-local BUILTIN_LIBRARY = {
-    {
-        key = "builtin:rotation-helper-proc-altglow",
-        label = "Rotation Helper Alt Glow",
-        category = "Starter Library",
+local BUILTIN_LIBRARY = {}
+
+local function AddBuiltinAtlas(categoryKey, atlas, width, height, subtitle, searchText, label)
+    if type(atlas) ~= "string" or atlas == "" then
+        return
+    end
+
+    BUILTIN_LIBRARY[#BUILTIN_LIBRARY + 1] = {
+        key = "builtin:" .. categoryKey .. ":" .. atlas,
+        label = label or string_trim(atlas),
+        categoryKey = categoryKey or FILTER_OTHER,
         sourceType = "atlas",
-        sourceValue = "UI-HUD-RotationHelper-ProcAltGlow",
-        blendMode = "ADD",
-        searchText = "rotation helper alt glow blizzard starter",
-    },
+        sourceValue = atlas,
+        width = width,
+        height = height,
+        subtitle = subtitle,
+        searchText = searchText or string_lower((label or atlas) .. " " .. (subtitle or "")),
+    }
+end
+
+local ARTIFACT_RUNES_SUBTITLE = "Interface/Artifacts/ArtifactRunes"
+local ARTIFACT_RUNES_ATLASES = {
+    { "Rune-01-dark", 75, 77 },
+    { "Rune-01-light", 75, 77 },
+    { "Rune-02-dark", 75, 77 },
+    { "Rune-02-light", 75, 77 },
+    { "Rune-03-dark", 75, 77 },
+    { "Rune-03-light", 75, 77 },
+    { "Rune-04-dark", 75, 77 },
+    { "Rune-04-light", 75, 77 },
+    { "Rune-05-dark", 75, 77 },
+    { "Rune-05-light", 75, 77 },
+    { "Rune-06-dark", 75, 77 },
+    { "Rune-06-light", 75, 77 },
+    { "Rune-07-dark", 75, 77 },
+    { "Rune-07-light", 75, 77 },
+    { "Rune-08-dark", 75, 77 },
+    { "Rune-08-light", 75, 77 },
+    { "Rune-09-dark", 75, 77 },
+    { "Rune-09-light", 75, 77 },
+    { "Rune-10-dark ", 75, 77, "Rune-10-dark" },
+    { "Rune-10-light", 75, 77 },
+    { "Rune-11-dark", 75, 77 },
+    { "Rune-11-light", 75, 77 },
 }
 
+for _, atlasInfo in ipairs(ARTIFACT_RUNES_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        ARTIFACT_RUNES_SUBTITLE,
+        string_lower(label .. " artifact runes rune symbol artifacts"),
+        label
+    )
+end
+
 local FILTER_OPTIONS = {
-    [FILTER_LIBRARY] = "Blizzard Library",
+    [FILTER_SYMBOLS] = "Symbols",
+    [FILTER_CLASS_AURAS] = "Class Auras",
+    [FILTER_OTHER] = "Other",
     [FILTER_RECENT] = "Recent Proc Overlays",
-    [FILTER_ATLASES] = "Atlas Search",
 }
 
 local LOCATION_ORDER = {
@@ -321,61 +372,6 @@ local function BuildLocationSubtitle(locationType)
     return TEXTURE_LAYOUT_LABELS[normalizedLocationType] or "Single"
 end
 
-local function GetAtlasSearchCache()
-    if CooldownCompanion._auraTextureAtlasCache then
-        return CooldownCompanion._auraTextureAtlasCache
-    end
-
-    local cache = {}
-    local atlasList = C_Texture.GetAtlasElements()
-    if atlasList then
-        for _, atlas in ipairs(atlasList) do
-            cache[#cache + 1] = {
-                atlas = atlas,
-                lower = string_lower(atlas),
-            }
-        end
-    end
-
-    table_sort(cache, function(a, b)
-        return a.lower < b.lower
-    end)
-
-    CooldownCompanion._auraTextureAtlasCache = cache
-    return cache
-end
-
-local function BuildAtlasEntry(atlas)
-    local info = C_Texture.GetAtlasInfo(atlas)
-    local fileID = info and info.file or nil
-    local width = info and info.width or nil
-    local height = info and info.height or nil
-    local filename = info and info.filename or nil
-    local subtitleParts = {}
-
-    if fileID then
-        subtitleParts[#subtitleParts + 1] = "File " .. tostring(fileID)
-    end
-    if width and height then
-        subtitleParts[#subtitleParts + 1] = tostring(width) .. "x" .. tostring(height)
-    end
-    if type(filename) == "string" and filename ~= "" then
-        subtitleParts[#subtitleParts + 1] = filename
-    end
-
-    return {
-        key = "atlas:" .. atlas,
-        label = atlas,
-        category = "Atlas Search",
-        sourceType = "atlas",
-        sourceValue = atlas,
-        width = width,
-        height = height,
-        subtitle = table.concat(subtitleParts, "  |  "),
-        searchText = string_lower(atlas .. " " .. (filename or "") .. " " .. tostring(fileID or "")),
-    }
-end
-
 local function NormalizeAuraTextureSettings(settings)
     if type(settings) ~= "table" then
         return nil
@@ -423,10 +419,6 @@ end
 
 function CooldownCompanion:IsTexturePanelGroup(group)
     return type(group) == "table" and group.displayMode == "textures"
-end
-
-function CooldownCompanion:GetAuraTexturePickerFilters()
-    return FILTER_OPTIONS, { FILTER_LIBRARY, FILTER_RECENT, FILTER_ATLASES }
 end
 
 function CooldownCompanion:GetTexturePanelLocationOptions()
@@ -670,7 +662,8 @@ local function BuildBuiltinEntries()
         entries[#entries + 1] = {
             key = entry.key,
             label = entry.label,
-            category = entry.category,
+            categoryKey = entry.categoryKey or FILTER_OTHER,
+            category = entry.category or FILTER_OPTIONS[entry.categoryKey] or FILTER_OPTIONS[FILTER_OTHER],
             sourceType = entry.sourceType,
             sourceValue = entry.sourceValue,
             width = entry.width,
@@ -686,28 +679,8 @@ end
 
 function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
     local query = type(searchText) == "string" and string_lower(string_trim(searchText)) or ""
-    local filter = FILTER_OPTIONS[filterValue] and filterValue or FILTER_LIBRARY
+    local filter = FILTER_OPTIONS[filterValue] and filterValue or FILTER_SYMBOLS
     local entries = {}
-
-    if filter == FILTER_LIBRARY then
-        for _, entry in ipairs(BuildBuiltinEntries()) do
-            if query == "" or string_find(entry.searchText, query, 1, true) then
-                entries[#entries + 1] = entry
-            end
-        end
-        for _, entry in ipairs(self:GetRecentAuraTextureEntries()) do
-            if query == "" or string_find(entry.searchText, query, 1, true) then
-                entries[#entries + 1] = entry
-            end
-        end
-        table_sort(entries, function(a, b)
-            if a.category == b.category then
-                return a.label < b.label
-            end
-            return a.category < b.category
-        end)
-        return entries
-    end
 
     if filter == FILTER_RECENT then
         for _, entry in ipairs(self:GetRecentAuraTextureEntries()) do
@@ -718,21 +691,39 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
         return entries
     end
 
-    if #query < 2 then
-        return entries
-    end
-
-    local atlasCache = GetAtlasSearchCache()
-    for _, atlas in ipairs(atlasCache) do
-        if string_find(atlas.lower, query, 1, true) then
-            entries[#entries + 1] = BuildAtlasEntry(atlas.atlas)
-            if #entries >= MAX_ATLAS_SEARCH_RESULTS then
-                break
-            end
+    for _, entry in ipairs(BuildBuiltinEntries()) do
+        if entry.categoryKey == filter and (query == "" or string_find(entry.searchText, query, 1, true)) then
+            entries[#entries + 1] = entry
         end
     end
 
+    table_sort(entries, function(a, b)
+        return a.label < b.label
+    end)
+
     return entries
+end
+
+function CooldownCompanion:GetAuraTexturePickerFilters()
+    return FILTER_OPTIONS, { FILTER_SYMBOLS, FILTER_CLASS_AURAS, FILTER_OTHER, FILTER_RECENT }
+end
+
+function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
+    if type(selection) ~= "table" then
+        return FILTER_SYMBOLS
+    end
+
+    for _, entry in ipairs(BuildBuiltinEntries()) do
+        if entry.sourceType == selection.sourceType and entry.sourceValue == selection.sourceValue then
+            return entry.categoryKey or FILTER_OTHER
+        end
+    end
+
+    if selection.sourceType == "file" then
+        return FILTER_RECENT
+    end
+
+    return FILTER_SYMBOLS
 end
 
 local function ApplyTextureSource(texture, settings)

@@ -96,14 +96,14 @@ local function OpenAuraTexturePicker(opts)
     local currentButtonIndex = opts.buttonIndex
     local currentOnCommit = opts.callback
     local currentSelection = opts.initialSelection
-    local currentFilter = "library"
+    local currentFilter = "symbols"
     local currentSearch = ""
     local selectedEntry = nil
     local thumbnailPool = {}
     local activeThumbs = {}
 
     local sourceDrop = AceGUI:Create("Dropdown")
-    sourceDrop:SetLabel("Source")
+    sourceDrop:SetLabel("Category")
     sourceDrop:SetRelativeWidth(0.45)
     window:AddChild(sourceDrop)
 
@@ -260,9 +260,7 @@ local function OpenAuraTexturePicker(opts)
         local entries = GetVisibleEntries()
         local query = strtrim(currentSearch or "")
 
-        if currentFilter == "atlases" and #query < 2 then
-            statusLabel:SetText("Type at least 2 characters to search Blizzard atlases.")
-        elseif #entries == 0 then
+        if #entries == 0 then
             statusLabel:SetText("No textures matched the current search.")
         else
             statusLabel:SetText(("Showing %d textures."):format(#entries))
@@ -330,7 +328,7 @@ local function OpenAuraTexturePicker(opts)
     sourceDrop:SetValue(currentFilter)
 
     sourceDrop:SetCallback("OnValueChanged", function(_, _, value)
-        currentFilter = value or "library"
+        currentFilter = value or "symbols"
         RebuildGrid()
     end)
 
@@ -380,26 +378,16 @@ local function OpenAuraTexturePicker(opts)
         window._targetButtonIndex = currentButtonIndex
         window:SetTitle(newOpts.title or "Browse Texture Panel Visuals")
 
-        if currentSelection and currentSelection.sourceType == "atlas" then
-            currentFilter = "atlases"
-            currentSearch = type(currentSelection.sourceValue) == "string" and currentSelection.sourceValue or ""
-        elseif currentSelection and currentSelection.label then
-            currentFilter = "library"
-            currentSearch = currentSelection.label
-        end
+        currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
+        currentSearch = (currentSelection and (currentSelection.label or currentSelection.sourceValue)) or ""
 
         searchBox:SetText(currentSearch or "")
         sourceDrop:SetValue(currentFilter)
         RebuildGrid()
     end
 
-    if currentSelection and currentSelection.sourceType == "atlas" then
-        currentFilter = "atlases"
-        currentSearch = type(currentSelection.sourceValue) == "string" and currentSelection.sourceValue or ""
-    elseif currentSelection and currentSelection.label then
-        currentFilter = "library"
-        currentSearch = currentSelection.label
-    end
+    currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
+    currentSearch = (currentSelection and (currentSelection.label or currentSelection.sourceValue)) or ""
 
     searchBox:SetText(currentSearch)
     sourceDrop:SetValue(currentFilter)
