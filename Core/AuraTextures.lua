@@ -892,6 +892,115 @@ local function SetTextureIndicatorBaseVisuals(host)
     host._indicatorBaseColor = CopyColor(color) or { 1, 1, 1, 1 }
 end
 
+local function ResetTextureIndicatorTransformState(host)
+    if not host or not host.visualRoot then
+        return
+    end
+
+    host.visualRoot:SetScale(1)
+    host.visualRoot:ClearAllPoints()
+    host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+end
+
+local function GetTextureIndicatorLoopPhase(now, duration)
+    duration = Clamp(tonumber(duration) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    local progress = now / duration
+    return progress - math_floor(progress)
+end
+
+local TextureIndicatorOnUpdate
+
+local function RefreshTextureIndicatorUpdater(host)
+    if not host or not host.visualRoot then
+        return
+    end
+
+    local wantsManualUpdate = host._textureColorShiftActive
+        or host._textureShrinkActive
+        or host._textureBounceActive
+
+    if not wantsManualUpdate or not host._activeTextureSettings or not host._activeTextureGeometry then
+        host:SetScript("OnUpdate", nil)
+        ResetTextureIndicatorTransformState(host)
+        SetTextureIndicatorBaseVisuals(host)
+        return
+    end
+
+    host:SetScript("OnUpdate", TextureIndicatorOnUpdate)
+    TextureIndicatorOnUpdate(host, 0)
+end
+
+TextureIndicatorOnUpdate = function(self)
+    if not self or not self.visualRoot or not self._activeTextureSettings or not self._activeTextureGeometry then
+        RefreshTextureIndicatorUpdater(self)
+        return
+    end
+
+    local settings = self._activeTextureSettings
+    local now = GetTime()
+    SetTextureIndicatorBaseVisuals(self)
+    local baseColor = self._indicatorBaseColor or { 1, 1, 1, 1 }
+    local baseAlpha = self._indicatorBaseAlpha or 1
+
+    if self._textureColorShiftActive then
+        local shift = self._textureColorShiftColor or { 1, 1, 1, 1 }
+        local colorPhase = GetTextureIndicatorLoopPhase(now, self._textureColorShiftSpeed)
+        local t = 0.5 - (0.5 * math_cos(colorPhase * 2 * math_pi))
+        local shiftAlpha = Clamp((shift[4] or 1) * (settings.alpha or 1), 0.05, 1)
+        local alpha = baseAlpha + ((shiftAlpha - baseAlpha) * t)
+
+        local primaryTexture = self.primaryTexture
+        if primaryTexture and primaryTexture:IsShown() then
+            primaryTexture:SetVertexColor(
+                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
+                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
+                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
+                alpha
+            )
+        end
+
+        local secondaryTexture = self.secondaryTexture
+        if secondaryTexture and secondaryTexture:IsShown() then
+            secondaryTexture:SetVertexColor(
+                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
+                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
+                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
+                alpha
+            )
+        end
+    end
+
+    local scale = 1
+    if self._textureShrinkActive then
+        local shrinkPhase = GetTextureIndicatorLoopPhase(
+            now - (self._textureShrinkStartTime or now),
+            self._textureShrinkSpeed
+        )
+        local shrinkT = 0.5 - (0.5 * math_cos(shrinkPhase * 2 * math_pi))
+        scale = 1 - ((1 - DEFAULT_TEXTURE_SHRINK_SCALE) * shrinkT)
+    end
+    self.visualRoot:SetScale(scale)
+
+    local bounceOffsetY = 0
+    if self._textureBounceActive then
+        local bouncePhase = GetTextureIndicatorLoopPhase(
+            now - (self._textureBounceStartTime or now),
+            self._textureBounceSpeed
+        )
+        local amplitude = self._textureBounceAmplitude or DEFAULT_TEXTURE_BOUNCE_PIXELS
+        if bouncePhase < 0.5 then
+            local riseT = bouncePhase / 0.5
+            bounceOffsetY = amplitude * (1 - ((1 - riseT) * (1 - riseT)))
+        else
+            local fallT = (bouncePhase - 0.5) / 0.5
+            bounceOffsetY = amplitude * (1 - (fallT * fallT))
+        end
+    end
+
+    self.visualRoot:ClearAllPoints()
+    self.visualRoot:SetPoint("CENTER", self, "CENTER", 0, bounceOffsetY)
+end
+
 local function StopTextureIndicatorAnimation(host, effectType)
     if not host or not host.visualRoot or not host._textureIndicatorAnimations then
         return
@@ -947,15 +1056,35 @@ local function SetTextureIndicatorAnimation(host, effectType, active, speed, amp
         return
     end
 
+    if effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
+        local wasActive = host._textureShrinkActive == true
+        host._textureShrinkActive = active and true or nil
+        host._textureShrinkSpeed = active and Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED) or nil
+        if host._textureShrinkActive and not wasActive then
+            host._textureShrinkStartTime = GetTime()
+        elseif not host._textureShrinkActive then
+            host._textureShrinkStartTime = nil
+        end
+        RefreshTextureIndicatorUpdater(host)
+        return
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+        local wasActive = host._textureBounceActive == true
+        host._textureBounceActive = active and true or nil
+        host._textureBounceSpeed = active and Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED) or nil
+        host._textureBounceAmplitude = active and (amplitude or DEFAULT_TEXTURE_BOUNCE_PIXELS) or nil
+        if host._textureBounceActive and not wasActive then
+            host._textureBounceStartTime = GetTime()
+        elseif not host._textureBounceActive then
+            host._textureBounceStartTime = nil
+        end
+        RefreshTextureIndicatorUpdater(host)
+        return
+    end
+
     if not active then
         StopTextureIndicatorAnimation(host, effectType)
         if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
             host.visualRoot:SetAlpha(1)
-        elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
-            host.visualRoot:SetScale(1)
-        elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
-            host.visualRoot:ClearAllPoints()
-            host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
         end
         return
     end
@@ -968,11 +1097,6 @@ local function SetTextureIndicatorAnimation(host, effectType, active, speed, amp
     speed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
     if effectType == TEXTURE_INDICATOR_EFFECT_PULSE and animData.alpha then
         animData.alpha:SetDuration(speed)
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND and animData.scale then
-        animData.scale:SetDuration(speed)
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE and animData.translation then
-        animData.translation:SetDuration(speed)
-        animData.translation:SetOffset(0, amplitude or DEFAULT_TEXTURE_BOUNCE_PIXELS)
     end
 
     if not animData.group:IsPlaying() then
@@ -986,8 +1110,7 @@ local function StopTextureColorShift(host)
     end
 
     host._textureColorShiftActive = nil
-    host:SetScript("OnUpdate", nil)
-    SetTextureIndicatorBaseVisuals(host)
+    RefreshTextureIndicatorUpdater(host)
 end
 
 local function StartTextureColorShift(host, shiftColor, speed)
@@ -998,42 +1121,7 @@ local function StartTextureColorShift(host, shiftColor, speed)
     host._textureColorShiftActive = true
     host._textureColorShiftColor = CopyColor(shiftColor) or { 1, 1, 1, 1 }
     host._textureColorShiftSpeed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
-    local function updateFn(self)
-        if not self._textureColorShiftActive or not self._activeTextureSettings or not self._activeTextureGeometry then
-            StopTextureColorShift(self)
-            return
-        end
-
-        local baseColor = self._indicatorBaseColor or { 1, 1, 1, 1 }
-        local baseAlpha = self._indicatorBaseAlpha or 1
-        local shift = self._textureColorShiftColor or { 1, 1, 1, 1 }
-        local speedNow = self._textureColorShiftSpeed or DEFAULT_TEXTURE_INDICATOR_SPEED
-        local t = 0.5 + 0.5 * math_sin(GetTime() * 2 * math_pi / speedNow)
-        local shiftAlpha = Clamp((shift[4] or 1) * (self._activeTextureSettings.alpha or 1), 0.05, 1)
-        local alpha = baseAlpha + ((shiftAlpha - baseAlpha) * t)
-
-        local primaryTexture = self.primaryTexture
-        if primaryTexture and primaryTexture:IsShown() then
-            primaryTexture:SetVertexColor(
-                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
-                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
-                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
-                alpha
-            )
-        end
-
-        local secondaryTexture = self.secondaryTexture
-        if secondaryTexture and secondaryTexture:IsShown() then
-            secondaryTexture:SetVertexColor(
-                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
-                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
-                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
-                alpha
-            )
-        end
-    end
-    host:SetScript("OnUpdate", updateFn)
-    updateFn(host)
+    RefreshTextureIndicatorUpdater(host)
 end
 
 local function StopAllTextureIndicatorEffects(host)
@@ -1042,13 +1130,20 @@ local function StopAllTextureIndicatorEffects(host)
     end
 
     StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_PULSE)
-    StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND)
-    StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_BOUNCE)
+    host._textureShrinkActive = nil
+    host._textureShrinkSpeed = nil
+    host._textureShrinkStartTime = nil
+    host._textureBounceActive = nil
+    host._textureBounceSpeed = nil
+    host._textureBounceAmplitude = nil
+    host._textureBounceStartTime = nil
+    host._textureColorShiftActive = nil
+    host._textureColorShiftColor = nil
+    host._textureColorShiftSpeed = nil
     host.visualRoot:SetAlpha(1)
-    host.visualRoot:SetScale(1)
-    host.visualRoot:ClearAllPoints()
-    host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
-    StopTextureColorShift(host)
+    ResetTextureIndicatorTransformState(host)
+    host:SetScript("OnUpdate", nil)
+    SetTextureIndicatorBaseVisuals(host)
 end
 
 local function IsTextureIndicatorSectionActive(button, sectionKey, config)
