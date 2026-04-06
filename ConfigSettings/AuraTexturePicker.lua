@@ -45,15 +45,12 @@ local function ApplyEntryTexture(texture, entry)
 end
 
 local function FindEntryForSelection(entries, selection)
-    if type(selection) ~= "table" then
-        return nil
+    if CooldownCompanion.FindAuraTexturePickerEntry then
+        return CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
     end
 
-    for _, entry in ipairs(entries or {}) do
-        if entry.sourceType == selection.sourceType
-            and entry.sourceValue == selection.sourceValue then
-            return entry
-        end
+    if type(selection) ~= "table" then
+        return nil
     end
 
     return nil
@@ -267,10 +264,10 @@ local function OpenAuraTexturePicker(opts)
         end
 
         local matchedSelected = FindEntryForSelection(entries, currentSelection)
-        if not selectedEntry or not FindEntryForSelection(entries, {
-            sourceType = selectedEntry.sourceType,
-            sourceValue = selectedEntry.sourceValue,
-        }) then
+        local visibleSelected = selectedEntry and FindEntryForSelection(entries, selectedEntry) or nil
+        if visibleSelected then
+            selectedEntry = visibleSelected
+        else
             selectedEntry = matchedSelected
         end
 

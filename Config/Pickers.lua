@@ -21,7 +21,6 @@ local pickCDMCallback = nil
 local pickAuraTextureOverlay = nil
 local pickAuraTextureCallback = nil
 local AURA_TEXTURE_FILTER_SYMBOLS = "symbols"
-local AURA_TEXTURE_FILTER_CLASS_AURAS = "classAuras"
 local AURA_TEXTURE_FILTER_OTHER = "other"
 local AURA_TEXTURE_FILTER_RECENT = "recent"
 
@@ -1270,28 +1269,23 @@ local function StartPickAuraTexture(opts)
     end
 
     if initialSelection and initialSelection.sourceType and initialSelection.sourceValue ~= nil then
-        if pickAuraTextureOverlay.entries then
-            for _, entry in ipairs(pickAuraTextureOverlay.entries) do
-                local matches = entry.sourceType == initialSelection.sourceType
-                    and entry.sourceValue == initialSelection.sourceValue
-                    and (entry.locationType or 0) == (initialSelection.locationType or 0)
-                if matches then
-                    pickAuraTextureOverlay.selectedKey = entry.key
-                    pickAuraTextureOverlay.selectedEntry = entry
-                    pickAuraTextureOverlay.confirmBtn:SetEnabled(true)
-                    pickAuraTextureOverlay.selectionLabel:SetText((entry.label or "Texture") .. "  |  " .. (entry.subtitle or entry.category or ""))
-                    if CS.selectedGroup and CS.selectedButton then
-                        CooldownCompanion:SetAuraTexturePickerPreview(
-                            CS.selectedGroup,
-                            CS.selectedButton,
-                            CooldownCompanion:CreateAuraTextureSelection(entry)
-                        )
-                    end
-                    if pickAuraTextureOverlay.RefreshRows then
-                        pickAuraTextureOverlay.RefreshRows()
-                    end
-                    break
-                end
+        local entry = CooldownCompanion.FindAuraTexturePickerEntry
+            and CooldownCompanion:FindAuraTexturePickerEntry(pickAuraTextureOverlay.entries, initialSelection)
+            or nil
+        if entry then
+            pickAuraTextureOverlay.selectedKey = entry.key
+            pickAuraTextureOverlay.selectedEntry = entry
+            pickAuraTextureOverlay.confirmBtn:SetEnabled(true)
+            pickAuraTextureOverlay.selectionLabel:SetText((entry.label or "Texture") .. "  |  " .. (entry.subtitle or entry.category or ""))
+            if CS.selectedGroup and CS.selectedButton then
+                CooldownCompanion:SetAuraTexturePickerPreview(
+                    CS.selectedGroup,
+                    CS.selectedButton,
+                    CooldownCompanion:CreateAuraTextureSelection(entry)
+                )
+            end
+            if pickAuraTextureOverlay.RefreshRows then
+                pickAuraTextureOverlay.RefreshRows()
             end
         end
     end

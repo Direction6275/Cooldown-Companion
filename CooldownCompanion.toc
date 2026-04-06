@@ -46,6 +46,7 @@ Core\SpellQueries.lua
 Core\Utils.lua
 Core\Init.lua
 Core\Defaults.lua
+Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua
 Core\ChangelogData.lua
 Core\Changelog.lua

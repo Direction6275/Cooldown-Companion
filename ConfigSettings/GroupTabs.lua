@@ -368,6 +368,7 @@ local function GetTexturePanelCommitCallback(group)
         if selection then
             CooldownCompanion:ApplyTexturePanelEntry(liveSettings, selection)
         else
+            liveSettings.libraryKey = nil
             liveSettings.sourceType = nil
             liveSettings.sourceValue = nil
             liveSettings.label = nil
@@ -1698,10 +1699,11 @@ local function BuildAppearanceTab(container)
         end
 
         local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
+        local selectedLayoutValue = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
         local locationDrop = AceGUI:Create("Dropdown")
         locationDrop:SetLabel("Texture Layout")
         locationDrop:SetList(locationOptions, locationOrder)
-        locationDrop:SetValue(settings.locationType or 0)
+        locationDrop:SetValue(selectedLayoutValue)
         locationDrop:SetFullWidth(true)
         locationDrop:SetCallback("OnValueChanged", function(_, _, value)
             settings.locationType = tonumber(value) or 0
@@ -1710,7 +1712,7 @@ local function BuildAppearanceTab(container)
         end)
         container:AddChild(locationDrop)
 
-        if settings.locationType == PREVIEW_LOCATION_LEFTRIGHT or settings.locationType == PREVIEW_LOCATION_TOPBOTTOM then
+        if selectedLayoutValue == PREVIEW_LOCATION_LEFTRIGHT or selectedLayoutValue == PREVIEW_LOCATION_TOPBOTTOM then
             local spacingSlider = AceGUI:Create("Slider")
             spacingSlider:SetLabel("Pair Spacing")
             spacingSlider:SetSliderValues(MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING, 0.01)

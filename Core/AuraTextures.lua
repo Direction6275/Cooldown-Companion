@@ -8,6 +8,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
 local C_Item_IsUsableItem = C_Item.IsUsableItem
+local C_Spell_GetSpellName = C_Spell.GetSpellName
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local GetTime = GetTime
 local ipairs = ipairs
@@ -26,6 +27,7 @@ local string_gsub = string.gsub
 local string_lower = string.lower
 local string_trim = strtrim
 local string_upper = string.upper
+local table_concat = table.concat
 local table_insert = table.insert
 local table_sort = table.sort
 local tonumber = tonumber
@@ -46,7 +48,7 @@ local LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
 local LOCATION_LEFTRIGHTOUTSIDE = SCREEN_LOCATION.LeftRightOutside or 11
 
 local FILTER_SYMBOLS = "symbols"
-local FILTER_CLASS_AURAS = "classAuras"
+local FILTER_BLIZZARD_PROC = "blizzardProc"
 local FILTER_OTHER = "other"
 local FILTER_RECENT = "recent"
 local MAX_RECENT_OVERLAYS = 200
@@ -153,9 +155,478 @@ for _, atlasInfo in ipairs(ARTIFACT_RUNES_ATLASES) do
     )
 end
 
+local WOWLABS_SPECTATOR_MODE_SUBTITLE = "Interface/HUD/UIWowlabsSpectatorMode"
+local WOWLABS_SPECTATOR_MODE_ATLASES = {
+    { "wowlabs-spectatecycling-arrowleft", 58, 55 },
+    { "wowlabs-spectatecycling-arrowleft_disabled", 58, 55 },
+    { "wowlabs-spectatecycling-arrowleft_hover", 58, 55 },
+    { "wowlabs-spectatecycling-arrowleft_pressed", 58, 55 },
+    { "wowlabs-spectatecycling-arrowright", 58, 55 },
+    { "wowlabs-spectatecycling-arrowright_disabled", 58, 55 },
+    { "wowlabs-spectatecycling-arrowright_hover", 58, 55 },
+    { "wowlabs-spectatecycling-arrowright_pressed", 58, 55 },
+}
+
+for _, atlasInfo in ipairs(WOWLABS_SPECTATOR_MODE_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        WOWLABS_SPECTATOR_MODE_SUBTITLE,
+        string_lower(label .. " wowlabs spectator mode arrow symbol"),
+        label
+    )
+end
+
+local UI_QUEST_CROSSHAIR_SUBTITLE = "Interface/Cursor/Crosshair/UIQuestCrosshair2x"
+local UI_QUEST_CROSSHAIR_ATLASES = {
+    { "Crosshair_Questturnin_128", 128, 128 },
+    { "Crosshair_Questturnin_32", 32, 32 },
+    { "Crosshair_Questturnin_48", 48, 48 },
+    { "Crosshair_Questturnin_64", 64, 64 },
+    { "Crosshair_Questturnin_96", 96, 96 },
+    { "Crosshair_Quest_128", 128, 128 },
+    { "Crosshair_Quest_32", 32, 32 },
+    { "Crosshair_Quest_48", 48, 48 },
+    { "Crosshair_Quest_64", 64, 64 },
+    { "Crosshair_Quest_96", 96, 96 },
+    { "Crosshair_unableQuestturnin_128", 128, 128 },
+    { "Crosshair_unableQuestturnin_32", 32, 32 },
+    { "Crosshair_unableQuestturnin_48", 48, 48 },
+    { "Crosshair_unableQuestturnin_64", 64, 64 },
+    { "Crosshair_unableQuestturnin_96", 96, 96 },
+    { "Crosshair_unableQuest_128", 128, 128 },
+    { "Crosshair_unableQuest_32", 32, 32 },
+    { "Crosshair_unableQuest_48", 48, 48 },
+    { "Crosshair_unableQuest_64", 64, 64 },
+    { "Crosshair_unableQuest_96", 96, 96 },
+}
+
+for _, atlasInfo in ipairs(UI_QUEST_CROSSHAIR_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        UI_QUEST_CROSSHAIR_SUBTITLE,
+        string_lower(label .. " quest crosshair cursor symbol"),
+        label
+    )
+end
+
+local UI_LFG_ROLE_ICONS_SUBTITLE = "Interface/LFGFrame/UILFGPrompts"
+local UI_LFG_ROLE_ICONS_ATLASES = {
+    { "UI-LFG-RoleIcon-DPS", 70, 70 },
+    { "UI-LFG-RoleIcon-Healer", 70, 70 },
+    { "UI-LFG-RoleIcon-Tank", 70, 70 },
+    { "UI-LFG-RoleIcon-Ready", 70, 70 },
+}
+
+for _, atlasInfo in ipairs(UI_LFG_ROLE_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        UI_LFG_ROLE_ICONS_SUBTITLE,
+        string_lower(label .. " lfg role icon symbol ready tank healer dps"),
+        label
+    )
+end
+
+local UI_LFG_ROLE_ICON_BACKGROUNDS_SUBTITLE = "Interface/LFGFrame/UILFGPrompts"
+local UI_LFG_ROLE_ICON_BACKGROUNDS_ATLASES = {
+    { "UI-LFG-RoleIcon-DPS-Background", 100, 100 },
+    { "UI-LFG-RoleIcon-Healer-Background", 100, 100 },
+    { "UI-LFG-RoleIcon-Tank-Background", 100, 100 },
+}
+
+for _, atlasInfo in ipairs(UI_LFG_ROLE_ICON_BACKGROUNDS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_OTHER,
+        atlas,
+        width,
+        height,
+        UI_LFG_ROLE_ICON_BACKGROUNDS_SUBTITLE,
+        string_lower(label .. " lfg role icon background"),
+        label
+    )
+end
+
+local UI_CROSSHAIRS_CURSOR_SUBTITLE = "Interface/Cursor/UICrosshairsCursor2x"
+local UI_CROSSHAIRS_CURSOR_ATLASES = {
+    { "cursor_crosshairs_128", 128, 128 },
+    { "cursor_crosshairs_32", 32, 32 },
+    { "cursor_crosshairs_48", 48, 48 },
+    { "cursor_crosshairs_64", 64, 64 },
+    { "cursor_crosshairs_96", 96, 96 },
+    { "cursor_unablecrosshairs_128", 128, 128 },
+    { "cursor_unablecrosshairs_32", 32, 32 },
+    { "cursor_unablecrosshairs_48", 48, 48 },
+    { "cursor_unablecrosshairs_64", 64, 64 },
+    { "cursor_unablecrosshairs_96", 96, 96 },
+}
+
+for _, atlasInfo in ipairs(UI_CROSSHAIRS_CURSOR_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        UI_CROSSHAIRS_CURSOR_SUBTITLE,
+        string_lower(label .. " cursor crosshairs symbol"),
+        label
+    )
+end
+
+local UI_COMBAT_TIMELINE_WARNING_ICONS_SUBTITLE = "Interface/HUD/UICombatTimelineWarningIcons"
+local UI_COMBAT_TIMELINE_WARNING_ICONS_ATLASES = {
+    { "icons_64x64_bleed", 64, 64 },
+    { "icons_64x64_curse", 64, 64 },
+    { "icons_64x64_damage", 64, 64 },
+    { "icons_64x64_deadly", 64, 64 },
+    { "icons_64x64_disease", 64, 64 },
+    { "icons_64x64_enrage", 64, 64 },
+    { "icons_64x64_heal", 64, 64 },
+    { "icons_64x64_important", 64, 64 },
+    { "icons_64x64_inturrupt", 64, 64 },
+    { "icons_64x64_magic", 64, 64 },
+    { "icons_64x64_poison", 64, 64 },
+    { "icons_64x64_tank", 64, 64 },
+    { "icons_16x16_blood", 20, 20 },
+    { "icons_16x16_curse", 20, 20 },
+    { "icons_16x16_damage", 20, 20 },
+    { "icons_16x16_deadly", 20, 20 },
+    { "icons_16x16_disease", 20, 20 },
+    { "icons_16x16_enrage", 20, 20 },
+    { "icons_16x16_heal", 20, 20 },
+    { "icons_16x16_important", 20, 20 },
+    { "icons_16x16_inturrupt", 20, 20 },
+    { "icons_16x16_magic", 20, 20 },
+    { "icons_16x16_poison", 20, 20 },
+    { "icons_16x16_tank", 20, 20 },
+    { "icons_16x16_heroic", 20, 20 },
+    { "icons_16x16_mythic", 20, 20 },
+    { "icons_16x16_none", 16, 16 },
+}
+
+for _, atlasInfo in ipairs(UI_COMBAT_TIMELINE_WARNING_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        UI_COMBAT_TIMELINE_WARNING_ICONS_SUBTITLE,
+        string_lower(label .. " combat timeline warning icon symbol"),
+        label
+    )
+end
+
+local THE_WAR_WITHIN_MAJOR_FACTIONS_ICONS_SUBTITLE = "Interface/MajorFactions/TheWarWithinMajorFactionsIcons"
+local THE_WAR_WITHIN_MAJOR_FACTIONS_ICONS_ATLASES = {
+    { "majorfactions_icons_candle512", 512, 512 },
+    { "majorfactions_icons_flame512", 512, 512 },
+    { "majorfactions_icons_storm512", 512, 512 },
+    { "majorfactions_icons_web512", 512, 512 },
+    { "majorfactions_icons_rocket512", 512, 512 },
+    { "majorfactions_icons_stars512", 512, 512 },
+    { "majorfactions_icons_Nightfall512", 512, 512 },
+    { "majorfactions_icons_Karesh512", 512, 512 },
+    { "majorfactions_icons_ManaforgeVandals512", 512, 512 },
+}
+
+for _, atlasInfo in ipairs(THE_WAR_WITHIN_MAJOR_FACTIONS_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_OTHER,
+        atlas,
+        width,
+        height,
+        THE_WAR_WITHIN_MAJOR_FACTIONS_ICONS_SUBTITLE,
+        string_lower(label .. " major factions war within icon"),
+        label
+    )
+end
+
+local TALENTS_HEROCLASS_RINGS_SUBTITLE = "Interface/AddOns/Blizzard_PlayerSpells/Icons"
+local TALENTS_HEROCLASS_RINGS_ATLASES = {
+    { "talents-heroclass-ring-selectionpane-gray", 248, 248 },
+    { "talents-heroclass-ring-mainpane", 192, 192 },
+}
+
+for _, atlasInfo in ipairs(TALENTS_HEROCLASS_RINGS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        TALENTS_HEROCLASS_RINGS_SUBTITLE,
+        string_lower(label .. " talents hero class ring symbol"),
+        label
+    )
+end
+
+local STORE_SERVICES_NUMBERS_SUBTITLE = "Interface/Store/ServicesAtlas"
+local STORE_SERVICES_NUMBERS_ATLASES = {
+    { "services-number-1", 71, 79 },
+    { "services-number-2", 71, 79 },
+    { "services-number-3", 71, 79 },
+    { "services-number-4", 71, 79 },
+    { "services-number-5", 71, 79 },
+    { "services-number-6", 71, 79 },
+    { "services-number-7", 71, 79 },
+    { "services-number-8", 71, 79 },
+    { "services-number-9", 71, 79 },
+}
+
+for _, atlasInfo in ipairs(STORE_SERVICES_NUMBERS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        STORE_SERVICES_NUMBERS_SUBTITLE,
+        string_lower(label .. " services number symbol"),
+        label
+    )
+end
+
+local PVP_PRESTIGE_ICONS_SUBTITLE = "Interface/PVPFrame/PvPPrestigeIcons"
+local PVP_PRESTIGE_ICONS_ATLASES = {
+    { "honorsystem-icon-prestige-1", 128, 128 },
+    { "honorsystem-icon-prestige-10", 128, 128 },
+    { "honorsystem-icon-prestige-11", 128, 128 },
+    { "honorsystem-icon-prestige-2", 128, 128 },
+    { "honorsystem-icon-prestige-3", 128, 128 },
+    { "honorsystem-icon-prestige-4", 128, 128 },
+    { "honorsystem-icon-prestige-5", 128, 128 },
+    { "honorsystem-icon-prestige-6", 128, 128 },
+    { "honorsystem-icon-prestige-7", 128, 128 },
+    { "honorsystem-icon-prestige-8", 128, 128 },
+    { "honorsystem-icon-prestige-9", 128, 128 },
+}
+
+for _, atlasInfo in ipairs(PVP_PRESTIGE_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_OTHER,
+        atlas,
+        width,
+        height,
+        PVP_PRESTIGE_ICONS_SUBTITLE,
+        string_lower(label .. " pvp prestige icon"),
+        label
+    )
+end
+
+AddBuiltinAtlas(
+    FILTER_OTHER,
+    "Start-VersusSplash",
+    217,
+    212,
+    "Interface/PetBattles/PetBattleHUDAtlas",
+    string_lower("Start-VersusSplash versus splash other"),
+    "Start-VersusSplash"
+)
+
+local NAMEPLATE_ELITE_ICONS_SUBTITLE = "Interface/TargetingFrame/UI-Nameplates"
+local NAMEPLATE_ELITE_ICONS_ATLASES = {
+    { "nameplates-icon-elite-gold", 32, 32 },
+    { "nameplates-icon-elite-silver", 32, 32 },
+    { "nameplates-icon-rareelite", 32, 32 },
+}
+
+for _, atlasInfo in ipairs(NAMEPLATE_ELITE_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_SYMBOLS,
+        atlas,
+        width,
+        height,
+        NAMEPLATE_ELITE_ICONS_SUBTITLE,
+        string_lower(label .. " elite rare nameplate symbol"),
+        label
+    )
+end
+
+local MOBILE_APP_ICONS_SUBTITLE = "Interface/Garrison/MobileAppIcons"
+local MOBILE_APP_ICONS_ATLASES = {
+    { "legionmission-map-orderhall-deathknight", 99, 66 },
+    { "legionmission-map-orderhall-demonhunter", 99, 66 },
+    { "legionmission-map-orderhall-druid", 99, 66 },
+    { "legionmission-map-orderhall-glow", 142, 109 },
+    { "legionmission-map-orderhall-hunter", 99, 66 },
+    { "legionmission-map-orderhall-mage", 99, 66 },
+    { "legionmission-map-orderhall-monk", 99, 66 },
+    { "legionmission-map-orderhall-paladin", 99, 66 },
+    { "legionmission-map-orderhall-priest", 99, 66 },
+    { "legionmission-map-orderhall-rogue", 99, 66 },
+    { "legionmission-map-orderhall-shaman", 99, 66 },
+    { "legionmission-map-orderhall-warlock", 99, 66 },
+    { "legionmission-map-orderhall-warrior", 99, 66 },
+    { "legionmission-map-orderhall-textglow", 122, 22 },
+    { "Mobile-BonusIcon", 128, 128 },
+    { "Mobile-CombatBadgeIcon", 128, 128 },
+    { "Mobile-CombatIcon", 128, 128 },
+    { "Mobile-LegendaryQuestIcon", 128, 128 },
+    { "Mobile-QuestIcon", 128, 128 },
+    { "Mobile-TreasureIcon", 128, 128 },
+    { "Mobile-CombatIcon-Desaturated", 128, 128 },
+    { "Mobile-BonusIcon-Desaturated", 128, 128 },
+    { "Mobile-TreasureIcon-Desaturated", 128, 128 },
+    { "Mobile-QuestIcon-Desaturated", 128, 128 },
+    { "Mobile-LegendaryQuestIcon-Desaturated", 128, 128 },
+    { "Mobile-Alchemy", 128, 128 },
+    { "Mobile-Archeology", 128, 128 },
+    { "Mobile-Blacksmithing", 128, 128 },
+    { "Mobile-Cooking", 128, 128 },
+    { "Mobile-Enchanting", 128, 128 },
+    { "Mobile-Enginnering", 128, 128 },
+    { "Mobile-FirstAid", 128, 128 },
+    { "Mobile-Fishing", 128, 128 },
+    { "Mobile-Herbalism", 128, 128 },
+    { "Mobile-Inscription", 128, 128 },
+    { "Mobile-Jewelcrafting", 128, 128 },
+    { "Mobile-Leatherworking", 128, 128 },
+    { "Mobile-MechanicIcon-Curse", 128, 128 },
+    { "Mobile-MechanicIcon-Disorienting", 128, 128 },
+    { "Mobile-MechanicIcon-Lethal", 128, 128 },
+    { "Mobile-MechanicIcon-Slowing", 128, 128 },
+    { "Mobile-Mining", 128, 128 },
+    { "Mobile-Pets", 128, 128 },
+    { "Mobile-Skinning", 128, 128 },
+    { "Mobile-Tailoring", 128, 128 },
+    { "Mobile-MechanicIcon-Powerful", 128, 128 },
+}
+
+for _, atlasInfo in ipairs(MOBILE_APP_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_OTHER,
+        atlas,
+        width,
+        height,
+        MOBILE_APP_ICONS_SUBTITLE,
+        string_lower(label .. " mobile app icon other"),
+        label
+    )
+end
+
+local MAJOR_FACTIONS_ICONS_SUBTITLE = "Interface/MajorFactions/MajorFactionsIcons"
+local MAJOR_FACTIONS_ICONS_ATLASES = {
+    { "majorfaction-celebration-toastbg", 275, 77 },
+    { "majorfaction-celebration-centaur", 235, 110 },
+    { "majorfaction-celebration-valdrakken", 235, 110 },
+    { "majorfaction-celebration-bottomglowline", 266, 19 },
+    { "majorfaction-celebration-expedition", 235, 110 },
+    { "majorfaction-celebration-content-ring", 128, 128 },
+    { "majorfaction-celebration-tuskarr", 235, 110 },
+    { "majorfaction-celebration-niffen", 235, 110 },
+}
+
+for _, atlasInfo in ipairs(MAJOR_FACTIONS_ICONS_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_OTHER,
+        atlas,
+        width,
+        height,
+        MAJOR_FACTIONS_ICONS_SUBTITLE,
+        string_lower(label .. " major factions icon other"),
+        label
+    )
+end
+
+AddBuiltinAtlas(
+    FILTER_OTHER,
+    "1f604",
+    72,
+    72,
+    "Interface/DougTestAtlas/DougTestAtlas",
+    string_lower("1f604 other"),
+    "1f604"
+)
+
+local PLUNDERSTORM_MAP_ATLASES_SUBTITLE = "Interface/HUD/UIMapDropPlunderstorm"
+local PLUNDERSTORM_MAP_ATLASES = {
+    { "plunderstorm-map-iconGreenSelected", 85, 85 },
+    { "plunderstorm-map-iconGreen-pressed", 85, 85 },
+    { "plunderstorm-map-zoneSelected-hover", 183, 183 },
+    { "plunderstorm-map-zoneSelected", 183, 183 },
+    { "plunderstorm-map-iconRed-hover", 85, 85 },
+    { "plunderstorm-map-iconRedSelected", 85, 85 },
+    { "plunderstorm-map-iconYellow", 85, 85 },
+    { "plunderstorm-map-iconYellowSelected", 85, 85 },
+    { "plunderstorm-map-iconYellowSelected-hover", 85, 85 },
+}
+
+for _, atlasInfo in ipairs(PLUNDERSTORM_MAP_ATLASES) do
+    local atlas = atlasInfo[1]
+    local width = atlasInfo[2]
+    local height = atlasInfo[3]
+    local label = atlasInfo[4] or string_trim(atlas)
+    AddBuiltinAtlas(
+        FILTER_OTHER,
+        atlas,
+        width,
+        height,
+        PLUNDERSTORM_MAP_ATLASES_SUBTITLE,
+        string_lower(label .. " plunderstorm map other"),
+        label
+    )
+end
+
 local FILTER_OPTIONS = {
     [FILTER_SYMBOLS] = "Symbols",
-    [FILTER_CLASS_AURAS] = "Class Auras",
+    [FILTER_BLIZZARD_PROC] = "Blizzard Proc Overlays",
     [FILTER_OTHER] = "Other",
     [FILTER_RECENT] = "Recent Proc Overlays",
 }
@@ -329,6 +800,12 @@ local function NormalizeAnchorPoint(anchor)
 end
 
 local function NormalizeTextureLayout(locationType)
+    if LOCATION_DIMENSIONS[locationType] then
+        if locationType == LOCATION_LEFTRIGHTOUTSIDE then
+            return LOCATION_LEFTRIGHT, LEGACY_OUTSIDE_PAIR_SPACING
+        end
+        return locationType, DEFAULT_TEXTURE_PAIR_SPACING
+    end
     if locationType == LOCATION_LEFTRIGHT then
         return LOCATION_LEFTRIGHT, DEFAULT_TEXTURE_PAIR_SPACING
     end
@@ -368,8 +845,12 @@ local function BuildRecentOverlayKey(fileDataID, locationType, scale, r, g, b)
 end
 
 local function BuildLocationSubtitle(locationType)
+    if LOCATION_LABELS[locationType] then
+        return LOCATION_LABELS[locationType]
+    end
+
     local normalizedLocationType = NormalizeTextureLayout(locationType)
-    return TEXTURE_LAYOUT_LABELS[normalizedLocationType] or "Single"
+    return TEXTURE_LAYOUT_LABELS[normalizedLocationType] or LOCATION_LABELS[normalizedLocationType] or "Center"
 end
 
 local function NormalizeAuraTextureSettings(settings)
@@ -411,6 +892,78 @@ local function NormalizeAuraTextureSettings(settings)
     return settings
 end
 
+local function AreTextureNumbersEqual(a, b)
+    if a == nil and b == nil then
+        return true
+    end
+    if type(a) ~= "number" or type(b) ~= "number" then
+        return false
+    end
+    return math_abs(a - b) <= 0.0001
+end
+
+local function AreTextureColorsEqual(a, b)
+    local left = CopyColor(a) or { 1, 1, 1, 1 }
+    local right = CopyColor(b) or { 1, 1, 1, 1 }
+    for index = 1, 4 do
+        if not AreTextureNumbersEqual(left[index] or 1, right[index] or 1) then
+            return false
+        end
+    end
+    return true
+end
+
+function CooldownCompanion:DoesAuraTexturePickerEntryMatchSelection(entry, selection)
+    if type(entry) ~= "table" or type(selection) ~= "table" then
+        return false
+    end
+
+    local selectionLibraryKey = selection.libraryKey
+    if type(selectionLibraryKey) == "string" and selectionLibraryKey ~= "" then
+        return entry.key == selectionLibraryKey
+    end
+
+    if entry.sourceType ~= selection.sourceType or entry.sourceValue ~= selection.sourceValue then
+        return false
+    end
+
+    if not entry.layoutAgnostic then
+        local entryLocationType = NormalizeTextureLayout(entry.locationType)
+        local selectionLocationType = NormalizeTextureLayout(selection.locationType)
+        if entryLocationType ~= selectionLocationType then
+            return false
+        end
+    end
+
+    if not AreTextureNumbersEqual(entry.scale or 1, selection.scale or 1) then
+        return false
+    end
+
+    if NormalizeBlendMode(entry.blendMode) ~= NormalizeBlendMode(selection.blendMode) then
+        return false
+    end
+
+    if not AreTextureColorsEqual(entry.color, selection.color) then
+        return false
+    end
+
+    return true
+end
+
+function CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
+    if type(selection) ~= "table" then
+        return nil
+    end
+
+    for _, entry in ipairs(entries or {}) do
+        if self:DoesAuraTexturePickerEntryMatchSelection(entry, selection) then
+            return entry
+        end
+    end
+
+    return nil
+end
+
 function CooldownCompanion:IsAuraTextureButtonSupported(buttonData)
     return type(buttonData) == "table"
         and buttonData.type == "spell"
@@ -427,6 +980,14 @@ function CooldownCompanion:GetTexturePanelLocationOptions()
         options[locationType] = TEXTURE_LAYOUT_LABELS[locationType]
     end
     return options, LOCATION_ORDER
+end
+
+function CooldownCompanion:GetTexturePanelLayoutSelectionValue(locationType)
+    local normalizedLocationType = NormalizeTextureLayout(locationType)
+    if normalizedLocationType == LOCATION_LEFTRIGHT or normalizedLocationType == LOCATION_TOPBOTTOM then
+        return normalizedLocationType
+    end
+    return LOCATION_CENTER
 end
 
 local function ResolveGroup(groupOrId)
@@ -493,20 +1054,26 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
         return
     end
 
+    local entryLocationType, entryDefaultPairSpacing
+    if entry.locationType ~= nil then
+        entryLocationType, entryDefaultPairSpacing = NormalizeTextureLayout(entry.locationType)
+    end
+
     settings.sourceType = entry.sourceType
     settings.sourceValue = entry.sourceValue
+    settings.libraryKey = entry.libraryKey or entry.key
     settings.label = entry.label
-    settings.locationType = NormalizeTextureLayout(settings.locationType)
+    settings.locationType = entryLocationType or NormalizeTextureLayout(settings.locationType)
     settings.width = entry.width
     settings.height = entry.height
     settings.color = CopyColor(entry.color) or { 1, 1, 1, 1 }
     settings.blendMode = NormalizeBlendMode(entry.blendMode or settings.blendMode)
-    settings.scale = Clamp(settings.scale or 1, 0.25, 4)
+    settings.scale = Clamp(entry.scale or settings.scale or 1, 0.25, 4)
     settings.alpha = Clamp(settings.alpha or 1, 0.05, 1)
     settings.rotation = Clamp(settings.rotation or 0, MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION)
     settings.stretchX = Clamp(settings.stretchX or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.stretchY = Clamp(settings.stretchY or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
-    settings.pairSpacing = Clamp(settings.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING, MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING)
+    settings.pairSpacing = Clamp(entry.pairSpacing or entryDefaultPairSpacing or settings.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING, MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING)
     settings.point = NormalizeAnchorPoint(settings.point or "CENTER")
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint or "CENTER")
     settings.relativeTo = UI_PARENT_NAME
@@ -520,11 +1087,16 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
     end
 
     local base = type(baseSettings) == "table" and NormalizeAuraTextureSettings(baseSettings) or nil
+    local entryLocationType, entryDefaultPairSpacing
+    if entry.locationType ~= nil then
+        entryLocationType, entryDefaultPairSpacing = NormalizeTextureLayout(entry.locationType)
+    end
     local selection = {
+        libraryKey = entry.libraryKey or entry.key,
         sourceType = entry.sourceType,
         sourceValue = entry.sourceValue,
         label = entry.label,
-        scale = base and base.scale or entry.scale or 1,
+        scale = entry.scale or (base and base.scale) or 1,
         alpha = base and base.alpha or 1,
         blendMode = NormalizeBlendMode((base and base.blendMode) or entry.blendMode),
         rotation = base and base.rotation or 0,
@@ -536,8 +1108,8 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
         x = base and base.x or 0,
         y = base and base.y or 0,
         color = CopyColor(base and base.color) or CopyColor(entry.color) or { 1, 1, 1, 1 },
-        locationType = base and base.locationType or LOCATION_CENTER,
-        pairSpacing = base and base.pairSpacing or DEFAULT_TEXTURE_PAIR_SPACING,
+        locationType = entryLocationType or (base and base.locationType) or LOCATION_CENTER,
+        pairSpacing = entry.pairSpacing or entryDefaultPairSpacing or (base and base.pairSpacing) or DEFAULT_TEXTURE_PAIR_SPACING,
         width = entry.width,
         height = entry.height,
     }
@@ -589,7 +1161,7 @@ function CooldownCompanion:RecordRecentAuraTextureOverlay(spellID, fileDataID, l
         label = spellName .. " Proc Overlay",
         sourceType = "file",
         sourceValue = fileDataID,
-        locationType = NormalizeTextureLayout(locationType),
+        locationType = locationType,
         color = {
             Clamp((tonumber(r) or 255) / 255, 0, 1),
             Clamp((tonumber(g) or 255) / 255, 0, 1),
@@ -628,17 +1200,24 @@ function CooldownCompanion:GetRecentAuraTextureEntries()
     if recent then
         for key, entry in pairs(recent) do
             local label = entry.label or entry.spellName or ("File " .. tostring(entry.sourceValue))
+            local locationSubtitle = BuildLocationSubtitle(entry.locationType)
             entries[#entries + 1] = {
                 key = "recent:" .. key,
                 label = label,
                 category = "Recent Proc Overlays",
                 sourceType = "file",
                 sourceValue = entry.sourceValue,
-                locationType = (NormalizeTextureLayout(entry.locationType)),
+                -- Recent proc captures should behave like the Blizzard proc library:
+                -- choose the art from the browser, then let the texture panel layout control
+                -- decide whether it renders as Single, Left + Right, etc. Keeping the raw
+                -- captured location here would make a recent pick silently overwrite the
+                -- panel layout with hidden right/bottom/outside values.
+                locationType = nil,
+                layoutAgnostic = true,
                 color = CopyColor(entry.color) or { 1, 1, 1, 1 },
                 blendMode = NormalizeBlendMode(entry.blendMode),
-                subtitle = tostring(entry.spellID or "?") .. "  |  File " .. tostring(entry.sourceValue) .. "  |  " .. BuildLocationSubtitle(entry.locationType),
-                searchText = string_lower(label .. " " .. tostring(entry.spellID or "") .. " " .. tostring(entry.sourceValue) .. " " .. BuildLocationSubtitle(entry.locationType)),
+                subtitle = tostring(entry.spellID or "?") .. "  |  File " .. tostring(entry.sourceValue) .. "  |  " .. locationSubtitle,
+                searchText = string_lower(label .. " " .. tostring(entry.spellID or "") .. " " .. tostring(entry.sourceValue) .. " " .. locationSubtitle),
                 lastSeenAt = entry.lastSeenAt or 0,
             }
         end
@@ -651,6 +1230,118 @@ function CooldownCompanion:GetRecentAuraTextureEntries()
             return a.label < b.label
         end
         return aTime > bTime
+    end)
+
+    return entries
+end
+
+local function BuildBlizzardProcOverlayEntries()
+    local overlayLibrary = ST._spellActivationOverlayLibrary
+    local rows = overlayLibrary and overlayLibrary.entries
+    local entries = {}
+    local deduped = {}
+
+    if type(rows) ~= "table" then
+        return entries
+    end
+
+    for _, row in ipairs(rows) do
+        local spellID = tonumber(row.spellID)
+        local fileDataID = tonumber(row.fileDataID)
+        if spellID and spellID > 0 and fileDataID and fileDataID > 0 then
+            local spellName = C_Spell_GetSpellName(spellID) or ("Spell " .. tostring(spellID))
+            local locationType = tonumber(row.locationType)
+            local locationSubtitle = BuildLocationSubtitle(locationType)
+            local color = CopyColor(row.color) or { 1, 1, 1, 1 }
+            local scale = tonumber(row.scale) or 1
+            -- Treat the Blizzard proc browser as an art library, not a layout library.
+            -- Different DB2 rows often point at the same visual and only vary by Blizzard's
+            -- authored placement metadata, while our config already lets the user choose the
+            -- final layout. We intentionally dedupe by visual identity and keep placement only
+            -- as searchable/informational metadata so the browser stays consistent.
+            local key = string_format(
+                "builtin:proc:%d:%.4f:%.4f:%.4f:%.4f:%.4f",
+                fileDataID,
+                scale,
+                color[1] or 1,
+                color[2] or 1,
+                color[3] or 1,
+                color[4] or 1
+            )
+            local entry = deduped[key]
+            if not entry then
+                entry = {
+                    key = key,
+                    label = spellName .. " Proc Overlay",
+                    categoryKey = FILTER_BLIZZARD_PROC,
+                    category = FILTER_OPTIONS[FILTER_BLIZZARD_PROC],
+                    sourceType = "file",
+                    sourceValue = fileDataID,
+                    -- Leave location unset so selecting a Blizzard proc does not force a
+                    -- built-in layout; the layout control remains the source of truth.
+                    locationType = nil,
+                    layoutAgnostic = true,
+                    color = color,
+                    blendMode = "ADD",
+                    scale = scale,
+                    subtitle = tostring(spellID) .. "  |  File " .. tostring(fileDataID),
+                    _spellIDs = { tostring(spellID) },
+                    _spellNames = { spellName },
+                    _spellCount = 1,
+                    _locationSubtitles = {
+                        [locationSubtitle] = true,
+                    },
+                    _seenSpellIDs = {
+                        [spellID] = true,
+                    },
+                    _seenSpellNames = {
+                        [spellName] = true,
+                    },
+                }
+                deduped[key] = entry
+                entries[#entries + 1] = entry
+            elseif not entry._seenSpellIDs[spellID] then
+                entry._seenSpellIDs[spellID] = true
+                entry._spellCount = (entry._spellCount or 1) + 1
+                table_insert(entry._spellIDs, tostring(spellID))
+                if not entry._seenSpellNames[spellName] then
+                    entry._seenSpellNames[spellName] = true
+                    table_insert(entry._spellNames, spellName)
+                end
+                entry._locationSubtitles[locationSubtitle] = true
+            end
+        end
+    end
+
+    for _, entry in ipairs(entries) do
+        local locationAliases = {}
+        for subtitle in pairs(entry._locationSubtitles or {}) do
+            locationAliases[#locationAliases + 1] = subtitle
+        end
+        table_sort(locationAliases)
+        local baseSearchText = entry.label
+            .. " "
+            .. table_concat(entry._spellNames or {}, " ")
+            .. " "
+            .. table_concat(entry._spellIDs or {}, " ")
+            .. " "
+            .. tostring(entry.sourceValue)
+            .. " "
+            .. table_concat(locationAliases, " ")
+        if (entry._spellCount or 1) > 1 then
+            entry.subtitle = entry.subtitle .. "  |  Used by " .. tostring(entry._spellCount) .. " spells"
+        end
+        entry.searchText = string_lower(baseSearchText)
+        entry._spellIDs = nil
+        entry._spellNames = nil
+        entry._spellCount = nil
+        entry._locationSubtitles = nil
+        entry._seenSpellIDs = nil
+        entry._seenSpellNames = nil
+    end
+
+    table_sort(entries, function(a, b)
+        return a.label < b.label
     end)
 
     return entries
@@ -673,6 +1364,9 @@ local function BuildBuiltinEntries()
             subtitle = entry.subtitle,
             searchText = entry.searchText or string_lower(entry.label),
         }
+    end
+    for _, entry in ipairs(BuildBlizzardProcOverlayEntries()) do
+        entries[#entries + 1] = entry
     end
     return entries
 end
@@ -705,7 +1399,7 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
 end
 
 function CooldownCompanion:GetAuraTexturePickerFilters()
-    return FILTER_OPTIONS, { FILTER_SYMBOLS, FILTER_CLASS_AURAS, FILTER_OTHER, FILTER_RECENT }
+    return FILTER_OPTIONS, { FILTER_SYMBOLS, FILTER_BLIZZARD_PROC, FILTER_OTHER, FILTER_RECENT }
 end
 
 function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
@@ -713,10 +1407,14 @@ function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
         return FILTER_SYMBOLS
     end
 
-    for _, entry in ipairs(BuildBuiltinEntries()) do
-        if entry.sourceType == selection.sourceType and entry.sourceValue == selection.sourceValue then
-            return entry.categoryKey or FILTER_OTHER
-        end
+    local recentEntry = self:FindAuraTexturePickerEntry(self:GetRecentAuraTextureEntries(), selection)
+    if recentEntry then
+        return FILTER_RECENT
+    end
+
+    local builtinEntry = self:FindAuraTexturePickerEntry(BuildBuiltinEntries(), selection)
+    if builtinEntry then
+        return builtinEntry.categoryKey or FILTER_OTHER
     end
 
     if selection.sourceType == "file" then
