@@ -59,6 +59,25 @@ local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 local SOUND_ALERT_NONE_OPTION_KEY = "None" -- Keep in sync with Core/SoundAlerts.lua SOUND_NONE_KEY.
 
+local function GroupUsesTexturePanelEntries(group)
+    return group and (group.displayMode or "icons") == "textures"
+end
+
+local function BuildButtonSettingsTabs(group)
+    local tabs = {
+        { value = "settings", text = "Settings" },
+        { value = "soundalerts", text = "Sound Alerts" },
+    }
+
+    -- Texture panels only ever manage a single texture entry, so the
+    -- per-button Overrides tab does not apply there and just creates noise.
+    if not GroupUsesTexturePanelEntries(group) then
+        tabs[#tabs + 1] = { value = "overrides", text = "Overrides" }
+    end
+
+    return tabs
+end
+
 local function BuildSortedSoundOptionOrder(soundOptions)
     local order = {}
     for optionKey in pairs(soundOptions) do
@@ -1188,6 +1207,13 @@ local function RefreshButtonSettingsColumn()
     end
 
     if hasSelection then
+        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group))
+
+        if GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
+            CS.buttonSettingsTab = "settings"
+        end
+
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
         bsCol.bsTabGroup.frame:Show()
         bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or "settings")

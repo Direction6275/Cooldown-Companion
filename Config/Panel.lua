@@ -1484,7 +1484,8 @@ local function CreateConfigPanel()
     btnBar2:Hide()
     CS.col2ButtonBar = btnBar2
 
-    -- Button Settings TabGroup (Settings + Sound Alerts + Overrides tabs)
+    -- Button Settings TabGroup. The tab list is refreshed later based on the
+    -- selected group's display mode, so texture panels can omit Overrides.
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
         { value = "settings",  text = "Settings" },
