@@ -369,6 +369,8 @@ local function OpenAuraTexturePicker(opts)
 
     sourceDrop:SetCallback("OnValueChanged", function(_, _, value)
         currentFilter = value or "symbols"
+        currentSearch = ""
+        searchBox:SetText("")
         RebuildGrid()
     end)
 
@@ -386,6 +388,7 @@ local function OpenAuraTexturePicker(opts)
         currentOnCommit(selection)
         StageEntryPreview(selectedEntry)
         UpdateSelectionLabel()
+        CloseAuraTexturePicker()
     end)
 
     clearBtn:SetCallback("OnClick", function()

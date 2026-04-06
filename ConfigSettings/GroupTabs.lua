@@ -81,7 +81,7 @@ local TEXTURE_BLEND_ORDER = {
 }
 
 local TEXTURE_PREVIEW_WIDTH = 240
-local TEXTURE_PREVIEW_HEIGHT = 132
+local TEXTURE_PREVIEW_HEIGHT = 170
 local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
 local MIN_TEXTURE_PAIR_SPACING = -5
 local MAX_TEXTURE_PAIR_SPACING = 5
@@ -220,7 +220,9 @@ local function UpdateTexturePanelPreview(preview, settings)
         and settings.sourceType ~= nil
         and settings.sourceValue ~= nil
 
-    preview.nameLabel:SetText(hasTexture and (settings.label or tostring(settings.sourceValue)) or "No texture selected")
+    if preview.nameLabel and preview.nameLabel.SetText then
+        preview.nameLabel:SetText(hasTexture and (settings.label or tostring(settings.sourceValue)) or "No texture selected")
+    end
     preview.placeholder:SetShown(not hasTexture)
     preview.primary:Hide()
     preview.secondary:Hide()
@@ -233,8 +235,8 @@ local function UpdateTexturePanelPreview(preview, settings)
     local baseWidth = (tonumber(settings.width) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
     local baseHeight = (tonumber(settings.height) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
     local geometry = CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHeight)
-    local maxWidth = TEXTURE_PREVIEW_WIDTH - 20
-    local maxHeight = TEXTURE_PREVIEW_HEIGHT - 20
+    local maxWidth = TEXTURE_PREVIEW_WIDTH - 8
+    local maxHeight = TEXTURE_PREVIEW_HEIGHT - 8
     local fit = math_min(maxWidth / math_max(geometry.boundsWidth, 1), maxHeight / math_max(geometry.boundsHeight, 1), 1)
 
     local color = settings.color or { 1, 1, 1, 1 }
@@ -1596,62 +1598,39 @@ local function BuildAppearanceTab(container)
 
         local previewGroup = AceGUI:Create("SimpleGroup")
         previewGroup:SetFullWidth(true)
-        previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 10)
+        previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 4)
         previewGroup:SetLayout("Fill")
         container:AddChild(previewGroup)
 
-        local previewFrame = CreateFrame("Frame", nil, previewGroup.frame, "BackdropTemplate")
+        local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
         previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
         previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, TEXTURE_PREVIEW_HEIGHT)
-        previewFrame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        previewFrame:SetBackdropColor(0.05, 0.08, 0.10, 0.95)
-        previewFrame:SetBackdropBorderColor(0.18, 0.35, 0.45, 0.95)
         appearanceTabElements[#appearanceTabElements + 1] = previewFrame
 
-        local previewInset = CreateFrame("Frame", nil, previewFrame)
-        previewInset:SetPoint("TOPLEFT", previewFrame, "TOPLEFT", 8, -8)
-        previewInset:SetPoint("BOTTOMRIGHT", previewFrame, "BOTTOMRIGHT", -8, 8)
-
-        local previewShade = previewInset:CreateTexture(nil, "BACKGROUND")
+        local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
         previewShade:SetAllPoints()
         previewShade:SetColorTexture(0, 0, 0, 0.42)
 
-        local previewAnchor = CreateFrame("Frame", nil, previewInset)
+        local previewAnchor = CreateFrame("Frame", nil, previewFrame)
         previewAnchor:SetPoint("CENTER")
-        previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 20, TEXTURE_PREVIEW_HEIGHT - 20)
+        previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 8, TEXTURE_PREVIEW_HEIGHT - 8)
 
-        local previewPrimary = previewInset:CreateTexture(nil, "ARTWORK")
-        local previewSecondary = previewInset:CreateTexture(nil, "ARTWORK")
+        local previewPrimary = previewFrame:CreateTexture(nil, "ARTWORK")
+        local previewSecondary = previewFrame:CreateTexture(nil, "ARTWORK")
 
-        local placeholder = previewInset:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         placeholder:SetPoint("CENTER")
         placeholder:SetJustifyH("CENTER")
         placeholder:SetText("No texture selected")
         placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
-
-        local previewName = AceGUI:Create("Label")
-        previewName:SetFullWidth(true)
-        previewName.label:SetFontObject(GameFontHighlight)
-        previewName.label:SetJustifyH("CENTER")
-        container:AddChild(previewName)
 
         previewWidget = {
             primary = previewPrimary,
             secondary = previewSecondary,
             placeholder = placeholder,
             anchor = previewAnchor,
-            nameLabel = previewName,
         }
         UpdateTexturePanelPreview(previewWidget, settings)
-
-        local helpLabel = AceGUI:Create("Label")
-        helpLabel:SetFullWidth(true)
-        helpLabel:SetText("|cff888888The entry controls when this shows. These controls only change the texture itself.|r")
-        container:AddChild(helpLabel)
 
         local actionRow = AceGUI:Create("SimpleGroup")
         actionRow:SetFullWidth(true)
