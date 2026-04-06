@@ -103,24 +103,24 @@ local TEXTURE_INDICATOR_EFFECT_ORDER = {
 }
 local TEXTURE_INDICATOR_SECTION_DEFS = {
     proc = {
-        label = "Proc",
-        previewText = "Preview Proc Indicator (3s)",
+        label = "Show Proc Effect",
+        previewText = "Preview Proc Effect (3s)",
     },
     aura = {
-        label = "Aura",
-        previewText = "Preview Aura Indicator (3s)",
+        label = "Show Aura Effect",
+        previewText = "Preview Aura Effect (3s)",
     },
     pandemic = {
-        label = "Pandemic",
-        previewText = "Preview Pandemic Indicator (3s)",
+        label = "Show Pandemic Effect",
+        previewText = "Preview Pandemic Effect (3s)",
     },
     ready = {
-        label = "Ready",
-        previewText = "Preview Ready Indicator (3s)",
+        label = "Show Ready Effect",
+        previewText = "Preview Ready Effect (3s)",
     },
     unusable = {
-        label = "Unusable",
-        previewText = "Preview Unusable Indicator (3s)",
+        label = "Show Unusable Effect",
+        previewText = "Preview Unusable Effect (3s)",
     },
 }
 
