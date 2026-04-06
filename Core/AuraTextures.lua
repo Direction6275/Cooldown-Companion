@@ -49,6 +49,7 @@ local LOCATION_LEFTRIGHTOUTSIDE = SCREEN_LOCATION.LeftRightOutside or 11
 
 local FILTER_SYMBOLS = "symbols"
 local FILTER_BLIZZARD_PROC = "blizzardProc"
+local FILTER_CUSTOM = "custom"
 local FILTER_OTHER = "other"
 local FILTER_RECENT = "recent"
 local MAX_RECENT_OVERLAYS = 200
@@ -627,6 +628,7 @@ end
 local FILTER_OPTIONS = {
     [FILTER_SYMBOLS] = "Symbols",
     [FILTER_BLIZZARD_PROC] = "Blizzard Proc Overlays",
+    [FILTER_CUSTOM] = "Custom",
     [FILTER_OTHER] = "Other",
     [FILTER_RECENT] = "Recent Proc Overlays",
 }
@@ -853,12 +855,39 @@ local function BuildLocationSubtitle(locationType)
     return TEXTURE_LAYOUT_LABELS[normalizedLocationType] or LOCATION_LABELS[normalizedLocationType] or "Center"
 end
 
+local function NormalizeAuraTextureSourceType(sourceType)
+    if sourceType == "atlas" or sourceType == "file" then
+        return sourceType
+    end
+    return nil
+end
+
+function CooldownCompanion:ResolveAuraTextureAsset(sourceType, sourceValue)
+    local normalizedSourceType = NormalizeAuraTextureSourceType(sourceType)
+
+    if normalizedSourceType == "atlas" then
+        if type(sourceValue) == "string" and C_Texture.GetAtlasExists(sourceValue) then
+            return "atlas", sourceValue
+        end
+        return nil
+    end
+
+    if normalizedSourceType == "file" then
+        if sourceValue ~= nil then
+            return "file", sourceValue
+        end
+        return nil
+    end
+
+    return nil
+end
+
 local function NormalizeAuraTextureSettings(settings)
     if type(settings) ~= "table" then
         return nil
     end
 
-    settings.sourceType = settings.sourceType == "atlas" and "atlas" or (settings.sourceType == "file" and "file" or nil)
+    settings.sourceType = NormalizeAuraTextureSourceType(settings.sourceType)
     settings.label = type(settings.label) == "string" and settings.label or nil
     settings.sourceValue = settings.sourceValue
     settings.enabled = settings.sourceType ~= nil and settings.sourceValue ~= nil
@@ -875,6 +904,7 @@ local function NormalizeAuraTextureSettings(settings)
     settings.x = tonumber(settings.x or settings.xOffset) or 0
     settings.y = tonumber(settings.y or settings.yOffset) or 0
     settings.anchor = nil
+    settings.mediaType = nil
     settings.xOffset = nil
     settings.yOffset = nil
     settings.color = CopyColor(settings.color) or { 1, 1, 1, 1 }
@@ -1125,6 +1155,157 @@ function CooldownCompanion:GetTexturePanelSelectionLabel(groupOrId)
     return settings.label or tostring(settings.sourceValue)
 end
 
+local SUPPORTED_CUSTOM_TEXTURE_EXTENSIONS = {
+    blp = true,
+    jpg = true,
+    jpeg = true,
+    png = true,
+    tga = true,
+}
+
+local function NormalizeCustomTexturePath(path)
+    if type(path) ~= "string" then
+        return nil
+    end
+
+    local normalized = string_trim(path)
+    if normalized == "" then
+        return nil
+    end
+
+    normalized = string_gsub(normalized, "/", "\\")
+    normalized = string_gsub(normalized, "\\+", "\\")
+
+    local lowerPath = string_lower(normalized)
+    if string_find(lowerPath, "^[a-z]:") or not string_find(lowerPath, "^interface\\") then
+        return nil
+    end
+
+    -- WoW only requires an explicit suffix for PNG paths; BLP/JPG/TGA can be
+    -- loaded with or without the extension, so the normalizer must allow both.
+    local extension = lowerPath:match("%.([a-z0-9]+)$")
+    if extension and not SUPPORTED_CUSTOM_TEXTURE_EXTENSIONS[extension] then
+        return nil
+    end
+
+    if not extension and string_find(lowerPath, "%.$") then
+        return nil
+    end
+
+    return normalized
+end
+
+local function BuildCustomTexturePathKey(normalizedPath)
+    if type(normalizedPath) ~= "string" or normalizedPath == "" then
+        return nil
+    end
+    -- Keep the saved shelf key tied to the exact normalized path so distinct
+    -- files like Glow.blp and Glow.tga cannot silently overwrite each other.
+    return string_lower(normalizedPath)
+end
+
+local function GetCustomTexturePathExtension(normalizedPath)
+    if type(normalizedPath) ~= "string" or normalizedPath == "" then
+        return nil
+    end
+
+    return string_lower(normalizedPath):match("%.([a-z0-9]+)$")
+end
+
+local function BuildCustomTextureCanonicalKey(normalizedPath)
+    local pathKey = BuildCustomTexturePathKey(normalizedPath)
+    if not pathKey then
+        return nil
+    end
+
+    local extension = GetCustomTexturePathExtension(normalizedPath)
+    if extension and extension ~= "png" and SUPPORTED_CUSTOM_TEXTURE_EXTENSIONS[extension] then
+        return pathKey:gsub("%.[a-z0-9]+$", "")
+    end
+
+    return pathKey
+end
+
+local function BuildCustomTextureLabel(normalizedPath)
+    if type(normalizedPath) ~= "string" or normalizedPath == "" then
+        return "Custom Texture"
+    end
+
+    local fileName = normalizedPath:match("([^\\]+)$")
+    return fileName or normalizedPath
+end
+
+local function NormalizeCustomTextureDimensions(width, height)
+    local normalizedWidth = tonumber(width)
+    local normalizedHeight = tonumber(height)
+
+    if not normalizedWidth or normalizedWidth <= 0 or not normalizedHeight or normalizedHeight <= 0 then
+        return nil, nil
+    end
+
+    return normalizedWidth, normalizedHeight
+end
+
+local function ReadCustomTextureRecord(value)
+    if type(value) == "string" then
+        return NormalizeCustomTexturePath(value), nil, nil
+    end
+
+    if type(value) ~= "table" then
+        return nil, nil, nil
+    end
+
+    local normalizedPath = NormalizeCustomTexturePath(value.path or value.sourceValue or value.texturePath)
+    local width, height = NormalizeCustomTextureDimensions(value.width, value.height)
+    return normalizedPath, width, height
+end
+
+local function BuildCustomTextureEntry(value)
+    local normalizedPath, width, height = ReadCustomTextureRecord(value)
+    local pathKey = BuildCustomTexturePathKey(normalizedPath)
+    if not normalizedPath or not pathKey then
+        return nil
+    end
+
+    local label = BuildCustomTextureLabel(normalizedPath)
+
+    return {
+        key = "custom:" .. pathKey,
+        libraryKey = "custom:" .. pathKey,
+        label = label,
+        categoryKey = FILTER_CUSTOM,
+        category = FILTER_OPTIONS[FILTER_CUSTOM],
+        sourceType = "file",
+        sourceValue = normalizedPath,
+        layoutAgnostic = true,
+        color = { 1, 1, 1, 1 },
+        blendMode = "BLEND",
+        width = width,
+        height = height,
+        subtitle = normalizedPath,
+        searchText = string_lower(label .. " " .. normalizedPath .. " custom texture"),
+        isCustomTexture = true,
+    }
+end
+
+function CooldownCompanion:NormalizeCustomAuraTexturePath(path)
+    return NormalizeCustomTexturePath(path)
+end
+
+function CooldownCompanion:IsCustomAuraTextureSelection(selection)
+    if type(selection) ~= "table" then
+        return false
+    end
+
+    if type(selection.libraryKey) == "string" and string_find(selection.libraryKey, "^custom:", 1, false) then
+        return true
+    end
+
+    return selection.sourceType == "file"
+        and type(selection.sourceValue) == "string"
+        and NormalizeCustomTexturePath(selection.sourceValue) ~= nil
+end
+
 function CooldownCompanion:EnsureAuraTextureLibraryStore()
     local profile = self.db and self.db.profile
     if not profile then
@@ -1132,12 +1313,126 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
     end
     if type(profile.auraTextureLibrary) ~= "table" then
         profile.auraTextureLibrary = {
+            customTextures = {},
             recentProcOverlays = {},
         }
-    elseif type(profile.auraTextureLibrary.recentProcOverlays) ~= "table" then
+    end
+    if type(profile.auraTextureLibrary.customTextures) ~= "table" then
+        profile.auraTextureLibrary.customTextures = {}
+    end
+    if type(profile.auraTextureLibrary.recentProcOverlays) ~= "table" then
         profile.auraTextureLibrary.recentProcOverlays = {}
     end
     return profile.auraTextureLibrary
+end
+
+function CooldownCompanion:GetCustomAuraTextureEntries()
+    local store = self:EnsureAuraTextureLibraryStore()
+    local customTextures = store and store.customTextures or nil
+    local entries = {}
+
+    for key, storedValue in pairs(customTextures or {}) do
+        local entry = BuildCustomTextureEntry(storedValue)
+        if entry then
+            entries[#entries + 1] = entry
+        else
+            customTextures[key] = nil
+        end
+    end
+
+    table_sort(entries, function(a, b)
+        return a.label < b.label
+    end)
+
+    return entries
+end
+
+function CooldownCompanion:SaveCustomAuraTexture(path, width, height)
+    local normalizedPath = NormalizeCustomTexturePath(path)
+    local pathKey = BuildCustomTexturePathKey(normalizedPath)
+    if not normalizedPath or not pathKey then
+        return nil
+    end
+
+    local store = self:EnsureAuraTextureLibraryStore()
+    if not store then
+        return nil
+    end
+
+    local normalizedWidth, normalizedHeight = NormalizeCustomTextureDimensions(width, height)
+    store.customTextures[pathKey] = {
+        path = normalizedPath,
+        width = normalizedWidth,
+        height = normalizedHeight,
+    }
+
+    return BuildCustomTextureEntry(store.customTextures[pathKey])
+end
+
+function CooldownCompanion:ResolveCustomAuraTextureSubmission(path)
+    local normalizedPath = NormalizeCustomTexturePath(path)
+    local pathKey = BuildCustomTexturePathKey(normalizedPath)
+    if not normalizedPath or not pathKey then
+        return nil, nil, "Enter a WoW texture path like Interface\\AddOns\\MyPack\\Texture.tga."
+    end
+
+    local store = self:EnsureAuraTextureLibraryStore()
+    if not store then
+        return nil, nil, "Texture library is unavailable right now."
+    end
+
+    local existingExact = store.customTextures[pathKey]
+    if existingExact then
+        return BuildCustomTextureEntry(existingExact), nil, nil
+    end
+
+    local typedExtension = GetCustomTexturePathExtension(normalizedPath)
+    if typedExtension ~= nil then
+        -- Explicit file variants should stay addable beside an older
+        -- extensionless save; only exact path matches should collapse here.
+        return nil, normalizedPath, nil
+    end
+
+    local canonicalKey = BuildCustomTextureCanonicalKey(normalizedPath)
+    local variantCount = 0
+    local soleVariantEntry = nil
+
+    for _, storedValue in pairs(store.customTextures) do
+        local storedPath = ReadCustomTextureRecord(storedValue)
+        if storedPath and BuildCustomTextureCanonicalKey(storedPath) == canonicalKey then
+            variantCount = variantCount + 1
+            soleVariantEntry = BuildCustomTextureEntry(storedValue)
+        end
+    end
+
+    if variantCount == 0 then
+        return nil, normalizedPath, nil
+    end
+    if variantCount == 1 then
+        return soleVariantEntry, nil, nil
+    end
+
+    return nil, nil, "More than one custom texture uses this name. Include the file extension."
+end
+
+function CooldownCompanion:RemoveCustomAuraTexture(pathOrKey)
+    local store = self:EnsureAuraTextureLibraryStore()
+    if not store then
+        return
+    end
+
+    local pathKey = nil
+    if type(pathOrKey) == "string" and string_find(pathOrKey, "^custom:", 1, false) then
+        pathKey = pathOrKey:sub(8)
+    else
+        pathKey = BuildCustomTexturePathKey(pathOrKey)
+    end
+
+    if not pathKey then
+        return
+    end
+
+    store.customTextures[pathKey] = nil
 end
 
 function CooldownCompanion:RecordRecentAuraTextureOverlay(spellID, fileDataID, locationType, scale, r, g, b)
@@ -1376,6 +1671,10 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
     local filter = FILTER_OPTIONS[filterValue] and filterValue or FILTER_SYMBOLS
     local entries = {}
 
+    if filter == FILTER_CUSTOM then
+        return self:GetCustomAuraTextureEntries()
+    end
+
     if filter == FILTER_RECENT then
         for _, entry in ipairs(self:GetRecentAuraTextureEntries()) do
             if query == "" or string_find(entry.searchText, query, 1, true) then
@@ -1399,7 +1698,7 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
 end
 
 function CooldownCompanion:GetAuraTexturePickerFilters()
-    return FILTER_OPTIONS, { FILTER_SYMBOLS, FILTER_BLIZZARD_PROC, FILTER_OTHER, FILTER_RECENT }
+    return FILTER_OPTIONS, { FILTER_SYMBOLS, FILTER_BLIZZARD_PROC, FILTER_CUSTOM, FILTER_OTHER, FILTER_RECENT }
 end
 
 function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
@@ -1412,9 +1711,18 @@ function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
         return FILTER_RECENT
     end
 
+    local customEntry = self:FindAuraTexturePickerEntry(self:GetCustomAuraTextureEntries(), selection)
+    if customEntry then
+        return FILTER_CUSTOM
+    end
+
     local builtinEntry = self:FindAuraTexturePickerEntry(BuildBuiltinEntries(), selection)
     if builtinEntry then
         return builtinEntry.categoryKey or FILTER_OTHER
+    end
+
+    if self:IsCustomAuraTextureSelection(selection) then
+        return FILTER_CUSTOM
     end
 
     if selection.sourceType == "file" then
@@ -1425,17 +1733,18 @@ function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
 end
 
 local function ApplyTextureSource(texture, settings)
-    if settings.sourceType == "atlas" then
-        if type(settings.sourceValue) ~= "string" or not C_Texture.GetAtlasExists(settings.sourceValue) then
-            texture:Hide()
-            return false
-        end
-        texture:SetAtlas(settings.sourceValue, false)
+    local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
+        settings.sourceType,
+        settings.sourceValue
+    )
+
+    if resolvedSourceType == "atlas" then
+        texture:SetAtlas(resolvedSourceValue, false)
         return true
     end
 
-    if settings.sourceType == "file" then
-        texture:SetTexture(settings.sourceValue)
+    if resolvedSourceType == "file" then
+        texture:SetTexture(resolvedSourceValue)
         return true
     end
 

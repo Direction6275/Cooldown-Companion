@@ -870,13 +870,18 @@ local function ApplyAuraTextureRowIcon(icon, entry)
     icon:SetBlendMode("ADD")
     icon:SetVertexColor(1, 1, 1, 1)
 
-    if entry.sourceType == "atlas" and type(entry.sourceValue) == "string" and C_Texture.GetAtlasExists(entry.sourceValue) then
-        icon:SetAtlas(entry.sourceValue, false)
+    local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
+        entry.sourceType,
+        entry.sourceValue
+    )
+
+    if resolvedSourceType == "atlas" and type(resolvedSourceValue) == "string" and C_Texture.GetAtlasExists(resolvedSourceValue) then
+        icon:SetAtlas(resolvedSourceValue, false)
         return
     end
 
-    if entry.sourceType == "file" and type(entry.sourceValue) == "number" then
-        icon:SetTexture(entry.sourceValue)
+    if resolvedSourceType == "file" and resolvedSourceValue ~= nil then
+        icon:SetTexture(resolvedSourceValue)
         local color = entry.color
         if type(color) == "table" then
             icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)

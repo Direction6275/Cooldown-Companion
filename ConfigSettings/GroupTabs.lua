@@ -2,7 +2,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
-local C_Texture_GetAtlasExists = C_Texture.GetAtlasExists
 local math_abs = math.abs
 local math_max = math.max
 local math_min = math.min
@@ -174,18 +173,19 @@ local function ApplyTexturePreviewSource(texture, settings)
         return false
     end
 
-    if settings.sourceType == "atlas" then
-        if type(settings.sourceValue) ~= "string" or not C_Texture_GetAtlasExists(settings.sourceValue) then
-            texture:Hide()
-            return false
-        end
-        texture:SetAtlas(settings.sourceValue, false)
+    local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
+        settings.sourceType,
+        settings.sourceValue
+    )
+
+    if resolvedSourceType == "atlas" then
+        texture:SetAtlas(resolvedSourceValue, false)
         texture:Show()
         return true
     end
 
-    if settings.sourceType == "file" and settings.sourceValue ~= nil then
-        texture:SetTexture(settings.sourceValue)
+    if resolvedSourceType == "file" and resolvedSourceValue ~= nil then
+        texture:SetTexture(resolvedSourceValue)
         texture:Show()
         return true
     end

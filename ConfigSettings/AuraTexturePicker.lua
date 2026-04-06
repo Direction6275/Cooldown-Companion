@@ -3,12 +3,11 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
-local C_Texture_GetAtlasExists = C_Texture.GetAtlasExists
-
 local BASE_THUMB_SIZE = 64
 local THUMB_GAP = 8
 local DEFAULT_THUMBS_PER_ROW = 5
 local GRID_HEIGHT = 452
+local FILTER_CUSTOM = "custom"
 
 local pickerWindow = nil
 local pickerParkingFrame = CreateFrame("Frame", nil, UIParent)
@@ -16,11 +15,43 @@ pickerParkingFrame:Hide()
 local pickerThumbnailPool = {}
 local pickerScrollFrame = nil
 local pickerScrollChild = nil
+local customTextureValidationFrame = CreateFrame("Frame", nil, UIParent)
+customTextureValidationFrame:Hide()
+local customTextureValidationTexture = customTextureValidationFrame:CreateTexture(nil, "ARTWORK")
+-- Request blocking loads here so valid custom textures can report their native
+-- size immediately when the user adds them to the saved custom shelf.
+customTextureValidationTexture:SetBlockingLoadsRequested(true)
 
-local function GetTargetButtonData(groupId, buttonIndex)
-    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = profile and profile.groups and profile.groups[groupId]
-    return group and group.buttons and group.buttons[buttonIndex] or nil
+local function IsCustomFilter(filterValue)
+    return filterValue == FILTER_CUSTOM
+end
+
+local function ValidateCustomTexturePath(path)
+    local normalizedPath = CooldownCompanion:NormalizeCustomAuraTexturePath(path)
+    if not normalizedPath then
+        return nil, nil, nil, "Enter a WoW texture path like Interface\\AddOns\\MyPack\\Texture.tga."
+    end
+
+    customTextureValidationTexture:SetTexture(nil)
+    local success = customTextureValidationTexture:SetTexture(normalizedPath)
+    if not success or customTextureValidationTexture:GetTexture() == nil then
+        customTextureValidationTexture:SetTexture(nil)
+        return nil, nil, nil, "Texture could not be loaded. Check the path, format, and dimensions."
+    end
+
+    if not customTextureValidationTexture:IsObjectLoaded() then
+        customTextureValidationTexture:SetTexture(nil)
+        return nil, nil, nil, "Texture has not finished loading yet. Check the path and try again."
+    end
+
+    local width, height = customTextureValidationTexture:GetSize()
+    if type(width) ~= "number" or width <= 0 or type(height) ~= "number" or height <= 0 then
+        customTextureValidationTexture:SetTexture(nil)
+        return nil, nil, nil, "Texture size could not be read. Check the file and try again."
+    end
+
+    customTextureValidationTexture:SetTexture(nil)
+    return normalizedPath, width, height, nil
 end
 
 local function BuildPreviewSelection(groupId, buttonIndex, entry)
@@ -31,18 +62,19 @@ local function BuildPreviewSelection(groupId, buttonIndex, entry)
 end
 
 local function ApplyEntryTexture(texture, entry)
-    if entry.sourceType == "atlas" then
-        if type(entry.sourceValue) ~= "string" or not C_Texture_GetAtlasExists(entry.sourceValue) then
-            texture:Hide()
-            return
-        end
-        texture:SetAtlas(entry.sourceValue, false)
+    local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
+        entry.sourceType,
+        entry.sourceValue
+    )
+
+    if resolvedSourceType == "atlas" then
+        texture:SetAtlas(resolvedSourceValue, false)
         texture:Show()
         return
     end
 
-    if entry.sourceType == "file" then
-        texture:SetTexture(entry.sourceValue)
+    if resolvedSourceType == "file" then
+        texture:SetTexture(resolvedSourceValue)
         texture:Show()
         return
     end
@@ -60,6 +92,46 @@ local function FindEntryForSelection(entries, selection)
     end
 
     return nil
+end
+
+local function GetCustomEntryLabel(path)
+    if type(path) ~= "string" or path == "" then
+        return "Custom Texture"
+    end
+
+    local fileName = path:match("([^\\]+)$")
+    return fileName or path
+end
+
+local function BuildTransientCurrentCustomEntry(selection)
+    if not CooldownCompanion:IsCustomAuraTextureSelection(selection) then
+        return nil
+    end
+
+    local normalizedPath = CooldownCompanion:NormalizeCustomAuraTexturePath(selection.sourceValue)
+    if not normalizedPath then
+        return nil
+    end
+
+    local label = selection.label or GetCustomEntryLabel(normalizedPath)
+    return {
+        key = selection.libraryKey or ("custom:" .. string.lower(normalizedPath)),
+        libraryKey = selection.libraryKey or ("custom:" .. string.lower(normalizedPath)),
+        label = label,
+        categoryKey = FILTER_CUSTOM,
+        category = "Custom",
+        sourceType = "file",
+        sourceValue = normalizedPath,
+        width = selection.width,
+        height = selection.height,
+        color = selection.color,
+        blendMode = selection.blendMode,
+        scale = selection.scale,
+        layoutAgnostic = true,
+        subtitle = normalizedPath .. "  |  Current selection (not saved)",
+        searchText = string.lower(label .. " " .. normalizedPath .. " current selection custom texture"),
+        isTransientCustomTexture = true,
+    }
 end
 
 local function CloseAuraTexturePicker()
@@ -104,6 +176,7 @@ local function OpenAuraTexturePicker(opts)
     local selectedEntry = nil
     local activeThumbs = {}
     local currentThumbSize = BASE_THUMB_SIZE
+    local suppressPathTextChanged = false
 
     local sourceDrop = AceGUI:Create("Dropdown")
     sourceDrop:SetLabel("Category")
@@ -175,6 +248,12 @@ local function OpenAuraTexturePicker(opts)
             thumb:SetScript("OnLeave", nil)
             thumb:SetScript("OnClick", nil)
             thumb:SetScript("OnMouseWheel", nil)
+            if thumb._deleteBtn then
+                thumb._deleteBtn:Hide()
+                thumb._deleteBtn:SetScript("OnClick", nil)
+                thumb._deleteBtn:SetScript("OnEnter", nil)
+                thumb._deleteBtn:SetScript("OnLeave", nil)
+            end
             thumb._entry = nil
             if thumb._hover then thumb._hover:Hide() end
             if thumb._selected then thumb._selected:Hide() end
@@ -193,6 +272,12 @@ local function OpenAuraTexturePicker(opts)
             thumb:SetScript("OnLeave", nil)
             thumb:SetScript("OnClick", nil)
             thumb:SetScript("OnMouseWheel", nil)
+            if thumb._deleteBtn then
+                thumb._deleteBtn:Hide()
+                thumb._deleteBtn:SetScript("OnClick", nil)
+                thumb._deleteBtn:SetScript("OnEnter", nil)
+                thumb._deleteBtn:SetScript("OnLeave", nil)
+            end
             thumb:SetParent(pickerParkingFrame)
             thumb._entry = nil
             if thumb._hover then thumb._hover:Hide() end
@@ -295,10 +380,51 @@ local function OpenAuraTexturePicker(opts)
         selected:Hide()
         thumb._selected = selected
 
+        local deleteBtn = CreateFrame("Button", nil, thumb)
+        deleteBtn:SetSize(16, 16)
+        deleteBtn:SetPoint("TOPRIGHT", thumb, "TOPRIGHT", -2, -2)
+        deleteBtn:Hide()
+        thumb._deleteBtn = deleteBtn
+
+        local deleteTex = deleteBtn:CreateTexture(nil, "ARTWORK")
+        deleteTex:SetAllPoints()
+        deleteTex:SetAtlas("common-icon-redx", false)
+        deleteBtn._icon = deleteTex
+
         return thumb
     end
 
+    local function SetPathInputText(text)
+        suppressPathTextChanged = true
+        currentSearch = text or ""
+        searchBox:SetText(currentSearch)
+        suppressPathTextChanged = false
+    end
+
+    local function GetUnsavedCurrentCustomPath()
+        if not IsCustomFilter(currentFilter) or not CooldownCompanion:IsCustomAuraTextureSelection(currentSelection) then
+            return nil
+        end
+
+        local savedEntries = CooldownCompanion:GetAuraTexturePickerEntries("", FILTER_CUSTOM)
+        if FindEntryForSelection(savedEntries, currentSelection) then
+            return nil
+        end
+
+        return CooldownCompanion:NormalizeCustomAuraTexturePath(currentSelection.sourceValue)
+    end
+
     local function GetVisibleEntries()
+        if IsCustomFilter(currentFilter) then
+            local entries = CooldownCompanion:GetAuraTexturePickerEntries("", currentFilter)
+            if not FindEntryForSelection(entries, currentSelection) then
+                local transientEntry = BuildTransientCurrentCustomEntry(currentSelection)
+                if transientEntry then
+                    table.insert(entries, 1, transientEntry)
+                end
+            end
+            return entries
+        end
         return CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
     end
 
@@ -339,12 +465,52 @@ local function OpenAuraTexturePicker(opts)
         ScrollGridByWheel(delta)
     end)
 
+    local function UpdateInputMode()
+        if IsCustomFilter(currentFilter) then
+            searchBox:SetLabel("Texture Path")
+        else
+            searchBox:SetLabel("Search")
+        end
+    end
+
+    searchBox:SetCallback("OnEnter", function(widget)
+        if not IsCustomFilter(currentFilter) then
+            return
+        end
+
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        GameTooltip:AddLine("Custom Texture Path")
+        GameTooltip:AddLine("Enter a WoW texture path.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Rules:", 1, 0.82, 0, true)
+        GameTooltip:AddLine("- Must start with Interface\\", 1, 1, 1, true)
+        GameTooltip:AddLine("- Do not use C:\\ or other OS paths", 1, 1, 1, true)
+        GameTooltip:AddLine("- PNG paths must include the .png file extension", 1, 1, 1, true)
+        GameTooltip:AddLine("- BLP, JPG, JPEG, and TGA paths can include the file extension or omit it", 1, 1, 1, true)
+        GameTooltip:AddLine("- If more than one file shares the same name, include the file extension", 1, 1, 1, true)
+        GameTooltip:AddLine("- Image dimensions must be power-of-two, like 64x64 or 256x128", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Example:", 1, 0.82, 0, true)
+        GameTooltip:AddLine("Interface\\AddOns\\Pack\\Glow.tga", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+
+    searchBox:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
     local function RebuildGrid()
         ReleaseActiveThumbs()
         local entries = GetVisibleEntries()
 
         if #entries == 0 then
-            statusLabel:SetText("No textures matched the current search.")
+            if IsCustomFilter(currentFilter) then
+                statusLabel:SetText("Enter a WoW texture path and press Enter to add it to Custom.")
+            else
+                statusLabel:SetText("No textures matched the current search.")
+            end
+        elseif IsCustomFilter(currentFilter) then
+            statusLabel:SetText(("Showing %d custom textures. Press Enter to add another."):format(#entries))
         else
             statusLabel:SetText(("Showing %d textures."):format(#entries))
         end
@@ -371,10 +537,16 @@ local function OpenAuraTexturePicker(opts)
             thumb:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", col * strideX, -(row * strideY))
             thumb._entry = entry
             thumb._selected:SetShown(selectedEntry == entry)
+            if thumb._deleteBtn then
+                thumb._deleteBtn:Hide()
+            end
             ApplyEntryTexture(thumb._previewTex, entry)
 
             thumb:SetScript("OnEnter", function(self)
                 self._hover:Show()
+                if self._deleteBtn and entry.isCustomTexture then
+                    self._deleteBtn:Show()
+                end
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:AddLine(entry.label or "Texture")
                 if entry.subtitle and entry.subtitle ~= "" then
@@ -386,7 +558,13 @@ local function OpenAuraTexturePicker(opts)
                 StageEntryPreview(entry)
             end)
             thumb:SetScript("OnLeave", function(self)
+                if self._deleteBtn and self._deleteBtn:IsMouseOver() then
+                    return
+                end
                 self._hover:Hide()
+                if self._deleteBtn then
+                    self._deleteBtn:Hide()
+                end
                 GameTooltip:Hide()
                 if selectedEntry then
                     StageEntryPreview(selectedEntry)
@@ -397,6 +575,40 @@ local function OpenAuraTexturePicker(opts)
             thumb:SetScript("OnClick", function()
                 SetSelectedEntry(entry)
             end)
+            if thumb._deleteBtn then
+                thumb._deleteBtn:SetScript("OnEnter", function()
+                    thumb._deleteBtn:Show()
+                    if thumb._hover then
+                        thumb._hover:Show()
+                    end
+                end)
+                thumb._deleteBtn:SetScript("OnLeave", function()
+                    if thumb:IsMouseOver() then
+                        thumb._deleteBtn:Show()
+                        return
+                    end
+                    thumb._deleteBtn:Hide()
+                    if thumb._hover then
+                        thumb._hover:Hide()
+                    end
+                    GameTooltip:Hide()
+                    if selectedEntry then
+                        StageEntryPreview(selectedEntry)
+                    else
+                        ClearStagedPreview()
+                    end
+                end)
+                thumb._deleteBtn:SetScript("OnClick", function()
+                    CooldownCompanion:RemoveCustomAuraTexture(entry.libraryKey or entry.key or entry.sourceValue)
+                    if selectedEntry == entry then
+                        selectedEntry = nil
+                    end
+                    if IsCustomFilter(currentFilter) then
+                        SetPathInputText(GetUnsavedCurrentCustomPath() or "")
+                    end
+                    RebuildGrid()
+                end)
+            end
             thumb:SetScript("OnMouseWheel", function(_, delta)
                 ScrollGridByWheel(delta)
             end)
@@ -410,6 +622,13 @@ local function OpenAuraTexturePicker(opts)
         SetGridScroll(0)
         applyBtn:SetDisabled(selectedEntry == nil)
         UpdateSelectionLabel()
+        -- Keep the live staged preview in sync after list rebuilds so adding or
+        -- removing a custom tile cannot leave an older hovered texture showing.
+        if selectedEntry then
+            StageEntryPreview(selectedEntry)
+        else
+            ClearStagedPreview()
+        end
     end
 
     scrollFrame:SetScript("OnSizeChanged", function(_, width)
@@ -426,16 +645,67 @@ local function OpenAuraTexturePicker(opts)
     local filterList, filterOrder = CooldownCompanion:GetAuraTexturePickerFilters()
     sourceDrop:SetList(filterList, filterOrder)
     sourceDrop:SetValue(currentFilter)
+    UpdateInputMode()
 
     sourceDrop:SetCallback("OnValueChanged", function(_, _, value)
         currentFilter = value or "symbols"
-        currentSearch = ""
-        searchBox:SetText("")
+        UpdateInputMode()
+        if IsCustomFilter(currentFilter) then
+            SetPathInputText(GetUnsavedCurrentCustomPath() or "")
+        else
+            SetPathInputText("")
+        end
         RebuildGrid()
     end)
 
     searchBox:SetCallback("OnTextChanged", function(_, _, text)
+        if suppressPathTextChanged then
+            return
+        end
         currentSearch = text or ""
+        if IsCustomFilter(currentFilter) then
+            if currentSearch == "" then
+                RebuildGrid()
+            else
+                statusLabel:SetText("Press Enter to add this path to Custom.")
+            end
+            return
+        end
+        RebuildGrid()
+    end)
+
+    searchBox:SetCallback("OnEnterPressed", function(_, _, value)
+        if not IsCustomFilter(currentFilter) then
+            return
+        end
+
+        local normalizedPath, width, height, err = ValidateCustomTexturePath(value)
+        if not normalizedPath then
+            statusLabel:SetText(err or "Texture could not be added.")
+            return
+        end
+
+        local existingEntry, pathToSave, resolveErr = CooldownCompanion:ResolveCustomAuraTextureSubmission(normalizedPath)
+        if resolveErr then
+            statusLabel:SetText(resolveErr)
+            return
+        end
+
+        -- Custom submissions reuse an existing shelf tile when the typed path
+        -- clearly points at the same saved texture, and otherwise require the
+        -- user to disambiguate with a file extension before adding a new one.
+        local entry = existingEntry
+        if not entry then
+            entry = CooldownCompanion:SaveCustomAuraTexture(pathToSave or normalizedPath, width, height)
+        end
+        if not entry then
+            statusLabel:SetText("Texture could not be added.")
+            return
+        end
+
+        currentSearch = ""
+        SetPathInputText("")
+        selectedEntry = entry
         RebuildGrid()
     end)
 
@@ -485,17 +755,23 @@ local function OpenAuraTexturePicker(opts)
         window:SetTitle(newOpts.title or "Browse Texture Panel Visuals")
 
         currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
-        currentSearch = (currentSelection and (currentSelection.label or currentSelection.sourceValue)) or ""
+        currentSearch = IsCustomFilter(currentFilter)
+            and (GetUnsavedCurrentCustomPath() or "")
+            or ((currentSelection and (currentSelection.label or currentSelection.sourceValue)) or "")
 
-        searchBox:SetText(currentSearch or "")
+        UpdateInputMode()
+        SetPathInputText(currentSearch or "")
         sourceDrop:SetValue(currentFilter)
         RebuildGrid()
     end
 
     currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
-    currentSearch = (currentSelection and (currentSelection.label or currentSelection.sourceValue)) or ""
+    currentSearch = IsCustomFilter(currentFilter)
+        and (GetUnsavedCurrentCustomPath() or "")
+        or ((currentSelection and (currentSelection.label or currentSelection.sourceValue)) or "")
 
-    searchBox:SetText(currentSearch)
+    UpdateInputMode()
+    SetPathInputText(currentSearch)
     sourceDrop:SetValue(currentFilter)
     window._targetGroupId = currentGroupId
     window._targetButtonIndex = currentButtonIndex

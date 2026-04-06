@@ -69,7 +69,7 @@ function CooldownCompanion:OnInitialize()
     -- Initialize config
     self:SetupConfig()
 
-    -- Re-apply fonts/textures when a SharedMedia pack registers new media
+    -- Re-apply fonts/textures when shared media used elsewhere in the addon updates.
     LSM.RegisterCallback(self, "LibSharedMedia_Registered", function(event, mediatype, key)
         if mediatype == "font" or mediatype == "statusbar" then
             if mediatype == "font" and ST._InvalidateFontCache then
