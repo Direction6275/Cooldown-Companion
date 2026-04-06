@@ -5,9 +5,10 @@ local CS = ST._configState
 
 local C_Texture_GetAtlasExists = C_Texture.GetAtlasExists
 
-local THUMB_SIZE = 68
+local BASE_THUMB_SIZE = 64
 local THUMB_GAP = 8
-local THUMBS_PER_ROW = 5
+local DEFAULT_THUMBS_PER_ROW = 5
+local GRID_HEIGHT = 452
 
 local pickerWindow = nil
 
@@ -98,6 +99,7 @@ local function OpenAuraTexturePicker(opts)
     local selectedEntry = nil
     local thumbnailPool = {}
     local activeThumbs = {}
+    local currentThumbSize = BASE_THUMB_SIZE
 
     local sourceDrop = AceGUI:Create("Dropdown")
     sourceDrop:SetLabel("Category")
@@ -118,17 +120,20 @@ local function OpenAuraTexturePicker(opts)
 
     local scrollGroup = AceGUI:Create("SimpleGroup")
     scrollGroup:SetFullWidth(true)
-    scrollGroup:SetHeight(390)
+    scrollGroup:SetHeight(GRID_HEIGHT)
     scrollGroup:SetLayout("Fill")
     window:AddChild(scrollGroup)
 
-    local scrollFrame = CreateFrame("ScrollFrame", nil, scrollGroup.frame, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, scrollGroup.frame)
     scrollFrame:SetPoint("TOPLEFT", 4, -4)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -24, 4)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -4, 4)
+    scrollFrame:EnableMouseWheel(true)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(1, 1)
     scrollFrame:SetScrollChild(scrollChild)
+    scrollChild:EnableMouseWheel(true)
+    local lastViewportWidth = 0
 
     local selectionLabel = AceGUI:Create("Label")
     selectionLabel:SetFullWidth(true)
@@ -207,31 +212,16 @@ local function OpenAuraTexturePicker(opts)
         end
 
         thumb = CreateFrame("Button", nil, scrollChild, "BackdropTemplate")
-        thumb:SetSize(THUMB_SIZE, THUMB_SIZE + 18)
-        thumb:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        thumb:SetBackdropColor(0.05, 0.08, 0.10, 0.95)
-        thumb:SetBackdropBorderColor(0.18, 0.35, 0.45, 0.95)
+        thumb:SetSize(currentThumbSize, currentThumbSize)
+        thumb:EnableMouseWheel(true)
 
         local previewBg = thumb:CreateTexture(nil, "BACKGROUND")
-        previewBg:SetPoint("TOPLEFT", thumb, "TOPLEFT", 4, -4)
-        previewBg:SetPoint("TOPRIGHT", thumb, "TOPRIGHT", -4, -4)
-        previewBg:SetHeight(THUMB_SIZE - 10)
+        previewBg:SetAllPoints()
         previewBg:SetColorTexture(0, 0, 0, 0.45)
 
         local previewTex = thumb:CreateTexture(nil, "ARTWORK")
-        previewTex:SetPoint("TOPLEFT", previewBg, "TOPLEFT", 3, -3)
-        previewTex:SetPoint("BOTTOMRIGHT", previewBg, "BOTTOMRIGHT", -3, 3)
+        previewTex:SetAllPoints(previewBg)
         thumb._previewTex = previewTex
-
-        local name = thumb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        name:SetPoint("TOPLEFT", previewBg, "BOTTOMLEFT", 0, -3)
-        name:SetPoint("TOPRIGHT", previewBg, "BOTTOMRIGHT", 0, -3)
-        name:SetJustifyH("CENTER")
-        thumb._name = name
 
         local hover = thumb:CreateTexture(nil, "OVERLAY")
         hover:SetAllPoints()
@@ -252,10 +242,46 @@ local function OpenAuraTexturePicker(opts)
         return CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
     end
 
+    local function GetGridMetrics(entryCount)
+        local viewportWidth = scrollFrame:GetWidth()
+        if not viewportWidth or viewportWidth <= 0 then
+            viewportWidth = (BASE_THUMB_SIZE + THUMB_GAP) * DEFAULT_THUMBS_PER_ROW
+        end
+
+        local columns = DEFAULT_THUMBS_PER_ROW
+        local thumbSize = math.max(BASE_THUMB_SIZE, math.floor((viewportWidth - ((columns - 1) * THUMB_GAP)) / columns))
+        local contentWidth = math.max(1, (columns * thumbSize) + ((columns - 1) * THUMB_GAP))
+        local rows = math.max(1, math.ceil((entryCount or 0) / columns))
+        local contentHeight = (rows * thumbSize) + ((rows - 1) * THUMB_GAP)
+        return columns, thumbSize, contentWidth, contentHeight
+    end
+
+    local function ClampScrollOffset(offset)
+        local maxScroll = math.max(0, (scrollChild:GetHeight() or 0) - (scrollFrame:GetHeight() or 0))
+        return math.min(math.max(offset or 0, 0), maxScroll)
+    end
+
+    local function SetGridScroll(offset)
+        scrollFrame:SetVerticalScroll(ClampScrollOffset(offset))
+    end
+
+    local function ScrollGridByWheel(delta)
+        if not delta or delta == 0 then
+            return
+        end
+        SetGridScroll((scrollFrame:GetVerticalScroll() or 0) - (delta * (currentThumbSize + THUMB_GAP)))
+    end
+
+    scrollFrame:SetScript("OnMouseWheel", function(_, delta)
+        ScrollGridByWheel(delta)
+    end)
+    scrollChild:SetScript("OnMouseWheel", function(_, delta)
+        ScrollGridByWheel(delta)
+    end)
+
     local function RebuildGrid()
         ReleaseActiveThumbs()
         local entries = GetVisibleEntries()
-        local query = strtrim(currentSearch or "")
 
         if #entries == 0 then
             statusLabel:SetText("No textures matched the current search.")
@@ -271,16 +297,19 @@ local function OpenAuraTexturePicker(opts)
             selectedEntry = matchedSelected
         end
 
-        local stride = THUMB_SIZE + THUMB_GAP
+        local columns, thumbSize, contentWidth, contentHeight = GetGridMetrics(#entries)
+        currentThumbSize = thumbSize
+        local strideX = currentThumbSize + THUMB_GAP
+        local strideY = currentThumbSize + THUMB_GAP
         for index, entry in ipairs(entries) do
             local thumb = AcquireThumb()
-            local row = math.floor((index - 1) / THUMBS_PER_ROW)
-            local col = (index - 1) % THUMBS_PER_ROW
+            local row = math.floor((index - 1) / columns)
+            local col = (index - 1) % columns
 
             thumb:ClearAllPoints()
-            thumb:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", col * stride, -(row * (THUMB_SIZE + 22)))
+            thumb:SetSize(currentThumbSize, currentThumbSize)
+            thumb:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", col * strideX, -(row * strideY))
             thumb._entry = entry
-            thumb._name:SetText((entry.label or "Texture"):sub(1, 13))
             thumb._selected:SetShown(selectedEntry == entry)
             ApplyEntryTexture(thumb._previewTex, entry)
 
@@ -308,17 +337,31 @@ local function OpenAuraTexturePicker(opts)
             thumb:SetScript("OnClick", function()
                 SetSelectedEntry(entry)
             end)
+            thumb:SetScript("OnMouseWheel", function(_, delta)
+                ScrollGridByWheel(delta)
+            end)
 
             thumb:Show()
             activeThumbs[#activeThumbs + 1] = thumb
         end
 
-        scrollChild:SetWidth((THUMB_SIZE + THUMB_GAP) * THUMBS_PER_ROW)
-        scrollChild:SetHeight(math.max(1, math.ceil(#entries / THUMBS_PER_ROW) * (THUMB_SIZE + 22)))
-        scrollFrame:SetVerticalScroll(0)
+        scrollChild:SetWidth(math.max(1, contentWidth))
+        scrollChild:SetHeight(math.max(1, contentHeight))
+        SetGridScroll(0)
         applyBtn:SetDisabled(selectedEntry == nil)
         UpdateSelectionLabel()
     end
+
+    scrollFrame:SetScript("OnSizeChanged", function(_, width)
+        if type(width) ~= "number" or width <= 0 then
+            return
+        end
+        if math.abs(width - lastViewportWidth) <= 1 then
+            return
+        end
+        lastViewportWidth = width
+        RebuildGrid()
+    end)
 
     local filterList, filterOrder = CooldownCompanion:GetAuraTexturePickerFilters()
     sourceDrop:SetList(filterList, filterOrder)
