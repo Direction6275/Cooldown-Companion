@@ -346,11 +346,11 @@ function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames)
     self._moduleAlphaTargets[moduleId] = { config = config, frames = frames }
 end
 
-function CooldownCompanion:UnregisterModuleAlpha(moduleId)
+function CooldownCompanion:UnregisterModuleAlpha(moduleId, preserveState)
     if self._moduleAlphaTargets then
         self._moduleAlphaTargets[moduleId] = nil
     end
-    if self.alphaState then
+    if not preserveState and self.alphaState then
         self.alphaState[moduleId] = nil
     end
 end

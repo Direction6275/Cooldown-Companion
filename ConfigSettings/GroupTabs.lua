@@ -421,6 +421,7 @@ local function BuildLayoutTab(container)
         if not settings then
             return
         end
+        local textureGroupId = CS.selectedGroup
 
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -459,6 +460,37 @@ local function BuildLayoutTab(container)
             CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(resetBtn)
+
+        BuildAlphaControls(container, group, function()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            CooldownCompanion:RefreshConfigPanel()
+        end, "layout_alpha", {
+            isGlobal = group.isGlobal,
+            onBaselineChanged = function(val)
+                CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
+                CS.texturePanelAlphaPreview[textureGroupId] = val
+
+                local alphaModuleId = "texture_panel_" .. tostring(textureGroupId)
+                CooldownCompanion.alphaState = CooldownCompanion.alphaState or {}
+                local state = CooldownCompanion.alphaState[alphaModuleId]
+                if not state then
+                    state = {}
+                    CooldownCompanion.alphaState[alphaModuleId] = state
+                end
+                state.currentAlpha = val
+                state.desiredAlpha = val
+                state.lastAlpha = val
+                state.fadeDuration = 0
+                state.fadeStartAlpha = val
+
+                local frame = CooldownCompanion.groupFrames[textureGroupId]
+                local button = frame and frame.buttons and frame.buttons[1] or nil
+                local host = button and button.auraTextureHost or nil
+                if host and host:IsShown() then
+                    host:SetAlpha(val)
+                end
+            end,
+        })
 
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
             OpenOrRebindTexturePanelPicker(group, settings, false)

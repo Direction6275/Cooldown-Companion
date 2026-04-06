@@ -1573,7 +1573,33 @@ local function EnsureAuraTextureHost(button)
     return host
 end
 
+local function GetTexturePanelAlphaModuleId(groupId)
+    if not groupId then
+        return nil
+    end
+    return "texture_panel_" .. tostring(groupId)
+end
+
+local function GetTexturePanelLayoutPreviewAlpha(button)
+    local CS = ST._configState
+    if not button or not CS or CS.panelSettingsTab ~= "layout" or CS.selectedGroup ~= button._groupId then
+        return nil
+    end
+
+    local preview = CS.texturePanelAlphaPreview
+    if type(preview) ~= "table" then
+        return nil
+    end
+
+    return preview[button._groupId]
+end
+
 function CooldownCompanion:HideAuraTextureVisual(button)
+    local alphaModuleId = button and GetTexturePanelAlphaModuleId(button._groupId) or nil
+    if alphaModuleId then
+        self:UnregisterModuleAlpha(alphaModuleId, true)
+    end
+
     local host = button and button.auraTextureHost
     if not host then
         return
@@ -1590,6 +1616,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host:EnableMouse(false)
+    host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
     if host.dragHandle then
         host.dragHandle:Hide()
@@ -1618,7 +1645,11 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
         return
     end
 
+    local alphaModuleId = GetTexturePanelAlphaModuleId(button._groupId)
     self:HideAuraTextureVisual(button)
+    if alphaModuleId then
+        self:UnregisterModuleAlpha(alphaModuleId)
+    end
     button.auraTextureHost:SetParent(nil)
     button.auraTextureHost = nil
 end
@@ -1759,6 +1790,22 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     host._activeTextureGeometry = geometry
     SetTextureIndicatorBaseVisuals(host)
     ApplyTextureIndicatorEffects(host, button, group)
+
+    local alphaModuleId = GetTexturePanelAlphaModuleId(button._groupId)
+    local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(button)
+    local bypassModuleAlpha = isEditing or isConfigForceVisible or isUnlocked
+    if alphaModuleId then
+        if bypassModuleAlpha then
+            self:UnregisterModuleAlpha(alphaModuleId, true)
+            host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
+        else
+            self:RegisterModuleAlpha(alphaModuleId, group, { host })
+            local alphaState = self.alphaState and self.alphaState[alphaModuleId]
+            if alphaState and alphaState.currentAlpha ~= nil then
+                host:SetAlpha(alphaState.currentAlpha)
+            end
+        end
+    end
 
     local savedSettings = group and group.textureSettings or nil
     host._dragEnabled = isUnlocked and type(savedSettings) == "table" and savedSettings.sourceType ~= nil
