@@ -11,6 +11,11 @@ local DEFAULT_THUMBS_PER_ROW = 5
 local GRID_HEIGHT = 452
 
 local pickerWindow = nil
+local pickerParkingFrame = CreateFrame("Frame", nil, UIParent)
+pickerParkingFrame:Hide()
+local pickerThumbnailPool = {}
+local pickerScrollFrame = nil
+local pickerScrollChild = nil
 
 local function GetTargetButtonData(groupId, buttonIndex)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
@@ -97,7 +102,6 @@ local function OpenAuraTexturePicker(opts)
     local currentFilter = "symbols"
     local currentSearch = ""
     local selectedEntry = nil
-    local thumbnailPool = {}
     local activeThumbs = {}
     local currentThumbSize = BASE_THUMB_SIZE
 
@@ -124,13 +128,25 @@ local function OpenAuraTexturePicker(opts)
     scrollGroup:SetLayout("Fill")
     window:AddChild(scrollGroup)
 
-    local scrollFrame = CreateFrame("ScrollFrame", nil, scrollGroup.frame)
+    local scrollFrame = pickerScrollFrame
+    local scrollChild = pickerScrollChild
+    if not scrollFrame or not scrollChild then
+        scrollFrame = CreateFrame("ScrollFrame", nil, scrollGroup.frame)
+        scrollChild = CreateFrame("Frame", nil, scrollFrame)
+        pickerScrollFrame = scrollFrame
+        pickerScrollChild = scrollChild
+    else
+        scrollFrame:SetParent(scrollGroup.frame)
+        scrollChild:SetParent(scrollFrame)
+    end
+    scrollFrame:ClearAllPoints()
     scrollFrame:SetPoint("TOPLEFT", 4, -4)
     scrollFrame:SetPoint("BOTTOMRIGHT", -4, 4)
+    scrollFrame:Show()
     scrollFrame:EnableMouseWheel(true)
 
-    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(1, 1)
+    scrollChild:Show()
     scrollFrame:SetScrollChild(scrollChild)
     scrollChild:EnableMouseWheel(true)
     local lastViewportWidth = 0
@@ -158,10 +174,54 @@ local function OpenAuraTexturePicker(opts)
             thumb:SetScript("OnEnter", nil)
             thumb:SetScript("OnLeave", nil)
             thumb:SetScript("OnClick", nil)
-            thumbnailPool[#thumbnailPool + 1] = thumb
+            thumb:SetScript("OnMouseWheel", nil)
+            thumb._entry = nil
+            if thumb._hover then thumb._hover:Hide() end
+            if thumb._selected then thumb._selected:Hide() end
+            pickerThumbnailPool[#pickerThumbnailPool + 1] = thumb
         end
         wipe(activeThumbs)
     end
+
+    local function CleanupRawGrid()
+        ReleaseActiveThumbs()
+
+        for _, thumb in ipairs(pickerThumbnailPool) do
+            thumb:Hide()
+            thumb:ClearAllPoints()
+            thumb:SetScript("OnEnter", nil)
+            thumb:SetScript("OnLeave", nil)
+            thumb:SetScript("OnClick", nil)
+            thumb:SetScript("OnMouseWheel", nil)
+            thumb:SetParent(pickerParkingFrame)
+            thumb._entry = nil
+            if thumb._hover then thumb._hover:Hide() end
+            if thumb._selected then thumb._selected:Hide() end
+        end
+
+        -- AceGUI recycles SimpleGroup frames, so these raw child frames must be
+        -- detached before release or they can bleed into unrelated config UIs.
+        -- Keep them parked in module-level pools so repeated open/close cycles
+        -- reuse the same frames instead of quietly accumulating hidden ones.
+        scrollFrame:SetScript("OnMouseWheel", nil)
+        scrollFrame:SetScript("OnSizeChanged", nil)
+        scrollFrame:EnableMouseWheel(false)
+        scrollFrame:SetVerticalScroll(0)
+        scrollFrame:SetScrollChild(scrollChild)
+        scrollFrame:ClearAllPoints()
+        scrollFrame:SetParent(pickerParkingFrame)
+        scrollFrame:Hide()
+
+        scrollChild:SetScript("OnMouseWheel", nil)
+        scrollChild:EnableMouseWheel(false)
+        scrollChild:SetParent(scrollFrame)
+        scrollChild:SetSize(1, 1)
+        scrollChild:Hide()
+    end
+
+    scrollGroup:SetCallback("OnRelease", function()
+        CleanupRawGrid()
+    end)
 
     local function UpdateSelectionLabel()
         if selectedEntry then
@@ -205,7 +265,7 @@ local function OpenAuraTexturePicker(opts)
     end
 
     local function AcquireThumb()
-        local thumb = table.remove(thumbnailPool)
+        local thumb = table.remove(pickerThumbnailPool)
         if thumb then
             thumb:SetParent(scrollChild)
             return thumb
@@ -405,7 +465,10 @@ local function OpenAuraTexturePicker(opts)
     window:SetCallback("OnClose", function(widget)
         ClearStagedPreview()
         GameTooltip:Hide()
-        ReleaseActiveThumbs()
+        CleanupRawGrid()
+        widget._rebind = nil
+        widget._targetGroupId = nil
+        widget._targetButtonIndex = nil
         pickerWindow = nil
         CS.auraTexturePickerWindow = nil
         AceGUI:Release(widget)

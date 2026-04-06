@@ -436,11 +436,6 @@ local function BuildLayoutTab(container)
         heading:SetFullWidth(true)
         container:AddChild(heading)
 
-        local intro = AceGUI:Create("Label")
-        intro:SetFullWidth(true)
-        intro:SetText("This panel's texture is a standalone screen element. Drag it directly while this tab is open, or use the controls below for exact placement.")
-        container:AddChild(intro)
-
         AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, "Texture Point")
         AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
         AddOffsetSliders(container, settings, "x", "y", {
@@ -1067,11 +1062,6 @@ local function BuildEffectsTab(container)
         if not indicators then
             return
         end
-
-        local intro = AceGUI:Create("Label")
-        intro:SetFullWidth(true)
-        intro:SetText("|cff888888Each state can own one effect type. Different effects can stack, but the same effect type cannot be used twice.|r")
-        container:AddChild(intro)
 
         for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
             BuildTextureIndicatorSection(container, group, indicators, sectionKey)
