@@ -41,6 +41,27 @@ local function RoundAnchorOffset(value)
     return math_floor(((value or 0) * 10) + 0.5) / 10
 end
 
+local function GetFrameSizeInUIParentSpace(frame)
+    if not (frame and frame.GetSize) then
+        return nil, nil
+    end
+
+    local width, height = frame:GetSize()
+    if not (width and height) then
+        return width, height
+    end
+
+    local frameScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or nil
+    local uiScale = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or nil
+    if frameScale and uiScale and uiScale > 0 then
+        local scaleRatio = frameScale / uiScale
+        width = width * scaleRatio
+        height = height * scaleRatio
+    end
+
+    return width, height
+end
+
 local function IsAddonAnchorFrameName(frameName)
     if type(frameName) ~= "string" then
         return false
@@ -87,7 +108,7 @@ function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
         end
 
         local rcx, rcy = relativeFrame:GetCenter()
-        local rw, rh = relativeFrame:GetSize()
+        local rw, rh = GetFrameSizeInUIParentSpace(relativeFrame)
         local ucx, ucy = UIParent:GetCenter()
 
         if not (rcx and rcy and rw and rh and ucx and ucy) then
