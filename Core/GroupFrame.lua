@@ -153,6 +153,11 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     return relativeFrame, "ok"
 end
 
+function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
+    local _, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
+    return anchorState
+end
+
 local function NormalizeCompactGrowthDirection(growthDirection)
     if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
         return "start"
@@ -1530,11 +1535,14 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
         return
     end
     frame._anchorDirty = nil
-    anchor = self:NormalizeContainerAnchor(anchor)
+    local normalizedAnchor, _, deferred = self:NormalizeContainerAnchor(anchor)
+    if not deferred then
+        anchor = normalizedAnchor
+    end
 
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", anchor.x, anchor.y)
-    UpdateCoordLabel(frame, anchor.x, anchor.y)
+    frame:SetPoint("CENTER", UIParent, "CENTER", tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
+    UpdateCoordLabel(frame, tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
 end
 
 function CooldownCompanion:SaveContainerPosition(containerId)
