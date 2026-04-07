@@ -180,6 +180,7 @@ local function RefreshColumn4(container)
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             CS.selectedTab = tab
+            CS.panelSettingsTab = tab
             if tab ~= "effects" then
                 CooldownCompanion:ClearAllTextureIndicatorPreviews()
             end
@@ -255,6 +256,7 @@ local function RefreshColumn4(container)
     if isTextMode and CS.selectedTab == "effects" then
         CS.selectedTab = "appearance"
     end
+    CS.panelSettingsTab = CS.selectedTab
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col4Scroll and creates a new one)
