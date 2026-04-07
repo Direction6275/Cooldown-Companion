@@ -43,6 +43,7 @@ local ROW_BADGE_SIZE = 16
 local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
+local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
 
 local function EnsureRowBadge(frame, key, atlas, iconSize)
     local badge = frame[key]
@@ -413,7 +414,7 @@ local function RefreshColumn2()
             elseif panel.displayMode == "text" then
                 modeBadge:SetAtlas("poi-workorders", false)
             elseif panel.displayMode == "textures" then
-                modeBadge:SetTexture(134400)
+                modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
             else
                 modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
             end
@@ -1115,7 +1116,7 @@ local function RefreshColumn2()
                 elseif panel.displayMode == "text" then
                     modeBadge:SetAtlas("poi-workorders", false)
                 elseif panel.displayMode == "textures" then
-                    modeBadge:SetTexture(134400)
+                    modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
                 else
                     modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
                 end
