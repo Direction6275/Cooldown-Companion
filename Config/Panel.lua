@@ -24,6 +24,7 @@ local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
 local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
 local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
+local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -221,6 +222,9 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllTextureIndicatorPreviews()
         CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         CooldownCompanion:StopCastBarPreview()
+        if ClearConfigShiftTooltipHover then
+            ClearConfigShiftTooltipHover()
+        end
         CloseDropDownMenus()
         CS.HideAutocomplete()
         if ST._CancelAutoAddFlow then
@@ -1803,6 +1807,9 @@ function CooldownCompanion:RefreshConfigPanel()
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
+    if ClearConfigShiftTooltipHover then
+        ClearConfigShiftTooltipHover()
+    end
 
     -- Save AceGUI scroll state before any column rebuilds.
     local function saveScroll(widget)

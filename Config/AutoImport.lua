@@ -15,6 +15,7 @@ local IsSpellInCDMBuffBar = ST._IsSpellInCDMBuffBar
 local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
+local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 
 local ICON_FALLBACK = 134400
 local ACTION_BAR_COUNT = 6
@@ -496,6 +497,11 @@ local function AddSelectableEntryRow(state, scroll, entry, onValueChanged)
     row:SetLabel(label)
     row:SetValue(state.selectedEntries[entry.importKey] ~= false)
     row:SetFullWidth(true)
+    if entry.type == "spell" then
+        BindConfigShiftTooltip(row, "spell", entry.id, row.frame, "ANCHOR_RIGHT")
+    elseif entry.type == "item" then
+        BindConfigShiftTooltip(row, "item", entry.id, row.frame, "ANCHOR_RIGHT")
+    end
     row:SetCallback("OnValueChanged", function(_, _, value)
         state.selectedEntries[entry.importKey] = value and true or false
         if onValueChanged then

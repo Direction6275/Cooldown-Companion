@@ -28,6 +28,7 @@ local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 
 local function HideAllBarWidgets(col2)
     if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
@@ -137,6 +138,36 @@ end
 
 local function CanTexturePanelAcceptEntry(group)
     return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
+end
+
+local function ResolveColumn2TooltipSpellId(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return nil
+    end
+
+    local child
+    if buttonData.cdmChildSlot then
+        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+        child = allChildren and allChildren[buttonData.cdmChildSlot]
+    else
+        child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+    end
+
+    if child and child.cooldownInfo then
+        if child.cooldownInfo.overrideTooltipSpellID then
+            return child.cooldownInfo.overrideTooltipSpellID
+        end
+        if child.cooldownInfo.overrideSpellID then
+            return child.cooldownInfo.overrideSpellID
+        end
+    end
+
+    local rawOverride = C_Spell.GetOverrideSpell(buttonData.id)
+    if rawOverride and rawOverride ~= 0 then
+        return rawOverride
+    end
+
+    return buttonData.id
 end
 
 local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGroupId, entryData)
@@ -1768,6 +1799,11 @@ local function RefreshColumn2()
                     entry:SetFullWidth(true)
                     entry:SetFontObject(GameFontHighlight)
                     entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                    if buttonData.type == "spell" then
+                        BindConfigShiftTooltip(entry, "spell", ResolveColumn2TooltipSpellId(buttonData), entry.frame, "ANCHOR_RIGHT")
+                    elseif buttonData.type == "item" then
+                        BindConfigShiftTooltip(entry, "item", buttonData.id, entry.frame, "ANCHOR_RIGHT")
+                    end
 
                     -- Selection highlighting: only show if this panel is the selected one
                     if CS.selectedGroup == panelId then

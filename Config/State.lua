@@ -204,6 +204,7 @@ ST._configState = {
     -- Auto Add flow state (Column 3 wizard mode)
     autoAddFlowActive = false,
     autoAddFlowState = nil,
+    configShiftTooltipActive = nil,
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
     tabInfoButtons = {},
@@ -791,6 +792,145 @@ local function OpenContainerIconPicker(containerId)
     end)
 
     pickerFrame:Show()
+    return true
+end
+
+------------------------------------------------------------------------
+-- Shared Shift-hover tooltip controller for config entry rows
+------------------------------------------------------------------------
+local function HideConfigShiftTooltip(active)
+    active = active or CS.configShiftTooltipActive
+    local owner = active and active.tooltipOwner
+    if active then
+        active.tooltipShown = nil
+    end
+    if owner and GameTooltip:GetOwner() ~= owner then
+        return
+    end
+    GameTooltip:Hide()
+end
+
+local function ShowConfigShiftTooltip()
+    local active = CS.configShiftTooltipActive
+    if not active then
+        return false
+    end
+
+    local widget = active.widget
+    if not widget or not widget.frame or not widget.frame:IsShown() then
+        CS.configShiftTooltipActive = nil
+        HideConfigShiftTooltip(active)
+        return false
+    end
+
+    if not IsShiftKeyDown() then
+        if active.tooltipShown then
+            HideConfigShiftTooltip(active)
+        end
+        return false
+    end
+
+    local kind = widget:GetUserData("cdcShiftTooltipKind")
+    local id = tonumber(widget:GetUserData("cdcShiftTooltipID"))
+    if not kind or not id or id <= 0 then
+        if active.tooltipShown then
+            HideConfigShiftTooltip(active)
+        end
+        return false
+    end
+
+    local owner = widget:GetUserData("cdcShiftTooltipOwner") or widget.frame
+    local anchor = widget:GetUserData("cdcShiftTooltipAnchor") or "ANCHOR_RIGHT"
+    local currentOwner = GameTooltip:GetOwner()
+    if currentOwner and currentOwner ~= owner then
+        if active.tooltipShown then
+            active.tooltipShown = nil
+        end
+        return false
+    end
+    GameTooltip:SetOwner(owner, anchor)
+    if kind == "spell" then
+        GameTooltip:SetSpellByID(id)
+    elseif kind == "item" then
+        GameTooltip:SetItemByID(id)
+    else
+        if active.tooltipShown then
+            HideConfigShiftTooltip(active)
+        end
+        return false
+    end
+    active.tooltipOwner = owner
+    active.tooltipShown = true
+    GameTooltip:Show()
+    return true
+end
+
+local function ClearConfigShiftTooltipHover(widget)
+    local active = CS.configShiftTooltipActive
+    if widget then
+        if not active or active.widget ~= widget then
+            return
+        end
+    end
+
+    CS.configShiftTooltipActive = nil
+    if active and active.tooltipShown then
+        HideConfigShiftTooltip(active)
+    end
+    if active then
+        active.tooltipOwner = nil
+    end
+end
+
+local configShiftTooltipEventFrame = CreateFrame("Frame")
+configShiftTooltipEventFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
+configShiftTooltipEventFrame:SetScript("OnEvent", function(_, event, key)
+    if event ~= "MODIFIER_STATE_CHANGED" then
+        return
+    end
+    key = tostring(key or "")
+    if not key:find("SHIFT", 1, true) then
+        return
+    end
+    if IsShiftKeyDown() then
+        ShowConfigShiftTooltip()
+    else
+        local active = CS.configShiftTooltipActive
+        if active and active.tooltipShown then
+            HideConfigShiftTooltip(active)
+        end
+    end
+end)
+
+local function ActivateConfigShiftTooltip(widget)
+    if not widget then
+        ClearConfigShiftTooltipHover()
+        return false
+    end
+
+    CS.configShiftTooltipActive = {
+        widget = widget,
+        tooltipOwner = nil,
+        tooltipShown = nil,
+    }
+    return ShowConfigShiftTooltip()
+end
+
+local function BindConfigShiftTooltip(widget, kind, id, owner, anchor)
+    if not (widget and kind and id) then
+        return false
+    end
+
+    widget:SetUserData("cdcShiftTooltipKind", kind)
+    widget:SetUserData("cdcShiftTooltipID", tonumber(id))
+    widget:SetUserData("cdcShiftTooltipOwner", owner or widget.frame)
+    widget:SetUserData("cdcShiftTooltipAnchor", anchor or "ANCHOR_RIGHT")
+    widget:SetCallback("OnEnter", function(hoveredWidget)
+        ActivateConfigShiftTooltip(hoveredWidget)
+    end)
+    widget:SetCallback("OnLeave", function(leftWidget)
+        ClearConfigShiftTooltipHover(leftWidget)
+    end)
     return true
 end
 
@@ -1682,6 +1822,10 @@ ST._OpenContainerIconPicker = OpenContainerIconPicker
 ST._IsValidIconTexture = IsValidIconTexture
 ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
+ST._BindConfigShiftTooltip = BindConfigShiftTooltip
+ST._ActivateConfigShiftTooltip = ActivateConfigShiftTooltip
+ST._ClearConfigShiftTooltipHover = ClearConfigShiftTooltipHover
+ST._ShowConfigShiftTooltip = ShowConfigShiftTooltip
 ST._COLUMN_PADDING = COLUMN_PADDING
 ST._BUTTON_HEIGHT = BUTTON_HEIGHT
 ST._BUTTON_SPACING = BUTTON_SPACING
