@@ -153,6 +153,11 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     return relativeFrame, "ok"
 end
 
+function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
+    local _, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
+    return anchorState
+end
+
 local function NormalizeCompactGrowthDirection(growthDirection)
     if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
         return "start"
@@ -1385,6 +1390,7 @@ local function CreateContainerNudger(frame, containerId)
         local function DoNudge()
             local container = CooldownCompanion.db.profile.groupContainers[containerId]
             if not container then return end
+            container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
             local cFrame = CooldownCompanion.containerFrames[containerId]
             if cFrame then
                 cFrame:AdjustPointsOffset(dir.dx, dir.dy)
@@ -1428,6 +1434,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
 
     local container = self.db.profile.groupContainers[containerId]
     if not container then return end
+    container.anchor = self:NormalizeContainerAnchor(container.anchor)
 
     local frameName = "CooldownCompanionContainer" .. containerId
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
@@ -1528,77 +1535,64 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
         return
     end
     frame._anchorDirty = nil
+    local normalizedAnchor, _, deferred = self:NormalizeContainerAnchor(anchor)
+    if not deferred then
+        anchor = normalizedAnchor
+    else
+        local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+        local anchorState = self.GetContainerAnchorTargetState and self:GetContainerAnchorTargetState(frame.containerId, relativeTo) or nil
+        local rawX = tonumber(anchor and anchor.x) or 0
+        local rawY = tonumber(anchor and anchor.y) or 0
 
-    local relativeTo = anchor.relativeTo
-    if relativeTo and relativeTo ~= "UIParent" then
-        local relativeFrame, anchorState = ResolveSafeAnchorTarget(self, frame.containerId, "container", relativeTo)
-        if relativeFrame then
-            frame:ClearAllPoints()
-            frame:SetPoint(anchor.point, relativeFrame, anchor.relativePoint, anchor.x, anchor.y)
-            UpdateCoordLabel(frame, anchor.x, anchor.y)
-            return
-        end
-        if anchorState == "unsafe" then
-            local unsafeFrame = _G[relativeTo]
-            if ApplyUnsafeAnchorVisualFallback(frame, anchor, unsafeFrame) then
-                UpdateCoordLabel(frame, anchor.x, anchor.y)
+        if anchorState == "ok" then
+            local relativeFrame = relativeTo and _G[relativeTo]
+            if relativeFrame then
+                frame:ClearAllPoints()
+                frame:SetPoint(anchor.point or "CENTER", relativeFrame, anchor.relativePoint or "CENTER", rawX, rawY)
+                UpdateCoordLabel(frame, rawX, rawY)
+                return
             end
+        elseif anchorState == "unsafe" then
+            local unsafeFrame = relativeTo and _G[relativeTo]
+            if ApplyUnsafeAnchorVisualFallback(frame, anchor, unsafeFrame) then
+                UpdateCoordLabel(frame, rawX, rawY)
+                return
+            end
+        elseif anchorState == "missing" then
+            frame:ClearAllPoints()
+            frame:SetPoint(anchor.point or "CENTER", UIParent, anchor.relativePoint or "CENTER", rawX, rawY)
+            UpdateCoordLabel(frame, rawX, rawY)
             return
         end
     end
 
     frame:ClearAllPoints()
-    frame:SetPoint(anchor.point, UIParent, anchor.relativePoint, anchor.x, anchor.y)
-    UpdateCoordLabel(frame, anchor.x, anchor.y)
+    frame:SetPoint("CENTER", UIParent, "CENTER", tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
+    UpdateCoordLabel(frame, tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
 end
 
 function CooldownCompanion:SaveContainerPosition(containerId)
     local frame = self.containerFrames[containerId]
     local container = self.db.profile.groupContainers[containerId]
     if not frame or not container then return end
+    container.anchor = self:NormalizeContainerAnchor(container.anchor)
 
     local cx, cy = frame:GetCenter()
     if not cx then return end
+    local ucx, ucy = UIParent:GetCenter()
+    if not ucx then return end
 
-    local relativeTo = container.anchor.relativeTo
-    local relFrame
-    local anchorState
-    if relativeTo and relativeTo ~= "UIParent" then
-        relFrame, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
-    end
-    if anchorState == "unsafe" then
-        self:AnchorContainerFrame(frame, container.anchor)
-        return
-    end
-    if not relFrame then
-        relFrame = UIParent
-        relativeTo = "UIParent"
-    end
-
-    local rw, rh = relFrame:GetSize()
-    local rcx, rcy = relFrame:GetCenter()
-    local fw, fh = frame:GetSize()
-
-    local desiredPoint = container.anchor.point
-    local desiredRelPoint = container.anchor.relativePoint
-
-    local fax, fay = GetAnchorOffset(desiredPoint, fw, fh)
-    local framePtX = cx + fax
-    local framePtY = cy + fay
-
-    local rax, ray = GetAnchorOffset(desiredRelPoint, rw, rh)
-    local refPtX = rcx + rax
-    local refPtY = rcy + ray
-
-    local newX = math_floor((framePtX - refPtX) * 10 + 0.5) / 10
-    local newY = math_floor((framePtY - refPtY) * 10 + 0.5) / 10
+    local newX = math_floor((cx - ucx) * 10 + 0.5) / 10
+    local newY = math_floor((cy - ucy) * 10 + 0.5) / 10
 
     container.anchor.x = newX
     container.anchor.y = newY
-    container.anchor.relativeTo = relativeTo
+    container.anchor.point = "CENTER"
+    container.anchor.relativeTo = "UIParent"
+    container.anchor.relativePoint = "CENTER"
 
     frame:ClearAllPoints()
-    frame:SetPoint(desiredPoint, relFrame, desiredRelPoint, newX, newY)
+    frame:SetPoint("CENTER", UIParent, "CENTER", newX, newY)
 
     UpdateCoordLabel(frame, newX, newY)
     self:RefreshConfigPanel()

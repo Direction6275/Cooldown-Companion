@@ -251,6 +251,7 @@ function CooldownCompanion:OnEnable()
     -- Create all container frames, then group (panel) frames
     self:CreateAllContainerFrames()
     self:CreateAllGroupFrames()
+    self:FinalizeContainerAnchorsToScreenOffsets()
 
     -- Start a ticker to update cooldowns periodically
     -- This ensures cooldowns update even if events don't fire

@@ -874,6 +874,8 @@ function CooldownCompanion:RefreshAllGroups()
             self:UnloadGroup(groupId)
         end
     end
+
+    self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
 -- Refresh only frame-level visibility/load-state without rebuilding buttons.
@@ -967,6 +969,8 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
             end
         end
     end
+
+    self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
 -- Fully unload a group: save/clear button OnUpdate scripts, remove from

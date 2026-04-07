@@ -41,6 +41,127 @@ local function RoundAnchorOffset(value)
     return math_floor(((value or 0) * 10) + 0.5) / 10
 end
 
+local function GetFrameSizeInUIParentSpace(frame)
+    if not (frame and frame.GetSize) then
+        return nil, nil
+    end
+
+    local width, height = frame:GetSize()
+    if not (width and height) then
+        return width, height
+    end
+
+    local frameScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or nil
+    local uiScale = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or nil
+    if frameScale and uiScale and uiScale > 0 then
+        local scaleRatio = frameScale / uiScale
+        width = width * scaleRatio
+        height = height * scaleRatio
+    end
+
+    return width, height
+end
+
+local function IsAddonAnchorFrameName(frameName)
+    if type(frameName) ~= "string" then
+        return false
+    end
+    return frameName:match("^CooldownCompanionContainer%d+$") ~= nil
+        or frameName:match("^CooldownCompanionGroup%d+$") ~= nil
+end
+
+function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
+    local normalized = type(anchor) == "table" and anchor or {}
+    local point = normalized.point or "CENTER"
+    local relativeTo = normalized.relativeTo or "UIParent"
+    local relativePoint = normalized.relativePoint or "CENTER"
+    local x = tonumber(normalized.x) or 0
+    local y = tonumber(normalized.y) or 0
+    local newX = RoundAnchorOffset(x)
+    local newY = RoundAnchorOffset(y)
+    local changed = (normalized.point ~= "CENTER")
+        or (normalized.relativeTo ~= "UIParent")
+        or (normalized.relativePoint ~= "CENTER")
+        or (normalized.x ~= newX)
+        or (normalized.y ~= newY)
+
+    if point ~= "CENTER" or relativeTo ~= "UIParent" or relativePoint ~= "CENTER" then
+        if IsAddonAnchorFrameName(relativeTo) and not resolveAddonFrames then
+            normalized.x = newX
+            normalized.y = newY
+            return normalized, changed, true
+        end
+
+        local relativeFrame
+        if relativeTo == "UIParent" then
+            relativeFrame = UIParent
+        elseif type(relativeTo) == "table" then
+            relativeFrame = relativeTo
+        elseif type(relativeTo) == "string" then
+            relativeFrame = _G[relativeTo]
+        end
+
+        if not (relativeFrame and relativeFrame.GetCenter and relativeFrame.GetSize) then
+            normalized.x = newX
+            normalized.y = newY
+            return normalized, changed, true
+        end
+
+        local rcx, rcy = relativeFrame:GetCenter()
+        local rw, rh = GetFrameSizeInUIParentSpace(relativeFrame)
+        local ucx, ucy = UIParent:GetCenter()
+
+        if not (rcx and rcy and rw and rh and ucx and ucy) then
+            normalized.x = newX
+            normalized.y = newY
+            return normalized, changed, true
+        end
+
+        local rax, ray = GetAnchorOffset(relativePoint, rw, rh)
+        local fax, fay = GetAnchorOffset(point, 1, 1)
+        local frameCenterX = rcx + rax + x - fax
+        local frameCenterY = rcy + ray + y - fay
+        newX = RoundAnchorOffset(frameCenterX - ucx)
+        newY = RoundAnchorOffset(frameCenterY - ucy)
+    end
+
+    normalized.point = "CENTER"
+    normalized.relativeTo = "UIParent"
+    normalized.relativePoint = "CENTER"
+    normalized.x = newX
+    normalized.y = newY
+
+    return normalized, changed, false
+end
+
+function CooldownCompanion:FinalizeContainerAnchorsToScreenOffsets()
+    local containers = self.db and self.db.profile and self.db.profile.groupContainers
+    if not containers then return end
+
+    for containerId, container in pairs(containers) do
+        if type(container) == "table" and self:IsContainerVisibleToCurrentChar(containerId) then
+            local anchor = type(container.anchor) == "table" and container.anchor or nil
+            local relativeTo = anchor and anchor.relativeTo
+            local skipFinalize = IsAddonAnchorFrameName(relativeTo)
+                and self.GetContainerAnchorTargetState
+                and self:GetContainerAnchorTargetState(containerId, relativeTo) == "unsafe"
+
+            if not skipFinalize then
+                local normalized, changed, deferred = self:NormalizeContainerAnchor(container.anchor, true)
+                if not deferred then
+                    container.anchor = normalized
+                    if changed then
+                        local frame = self.containerFrames and self.containerFrames[containerId]
+                        if frame then
+                            self:AnchorContainerFrame(frame, container.anchor)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
     if not (self and groupId and type(group) == "table") then
         return
@@ -526,6 +647,9 @@ function CooldownCompanion:DuplicateContainer(containerId)
     -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)
     if self.CreateContainerFrame then
         self:CreateContainerFrame(newContainerId)
+    end
+    if self.FinalizeContainerAnchorsToScreenOffsets then
+        self:FinalizeContainerAnchorsToScreenOffsets()
     end
 
     return newContainerId
