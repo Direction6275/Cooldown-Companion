@@ -11,6 +11,7 @@ local CS = ST._configState
 local ResetConfigSelection = ST._ResetConfigSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
+local PrepareSharedImportText = ST._PrepareSharedImportText
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -405,18 +406,19 @@ local MAX_IMPORT_LENGTH = 500000
 local function DecodeProfileImport(popup)
     local text = popup.EditBox:GetText()
     if not text or text == "" then return nil end
-    text = text:gsub("%s+", "")
+    local preparedText, compactText = PrepareSharedImportText(text)
+    if not preparedText then return nil end
 
-    if #text > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
+    if #compactText > MAX_IMPORT_LENGTH then
+        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
         return nil
     end
 
-    if text:sub(1, 8) == "CDCdiag:" then
+    if compactText:sub(1, 8) == "CDCdiag:" then
         CooldownCompanion:Print("This is a bug report string, not a profile export.")
         return nil
     end
-    local success, data = DecodeSharedPayload(text)
+    local success, data = DecodeSharedPayload(preparedText)
     if not (success and type(data) == "table") then
         CooldownCompanion:Print("Import failed: invalid data.")
         return nil
@@ -879,18 +881,19 @@ ST._EncodeExportData = EncodeExportData
 
 local function ImportGroupData(text)
     if not text or text == "" then return false end
-    text = text:gsub("%s+", "")
-    if #text > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
+    local preparedText, compactText = PrepareSharedImportText(text)
+    if not preparedText then return false end
+    if #compactText > MAX_IMPORT_LENGTH then
+        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
         return false
     end
 
-    if text:sub(1, 8) == "CDCdiag:" then
+    if compactText:sub(1, 8) == "CDCdiag:" then
         CooldownCompanion:Print("This is a bug report string, not a group export.")
         return false
     end
 
-    local success, data = DecodeSharedPayload(text)
+    local success, data = DecodeSharedPayload(preparedText)
 
     if not success or type(data) ~= "table" then
         return false

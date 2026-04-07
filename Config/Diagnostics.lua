@@ -10,6 +10,7 @@ local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
+local PrepareSharedImportText = ST._PrepareSharedImportText
 
 -- File-local state
 local decodedDiagnostic = nil
@@ -1030,11 +1031,12 @@ local function OpenDiagnosticDecodePanel()
     decodeBtn:SetCallback("OnClick", function()
         local text = inputBox:GetText()
         if not text or text == "" then return end
-        text = text:gsub("%s+", "")
-        if text:sub(1, 8) == "CDCdiag:" then
-            text = text:sub(9)
+        local preparedText, compactText = PrepareSharedImportText(text)
+        if not preparedText then return end
+        if compactText:sub(1, 8) == "CDCdiag:" then
+            preparedText = compactText:sub(9)
         end
-        local success, data = DecodeSharedPayload(text)
+        local success, data = DecodeSharedPayload(preparedText)
         if not success or type(data) ~= "table" then
             outputBox:SetText("Error: Failed to deserialize.")
             return
