@@ -365,6 +365,11 @@ function CooldownCompanion:InitAlphaUpdateFrame()
 
     local function ConfigNeedsAlphaUpdate(config, stateKey)
         if (config.baselineAlpha or 1) < 1 then return true end
+        if config.forceAlphaInCombat or config.forceAlphaOutOfCombat
+            or config.forceAlphaRegularMounted or config.forceAlphaDragonriding
+            or config.forceAlphaTargetExists or config.forceAlphaMouseover then
+            return true
+        end
         if config.forceHideInCombat or config.forceHideOutOfCombat
             or config.forceHideRegularMounted or config.forceHideDragonriding then
             return true

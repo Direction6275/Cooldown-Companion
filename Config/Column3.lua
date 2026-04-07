@@ -54,6 +54,7 @@ local function RefreshColumn3()
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                 CS.customAuraBarTab = tab
+                CooldownCompanion:ApplyResourceBars()
                 widget:ReleaseChildren()
 
                 local scroll = AceGUI:Create("ScrollFrame")

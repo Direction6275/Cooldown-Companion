@@ -1645,7 +1645,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 bars[capturedIdx].independentLocked = false
                 if CS.customAuraBarSubTabs then
                     local prior = CS.customAuraBarSubTabs[capturedIdx]
-                    if prior ~= "settings" and prior ~= "anchor" then
+                    if prior ~= "settings" and prior ~= "anchor" and prior ~= "alpha" then
                         CS.customAuraBarSubTabs[capturedIdx] = "settings"
                     end
                 end
@@ -1666,7 +1666,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
     local independentSubTab = "settings"
     if cab.enabled and IsTruthyConfigFlag(cab.independentAnchorEnabled) then
         independentSubTab = CS.customAuraBarSubTabs and CS.customAuraBarSubTabs[capturedIdx] or "settings"
-        if independentSubTab ~= "settings" and independentSubTab ~= "anchor" then
+        if independentSubTab ~= "settings" and independentSubTab ~= "anchor" and independentSubTab ~= "alpha" then
             independentSubTab = "settings"
         end
         if CS.customAuraBarSubTabs then
@@ -1679,29 +1679,45 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
         local settingsBtn = AceGUI:Create("Button")
         settingsBtn:SetText(independentSubTab == "settings" and ClassColorText("[Settings]") or "Settings")
-        settingsBtn:SetRelativeWidth(0.49)
+        settingsBtn:SetRelativeWidth(0.32)
         settingsBtn:SetCallback("OnClick", function()
             local currentTab = CS.customAuraBarSubTabs and CS.customAuraBarSubTabs[capturedIdx] or "settings"
             if currentTab == "settings" then return end
             if CS.customAuraBarSubTabs then
                 CS.customAuraBarSubTabs[capturedIdx] = "settings"
             end
+            CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
         end)
         subTabRow:AddChild(settingsBtn)
 
         local anchorBtn = AceGUI:Create("Button")
-        anchorBtn:SetText(independentSubTab == "anchor" and ClassColorText("[Anchor Settings]") or "Anchor Settings")
-        anchorBtn:SetRelativeWidth(0.49)
+        anchorBtn:SetText(independentSubTab == "anchor" and ClassColorText("[Anchor]") or "Anchor")
+        anchorBtn:SetRelativeWidth(0.32)
         anchorBtn:SetCallback("OnClick", function()
             local currentTab = CS.customAuraBarSubTabs and CS.customAuraBarSubTabs[capturedIdx] or "settings"
             if currentTab == "anchor" then return end
             if CS.customAuraBarSubTabs then
                 CS.customAuraBarSubTabs[capturedIdx] = "anchor"
             end
+            CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
         end)
         subTabRow:AddChild(anchorBtn)
+
+        local alphaBtn = AceGUI:Create("Button")
+        alphaBtn:SetText(independentSubTab == "alpha" and ClassColorText("[Alpha]") or "Alpha")
+        alphaBtn:SetRelativeWidth(0.32)
+        alphaBtn:SetCallback("OnClick", function()
+            local currentTab = CS.customAuraBarSubTabs and CS.customAuraBarSubTabs[capturedIdx] or "settings"
+            if currentTab == "alpha" then return end
+            if CS.customAuraBarSubTabs then
+                CS.customAuraBarSubTabs[capturedIdx] = "alpha"
+            end
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        subTabRow:AddChild(alphaBtn)
 
         container:AddChild(subTabRow)
 
@@ -1712,7 +1728,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
         CS.customAuraBarSubTabs[capturedIdx] = nil
     end
 
-    if cab.enabled and independentSubTab ~= "anchor" then
+    if cab.enabled and independentSubTab == "settings" then
 
             local trackedAuraName = cab.spellID and C_Spell.GetSpellName(cab.spellID)
             local trackedAuraIcon = cab.spellID and C_Spell.GetSpellTexture(cab.spellID)
@@ -2431,6 +2447,23 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
     if cab.enabled and IsTruthyConfigFlag(cab.independentAnchorEnabled) and independentSubTab == "anchor" then
         BuildCustomAuraBarAnchorSettings(container, customBars, settings, capturedIdx)
+    end
+
+    if cab.enabled and IsTruthyConfigFlag(cab.independentAnchorEnabled) and independentSubTab == "alpha" then
+        local group = CooldownCompanion.db
+            and CooldownCompanion.db.profile
+            and CooldownCompanion.db.profile.groups
+            and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        BuildAlphaControls(container, cab, function()
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end, "rb_custom_aura_alpha_" .. tostring(capturedIdx), {
+            isGlobal = group and group.isGlobal,
+            onBaselineChanged = function()
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
     end
 
 end

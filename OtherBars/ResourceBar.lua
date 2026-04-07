@@ -155,6 +155,34 @@ local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
 
+local function GetCustomAuraAlphaModuleId(slotIdx)
+    if not slotIdx or slotIdx < 1 or slotIdx > MAX_CUSTOM_AURA_BARS then
+        return nil
+    end
+    return "custom_aura_bar_" .. tostring(slotIdx)
+end
+
+local function CustomAuraUsesOwnAlpha(cabConfig)
+    if type(cabConfig) ~= "table" then
+        return false
+    end
+
+    if (tonumber(cabConfig.baselineAlpha) or 1) ~= 1 then
+        return true
+    end
+
+    return IsTruthyConfigFlag(cabConfig.forceAlphaInCombat)
+        or IsTruthyConfigFlag(cabConfig.forceAlphaOutOfCombat)
+        or IsTruthyConfigFlag(cabConfig.forceAlphaRegularMounted)
+        or IsTruthyConfigFlag(cabConfig.forceAlphaDragonriding)
+        or IsTruthyConfigFlag(cabConfig.forceAlphaTargetExists)
+        or IsTruthyConfigFlag(cabConfig.forceAlphaMouseover)
+        or IsTruthyConfigFlag(cabConfig.forceHideInCombat)
+        or IsTruthyConfigFlag(cabConfig.forceHideOutOfCombat)
+        or IsTruthyConfigFlag(cabConfig.forceHideRegularMounted)
+        or IsTruthyConfigFlag(cabConfig.forceHideDragonriding)
+end
+
 ------------------------------------------------------------------------
 -- Independent Anchor Config (writes state — stays in main file)
 ------------------------------------------------------------------------
@@ -266,6 +294,84 @@ local function GetCustomAuraSlotFromPowerType(powerType)
         return nil
     end
     return pt - CUSTOM_AURA_BAR_BASE + 1
+end
+
+local IsIndependentCustomAuraUnlocked
+
+local function IsIndependentCustomAuraConfigEditing(barInfo)
+    if not barInfo or not barInfo._isIndependent or not IsBarsConfigActive() then
+        return false
+    end
+
+    local slotIdx = GetCustomAuraSlotFromPowerType(barInfo.powerType)
+    local configState = ST._configState
+    if not slotIdx or not configState or not configState.resourceBarPanelActive then
+        return false
+    end
+
+    return configState.customAuraBarTab == ("bar_" .. tostring(slotIdx))
+end
+
+local function ShouldForceVisibleIndependentCustomAura(barInfo)
+    return IsIndependentCustomAuraUnlocked(barInfo) or IsIndependentCustomAuraConfigEditing(barInfo)
+end
+
+local function ApplyIndependentCustomAuraAlpha(barInfo, settings, targetFrame)
+    if not barInfo or not barInfo.frame or not barInfo.cabConfig then return end
+
+    local frame = barInfo.frame
+    local slotIdx = GetCustomAuraSlotFromPowerType(barInfo.powerType)
+    local alphaModuleId = GetCustomAuraAlphaModuleId(slotIdx)
+    local previousAlphaModuleId = frame._cdcCustomAuraAlphaModuleId
+    if previousAlphaModuleId and previousAlphaModuleId ~= alphaModuleId then
+        CooldownCompanion:UnregisterModuleAlpha(previousAlphaModuleId)
+    end
+    frame._cdcCustomAuraAlphaModuleId = alphaModuleId
+
+    local bypassAlpha = barInfo._isIndependent and ShouldForceVisibleIndependentCustomAura(barInfo)
+    local useOwnAlpha = CustomAuraUsesOwnAlpha(barInfo.cabConfig)
+    local desiredMode = bypassAlpha and "bypass" or (useOwnAlpha and "custom" or "inherit")
+
+    if frame._cdcCustomAuraAlphaMode == desiredMode and previousAlphaModuleId == alphaModuleId then
+        if desiredMode == "inherit" then
+            if frame._cdcIndependentAlphaTarget == targetFrame then
+                return
+            end
+        elseif desiredMode == "bypass" then
+            frame:SetAlpha(1)
+            return
+        else
+            return
+        end
+    end
+    frame._cdcCustomAuraAlphaMode = desiredMode
+
+    if not alphaModuleId then
+        frame._cdcCustomAuraAlphaModuleId = nil
+        ApplyIndependentAlphaSync(frame, settings, targetFrame)
+        return
+    end
+
+    if bypassAlpha then
+        CooldownCompanion:UnregisterModuleAlpha(alphaModuleId, true)
+        ApplyIndependentAlphaSync(frame, nil, nil)
+        frame:SetAlpha(1)
+        return
+    end
+
+    if useOwnAlpha then
+        ApplyIndependentAlphaSync(frame, nil, nil)
+        CooldownCompanion:RegisterModuleAlpha(alphaModuleId, barInfo.cabConfig, { frame })
+
+        local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[alphaModuleId]
+        if alphaState and alphaState.currentAlpha ~= nil then
+            frame:SetAlpha(alphaState.currentAlpha)
+        end
+        return
+    end
+
+    CooldownCompanion:UnregisterModuleAlpha(alphaModuleId)
+    ApplyIndependentAlphaSync(frame, settings, targetFrame)
 end
 
 local function HasCustomAuraBarAuraVisuals(cabConfig)
@@ -469,7 +575,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
         bar:SetStatusBarColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4] or 1)
     end
 end
-local function IsIndependentCustomAuraUnlocked(barInfo)
+IsIndependentCustomAuraUnlocked = function(barInfo)
     return barInfo and barInfo.cabConfig and barInfo.cabConfig.independentLocked ~= true
 end
 
@@ -636,6 +742,10 @@ local function EnsureIndependentDragChrome(frame)
         info.cabConfig.independentLocked = true
         SaveIndependentCustomAuraAnchor(info, true)
         UpdateIndependentDragState(frame, info)
+        local settings = GetResourceBarSettings()
+        if settings then
+            ApplyIndependentCustomAuraAlpha(info, settings, ResolveIndependentAnchorTarget(info.cabConfig, settings))
+        end
     end)
 
     frame._cdcIndependentDragHandle = dragHandle
@@ -693,6 +803,11 @@ end
 
 local function ClearIndependentRuntimeState(frame)
     if not frame then return end
+    if frame._cdcCustomAuraAlphaModuleId then
+        CooldownCompanion:UnregisterModuleAlpha(frame._cdcCustomAuraAlphaModuleId)
+        frame._cdcCustomAuraAlphaModuleId = nil
+    end
+    frame._cdcCustomAuraAlphaMode = nil
     frame._cdcIndependentBarInfo = nil
     frame:SetMovable(false)
     frame:EnableMouse(false)
@@ -746,7 +861,7 @@ local function ApplyIndependentCustomAuraPlacement(barInfo, cabConfig, settings)
 
     frame._cdcIndependentBarInfo = barInfo
     UpdateIndependentDragState(frame, barInfo)
-    ApplyIndependentAlphaSync(frame, settings, targetFrame)
+    ApplyIndependentCustomAuraAlpha(barInfo, settings, targetFrame)
 end
 
 function CooldownCompanion:ApplyIndependentCustomAuraPlacement(barInfo, cabConfig, settings)
@@ -1640,10 +1755,10 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     -- Hide When Inactive: hide the bar frame when aura is absent.
-    -- Independent bars are forced visible while unlocked so users can drag/place them.
+    -- Independent bars stay visible while being edited or placed so they do not disappear.
     if cabConfig.hideWhenInactive then
-        local forceVisibleForPlacement = barInfo._isIndependent and IsIndependentCustomAuraUnlocked(barInfo)
-        local shouldShow = auraPresent or forceVisibleForPlacement or auraPreview or pandemicPreview
+        local forceVisibleForEditing = barInfo._isIndependent and ShouldForceVisibleIndependentCustomAura(barInfo)
+        local shouldShow = auraPresent or forceVisibleForEditing or auraPreview or pandemicPreview
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
         if wasShown ~= shouldShow then
@@ -2265,6 +2380,9 @@ local function OnUpdate(self, elapsed)
                 or barInfo.barType == "custom_segmented"
                 or barInfo.barType == "custom_overlay" then
                 UpdateCustomAuraBar(barInfo)
+                if barInfo._isIndependent and barInfo.cabConfig then
+                    ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
+                end
                 if barInfo.barType == "custom_continuous" then
                     AnimateCustomAuraBarIndicator(barInfo.frame)
                 end
@@ -2272,6 +2390,9 @@ local function OnUpdate(self, elapsed)
         elseif barInfo.frame and barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
             -- Frame hidden by hideWhenInactive; still update so it can re-show when aura returns
             UpdateCustomAuraBar(barInfo)
+            if barInfo._isIndependent and barInfo.cabConfig then
+                ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
+            end
             if barInfo.barType == "custom_continuous" then
                 AnimateCustomAuraBarIndicator(barInfo.frame)
             end
