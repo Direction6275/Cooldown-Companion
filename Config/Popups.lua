@@ -8,10 +8,9 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
-local AceSerializer = LibStub("AceSerializer-3.0")
-local LibDeflate = LibStub("LibDeflate")
-
 local ResetConfigSelection = ST._ResetConfigSelection
+local EncodeSharedPayload = ST._EncodeSharedPayload
+local DecodeSharedPayload = ST._DecodeSharedPayload
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -385,10 +384,7 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
         local exportData = CopyTable(db.profile)
         exportData._exporterCharKey = db.keys.char
         exportData._characterInfo = db.global.characterInfo
-        local serialized = AceSerializer:Serialize(exportData)
-        local compressed = LibDeflate:CompressDeflate(serialized)
-        local encoded = LibDeflate:EncodeForPrint(compressed)
-        self.EditBox:SetText(encoded)
+        self.EditBox:SetText(EncodeSharedPayload(exportData, "profile"))
         self.EditBox:HighlightText()
         self.EditBox:SetFocus()
     end,
@@ -409,6 +405,7 @@ local MAX_IMPORT_LENGTH = 500000
 local function DecodeProfileImport(popup)
     local text = popup.EditBox:GetText()
     if not text or text == "" then return nil end
+    text = text:gsub("%s+", "")
 
     if #text > MAX_IMPORT_LENGTH then
         CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
@@ -419,19 +416,7 @@ local function DecodeProfileImport(popup)
         CooldownCompanion:Print("This is a bug report string, not a profile export.")
         return nil
     end
-    local success, data
-    -- Detect format: legacy AceSerialized strings start with "^1"
-    if text:sub(1, 2) == "^1" then
-        success, data = AceSerializer:Deserialize(text)
-    else
-        local decoded = LibDeflate:DecodeForPrint(text)
-        if decoded then
-            local decompressed = LibDeflate:DecompressDeflate(decoded)
-            if decompressed then
-                success, data = AceSerializer:Deserialize(decompressed)
-            end
-        end
-    end
+    local success, data = DecodeSharedPayload(text)
     if not (success and type(data) == "table") then
         CooldownCompanion:Print("Import failed: invalid data.")
         return nil
@@ -875,9 +860,7 @@ local function BuildGroupExportData(group)
 end
 
 local function EncodeExportData(payload)
-    local serialized = AceSerializer:Serialize(payload)
-    local compressed = LibDeflate:CompressDeflate(serialized)
-    return LibDeflate:EncodeForPrint(compressed)
+    return EncodeSharedPayload(payload, "entity")
 end
 
 local function BuildContainerExportData(container)
@@ -896,6 +879,7 @@ ST._EncodeExportData = EncodeExportData
 
 local function ImportGroupData(text)
     if not text or text == "" then return false end
+    text = text:gsub("%s+", "")
     if #text > MAX_IMPORT_LENGTH then
         CooldownCompanion:Print("Import string too large (" .. #text .. " characters).")
         return false
@@ -906,18 +890,7 @@ local function ImportGroupData(text)
         return false
     end
 
-    local success, data
-    if text:sub(1, 2) == "^1" then
-        success, data = AceSerializer:Deserialize(text)
-    else
-        local decoded = LibDeflate:DecodeForPrint(text)
-        if decoded then
-            local decompressed = LibDeflate:DecompressDeflate(decoded)
-            if decompressed then
-                success, data = AceSerializer:Deserialize(decompressed)
-            end
-        end
-    end
+    local success, data = DecodeSharedPayload(text)
 
     if not success or type(data) ~= "table" then
         return false

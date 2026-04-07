@@ -1142,7 +1142,13 @@ local function RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 exportPanels[#exportPanels + 1] = panelData
             end
         end
-        local payload = { type = "container", version = 1, container = containerData, panels = exportPanels }
+        local payload = {
+            type = "container",
+            version = 1,
+            container = containerData,
+            panels = exportPanels,
+            _originalContainerId = containerId,
+        }
         local exportString = EncodeExportData(payload)
         CS.ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
     end)

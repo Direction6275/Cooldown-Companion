@@ -1574,7 +1574,13 @@ local function RefreshColumn2()
                                 local db = CooldownCompanion.db.profile
                                 local containerData = BuildContainerExportData(db.groupContainers[ctxContainerId])
                                 containerData.name = ctxPanel.name or "Panel"
-                                local payload = { type = "container", version = 1, container = containerData, panels = { BuildGroupExportData(ctxPanel) } }
+                                local payload = {
+                                    type = "container",
+                                    version = 1,
+                                    container = containerData,
+                                    panels = { BuildGroupExportData(ctxPanel) },
+                                    _originalContainerId = ctxContainerId,
+                                }
                                 local exportString = EncodeExportData(payload)
                                 ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
                             end

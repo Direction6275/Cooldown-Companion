@@ -8,8 +8,8 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 local AceGUI = LibStub("AceGUI-3.0")
-local AceSerializer = LibStub("AceSerializer-3.0")
-local LibDeflate = LibStub("LibDeflate")
+local EncodeSharedPayload = ST._EncodeSharedPayload
+local DecodeSharedPayload = ST._DecodeSharedPayload
 
 -- File-local state
 local decodedDiagnostic = nil
@@ -926,10 +926,7 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_EXPORT"] = {
     hasEditBox = true,
     OnShow = function(self)
         local snapshot = BuildDiagnosticSnapshot()
-        local serialized = AceSerializer:Serialize(snapshot)
-        local compressed = LibDeflate:CompressDeflate(serialized)
-        local encoded = LibDeflate:EncodeForPrint(compressed)
-        self.EditBox:SetText("CDCdiag:" .. encoded)
+        self.EditBox:SetText("CDCdiag:" .. EncodeSharedPayload(snapshot, "diagnostic"))
         self.EditBox:HighlightText()
         self.EditBox:SetFocus()
     end,
@@ -1037,17 +1034,7 @@ local function OpenDiagnosticDecodePanel()
         if text:sub(1, 8) == "CDCdiag:" then
             text = text:sub(9)
         end
-        local decoded = LibDeflate:DecodeForPrint(text)
-        if not decoded then
-            outputBox:SetText("Error: Failed to decode string.")
-            return
-        end
-        local decompressed = LibDeflate:DecompressDeflate(decoded)
-        if not decompressed then
-            outputBox:SetText("Error: Failed to decompress.")
-            return
-        end
-        local success, data = AceSerializer:Deserialize(decompressed)
+        local success, data = DecodeSharedPayload(text)
         if not success or type(data) ~= "table" then
             outputBox:SetText("Error: Failed to deserialize.")
             return
