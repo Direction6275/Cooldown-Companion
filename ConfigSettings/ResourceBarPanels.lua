@@ -27,6 +27,13 @@ local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local tabInfoButtons = CS.tabInfoButtons
 
+local function RefreshLayoutOrderPreview()
+    if not (CS.resourceBarPanelActive and CS.col4Container and ST._RefreshColumn4) then
+        return
+    end
+    ST._RefreshColumn4(CS.col4Container)
+end
+
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
 local POWER_NAMES = RB.POWER_NAMES
@@ -1808,6 +1815,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 widget:SetText(tostring(customBars[capturedIdx].maxStacks or 1))
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
+                RefreshLayoutOrderPreview()
             end)
             container:AddChild(maxEdit)
             end
