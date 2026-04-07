@@ -766,7 +766,13 @@ local function RefreshColumn1(preserveDrag)
                                     panels[#panels + 1] = panelData
                                 end
                                 local containerData = BuildContainerExportData(container)
-                                local payload = { type = "container", version = 1, container = containerData, panels = panels }
+                                local payload = {
+                                    type = "container",
+                                    version = 1,
+                                    container = containerData,
+                                    panels = panels,
+                                    _originalContainerId = containerId,
+                                }
                                 local exportString = EncodeExportData(payload)
                                 ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
                             end
