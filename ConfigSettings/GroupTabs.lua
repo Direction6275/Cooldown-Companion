@@ -2254,131 +2254,39 @@ local function BuildContainerGeneralTab(scroll, containerId)
     end)
 
     if not layoutCollapsed then
+        container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
 
-    -- ================================================================
-    -- Anchor to Frame (editbox + pick button row)
-    -- ================================================================
-    local anchorRow = AceGUI:Create("SimpleGroup")
-    anchorRow:SetFullWidth(true)
-    anchorRow:SetLayout("Flow")
-
-    local anchorBox = AceGUI:Create("EditBox")
-    if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
-    anchorBox:SetLabel("Anchor to Frame")
-    local currentAnchor = container.anchor.relativeTo
-    if currentAnchor == "UIParent" then currentAnchor = "" end
-    anchorBox:SetText(currentAnchor)
-    anchorBox:SetRelativeWidth(0.68)
-    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        if text == "" then
-            local wasAnchored = container.anchor.relativeTo and container.anchor.relativeTo ~= "UIParent"
-            if wasAnchored then
-                container.anchor = {
-                    point = "CENTER",
-                    relativeTo = "UIParent",
-                    relativePoint = "CENTER",
-                    x = 0,
-                    y = 0,
-                }
-            else
-                container.anchor.relativeTo = "UIParent"
+        -- X Offset
+        local xSlider = AceGUI:Create("Slider")
+        xSlider:SetLabel("X Offset")
+        xSlider:SetSliderValues(-2000, 2000, 0.1)
+        xSlider:SetValue(container.anchor.x or 0)
+        xSlider:SetFullWidth(true)
+        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            container.anchor.x = val
+            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+            if containerFrame then
+                CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
             end
-        else
-            local targetFrame = _G[text]
-            if not targetFrame then
-                CooldownCompanion:Print("Frame '" .. text .. "' not found.")
-                CooldownCompanion:RefreshConfigPanel()
-                return
-            end
-            container.anchor.relativeTo = text
-        end
-        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-        if containerFrame then
-            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-        end
-        RefreshPanels()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    anchorRow:AddChild(anchorBox)
-
-    local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.24)
-    pickBtn:SetCallback("OnClick", function()
-        CS.StartPickFrame(function(name)
-            if CS.configFrame then
-                CS.configFrame.frame:Show()
-            end
-            if name then
-                container.anchor = {
-                    point = "TOPLEFT",
-                    relativeTo = name,
-                    relativePoint = "BOTTOMLEFT",
-                    x = 0,
-                    y = -5,
-                }
-                local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-                if containerFrame then
-                    CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-                end
-                RefreshPanels()
-            end
-            CooldownCompanion:RefreshConfigPanel()
         end)
-    end)
-    anchorRow:AddChild(pickBtn)
+        HookSliderEditBox(xSlider)
+        scroll:AddChild(xSlider)
 
-    scroll:AddChild(anchorRow)
-    pickBtn.frame:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-        if yOfs then
-            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-        end
-    end)
-
-    -- Anchor Point / Relative Point dropdowns
-    local function refreshContainerAnchor()
-        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-        if containerFrame then
-            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-        end
-    end
-
-    AddAnchorDropdown(scroll, container.anchor, "point", "CENTER", refreshContainerAnchor, "Anchor Point")
-    AddAnchorDropdown(scroll, container.anchor, "relativePoint", "CENTER", refreshContainerAnchor, "Relative Point")
-
-    -- X Offset
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-2000, 2000, 0.1)
-    xSlider:SetValue(container.anchor.x or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        container.anchor.x = val
-        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-        if containerFrame then
-            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-        end
-    end)
-    HookSliderEditBox(xSlider)
-    scroll:AddChild(xSlider)
-
-    -- Y Offset
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-2000, 2000, 0.1)
-    ySlider:SetValue(container.anchor.y or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        container.anchor.y = val
-        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-        if containerFrame then
-            CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-        end
-    end)
-    HookSliderEditBox(ySlider)
-    scroll:AddChild(ySlider)
+        -- Y Offset
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Y Offset")
+        ySlider:SetSliderValues(-2000, 2000, 0.1)
+        ySlider:SetValue(container.anchor.y or 0)
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            container.anchor.y = val
+            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+            if containerFrame then
+                CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+            end
+        end)
+        HookSliderEditBox(ySlider)
+        scroll:AddChild(ySlider)
 
     end -- if not layoutCollapsed
 

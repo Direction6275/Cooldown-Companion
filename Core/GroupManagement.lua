@@ -41,6 +41,56 @@ local function RoundAnchorOffset(value)
     return math_floor(((value or 0) * 10) + 0.5) / 10
 end
 
+function CooldownCompanion:NormalizeContainerAnchor(anchor)
+    local normalized = type(anchor) == "table" and anchor or {}
+    local point = normalized.point or "CENTER"
+    local relativeTo = normalized.relativeTo or "UIParent"
+    local relativePoint = normalized.relativePoint or "CENTER"
+    local x = tonumber(normalized.x) or 0
+    local y = tonumber(normalized.y) or 0
+    local newX = RoundAnchorOffset(x)
+    local newY = RoundAnchorOffset(y)
+    local changed = (normalized.point ~= "CENTER")
+        or (normalized.relativeTo ~= "UIParent")
+        or (normalized.relativePoint ~= "CENTER")
+        or (normalized.x ~= newX)
+        or (normalized.y ~= newY)
+
+    if point ~= "CENTER" or relativeTo ~= "UIParent" or relativePoint ~= "CENTER" then
+        local relativeFrame
+        if relativeTo == "UIParent" then
+            relativeFrame = UIParent
+        elseif type(relativeTo) == "table" then
+            relativeFrame = relativeTo
+        elseif type(relativeTo) == "string" then
+            relativeFrame = _G[relativeTo]
+        end
+
+        if relativeFrame and relativeFrame.GetCenter and relativeFrame.GetSize then
+            local rcx, rcy = relativeFrame:GetCenter()
+            local rw, rh = relativeFrame:GetSize()
+            local ucx, ucy = UIParent:GetCenter()
+
+            if rcx and rcy and rw and rh and ucx and ucy then
+                local rax, ray = GetAnchorOffset(relativePoint, rw, rh)
+                local fax, fay = GetAnchorOffset(point, 1, 1)
+                local frameCenterX = rcx + rax + x - fax
+                local frameCenterY = rcy + ray + y - fay
+                newX = RoundAnchorOffset(frameCenterX - ucx)
+                newY = RoundAnchorOffset(frameCenterY - ucy)
+            end
+        end
+    end
+
+    normalized.point = "CENTER"
+    normalized.relativeTo = "UIParent"
+    normalized.relativePoint = "CENTER"
+    normalized.x = newX
+    normalized.y = newY
+
+    return normalized, changed
+end
+
 local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
     if not (self and groupId and type(group) == "table") then
         return

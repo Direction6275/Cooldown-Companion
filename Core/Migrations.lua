@@ -47,6 +47,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateNewDefaults()
     self:MigrateCharacterScopedBarSettings()
     self:MigrateGroupsToContainers()
+    self:MigrateContainerAnchorsToScreenOffsets()
     self:MigrateContainerAlphaToPanel()
     self:MigrateStrataOrderExpansion()
     self:MigrateCustomAuraBarSlots5()
@@ -73,6 +74,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
     profile._migratedContainersV1 = nil
+    profile._migratedContainerAnchorsToScreenOffsets = nil
     profile._migratedContainerAlphaToPanel = nil
     profile._migratedContainerHeroTalentStamps = nil
     profile._migratedStrataOrder6 = nil
@@ -1553,6 +1555,17 @@ function CooldownCompanion:MigrateGroupsToContainers()
     end
 
     profile._migratedContainersV1 = true
+end
+
+function CooldownCompanion:MigrateContainerAnchorsToScreenOffsets()
+    local profile = self.db.profile
+    if profile._migratedContainerAnchorsToScreenOffsets then return end
+
+    for _, container in pairs(profile.groupContainers or {}) do
+        container.anchor = self:NormalizeContainerAnchor(container.anchor)
+    end
+
+    profile._migratedContainerAnchorsToScreenOffsets = true
 end
 
 -------------------------------------------------------------------------

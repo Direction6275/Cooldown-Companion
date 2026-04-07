@@ -4,6 +4,7 @@
 ]]
 
 local ADDON_NAME, ST = ...
+local CooldownCompanion = ST.Addon
 
 local AceSerializer = LibStub("AceSerializer-3.0")
 local LibDeflate = LibStub("LibDeflate")
@@ -803,6 +804,9 @@ local function RehydrateContainer(container, formatVersion)
         container.anchor = CopyTable(containerAnchorDefaults)
     elseif type(container.anchor) == "table" then
         container.anchor = MergeWithDefaults(container.anchor, containerAnchorDefaults)
+    end
+    if CooldownCompanion and CooldownCompanion.NormalizeContainerAnchor then
+        container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
     end
 
     for key, defaultValue in pairs(containerDefaults) do
