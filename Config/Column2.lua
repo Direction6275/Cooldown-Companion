@@ -44,6 +44,24 @@ local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
+local PANEL_TYPE_TOOLTIPS = {
+    icons = {
+        title = "Icon Panel",
+        description = "Classic cooldown icons for spells or items.",
+    },
+    bars = {
+        title = "Bar Panel",
+        description = "Bar timers with names and durations.",
+    },
+    text = {
+        title = "Text Panel",
+        description = "Text-only entries for compact status lists.",
+    },
+    textures = {
+        title = "Texture Panel",
+        description = "One custom texture for a single spell or item.",
+    },
+}
 
 local function EnsureRowBadge(frame, key, atlas, iconSize)
     local badge = frame[key]
@@ -971,6 +989,8 @@ local function RefreshColumn2()
             if not found then CS.addingToPanelId = nil end
         end
 
+        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+
         if panelCount == 0 then
             local spacer = AceGUI:Create("SimpleGroup")
             spacer:SetFullWidth(true)
@@ -992,18 +1012,74 @@ local function RefreshColumn2()
             CS.col2Scroll:AddChild(descSpacer)
 
             local desc = AceGUI:Create("Label")
-            desc:SetText("A panel controls dimensions, display mode, and layout for all entries inside it. Use the buttons below to create your first panel.")
+            desc:SetText("Choose a panel type below to get started.")
             desc:SetFullWidth(true)
             desc:SetJustifyH("CENTER")
             desc:SetFont((GameFontNormal:GetFont()), 12, "")
             desc:SetColor(0.7, 0.7, 0.7)
             CS.col2Scroll:AddChild(desc)
 
+            local helpSpacer = AceGUI:Create("SimpleGroup")
+            helpSpacer:SetFullWidth(true)
+            helpSpacer:SetHeight(10)
+            helpSpacer.noAutoHeight = true
+            CS.col2Scroll:AddChild(helpSpacer)
+
+            local divider = AceGUI:Create("Label")
+            divider:SetText(" ")
+            divider:SetFullWidth(true)
+            divider:SetHeight(2)
+            local dividerBar = divider.frame._cdcAccentBar
+            if not dividerBar then
+                dividerBar = divider.frame:CreateTexture(nil, "ARTWORK")
+                divider.frame._cdcAccentBar = dividerBar
+            end
+            dividerBar:SetHeight(1.5)
+            dividerBar:ClearAllPoints()
+            local dividerInset = math.floor(divider.frame:GetWidth() * 0.10 + 0.5)
+            dividerBar:SetPoint("LEFT", divider.frame, "LEFT", dividerInset, 1)
+            dividerBar:SetPoint("RIGHT", divider.frame, "RIGHT", -dividerInset, 1)
+            if cc then
+                dividerBar:SetColorTexture(cc.r, cc.g, cc.b, 0.8)
+            end
+            dividerBar:Show()
+            divider:SetCallback("OnRelease", function() dividerBar:Hide() end)
+            CS.col2Scroll:AddChild(divider)
+
+            local postDividerSpacer = AceGUI:Create("SimpleGroup")
+            postDividerSpacer:SetFullWidth(true)
+            postDividerSpacer:SetHeight(10)
+            postDividerSpacer.noAutoHeight = true
+            CS.col2Scroll:AddChild(postDividerSpacer)
+
+            local helpEntries = {
+                PANEL_TYPE_TOOLTIPS.icons,
+                PANEL_TYPE_TOOLTIPS.bars,
+                PANEL_TYPE_TOOLTIPS.text,
+                PANEL_TYPE_TOOLTIPS.textures,
+            }
+
+            for index, entry in ipairs(helpEntries) do
+                if index > 1 then
+                    local entrySpacer = AceGUI:Create("SimpleGroup")
+                    entrySpacer:SetFullWidth(true)
+                    entrySpacer:SetHeight(8)
+                    entrySpacer.noAutoHeight = true
+                    CS.col2Scroll:AddChild(entrySpacer)
+                end
+
+                local panelHelp = AceGUI:Create("Label")
+                panelHelp:SetText("|cffffffff" .. entry.title .. "|r - " .. entry.description)
+                panelHelp:SetFullWidth(true)
+                panelHelp:SetJustifyH("CENTER")
+                panelHelp:SetFont((GameFontNormal:GetFont()), 12, "")
+                panelHelp:SetColor(0.75, 0.75, 0.75)
+                CS.col2Scroll:AddChild(panelHelp)
+            end
+
             CS.col2Scroll:DoLayout()
             return
         end
-
-        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
         local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
 
