@@ -3607,6 +3607,10 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     local sourceGroup = db.groups[sourcePanelId]
     local targetGroup = db.groups[targetPanelId]
     if not sourceGroup or not targetGroup then return nil end
+    if targetGroup.displayMode == "textures" and #targetGroup.buttons >= 1 then
+        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+        return nil
+    end
     local buttonData = table.remove(sourceGroup.buttons, sourceIndex)
     if not buttonData then return nil end
     -- Resolve "append" targets (nil targetIndex = after last button)

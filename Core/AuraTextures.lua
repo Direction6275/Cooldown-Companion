@@ -2636,6 +2636,13 @@ function CooldownCompanion:HideAuraTextureVisual(button)
         host.nudger:Hide()
     end
     host:Hide()
+
+    if button and ST.SetFrameClickThroughRecursive then
+        -- Texture panels hide the backing button and render through the separate host.
+        -- Keep the hidden button fully hover/click-through so old tooltip handlers do
+        -- not become invisible hotspots when texture mode is active.
+        ST.SetFrameClickThroughRecursive(button, true, true)
+    end
 end
 
 function CooldownCompanion:ReleaseAuraTextureVisual(button)
@@ -2792,6 +2799,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local alphaModuleId = GetTexturePanelAlphaModuleId(button._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(button)
     local bypassModuleAlpha = isEditing or isConfigForceVisible or isUnlocked
+    local visibilityAlpha = Clamp(button._rawVisibilityAlphaOverride or 1, 0, 1)
     if alphaModuleId then
         if bypassModuleAlpha then
             self:UnregisterModuleAlpha(alphaModuleId, true)
@@ -2800,9 +2808,13 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             self:RegisterModuleAlpha(alphaModuleId, group, { host })
             local alphaState = self.alphaState and self.alphaState[alphaModuleId]
             if alphaState and alphaState.currentAlpha ~= nil then
-                host:SetAlpha(alphaState.currentAlpha)
+                host:SetAlpha(Clamp(alphaState.currentAlpha * visibilityAlpha, 0, 1))
+            else
+                host:SetAlpha(visibilityAlpha)
             end
         end
+    else
+        host:SetAlpha(bypassModuleAlpha and (layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1) or visibilityAlpha)
     end
 
     local savedSettings = group and group.textureSettings or nil
@@ -2827,6 +2839,12 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     if button:GetAlpha() ~= 0 then
         button:SetAlpha(0)
         button._lastVisAlpha = 0
+    end
+    if ST.SetFrameClickThroughRecursive then
+        -- The visible texture host is intentionally non-interactive. Make the hidden
+        -- backing button fully click/hover-through too, so tooltip-enabled icon panels
+        -- do not leave an invisible hotspot behind after switching to texture mode.
+        ST.SetFrameClickThroughRecursive(button, true, true)
     end
 end
 

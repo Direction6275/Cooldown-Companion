@@ -1838,17 +1838,20 @@ local function RefreshColumn2()
                                     end
                                     UIDropDownMenu_AddButton(toggleInfo, level)
 
-                                    local dupInfo = UIDropDownMenu_CreateInfo()
-                                    dupInfo.text = "Duplicate"
-                                    dupInfo.notCheckable = true
-                                    dupInfo.func = function()
-                                        local copy = CopyTable(entryData)
-                                        table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
-                                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                        CooldownCompanion:RefreshConfigPanel()
-                                        CloseDropDownMenus()
+                                    local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
+                                    if not (sourceGroup and sourceGroup.displayMode == "textures") then
+                                        local dupInfo = UIDropDownMenu_CreateInfo()
+                                        dupInfo.text = "Duplicate"
+                                        dupInfo.notCheckable = true
+                                        dupInfo.func = function()
+                                            local copy = CopyTable(entryData)
+                                            table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                                            CooldownCompanion:RefreshConfigPanel()
+                                            CloseDropDownMenus()
+                                        end
+                                        UIDropDownMenu_AddButton(dupInfo, level)
                                     end
-                                    UIDropDownMenu_AddButton(dupInfo, level)
 
                                     local iconInfo = UIDropDownMenu_CreateInfo()
                                     iconInfo.text = "Override Icon..."
