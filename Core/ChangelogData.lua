@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.12",
         "1.11",
         "1.10.28",
         "1.10.27",
@@ -14,6 +15,33 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.12"] = {
+            markdown = [[
+## New Features
+
+- **Texture panels:** A brand-new panel type that displays spell and aura effects as standalone visual indicators anywhere on your screen. Comes with drag positioning, nudge controls, rotation, stretch, opacity, and bounce/shrink animations. Includes a built-in texture picker with curated Blizzard textures, a proc overlay browser, and support for custom texture paths. Everything previews live in the config.
+
+- **Cast bar vertical offset:** When panel anchoring is active for both resources and the cast bar, cast bars now have their own independent vertical offset slider, so you can position the cast bar separately from the rest of the icon group.
+
+- **New standalone aura desaturation toggles:** Reworked the old `Saturate while Aura Active` toggle into 2 new muturally exclusive toggles: `Invert Desaturation Logic` and `Never Desaturate` for more fine-tuned control. Only applies to standalone aura entries.
+
+## Polish | QoL
+
+- **Panel type dropdown:** Extra panel types are now organized in a compact dropdown instead of separate buttons.
+- **Empty panel guidance:** The panel list now shows helpful guidance text when no panels exist yet.
+- **Aura tracking tooltip rewrite:** The aura tracking tooltip now shows structured setup requirements, supported capabilities, and limitations instead of a brief warning.
+- **Stable config columns:** Button settings now always appear in Column 3 and panel/group settings always in Column 4.
+- **Custom aura bar alpha controls:** Independently anchored custom aura bars now have their own Alpha tab.
+- **Config tooltips:** Hold Shift while hovering over entries in Column 2 to see their tooltips. Also works for entries seen via Auto-Add in Column 3.
+- **Smaller export strings:** Export strings are now significantly more compact, producing shorter share codes. Importing older strings still works as before.
+- **Simplified group positioning:** Removed the old Anchor to Frame, Anchor Point, and Relative Point controls from group layout settings. Groups now use simple screen offsets for positioning. Panel settings continue to maintain their Anchor-to-Frame settings.
+
+## Bug Fixes
+
+- **Stacks layout preview not refreshing:** The layout preview now updates immediately when you change max stack settings.
+- **Single aura stacks in text mode:** Auras with a single stack now show the stack count in text mode, matching multi-stack auras.
+]],
+        },
         ["1.11"] = {
             markdown = [[
 ## New Features
