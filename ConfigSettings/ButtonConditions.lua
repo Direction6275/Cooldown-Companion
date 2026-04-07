@@ -66,6 +66,9 @@ end
 local function FilterAuraTracking(bd)
     return bd.auraTracking == true
 end
+local function FilterPassiveAuraTracking(bd)
+    return bd.auraTracking == true and bd.isPassive == true
+end
 local function FilterTargetAuraTracking(bd)
     return bd.auraTracking == true and bd.auraUnit == "target"
 end
@@ -419,6 +422,23 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
     end
 
+    -- Filtered apply: only write to passive aura-tracked buttons.
+    -- When clearing, write to ALL selected to clean stale data.
+    local function ApplyToPassiveAuraTracking(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then
+                    if not value or FilterPassiveAuraTracking(bd) then
+                        bd[field] = value
+                    end
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
+
     -- Filtered apply: only write to buttons with target aura tracking.
     -- When clearing, write to ALL selected to clean stale data.
     local function ApplyToTargetAuraTracking(field, value)
@@ -519,7 +539,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             or (not isTexturePanel and bd.useBaselineAlphaFallback)
             or (not isTexturePanel and bd.useBaselineAlphaFallbackAuraActive)
             or bd.hideAuraActiveExceptPandemic
-            or (not isTexturePanel and bd.saturateWhileAuraNotActive)
+            or (not isTexturePanel and bd.invertAuraDesaturationLogic)
+            or (not isTexturePanel and bd.neverDesaturate)
             or (not isTexturePanel and bd.desaturateWhileAuraNotActive)
         )
     end
@@ -1035,17 +1056,39 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 else anyPassiveAura = buttonData.isPassive end
                 if anyPassiveAura then
                     local satNoAuraCb = AceGUI:Create("CheckBox")
-                    satNoAuraCb:SetLabel("Saturate While Aura Not Active")
-                    SetCheckboxValue(satNoAuraCb, "saturateWhileAuraNotActive", FilterAuraTracking)
+                    satNoAuraCb:SetLabel("Invert Desaturation Logic")
+                    SetCheckboxValue(satNoAuraCb, "invertAuraDesaturationLogic", FilterPassiveAuraTracking)
                     satNoAuraCb:SetFullWidth(true)
                     WrapBatchCallback(satNoAuraCb, function(widget, event, val)
-                        ApplyToAuraTracking("saturateWhileAuraNotActive", val or nil)
+                        ApplyToPassiveAuraTracking("invertAuraDesaturationLogic", val or nil)
+                        if val then
+                            ApplyToPassiveAuraTracking("neverDesaturate", nil)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
                     end)
                     scroll:AddChild(satNoAuraCb)
 
                     CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
-                        "Saturate While Aura Not Active",
-                        {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
+                        "Invert Desaturation Logic",
+                        {"Flips passive aura desaturation so the icon stays saturated while inactive and desaturates while active.", 1, 1, 1, true},
+                    }, infoButtons)
+
+                    local neverDesatCb = AceGUI:Create("CheckBox")
+                    neverDesatCb:SetLabel("Never Desaturate")
+                    SetCheckboxValue(neverDesatCb, "neverDesaturate", FilterPassiveAuraTracking)
+                    neverDesatCb:SetFullWidth(true)
+                    WrapBatchCallback(neverDesatCb, function(widget, event, val)
+                        ApplyToPassiveAuraTracking("neverDesaturate", val or nil)
+                        if val then
+                            ApplyToPassiveAuraTracking("invertAuraDesaturationLogic", nil)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                    end)
+                    scroll:AddChild(neverDesatCb)
+
+                    CreateInfoButton(neverDesatCb.frame, neverDesatCb.checkbg, "LEFT", "RIGHT", neverDesatCb.text:GetStringWidth() + 4, 0, {
+                        "Never Desaturate",
+                        {"Prevents passive aura desaturation so the icon stays saturated whether the aura is active or inactive.", 1, 1, 1, true},
                     }, infoButtons)
                 end
 
