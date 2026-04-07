@@ -62,6 +62,16 @@ local function GetAnchorGroupFrame(settings)
     return CooldownCompanion.groupFrames[groupId]
 end
 
+local function GetAttachedCastBarPanelYOffset(settings)
+    if not settings or settings.independentAnchorEnabled == true then
+        return 0
+    end
+    if settings.panelAnchorYOffsetEnabled ~= true then
+        return 0
+    end
+    return tonumber(settings.panelAnchorYOffset) or 0
+end
+
 ------------------------------------------------------------------------
 -- Independent Cast Bar Anchor (proxy mover frame to avoid Blizzard taint)
 ------------------------------------------------------------------------
@@ -752,22 +762,23 @@ local function ApplyPosition(cb, s, height)
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local gap = rbSettings and (rbSettings.yOffset or 3) or 3
     local barSpacing = rbSettings and (rbSettings.barSpacing or 3.6) or 3.6
+    local panelYOffset = GetAttachedCastBarPanelYOffset(s)
 
     if predecessor then
         if cbPosition == "above" then
-            cb:SetPoint("BOTTOMLEFT", predecessor, "TOPLEFT", iconInsetLeft, barSpacing)
-            cb:SetPoint("BOTTOMRIGHT", predecessor, "TOPRIGHT", -iconInsetRight, barSpacing)
+            cb:SetPoint("BOTTOMLEFT", predecessor, "TOPLEFT", iconInsetLeft, barSpacing + panelYOffset)
+            cb:SetPoint("BOTTOMRIGHT", predecessor, "TOPRIGHT", -iconInsetRight, barSpacing + panelYOffset)
         else
-            cb:SetPoint("TOPLEFT", predecessor, "BOTTOMLEFT", iconInsetLeft, -barSpacing)
-            cb:SetPoint("TOPRIGHT", predecessor, "BOTTOMRIGHT", -iconInsetRight, -barSpacing)
+            cb:SetPoint("TOPLEFT", predecessor, "BOTTOMLEFT", iconInsetLeft, -(barSpacing + panelYOffset))
+            cb:SetPoint("TOPRIGHT", predecessor, "BOTTOMRIGHT", -iconInsetRight, -(barSpacing + panelYOffset))
         end
     else
         if cbPosition == "above" then
-            cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, gap)
-            cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, gap)
+            cb:SetPoint("BOTTOMLEFT", groupFrame, "TOPLEFT", iconInsetLeft, gap + panelYOffset)
+            cb:SetPoint("BOTTOMRIGHT", groupFrame, "TOPRIGHT", -iconInsetRight, gap + panelYOffset)
         else
-            cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, -gap)
-            cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, -gap)
+            cb:SetPoint("TOPLEFT", groupFrame, "BOTTOMLEFT", iconInsetLeft, -(gap + panelYOffset))
+            cb:SetPoint("TOPRIGHT", groupFrame, "BOTTOMRIGHT", -iconInsetRight, -(gap + panelYOffset))
         end
     end
 

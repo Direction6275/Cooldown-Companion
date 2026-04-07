@@ -518,7 +518,7 @@ local function BuildResourceBarPositioningPanel(container)
         if not posCollapsed then
             local gapSlider = AceGUI:Create("Slider")
             gapSlider:SetLabel(gapLabel)
-            gapSlider:SetSliderValues(0, 50, 0.1)
+            gapSlider:SetSliderValues(-100, 100, 0.1)
             if gapField == "verticalXOffset" then
                 gapSlider:SetValue(settings.verticalXOffset or settings.yOffset or 3)
             else
@@ -532,18 +532,8 @@ local function BuildResourceBarPositioningPanel(container)
             end)
             container:AddChild(gapSlider)
 
-            if isVerticalLayout then
-                local castGapSlider = AceGUI:Create("Slider")
-                castGapSlider:SetLabel("Cast Bar Y Offset")
-                castGapSlider:SetSliderValues(0, 50, 0.1)
-                castGapSlider:SetValue(settings.yOffset or 3)
-                castGapSlider:SetFullWidth(true)
-                castGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.yOffset = val
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
-                end)
-                container:AddChild(castGapSlider)
+            if ST._BuildAttachedCastBarOffsetControls then
+                ST._BuildAttachedCastBarOffsetControls(container)
             end
         end
     end

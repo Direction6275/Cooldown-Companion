@@ -38,6 +38,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateBarOrdering()
     self:MigrateRemoveAuraDurationCache()
     self:MigrateResourceBarYOffset()
+    self:MigrateLegacyCastBarYOffsetField()
     self:MigrateResourceAuraOverlayEntries()
     self:MigrateMaxStacksGlowStyles()
     self:MigrateTalentConditions()
@@ -1124,6 +1125,32 @@ function CooldownCompanion:MigrateResourceBarYOffset()
     if rb and rb.yOffset and rb.yOffset < 0 then
         rb.yOffset = math.abs(rb.yOffset)
     end
+end
+
+-- Remove the old castBar.yOffset field from all storage buckets.
+-- Attached-mode cast bar gap now comes from resourceBars.yOffset plus the
+-- new opt-in castBar.panelAnchorYOffset delta.
+function CooldownCompanion:MigrateLegacyCastBarYOffsetField()
+    local profile = self.db.profile
+    if profile._migratedLegacyCastBarYOffsetField then return end
+
+    local function clearLegacyYOffset(settings)
+        if type(settings) == "table" and settings.yOffset ~= nil then
+            settings.yOffset = nil
+        end
+    end
+
+    clearLegacyYOffset(rawget(profile, "castBar"))
+    clearLegacyYOffset(rawget(profile, "legacyCastBarSeed"))
+
+    local store = rawget(profile, "castBarByChar")
+    if type(store) == "table" then
+        for _, settings in pairs(store) do
+            clearLegacyYOffset(settings)
+        end
+    end
+
+    profile._migratedLegacyCastBarYOffsetField = true
 end
 
 local function HasResourceAuraOverlayEntries(resource)

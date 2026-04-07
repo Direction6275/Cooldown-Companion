@@ -17,6 +17,56 @@ local HookSliderEditBox = ST._HookSliderEditBox
 -- CAST BAR SETTINGS PANEL
 ------------------------------------------------------------------------
 
+local function CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings)
+    return rbSettings
+        and rbSettings.enabled
+        and rbSettings.independentAnchorEnabled ~= true
+        and cbSettings
+        and cbSettings.enabled
+        and cbSettings.independentAnchorEnabled ~= true
+end
+
+local function RefreshAttachedCastBarOffset(refreshConfig)
+    CooldownCompanion:RepositionCastBar()
+    if refreshConfig then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function BuildAttachedCastBarOffsetControls(container)
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local cbSettings = CooldownCompanion:GetCastBarSettings()
+    if not CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings) then
+        return false
+    end
+
+    local offsetToggle = AceGUI:Create("CheckBox")
+    offsetToggle:SetLabel("Enable Cast Bar-Only Y Offset")
+    offsetToggle:SetValue(cbSettings.panelAnchorYOffsetEnabled == true)
+    offsetToggle:SetFullWidth(true)
+    offsetToggle:SetCallback("OnValueChanged", function(widget, event, val)
+        cbSettings.panelAnchorYOffsetEnabled = val == true
+        RefreshAttachedCastBarOffset(true)
+    end)
+    container:AddChild(offsetToggle)
+
+    if cbSettings.panelAnchorYOffsetEnabled then
+        local offsetSlider = AceGUI:Create("Slider")
+        offsetSlider:SetLabel("Cast Bar Y Offset")
+        offsetSlider:SetSliderValues(-100, 100, 0.1)
+        offsetSlider:SetValue(cbSettings.panelAnchorYOffset or 0)
+        offsetSlider:SetFullWidth(true)
+        offsetSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            cbSettings.panelAnchorYOffset = val
+            RefreshAttachedCastBarOffset(false)
+        end)
+        HookSliderEditBox(offsetSlider)
+        container:AddChild(offsetSlider)
+    end
+
+    return true
+end
+
 local function BuildCastBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetCastBarSettings()
@@ -132,7 +182,7 @@ local function BuildCastBarPositioningPanel(container)
         local rbSettings = CooldownCompanion:GetResourceBarSettings()
         local ySlider = AceGUI:Create("Slider")
         ySlider:SetLabel("Y Offset")
-        ySlider:SetSliderValues(0, 50, 0.1)
+        ySlider:SetSliderValues(-100, 100, 0.1)
         ySlider:SetValue(rbSettings and rbSettings.yOffset or 3)
         ySlider:SetFullWidth(true)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -141,6 +191,8 @@ local function BuildCastBarPositioningPanel(container)
             CooldownCompanion:UpdateAnchorStacking()
         end)
         container:AddChild(ySlider)
+
+        BuildAttachedCastBarOffsetControls(container)
         return
     end
 
@@ -611,3 +663,4 @@ end
 ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarPositioningPanel = BuildCastBarPositioningPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel
+ST._BuildAttachedCastBarOffsetControls = BuildAttachedCastBarOffsetControls
