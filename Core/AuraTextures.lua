@@ -2636,13 +2636,6 @@ function CooldownCompanion:HideAuraTextureVisual(button)
         host.nudger:Hide()
     end
     host:Hide()
-
-    if button and ST.SetFrameClickThroughRecursive then
-        -- Texture panels hide the backing button and render through the separate host.
-        -- Keep the hidden button fully hover/click-through so old tooltip handlers do
-        -- not become invisible hotspots when texture mode is active.
-        ST.SetFrameClickThroughRecursive(button, true, true)
-    end
 end
 
 function CooldownCompanion:ReleaseAuraTextureVisual(button)

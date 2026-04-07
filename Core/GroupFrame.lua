@@ -1289,10 +1289,13 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if not frame or not group then return end
 
     local isLocked = GetContainerState(groupId)
+    local isTextureMode = group.displayMode == "textures"
 
     -- When locked: group container is always fully non-interactive
-    -- When unlocked: enable everything for dragging
-    if isLocked then
+    -- Texture panels also keep the backing group frame non-interactive while
+    -- unlocked, because dragging and hovering are handled by the separate
+    -- visible texture host instead of the hidden 1x1 anchor frame.
+    if isLocked or isTextureMode then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)

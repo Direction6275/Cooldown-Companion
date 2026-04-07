@@ -174,6 +174,7 @@ local function OpenAuraTexturePicker(opts)
     local currentFilter = "symbols"
     local currentSearch = ""
     local selectedEntry = nil
+    local stagedClear = false
     local activeThumbs = {}
     local currentThumbSize = BASE_THUMB_SIZE
     local suppressPathTextChanged = false
@@ -311,6 +312,8 @@ local function OpenAuraTexturePicker(opts)
     local function UpdateSelectionLabel()
         if selectedEntry then
             selectionLabel:SetText((selectedEntry.label or "Texture") .. (selectedEntry.subtitle and ("  |  " .. selectedEntry.subtitle) or ""))
+        elseif stagedClear then
+            selectionLabel:SetText("Clear staged. Apply removes the current texture.")
         elseif currentSelection and currentSelection.label then
             selectionLabel:SetText("Current: " .. currentSelection.label)
         else
@@ -341,6 +344,7 @@ local function OpenAuraTexturePicker(opts)
 
     local function SetSelectedEntry(entry)
         selectedEntry = entry
+        stagedClear = false
         applyBtn:SetDisabled(entry == nil)
         UpdateSelectionLabel()
         StageEntryPreview(entry)
@@ -620,12 +624,14 @@ local function OpenAuraTexturePicker(opts)
         scrollChild:SetWidth(math.max(1, contentWidth))
         scrollChild:SetHeight(math.max(1, contentHeight))
         SetGridScroll(0)
-        applyBtn:SetDisabled(selectedEntry == nil)
+        applyBtn:SetDisabled(selectedEntry == nil and not stagedClear)
         UpdateSelectionLabel()
         -- Keep the live staged preview in sync after list rebuilds so adding or
         -- removing a custom tile cannot leave an older hovered texture showing.
         if selectedEntry then
             StageEntryPreview(selectedEntry)
+        elseif stagedClear then
+            ClearStagedPreview()
         else
             ClearStagedPreview()
         end
@@ -706,28 +712,32 @@ local function OpenAuraTexturePicker(opts)
         currentSearch = ""
         SetPathInputText("")
         selectedEntry = entry
+        stagedClear = false
         RebuildGrid()
     end)
 
     applyBtn:SetCallback("OnClick", function()
-        if not selectedEntry or not currentOnCommit then
+        if (not selectedEntry and not stagedClear) or not currentOnCommit then
             return
         end
-        local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, selectedEntry)
+        local selection = selectedEntry and BuildPreviewSelection(currentGroupId, currentButtonIndex, selectedEntry) or nil
         currentSelection = selection
         currentOnCommit(selection)
-        StageEntryPreview(selectedEntry)
+        stagedClear = false
+        if selectedEntry then
+            StageEntryPreview(selectedEntry)
+        else
+            ClearStagedPreview()
+        end
         UpdateSelectionLabel()
         CloseAuraTexturePicker()
     end)
 
     clearBtn:SetCallback("OnClick", function()
         selectedEntry = nil
-        currentSelection = nil
+        stagedClear = currentSelection ~= nil
         ClearStagedPreview()
-        if currentOnCommit then
-            currentOnCommit(nil)
-        end
+        applyBtn:SetDisabled(not stagedClear)
         UpdateSelectionLabel()
         RebuildGrid()
     end)
@@ -750,6 +760,7 @@ local function OpenAuraTexturePicker(opts)
         currentButtonIndex = newOpts.buttonIndex
         currentOnCommit = newOpts.callback
         currentSelection = newOpts.initialSelection
+        stagedClear = false
         window._targetGroupId = currentGroupId
         window._targetButtonIndex = currentButtonIndex
         window:SetTitle(newOpts.title or "Browse Texture Panel Visuals")
