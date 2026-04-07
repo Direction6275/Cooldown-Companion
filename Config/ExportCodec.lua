@@ -496,6 +496,12 @@ local COMPACT_ENTITY_DEFAULTS = {
     },
 }
 
+-- compact1 shipped before defaults were version-pinned. Freeze it against the
+-- original baseline so older compact strings do not drift as live defaults
+-- evolve in later releases.
+COMPACT_PROFILE_DEFAULTS[LEGACY_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_PROFILE_DEFAULTS[CURRENT_COMPACT_FORMAT_VALUE])
+COMPACT_ENTITY_DEFAULTS[LEGACY_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_ENTITY_DEFAULTS[CURRENT_COMPACT_FORMAT_VALUE])
+
 local function CopyValue(value)
     if type(value) == "table" then
         return CopyTable(value)
