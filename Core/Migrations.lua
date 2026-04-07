@@ -24,6 +24,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateRemoveBarChargeOldFields()
     self:MigrateVisibility()
     self:MigrateAddedAsClassification()
+    self:MigrateInvertAuraDesaturationLogic()
     self:MigrateFolders()
     self:MigrateFolderSpecFilters()
     self:MigrateContainerHeroTalentStamps()
@@ -67,6 +68,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.auraIndicatorMigrated = nil
     profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
+    profile.invertAuraDesaturationLogicMigrated = nil
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
@@ -305,6 +307,26 @@ function CooldownCompanion:MigrateAddedAsClassification()
     end
 
     profile.addedAsClassificationMigrated = true
+end
+
+function CooldownCompanion:MigrateInvertAuraDesaturationLogic()
+    local profile = self.db.profile
+    if profile.invertAuraDesaturationLogicMigrated then return end
+
+    for _, group in pairs(profile.groups or {}) do
+        if group.buttons then
+            for _, buttonData in ipairs(group.buttons) do
+                if buttonData.saturateWhileAuraNotActive ~= nil then
+                    if buttonData.isPassive and buttonData.saturateWhileAuraNotActive then
+                        buttonData.neverDesaturate = true
+                    end
+                    buttonData.saturateWhileAuraNotActive = nil
+                end
+            end
+        end
+    end
+
+    profile.invertAuraDesaturationLogicMigrated = true
 end
 
 function CooldownCompanion:MigrateFolders()

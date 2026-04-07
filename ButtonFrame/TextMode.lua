@@ -17,6 +17,7 @@ local math_pi = math.pi
 local string_format = string.format
 local table_concat = table.concat
 local issecretvalue = issecretvalue
+local C_UnitAuras_GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from Helpers
@@ -230,12 +231,35 @@ local function WrapColor(text, color)
         text)
 end
 
+local function ResolveTextModeStackDisplay(button)
+    local auraUnit = button._auraUnit
+    local auraInstanceID = button._auraInstanceID
+    if auraUnit and auraInstanceID then
+        local displayCount = C_UnitAuras_GetAuraApplicationDisplayCount(auraUnit, auraInstanceID, 1)
+        if displayCount and (issecretvalue(displayCount) or displayCount ~= "") then
+            return displayCount, "aura"
+        end
+    end
+
+    local stackText = button._auraStackText
+    if stackText and (issecretvalue(stackText) or stackText ~= "") then
+        return stackText, "aura"
+    end
+
+    local itemCount = button._itemCount
+    if itemCount and itemCount > 0 then
+        return tostring(itemCount), "item"
+    end
+
+    return nil, nil
+end
+
 ------------------------------------------------------------------------
 -- EVALUATE TOKEN PRESENCE
 -- Returns true if the given token would produce non-empty output.
 -- Used by conditional sections ({?token}...{/token}).
 ------------------------------------------------------------------------
-local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
+local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret, stackDisplayKind)
     if tokenName == "time" then
         return timeIsSecret or (timeRemaining and timeRemaining > 0)
     elseif tokenName == "charges" then
@@ -267,9 +291,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
             return button._zeroChargesConfirmed == true
         end
     elseif tokenName == "stacks" then
-        local stackText = button._auraStackText
-        if stackText and (issecretvalue(stackText) or stackText ~= "") then return true end
-        return button._itemCount and button._itemCount > 0
+        return stackDisplayKind ~= nil
     elseif tokenName == "aura" then
         return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
@@ -329,6 +351,7 @@ local function SubstituteTokens(button, segments, style, effectState)
     local auraOnlyEntry = IsAuraOnlyEntry(buttonData)
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
+    local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
     local auraActive = button._auraActive
     local auraHasTimer = button._auraHasTimer == true
     local onCooldown = button._cooldownDeferred or (button.cooldown and button.cooldown:IsShown())
@@ -383,7 +406,7 @@ local function SubstituteTokens(button, segments, style, effectState)
             if skipDepth > 0 then
                 skipDepth = skipDepth + 1
             else
-                local present = EvaluateTokenPresence(button, seg.value, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
+                local present = EvaluateTokenPresence(button, seg.value, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret, stackDisplayKind)
                 local shouldShow = (seg.negated and not present) or (not seg.negated and present)
                 if not shouldShow then
                     skipDepth = 1
@@ -470,18 +493,15 @@ local function SubstituteTokens(button, segments, style, effectState)
                 end
 
             elseif token == "stacks" then
-                local stackText = button._auraStackText
-                if stackText and (issecretvalue(stackText) or stackText ~= "") then
-                    if issecretvalue(stackText) then
+                if stackDisplayKind then
+                    if issecretvalue(stackDisplayText) then
                         if not secretStackValue then
-                            secretStackValue = stackText
+                            secretStackValue = stackDisplayText
                         end
                         parts[#parts + 1] = WrapColor("%STACKS%", colorOverride or baseColor)
                     else
-                        parts[#parts + 1] = WrapColor(stackText, colorOverride or baseColor)
+                        parts[#parts + 1] = WrapColor(stackDisplayText, colorOverride or baseColor)
                     end
-                elseif button._itemCount and button._itemCount > 0 then
-                    parts[#parts + 1] = WrapColor(tostring(button._itemCount), colorOverride or baseColor)
                 end
 
             elseif token == "aura" then
