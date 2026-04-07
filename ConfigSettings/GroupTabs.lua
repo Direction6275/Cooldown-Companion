@@ -2,6 +2,10 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
+local math_abs = math.abs
+local math_max = math.max
+local math_min = math.min
+local tonumber = tonumber
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -65,6 +69,341 @@ local BuildBarEffectsTab = ST._BuildBarEffectsTab
 -- Imports from TextModeTabs.lua
 local BuildTextAppearanceTab = ST._BuildTextAppearanceTab
 
+local TEXTURE_BLEND_OPTIONS = {
+    ADD = "Add",
+    BLEND = "Blend",
+}
+
+local TEXTURE_BLEND_ORDER = {
+    "ADD",
+    "BLEND",
+}
+
+local TEXTURE_PREVIEW_WIDTH = 240
+local TEXTURE_PREVIEW_HEIGHT = 170
+local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
+local MIN_TEXTURE_PAIR_SPACING = -5
+local MAX_TEXTURE_PAIR_SPACING = 5
+local MIN_TEXTURE_ROTATION = -180
+local MAX_TEXTURE_ROTATION = 180
+local MIN_TEXTURE_STRETCH = -0.75
+local MAX_TEXTURE_STRETCH = 2
+local TEXTURE_INDICATOR_EFFECT_OPTIONS = {
+    pulse = "Pulse",
+    colorShift = "Color Shift",
+    shrinkExpand = "Shrink / Expand",
+    bounce = "Bounce",
+}
+local TEXTURE_INDICATOR_EFFECT_ORDER = {
+    "pulse",
+    "colorShift",
+    "shrinkExpand",
+    "bounce",
+}
+local TEXTURE_INDICATOR_SECTION_DEFS = {
+    proc = {
+        label = "Show Proc Effect",
+        previewText = "Preview Proc Effect (3s)",
+    },
+    aura = {
+        label = "Show Aura Effect",
+        previewText = "Preview Aura Effect (3s)",
+    },
+    pandemic = {
+        label = "Show Pandemic Effect",
+        previewText = "Preview Pandemic Effect (3s)",
+    },
+    ready = {
+        label = "Show Ready Effect",
+        previewText = "Preview Ready Effect (3s)",
+    },
+    unusable = {
+        label = "Show Unusable Effect",
+        previewText = "Preview Unusable Effect (3s)",
+    },
+}
+
+local function GetTextureIndicatorStore(group)
+    return CooldownCompanion:GetTexturePanelIndicatorSettings(group, true)
+end
+
+local function GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
+    local used = {}
+    if type(indicators) ~= "table" then
+        return used
+    end
+
+    for sectionKey, sectionData in pairs(indicators) do
+        if sectionKey ~= currentSectionKey and type(sectionData) == "table" and sectionData.enabled and type(sectionData.effectType) == "string" and sectionData.effectType ~= "none" then
+            used[sectionData.effectType] = true
+        end
+    end
+
+    return used
+end
+
+local function GetTextureIndicatorEffectList(indicators, currentSectionKey)
+    local used = GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
+    local list = {}
+    local order = {}
+    local current = indicators and indicators[currentSectionKey] and indicators[currentSectionKey].effectType or nil
+
+    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+        if effectKey == current or not used[effectKey] then
+            list[effectKey] = TEXTURE_INDICATOR_EFFECT_OPTIONS[effectKey]
+            order[#order + 1] = effectKey
+        end
+    end
+
+    return list, order
+end
+
+local function GetFirstAvailableTextureIndicatorEffect(indicators, currentSectionKey)
+    local _, order = GetTextureIndicatorEffectList(indicators, currentSectionKey)
+    return order[1]
+end
+
+local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
+local PREVIEW_LOCATION_CENTER = SCREEN_LOCATION.Center or 0
+local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
+local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
+
+local function ApplyTexturePreviewSource(texture, settings)
+    if not texture or type(settings) ~= "table" then
+        return false
+    end
+
+    local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
+        settings.sourceType,
+        settings.sourceValue
+    )
+
+    if resolvedSourceType == "atlas" then
+        texture:SetAtlas(resolvedSourceValue, false)
+        texture:Show()
+        return true
+    end
+
+    if resolvedSourceType == "file" and resolvedSourceValue ~= nil then
+        texture:SetTexture(resolvedSourceValue)
+        texture:Show()
+        return true
+    end
+
+    texture:Hide()
+    return false
+end
+
+local function ApplyTexturePreviewVisual(texture, settings, alpha, flipH, flipV, rotationRadians)
+    if not texture or type(settings) ~= "table" then
+        return
+    end
+
+    local color = settings.color or { 1, 1, 1, 1 }
+    texture:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha or 1)
+    texture:SetBlendMode(settings.blendMode or "ADD")
+
+    local left = flipH and 1 or 0
+    local right = flipH and 0 or 1
+    local top = flipV and 1 or 0
+    local bottom = flipV and 0 or 1
+    texture:SetTexCoord(left, right, top, bottom)
+    texture:SetRotation(rotationRadians or 0)
+end
+
+local function UpdateTexturePanelPreview(preview, settings)
+    if type(preview) ~= "table" then
+        return
+    end
+
+    local hasTexture = type(settings) == "table"
+        and settings.sourceType ~= nil
+        and settings.sourceValue ~= nil
+
+    if preview.nameLabel and preview.nameLabel.SetText then
+        preview.nameLabel:SetText(hasTexture and (settings.label or tostring(settings.sourceValue)) or "No texture selected")
+    end
+    preview.placeholder:SetShown(not hasTexture)
+    preview.primary:Hide()
+    preview.secondary:Hide()
+
+    if not hasTexture then
+        return
+    end
+
+    local scale = tonumber(settings.scale) or 1
+    local baseWidth = (tonumber(settings.width) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
+    local baseHeight = (tonumber(settings.height) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
+    local geometry = CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHeight)
+    local maxWidth = TEXTURE_PREVIEW_WIDTH - 8
+    local maxHeight = TEXTURE_PREVIEW_HEIGHT - 8
+    local fit = math_min(maxWidth / math_max(geometry.boundsWidth, 1), maxHeight / math_max(geometry.boundsHeight, 1), 1)
+
+    local color = settings.color or { 1, 1, 1, 1 }
+    local alpha = math_min(math_max((color[4] or 1) * (settings.alpha or 1), 0.05), 1)
+    local primary = preview.primary
+    local secondary = preview.secondary
+    local shown = false
+    local textures = { primary, secondary }
+
+    for index, texture in ipairs(textures) do
+        local piece = geometry.pieces[index]
+        texture:ClearAllPoints()
+        if not piece then
+            texture:Hide()
+        else
+            texture:SetSize(math_max(8, geometry.pieceWidth * fit), math_max(8, geometry.pieceHeight * fit))
+            texture:SetPoint("CENTER", preview.anchor, "CENTER", piece.centerX * fit, piece.centerY * fit)
+            if ApplyTexturePreviewSource(texture, settings) then
+                ApplyTexturePreviewVisual(texture, settings, alpha, piece.flipH, piece.flipV, geometry.rotationRadians)
+                shown = true
+            else
+                texture:Hide()
+            end
+        end
+    end
+
+    preview.placeholder:SetShown(not shown)
+end
+
+local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
+    if not sliderWidget or not sliderWidget.slider or type(applyValue) ~= "function" then
+        return
+    end
+
+    local sliderFrame = sliderWidget.slider
+    sliderWidget._ccApplyLiveTextureValue = applyValue
+    sliderWidget._ccLastLiveTextureValue = nil
+
+    local function pushValue(widget, value)
+        if not widget then
+            return
+        end
+
+        value = tonumber(value)
+        if value == nil then
+            return
+        end
+
+        local lastValue = widget._ccLastLiveTextureValue
+        if lastValue ~= nil and math_abs(lastValue - value) < 0.0001 then
+            return
+        end
+
+        widget._ccLastLiveTextureValue = value
+
+        local liveApply = widget._ccApplyLiveTextureValue
+        if type(liveApply) == "function" then
+            liveApply(value)
+        end
+    end
+
+    sliderWidget:SetCallback("OnValueChanged", function(widget, _, value)
+        pushValue(widget, value)
+    end)
+
+    sliderWidget:SetCallback("OnMouseUp", function(widget, _, value)
+        pushValue(widget, value)
+        sliderFrame:SetScript("OnUpdate", nil)
+        sliderFrame._ccLiveTextureSliderActive = nil
+        widget._ccLastLiveTextureValue = nil
+    end)
+
+    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
+    sliderWidget:SetCallback("OnRelease", function(widget, event)
+        sliderFrame:SetScript("OnUpdate", nil)
+        sliderFrame._ccLiveTextureSliderActive = nil
+        widget._ccApplyLiveTextureValue = nil
+        widget._ccLastLiveTextureValue = nil
+        if prevOnRelease then
+            prevOnRelease(widget, event)
+        end
+    end)
+
+    if sliderFrame._ccLiveTextureSliderHooked then
+        return
+    end
+
+    sliderFrame._ccLiveTextureSliderHooked = true
+
+    sliderFrame:HookScript("OnMouseDown", function(frame)
+        frame._ccLiveTextureSliderActive = true
+        frame:SetScript("OnUpdate", function(self)
+            if not self._ccLiveTextureSliderActive then
+                self:SetScript("OnUpdate", nil)
+                return
+            end
+
+            local widget = self.obj
+            if widget then
+                pushValue(widget, widget:GetValue())
+            end
+        end)
+    end)
+
+    sliderFrame:HookScript("OnMouseUp", function(frame)
+        frame._ccLiveTextureSliderActive = nil
+        frame:SetScript("OnUpdate", nil)
+        local widget = frame.obj
+        if widget then
+            widget._ccLastLiveTextureValue = nil
+        end
+    end)
+
+    sliderFrame:HookScript("OnHide", function(frame)
+        frame._ccLiveTextureSliderActive = nil
+        frame:SetScript("OnUpdate", nil)
+        local widget = frame.obj
+        if widget then
+            widget._ccLastLiveTextureValue = nil
+        end
+    end)
+end
+
+local function GetTexturePanelCommitCallback(group)
+    return function(selection)
+        local liveSettings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        if not liveSettings then
+            return
+        end
+
+        if selection then
+            CooldownCompanion:ApplyTexturePanelEntry(liveSettings, selection)
+        else
+            liveSettings.libraryKey = nil
+            liveSettings.sourceType = nil
+            liveSettings.sourceValue = nil
+            liveSettings.label = nil
+            liveSettings.width = nil
+            liveSettings.height = nil
+        end
+
+        liveSettings.enabled = nil
+
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function OpenOrRebindTexturePanelPicker(group, settings, forceOpen)
+    if not (group and group.buttons and group.buttons[1] and CS.StartPickAuraTexture) then
+        return
+    end
+
+    local pickerOpts = {
+        groupId = CS.selectedGroup,
+        buttonIndex = 1,
+        initialSelection = settings and settings.sourceType and settings or nil,
+        callback = GetTexturePanelCommitCallback(group),
+    }
+
+    if forceOpen or not (CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen()) then
+        CS.StartPickAuraTexture(pickerOpts)
+    elseif CS.RebindPickAuraTexture then
+        CS.RebindPickAuraTexture(pickerOpts)
+    end
+end
+
 local function BuildLayoutTab(container)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
@@ -77,6 +416,86 @@ local function BuildLayoutTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    CooldownCompanion:ClearAllTextureIndicatorPreviews()
+
+    if group.displayMode == "textures" then
+        local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        if not settings then
+            return
+        end
+        local textureGroupId = CS.selectedGroup
+
+        local function RefreshTextureVisual()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Texture Position")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
+
+        AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, "Texture Point")
+        AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
+        AddOffsetSliders(container, settings, "x", "y", {
+            x = 0,
+            y = 0,
+            range = 2000,
+            step = 1,
+        }, RefreshTextureVisual)
+
+        local resetBtn = AceGUI:Create("Button")
+        resetBtn:SetText("Reset Position")
+        resetBtn:SetFullWidth(true)
+        resetBtn:SetCallback("OnClick", function()
+            settings.point = "CENTER"
+            settings.relativePoint = "CENTER"
+            settings.relativeTo = "UIParent"
+            settings.x = 0
+            settings.y = 0
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(resetBtn)
+
+        BuildAlphaControls(container, group, function()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            CooldownCompanion:RefreshConfigPanel()
+        end, "layout_alpha", {
+            isGlobal = group.isGlobal,
+            onBaselineChanged = function(val)
+                CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
+                CS.texturePanelAlphaPreview[textureGroupId] = val
+
+                local alphaModuleId = "texture_panel_" .. tostring(textureGroupId)
+                CooldownCompanion.alphaState = CooldownCompanion.alphaState or {}
+                local state = CooldownCompanion.alphaState[alphaModuleId]
+                if not state then
+                    state = {}
+                    CooldownCompanion.alphaState[alphaModuleId] = state
+                end
+                state.currentAlpha = val
+                state.desiredAlpha = val
+                state.lastAlpha = val
+                state.fadeDuration = 0
+                state.fadeStartAlpha = val
+
+                local frame = CooldownCompanion.groupFrames[textureGroupId]
+                local button = frame and frame.buttons and frame.buttons[1] or nil
+                local host = button and button.auraTextureHost or nil
+                if host and host:IsShown() then
+                    host:SetAlpha(val)
+                end
+            end,
+        })
+
+        if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+            OpenOrRebindTexturePanelPicker(group, settings, false)
+        end
+        RefreshTextureVisual()
+        return
+    end
 
     -- ================================================================
     -- Anchor to Frame (editbox + pick button row)
@@ -500,6 +919,123 @@ local function BuildLayoutTab(container)
 end
 
 
+local function RefreshTextureIndicatorConfig()
+    CooldownCompanion:RefreshAllAuraTextureVisuals()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BuildTextureIndicatorSpeedSlider(container, config, label)
+    local slider = AceGUI:Create("Slider")
+    slider:SetLabel(label)
+    slider:SetSliderValues(0.1, 2.0, 0.05)
+    slider:SetValue(config.speed or 0.5)
+    slider:SetFullWidth(true)
+    slider:SetCallback("OnValueChanged", function(_, _, value)
+        config.speed = value
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+    end)
+    HookSliderEditBox(slider)
+    container:AddChild(slider)
+end
+
+local function BuildTextureIndicatorSection(container, group, indicators, sectionKey)
+    local config = indicators and indicators[sectionKey]
+    local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[sectionKey]
+    if not config or not sectionDef then
+        return
+    end
+
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel(sectionDef.label)
+    enableCb:SetValue(config.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(_, _, value)
+        if value then
+            local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
+            local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
+            local currentEffect = config.effectType
+            if currentEffect == "none" or usedEffects[currentEffect] then
+                if firstAvailable then
+                    config.effectType = firstAvailable
+                else
+                    config.enabled = false
+                    CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
+                    RefreshTextureIndicatorConfig()
+                    return
+                end
+            end
+        end
+
+        config.enabled = value == true
+        RefreshTextureIndicatorConfig()
+    end)
+    container:AddChild(enableCb)
+
+    local advKey = "textureIndicator_" .. sectionKey
+    local advExpanded = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled)
+
+    if not advExpanded or not config.enabled then
+        return
+    end
+
+    local combatCb = AceGUI:Create("CheckBox")
+    combatCb:SetLabel("Show Only In Combat")
+    combatCb:SetValue(config.combatOnly or false)
+    combatCb:SetFullWidth(true)
+    combatCb:SetCallback("OnValueChanged", function(_, _, value)
+        config.combatOnly = value == true
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+    end)
+    container:AddChild(combatCb)
+    ApplyCheckboxIndent(combatCb, 20)
+
+    if sectionKey == "aura" then
+        local invertCb = AceGUI:Create("CheckBox")
+        invertCb:SetLabel("Show When Missing")
+        invertCb:SetValue(config.invert or false)
+        invertCb:SetFullWidth(true)
+        invertCb:SetCallback("OnValueChanged", function(_, _, value)
+            config.invert = value == true
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end)
+        container:AddChild(invertCb)
+        ApplyCheckboxIndent(invertCb, 20)
+    end
+
+    local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
+    local effectDrop = AceGUI:Create("Dropdown")
+    effectDrop:SetLabel("Effect Type")
+    effectDrop:SetList(effectList, effectOrder)
+    effectDrop:SetValue(config.effectType)
+    effectDrop:SetFullWidth(true)
+    effectDrop:SetCallback("OnValueChanged", function(_, _, value)
+        config.effectType = value or "none"
+        RefreshTextureIndicatorConfig()
+    end)
+    container:AddChild(effectDrop)
+
+    if config.effectType == "colorShift" then
+        AddColorPicker(container, config, "color", "Shift Color", { 1, 1, 1, 1 }, true,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end)
+        BuildTextureIndicatorSpeedSlider(container, config, "Shift Duration")
+    elseif config.effectType == "pulse" then
+        BuildTextureIndicatorSpeedSlider(container, config, "Pulse Duration")
+    elseif config.effectType == "shrinkExpand" then
+        BuildTextureIndicatorSpeedSlider(container, config, "Cycle Duration")
+    elseif config.effectType == "bounce" then
+        BuildTextureIndicatorSpeedSlider(container, config, "Bounce Duration")
+    end
+
+    local previewBtn = AceGUI:Create("Button")
+    previewBtn:SetText(sectionDef.previewText)
+    previewBtn:SetFullWidth(true)
+    previewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, 3)
+    end)
+    container:AddChild(previewBtn)
+end
+
 local function BuildEffectsTab(container)
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -518,6 +1054,20 @@ local function BuildEffectsTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    CooldownCompanion:ClearAllTextureIndicatorPreviews()
+
+    if group.displayMode == "textures" then
+        local indicators = GetTextureIndicatorStore(group)
+        if not indicators then
+            return
+        end
+
+        for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
+            BuildTextureIndicatorSection(container, group, indicators, sectionKey)
+        end
+        return
+    end
 
     -- Branch for bar mode
     if group.displayMode == "bars" then
@@ -984,6 +1534,255 @@ local function BuildAppearanceTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+
+    CooldownCompanion:ClearAllTextureIndicatorPreviews()
+
+    if group.displayMode == "textures" then
+        local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        if not settings then
+            return
+        end
+
+        local groupId = CS.selectedGroup
+        local buttonData = group.buttons and group.buttons[1] or nil
+        local previewWidget = nil
+        local function RefreshTextureVisual()
+            if previewWidget then
+                UpdateTexturePanelPreview(previewWidget, settings)
+            end
+            local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+            local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+            if button then
+                CooldownCompanion:UpdateAuraTextureVisual(button)
+            else
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+            end
+        end
+
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Texture Panel")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
+
+        CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+            "Texture Panel",
+            {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
+            " ",
+            {"Its single entry decides when that texture appears.", 1, 1, 1, true},
+        }, tabInfoButtons)
+
+        if not buttonData then
+            local emptyLabel = AceGUI:Create("Label")
+            emptyLabel:SetFullWidth(true)
+            emptyLabel:SetText("|cff888888Add one entry in Column 2 first. The texture browser will open after that.|r")
+            container:AddChild(emptyLabel)
+
+            if CS.pendingTexturePickerOpen == CS.selectedGroup then
+                CS.pendingTexturePickerOpen = nil
+            end
+            return
+        end
+
+        local selectionLabel = CooldownCompanion:GetTexturePanelSelectionLabel(group)
+
+        local previewGroup = AceGUI:Create("SimpleGroup")
+        previewGroup:SetFullWidth(true)
+        previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 4)
+        previewGroup:SetLayout("Fill")
+        container:AddChild(previewGroup)
+
+        local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
+        previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
+        previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, TEXTURE_PREVIEW_HEIGHT)
+        appearanceTabElements[#appearanceTabElements + 1] = previewFrame
+
+        local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
+        previewShade:SetAllPoints()
+        previewShade:SetColorTexture(0, 0, 0, 0.42)
+
+        local previewAnchor = CreateFrame("Frame", nil, previewFrame)
+        previewAnchor:SetPoint("CENTER")
+        previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 8, TEXTURE_PREVIEW_HEIGHT - 8)
+
+        local previewPrimary = previewFrame:CreateTexture(nil, "ARTWORK")
+        local previewSecondary = previewFrame:CreateTexture(nil, "ARTWORK")
+
+        local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        placeholder:SetPoint("CENTER")
+        placeholder:SetJustifyH("CENTER")
+        placeholder:SetText("No texture selected")
+        placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
+
+        previewWidget = {
+            primary = previewPrimary,
+            secondary = previewSecondary,
+            placeholder = placeholder,
+            anchor = previewAnchor,
+        }
+        UpdateTexturePanelPreview(previewWidget, settings)
+
+        local actionRow = AceGUI:Create("SimpleGroup")
+        actionRow:SetFullWidth(true)
+        actionRow:SetLayout("Flow")
+        container:AddChild(actionRow)
+
+        local browseBtn = AceGUI:Create("Button")
+        browseBtn:SetText("Browse / Change")
+        browseBtn:SetRelativeWidth(0.49)
+        browseBtn:SetCallback("OnClick", function()
+            OpenOrRebindTexturePanelPicker(group, settings, true)
+        end)
+        actionRow:AddChild(browseBtn)
+
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear")
+        clearBtn:SetDisabled(not selectionLabel)
+        clearBtn:SetRelativeWidth(0.49)
+        clearBtn:SetCallback("OnClick", function()
+            CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+            GetTexturePanelCommitCallback(group)(nil)
+        end)
+        actionRow:AddChild(clearBtn)
+
+        if not selectionLabel then
+            local emptyStateLabel = AceGUI:Create("Label")
+            emptyStateLabel:SetFullWidth(true)
+            emptyStateLabel:SetText("|cff888888Pick a texture to show the rest of the display controls.|r")
+            container:AddChild(emptyStateLabel)
+
+            local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
+            if shouldOpenPicker then
+                CS.pendingTexturePickerOpen = nil
+                C_Timer.After(0, function()
+                    if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
+                        OpenOrRebindTexturePanelPicker(group, settings, true)
+                    end
+                end)
+            elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+                OpenOrRebindTexturePanelPicker(group, settings, false)
+            end
+
+            RefreshTextureVisual()
+            return
+        end
+
+        local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
+        local selectedLayoutValue = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
+        local locationDrop = AceGUI:Create("Dropdown")
+        locationDrop:SetLabel("Texture Layout")
+        locationDrop:SetList(locationOptions, locationOrder)
+        locationDrop:SetValue(selectedLayoutValue)
+        locationDrop:SetFullWidth(true)
+        locationDrop:SetCallback("OnValueChanged", function(_, _, value)
+            settings.locationType = tonumber(value) or 0
+            RefreshTextureVisual()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(locationDrop)
+
+        if selectedLayoutValue == PREVIEW_LOCATION_LEFTRIGHT or selectedLayoutValue == PREVIEW_LOCATION_TOPBOTTOM then
+            local spacingSlider = AceGUI:Create("Slider")
+            spacingSlider:SetLabel("Pair Spacing")
+            spacingSlider:SetSliderValues(MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING, 0.01)
+            spacingSlider:SetValue(settings.pairSpacing or 0)
+            spacingSlider:SetFullWidth(true)
+            AttachLiveTextureSliderRefresh(spacingSlider, function(value)
+                settings.pairSpacing = value
+                RefreshTextureVisual()
+            end)
+            HookSliderEditBox(spacingSlider)
+            container:AddChild(spacingSlider)
+        end
+
+        local blendDrop = AceGUI:Create("Dropdown")
+        blendDrop:SetLabel("Blend Mode")
+        blendDrop:SetList(TEXTURE_BLEND_OPTIONS, TEXTURE_BLEND_ORDER)
+        blendDrop:SetValue(settings.blendMode or "ADD")
+        blendDrop:SetFullWidth(true)
+        blendDrop:SetCallback("OnValueChanged", function(_, _, value)
+            settings.blendMode = value or "ADD"
+            RefreshTextureVisual()
+        end)
+        container:AddChild(blendDrop)
+
+        local scaleSlider = AceGUI:Create("Slider")
+        scaleSlider:SetLabel("Texture Scale")
+        scaleSlider:SetSliderValues(0.25, 4, 0.05)
+        scaleSlider:SetValue(settings.scale or 1)
+        scaleSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(scaleSlider, function(value)
+            settings.scale = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(scaleSlider)
+        container:AddChild(scaleSlider)
+
+        local rotationSlider = AceGUI:Create("Slider")
+        rotationSlider:SetLabel("Rotation")
+        rotationSlider:SetSliderValues(MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION, 1)
+        rotationSlider:SetValue(settings.rotation or 0)
+        rotationSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(rotationSlider, function(value)
+            settings.rotation = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(rotationSlider)
+        container:AddChild(rotationSlider)
+
+        local stretchXSlider = AceGUI:Create("Slider")
+        stretchXSlider:SetLabel("Horizontal Stretch / Compress")
+        stretchXSlider:SetSliderValues(MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH, 0.05)
+        stretchXSlider:SetValue(settings.stretchX or 0)
+        stretchXSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(stretchXSlider, function(value)
+            settings.stretchX = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(stretchXSlider)
+        container:AddChild(stretchXSlider)
+
+        local stretchYSlider = AceGUI:Create("Slider")
+        stretchYSlider:SetLabel("Vertical Stretch / Compress")
+        stretchYSlider:SetSliderValues(MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH, 0.05)
+        stretchYSlider:SetValue(settings.stretchY or 0)
+        stretchYSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(stretchYSlider, function(value)
+            settings.stretchY = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(stretchYSlider)
+        container:AddChild(stretchYSlider)
+
+        local alphaSlider = AceGUI:Create("Slider")
+        alphaSlider:SetLabel("Texture Alpha")
+        alphaSlider:SetSliderValues(0.05, 1, 0.05)
+        alphaSlider:SetValue(settings.alpha or 1)
+        alphaSlider:SetFullWidth(true)
+        AttachLiveTextureSliderRefresh(alphaSlider, function(value)
+            settings.alpha = value
+            RefreshTextureVisual()
+        end)
+        HookSliderEditBox(alphaSlider)
+        container:AddChild(alphaSlider)
+
+        AddColorPicker(container, settings, "color", "Texture Color", { 1, 1, 1, 1 }, true, RefreshTextureVisual, RefreshTextureVisual)
+
+        local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
+        if shouldOpenPicker then
+            CS.pendingTexturePickerOpen = nil
+            C_Timer.After(0, function()
+                if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
+                    OpenOrRebindTexturePanelPicker(group, settings, true)
+                end
+            end)
+        elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+            OpenOrRebindTexturePanelPicker(group, settings, false)
+        end
+
+        RefreshTextureVisual()
+        return
+    end
 
     -- Branch for text mode
     if group.displayMode == "text" then

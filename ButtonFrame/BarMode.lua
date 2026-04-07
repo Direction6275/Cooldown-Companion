@@ -1102,6 +1102,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     SetBarIconTooltipScripts(button, iconTooltips)
     button:SetScript("OnEnter", nil)
     button:SetScript("OnLeave", nil)
+    CooldownCompanion:UpdateAuraTextureVisual(button)
 end
 
 -- Exports

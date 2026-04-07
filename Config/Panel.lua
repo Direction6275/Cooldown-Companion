@@ -44,6 +44,15 @@ local function GetVersionFooterText()
     return version .. "  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default")
 end
 
+local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
+
+if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
+    -- These columns are positioned and sized manually, so their layout should
+    -- not call LayoutFinished and auto-shrink them based on child height.
+    AceGUI:RegisterLayout(MANUAL_COLUMN_LAYOUT, function()
+    end)
+end
+
 local function SetPrimaryMode(mode, opts)
     if SetConfigPrimaryMode then
         return SetConfigPrimaryMode(mode, opts)
@@ -200,12 +209,17 @@ local function CreateConfigPanel()
         if CS.talentPickerMode then
             CooldownCompanion:CloseTalentPicker()
         end
+        if CS.CancelPickAuraTexture then
+            CS.CancelPickAuraTexture()
+        end
         CooldownCompanion:ClearAllProcGlowPreviews()
         CooldownCompanion:ClearAllAuraGlowPreviews()
         CooldownCompanion:ClearAllPandemicPreviews()
         CooldownCompanion:ClearAllReadyGlowPreviews()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
+        CooldownCompanion:ClearAllTextureIndicatorPreviews()
+        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         CooldownCompanion:StopCastBarPreview()
         CloseDropDownMenus()
         CS.HideAutocomplete()
@@ -1259,7 +1273,8 @@ local function CreateConfigPanel()
     -- Column 1: Groups (AceGUI InlineGroup)
     local col1 = AceGUI:Create("InlineGroup")
     col1:SetTitle("Groups")
-    col1:SetLayout("None")
+    col1:SetAutoAdjustHeight(false)
+    col1:SetLayout(MANUAL_COLUMN_LAYOUT)
     col1.frame:SetParent(colParent)
     col1.frame:Show()
 
@@ -1311,7 +1326,8 @@ local function CreateConfigPanel()
     -- Column 2: Panels (AceGUI InlineGroup)
     local col2 = AceGUI:Create("InlineGroup")
     col2:SetTitle("Panels")
-    col2:SetLayout("None")
+    col2:SetAutoAdjustHeight(false)
+    col2:SetLayout(MANUAL_COLUMN_LAYOUT)
     col2.frame:SetParent(colParent)
     col2.frame:Show()
 
@@ -1352,7 +1368,8 @@ local function CreateConfigPanel()
     -- Column 3: Button Settings
     local col3 = AceGUI:Create("InlineGroup")
     col3:SetTitle("Button Settings")
-    col3:SetLayout("None")
+    col3:SetAutoAdjustHeight(false)
+    col3:SetLayout(MANUAL_COLUMN_LAYOUT)
     col3.frame:SetParent(colParent)
     col3.frame:Show()
 
@@ -1396,7 +1413,8 @@ local function CreateConfigPanel()
     -- Column 4: Group Settings (AceGUI InlineGroup)
     local col4 = AceGUI:Create("InlineGroup")
     col4:SetTitle("Group Settings")
-    col4:SetLayout("None")
+    col4:SetAutoAdjustHeight(false)
+    col4:SetLayout(MANUAL_COLUMN_LAYOUT)
     col4.frame:SetParent(colParent)
     col4.frame:Show()
 
@@ -1479,7 +1497,8 @@ local function CreateConfigPanel()
     btnBar2:Hide()
     CS.col2ButtonBar = btnBar2
 
-    -- Button Settings TabGroup (Settings + Sound Alerts + Overrides tabs)
+    -- Button Settings TabGroup. The tab list is refreshed later based on the
+    -- selected group's display mode, so texture panels can omit Overrides.
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
         { value = "settings",  text = "Settings" },

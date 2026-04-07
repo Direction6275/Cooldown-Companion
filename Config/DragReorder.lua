@@ -310,6 +310,8 @@ local function ApplyPreviewModeBadge(texture, displayMode)
         texture:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
     elseif displayMode == "text" then
         texture:SetAtlas("poi-workorders", false)
+    elseif displayMode == "textures" then
+        texture:SetTexture(134400)
     else
         texture:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
     end
@@ -3605,6 +3607,10 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     local sourceGroup = db.groups[sourcePanelId]
     local targetGroup = db.groups[targetPanelId]
     if not sourceGroup or not targetGroup then return nil end
+    if targetGroup.displayMode == "textures" and #targetGroup.buttons >= 1 then
+        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+        return nil
+    end
     local buttonData = table.remove(sourceGroup.buttons, sourceIndex)
     if not buttonData then return nil end
     -- Resolve "append" targets (nil targetIndex = after last button)

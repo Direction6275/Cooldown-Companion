@@ -144,7 +144,16 @@ end
 
 local tabInfoButtons = CS.tabInfoButtons
 
+local function GroupSupportsPerButtonOverrides(group)
+    return group and (group.displayMode or "icons") ~= "textures"
+end
+
 local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not GroupSupportsPerButtonOverrides(group) then
+        return nil
+    end
+
     local promoteBtn = CreateFrame("Button", nil, headingWidget.frame)
     promoteBtn:SetSize(16, 16)
     local anchorAfter = headingWidget.frame._cdcCollapseBtn or headingWidget.label
@@ -235,6 +244,10 @@ local function CreateRevertButton(headingWidget, buttonData, sectionId)
 end
 
 local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId, group, groupStyle)
+    if not GroupSupportsPerButtonOverrides(group) then
+        return nil
+    end
+
     local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
     local promoteBtn = CreateFrame("Button", nil, cbWidget.frame)
     promoteBtn:SetSize(16, 16)

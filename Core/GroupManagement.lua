@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
+local math_floor = math.floor
 local table_sort = table.sort
 local table_remove = table.remove
 local GROUP_SETTING_PRESET_MODES = {
@@ -19,6 +20,123 @@ local GROUP_SETTING_PRESET_MODES = {
 
 local function IsValidGroupSettingPresetMode(mode)
     return GROUP_SETTING_PRESET_MODES[mode] == true
+end
+
+local function GetAnchorOffset(point, width, height)
+    local halfW = (width or 0) / 2
+    local halfH = (height or 0) / 2
+    if point == "TOPLEFT" then return -halfW, halfH end
+    if point == "TOP" then return 0, halfH end
+    if point == "TOPRIGHT" then return halfW, halfH end
+    if point == "LEFT" then return -halfW, 0 end
+    if point == "CENTER" then return 0, 0 end
+    if point == "RIGHT" then return halfW, 0 end
+    if point == "BOTTOMLEFT" then return -halfW, -halfH end
+    if point == "BOTTOM" then return 0, -halfH end
+    if point == "BOTTOMRIGHT" then return halfW, -halfH end
+    return 0, 0
+end
+
+local function RoundAnchorOffset(value)
+    return math_floor(((value or 0) * 10) + 0.5) / 10
+end
+
+local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
+    if not (self and groupId and type(group) == "table") then
+        return
+    end
+
+    local settings = self:GetTexturePanelSettings(group, true)
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    local anchor = type(group.anchor) == "table" and group.anchor or nil
+    local point = (anchor and anchor.point) or "CENTER"
+    local relativePoint = (anchor and anchor.relativePoint) or "CENTER"
+
+    if frame and frame.GetCenter then
+        local cx, cy = frame:GetCenter()
+        local fw, fh = frame:GetSize()
+        local rcx, rcy = UIParent:GetCenter()
+        local rw, rh = UIParent:GetSize()
+
+        if cx and cy and fw and fh and rcx and rcy and rw and rh then
+            local fax, fay = GetAnchorOffset(point, fw, fh)
+            local framePtX = cx + fax
+            local framePtY = cy + fay
+            local rax, ray = GetAnchorOffset(relativePoint, rw, rh)
+            local refPtX = rcx + rax
+            local refPtY = rcy + ray
+
+            settings.point = point
+            settings.relativePoint = relativePoint
+            settings.relativeTo = "UIParent"
+            settings.x = RoundAnchorOffset(framePtX - refPtX)
+            settings.y = RoundAnchorOffset(framePtY - refPtY)
+            return
+        end
+    end
+
+    settings.point = point
+    settings.relativePoint = relativePoint
+    settings.relativeTo = "UIParent"
+    settings.x = tonumber(anchor and anchor.x) or 0
+    settings.y = tonumber(anchor and anchor.y) or 0
+end
+
+local function SyncGroupAnchorFromTexturePanelSettings(self, group)
+    if not (self and type(group) == "table") then
+        return
+    end
+
+    local settings = self:GetTexturePanelSettings(group)
+    if not settings then
+        return
+    end
+
+    group.anchor = group.anchor or {}
+
+    local point = settings.point or group.anchor.point or "CENTER"
+    local relativePoint = settings.relativePoint or group.anchor.relativePoint or "CENTER"
+    local relativeTo = group.anchor.relativeTo or "UIParent"
+    local relFrame = nil
+
+    if relativeTo ~= "UIParent" then
+        relFrame = _G[relativeTo]
+        if not (relFrame and relFrame.GetCenter and relFrame.GetSize) then
+            relativeTo = "UIParent"
+            relFrame = nil
+        end
+    end
+
+    if not relFrame then
+        relFrame = UIParent
+    end
+
+    local rw, rh = relFrame:GetSize()
+    local rcx, rcy = relFrame:GetCenter()
+    local uw, uh = UIParent:GetSize()
+    local ucx, ucy = UIParent:GetCenter()
+
+    if rw and rh and rcx and rcy and uw and uh and ucx and ucy then
+        local uiAnchorX, uiAnchorY = GetAnchorOffset(relativePoint, uw, uh)
+        local screenPtX = ucx + uiAnchorX + (tonumber(settings.x) or 0)
+        local screenPtY = ucy + uiAnchorY + (tonumber(settings.y) or 0)
+        local relAnchorX, relAnchorY = GetAnchorOffset(relativePoint, rw, rh)
+        local refPtX = rcx + relAnchorX
+        local refPtY = rcy + relAnchorY
+
+        group.anchor.point = point
+        group.anchor.relativeTo = relativeTo
+        group.anchor.relativePoint = relativePoint
+        group.anchor.x = RoundAnchorOffset(screenPtX - refPtX)
+        group.anchor.y = RoundAnchorOffset(screenPtY - refPtY)
+        return
+    end
+
+    group.anchor.point = point
+    group.anchor.relativeTo = relativeTo
+    group.anchor.relativePoint = relativePoint
+    group.anchor.x = tonumber(settings.x) or 0
+    group.anchor.y = tonumber(settings.y) or 0
 end
 
 local function CopyPresetValue(v)
@@ -476,6 +594,16 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
 
+    if displayMode == "textures" then
+        db.groups[groupId].textureSettings = {
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+            x = 0,
+            y = 0,
+        }
+    end
+
     self:CreateGroupFrame(groupId)
     return groupId
 end
@@ -560,8 +688,33 @@ end
 function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+
+    if newMode == "textures" and #group.buttons > 1 then
+        self:Print("Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.")
+        return false
+    end
+
+    local oldMode = group.displayMode
+    if oldMode == "textures" and newMode ~= "textures" then
+        -- Leaving texture mode should carry the standalone texture position
+        -- back into the normal panel anchor so the panel does not jump back.
+        SyncGroupAnchorFromTexturePanelSettings(self, group)
+    end
+
     group.displayMode = newMode
+    if newMode == "bars" or newMode == "text" then
+        group.style.orientation = "vertical"
+    end
+    if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
+        self:ToggleGroupMasque(groupId, false)
+    end
+    if newMode == "textures" then
+        -- Entering texture mode switches from group.anchor to textureSettings,
+        -- so convert the panel's current on-screen position once here.
+        SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
+    end
     self:RefreshGroupFrame(groupId)
+    return true
 end
 
 ------------------------------------------------------------------------
@@ -745,6 +898,11 @@ end
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+
+    if group.displayMode == "textures" and #group.buttons >= 1 then
+        self:Print("Texture Panels can only hold one entry. Remove the current entry first if you want to replace it.")
+        return nil
+    end
 
     -- Resolve spell transforms to base spell ID so the override chain can
     -- freely reach all variant forms at runtime.  Skip for items (no spell

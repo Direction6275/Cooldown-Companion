@@ -1361,6 +1361,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Per-button visibility evaluation (after charge tracking)
     EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive, procOverlayActive)
+    button._rawVisibilityHidden = button._visibilityHidden
+    button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
 
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
     local forceVisibleByConfig = IsConfigButtonForceVisible(button)
@@ -1394,6 +1396,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
             end
+            CooldownCompanion:UpdateAuraTextureVisual(button)
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1409,6 +1412,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
+            CooldownCompanion:UpdateAuraTextureVisual(button)
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1457,7 +1461,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateTextDisplay(button)
     elseif button._isBar then
         UpdateBarDisplay(button)
+        CooldownCompanion:UpdateAuraTextureVisual(button)
     else
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
+        CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 end

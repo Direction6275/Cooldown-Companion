@@ -964,6 +964,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
+    CooldownCompanion:UpdateAuraTextureVisual(button)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on

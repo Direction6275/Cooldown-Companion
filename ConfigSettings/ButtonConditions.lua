@@ -325,6 +325,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    local isTexturePanel = group.displayMode == "textures"
 
     local isBatch = batchContext ~= nil
     local isItem
@@ -515,11 +516,11 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         return bd and (
             bd.hideWhileAuraNotActive
             or bd.hideWhileAuraActive
-            or bd.useBaselineAlphaFallback
-            or bd.useBaselineAlphaFallbackAuraActive
+            or (not isTexturePanel and bd.useBaselineAlphaFallback)
+            or (not isTexturePanel and bd.useBaselineAlphaFallbackAuraActive)
             or bd.hideAuraActiveExceptPandemic
-            or bd.saturateWhileAuraNotActive
-            or bd.desaturateWhileAuraNotActive
+            or (not isTexturePanel and bd.saturateWhileAuraNotActive)
+            or (not isTexturePanel and bd.desaturateWhileAuraNotActive)
         )
     end
 
@@ -572,7 +573,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local showFallbackOnCooldown
     if isBatch then showFallbackOnCooldown = AnySelectedHas(group, "hideWhileOnCooldown")
     else showFallbackOnCooldown = buttonData.hideWhileOnCooldown end
-    if showFallbackOnCooldown then
+    if showFallbackOnCooldown and not isTexturePanel then
         local fallbackOnCDCb = AceGUI:Create("CheckBox")
         fallbackOnCDCb:SetLabel("Use Baseline Alpha Fallback")
         SetCheckboxValue(fallbackOnCDCb, "useBaselineAlphaFallbackOnCooldown")
@@ -610,7 +611,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local showFallbackNotOnCooldown
     if isBatch then showFallbackNotOnCooldown = AnySelectedHas(group, "hideWhileNotOnCooldown")
     else showFallbackNotOnCooldown = buttonData.hideWhileNotOnCooldown end
-    if showFallbackNotOnCooldown then
+    if showFallbackNotOnCooldown and not isTexturePanel then
         local fallbackNotOnCDCb = AceGUI:Create("CheckBox")
         fallbackNotOnCDCb:SetLabel("Use Baseline Alpha Fallback")
         SetCheckboxValue(fallbackNotOnCDCb, "useBaselineAlphaFallbackNotOnCooldown")
@@ -655,7 +656,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local showFallbackUnusable
     if isBatch then showFallbackUnusable = AnySelectedHas(group, "hideWhileUnusable")
     else showFallbackUnusable = buttonData.hideWhileUnusable end
-    if showFallbackUnusable then
+    if showFallbackUnusable and not isTexturePanel then
         local fallbackUnusableCb = AceGUI:Create("CheckBox")
         fallbackUnusableCb:SetLabel("Use Baseline Alpha Fallback")
         SetCheckboxValue(fallbackUnusableCb, "useBaselineAlphaFallbackUnusable")
@@ -698,7 +699,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         local showFallbackNoProc
         if isBatch then showFallbackNoProc = AnySelectedHas(group, "hideWhileNoProc")
         else showFallbackNoProc = buttonData.hideWhileNoProc end
-        if showFallbackNoProc then
+        if showFallbackNoProc and not isTexturePanel then
             local fallbackNoProcCb = AceGUI:Create("CheckBox")
             fallbackNoProcCb:SetLabel("Use Baseline Alpha Fallback")
             SetCheckboxValue(fallbackNoProcCb, "useBaselineAlphaFallbackNoProc")
@@ -745,7 +746,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         local showFallbackZeroCharges
         if isBatch then showFallbackZeroCharges = AnySelectedHasFiltered(group, "hideWhileZeroCharges", FilterChargeCapable)
         else showFallbackZeroCharges = buttonData.hideWhileZeroCharges end
-        if showFallbackZeroCharges then
+        if showFallbackZeroCharges and not isTexturePanel then
             local fallbackZeroChargesCb = AceGUI:Create("CheckBox")
             fallbackZeroChargesCb:SetLabel("Use Baseline Alpha Fallback")
             SetCheckboxValue(fallbackZeroChargesCb, "useBaselineAlphaFallbackZeroCharges", FilterChargeCapable)
@@ -764,19 +765,21 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
 
         -- Desaturate While At Zero Charges
-        local desatZeroChargesCb = AceGUI:Create("CheckBox")
-        desatZeroChargesCb:SetLabel("Desaturate While At Zero Charges")
-        SetCheckboxValue(desatZeroChargesCb, "desaturateWhileZeroCharges", FilterChargeCapable)
-        desatZeroChargesCb:SetFullWidth(true)
-        WrapBatchCallback(desatZeroChargesCb, function(widget, event, val)
-            ApplyToChargeCapable("desaturateWhileZeroCharges", val or nil)
-            if val then
-                ApplyToChargeCapable("hideWhileZeroCharges", nil)
-                ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(desatZeroChargesCb)
+        if not isTexturePanel then
+            local desatZeroChargesCb = AceGUI:Create("CheckBox")
+            desatZeroChargesCb:SetLabel("Desaturate While At Zero Charges")
+            SetCheckboxValue(desatZeroChargesCb, "desaturateWhileZeroCharges", FilterChargeCapable)
+            desatZeroChargesCb:SetFullWidth(true)
+            WrapBatchCallback(desatZeroChargesCb, function(widget, event, val)
+                ApplyToChargeCapable("desaturateWhileZeroCharges", val or nil)
+                if val then
+                    ApplyToChargeCapable("hideWhileZeroCharges", nil)
+                    ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            scroll:AddChild(desatZeroChargesCb)
+        end
 
         -- Hide Cooldown While Charges Remain
         local hideCdChargesCb = AceGUI:Create("CheckBox")
@@ -820,7 +823,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             local showFallbackZeroStacks
             if isBatch then showFallbackZeroStacks = AnySelectedHasFiltered(group, "hideWhileZeroStacks", FilterNonEquippable)
             else showFallbackZeroStacks = buttonData.hideWhileZeroStacks end
-            if showFallbackZeroStacks then
+            if showFallbackZeroStacks and not isTexturePanel then
                 local fallbackZeroStacksCb = AceGUI:Create("CheckBox")
                 fallbackZeroStacksCb:SetLabel("Use Baseline Alpha Fallback")
                 SetCheckboxValue(fallbackZeroStacksCb, "useBaselineAlphaFallbackZeroStacks", FilterNonEquippable)
@@ -839,19 +842,21 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             end
 
             -- Desaturate While At Zero Stacks
-            local desatZeroStacksCb = AceGUI:Create("CheckBox")
-            desatZeroStacksCb:SetLabel("Desaturate While At Zero Stacks")
-            SetCheckboxValue(desatZeroStacksCb, "desaturateWhileZeroStacks", FilterNonEquippable)
-            desatZeroStacksCb:SetFullWidth(true)
-            WrapBatchCallback(desatZeroStacksCb, function(widget, event, val)
-                ApplyToNonEquippable("desaturateWhileZeroStacks", val or nil)
-                if val then
-                    ApplyToNonEquippable("hideWhileZeroStacks", nil)
-                    ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            scroll:AddChild(desatZeroStacksCb)
+            if not isTexturePanel then
+                local desatZeroStacksCb = AceGUI:Create("CheckBox")
+                desatZeroStacksCb:SetLabel("Desaturate While At Zero Stacks")
+                SetCheckboxValue(desatZeroStacksCb, "desaturateWhileZeroStacks", FilterNonEquippable)
+                desatZeroStacksCb:SetFullWidth(true)
+                WrapBatchCallback(desatZeroStacksCb, function(widget, event, val)
+                    ApplyToNonEquippable("desaturateWhileZeroStacks", val or nil)
+                    if val then
+                        ApplyToNonEquippable("hideWhileZeroStacks", nil)
+                        ApplyToNonEquippable("useBaselineAlphaFallbackZeroStacks", nil)
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                scroll:AddChild(desatZeroStacksCb)
+            end
         end
     end
 
@@ -878,7 +883,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         local showFallbackEquip
         if isBatch then showFallbackEquip = AnySelectedHasFiltered(group, "hideWhileNotEquipped", FilterEquippable)
         else showFallbackEquip = buttonData.hideWhileNotEquipped end
-        if showFallbackEquip then
+        if showFallbackEquip and not isTexturePanel then
             local fallbackNotEquippedCb = AceGUI:Create("CheckBox")
             fallbackNotEquippedCb:SetLabel("Use Baseline Alpha Fallback")
             SetCheckboxValue(fallbackNotEquippedCb, "useBaselineAlphaFallbackNotEquipped", FilterEquippable)
@@ -964,7 +969,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 }, infoButtons)
             end
 
-            if showFallbackAuraActive then
+            if showFallbackAuraActive and not isTexturePanel then
                 local fallbackAuraCb = AceGUI:Create("CheckBox")
                 fallbackAuraCb:SetLabel("Use Baseline Alpha Fallback")
                 SetCheckboxValue(fallbackAuraCb, "useBaselineAlphaFallbackAuraActive", FilterAuraTracking)
@@ -1007,7 +1012,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             else
                 showFallbackAuraNotActive = buttonData.hideWhileAuraNotActive
             end
-            if showFallbackAuraNotActive then
+            if showFallbackAuraNotActive and not isTexturePanel then
                 local fallbackCb = AceGUI:Create("CheckBox")
                 fallbackCb:SetLabel("Use Baseline Alpha Fallback")
                 SetCheckboxValue(fallbackCb, "useBaselineAlphaFallback", FilterAuraTracking)
@@ -1024,42 +1029,44 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 }, infoButtons)
             end
 
-            local anyPassiveAura
-            if isBatch then anyPassiveAura = AnySelectedHas(group, "isPassive")
-            else anyPassiveAura = buttonData.isPassive end
-            if anyPassiveAura then
-                local satNoAuraCb = AceGUI:Create("CheckBox")
-                satNoAuraCb:SetLabel("Saturate While Aura Not Active")
-                SetCheckboxValue(satNoAuraCb, "saturateWhileAuraNotActive", FilterAuraTracking)
-                satNoAuraCb:SetFullWidth(true)
-                WrapBatchCallback(satNoAuraCb, function(widget, event, val)
-                    ApplyToAuraTracking("saturateWhileAuraNotActive", val or nil)
-                end)
-                scroll:AddChild(satNoAuraCb)
+            if not isTexturePanel then
+                local anyPassiveAura
+                if isBatch then anyPassiveAura = AnySelectedHas(group, "isPassive")
+                else anyPassiveAura = buttonData.isPassive end
+                if anyPassiveAura then
+                    local satNoAuraCb = AceGUI:Create("CheckBox")
+                    satNoAuraCb:SetLabel("Saturate While Aura Not Active")
+                    SetCheckboxValue(satNoAuraCb, "saturateWhileAuraNotActive", FilterAuraTracking)
+                    satNoAuraCb:SetFullWidth(true)
+                    WrapBatchCallback(satNoAuraCb, function(widget, event, val)
+                        ApplyToAuraTracking("saturateWhileAuraNotActive", val or nil)
+                    end)
+                    scroll:AddChild(satNoAuraCb)
 
-                CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
-                    "Saturate While Aura Not Active",
-                    {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
-                }, infoButtons)
-            end
+                    CreateInfoButton(satNoAuraCb.frame, satNoAuraCb.checkbg, "LEFT", "RIGHT", satNoAuraCb.text:GetStringWidth() + 4, 0, {
+                        "Saturate While Aura Not Active",
+                        {"Keep the icon at full color even when the tracked aura is missing.", 1, 1, 1, true},
+                    }, infoButtons)
+                end
 
-            local allPassiveAura
-            if isBatch then allPassiveAura = AllSelectedAre(group, "isPassive")
-            else allPassiveAura = buttonData.isPassive end
-            if not allPassiveAura then
-                local desatNoAuraCb = AceGUI:Create("CheckBox")
-                desatNoAuraCb:SetLabel("Desaturate While Aura Not Active")
-                SetCheckboxValue(desatNoAuraCb, "desaturateWhileAuraNotActive", FilterAuraTracking)
-                desatNoAuraCb:SetFullWidth(true)
-                WrapBatchCallback(desatNoAuraCb, function(widget, event, val)
-                    ApplyToAuraTracking("desaturateWhileAuraNotActive", val or nil)
-                end)
-                scroll:AddChild(desatNoAuraCb)
+                local allPassiveAura
+                if isBatch then allPassiveAura = AllSelectedAre(group, "isPassive")
+                else allPassiveAura = buttonData.isPassive end
+                if not allPassiveAura then
+                    local desatNoAuraCb = AceGUI:Create("CheckBox")
+                    desatNoAuraCb:SetLabel("Desaturate While Aura Not Active")
+                    SetCheckboxValue(desatNoAuraCb, "desaturateWhileAuraNotActive", FilterAuraTracking)
+                    desatNoAuraCb:SetFullWidth(true)
+                    WrapBatchCallback(desatNoAuraCb, function(widget, event, val)
+                        ApplyToAuraTracking("desaturateWhileAuraNotActive", val or nil)
+                    end)
+                    scroll:AddChild(desatNoAuraCb)
 
-                CreateInfoButton(desatNoAuraCb.frame, desatNoAuraCb.checkbg, "LEFT", "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0, {
-                    "Desaturate While Aura Not Active",
-                    {"Requires Aura Tracking to be active and ready above.", 1, 1, 1, true},
-                }, infoButtons)
+                    CreateInfoButton(desatNoAuraCb.frame, desatNoAuraCb.checkbg, "LEFT", "RIGHT", desatNoAuraCb.text:GetStringWidth() + 4, 0, {
+                        "Desaturate While Aura Not Active",
+                        {"Requires Aura Tracking to be active and ready above.", 1, 1, 1, true},
+                    }, infoButtons)
+                end
             end
         end
 

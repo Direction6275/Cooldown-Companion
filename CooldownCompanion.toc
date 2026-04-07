@@ -46,6 +46,8 @@ Core\SpellQueries.lua
 Core\Utils.lua
 Core\Init.lua
 Core\Defaults.lua
+Core\SpellActivationOverlayData.lua
+Core\AuraTextures.lua
 Core\ChangelogData.lua
 Core\Changelog.lua
 Core\ScopedSettings.lua
@@ -96,6 +98,7 @@ ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
+ConfigSettings\AuraTexturePicker.lua
 ConfigSettings\ButtonSettings.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua

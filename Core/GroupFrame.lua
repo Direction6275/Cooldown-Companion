@@ -397,9 +397,11 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Resolve locked state from container (or group for legacy)
     local isLocked, baseAlpha = GetContainerState(groupId)
 
-    -- Make it movable when unlocked
+    -- Make it movable when unlocked. Texture panels use direct texture dragging
+    -- instead of the standard panel drag handle.
+    local isTextureMode = group.displayMode == "textures"
     frame:SetMovable(true)
-    frame:EnableMouse(not isLocked)
+    frame:EnableMouse((not isLocked) and (not isTextureMode))
     frame:RegisterForDrag("LeftButton")
 
     -- Drag handle (visible when unlocked)
@@ -431,7 +433,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
-    if isLocked or #group.buttons == 0 then
+    if isLocked or #group.buttons == 0 or isTextureMode then
         frame.dragHandle:Hide()
     end
 
@@ -705,8 +707,11 @@ local function GetButtonDimensions(group)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
+    local isTextureMode = group.displayMode == "textures"
     local w, h
-    if isTextMode then
+    if isTextureMode then
+        w, h = 1, 1
+    elseif isTextMode then
         w = style.textWidth or 200
         if GetEffectiveTextHeight then
             local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
@@ -750,6 +755,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Clear existing buttons (remove from Masque first if enabled)
     for _, button in ipairs(frame.buttons) do
+        if CooldownCompanion.ReleaseAuraTextureVisual then
+            CooldownCompanion:ReleaseAuraTextureVisual(button)
+        end
         if group.masqueEnabled then
             self:RemoveButtonFromMasque(groupId, button)
         end
@@ -812,6 +820,10 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
             else
                 button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
+                if group.displayMode == "textures" then
+                    button:SetAlpha(0)
+                    button._lastVisAlpha = 0
+                end
             end
 
             -- Position the button using visibleIndex for gap-free layout
@@ -830,7 +842,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             table_insert(frame.buttons, button)
 
             -- Add to Masque if enabled (after button is shown and in the list, icons only)
-            if not isBarMode and group.displayMode ~= "text" and group.masqueEnabled then
+            if group.displayMode == "icons" and group.masqueEnabled then
                 self:AddButtonToMasque(groupId, button)
             end
         end
@@ -1068,11 +1080,12 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update drag handle text and lock state
     local hasButtons = #group.buttons > 0
+    local isTextureMode = group.displayMode == "textures"
     if frame.dragHandle then
         if frame.dragHandle.text then
             frame.dragHandle.text:SetText(group.name)
         end
-        if isLocked or not hasButtons then
+        if isLocked or not hasButtons or isTextureMode then
             frame.dragHandle:Hide()
         else
             frame.dragHandle:Show()
@@ -1276,10 +1289,13 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if not frame or not group then return end
 
     local isLocked = GetContainerState(groupId)
+    local isTextureMode = group.displayMode == "textures"
 
     -- When locked: group container is always fully non-interactive
-    -- When unlocked: enable everything for dragging
-    if isLocked then
+    -- Texture panels also keep the backing group frame non-interactive while
+    -- unlocked, because dragging and hovering are handled by the separate
+    -- visible texture host instead of the hidden 1x1 anchor frame.
+    if isLocked or isTextureMode then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)

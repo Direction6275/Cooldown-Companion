@@ -983,6 +983,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     -- Buttons stay attached to the frame for potential reuse.
     if frame.buttons then
         for _, button in ipairs(frame.buttons) do
+            if self.HideAuraTextureVisual then
+                self:HideAuraTextureVisual(button)
+            end
             self:RemoveButtonFromMasque(groupId, button)
             local onUpdate = button:GetScript("OnUpdate")
             if onUpdate then
@@ -1061,6 +1064,12 @@ end
 -- Discard a dormant frame permanently (used by delete operations).
 function CooldownCompanion:DiscardDormantFrame(groupId)
     if self._dormantFrames then
+        local frame = self._dormantFrames[groupId]
+        if frame and frame.buttons and self.ReleaseAuraTextureVisual then
+            for _, button in ipairs(frame.buttons) do
+                self:ReleaseAuraTextureVisual(button)
+            end
+        end
         self._dormantFrames[groupId] = nil
     end
 end

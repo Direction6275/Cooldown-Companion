@@ -27,6 +27,7 @@ local pandemicButtonPreviewTokens = {}
 local readyPreviewTokens = {}
 local readyButtonPreviewTokens = {}
 local kphPreviewTokens = {}
+local textureIndicatorPreviewTokens = {}
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
@@ -378,4 +379,121 @@ end
 
 function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
     ClearAllPreviews(self, "_keyPressHighlightPreview", "_keyPressHighlightActive", nil, kphPreviewTokens, nil, nil, false)
+end
+
+--------------------------------------------------------------------------------
+-- Texture Indicator Previews
+--------------------------------------------------------------------------------
+
+local TEXTURE_INDICATOR_PREVIEW_FLAGS = {
+    proc = "_textureProcPreview",
+    aura = "_textureAuraPreview",
+    pandemic = "_texturePandemicPreview",
+    ready = "_textureReadyPreview",
+    unusable = "_textureUnusablePreview",
+}
+
+local function GetTextureIndicatorTokenStore(indicatorKey)
+    if not textureIndicatorPreviewTokens[indicatorKey] then
+        textureIndicatorPreviewTokens[indicatorKey] = {}
+    end
+    return textureIndicatorPreviewTokens[indicatorKey]
+end
+
+function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey, show)
+    local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
+    if not previewFlag then
+        return
+    end
+
+    SetGroupPreview(
+        self,
+        groupId,
+        show,
+        previewFlag,
+        "_textureIndicatorPreviewDirty",
+        false,
+        GetTextureIndicatorTokenStore(indicatorKey),
+        nil,
+        nil,
+        true
+    )
+end
+
+function CooldownCompanion:PlayGroupTextureIndicatorPreview(groupId, indicatorKey, durationSeconds)
+    local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
+    if not previewFlag then
+        return
+    end
+
+    PlayGroupPreview(
+        self,
+        groupId,
+        durationSeconds,
+        GetTextureIndicatorTokenStore(indicatorKey),
+        function(_, previewGroupId, show)
+            self:SetGroupTextureIndicatorPreview(previewGroupId, indicatorKey, show)
+        end
+    )
+end
+
+function CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    for indicatorKey in pairs(TEXTURE_INDICATOR_PREVIEW_FLAGS) do
+        wipe(GetTextureIndicatorTokenStore(indicatorKey))
+    end
+
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            button._textureProcPreview = nil
+            button._textureAuraPreview = nil
+            button._texturePandemicPreview = nil
+            button._textureReadyPreview = nil
+            button._textureUnusablePreview = nil
+            button._textureIndicatorPreviewDirty = false
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Aura Texture Picker Preview
+--------------------------------------------------------------------------------
+
+function CooldownCompanion:SetAuraTexturePickerPreview(groupId, buttonIndex, selection)
+    local frame = self.groupFrames[groupId]
+    if not frame then
+        return
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            button._auraTexturePreviewSelection = selection and CopyTable(selection) or nil
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+            return
+        end
+    end
+end
+
+function CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            local hadPreview = button._auraTexturePreviewSelection ~= nil
+            if hadPreview then
+                button._auraTexturePreviewSelection = nil
+            end
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+        end
+    end
 end

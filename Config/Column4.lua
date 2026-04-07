@@ -185,6 +185,9 @@ local function RefreshColumn4(container)
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             CS.selectedTab = tab
+            if tab ~= "effects" then
+                CooldownCompanion:ClearAllTextureIndicatorPreviews()
+            end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs
             for _, btn in ipairs(CS.tabInfoButtons) do
@@ -254,7 +257,9 @@ local function RefreshColumn4(container)
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
     if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
     -- Text mode has no Indicators tab — redirect to Appearance
-    if isTextMode and CS.selectedTab == "effects" then CS.selectedTab = "appearance" end
+    if isTextMode and CS.selectedTab == "effects" then
+        CS.selectedTab = "appearance"
+    end
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col4Scroll and creates a new one)

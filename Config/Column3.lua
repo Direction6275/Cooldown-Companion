@@ -193,6 +193,9 @@ local function RefreshColumn3()
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
                 CS.panelSettingsTab = tab
+                if tab ~= "effects" then
+                    CooldownCompanion:ClearAllTextureIndicatorPreviews()
+                end
                 for _, btn in ipairs(CS.tabInfoButtons) do
                     btn:ClearAllPoints(); btn:Hide(); btn:SetParent(nil)
                 end
@@ -240,8 +243,10 @@ local function RefreshColumn3()
         tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
         col3Normal._panelTabGroup:SetTabs(tabs)
 
-        -- Migrate stale tab / text-mode redirect
-        if isTextMode and CS.panelSettingsTab == "effects" then CS.panelSettingsTab = "appearance" end
+        -- Migrate stale tab / mode redirects
+        if isTextMode and CS.panelSettingsTab == "effects" then
+            CS.panelSettingsTab = "appearance"
+        end
 
         -- Save scroll state before SelectTab releases the old ScrollFrame
         local savedOffset, savedScrollvalue
