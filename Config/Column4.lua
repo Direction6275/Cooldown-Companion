@@ -13,7 +13,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 
 ------------------------------------------------------------------------
--- COLUMN 4: Group Settings / Tab Column
+-- COLUMN 4: Group / Panel Settings Column
 ------------------------------------------------------------------------
 local function RefreshColumn4(container)
     -- Hide browse placeholder
@@ -100,15 +100,8 @@ local function RefreshColumn4(container)
         return
     end
 
-    -- Determine if any button is selected (for specificity cascade)
-    local anyButtonSelected = CS.selectedButton ~= nil
-    if not anyButtonSelected then
-        for _ in pairs(CS.selectedButtons) do anyButtonSelected = true; break end
-    end
-
-    -- Container settings: container selected AND NOT (panel + button both selected)
-    -- Covers: no panel selected, OR panel selected but no button → Column 3 handles panel settings
-    if CS.selectedContainer and not (CS.selectedGroup and anyButtonSelected) then
+    -- Group settings: direct group selection with no panel selected.
+    if CS.selectedContainer and not CS.selectedGroup then
         if container.placeholderLabel then container.placeholderLabel:Hide() end
         if container.tabGroup then container.tabGroup.frame:Hide() end
 
@@ -174,6 +167,8 @@ local function RefreshColumn4(container)
         return
     end
 
+    -- Single panel selection: show panel settings in Column 4 whether the panel
+    -- itself or one of its buttons is selected.
     if container.placeholderLabel then
         container.placeholderLabel:Hide()
     end
@@ -185,6 +180,7 @@ local function RefreshColumn4(container)
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             CS.selectedTab = tab
+            CS.panelSettingsTab = tab
             if tab ~= "effects" then
                 CooldownCompanion:ClearAllTextureIndicatorPreviews()
             end
@@ -260,6 +256,7 @@ local function RefreshColumn4(container)
     if isTextMode and CS.selectedTab == "effects" then
         CS.selectedTab = "appearance"
     end
+    CS.panelSettingsTab = CS.selectedTab
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col4Scroll and creates a new one)
