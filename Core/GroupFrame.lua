@@ -1538,6 +1538,32 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
     local normalizedAnchor, _, deferred = self:NormalizeContainerAnchor(anchor)
     if not deferred then
         anchor = normalizedAnchor
+    else
+        local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+        local anchorState = self.GetContainerAnchorTargetState and self:GetContainerAnchorTargetState(frame.containerId, relativeTo) or nil
+        local rawX = tonumber(anchor and anchor.x) or 0
+        local rawY = tonumber(anchor and anchor.y) or 0
+
+        if anchorState == "ok" then
+            local relativeFrame = relativeTo and _G[relativeTo]
+            if relativeFrame then
+                frame:ClearAllPoints()
+                frame:SetPoint(anchor.point or "CENTER", relativeFrame, anchor.relativePoint or "CENTER", rawX, rawY)
+                UpdateCoordLabel(frame, rawX, rawY)
+                return
+            end
+        elseif anchorState == "unsafe" then
+            local unsafeFrame = relativeTo and _G[relativeTo]
+            if ApplyUnsafeAnchorVisualFallback(frame, anchor, unsafeFrame) then
+                UpdateCoordLabel(frame, rawX, rawY)
+                return
+            end
+        elseif anchorState == "missing" then
+            frame:ClearAllPoints()
+            frame:SetPoint(anchor.point or "CENTER", UIParent, anchor.relativePoint or "CENTER", rawX, rawY)
+            UpdateCoordLabel(frame, rawX, rawY)
+            return
+        end
     end
 
     frame:ClearAllPoints()

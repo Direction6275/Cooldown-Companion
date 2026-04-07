@@ -118,7 +118,7 @@ function CooldownCompanion:FinalizeContainerAnchorsToScreenOffsets()
     if not containers then return end
 
     for containerId, container in pairs(containers) do
-        if type(container) == "table" then
+        if type(container) == "table" and self:IsContainerVisibleToCurrentChar(containerId) then
             local anchor = type(container.anchor) == "table" and container.anchor or nil
             local relativeTo = anchor and anchor.relativeTo
             local skipFinalize = IsAddonAnchorFrameName(relativeTo)

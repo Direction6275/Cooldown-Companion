@@ -1561,8 +1561,10 @@ function CooldownCompanion:MigrateContainerAnchorsToScreenOffsets()
     local profile = self.db.profile
     if profile._migratedContainerAnchorsToScreenOffsets then return end
 
-    for _, container in pairs(profile.groupContainers or {}) do
-        container.anchor = self:NormalizeContainerAnchor(container.anchor)
+    for containerId, container in pairs(profile.groupContainers or {}) do
+        if self:IsContainerVisibleToCurrentChar(containerId) then
+            container.anchor = self:NormalizeContainerAnchor(container.anchor)
+        end
     end
 
     profile._migratedContainerAnchorsToScreenOffsets = true
