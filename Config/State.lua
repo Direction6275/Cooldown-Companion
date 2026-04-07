@@ -158,6 +158,7 @@ ST._configState = {
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
     panelContextMenu = nil,
+    col2PanelTypeMenu = nil,
     charCopyMenu = nil,
 
     -- Cross-character browse mode

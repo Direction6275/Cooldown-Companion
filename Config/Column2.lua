@@ -821,11 +821,9 @@ local function RefreshColumn2()
         if CS.col2ButtonBar then
             CS.col2ButtonBar:Show()
             local barW = CS.col2ButtonBar:GetWidth() or 300
-            local panelBtnWidth = (barW - 9) / 4
+            local panelBtnWidth = (barW - 6) / 3
 
-            local iconPanelBtn = AceGUI:Create("Button")
-            iconPanelBtn:SetText("Icon Panel")
-            iconPanelBtn:SetCallback("OnClick", function()
+            local function CreateIconPanel()
                 local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
                 if newPanelId then
                     CS.selectedGroup = newPanelId
@@ -833,18 +831,9 @@ local function RefreshColumn2()
                     CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
-            end)
-            iconPanelBtn.frame:SetParent(CS.col2ButtonBar)
-            iconPanelBtn.frame:ClearAllPoints()
-            iconPanelBtn.frame:SetPoint("TOPLEFT", CS.col2ButtonBar, "TOPLEFT", 0, -1)
-            iconPanelBtn.frame:SetWidth(panelBtnWidth)
-            iconPanelBtn.frame:SetHeight(28)
-            iconPanelBtn.frame:Show()
-            table.insert(CS.col2BarWidgets, iconPanelBtn)
+            end
 
-            local barPanelBtn = AceGUI:Create("Button")
-            barPanelBtn:SetText("Bar Panel")
-            barPanelBtn:SetCallback("OnClick", function()
+            local function CreateBarPanel()
                 local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "bars")
                 if newPanelId then
                     local group = CooldownCompanion.db.profile.groups[newPanelId]
@@ -860,18 +849,9 @@ local function RefreshColumn2()
                     CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
-            end)
-            barPanelBtn.frame:SetParent(CS.col2ButtonBar)
-            barPanelBtn.frame:ClearAllPoints()
-            barPanelBtn.frame:SetPoint("LEFT", iconPanelBtn.frame, "RIGHT", 3, 0)
-            barPanelBtn.frame:SetWidth(panelBtnWidth)
-            barPanelBtn.frame:SetHeight(28)
-            barPanelBtn.frame:Show()
-            table.insert(CS.col2BarWidgets, barPanelBtn)
+            end
 
-            local textPanelBtn = AceGUI:Create("Button")
-            textPanelBtn:SetText("Text Panel")
-            textPanelBtn:SetCallback("OnClick", function()
+            local function CreateTextPanel()
                 local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "text")
                 if newPanelId then
                     local group = CooldownCompanion.db.profile.groups[newPanelId]
@@ -887,18 +867,9 @@ local function RefreshColumn2()
                     CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
-            end)
-            textPanelBtn.frame:SetParent(CS.col2ButtonBar)
-            textPanelBtn.frame:ClearAllPoints()
-            textPanelBtn.frame:SetPoint("LEFT", barPanelBtn.frame, "RIGHT", 3, 0)
-            textPanelBtn.frame:SetWidth(panelBtnWidth)
-            textPanelBtn.frame:SetHeight(28)
-            textPanelBtn.frame:Show()
-            table.insert(CS.col2BarWidgets, textPanelBtn)
+            end
 
-            local texturePanelBtn = AceGUI:Create("Button")
-            texturePanelBtn:SetText("Texture Panel")
-            texturePanelBtn:SetCallback("OnClick", function()
+            local function CreateTexturePanel()
                 local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "textures")
                 if newPanelId then
                     CS.selectedGroup = newPanelId
@@ -908,25 +879,78 @@ local function RefreshColumn2()
                     CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
                 end
+            end
+
+            local iconPanelBtn = AceGUI:Create("Button")
+            iconPanelBtn:SetText("Icon Panel")
+            iconPanelBtn:SetCallback("OnClick", CreateIconPanel)
+            iconPanelBtn.frame:SetParent(CS.col2ButtonBar)
+            iconPanelBtn.frame:ClearAllPoints()
+            iconPanelBtn.frame:SetPoint("TOPLEFT", CS.col2ButtonBar, "TOPLEFT", 0, -1)
+            iconPanelBtn.frame:SetWidth(panelBtnWidth)
+            iconPanelBtn.frame:SetHeight(28)
+            iconPanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, iconPanelBtn)
+
+            local barPanelBtn = AceGUI:Create("Button")
+            barPanelBtn:SetText("Bar Panel")
+            barPanelBtn:SetCallback("OnClick", CreateBarPanel)
+            barPanelBtn.frame:SetParent(CS.col2ButtonBar)
+            barPanelBtn.frame:ClearAllPoints()
+            barPanelBtn.frame:SetPoint("LEFT", iconPanelBtn.frame, "RIGHT", 3, 0)
+            barPanelBtn.frame:SetWidth(panelBtnWidth)
+            barPanelBtn.frame:SetHeight(28)
+            barPanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, barPanelBtn)
+
+            local otherPanelBtn = AceGUI:Create("Button")
+            otherPanelBtn:SetText("Extra")
+            otherPanelBtn:SetCallback("OnClick", function()
+                if not CS.col2PanelTypeMenu then
+                    CS.col2PanelTypeMenu = CreateFrame("Frame", "CDCCol2PanelTypeMenu", UIParent, "UIDropDownMenuTemplate")
+                end
+                UIDropDownMenu_Initialize(CS.col2PanelTypeMenu, function(self, level)
+                    level = level or 1
+                    if level ~= 1 then return end
+
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = "Text Panel"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        CreateTextPanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Texture Panel"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        CreateTexturePanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end, "MENU")
+                CS.col2PanelTypeMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+                ToggleDropDownMenu(1, nil, CS.col2PanelTypeMenu, "cursor", 0, 0)
             end)
-            texturePanelBtn.frame:SetParent(CS.col2ButtonBar)
-            texturePanelBtn.frame:ClearAllPoints()
-            texturePanelBtn.frame:SetPoint("LEFT", textPanelBtn.frame, "RIGHT", 3, 0)
-            texturePanelBtn.frame:SetWidth(panelBtnWidth)
-            texturePanelBtn.frame:SetHeight(28)
-            texturePanelBtn.frame:Show()
-            table.insert(CS.col2BarWidgets, texturePanelBtn)
+            otherPanelBtn.frame:SetParent(CS.col2ButtonBar)
+            otherPanelBtn.frame:ClearAllPoints()
+            otherPanelBtn.frame:SetPoint("LEFT", barPanelBtn.frame, "RIGHT", 3, 0)
+            otherPanelBtn.frame:SetWidth(panelBtnWidth)
+            otherPanelBtn.frame:SetHeight(28)
+            otherPanelBtn.frame:Show()
+            table.insert(CS.col2BarWidgets, otherPanelBtn)
 
             -- Dynamic equal-width resize for panel buttons
             CS.col2ButtonBar._topRowBtns = {
                 iconPanelBtn.frame,
                 barPanelBtn.frame,
-                textPanelBtn.frame,
-                texturePanelBtn.frame,
+                otherPanelBtn.frame,
             }
             CS.col2ButtonBar:SetScript("OnSizeChanged", function(self, w)
                 if self._topRowBtns then
-                    local tw = (w - 9) / 4
+                    local tw = (w - 6) / 3
                     for _, f in ipairs(self._topRowBtns) do
                         f:SetWidth(tw)
                     end
