@@ -69,6 +69,12 @@ local function GetAttachedCastBarPanelYOffset(settings)
     if settings.panelAnchorYOffsetEnabled ~= true then
         return 0
     end
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    if not rbSettings
+        or rbSettings.enabled ~= true
+        or rbSettings.independentAnchorEnabled == true then
+        return 0
+    end
     return tonumber(settings.panelAnchorYOffset) or 0
 end
 

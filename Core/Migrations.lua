@@ -1118,13 +1118,18 @@ function CooldownCompanion:MigrateRemoveAuraDurationCache()
     self.db.profile.auraDurationCache = nil
 end
 
--- Convert negative resourceBars.yOffset to positive.
--- The slider range changed from [-50, 50] to [0, 50]; old default was -3.
+-- Normalize only legacy shared resource-bar settings that predate the
+-- character-scoped buckets. Modern character-scoped values may be negative on
+-- purpose now, so leave those untouched.
 function CooldownCompanion:MigrateResourceBarYOffset()
-    local rb = self.db.profile.resourceBars
-    if rb and rb.yOffset and rb.yOffset < 0 then
-        rb.yOffset = math.abs(rb.yOffset)
+    local function normalizeLegacyYOffset(settings)
+        if type(settings) == "table" and settings.yOffset and settings.yOffset < 0 then
+            settings.yOffset = math.abs(settings.yOffset)
+        end
     end
+
+    normalizeLegacyYOffset(rawget(self.db.profile, "resourceBars"))
+    normalizeLegacyYOffset(rawget(self.db.profile, "legacyResourceBarsSeed"))
 end
 
 -- Remove the old castBar.yOffset field from all storage buckets.
