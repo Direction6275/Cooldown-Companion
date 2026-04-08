@@ -648,6 +648,145 @@ function CooldownCompanion:PopulateAnchorDropdown(dropdown)
     return eligibleCount
 end
 
+function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGroupId)
+    local db = self.db.profile
+    local containers = db.groupContainers or {}
+    local folders = db.folders or {}
+    local folderContainers = {}
+    local looseContainers = {}
+    local eligibleCount = 0
+
+    dropdown:SetList({}, {})
+
+    for groupId, group in pairs(db.groups) do
+        local targetFrameName = "CooldownCompanionGroup" .. groupId
+        if groupId ~= sourceGroupId
+            and group.parentContainerId
+            and _G[targetFrameName]
+            and not self:WouldCreateCircularAnchor(sourceGroupId, groupId)
+            and self:IsGroupActive(groupId, {
+                group = group,
+                checkCharVisibility = true,
+                checkLoadConditions = true,
+                requireButtons = true,
+            }) then
+            eligibleCount = eligibleCount + 1
+            local cid = group.parentContainerId
+            local ctr = containers[cid]
+            local fid = ctr and ctr.folderId
+            local contName = ctr and ctr.name or "Group"
+            local panelName = group.name or ("Panel " .. groupId)
+            local panelEntry = {
+                id = groupId,
+                key = tostring(groupId),
+                name = panelName,
+                contName = contName,
+                order = group.order or groupId,
+            }
+            local containerBucket
+            local entry = {
+                id = cid,
+                name = contName,
+                order = self:GetOrderForSpec(ctr or {}, self._currentSpecId, cid),
+                panels = {},
+            }
+            if fid and folders[fid] then
+                folderContainers[fid] = folderContainers[fid] or {}
+                containerBucket = folderContainers[fid][cid]
+                if not containerBucket then
+                    containerBucket = entry
+                    folderContainers[fid][cid] = containerBucket
+                end
+            else
+                containerBucket = looseContainers[cid]
+                if not containerBucket then
+                    containerBucket = entry
+                    looseContainers[cid] = containerBucket
+                end
+            end
+            table.insert(containerBucket.panels, panelEntry)
+        end
+    end
+
+    local sortedFolders = {}
+    for fid, folder in pairs(folders) do
+        if folderContainers[fid] then
+            table.insert(sortedFolders, {
+                id = fid,
+                name = folder.name or ("Folder " .. fid),
+                order = self:GetOrderForSpec(folder, self._currentSpecId, fid),
+            })
+        end
+    end
+    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
+
+    local hasHeaders = #sortedFolders > 0
+
+    for _, folder in ipairs(sortedFolders) do
+        local hdrKey = "_panel_hdr_" .. folder.id
+        dropdown:AddItem(hdrKey, "|cffffd100" .. folder.name .. "|r")
+        dropdown:SetItemDisabled(hdrKey, true)
+
+        local sortedContainers = {}
+        for _, container in pairs(folderContainers[folder.id]) do
+            table.insert(sortedContainers, container)
+        end
+        table.sort(sortedContainers, function(a, b)
+            if a.order ~= b.order then return a.order < b.order end
+            return a.name < b.name
+        end)
+
+        for _, container in ipairs(sortedContainers) do
+            local containerHdrKey = "_panel_ctr_" .. folder.id .. "_" .. tostring(container.id)
+            dropdown:AddItem(containerHdrKey, "   |cffffd100" .. container.name .. "|r")
+            dropdown:SetItemDisabled(containerHdrKey, true)
+
+            table.sort(container.panels, function(a, b)
+                if a.order ~= b.order then return a.order < b.order end
+                return a.name < b.name
+            end)
+            for _, panel in ipairs(container.panels) do
+                dropdown:AddItem(panel.key, "      " .. panel.name)
+                dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
+            end
+        end
+    end
+
+    local sortedLooseContainers = {}
+    for _, container in pairs(looseContainers) do
+        table.insert(sortedLooseContainers, container)
+    end
+
+    if #sortedLooseContainers > 0 then
+        if hasHeaders then
+            dropdown:AddItem("_panel_hdr_none", "|cffffd100No Folder|r")
+            dropdown:SetItemDisabled("_panel_hdr_none", true)
+        end
+        table.sort(sortedLooseContainers, function(a, b)
+            if a.order ~= b.order then return a.order < b.order end
+            return a.name < b.name
+        end)
+        for _, container in ipairs(sortedLooseContainers) do
+            local containerHdrKey = "_panel_ctr_none_" .. tostring(container.id)
+            local containerPrefix = hasHeaders and "   " or ""
+            dropdown:AddItem(containerHdrKey, containerPrefix .. "|cffffd100" .. container.name .. "|r")
+            dropdown:SetItemDisabled(containerHdrKey, true)
+
+            table.sort(container.panels, function(a, b)
+                if a.order ~= b.order then return a.order < b.order end
+                return a.name < b.name
+            end)
+            for _, panel in ipairs(container.panels) do
+                local panelPrefix = hasHeaders and "      " or "   "
+                dropdown:AddItem(panel.key, panelPrefix .. panel.name)
+                dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
+            end
+        end
+    end
+
+    return eligibleCount
+end
+
 function CooldownCompanion:CheckLoadConditions(group)
     local lc = group.loadConditions
     if not lc then return true end
