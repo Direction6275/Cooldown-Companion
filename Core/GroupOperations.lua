@@ -512,6 +512,27 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     return true
 end
 
+function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return false end
+    if not group.parentContainerId then return false end
+    if group.displayMode == "textures" then return false end
+
+    local container = self:GetParentContainer(group)
+    if container and container.isGlobal and not container.anchorEligible then return false end
+    if container and not container.isGlobal and container.anchorEligible == false then return false end
+
+    if not self:IsGroupActive(groupId, {
+        group = group,
+        checkCharVisibility = true,
+        checkLoadConditions = true,
+    }) then
+        return false
+    end
+
+    return true
+end
+
 function CooldownCompanion:GetFirstAvailableAnchorGroup()
     local db = self.db.profile
     local groups = db.groups
@@ -661,15 +682,9 @@ function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGro
     for groupId, group in pairs(db.groups) do
         local targetFrameName = "CooldownCompanionGroup" .. groupId
         if groupId ~= sourceGroupId
-            and group.parentContainerId
             and _G[targetFrameName]
             and not self:WouldCreateCircularAnchor(sourceGroupId, groupId)
-            and self:IsGroupActive(groupId, {
-                group = group,
-                checkCharVisibility = true,
-                checkLoadConditions = true,
-                requireButtons = true,
-            }) then
+            and self:IsGroupAvailableForPanelAnchorTarget(groupId) then
             eligibleCount = eligibleCount + 1
             local cid = group.parentContainerId
             local ctr = containers[cid]
