@@ -322,7 +322,12 @@ function CooldownCompanion:MigrateStandaloneAuraMetadata()
     for _, group in pairs(profile.groups or {}) do
         if group.buttons then
             for _, buttonData in ipairs(group.buttons) do
-                self:NormalizeStandaloneAuraButtonData(buttonData, group.buttons)
+                self:NormalizeStandaloneAuraButtonData(buttonData, group.buttons, {
+                    -- Be conservative on legacy/imported data: an old saved
+                    -- addedAs="aura" label is not enough proof by itself that
+                    -- the entry was intentionally created as aura-only.
+                    trustExplicitAuraLabel = false,
+                })
             end
         end
     end

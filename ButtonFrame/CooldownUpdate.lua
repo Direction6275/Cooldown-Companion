@@ -1029,7 +1029,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- this spell, a proc may have reset its cooldown — let the GCD-only
     -- detection stand so the button saturates immediately.
     if buttonData.type == "spell"
-       and not buttonData.hasCharges
+       and not usesChargeBehavior
        and not auraOverrideActive
        and buttonData._cooldownSecrecy ~= 0
        and button._postCastGCDHold
@@ -1050,7 +1050,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and isGCDOnly
-            and not buttonData.hasCharges and not buttonData.isPassive
+            and not usesChargeBehavior and not buttonData.isPassive
     end
 
     -- Bar mode icon-only GCD swipe.
@@ -1101,7 +1101,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
             button._mainCDShown = false
-        elseif buttonData.type == "spell" and buttonData.hasCharges then
+        elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
             -- which is NOT charge-aware (isActive = isEnabled and startTime > 0
