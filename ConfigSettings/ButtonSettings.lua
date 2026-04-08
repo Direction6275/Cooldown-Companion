@@ -1492,7 +1492,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                             if sectionId == "readyGlow" then
                                 local cappedCb = AceGUI:Create("CheckBox")
                                 cappedCb:SetLabel("Glow When Charges Are Capped")
-                                cappedCb:SetValue(overrides.readyGlowOnlyAtMaxCharges or false)
+                                cappedCb:SetValue(GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") or false)
                                 cappedCb:SetFullWidth(true)
                                 cappedCb:SetCallback("OnValueChanged", function(widget, event, val)
                                     overrides.readyGlowOnlyAtMaxCharges = val == true

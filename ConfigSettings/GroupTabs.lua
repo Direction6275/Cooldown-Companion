@@ -1337,6 +1337,9 @@ local function BuildEffectsTab(container)
     readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowDuration = val and 3 or 0
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        if val and style.readyGlowOnlyAtMaxCharges then
+            PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+        end
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
     end)
