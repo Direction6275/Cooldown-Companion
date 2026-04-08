@@ -72,6 +72,14 @@ local function AddCooldownInfoCandidateIDs(candidateSet, cooldownInfo)
     end
 end
 
+local function HasBuffSuffixName(name)
+    return type(name) == "string" and name:match("%s%([Bb]uff%)$") ~= nil
+end
+
+local function HasValidAuraUnit(buttonData)
+    return buttonData and (buttonData.auraUnit == "player" or buttonData.auraUnit == "target")
+end
+
 local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
     local numericAuraID = tonumber(auraSpellID)
     if not numericAuraID or numericAuraID == 0 then
@@ -472,17 +480,64 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
     return data
 end
 
-function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData)
+function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
 
-    local isAuraOnlyEntry = buttonData.addedAs == "aura" or buttonData.isPassive == true
+    if buttonData.isPassive == true or buttonData.addedAs == "aura" then
+        return true
+    end
+
+    local hasAuraMarkers = buttonData.auraTracking == true
+        or buttonData.auraIndicatorEnabled == true
+        or buttonData.auraSpellID ~= nil
+    if not hasAuraMarkers then
+        return false
+    end
+
+    if HasBuffSuffixName(buttonData.name) then
+        return true
+    end
+
+    if siblingButtons then
+        for _, siblingData in ipairs(siblingButtons) do
+            if siblingData ~= buttonData
+                and siblingData
+                and siblingData.type == "spell"
+                and siblingData.id == buttonData.id
+                and siblingData.cdmChildSlot == buttonData.cdmChildSlot then
+                if siblingData.auraTracking ~= true or siblingData.addedAs == "spell" then
+                    return true
+                end
+            end
+        end
+    end
+
+    if C_Spell.IsSpellHarmful(buttonData.id) and not HasValidAuraUnit(buttonData) then
+        return true
+    end
+
+    return false
+end
+
+function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, siblingButtons)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    local recoverLegacyAura = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons)
+    local isAuraOnlyEntry = recoverLegacyAura
     if not isAuraOnlyEntry then
         return false
     end
 
     local changed = false
+    if buttonData.addedAs ~= "aura" then
+        buttonData.addedAs = "aura"
+        changed = true
+    end
+
     -- Preserve an explicit user disable on aura-only entries. Only restore the
     -- toggle when the value is missing, or when passive entries need their
     -- always-on tracking behavior back.

@@ -70,8 +70,10 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.auraIndicatorMigrated = nil
     profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
+    profile.addedAsClassificationV2Migrated = nil
     profile.standaloneAuraMetadataMigrated = nil
     profile.standaloneAuraLinkMetadataMigrated = nil
+    profile.standaloneAuraMetadataV2Migrated = nil
     profile.invertAuraDesaturationLogicMigrated = nil
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
@@ -316,7 +318,7 @@ function CooldownCompanion:MigrateStandaloneAuraMetadata()
     for _, group in pairs(profile.groups or {}) do
         if group.buttons then
             for _, buttonData in ipairs(group.buttons) do
-                self:NormalizeStandaloneAuraButtonData(buttonData)
+                self:NormalizeStandaloneAuraButtonData(buttonData, group.buttons)
             end
         end
     end

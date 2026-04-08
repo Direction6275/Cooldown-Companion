@@ -1199,7 +1199,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     end
 
     if buttonType == "spell" then
-        self:NormalizeStandaloneAuraButtonData(group.buttons[buttonIndex])
+        self:NormalizeStandaloneAuraButtonData(group.buttons[buttonIndex], group.buttons)
     end
 
     self:RefreshGroupFrame(groupId)
