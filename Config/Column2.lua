@@ -133,7 +133,8 @@ end
 
 local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
     local viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
-    return CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, viewerFrame)
+    local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
+    return auraStatus.ready == true, auraStatus
 end
 
 local function CanTexturePanelAcceptEntry(group)
@@ -1860,13 +1861,23 @@ local function RefreshColumn2()
                         if buttonData.auraTracking then
                             auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
                             auraBadge:SetFrameLevel(rowBadgeLevel)
-                            local auraReady = IsAuraTrackingConfigReady(buttonData, cdmEnabled)
+                            local auraReady, auraStatus = IsAuraTrackingConfigReady(buttonData, cdmEnabled)
                             if auraReady then
                                 auraBadge.icon:SetVertexColor(1, 1, 1, 1)
                                 SetRowBadgeTooltip(auraBadge, "Aura tracking: Active", 0.2, 1, 0.2)
                             else
                                 auraBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
-                                SetRowBadgeTooltip(auraBadge, "Aura tracking: Inactive", 1, 0.2, 0.2)
+                                local tooltipText = "Aura tracking: Inactive"
+                                if auraStatus and auraStatus.state == "cdmDisabled" then
+                                    tooltipText = "Aura tracking: Inactive (Blizzard CDM disabled)"
+                                elseif auraStatus and auraStatus.state == "trackedAuraUnavailable" then
+                                    tooltipText = "Aura tracking: Inactive (tracked in CDM, but the Buffs/Debuffs viewer is not currently readable)"
+                                elseif auraStatus and auraStatus.state == "associatedAuraNotTracked" then
+                                    tooltipText = "Aura tracking: Inactive (associated aura is not currently tracked in CDM)"
+                                elseif auraStatus and auraStatus.state == "noAssociatedAura" then
+                                    tooltipText = "Aura tracking: Inactive (no associated aura found)"
+                                end
+                                SetRowBadgeTooltip(auraBadge, tooltipText, 1, 0.2, 0.2)
                             end
                             auraBadge:Show()
                         end

@@ -21,12 +21,203 @@ local COOLDOWN_VIEWER_NAMES = ST._COOLDOWN_VIEWER_NAMES
 local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
 local cdmAlphaGuard = ST._cdmAlphaGuard
 local pendingViewerAuraMapToken = 0
+local FindChildInViewers
+local TRACKED_AURA_CATEGORIES = {
+    Enum.CooldownViewerCategory.TrackedBuff,
+    Enum.CooldownViewerCategory.TrackedBar,
+}
+local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
+    Enum.CooldownViewerCategory.Essential,
+    Enum.CooldownViewerCategory.Utility,
+    Enum.CooldownViewerCategory.TrackedBuff,
+    Enum.CooldownViewerCategory.TrackedBar,
+}
 
 local function IsBuffViewerChild(frame)
     if not frame then return false end
     local parent = frame:GetParent()
     local parentName = parent and parent:GetName()
     return BUFF_VIEWER_SET[parentName] == true
+end
+
+local function AddAuraCandidateID(candidateSet, spellID)
+    local numericID = tonumber(spellID)
+    if numericID and numericID ~= 0 then
+        candidateSet[numericID] = true
+    end
+end
+
+local function AddAuraCandidateIDsFromString(candidateSet, rawIDs)
+    if not rawIDs then
+        return
+    end
+    for id in tostring(rawIDs):gmatch("%d+") do
+        AddAuraCandidateID(candidateSet, id)
+    end
+end
+
+local function AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, spellID)
+    local numericID = tonumber(spellID)
+    if not numericID or numericID == 0 then
+        return
+    end
+    candidateSet[numericID] = true
+    if orderedSet[numericID] then
+        return
+    end
+    orderedSet[numericID] = true
+    orderedIDs[#orderedIDs + 1] = numericID
+end
+
+local function AppendOrderedAuraCandidateIDsFromString(candidateSet, orderedSet, orderedIDs, rawIDs)
+    if not rawIDs then
+        return
+    end
+    for id in tostring(rawIDs):gmatch("%d+") do
+        AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, id)
+    end
+end
+
+local function AddCooldownInfoCandidateIDs(candidateSet, cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return
+    end
+
+    AddAuraCandidateID(candidateSet, cooldownInfo.spellID)
+    AddAuraCandidateID(candidateSet, cooldownInfo.overrideSpellID)
+    AddAuraCandidateID(candidateSet, cooldownInfo.overrideTooltipSpellID)
+
+    if cooldownInfo.linkedSpellIDs then
+        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
+            AddAuraCandidateID(candidateSet, linkedSpellID)
+        end
+    end
+end
+
+local function HasBuffSuffixName(name)
+    return type(name) == "string" and name:match("%s%([Bb]uff%)$") ~= nil
+end
+
+local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
+    local numericAuraID = tonumber(auraSpellID)
+    if not numericAuraID or numericAuraID == 0 then
+        return nil
+    end
+
+    local auraBase = C_Spell.GetBaseSpell(numericAuraID)
+    if auraBase and auraBase == baseId and auraBase ~= numericAuraID then
+        return baseId
+    end
+
+    return numericAuraID
+end
+
+local function ResolveViewerFrameForSpellID(spellID, buffOnly)
+    local numericID = tonumber(spellID)
+    if not numericID or numericID == 0 then
+        return nil
+    end
+
+    local candidate = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[numericID]
+    if candidate and type(candidate.cooldownInfo) == "table" and (not buffOnly or IsBuffViewerChild(candidate)) then
+        return candidate
+    end
+
+    candidate = FindChildInViewers(VIEWER_NAMES, numericID, buffOnly)
+    if candidate then
+        CooldownCompanion.viewerAuraFrames[numericID] = candidate
+    end
+    return candidate
+end
+
+local function CooldownInfoMatchesCandidateSet(cooldownInfo, candidateSet)
+    if type(cooldownInfo) ~= "table" then
+        return false
+    end
+
+    local function MatchesSpellID(spellID)
+        local numericID = tonumber(spellID)
+        if not numericID or numericID == 0 then
+            return false
+        end
+        if candidateSet[numericID] then
+            return true
+        end
+
+        local baseSpellID = C_Spell.GetBaseSpell(numericID)
+        return baseSpellID and baseSpellID ~= numericID and candidateSet[baseSpellID] == true
+    end
+
+    if MatchesSpellID(cooldownInfo.spellID)
+        or MatchesSpellID(cooldownInfo.overrideSpellID)
+        or MatchesSpellID(cooldownInfo.overrideTooltipSpellID) then
+        return true
+    end
+
+    if cooldownInfo.linkedSpellIDs then
+        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
+            if MatchesSpellID(linkedSpellID) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function GetCooldownViewerDataProvider()
+    if not (CooldownViewerSettings and CooldownViewerSettings.GetDataProvider) then
+        return nil
+    end
+    return CooldownViewerSettings:GetDataProvider()
+end
+
+local function ForEachRawCooldownInfo(callback)
+    for _, category in ipairs(COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES) do
+        local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(category, true)
+        if cooldownIDs then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+                if info then
+                    callback(cooldownID, info, category)
+                end
+            end
+        end
+    end
+end
+
+local function ForEachAuraLayoutInfo(callback)
+    local dataProvider = GetCooldownViewerDataProvider()
+    if not dataProvider then
+        return false
+    end
+
+    for _, category in ipairs(TRACKED_AURA_CATEGORIES) do
+        local cooldownIDs = dataProvider:GetOrderedCooldownIDsForCategory(category, true)
+        if cooldownIDs then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local info = dataProvider:GetCooldownInfoForID(cooldownID)
+                if info then
+                    callback(cooldownID, info, category, true)
+                end
+            end
+        end
+    end
+
+    local hiddenAuraCategory = Enum.CooldownViewerCategory.HiddenAura
+    if hiddenAuraCategory ~= nil then
+        local cooldownIDs = dataProvider:GetOrderedCooldownIDsForCategory(hiddenAuraCategory, true)
+        if cooldownIDs then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local info = dataProvider:GetCooldownInfoForID(cooldownID)
+                if info then
+                    callback(cooldownID, info, hiddenAuraCategory, false)
+                end
+            end
+        end
+    end
+
+    return true
 end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
@@ -155,14 +346,8 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
         -- buff is always applied as the base spell regardless of form.
         local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-        local auraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
-        if auraId and auraId ~= 0 then
-            -- If the cooldown aura is a form variant of the same base spell,
-            -- use the base spell ID — the buff is always applied as base form.
-            local auraBase = C_Spell.GetBaseSpell(auraId)
-            if auraBase and auraBase == baseId and auraBase ~= auraId then
-                return baseId
-            end
+        local auraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+        if auraId then
             return auraId
         end
         -- Many spells share the same ID for cast and buff; fall back to the base spell ID
@@ -171,115 +356,317 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return nil
+    end
+
+    if buttonData.auraSpellID then
+        return tostring(buttonData.auraSpellID)
+    end
+
+    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
+    if overrideBuffs then
+        return overrideBuffs
+    end
+
+    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+    local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+    if resolvedAuraId and resolvedAuraId ~= buttonData.id then
+        return tostring(resolvedAuraId)
+    end
+
+    local buffViewerFrame = self:ResolveBuffViewerFrameForSpell(baseId)
+        or (baseId ~= buttonData.id and self:ResolveBuffViewerFrameForSpell(buttonData.id))
+    local distinctAuraIDs = {}
+    if buffViewerFrame and type(buffViewerFrame.cooldownInfo) == "table" then
+        local info = buffViewerFrame.cooldownInfo
+        for _, spellID in ipairs({
+            info.overrideSpellID,
+            info.overrideTooltipSpellID,
+        }) do
+            local numericID = tonumber(spellID)
+            if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+                distinctAuraIDs[numericID] = true
+            end
+        end
+        if info.linkedSpellIDs then
+            for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
+                local numericID = tonumber(linkedSpellID)
+                if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+                    distinctAuraIDs[numericID] = true
+                end
+            end
+        end
+    end
+
+    local inferredAuraSpellID
+    for spellID in pairs(distinctAuraIDs) do
+        if inferredAuraSpellID then
+            return nil
+        end
+        inferredAuraSpellID = tostring(spellID)
+    end
+
+    return inferredAuraSpellID
+end
+
+function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
+    local data = {
+        hasAssociatedAura = false,
+        hasTrackedAuraLayout = false,
+        trackedBuffViewerFrame = nil,
+    }
+
+    if not (buttonData and buttonData.type == "spell") then
+        return data
+    end
+
+    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+    local candidateIDs = {}
+    local orderedCandidateSet = {}
+    local orderedCandidateIDs = {}
+
+    AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
+    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
+    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+
+    local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
+    if resolvedAuraId and resolvedAuraId ~= 0 then
+        data.hasAssociatedAura = true
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
+    end
+
+    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
+    if overrideBuffs then
+        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
+    end
+
+    local function MergeCooldownInfo(cooldownInfo)
+        if type(cooldownInfo) ~= "table" then
+            return
+        end
+        AddCooldownInfoCandidateIDs(candidateIDs, cooldownInfo)
+    end
+
+    if viewerFrame and IsBuffViewerChild(viewerFrame) and type(viewerFrame.cooldownInfo) == "table" then
+        data.trackedBuffViewerFrame = viewerFrame
+        data.hasAssociatedAura = true
+        MergeCooldownInfo(viewerFrame.cooldownInfo)
+    end
+
+    -- Raw cooldown records expand candidate spell IDs, but the config text should
+    -- only consider an aura "found" if Blizzard places it in the aura layout
+    -- itself (tracked or hidden/not displayed), not merely on a cooldown record.
+    for _ = 1, 2 do
+        ForEachRawCooldownInfo(function(_cooldownID, info)
+            if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
+                MergeCooldownInfo(info)
+            end
+        end)
+    end
+
+    for spellID in pairs(candidateIDs) do
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, spellID)
+    end
+
+    if not data.trackedBuffViewerFrame then
+        for _, spellID in ipairs(orderedCandidateIDs) do
+            local candidate = self:ResolveBuffViewerFrameForSpell(spellID)
+            if candidate then
+                data.trackedBuffViewerFrame = candidate
+                data.hasAssociatedAura = true
+                MergeCooldownInfo(candidate.cooldownInfo)
+                break
+            end
+        end
+    end
+
+    for _, spellID in ipairs(orderedCandidateIDs) do
+        local candidate = ResolveViewerFrameForSpellID(spellID, false)
+        if candidate and type(candidate.cooldownInfo) == "table" then
+            MergeCooldownInfo(candidate.cooldownInfo)
+        end
+    end
+
+    for _ = 1, 2 do
+        ForEachAuraLayoutInfo(function(_cooldownID, info, _category, isTracked)
+            if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
+                if isTracked then
+                    data.hasTrackedAuraLayout = true
+                end
+                data.hasAssociatedAura = true
+                MergeCooldownInfo(info)
+            end
+        end)
+    end
+
+    return data
+end
+
+function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    options = options or {}
+
+    if buttonData.isPassive == true then
+        return true
+    end
+
+    if options.trustExplicitAuraLabel ~= false and buttonData.addedAs == "aura" then
+        return true
+    end
+
+    local hasAuraMarkers = buttonData.auraTracking == true
+        or buttonData.auraIndicatorEnabled == true
+        or buttonData.auraSpellID ~= nil
+    if not hasAuraMarkers then
+        return false
+    end
+
+    if HasBuffSuffixName(buttonData.name) then
+        return true
+    end
+
+    return false
+end
+
+function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, siblingButtons, options)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    local recoverLegacyAura = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
+    local isAuraOnlyEntry = recoverLegacyAura
+    if not isAuraOnlyEntry then
+        return false
+    end
+
+    local changed = false
+    if buttonData.addedAs ~= "aura" then
+        buttonData.addedAs = "aura"
+        changed = true
+    end
+
+    -- Aura entries are never dynamic spell buttons: keep auraTracking on so
+    -- they remain aura-only even when CDM is temporarily not ready.
+    if buttonData.addedAs == "aura" and buttonData.auraTracking ~= true then
+        buttonData.auraTracking = true
+        changed = true
+    end
+
+    if buttonData.auraIndicatorEnabled == nil then
+        buttonData.auraIndicatorEnabled = true
+        changed = true
+    end
+
+    if not buttonData.auraSpellID then
+        local inferredAuraSpellID = self:InferConfirmedAuraSpellIDString(buttonData)
+        if inferredAuraSpellID then
+            buttonData.auraSpellID = inferredAuraSpellID
+            changed = true
+        end
+    end
+
+    if buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then
+        buttonData.auraUnit = C_Spell.IsSpellHarmful(buttonData.id) and "target" or "player"
+        changed = true
+    end
+
+    return changed
+end
+
 function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
 
-    if buttonData.isPassive then
+    if buttonData.auraTracking ~= true and buttonData.isPassive ~= true then
+        return false
+    end
+
+    if cdmEnabled == nil then
+        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    end
+    if cdmEnabled ~= true then
+        return false
+    end
+
+    if viewerFrame ~= nil then
         return true
     end
 
-    if buttonData.auraTracking ~= true then
-        return false
-    end
-
-    if cdmEnabled == nil then
-        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-    end
-    if cdmEnabled ~= true then
-        return false
-    end
-
-    return viewerFrame ~= nil
+    -- Passive player auras can still track through direct aura API fallback
+    -- even when Blizzard has not built a readable Buff viewer child yet.
+    return buttonData.isPassive == true and (buttonData.auraUnit or "player") == "player"
 end
 
-function CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, viewerFrame)
+function CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
+    local status = {
+        state = "disabled",
+        ready = false,
+        cdmEnabled = false,
+        hasAssociatedAura = false,
+        hasTrackedAuraLayout = false,
+    }
+
     if not (buttonData and buttonData.type == "spell") then
-        return false
+        return status
     end
 
-    if buttonData.auraTracking ~= true then
-        return false
+    if buttonData.auraTracking ~= true and buttonData.isPassive ~= true then
+        return status
     end
 
     if cdmEnabled == nil then
         cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
     end
-    if cdmEnabled ~= true then
-        return false
+    status.cdmEnabled = cdmEnabled == true
+    if not status.cdmEnabled then
+        status.state = "cdmDisabled"
+        return status
     end
 
-    return viewerFrame ~= nil
+    local associationData = self:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
+    local hasTrackedBuffViewer = associationData.trackedBuffViewerFrame ~= nil
+    local hasTrackedAuraLayout = associationData.hasTrackedAuraLayout == true
+    status.hasAssociatedAura = associationData.hasAssociatedAura == true
+    status.hasTrackedAuraLayout = hasTrackedAuraLayout
+
+    if hasTrackedBuffViewer then
+        status.ready = true
+        status.state = "ready"
+        return status
+    end
+
+    if hasTrackedAuraLayout then
+        status.state = "trackedAuraUnavailable"
+        return status
+    end
+
+    if status.hasAssociatedAura then
+        status.state = "associatedAuraNotTracked"
+        return status
+    end
+
+    status.state = "noAssociatedAura"
+    return status
 end
 
 function CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
     if not buttonData or buttonData.type ~= "spell" then return nil end
-
-    local viewerFrame
     if buttonData.cdmChildSlot then
         local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
         local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
         if IsBuffViewerChild(slotChild) then
-            viewerFrame = slotChild
+            return slotChild
         end
     end
 
-    if not viewerFrame and buttonData.auraSpellID then
-        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-            local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
-            if IsBuffViewerChild(candidate) then
-                viewerFrame = candidate
-            end
-            if viewerFrame then break end
-        end
-    end
-
-    if not viewerFrame then
-        local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-        if resolvedAuraId and resolvedAuraId ~= 0 then
-            local resolvedChild = CooldownCompanion.viewerAuraFrames[resolvedAuraId]
-            if IsBuffViewerChild(resolvedChild) then
-                viewerFrame = resolvedChild
-            end
-        end
-        if not viewerFrame then
-            local idChild = CooldownCompanion.viewerAuraFrames[buttonData.id]
-            if IsBuffViewerChild(idChild) then
-                viewerFrame = idChild
-            end
-        end
-    end
-
-    if not viewerFrame then
-        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-        if allChildren and allChildren[1] and IsBuffViewerChild(allChildren[1]) then
-            viewerFrame = allChildren[1]
-        end
-    end
-
-    if not viewerFrame then
-        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-        if overrideBuffs then
-            for id in overrideBuffs:gmatch("%d+") do
-                local candidate = CooldownCompanion.viewerAuraFrames[tonumber(id)]
-                if IsBuffViewerChild(candidate) then
-                    viewerFrame = candidate
-                end
-                if viewerFrame then break end
-            end
-        end
-    end
-
-    if not viewerFrame then
-        local fallback = CooldownCompanion:FindViewerChildForSpell(buttonData.id)
-        if IsBuffViewerChild(fallback) then
-            CooldownCompanion.viewerAuraFrames[buttonData.id] = fallback
-            viewerFrame = fallback
-        end
-    end
-
-    return viewerFrame
+    local associationData = self:ResolveAuraTrackingAssociationData(buttonData)
+    return associationData.trackedBuffViewerFrame
 end
 
 -- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
@@ -297,7 +684,7 @@ CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
 
 -- Shared helper: scan a list of viewer frames for a child matching spellID.
 -- Checks cooldownInfo spell associations used by CDM (base, overrides, linked).
-local function FindChildInViewers(viewerNames, spellID, buffOnly)
+FindChildInViewers = function(viewerNames, spellID, buffOnly)
     for _, name in ipairs(viewerNames) do
         local viewer = _G[name]
         if viewer then

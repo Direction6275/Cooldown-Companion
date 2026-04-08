@@ -491,7 +491,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
         -- the viewer path has no auraInstanceID (form-variant spells like
         -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
-        if auraTrackingReady and not auraOverrideActive and configUnit == "player" then
+        local canUsePlayerAuraFallback = auraTrackingReady and configUnit == "player"
+
+        if canUsePlayerAuraFallback and not auraOverrideActive then
             local baseId = C_Spell.GetBaseSpell(buttonData.id)
             -- Try base spell first (buff is applied as base), then _auraSpellID
             local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
@@ -522,7 +524,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- combat and the instance ID persists until OnUnitAura removal clears it.
         -- Target-debuff tracking intentionally skips this fallback because a stale
         -- target auraInstanceID can survive brief viewer churn and show ghost time.
-        if auraTrackingReady and not auraOverrideActive and configUnit == "player" and button._auraInstanceID then
+        if canUsePlayerAuraFallback and not auraOverrideActive and button._auraInstanceID then
             local cachedUnit = button._auraUnit or configUnit
             if cachedUnit == configUnit then
                 local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(cachedUnit, button._auraInstanceID)
@@ -944,12 +946,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- When readable, charge count is authoritative for "zero charges" (unusable),
     -- even if the spell also has a per-cast cooldown lockout.
     local charges
-    if buttonData.hasCharges and buttonData.type == "spell" then
+    if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-    elseif buttonData._hasDisplayCount and buttonData.type == "spell" then
+    elseif usesChargeBehavior and buttonData._hasDisplayCount and buttonData.type == "spell" then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
-    elseif not buttonData.hasCharges then
+    elseif not usesChargeBehavior then
         -- hasCharges cleared: wipe stale charge state.
         button._currentReadableCharges = nil
         button._chargeCountReadable = nil
@@ -1027,7 +1029,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- this spell, a proc may have reset its cooldown — let the GCD-only
     -- detection stand so the button saturates immediately.
     if buttonData.type == "spell"
-       and not buttonData.hasCharges
+       and not usesChargeBehavior
        and not auraOverrideActive
        and buttonData._cooldownSecrecy ~= 0
        and button._postCastGCDHold
@@ -1048,7 +1050,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and isGCDOnly
-            and not buttonData.hasCharges and not buttonData.isPassive
+            and not usesChargeBehavior and not buttonData.isPassive
     end
 
     -- Bar mode icon-only GCD swipe.
@@ -1099,7 +1101,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
             button._mainCDShown = false
-        elseif buttonData.type == "spell" and buttonData.hasCharges then
+        elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
             -- which is NOT charge-aware (isActive = isEnabled and startTime > 0
@@ -1135,6 +1137,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
            and buttonData.type == "spell"
+           and usesChargeBehavior
            and buttonData.hasCharges
            and button._chargeCountReadable ~= true then
             -- Heuristic: suppress zero-charge when cast history says charges remain.
@@ -1184,8 +1187,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     end
 
-    if buttonData.hasCharges then
-      if buttonData.type == "spell" then
+    if usesChargeBehavior then
+      if buttonData.type == "spell" and buttonData.hasCharges then
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.

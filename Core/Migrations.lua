@@ -23,6 +23,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateMasqueField()
     self:MigrateRemoveBarChargeOldFields()
     self:MigrateVisibility()
+    self:MigrateStandaloneAuraMetadata()
     self:MigrateAddedAsClassification()
     self:MigrateInvertAuraDesaturationLogic()
     self:MigrateFolders()
@@ -69,6 +70,10 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.auraIndicatorMigrated = nil
     profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
+    profile.addedAsClassificationV2Migrated = nil
+    profile.standaloneAuraMetadataMigrated = nil
+    profile.standaloneAuraLinkMetadataMigrated = nil
+    profile.standaloneAuraMetadataV2Migrated = nil
     profile.invertAuraDesaturationLogicMigrated = nil
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
@@ -285,7 +290,7 @@ end
 
 function CooldownCompanion:MigrateAddedAsClassification()
     local profile = self.db.profile
-    if profile.addedAsClassificationMigrated then return end
+    if profile.addedAsClassificationV2Migrated then return end
 
     for _, group in pairs(self.db.profile.groups) do
         if group.buttons then
@@ -293,13 +298,11 @@ function CooldownCompanion:MigrateAddedAsClassification()
                 if buttonData.type == "spell" then
                     local addedAs = buttonData.addedAs
                     if addedAs ~= "spell" and addedAs ~= "aura" then
-                        addedAs = buttonData.isPassive and "aura" or "spell"
-                    end
-
-                    -- Non-passive spells should not be permanently classified as aura
-                    -- just because aura tracking was auto-detected.
-                    if addedAs == "aura" and not buttonData.isPassive then
-                        addedAs = "spell"
+                        addedAs = self:ShouldRecoverLegacyStandaloneAuraEntry(
+                            buttonData,
+                            group.buttons,
+                            { trustExplicitAuraLabel = false }
+                        ) and "aura" or "spell"
                     end
 
                     buttonData.addedAs = addedAs
@@ -309,6 +312,28 @@ function CooldownCompanion:MigrateAddedAsClassification()
     end
 
     profile.addedAsClassificationMigrated = true
+    profile.addedAsClassificationV2Migrated = true
+end
+
+function CooldownCompanion:MigrateStandaloneAuraMetadata()
+    local profile = self.db.profile
+    if profile.standaloneAuraMetadataV2Migrated then return end
+
+    for _, group in pairs(profile.groups or {}) do
+        if group.buttons then
+            for _, buttonData in ipairs(group.buttons) do
+                self:NormalizeStandaloneAuraButtonData(buttonData, group.buttons, {
+                    -- Be conservative on legacy/imported data: an old saved
+                    -- addedAs="aura" label is not enough proof by itself that
+                    -- the entry was intentionally created as aura-only.
+                    trustExplicitAuraLabel = false,
+                })
+            end
+        end
+    end
+
+    profile.standaloneAuraLinkMetadataMigrated = true
+    profile.standaloneAuraMetadataV2Migrated = true
 end
 
 function CooldownCompanion:MigrateInvertAuraDesaturationLogic()

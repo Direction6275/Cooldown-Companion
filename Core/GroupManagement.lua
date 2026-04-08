@@ -1129,6 +1129,16 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         end
     end
 
+    -- Record original classification (immutable label for config display).
+    -- This represents add intent, not current auraTracking state.
+    if buttonType == "spell" then
+        if forceAura == true or (isPassive and forceAura ~= false) then
+            group.buttons[buttonIndex].addedAs = "aura"
+        else
+            group.buttons[buttonIndex].addedAs = "spell"
+        end
+    end
+
     -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
     if forceAura == true then
         group.buttons[buttonIndex].auraTracking = true
@@ -1188,14 +1198,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         group.buttons[buttonIndex].auraTracking = false
     end
 
-    -- Record original classification (immutable label for config display).
-    -- This represents add intent, not current auraTracking state.
-    if buttonType == "spell" then
-        if forceAura == true or isPassive then
-            group.buttons[buttonIndex].addedAs = "aura"
-        else
-            group.buttons[buttonIndex].addedAs = "spell"
-        end
+    if buttonType == "spell" and forceAura ~= false then
+        self:NormalizeStandaloneAuraButtonData(
+            group.buttons[buttonIndex],
+            group.buttons,
+            { trustExplicitAuraLabel = true }
+        )
     end
 
     self:RefreshGroupFrame(groupId)

@@ -106,9 +106,13 @@ end
 CooldownCompanion.GetCastCountSpellID = GetCastCountSpellID
 
 local function UsesChargeBehavior(buttonData)
-    return buttonData
-        and (buttonData.hasCharges == true or buttonData._hasDisplayCount == true)
-        or false
+    if not buttonData then
+        return false
+    end
+    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
+        return false
+    end
+    return buttonData.hasCharges == true or buttonData._hasDisplayCount == true
 end
 CooldownCompanion.UsesChargeBehavior = UsesChargeBehavior
 
