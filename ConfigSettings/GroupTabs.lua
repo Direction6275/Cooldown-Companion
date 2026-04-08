@@ -24,6 +24,35 @@ local AddOffsetSliders = ST._AddOffsetSliders
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 
+local function ExpireCurrentCappedChargeReadyGlows(groupId, duration)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if not (frame and frame.buttons) then
+        return
+    end
+
+    local now = GetTime()
+    for _, button in ipairs(frame.buttons) do
+        local buttonData = button.buttonData
+        if buttonData and buttonData.type == "spell" and buttonData.hasCharges == true then
+            local cur = button._currentReadableCharges
+            local maxCharges = buttonData.maxCharges
+            local isCapped = false
+
+            if button._chargeCountReadable == true and cur ~= nil and maxCharges ~= nil then
+                isCapped = (cur == maxCharges)
+            elseif button._chargeCountReadable ~= true then
+                isCapped = not button._chargeRecharging and not button._zeroChargesConfirmed
+            end
+
+            if isCapped then
+                button._readyGlowMaxChargesSpellID = buttonData.id
+                button._readyGlowMaxChargesActive = true
+                button._readyGlowMaxChargesStartTime = now - (duration or 0) - 0.01
+            end
+        end
+    end
+end
+
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
 local BuildAuraTextControls = ST._BuildAuraTextControls
@@ -1272,7 +1301,9 @@ local function BuildEffectsTab(container)
     local readyPromoteBtn = CreateCheckboxPromoteButton(readyEnableCb, readyAdvBtn, "readyGlow", group, style)
     CreateInfoButton(readyEnableCb.frame, readyPromoteBtn, "LEFT", "RIGHT", 4, 0, {
         "Ready Glow",
-        {"Adds a glow effect around buttons whose spells or items are off cooldown and ready to use.", 1, 1, 1, true},
+        {"Adds a glow to ready spells and items.", 1, 1, 1, true},
+        " ",
+        {"Optional: charge spells can glow only when fully capped.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     if readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none" then
@@ -1287,6 +1318,24 @@ local function BuildEffectsTab(container)
     container:AddChild(readyCombatCb)
     ApplyCheckboxIndent(readyCombatCb, 20)
 
+    local readyChargesCb = AceGUI:Create("CheckBox")
+    readyChargesCb:SetLabel("Glow When Charges Are Capped")
+    readyChargesCb:SetValue(style.readyGlowOnlyAtMaxCharges or false)
+    readyChargesCb:SetFullWidth(true)
+    readyChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.readyGlowOnlyAtMaxCharges = val == true
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(readyChargesCb)
+    ApplyCheckboxIndent(readyChargesCb, 20)
+    CreateInfoButton(readyChargesCb.frame, readyChargesCb.checkbg, "LEFT", "RIGHT", readyChargesCb.text:GetStringWidth() + 6, 0, {
+        "Glow When Charges Are Capped",
+        {"Only affects real multi-charge spells.", 1, 1, 1, true},
+        " ",
+        {"Glows only at full charges.", 1, 1, 1, true},
+        {"Auto-hide still applies.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
     local readyDurCb = AceGUI:Create("CheckBox")
     readyDurCb:SetLabel("Auto-Hide After Duration")
     readyDurCb:SetValue((style.readyGlowDuration or 0) > 0)
@@ -1294,6 +1343,10 @@ local function BuildEffectsTab(container)
     readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowDuration = val and 3 or 0
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        if val and style.readyGlowOnlyAtMaxCharges then
+            ExpireCurrentCappedChargeReadyGlows(CS.selectedGroup, style.readyGlowDuration or 0)
+        end
+        CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(readyDurCb)
@@ -1317,7 +1370,7 @@ local function BuildEffectsTab(container)
     end)
 
     local readyPreviewBtn = AceGUI:Create("Button")
-    readyPreviewBtn:SetText("Preview Ready Glow (3s)")
+    readyPreviewBtn:SetText("Preview Ready Glow Style (3s)")
     readyPreviewBtn:SetFullWidth(true)
     readyPreviewBtn:SetCallback("OnClick", function()
         CooldownCompanion:PlayGroupReadyGlowPreview(CS.selectedGroup, 3)

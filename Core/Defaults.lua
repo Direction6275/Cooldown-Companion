@@ -311,6 +311,7 @@ local defaults = {
             readyGlowSpeed = 50,
             readyGlowLines = 8,
             readyGlowCombatOnly = false,
+            readyGlowOnlyAtMaxCharges = false,
             readyGlowDuration = 0,
             keyPressHighlightStyle = "none",
             keyPressHighlightColor = {1, 1, 1, 0.4},

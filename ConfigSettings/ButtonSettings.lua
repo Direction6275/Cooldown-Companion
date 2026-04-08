@@ -1556,7 +1556,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                         scroll:AddChild(pandemicPreviewBtn)
                     elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
                         local readyPreviewBtn = AceGUI:Create("Button")
-                        readyPreviewBtn:SetText("Preview Ready Glow (3s)")
+                        readyPreviewBtn:SetText("Preview Ready Glow Style (3s)")
                         readyPreviewBtn:SetFullWidth(true)
                         readyPreviewBtn:SetCallback("OnClick", function()
                             if CS.selectedGroup and CS.selectedButton then

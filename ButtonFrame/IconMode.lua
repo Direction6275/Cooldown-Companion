@@ -52,6 +52,24 @@ local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
 
+local function IsReadyGlowAtMaxCharges(button, buttonData)
+    if not (button and buttonData) then
+        return false
+    end
+
+    if buttonData.type ~= "spell" or buttonData.hasCharges ~= true then
+        return false
+    end
+
+    local cur = button._currentReadableCharges
+    local maxCharges = buttonData.maxCharges
+    if button._chargeCountReadable == true and cur ~= nil and maxCharges ~= nil then
+        return cur == maxCharges
+    end
+
+    return not button._chargeRecharging and not button._zeroChargesConfirmed
+end
+
 local function ApplyCountTextStyle(button, style)
     if not button or not button.count then return end
     local buttonData = button.buttonData
@@ -755,12 +773,43 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
                and (not style.readyGlowCombatOnly or inCombat)
                and button._desatCooldownActive == false
                and not (procOverlayActive and style.procGlowStyle ~= "none") then
-            local dur = style.readyGlowDuration or 0
-            if dur > 0 then
-                showReady = button._readyGlowStartTime ~= nil
-                    and (GetTime() - button._readyGlowStartTime) <= dur
+            if style.readyGlowOnlyAtMaxCharges and buttonData.type == "spell" and buttonData.hasCharges == true then
+                if button._readyGlowMaxChargesSpellID ~= buttonData.id then
+                    button._readyGlowMaxChargesSpellID = buttonData.id
+                    button._readyGlowMaxChargesStartTime = nil
+                    button._readyGlowMaxChargesActive = nil
+                end
+
+                local isCapped = IsReadyGlowAtMaxCharges(button, buttonData)
+                local dur = style.readyGlowDuration or 0
+
+                if isCapped then
+                    if button._readyGlowMaxChargesActive ~= true then
+                        button._readyGlowMaxChargesStartTime = GetTime()
+                    end
+
+                    if dur > 0 then
+                        showReady = button._readyGlowMaxChargesStartTime ~= nil
+                            and (GetTime() - button._readyGlowMaxChargesStartTime) <= dur
+                    else
+                        showReady = true
+                    end
+                else
+                    button._readyGlowMaxChargesStartTime = nil
+                end
+
+                button._readyGlowMaxChargesActive = isCapped
             else
-                showReady = true
+                button._readyGlowMaxChargesSpellID = nil
+                button._readyGlowMaxChargesActive = nil
+                button._readyGlowMaxChargesStartTime = nil
+                local dur = style.readyGlowDuration or 0
+                if dur > 0 then
+                    showReady = button._readyGlowStartTime ~= nil
+                        and (GetTime() - button._readyGlowStartTime) <= dur
+                else
+                    showReady = true
+                end
             end
         end
         SetReadyGlow(button, showReady)
