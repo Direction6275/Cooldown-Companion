@@ -568,6 +568,31 @@ local function BuildLayoutTab(container)
         end
     end)
 
+    local panelAnchorDrop = AceGUI:Create("Dropdown")
+    panelAnchorDrop:SetLabel("Anchor to Panel")
+    CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
+    panelAnchorDrop:SetFullWidth(true)
+    local currentAnchorGroupId = currentAnchor:match("^CooldownCompanionGroup(%d+)$")
+    if currentAnchorGroupId then
+        panelAnchorDrop:SetValue(tostring(currentAnchorGroupId))
+    else
+        panelAnchorDrop:SetValue(nil)
+    end
+    panelAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        if not val or val == "" then return end
+        local targetGroupId = tonumber(val)
+        if not targetGroupId then return end
+        local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
+        if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, targetFrameName) then
+            currentAnchor = targetFrameName
+            anchorBox:SetText(targetFrameName)
+            CooldownCompanion:RefreshConfigPanel()
+        else
+            widget:SetValue(nil)
+        end
+    end)
+    container:AddChild(panelAnchorDrop)
+
     -- Anchor Point / Relative Point dropdowns
     local function refreshGroupAnchor()
         local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
