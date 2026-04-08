@@ -491,7 +491,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
         -- the viewer path has no auraInstanceID (form-variant spells like
         -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
-        if auraTrackingReady and not auraOverrideActive and configUnit == "player" then
+        local canUsePlayerAuraFallback = auraTrackingReady and configUnit == "player"
+
+        if canUsePlayerAuraFallback and not auraOverrideActive then
             local baseId = C_Spell.GetBaseSpell(buttonData.id)
             -- Try base spell first (buff is applied as base), then _auraSpellID
             local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
@@ -522,7 +524,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- combat and the instance ID persists until OnUnitAura removal clears it.
         -- Target-debuff tracking intentionally skips this fallback because a stale
         -- target auraInstanceID can survive brief viewer churn and show ghost time.
-        if auraTrackingReady and not auraOverrideActive and configUnit == "player" and button._auraInstanceID then
+        if canUsePlayerAuraFallback and not auraOverrideActive and button._auraInstanceID then
             local cachedUnit = button._auraUnit or configUnit
             if cachedUnit == configUnit then
                 local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(cachedUnit, button._auraInstanceID)

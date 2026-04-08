@@ -72,6 +72,20 @@ local function AddCooldownInfoCandidateIDs(candidateSet, cooldownInfo)
     end
 end
 
+local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
+    local numericAuraID = tonumber(auraSpellID)
+    if not numericAuraID or numericAuraID == 0 then
+        return nil
+    end
+
+    local auraBase = C_Spell.GetBaseSpell(numericAuraID)
+    if auraBase and auraBase == baseId and auraBase ~= numericAuraID then
+        return baseId
+    end
+
+    return numericAuraID
+end
+
 local function ResolveViewerFrameForSpellID(spellID, buffOnly)
     local numericID = tonumber(spellID)
     if not numericID or numericID == 0 then
@@ -306,14 +320,8 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
         -- buff is always applied as the base spell regardless of form.
         local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-        local auraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
-        if auraId and auraId ~= 0 then
-            -- If the cooldown aura is a form variant of the same base spell,
-            -- use the base spell ID — the buff is always applied as base form.
-            local auraBase = C_Spell.GetBaseSpell(auraId)
-            if auraBase and auraBase == baseId and auraBase ~= auraId then
-                return baseId
-            end
+        local auraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+        if auraId then
             return auraId
         end
         -- Many spells share the same ID for cast and buff; fall back to the base spell ID
@@ -323,7 +331,7 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
 end
 
 function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
-    if not (buttonData and buttonData.type == "spell" and buttonData.auraTracking) then
+    if not (buttonData and buttonData.type == "spell") then
         return nil
     end
 
@@ -337,8 +345,8 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     end
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-    local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
-    if resolvedAuraId and resolvedAuraId ~= 0 and resolvedAuraId ~= buttonData.id then
+    local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+    if resolvedAuraId and resolvedAuraId ~= buttonData.id then
         return tostring(resolvedAuraId)
     end
 
@@ -475,7 +483,13 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData)
     end
 
     local changed = false
-    if buttonData.auraTracking ~= true then
+    -- Preserve an explicit user disable on aura-only entries. Only restore the
+    -- toggle when the value is missing, or when passive entries need their
+    -- always-on tracking behavior back.
+    if buttonData.isPassive == true and buttonData.auraTracking ~= true then
+        buttonData.auraTracking = true
+        changed = true
+    elseif buttonData.addedAs == "aura" and buttonData.auraTracking == nil then
         buttonData.auraTracking = true
         changed = true
     end
@@ -517,7 +531,13 @@ function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFra
         return false
     end
 
-    return viewerFrame ~= nil
+    if viewerFrame ~= nil then
+        return true
+    end
+
+    -- Passive player auras can still track through direct aura API fallback
+    -- even when Blizzard has not built a readable Buff viewer child yet.
+    return buttonData.isPassive == true and (buttonData.auraUnit or "player") == "player"
 end
 
 function CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
@@ -525,6 +545,8 @@ function CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnable
         state = "disabled",
         ready = false,
         cdmEnabled = false,
+        hasAssociatedAura = false,
+        hasTrackedAuraLayout = false,
     }
 
     if not (buttonData and buttonData.type == "spell") then
@@ -547,14 +569,21 @@ function CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnable
     local associationData = self:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
     local hasTrackedBuffViewer = associationData.trackedBuffViewerFrame ~= nil
     local hasTrackedAuraLayout = associationData.hasTrackedAuraLayout == true
+    status.hasAssociatedAura = associationData.hasAssociatedAura == true
+    status.hasTrackedAuraLayout = hasTrackedAuraLayout
 
-    if hasTrackedBuffViewer or hasTrackedAuraLayout then
+    if hasTrackedBuffViewer then
         status.ready = true
         status.state = "ready"
         return status
     end
 
-    if associationData.hasAssociatedAura == true then
+    if hasTrackedAuraLayout then
+        status.state = "trackedAuraUnavailable"
+        return status
+    end
+
+    if status.hasAssociatedAura then
         status.state = "associatedAuraNotTracked"
         return status
     end

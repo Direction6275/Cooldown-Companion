@@ -236,6 +236,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     )
     local auraConfigReady = auraStatus.ready == true
     local auraFoundButUntracked = auraStatus.state == "associatedAuraNotTracked"
+    local auraTrackedButUnavailable = auraStatus.state == "trackedAuraUnavailable"
     local auraInactiveColorCode = auraFoundButUntracked and "|cffffff00" or "|cffff0000"
     local function SetupWrappedStatusLabel(label, text, justifyH)
         label:SetFullWidth(true)
@@ -507,6 +508,17 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         noAuraSpacer:SetText(" ")
         noAuraSpacer:SetFullWidth(true)
         scroll:AddChild(noAuraSpacer)
+    elseif auraTrackedButUnavailable then
+        local viewerUnavailableLabel = AceGUI:Create("Label")
+        SetupWrappedStatusLabel(
+            viewerUnavailableLabel,
+            "|cff888888An associated aura is tracked in Blizzard CDM, but its Buffs/Debuffs viewer is not currently readable. Set the CDM Buffs/Debuffs visibility to Always Visible.|r"
+        )
+        scroll:AddChild(viewerUnavailableLabel)
+        local viewerUnavailableSpacer = AceGUI:Create("Label")
+        viewerUnavailableSpacer:SetText(" ")
+        viewerUnavailableSpacer:SetFullWidth(true)
+        scroll:AddChild(viewerUnavailableSpacer)
     end
 
     if auraStatus.state == "associatedAuraNotTracked" then

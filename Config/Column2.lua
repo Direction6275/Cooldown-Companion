@@ -1870,6 +1870,8 @@ local function RefreshColumn2()
                                 local tooltipText = "Aura tracking: Inactive"
                                 if auraStatus and auraStatus.state == "cdmDisabled" then
                                     tooltipText = "Aura tracking: Inactive (Blizzard CDM disabled)"
+                                elseif auraStatus and auraStatus.state == "trackedAuraUnavailable" then
+                                    tooltipText = "Aura tracking: Inactive (tracked in CDM, but the Buffs/Debuffs viewer is not currently readable)"
                                 elseif auraStatus and auraStatus.state == "associatedAuraNotTracked" then
                                     tooltipText = "Aura tracking: Inactive (associated aura is not currently tracked in CDM)"
                                 elseif auraStatus and auraStatus.state == "noAssociatedAura" then

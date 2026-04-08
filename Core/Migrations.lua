@@ -23,8 +23,8 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateMasqueField()
     self:MigrateRemoveBarChargeOldFields()
     self:MigrateVisibility()
-    self:MigrateAddedAsClassification()
     self:MigrateStandaloneAuraMetadata()
+    self:MigrateAddedAsClassification()
     self:MigrateInvertAuraDesaturationLogic()
     self:MigrateFolders()
     self:MigrateFolderSpecFilters()
@@ -288,7 +288,7 @@ end
 
 function CooldownCompanion:MigrateAddedAsClassification()
     local profile = self.db.profile
-    if profile.addedAsClassificationMigrated then return end
+    if profile.addedAsClassificationV2Migrated then return end
 
     for _, group in pairs(self.db.profile.groups) do
         if group.buttons then
@@ -299,12 +299,6 @@ function CooldownCompanion:MigrateAddedAsClassification()
                         addedAs = buttonData.isPassive and "aura" or "spell"
                     end
 
-                    -- Non-passive spells should not be permanently classified as aura
-                    -- just because aura tracking was auto-detected.
-                    if addedAs == "aura" and not buttonData.isPassive then
-                        addedAs = "spell"
-                    end
-
                     buttonData.addedAs = addedAs
                 end
             end
@@ -312,11 +306,12 @@ function CooldownCompanion:MigrateAddedAsClassification()
     end
 
     profile.addedAsClassificationMigrated = true
+    profile.addedAsClassificationV2Migrated = true
 end
 
 function CooldownCompanion:MigrateStandaloneAuraMetadata()
     local profile = self.db.profile
-    if profile.standaloneAuraLinkMetadataMigrated then return end
+    if profile.standaloneAuraMetadataV2Migrated then return end
 
     for _, group in pairs(profile.groups or {}) do
         if group.buttons then
@@ -327,6 +322,7 @@ function CooldownCompanion:MigrateStandaloneAuraMetadata()
     end
 
     profile.standaloneAuraLinkMetadataMigrated = true
+    profile.standaloneAuraMetadataV2Migrated = true
 end
 
 function CooldownCompanion:MigrateInvertAuraDesaturationLogic()
