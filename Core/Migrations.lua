@@ -298,7 +298,10 @@ function CooldownCompanion:MigrateAddedAsClassification()
                 if buttonData.type == "spell" then
                     local addedAs = buttonData.addedAs
                     if addedAs ~= "spell" and addedAs ~= "aura" then
-                        addedAs = buttonData.isPassive and "aura" or "spell"
+                        addedAs = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, group.buttons) and "aura" or "spell"
+                    elseif addedAs == "aura"
+                        and not self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, group.buttons) then
+                        addedAs = "spell"
                     end
 
                     buttonData.addedAs = addedAs

@@ -76,10 +76,6 @@ local function HasBuffSuffixName(name)
     return type(name) == "string" and name:match("%s%([Bb]uff%)$") ~= nil
 end
 
-local function HasValidAuraUnit(buttonData)
-    return buttonData and (buttonData.auraUnit == "player" or buttonData.auraUnit == "target")
-end
-
 local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
     local numericAuraID = tonumber(auraSpellID)
     if not numericAuraID or numericAuraID == 0 then
@@ -480,12 +476,18 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
     return data
 end
 
-function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons)
+function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
 
-    if buttonData.isPassive == true or buttonData.addedAs == "aura" then
+    options = options or {}
+
+    if buttonData.isPassive == true then
+        return true
+    end
+
+    if options.trustExplicitAuraLabel == true and buttonData.addedAs == "aura" then
         return true
     end
 
@@ -514,19 +516,15 @@ function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, si
         end
     end
 
-    if C_Spell.IsSpellHarmful(buttonData.id) and not HasValidAuraUnit(buttonData) then
-        return true
-    end
-
     return false
 end
 
-function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, siblingButtons)
+function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, siblingButtons, options)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
 
-    local recoverLegacyAura = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons)
+    local recoverLegacyAura = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
     local isAuraOnlyEntry = recoverLegacyAura
     if not isAuraOnlyEntry then
         return false
