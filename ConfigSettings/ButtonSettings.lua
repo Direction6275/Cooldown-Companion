@@ -107,6 +107,25 @@ local function GetDefaultAuraUnit(isHarmful)
     return isHarmful and "target" or "player"
 end
 
+local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    local button = frame and frame.buttons and frame.buttons[buttonIndex]
+    local buttonData = button and button.buttonData
+    if not (button and buttonData) then
+        return
+    end
+
+    if buttonData.type ~= "spell"
+       or buttonData.hasCharges ~= true
+       or buttonData._hasDisplayCount then
+        return
+    end
+
+    button._readyGlowMaxChargesSpellID = button._displaySpellId or buttonData.id
+    button._readyGlowMaxChargesStartTime = nil
+    button._readyGlowMaxChargesActive = false
+end
+
 local function EnsureAuraUnitChoice(buttonData, isHarmful, unit)
     if IsValidAuraUnit(unit) then
         buttonData.auraUnit = unit
@@ -1471,6 +1490,28 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                             end
 
                             if sectionId == "readyGlow" then
+                                local cappedCb = AceGUI:Create("CheckBox")
+                                cappedCb:SetLabel("Glow When Charges Are Capped")
+                                cappedCb:SetValue(overrides.readyGlowOnlyAtMaxCharges or false)
+                                cappedCb:SetFullWidth(true)
+                                cappedCb:SetCallback("OnValueChanged", function(widget, event, val)
+                                    overrides.readyGlowOnlyAtMaxCharges = val == true
+                                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                    if val and (overrides.readyGlowDuration or 0) > 0 then
+                                        PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                    end
+                                    CooldownCompanion:UpdateAllCooldowns()
+                                end)
+                                cont:AddChild(cappedCb)
+                                ApplyCheckboxIndent(cappedCb, 20)
+                                CreateInfoButton(cappedCb.frame, cappedCb.checkbg, "LEFT", "RIGHT", cappedCb.text:GetStringWidth() + 6, 0, {
+                                    "Glow When Charges Are Capped",
+                                    {"Only affects real multi-charge spells.", 1, 1, 1, true},
+                                    " ",
+                                    {"Glows only at full charges.", 1, 1, 1, true},
+                                    {"Auto-hide still applies.", 1, 1, 1, true},
+                                }, infoButtons)
+
                                 local durCb = AceGUI:Create("CheckBox")
                                 durCb:SetLabel("Auto-Hide After Duration")
                                 durCb:SetValue((overrides.readyGlowDuration or 0) > 0)
@@ -1478,6 +1519,10 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 durCb:SetCallback("OnValueChanged", function(widget, event, val)
                                     overrides.readyGlowDuration = val and 3 or 0
                                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                    if val and overrides.readyGlowOnlyAtMaxCharges then
+                                        PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                    end
+                                    CooldownCompanion:UpdateAllCooldowns()
                                     CooldownCompanion:RefreshConfigPanel()
                                 end)
                                 cont:AddChild(durCb)

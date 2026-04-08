@@ -652,7 +652,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     readyGlow = {
         label = "Ready Glow",
-        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowDuration"},
+        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowOnlyAtMaxCharges", "readyGlowDuration"},
         modes = {icons = true},
     },
     keyPressHighlight = {

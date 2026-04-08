@@ -52,6 +52,25 @@ local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 
+local function PrimeReadyGlowCappedChargeTransitions(groupId)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if not (frame and frame.buttons) then
+        return
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        local buttonData = button.buttonData
+        if buttonData
+           and buttonData.type == "spell"
+           and buttonData.hasCharges == true
+           and not buttonData._hasDisplayCount then
+            button._readyGlowMaxChargesSpellID = button._displaySpellId or buttonData.id
+            button._readyGlowMaxChargesStartTime = nil
+            button._readyGlowMaxChargesActive = false
+        end
+    end
+end
+
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
@@ -1296,6 +1315,10 @@ local function BuildEffectsTab(container)
     readyChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowOnlyAtMaxCharges = val == true
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        if val and (style.readyGlowDuration or 0) > 0 then
+            PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+        end
+        CooldownCompanion:UpdateAllCooldowns()
     end)
     container:AddChild(readyChargesCb)
     ApplyCheckboxIndent(readyChargesCb, 20)

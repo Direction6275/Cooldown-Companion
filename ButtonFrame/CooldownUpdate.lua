@@ -1257,8 +1257,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if IsReadyGlowMaxChargeEligible(buttonData) then
-        if button._readyGlowMaxChargesSpellID ~= buttonData.id then
-            button._readyGlowMaxChargesSpellID = buttonData.id
+        local readyGlowSpellID = cooldownSpellId or buttonData.id
+        if button._readyGlowMaxChargesSpellID ~= readyGlowSpellID then
+            button._readyGlowMaxChargesSpellID = readyGlowSpellID
             button._readyGlowMaxChargesStartTime = nil
             button._readyGlowMaxChargesActive = nil
         end
