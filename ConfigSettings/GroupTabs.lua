@@ -572,7 +572,9 @@ local function BuildLayoutTab(container)
     panelAnchorDrop:SetLabel("Anchor to Panel")
     CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
     panelAnchorDrop:SetFullWidth(true)
-    local currentAnchorGroupId = currentAnchor:match("^CooldownCompanionGroup(%d+)$")
+    local currentAnchorGroupId = type(currentAnchor) == "string"
+        and currentAnchor:match("^CooldownCompanionGroup(%d+)$")
+        or nil
     if currentAnchorGroupId then
         panelAnchorDrop:SetValue(tostring(currentAnchorGroupId))
     else
