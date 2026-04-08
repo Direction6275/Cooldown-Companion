@@ -215,92 +215,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     if not group then return end
 
     local isHarmful = buttonData.type == "spell" and C_Spell.IsSpellHarmful(buttonData.id)
-    -- Look up viewer frame: for multi-slot buttons, use the slot-specific CDM child
-    local viewerFrame
-    if buttonData.cdmChildSlot then
-        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-        viewerFrame = allChildren and allChildren[buttonData.cdmChildSlot]
-    end
-    if not viewerFrame and buttonData.auraSpellID then
-        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-            viewerFrame = CooldownCompanion.viewerAuraFrames[tonumber(id)]
-            if viewerFrame then break end
-        end
-    end
-    if not viewerFrame then
-        local resolvedAuraId = buttonData.type == "spell"
-            and C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-        viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
-                and CooldownCompanion.viewerAuraFrames[resolvedAuraId])
-            or CooldownCompanion.viewerAuraFrames[buttonData.id]
-    end
-
-    -- Fallback scan for transforming spells whose override hasn't fired yet
-    if not viewerFrame and buttonData.type == "spell" then
-        local child = CooldownCompanion:FindViewerChildForSpell(buttonData.id)
-        if child then
-            CooldownCompanion.viewerAuraFrames[buttonData.id] = child
-            viewerFrame = child
-        end
-    end
-    -- Fallback for hardcoded overrides: try the buff IDs in the viewer map
-    if not viewerFrame and buttonData.type == "spell" then
-        local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-        if overrideBuffs then
-            for id in overrideBuffs:gmatch("%d+") do
-                viewerFrame = CooldownCompanion.viewerAuraFrames[tonumber(id)]
-                if viewerFrame then break end
-            end
-        end
-    end
-
     local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-
-    -- Only treat as aura-capable if CDM is enabled and viewer is from BuffIcon or BuffBar.
-    -- When CDM is disabled, viewer children persist with stale data and cannot be trusted.
-    -- (Essential and Utility viewers track cooldowns only, not auras)
-    local hasViewerFrame = false
-    if viewerFrame and cdmEnabled then
-        local parent = viewerFrame:GetParent()
-        local parentName = parent and parent:GetName()
-        hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
-    end
-    local function ComputeAuraConfigReady()
-        return CooldownCompanion:IsAuraTrackingConfigReady(
-            buttonData,
-            cdmEnabled,
-            hasViewerFrame and viewerFrame or nil
-        )
-    end
-    local auraConfigReady = ComputeAuraConfigReady()
-
-    -- Determine if this spell could theoretically track a buff/debuff.
-    -- Query the CDM's authoritative category lists for TrackedBuff and TrackedBar.
-    local buffTrackableSpells = {}
-    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info then
-                    buffTrackableSpells[info.spellID] = true
-                    if info.overrideSpellID then
-                        buffTrackableSpells[info.overrideSpellID] = true
-                    end
-                    if info.overrideTooltipSpellID then
-                        buffTrackableSpells[info.overrideTooltipSpellID] = true
-                    end
-                end
-            end
-        end
-    end
-
-    local canTrackAura = auraConfigReady
-        or hasViewerFrame
-        or buffTrackableSpells[buttonData.id]
-        or (buttonData.auraSpellID and buttonData.auraSpellID ~= "")
-        or (buttonData.type == "spell" and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id])
-
+    local viewerFrame = cdmEnabled and CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData) or nil
+    local hasViewerFrame = viewerFrame ~= nil
     -- Auto-enable aura tracking for viewer-backed spells
     if hasViewerFrame and buttonData.auraTracking == nil then
         buttonData.auraTracking = true
@@ -309,9 +226,15 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             buttonData.auraSpellID = overrideBuffs
         end
         EnsureAuraUnitChoice(buttonData, isHarmful)
-        auraConfigReady = ComputeAuraConfigReady()
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end
+
+    local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(
+        buttonData,
+        cdmEnabled,
+        viewerFrame
+    )
+    local auraConfigReady = auraStatus.ready == true
 
     if buttonData.type == "spell" then
     local auraHeading = AceGUI:Create("Heading")
@@ -559,9 +482,18 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraStatusSpacer2:SetFullWidth(true)
     scroll:AddChild(auraStatusSpacer2)
 
-    if not canTrackAura and not auraConfigReady then
+    if auraStatus.state == "cdmDisabled" then
+        local cdmDisabledLabel = AceGUI:Create("Label")
+        cdmDisabledLabel:SetText("|cff888888Blizzard Cooldown Manager is disabled. Enable it above to allow aura tracking.|r")
+        cdmDisabledLabel:SetFullWidth(true)
+        scroll:AddChild(cdmDisabledLabel)
+        local cdmDisabledSpacer = AceGUI:Create("Label")
+        cdmDisabledSpacer:SetText(" ")
+        cdmDisabledSpacer:SetFullWidth(true)
+        scroll:AddChild(cdmDisabledSpacer)
+    elseif auraStatus.state == "noAssociatedAura" then
         local noAuraLabel = AceGUI:Create("Label")
-        noAuraLabel:SetText("|cff888888No associated buff or debuff was found in the Cooldown Manager for this spell. Use the Spell ID Override above to link this spell to a CDM-trackable aura.|r")
+        noAuraLabel:SetText("|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r")
         noAuraLabel:SetFullWidth(true)
         scroll:AddChild(noAuraLabel)
         local noAuraSpacer = AceGUI:Create("Label")
@@ -570,10 +502,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         scroll:AddChild(noAuraSpacer)
     end
 
-    if canTrackAura then
-    if not hasViewerFrame and not auraConfigReady then
+    if auraStatus.state == "associatedAuraNotTracked" then
         local auraDisabledLabel = AceGUI:Create("Label")
-        auraDisabledLabel:SetText("|cff888888This spell has a trackable aura in the Cooldown Manager, but it has not been added as a tracked buff or debuff yet. Add it in the CDM to enable aura tracking.|r")
+        auraDisabledLabel:SetText("|cff888888An associated aura was found, but it is not being currently tracked in Blizzard CDM as a Tracked Buff or Tracked Bar.|r")
         auraDisabledLabel:SetFullWidth(true)
         scroll:AddChild(auraDisabledLabel)
         local auraDisabledSpacer = AceGUI:Create("Label")
@@ -590,7 +521,6 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             end
 
     end -- hasViewerFrame and auraTracking
-    end -- canTrackAura
 
     if buttonData.auraTracking and not buttonData.isPassive then
         local auraIconCb = AceGUI:Create("CheckBox")

@@ -71,6 +71,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.assistedHighlightHostileTargetOnlyMigrated = nil
     profile.addedAsClassificationMigrated = nil
     profile.standaloneAuraMetadataMigrated = nil
+    profile.standaloneAuraLinkMetadataMigrated = nil
     profile.invertAuraDesaturationLogicMigrated = nil
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
@@ -315,7 +316,7 @@ end
 
 function CooldownCompanion:MigrateStandaloneAuraMetadata()
     local profile = self.db.profile
-    if profile.standaloneAuraMetadataMigrated then return end
+    if profile.standaloneAuraLinkMetadataMigrated then return end
 
     for _, group in pairs(profile.groups or {}) do
         if group.buttons then
@@ -325,7 +326,7 @@ function CooldownCompanion:MigrateStandaloneAuraMetadata()
         end
     end
 
-    profile.standaloneAuraMetadataMigrated = true
+    profile.standaloneAuraLinkMetadataMigrated = true
 end
 
 function CooldownCompanion:MigrateInvertAuraDesaturationLogic()
