@@ -295,7 +295,8 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         end
     end
 
-    local canTrackAura = hasViewerFrame
+    local canTrackAura = auraConfigReady
+        or hasViewerFrame
         or buffTrackableSpells[buttonData.id]
         or (buttonData.auraSpellID and buttonData.auraSpellID ~= "")
         or (buttonData.type == "spell" and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id])
@@ -558,7 +559,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     auraStatusSpacer2:SetFullWidth(true)
     scroll:AddChild(auraStatusSpacer2)
 
-    if not canTrackAura then
+    if not canTrackAura and not auraConfigReady then
         local noAuraLabel = AceGUI:Create("Label")
         noAuraLabel:SetText("|cff888888No associated buff or debuff was found in the Cooldown Manager for this spell. Use the Spell ID Override above to link this spell to a CDM-trackable aura.|r")
         noAuraLabel:SetFullWidth(true)
@@ -570,7 +571,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end
 
     if canTrackAura then
-    if not hasViewerFrame then
+    if not hasViewerFrame and not auraConfigReady then
         local auraDisabledLabel = AceGUI:Create("Label")
         auraDisabledLabel:SetText("|cff888888This spell has a trackable aura in the Cooldown Manager, but it has not been added as a tracked buff or debuff yet. Add it in the CDM to enable aura tracking.|r")
         auraDisabledLabel:SetFullWidth(true)

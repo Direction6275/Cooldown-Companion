@@ -171,6 +171,49 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    local isAuraOnlyEntry = buttonData.addedAs == "aura" or buttonData.isPassive == true
+    if not isAuraOnlyEntry then
+        return false
+    end
+
+    local changed = false
+    if buttonData.auraTracking ~= true then
+        buttonData.auraTracking = true
+        changed = true
+    end
+
+    if buttonData.auraIndicatorEnabled == nil then
+        buttonData.auraIndicatorEnabled = true
+        changed = true
+    end
+
+    if not buttonData.auraSpellID then
+        local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
+        if overrideBuffs then
+            buttonData.auraSpellID = overrideBuffs
+            changed = true
+        else
+            local resolvedAuraId = self:ResolveAuraSpellID(buttonData)
+            if resolvedAuraId and resolvedAuraId ~= buttonData.id then
+                buttonData.auraSpellID = tostring(resolvedAuraId)
+                changed = true
+            end
+        end
+    end
+
+    if buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then
+        buttonData.auraUnit = C_Spell.IsSpellHarmful(buttonData.id) and "target" or "player"
+        changed = true
+    end
+
+    return changed
+end
+
 function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
     if not (buttonData and buttonData.type == "spell") then
         return false
@@ -201,6 +244,13 @@ function CooldownCompanion:IsAuraTrackingConfigReady(buttonData, cdmEnabled, vie
 
     if buttonData.auraTracking ~= true then
         return false
+    end
+
+    -- Standalone aura entries use the same passive-ready semantics as the
+    -- runtime path, so the config status does not incorrectly warn when the
+    -- aura is already tracking correctly without a live viewer frame.
+    if buttonData.isPassive then
+        return true
     end
 
     if cdmEnabled == nil then

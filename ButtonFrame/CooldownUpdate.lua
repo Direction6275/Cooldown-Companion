@@ -944,12 +944,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- When readable, charge count is authoritative for "zero charges" (unusable),
     -- even if the spell also has a per-cast cooldown lockout.
     local charges
-    if buttonData.hasCharges and buttonData.type == "spell" then
+    if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-    elseif buttonData._hasDisplayCount and buttonData.type == "spell" then
+    elseif usesChargeBehavior and buttonData._hasDisplayCount and buttonData.type == "spell" then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
-    elseif not buttonData.hasCharges then
+    elseif not usesChargeBehavior then
         -- hasCharges cleared: wipe stale charge state.
         button._currentReadableCharges = nil
         button._chargeCountReadable = nil
@@ -1135,6 +1135,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
            and buttonData.type == "spell"
+           and usesChargeBehavior
            and buttonData.hasCharges
            and button._chargeCountReadable ~= true then
             -- Heuristic: suppress zero-charge when cast history says charges remain.
@@ -1184,8 +1185,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     end
 
-    if buttonData.hasCharges then
-      if buttonData.type == "spell" then
+    if usesChargeBehavior then
+      if buttonData.type == "spell" and buttonData.hasCharges then
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
