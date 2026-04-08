@@ -309,8 +309,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         scroll:AddChild(slotLabel)
     end
 
-    -- Track buff/debuff duration toggle (hidden for passives — forced on)
-    if not buttonData.isPassive then
+    local isAuraEntry = buttonData.addedAs == "aura"
+
+    -- Track buff/debuff duration toggle (hidden for passives and aura entries — forced on)
+    if not buttonData.isPassive and not isAuraEntry then
     local auraCb = AceGUI:Create("CheckBox")
     local auraLabel = "Aura Tracking"
     local auraActive = auraConfigReady
@@ -328,9 +330,9 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     end)
     scroll:AddChild(auraCb)
 
-    end -- not buttonData.isPassive
+    end -- not buttonData.isPassive and not aura entry
 
-    local showAuraDetails = buttonData.isPassive or buttonData.auraTracking == true
+    local showAuraDetails = buttonData.isPassive or isAuraEntry or buttonData.auraTracking == true
 
     if showAuraDetails then
     local function StartAuraSpellOverridePicker()

@@ -109,7 +109,7 @@ local function UsesChargeBehavior(buttonData)
     if not buttonData then
         return false
     end
-    if buttonData.type == "spell" and buttonData.addedAs == "aura" and buttonData.auraTracking == true then
+    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
         return false
     end
     return buttonData.hasCharges == true or buttonData._hasDisplayCount == true

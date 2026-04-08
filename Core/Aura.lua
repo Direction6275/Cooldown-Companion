@@ -56,6 +56,28 @@ local function AddAuraCandidateIDsFromString(candidateSet, rawIDs)
     end
 end
 
+local function AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, spellID)
+    local numericID = tonumber(spellID)
+    if not numericID or numericID == 0 then
+        return
+    end
+    candidateSet[numericID] = true
+    if orderedSet[numericID] then
+        return
+    end
+    orderedSet[numericID] = true
+    orderedIDs[#orderedIDs + 1] = numericID
+end
+
+local function AppendOrderedAuraCandidateIDsFromString(candidateSet, orderedSet, orderedIDs, rawIDs)
+    if not rawIDs then
+        return
+    end
+    for id in tostring(rawIDs):gmatch("%d+") do
+        AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, id)
+    end
+end
+
 local function AddCooldownInfoCandidateIDs(candidateSet, cooldownInfo)
     if type(cooldownInfo) ~= "table" then
         return
@@ -402,20 +424,22 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
     local candidateIDs = {}
+    local orderedCandidateSet = {}
+    local orderedCandidateIDs = {}
 
-    AddAuraCandidateID(candidateIDs, buttonData.id)
-    AddAuraCandidateID(candidateIDs, baseId)
-    AddAuraCandidateIDsFromString(candidateIDs, buttonData.auraSpellID)
+    AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
+    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
+    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
 
     local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
     if resolvedAuraId and resolvedAuraId ~= 0 then
         data.hasAssociatedAura = true
-        AddAuraCandidateID(candidateIDs, resolvedAuraId)
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
     end
 
     local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
     if overrideBuffs then
-        AddAuraCandidateIDsFromString(candidateIDs, overrideBuffs)
+        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
     end
 
     local function MergeCooldownInfo(cooldownInfo)
@@ -442,8 +466,12 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
         end)
     end
 
+    for spellID in pairs(candidateIDs) do
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, spellID)
+    end
+
     if not data.trackedBuffViewerFrame then
-        for spellID in pairs(candidateIDs) do
+        for _, spellID in ipairs(orderedCandidateIDs) do
             local candidate = self:ResolveBuffViewerFrameForSpell(spellID)
             if candidate then
                 data.trackedBuffViewerFrame = candidate
@@ -454,7 +482,7 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
         end
     end
 
-    for spellID in pairs(candidateIDs) do
+    for _, spellID in ipairs(orderedCandidateIDs) do
         local candidate = ResolveViewerFrameForSpellID(spellID, false)
         if candidate and type(candidate.cooldownInfo) == "table" then
             MergeCooldownInfo(candidate.cooldownInfo)
@@ -487,7 +515,7 @@ function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, si
         return true
     end
 
-    if options.trustExplicitAuraLabel == true and buttonData.addedAs == "aura" then
+    if options.trustExplicitAuraLabel ~= false and buttonData.addedAs == "aura" then
         return true
     end
 
@@ -500,20 +528,6 @@ function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, si
 
     if HasBuffSuffixName(buttonData.name) then
         return true
-    end
-
-    if siblingButtons then
-        for _, siblingData in ipairs(siblingButtons) do
-            if siblingData ~= buttonData
-                and siblingData
-                and siblingData.type == "spell"
-                and siblingData.id == buttonData.id
-                and siblingData.cdmChildSlot == buttonData.cdmChildSlot then
-                if siblingData.auraTracking ~= true or siblingData.addedAs == "spell" then
-                    return true
-                end
-            end
-        end
     end
 
     return false
@@ -536,13 +550,9 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
         changed = true
     end
 
-    -- Preserve an explicit user disable on aura-only entries. Only restore the
-    -- toggle when the value is missing, or when passive entries need their
-    -- always-on tracking behavior back.
-    if buttonData.isPassive == true and buttonData.auraTracking ~= true then
-        buttonData.auraTracking = true
-        changed = true
-    elseif buttonData.addedAs == "aura" and buttonData.auraTracking == nil then
+    -- Aura entries are never dynamic spell buttons: keep auraTracking on so
+    -- they remain aura-only even when CDM is temporarily not ready.
+    if buttonData.addedAs == "aura" and buttonData.auraTracking ~= true then
         buttonData.auraTracking = true
         changed = true
     end
