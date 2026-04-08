@@ -235,6 +235,17 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         viewerFrame
     )
     local auraConfigReady = auraStatus.ready == true
+    local auraFoundButUntracked = auraStatus.state == "associatedAuraNotTracked"
+    local auraInactiveColorCode = auraFoundButUntracked and "|cffffff00" or "|cffff0000"
+    local function SetupWrappedStatusLabel(label, text, justifyH)
+        label:SetFullWidth(true)
+        label:SetJustifyH(justifyH or "LEFT")
+        local contentWidth = scroll.content and scroll.content:GetWidth()
+        if contentWidth and contentWidth > 0 then
+            label:SetWidth(math.max(1, contentWidth - 20))
+        end
+        label:SetText(text)
+    end
 
     if buttonData.type == "spell" then
     local auraHeading = AceGUI:Create("Heading")
@@ -302,7 +313,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
     local auraCb = AceGUI:Create("CheckBox")
     local auraLabel = "Aura Tracking"
     local auraActive = auraConfigReady
-    auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": |cffff0000Inactive|r")
+    auraLabel = auraLabel .. (auraActive and ": |cff00ff00Active|r" or ": " .. auraInactiveColorCode .. "Inactive|r")
     auraCb:SetLabel(auraLabel)
     auraCb:SetValue(buttonData.auraTracking == true)
     auraCb:SetFullWidth(true)
@@ -469,12 +480,10 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     local auraStatusLabel = AceGUI:Create("Label")
     if auraConfigReady then
-        auraStatusLabel:SetText("|cff00ff00Aura tracking is active and ready.|r")
+        SetupWrappedStatusLabel(auraStatusLabel, "|cff00ff00Aura tracking is active and ready.|r", "CENTER")
     else
-        auraStatusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
+        SetupWrappedStatusLabel(auraStatusLabel, (auraFoundButUntracked and "|cffffff00" or "|cffff0000") .. "Aura tracking is not ready.|r", "CENTER")
     end
-    auraStatusLabel:SetFullWidth(true)
-    auraStatusLabel:SetJustifyH("CENTER")
     scroll:AddChild(auraStatusLabel)
 
     local auraStatusSpacer2 = AceGUI:Create("Label")
@@ -484,8 +493,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     if auraStatus.state == "cdmDisabled" then
         local cdmDisabledLabel = AceGUI:Create("Label")
-        cdmDisabledLabel:SetText("|cff888888Blizzard Cooldown Manager is disabled. Enable it above to allow aura tracking.|r")
-        cdmDisabledLabel:SetFullWidth(true)
+        SetupWrappedStatusLabel(cdmDisabledLabel, "|cff888888Blizzard Cooldown Manager is disabled. Enable it above to allow aura tracking.|r")
         scroll:AddChild(cdmDisabledLabel)
         local cdmDisabledSpacer = AceGUI:Create("Label")
         cdmDisabledSpacer:SetText(" ")
@@ -493,8 +501,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
         scroll:AddChild(cdmDisabledSpacer)
     elseif auraStatus.state == "noAssociatedAura" then
         local noAuraLabel = AceGUI:Create("Label")
-        noAuraLabel:SetText("|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r")
-        noAuraLabel:SetFullWidth(true)
+        SetupWrappedStatusLabel(noAuraLabel, "|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r")
         scroll:AddChild(noAuraLabel)
         local noAuraSpacer = AceGUI:Create("Label")
         noAuraSpacer:SetText(" ")
@@ -504,8 +511,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
 
     if auraStatus.state == "associatedAuraNotTracked" then
         local auraDisabledLabel = AceGUI:Create("Label")
-        auraDisabledLabel:SetText("|cff888888An associated aura was found, but it is not being currently tracked in Blizzard CDM as a Tracked Buff or Tracked Bar.|r")
-        auraDisabledLabel:SetFullWidth(true)
+        SetupWrappedStatusLabel(auraDisabledLabel, "|cff888888An associated aura was found, but it is not being currently tracked in Blizzard CDM as a Tracked Buff or Tracked Bar.|r")
         scroll:AddChild(auraDisabledLabel)
         local auraDisabledSpacer = AceGUI:Create("Label")
         auraDisabledSpacer:SetText(" ")

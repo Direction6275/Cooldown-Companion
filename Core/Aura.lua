@@ -146,7 +146,7 @@ local function ForEachRawCooldownInfo(callback)
     end
 end
 
-local function ForEachTrackedAuraLayoutInfo(callback)
+local function ForEachAuraLayoutInfo(callback)
     local dataProvider = GetCooldownViewerDataProvider()
     if not dataProvider then
         return false
@@ -158,7 +158,20 @@ local function ForEachTrackedAuraLayoutInfo(callback)
             for _, cooldownID in ipairs(cooldownIDs) do
                 local info = dataProvider:GetCooldownInfoForID(cooldownID)
                 if info then
-                    callback(cooldownID, info, category)
+                    callback(cooldownID, info, category, true)
+                end
+            end
+        end
+    end
+
+    local hiddenAuraCategory = Enum.CooldownViewerCategory.HiddenAura
+    if hiddenAuraCategory ~= nil then
+        local cooldownIDs = dataProvider:GetOrderedCooldownIDsForCategory(hiddenAuraCategory, true)
+        if cooldownIDs then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local info = dataProvider:GetCooldownInfoForID(cooldownID)
+                if info then
+                    callback(cooldownID, info, hiddenAuraCategory, false)
                 end
             end
         end
@@ -393,28 +406,26 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
         AddAuraCandidateIDsFromString(candidateIDs, overrideBuffs)
     end
 
-    local function MergeCooldownInfo(cooldownInfo, markAssociation)
+    local function MergeCooldownInfo(cooldownInfo)
         if type(cooldownInfo) ~= "table" then
             return
         end
         AddCooldownInfoCandidateIDs(candidateIDs, cooldownInfo)
-        if markAssociation and cooldownInfo.hasAura == true then
-            data.hasAssociatedAura = true
-        end
     end
 
     if viewerFrame and IsBuffViewerChild(viewerFrame) and type(viewerFrame.cooldownInfo) == "table" then
         data.trackedBuffViewerFrame = viewerFrame
         data.hasAssociatedAura = true
-        MergeCooldownInfo(viewerFrame.cooldownInfo, false)
+        MergeCooldownInfo(viewerFrame.cooldownInfo)
     end
 
-    -- Raw cooldown records tell us whether Blizzard associates an aura with this spell,
-    -- but they do not prove that the aura is currently tracked as a Buff or Bar.
+    -- Raw cooldown records expand candidate spell IDs, but the config text should
+    -- only consider an aura "found" if Blizzard places it in the aura layout
+    -- itself (tracked or hidden/not displayed), not merely on a cooldown record.
     for _ = 1, 2 do
         ForEachRawCooldownInfo(function(_cooldownID, info)
             if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
-                MergeCooldownInfo(info, true)
+                MergeCooldownInfo(info)
             end
         end)
     end
@@ -425,28 +436,29 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
             if candidate then
                 data.trackedBuffViewerFrame = candidate
                 data.hasAssociatedAura = true
-                MergeCooldownInfo(candidate.cooldownInfo, false)
+                MergeCooldownInfo(candidate.cooldownInfo)
                 break
             end
         end
     end
 
-    ForEachTrackedAuraLayoutInfo(function(_cooldownID, info)
-        if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
-            data.hasTrackedAuraLayout = true
-            data.hasAssociatedAura = true
-            MergeCooldownInfo(info, false)
-        end
-    end)
-
     for spellID in pairs(candidateIDs) do
         local candidate = ResolveViewerFrameForSpellID(spellID, false)
-        if candidate then
-            if type(candidate.cooldownInfo) == "table" then
-                MergeCooldownInfo(candidate.cooldownInfo, true)
-            end
-            break
+        if candidate and type(candidate.cooldownInfo) == "table" then
+            MergeCooldownInfo(candidate.cooldownInfo)
         end
+    end
+
+    for _ = 1, 2 do
+        ForEachAuraLayoutInfo(function(_cooldownID, info, _category, isTracked)
+            if CooldownInfoMatchesCandidateSet(info, candidateIDs) then
+                if isTracked then
+                    data.hasTrackedAuraLayout = true
+                end
+                data.hasAssociatedAura = true
+                MergeCooldownInfo(info)
+            end
+        end)
     end
 
     return data
