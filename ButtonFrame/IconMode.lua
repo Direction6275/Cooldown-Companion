@@ -57,7 +57,7 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
         return false
     end
 
-    if buttonData.type ~= "spell" or buttonData.hasCharges ~= true then
+    if buttonData.type ~= "spell" or buttonData.hasCharges ~= true or buttonData._hasDisplayCount then
         return false
     end
 
@@ -773,36 +773,21 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
                and (not style.readyGlowCombatOnly or inCombat)
                and button._desatCooldownActive == false
                and not (procOverlayActive and style.procGlowStyle ~= "none") then
-            if style.readyGlowOnlyAtMaxCharges and buttonData.type == "spell" and buttonData.hasCharges == true then
-                if button._readyGlowMaxChargesSpellID ~= buttonData.id then
-                    button._readyGlowMaxChargesSpellID = buttonData.id
-                    button._readyGlowMaxChargesStartTime = nil
-                    button._readyGlowMaxChargesActive = nil
-                end
-
-                local isCapped = IsReadyGlowAtMaxCharges(button, buttonData)
+            if style.readyGlowOnlyAtMaxCharges
+               and buttonData.type == "spell"
+               and buttonData.hasCharges == true
+               and not buttonData._hasDisplayCount then
                 local dur = style.readyGlowDuration or 0
 
-                if isCapped then
-                    if button._readyGlowMaxChargesActive ~= true then
-                        button._readyGlowMaxChargesStartTime = GetTime()
-                    end
-
+                if IsReadyGlowAtMaxCharges(button, buttonData) then
                     if dur > 0 then
                         showReady = button._readyGlowMaxChargesStartTime ~= nil
                             and (GetTime() - button._readyGlowMaxChargesStartTime) <= dur
                     else
                         showReady = true
                     end
-                else
-                    button._readyGlowMaxChargesStartTime = nil
                 end
-
-                button._readyGlowMaxChargesActive = isCapped
             else
-                button._readyGlowMaxChargesSpellID = nil
-                button._readyGlowMaxChargesActive = nil
-                button._readyGlowMaxChargesStartTime = nil
                 local dur = style.readyGlowDuration or 0
                 if dur > 0 then
                     showReady = button._readyGlowStartTime ~= nil
@@ -839,6 +824,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._desaturated = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
+    button._readyGlowMaxChargesStartTime = nil
+    button._readyGlowMaxChargesActive = nil
+    button._readyGlowMaxChargesSpellID = nil
     button._noCooldown = nil
     button._vertexR = nil
     button._vertexG = nil

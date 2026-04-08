@@ -24,35 +24,6 @@ local AddOffsetSliders = ST._AddOffsetSliders
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 
-local function ExpireCurrentCappedChargeReadyGlows(groupId, duration)
-    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
-    if not (frame and frame.buttons) then
-        return
-    end
-
-    local now = GetTime()
-    for _, button in ipairs(frame.buttons) do
-        local buttonData = button.buttonData
-        if buttonData and buttonData.type == "spell" and buttonData.hasCharges == true then
-            local cur = button._currentReadableCharges
-            local maxCharges = buttonData.maxCharges
-            local isCapped = false
-
-            if button._chargeCountReadable == true and cur ~= nil and maxCharges ~= nil then
-                isCapped = (cur == maxCharges)
-            elseif button._chargeCountReadable ~= true then
-                isCapped = not button._chargeRecharging and not button._zeroChargesConfirmed
-            end
-
-            if isCapped then
-                button._readyGlowMaxChargesSpellID = buttonData.id
-                button._readyGlowMaxChargesActive = true
-                button._readyGlowMaxChargesStartTime = now - (duration or 0) - 0.01
-            end
-        end
-    end
-end
-
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
 local BuildAuraTextControls = ST._BuildAuraTextControls
@@ -1343,9 +1314,6 @@ local function BuildEffectsTab(container)
     readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowDuration = val and 3 or 0
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        if val and style.readyGlowOnlyAtMaxCharges then
-            ExpireCurrentCappedChargeReadyGlows(CS.selectedGroup, style.readyGlowDuration or 0)
-        end
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
     end)
