@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.12.1",
         "1.12",
         "1.11",
         "1.10.28",
@@ -15,6 +16,26 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.12.1"] = {
+            markdown = [[
+## New Features
+
+- **Ready glow for full charges:** Charge-based spells and items can now trigger Ready Glow when they are fully recharged, with new panel controls for tuning that behavior.
+
+## Polish | QoL
+
+- **Sound previews in dropdowns:** Sound alert dropdowns now include inline preview buttons so you can hear a sound before picking it.
+- **Easier panel anchoring:** Panel anchor targets are now grouped in a cleaner dropdown, making it faster to pick the panel you want to anchor to.
+
+## Bug Fixes
+
+- **Standalone aura entries:** Fixed several issues that could cause standalone aura tracking to show the wrong ready state, charge state, or status text, especially on older migrated setups.
+
+## Performance
+
+- **Hidden custom aura bars:** Custom aura bars now avoid unnecessary update work while hidden, reducing CPU usage when they are not visible.
+]],
+        },
         ["1.12"] = {
             markdown = [[
 ## New Features
