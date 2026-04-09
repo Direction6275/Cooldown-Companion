@@ -1284,7 +1284,8 @@ function CooldownCompanion:UpdateAllCooldowns()
         end
     end
 
-    if self._groupLayoutWorkPending then
+    -- Compact layout can hide/show buttons, so defer that work until combat ends.
+    if self._groupLayoutWorkPending and not InCombatLockdown() then
         self:UpdateAllGroupLayouts()
     end
 end
