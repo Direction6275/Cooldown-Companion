@@ -262,7 +262,9 @@ function CooldownCompanion:OnEnable()
         end
 
         self:UpdateAllCooldowns()
-        self:UpdateAllGroupLayouts()
+        if self._groupLayoutWorkPending then
+            self:UpdateAllGroupLayouts()
+        end
         self._cooldownsDirty = false
     end)
 

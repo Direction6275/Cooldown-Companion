@@ -221,6 +221,10 @@ local function ForEachAuraLayoutInfo(callback)
 end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
+    if unit ~= "player" and unit ~= "target" then
+        return
+    end
+
     self._cooldownsDirty = true
     if unit == "player" and self._isDracthyr then
         self:InvalidateMountAlphaCache()

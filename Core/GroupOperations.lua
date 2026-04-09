@@ -20,6 +20,36 @@ local InCombatLockdown = InCombatLockdown
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function HasPendingGroupLayoutWork(addon)
+    for _, frame in pairs(addon.groupFrames or {}) do
+        if frame and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
+            return true
+        end
+    end
+
+    if addon._dormantFrames then
+        for _, frame in pairs(addon._dormantFrames) do
+            if frame and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
+                return true
+            end
+        end
+    end
+
+    if addon.containerFrames then
+        for _, frame in pairs(addon.containerFrames) do
+            if frame and frame._anchorDirty then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function CooldownCompanion:UpdateGroupLayoutWorkPending()
+    self._groupLayoutWorkPending = HasPendingGroupLayoutWork(self) or nil
+end
+
 --- Return the per-spec order for a container or folder, falling back to the
 --- global .order field and then to the supplied default (typically the ID).
 --- @param obj table  groupContainer or folder table with optional specOrders
@@ -1032,9 +1062,9 @@ function CooldownCompanion:RefreshAllGroups()
     self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
--- Refresh only frame-level visibility/load-state without rebuilding buttons.
--- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
--- caused by full button repopulation.
+    -- Refresh only frame-level visibility/load-state without rebuilding buttons.
+    -- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
+    -- caused by full button repopulation.
 function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
@@ -1116,6 +1146,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                         end
                         if group.compactLayout then
                             frame._layoutDirty = true
+                            self._groupLayoutWorkPending = true
                             self:UpdateGroupLayout(groupId)
                         end
                     end
@@ -1177,6 +1208,7 @@ function CooldownCompanion:UnloadGroup(groupId)
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil
+    self:UpdateGroupLayoutWorkPending()
 end
 
 -- Recover a dormant frame: restore it to groupFrames, re-enable button
@@ -1215,6 +1247,8 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     if frame.anchoredToParent and not frame._anchorDirty then
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
+
+    self:UpdateGroupLayoutWorkPending()
 
     return frame
 end
@@ -1260,6 +1294,8 @@ function CooldownCompanion:UpdateAllCooldowns()
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
+    if not self._groupLayoutWorkPending then return end
+
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame:IsShown() then
             local protected = InCombatLockdown() and frame:IsProtected()
@@ -1293,6 +1329,7 @@ function CooldownCompanion:UpdateAllGroupLayouts()
             end
         end
     end
+    self:UpdateGroupLayoutWorkPending()
 end
 
 -- Refresh all panel frames belonging to a container.

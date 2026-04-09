@@ -249,6 +249,14 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
+    local buttonType = buttonData.type
+    local buttonId = buttonData.id
+    local isSpell = buttonType == "spell"
+    local isItem = buttonType == "item"
+    local isEquipItem = buttonType == "equipitem"
+    local isPassive = buttonData.isPassive == true
+    local hasCharges = buttonData.hasCharges == true
+    local auraTracking = buttonData.auraTracking == true
     local usesChargeBehavior = UsesChargeBehavior(buttonData)
     local useChargeTextLane = UsesChargeTextLane(buttonData)
     local now = GetTime()
@@ -272,15 +280,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Lazy-cache no-cooldown detection for spells (GCD-only, no real CD).
     -- Computed once (nil → true/false), reset in UpdateButtonStyle on respec.
     if button._noCooldown == nil then
-        if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
-            local baseCd = GetSpellBaseCooldown(buttonData.id)
-            button._noCooldown = (not baseCd or baseCd == 0) and not HasTooltipCooldown(buttonData.id)
+        if isSpell and not isPassive and not usesChargeBehavior then
+            local baseCd = GetSpellBaseCooldown(buttonId)
+            button._noCooldown = (not baseCd or baseCd == 0) and not HasTooltipCooldown(buttonId)
         else
             button._noCooldown = false
         end
     end
 
-    local cooldownSpellId = button._displaySpellId or buttonData.id
+    local cooldownSpellId = button._displaySpellId or buttonId
 
     -- Deferred icon refresh for cdmChildSlot buttons (set by OnSpellUpdateIcon).
     -- One-tick delay ensures the CDM viewer's RefreshSpellTexture has already
@@ -288,7 +296,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button._iconDirty then
         button._iconDirty = nil
         CooldownCompanion:UpdateButtonIcon(button)
-        cooldownSpellId = button._displaySpellId or buttonData.id
+        cooldownSpellId = button._displaySpellId or buttonId
     end
 
     -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's Fury
@@ -296,22 +304,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- visual, but no event fires for these transforms. cdmChildSlot buttons
     -- already have their own per-tick viewer-based icon re-sync.
     -- Event-driven updates (_iconDirty) remain instant (handled above).
-    if buttonData.type == "spell" and not buttonData.cdmChildSlot then
-        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
+    if isSpell and not buttonData.cdmChildSlot then
+        local freshIcon = C_Spell.GetSpellTexture(buttonId)
         if freshIcon and freshIcon ~= button._lastSpellTexture then
             button._lastSpellTexture = freshIcon
             CooldownCompanion:UpdateButtonIcon(button)
-            cooldownSpellId = button._displaySpellId or buttonData.id
+            cooldownSpellId = button._displaySpellId or buttonId
         end
     end
 
     -- Proc state: event-driven table lookup (base spell + current displayed override).
     -- Keeps visibility and glow checks aligned without polling overlay APIs.
     local procOverlayActive = false
-    if buttonData.type == "spell" and not buttonData.isPassive then
+    if isSpell and not isPassive then
         local displaySpellId = button._displaySpellId
-        procOverlayActive = CooldownCompanion.procOverlaySpells[buttonData.id] ~= nil
-        if not procOverlayActive and displaySpellId and displaySpellId ~= buttonData.id then
+        procOverlayActive = CooldownCompanion.procOverlaySpells[buttonId] ~= nil
+        if not procOverlayActive and displaySpellId and displaySpellId ~= buttonId then
             procOverlayActive = CooldownCompanion.procOverlaySpells[displaySpellId] ~= nil
         end
     end
@@ -338,13 +346,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
     local auraHasTimer = button._auraHasTimer == true
-    local auraTrackingReady = buttonData.isPassive == true
+    local auraTrackingReady = isPassive
     -- Capture and clear event-driven removal flag (set by OnUnitAura when
     -- removedAuraInstanceIDs confirms the aura is gone).  Used to bypass the
     -- grace hold, which otherwise can't detect expiry in combat (secret values).
     local auraEventRemoved = button._auraEventRemoved
     button._auraEventRemoved = nil
-    if buttonData.auraTracking and button._auraSpellID then
+    if auraTracking and button._auraSpellID then
         local configUnit = GetConfiguredAuraUnit(buttonData)
         local auraUnit = button._auraUnit or configUnit
 
@@ -357,7 +365,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Requires the Blizzard Cooldown Manager to be visible with this spell.
         -- CDM child slot: use specific child for multi-entry spells (e.g., Diabolic Ritual)
         if buttonData.cdmChildSlot then
-            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonId]
             if allChildren then
                 viewerFrame = allChildren[buttonData.cdmChildSlot]
             end
@@ -392,12 +400,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not viewerFrame then
             viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(button._auraSpellID)
             if not viewerFrame then
-                viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(buttonData.id)
+                viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(buttonId)
                     or (button._displaySpellId and CooldownCompanion:ResolveBuffViewerFrameForSpell(button._displaySpellId))
                 -- Try base spell for form-variant spells (e.g. Stampeding Roar)
                 if not viewerFrame then
-                    local baseId = C_Spell.GetBaseSpell(buttonData.id)
-                    if baseId and baseId ~= buttonData.id and baseId ~= button._auraSpellID then
+                    local baseId = C_Spell.GetBaseSpell(buttonId)
+                    if baseId and baseId ~= buttonId and baseId ~= button._auraSpellID then
                         viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(baseId)
                     end
                 end
@@ -515,7 +523,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local canUsePlayerAuraFallback = auraTrackingReady and configUnit == "player"
 
         if canUsePlayerAuraFallback and not auraOverrideActive then
-            local baseId = C_Spell.GetBaseSpell(buttonData.id)
+            local baseId = C_Spell.GetBaseSpell(buttonId)
             -- Try base spell first (buff is applied as base), then _auraSpellID
             local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
             local auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
@@ -569,7 +577,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- (debuff absent on new target) or primary path provides fresh data.
         -- Player path: DurationObject expiry + time-based grace window.
         if not auraOverrideActive and button._auraActive
-           and prevAuraDurationObj and not buttonData.isPassive then
+           and prevAuraDurationObj and not isPassive then
             local expired = false
             if auraEventRemoved then
                 -- Server confirmed aura removal via UNIT_AURA
@@ -658,7 +666,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- viewer frame's Icon widget updates per-stage (e.g. Heating Up → Hot Streak)
         -- but UpdateButtonIcon is not called per-tick. Detect texture changes here
         -- and trigger an icon update only when the viewer icon actually changes.
-        if buttonData.isPassive and viewerFrame then
+        if isPassive and viewerFrame then
             local iconObj = viewerFrame.Icon
             if iconObj and not iconObj.GetTextureFileID then
                 iconObj = iconObj.Icon
@@ -676,7 +684,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     CooldownCompanion:UpdateButtonIcon(button)
                 end
             end
-        elseif buttonData.isPassive and button._lastViewerTexId then
+        elseif isPassive and button._lastViewerTexId then
             button._lastViewerTexId = nil
             button._auraViewerFrame = nil
             CooldownCompanion:UpdateButtonIcon(button)
@@ -710,13 +718,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             button._showingAuraIcon = nil
             -- Don't clear _auraViewerFrame for passive buttons — managed above
-            if not buttonData.isPassive then
+            if not isPassive then
                 button._auraViewerFrame = nil
             end
         end
 
         -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
-        if button._auraTrackingReady or buttonData.isPassive then
+        if button._auraTrackingReady or isPassive then
             if auraOverrideActive and viewerFrame then
                 button._auraStackText = GetViewerAuraStackText(viewerFrame)
             else
@@ -797,7 +805,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         elseif button._viewerAuraVisualsActive then
             button._viewerAuraVisualsActive = nil
             if button.nameText and not buttonData.customName then
-                local restoreSpellID = button._displaySpellId or buttonData.id
+                local restoreSpellID = button._displaySpellId or buttonId
                 local baseName = C_Spell.GetSpellName(restoreSpellID)
                 if baseName then
                     button.nameText:SetText(baseName)
@@ -813,19 +821,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     button._auraTrackingReady = auraTrackingReady
 
-    if buttonData.isPassive and not auraOverrideActive then
+    if isPassive and not auraOverrideActive then
         button.cooldown:Hide()
     end
 
     -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
-    if auraOverrideActive and buttonData.type == "spell" and not buttonData.isPassive then
+    if auraOverrideActive and isSpell and not isPassive then
         auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
         auraProbeIsGCDOnly = auraProbeInfo and IsSpellGCDOnly(auraProbeInfo, buttonData._cooldownSecrecy) or false
     end
 
     -- Secondary cooldown text display during aura override
     if auraOverrideActive and button.secondaryCooldown then
-        if buttonData.type == "spell" and not buttonData.isPassive then
+        if isSpell and not isPassive then
             if auraProbeInfo then
                 if not auraProbeIsGCDOnly then
                     local probeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
@@ -844,8 +852,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.secondaryCooldown:SetCooldown(0, 0)
                 button._secondaryCdActive = false
             end
-        elseif buttonData.type == "item" then
-            local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
+        elseif isItem then
+            local cdStart, cdDuration = C_Item.GetItemCooldown(buttonId)
             local probeIsGCDOnly = false
             if cdDuration and cdDuration > 0 then
                 local gcdInfo = CooldownCompanion._gcdInfo
@@ -868,7 +876,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if not auraOverrideActive then
-        if buttonData.type == "spell" and not buttonData.isPassive then
+        if isSpell and not isPassive then
             -- isActive (NeverSecret, 12.0.1 hotfix) is authoritative for whether
             -- the UI should render a cooldown.  Action-slot probing is deferred to
             -- the nil-fallback below — only needed when GetSpellCooldown returns nil
@@ -909,7 +917,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- spells whose spell-level API is unavailable in combat.
                 if not usesChargeBehavior and buttonData._cooldownSecrecy ~= 0 then
                     actionSlotCooldownShown, actionSlotDurationObj =
-                        ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+                        ProbeActionSlotCooldownForSpell(buttonId, cooldownSpellId)
                     if actionSlotDurationObj then
                         button._durationObj = actionSlotDurationObj
                         button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
@@ -921,10 +929,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button.cooldown:SetCooldown(0, 0)
                 end
             end
-        elseif buttonData.type == "item" then
+        elseif isItem then
             button._isEquippableNotEquipped = false
             local isEquippable = IsItemEquippable(buttonData)
-            if isEquippable and not C_Item.IsEquippedItem(buttonData.id) then
+            if isEquippable and not C_Item.IsEquippedItem(buttonId) then
                 button._isEquippableNotEquipped = true
                 -- Suppress cooldown display: static desaturated icon
                 button.cooldown:SetCooldown(0, 0)
@@ -932,7 +940,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._itemCdDuration = 0
             else
                 button._isEquippableNotEquipped = false
-                local cdStart, cdDuration, enableCooldownTimer = C_Item.GetItemCooldown(buttonData.id)
+                local cdStart, cdDuration, enableCooldownTimer = C_Item.GetItemCooldown(buttonId)
                 if not enableCooldownTimer and cdStart > 0 then
                     -- Deferred cooldown (e.g. Healthstone used in combat): the
                     -- timer hasn't started yet.  Suppress the swipe to prevent
@@ -967,10 +975,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- When readable, charge count is authoritative for "zero charges" (unusable),
     -- even if the spell also has a per-cast cooldown lockout.
     local charges
-    if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
+    if usesChargeBehavior and hasCharges and isSpell then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-    elseif usesChargeBehavior and buttonData._hasDisplayCount and buttonData.type == "spell" then
+    elseif usesChargeBehavior and buttonData._hasDisplayCount and isSpell then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
     elseif not usesChargeBehavior then
         -- hasCharges cleared: wipe stale charge state.
@@ -982,7 +990,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargesSpent = nil
         button._chargeText = nil
         button._displayCountZeroUsabilityFallback = nil
-        if buttonData.type == "spell" then
+        if isSpell then
             button.count:SetText("")
         end
         -- Shared count-text lane for non-charge spells:
@@ -990,7 +998,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         --   2) Cast-count stacks (e.g. Mana Tea)
         -- Both intentionally reuse the charge-text font/toggle without driving
         -- charge-specific cooldown logic.
-        if buttonData.type == "spell"
+        if isSpell
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false)
                 and button.style and button.style.showChargeText then
             local displayCountShown = false
@@ -1021,7 +1029,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             elseif not displayCountShown then
                 button.count:SetText("")
             end
-        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData)) and buttonData.type == "spell"
+        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData)) and isSpell
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
             -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
@@ -1049,7 +1057,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Proc overlay guard: when SPELL_ACTIVATION_OVERLAY_GLOW_SHOW has fired for
     -- this spell, a proc may have reset its cooldown — let the GCD-only
     -- detection stand so the button saturates immediately.
-    if buttonData.type == "spell"
+    if isSpell
        and not usesChargeBehavior
        and not auraOverrideActive
        and buttonData._cooldownSecrecy ~= 0
@@ -1071,14 +1079,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and isGCDOnly
-            and not usesChargeBehavior and not buttonData.isPassive
+       and not usesChargeBehavior and not isPassive
     end
 
     -- Bar mode icon-only GCD swipe.
     if button._isBar and button.iconGCDCooldown then
         local showBarGCDSwipe = (style.showBarIcon ~= false)
             and style.showGCDSwipe == true
-            and buttonData.type == "spell"
+            and isSpell
             and isOnGCD == true
         if showBarGCDSwipe then
             local gcdDurationObj = CooldownCompanion._gcdDurationObj
@@ -1106,30 +1114,30 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if usesChargeBehavior then
         -- Default to non-zero each tick; set true only when a current probe confirms zero.
         button._mainCDShown = false
-        if buttonData.type == "item" then
+        if isItem then
             -- Items: 0 charges = on cooldown. No GCD to filter.
-            local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+            local chargeCount = C_Item.GetItemCount(buttonId, false, true)
             button._mainCDShown = (chargeCount == 0)
-        elseif buttonData.type == "spell"
+        elseif isSpell
            and button._chargeCountReadable == true
            and button._currentReadableCharges ~= nil then
             -- Readable charge count is the source of truth for zero-charge state.
             -- Prevents short lockout cooldowns (e.g., dragonriding flyout abilities)
             -- from being misclassified as "zero charges".
             button._mainCDShown = (button._currentReadableCharges == 0)
-        elseif buttonData.type == "spell" and buttonData._hasDisplayCount then
+        elseif isSpell and buttonData._hasDisplayCount then
             -- Secret display counts do not expose a readable number in combat for
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
             button._mainCDShown = false
-        elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
+        elseif isSpell and usesChargeBehavior and hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
             -- which is NOT charge-aware (isActive = isEnabled and startTime > 0
             -- and duration > 0).  It can report true during per-cast lockouts
             -- and recharge, so the _chargesSpent heuristic below guards both
             -- this path and the isActive fallback.
-            local slotShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+            local slotShown = ProbeActionSlotCooldownForSpell(buttonId, cooldownSpellId)
             if slotShown ~= nil then
                 button._mainCDShown = slotShown and not isGCDOnly
             elseif not auraOverrideActive then
@@ -1157,9 +1165,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         local zeroConfirmed = (button._mainCDShown == true)
         if zeroConfirmed
-           and buttonData.type == "spell"
+           and isSpell
            and usesChargeBehavior
-           and buttonData.hasCharges
+           and hasCharges
            and button._chargeCountReadable ~= true then
             -- Heuristic: suppress zero-charge when cast history says charges remain.
             -- Applies to both the action bar probe and isActive fallback paths.
@@ -1182,7 +1190,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- info is unavailable (nil-fallback probe). Otherwise use addon state.
     -- _cooldownDeferred: timer hasn't started (e.g. Healthstone in combat, Feign
     -- Death while buff active).  Treat as "on cooldown" for dimming/visibility.
-    if buttonData.type == "item" then
+    if isItem then
         button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
             or button._cooldownDeferred or false
     elseif usesChargeBehavior then
@@ -1209,7 +1217,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if usesChargeBehavior then
-      if buttonData.type == "spell" and buttonData.hasCharges then
+      if isSpell and hasCharges then
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
@@ -1238,7 +1246,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         elseif not button._isBar and not button._isText and not auraOverrideActive then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
             -- Clear if unavailable to prevent stale cooldown widget state.
-            local chargeSpellID = cooldownSpellId or buttonData.id
+            local chargeSpellID = cooldownSpellId or buttonId
             local fallbackDuration = C_Spell.GetSpellChargeDuration(chargeSpellID)
             if fallbackDuration then
                 button.cooldown:SetCooldownFromDurationObject(fallbackDuration)
@@ -1247,7 +1255,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-      elseif buttonData.type == "item" then
+        elseif isItem then
         UpdateItemChargeTracking(button, buttonData)
 
         -- Detect recharging via stored item cooldown values
@@ -1257,7 +1265,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     if IsReadyGlowMaxChargeEligible(buttonData) then
-        local readyGlowSpellID = cooldownSpellId or buttonData.id
+        local readyGlowSpellID = cooldownSpellId or buttonId
         if button._readyGlowMaxChargesSpellID ~= readyGlowSpellID then
             button._readyGlowMaxChargesSpellID = readyGlowSpellID
             button._readyGlowMaxChargesStartTime = nil
@@ -1278,8 +1286,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
-    if buttonData.type == "item" and not buttonData.hasCharges and not IsItemEquippable(buttonData) then
-        local count = C_Item.GetItemCount(buttonData.id)
+    if isItem and not hasCharges and not IsItemEquippable(buttonData) then
+        local count = C_Item.GetItemCount(buttonId)
         if button._itemCount ~= count then
             button._itemCount = count
             if count and count >= 1 then
@@ -1293,7 +1301,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura stack count display (aura-tracking spells with stackable auras)
     -- Text is a secret value in combat — pass through directly to SetText.
     -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
-    if button.auraStackCount and (button._auraTrackingReady or buttonData.isPassive)
+    if button.auraStackCount and (button._auraTrackingReady or isPassive)
        and (style.showAuraStackText ~= false) then
         if button._auraActive then
             button.auraStackCount:SetText(button._auraStackText or "")
@@ -1334,7 +1342,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Per-button sound alerts (Blizzard-scoped events, CDM-valid only).
-    if buttonData.type == "spell" then
+    if isSpell then
         local soundCfg = buttonData.soundAlerts
         local hasSoundConfig = soundCfg and type(soundCfg.events) == "table" and next(soundCfg.events) ~= nil
         if hasSoundConfig then
@@ -1428,7 +1436,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     if visibilityChanged or forceVisibleChanged then
         local groupFrame = button:GetParent()
-        if groupFrame then groupFrame._layoutDirty = true end
+        if groupFrame then
+            groupFrame._layoutDirty = true
+            CooldownCompanion._groupLayoutWorkPending = true
+        end
     end
 
     -- Apply visibility alpha or early-return for hidden buttons
@@ -1472,23 +1483,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Unusable/out-of-range state for text mode {unusable}/{oor} conditionals
     if button._isText then
-        if buttonData.isPassive then
+        if isPassive then
             button._isUnusable = false
-        elseif buttonData.type == "spell" then
-            button._isUnusable = not C_Spell_IsSpellUsable(buttonData.id)
-        elseif buttonData.type == "item" or buttonData.type == "equipitem" then
-            local usable = IsUsableItem(buttonData.id)
+        elseif isSpell then
+            button._isUnusable = not C_Spell_IsSpellUsable(buttonId)
+        elseif isItem or isEquipItem then
+            local usable = IsUsableItem(buttonId)
             button._isUnusable = not usable
         else
             button._isUnusable = false
         end
 
-        if buttonData.type == "spell" then
+        if isSpell then
             button._isOutOfRange = button._spellOutOfRange or false
-        elseif buttonData.type == "item" or buttonData.type == "equipitem" then
+        elseif isItem or isEquipItem then
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0)
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
-                local inRange = IsItemInRange(buttonData.id, "target")
+                local inRange = IsItemInRange(buttonId, "target")
                 button._isOutOfRange = (inRange == false)
             else
                 button._isOutOfRange = false

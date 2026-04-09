@@ -518,10 +518,12 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     -- Deferred during combat — ClearAllPoints/SetPoint are protected.
     if InCombatLockdown() and frame:IsProtected() then
         frame._anchorDirty = true
+        self._groupLayoutWorkPending = true
         return
     end
     frame._anchorDirty = nil
     frame:ClearAllPoints()
+    self:UpdateGroupLayoutWorkPending()
 
     -- ClearAllPoints removes all anchor points, discarding any offsets that
     -- AdjustPointsOffset added for compact anchor compensation.  Clear the
@@ -878,6 +880,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- briefly appear before the next ticker-driven layout pass.
     if group.compactLayout then
         frame._layoutDirty = true
+        self._groupLayoutWorkPending = true
         self:UpdateGroupLayout(groupId)
     end
     -- _hasBeenSized is now true if the compact resize ran (set by
@@ -942,6 +945,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     -- Defer resizing during combat and retry from the layout ticker.
     if InCombatLockdown() and frame:IsProtected() then
         frame._sizeDirty = true
+        self._groupLayoutWorkPending = true
         return false
     end
 
@@ -966,6 +970,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     frame._hasBeenSized = true
     frame._sizeDirty = nil
+    self:UpdateGroupLayoutWorkPending()
     return true
 end
 
@@ -978,6 +983,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 
     if not group.compactLayout then
         frame._layoutDirty = false
+        self:UpdateGroupLayoutWorkPending()
         return
     end
 
@@ -1027,6 +1033,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     end
 
     frame._layoutDirty = false
+    self:UpdateGroupLayoutWorkPending()
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
@@ -1060,6 +1067,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         -- Deferred during combat — protected frame restriction.
         if InCombatLockdown() and frame:IsProtected() then
             frame._strataDirty = true
+            self._groupLayoutWorkPending = true
         else
             local strata = group.frameStrata
             if strata then
@@ -1534,9 +1542,11 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
     -- Deferred during combat — ClearAllPoints/SetPoint are protected.
     if InCombatLockdown() and frame:IsProtected() then
         frame._anchorDirty = true
+        self._groupLayoutWorkPending = true
         return
     end
     frame._anchorDirty = nil
+    self:UpdateGroupLayoutWorkPending()
     local normalizedAnchor, _, deferred = self:NormalizeContainerAnchor(anchor)
     if not deferred then
         anchor = normalizedAnchor
