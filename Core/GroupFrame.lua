@@ -252,6 +252,8 @@ local function ResetButtonGlowTransitionState(button)
     button._procGlowActive = nil
     button._auraGlowActive = nil
     button._readyGlowActive = nil
+    button._readyGlowMaxChargesStartTime = nil
+    button._readyGlowMaxChargesActive = false
     button._barAuraEffectActive = nil
     button._barPulseActive = nil
     button._barColorShiftActive = nil

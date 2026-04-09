@@ -71,6 +71,25 @@ local function PrimeReadyGlowCappedChargeTransitions(groupId)
     end
 end
 
+local function PrimeReadyGlowNormalTransitions(groupId)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if not (frame and frame.buttons) then
+        return
+    end
+
+    local now = GetTime()
+    for _, button in ipairs(frame.buttons) do
+        local buttonData = button.buttonData
+        if buttonData
+           and not buttonData.isPassive
+           and button._noCooldown ~= true
+           and button._visibilityHidden ~= true
+           and button._desatCooldownActive == false then
+            button._readyGlowStartTime = now
+        end
+    end
+end
+
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
@@ -1313,8 +1332,12 @@ local function BuildEffectsTab(container)
     readyChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowOnlyAtMaxCharges = val == true
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        if val and (style.readyGlowDuration or 0) > 0 then
-            PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+        if (style.readyGlowDuration or 0) > 0 then
+            if val then
+                PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+            else
+                PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+            end
         end
         CooldownCompanion:UpdateAllCooldowns()
     end)
@@ -1332,8 +1355,12 @@ local function BuildEffectsTab(container)
     readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowDuration = val and 3 or 0
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        if val and style.readyGlowOnlyAtMaxCharges then
-            PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+        if val then
+            if style.readyGlowOnlyAtMaxCharges then
+                PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+            else
+                PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+            end
         end
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()

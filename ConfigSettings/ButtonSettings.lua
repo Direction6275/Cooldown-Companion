@@ -126,6 +126,21 @@ local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex
     button._readyGlowMaxChargesActive = false
 end
 
+local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    local button = frame and frame.buttons and frame.buttons[buttonIndex]
+    local buttonData = button and button.buttonData
+    if not (button and buttonData) then
+        return
+    end
+
+    if buttonData.isPassive or button._noCooldown == true or button._desatCooldownActive ~= false then
+        return
+    end
+
+    button._readyGlowStartTime = GetTime()
+end
+
 local function EnsureAuraUnitChoice(buttonData, isHarmful, unit)
     if IsValidAuraUnit(unit) then
         buttonData.auraUnit = unit
@@ -1497,8 +1512,12 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 cappedCb:SetCallback("OnValueChanged", function(widget, event, val)
                                     overrides.readyGlowOnlyAtMaxCharges = val == true
                                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                    if val and (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
-                                        PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                    if (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
+                                        if val then
+                                            PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                        else
+                                            PrimeSelectedReadyGlowNormalTransition(CS.selectedGroup, CS.selectedButton)
+                                        end
                                     end
                                     CooldownCompanion:UpdateAllCooldowns()
                                 end)
@@ -1516,8 +1535,12 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 durCb:SetCallback("OnValueChanged", function(widget, event, val)
                                     overrides.readyGlowDuration = val and 3 or 0
                                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                    if val and GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") then
-                                        PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                    if val then
+                                        if GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") then
+                                            PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
+                                        else
+                                            PrimeSelectedReadyGlowNormalTransition(CS.selectedGroup, CS.selectedButton)
+                                        end
                                     end
                                     CooldownCompanion:UpdateAllCooldowns()
                                     CooldownCompanion:RefreshConfigPanel()
@@ -1525,15 +1548,16 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 cont:AddChild(durCb)
                                 ApplyCheckboxIndent(durCb, 20)
 
-                                if (overrides.readyGlowDuration or 0) > 0 then
+                                if (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
                                     local durSlider = AceGUI:Create("Slider")
                                     durSlider:SetLabel("Duration (seconds)")
                                     durSlider:SetSliderValues(0.5, 5, 0.5)
-                                    durSlider:SetValue(overrides.readyGlowDuration or 3)
+                                    durSlider:SetValue(GetEffectiveOverrideValue("readyGlowDuration") or 3)
                                     durSlider:SetFullWidth(true)
                                     durSlider:SetCallback("OnValueChanged", function(widget, event, val)
                                         overrides.readyGlowDuration = val
                                         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                                        CooldownCompanion:RefreshConfigPanel()
                                     end)
                                     cont:AddChild(durSlider)
                                 end
