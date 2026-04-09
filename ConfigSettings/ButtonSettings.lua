@@ -1324,7 +1324,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
     if not buttonData.overrideSections or not next(buttonData.overrideSections) then
         if displayMode ~= "text" then
             local noOverridesLabel = AceGUI:Create("Label")
-            noOverridesLabel:SetText("|cff888888No appearance overrides.\n\nTo customize this button's appearance, select it and click the |A:Crosshair_VehichleCursor_32:0:0|a icon next to a group settings section heading.|r")
+            noOverridesLabel:SetText("|cff888888No appearance overrides are currently set.\n\nIf you want to override a setting for this specific button, click the |A:Crosshair_VehichleCursor_32:0:0|a badge next to the associated panel level setting while this button is selected.|r")
             noOverridesLabel:SetFullWidth(true)
             scroll:AddChild(noOverridesLabel)
         end

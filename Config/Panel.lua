@@ -1541,7 +1541,7 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Panel settings apply to all buttons in that panel.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("If you want to override a setting for one specific button, click the |A:Crosshair_VehichleCursor_32:14:14|a badge next to the associated setting while the button is selected.", 1, 1, 1, true)
+                GameTooltip:AddLine("If you want to override a setting for this specific button, click the |A:Crosshair_VehichleCursor_32:14:14|a badge next to the associated panel level setting while this button is selected.", 1, 1, 1, true)
             else
                 GameTooltip:AddLine("Group Settings")
                 if selection.groupMultiCount >= 2 then
