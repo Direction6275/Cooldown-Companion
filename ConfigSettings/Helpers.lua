@@ -450,7 +450,9 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
         local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
         if frame then
             frame._layoutDirty = true
-            CooldownCompanion._groupLayoutWorkPending = true
+            if frame:IsShown() then
+                CooldownCompanion._groupLayoutWorkPending = true
+            end
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -485,7 +487,9 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
             local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
             if frame then
                 frame._layoutDirty = true
-                CooldownCompanion._groupLayoutWorkPending = true
+                if frame:IsShown() then
+                    CooldownCompanion._groupLayoutWorkPending = true
+                end
                 if frame:IsShown() then
                     CooldownCompanion:UpdateGroupLayout(CS.selectedGroup)
                 end
@@ -514,7 +518,9 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
             local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
             if frame then
                 frame._layoutDirty = true
-                CooldownCompanion._groupLayoutWorkPending = true
+                if frame:IsShown() then
+                    CooldownCompanion._groupLayoutWorkPending = true
+                end
             end
         end)
         container:AddChild(maxVisSlider)

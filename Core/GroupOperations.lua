@@ -22,22 +22,14 @@ local LSM = LibStub("LibSharedMedia-3.0")
 
 local function HasPendingGroupLayoutWork(addon)
     for _, frame in pairs(addon.groupFrames or {}) do
-        if frame and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
+        if frame and frame:IsShown() and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
             return true
-        end
-    end
-
-    if addon._dormantFrames then
-        for _, frame in pairs(addon._dormantFrames) do
-            if frame and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
-                return true
-            end
         end
     end
 
     if addon.containerFrames then
         for _, frame in pairs(addon.containerFrames) do
-            if frame and frame._anchorDirty then
+            if frame and frame:IsShown() and frame._anchorDirty then
                 return true
             end
         end
@@ -1060,6 +1052,7 @@ function CooldownCompanion:RefreshAllGroups()
     end
 
     self:FinalizeContainerAnchorsToScreenOffsets()
+    self:UpdateGroupLayoutWorkPending()
 end
 
     -- Refresh only frame-level visibility/load-state without rebuilding buttons.
