@@ -1506,10 +1506,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 ApplyCheckboxIndent(cappedCb, 20)
                                 CreateInfoButton(cappedCb.frame, cappedCb.checkbg, "LEFT", "RIGHT", cappedCb.text:GetStringWidth() + 6, 0, {
                                     "Glow When Charges Are Capped",
-                                    {"Only affects real multi-charge spells.", 1, 1, 1, true},
-                                    " ",
-                                    {"When enabled, charge spells only glow at max charges.", 1, 1, 1, true},
-                                    {"Auto-hide still applies.", 1, 1, 1, true},
+                                    {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
                                 }, infoButtons)
 
                                 local durCb = AceGUI:Create("CheckBox")

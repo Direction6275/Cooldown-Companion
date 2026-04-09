@@ -1292,8 +1292,6 @@ local function BuildEffectsTab(container)
     CreateInfoButton(readyEnableCb.frame, readyPromoteBtn, "LEFT", "RIGHT", 4, 0, {
         "Ready Glow",
         {"Adds a glow to spells/items that are not on cooldown.", 1, 1, 1, true},
-        " ",
-        {"When this toggle is enabled, charge spells only glow at max charges.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     if readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none" then
@@ -1324,10 +1322,7 @@ local function BuildEffectsTab(container)
     ApplyCheckboxIndent(readyChargesCb, 20)
     CreateInfoButton(readyChargesCb.frame, readyChargesCb.checkbg, "LEFT", "RIGHT", readyChargesCb.text:GetStringWidth() + 6, 0, {
         "Glow When Charges Are Capped",
-        {"Only affects real multi-charge spells.", 1, 1, 1, true},
-        " ",
-        {"When enabled, charge spells only glow at max charges.", 1, 1, 1, true},
-        {"Auto-hide still applies.", 1, 1, 1, true},
+        {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     local readyDurCb = AceGUI:Create("CheckBox")
