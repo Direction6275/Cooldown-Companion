@@ -27,14 +27,6 @@ local function HasPendingGroupLayoutWork(addon)
         end
     end
 
-    if addon._dormantFrames then
-        for _, frame in pairs(addon._dormantFrames) do
-            if frame and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
-                return true
-            end
-        end
-    end
-
     if addon.containerFrames then
         for _, frame in pairs(addon.containerFrames) do
             if frame and frame:IsShown() and frame._anchorDirty then
