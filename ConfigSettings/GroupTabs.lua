@@ -84,7 +84,7 @@ local function PrimeReadyGlowNormalTransitions(groupId)
            and not buttonData.isPassive
            and button._noCooldown ~= true
            and button._visibilityHidden ~= true
-           and button._desatCooldownActive == false then
+           and button._desatCooldownActive ~= true then
             button._readyGlowStartTime = now
         end
     end

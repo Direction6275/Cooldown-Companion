@@ -134,7 +134,7 @@ local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
         return
     end
 
-    if buttonData.isPassive or button._noCooldown == true or button._desatCooldownActive ~= false then
+    if buttonData.isPassive or button._noCooldown == true or button._desatCooldownActive == true then
         return
     end
 
