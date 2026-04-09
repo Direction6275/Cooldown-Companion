@@ -1291,9 +1291,9 @@ local function BuildEffectsTab(container)
     local readyPromoteBtn = CreateCheckboxPromoteButton(readyEnableCb, readyAdvBtn, "readyGlow", group, style)
     CreateInfoButton(readyEnableCb.frame, readyPromoteBtn, "LEFT", "RIGHT", 4, 0, {
         "Ready Glow",
-        {"Adds a glow to ready spells and items.", 1, 1, 1, true},
+        {"Adds a glow to spells/items that are not on cooldown.", 1, 1, 1, true},
         " ",
-        {"Optional: charge spells can glow only when fully capped.", 1, 1, 1, true},
+        {"When this toggle is enabled, charge spells only glow at max charges.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     if readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none" then
@@ -1326,7 +1326,7 @@ local function BuildEffectsTab(container)
         "Glow When Charges Are Capped",
         {"Only affects real multi-charge spells.", 1, 1, 1, true},
         " ",
-        {"Glows only at full charges.", 1, 1, 1, true},
+        {"When enabled, charge spells only glow at max charges.", 1, 1, 1, true},
         {"Auto-hide still applies.", 1, 1, 1, true},
     }, tabInfoButtons)
 

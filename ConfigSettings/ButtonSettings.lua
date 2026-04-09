@@ -1508,7 +1508,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                     "Glow When Charges Are Capped",
                                     {"Only affects real multi-charge spells.", 1, 1, 1, true},
                                     " ",
-                                    {"Glows only at full charges.", 1, 1, 1, true},
+                                    {"When enabled, charge spells only glow at max charges.", 1, 1, 1, true},
                                     {"Auto-hide still applies.", 1, 1, 1, true},
                                 }, infoButtons)
 
