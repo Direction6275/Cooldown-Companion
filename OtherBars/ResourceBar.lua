@@ -1904,6 +1904,47 @@ local function UpdateCustomAuraBar(barInfo)
     end
 end
 
+local function GetHiddenCustomAuraWakeUnit(cabConfig)
+    if not cabConfig or not cabConfig.spellID then
+        return nil
+    end
+
+    local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(cabConfig.spellID)
+    local viewerUnit = viewerFrame and viewerFrame.auraDataUnit
+    if viewerUnit == "player" or viewerUnit == "target" then
+        return viewerUnit
+    end
+
+    return C_Spell.IsSpellHarmful(cabConfig.spellID) and "target" or "player"
+end
+
+local function IsEventDrivenCustomAuraBar(barInfo)
+    return barInfo
+        and (barInfo.barType == "custom_segmented"
+            or barInfo.barType == "custom_overlay")
+end
+
+local function RefreshEventDrivenCustomAuraBarsForUnit(unit)
+    if unit ~= "player" and unit ~= "target" then return end
+
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local frame = barInfo and barInfo.frame
+        local cabConfig = barInfo and barInfo.cabConfig
+        local shouldRefresh = frame and (
+            IsEventDrivenCustomAuraBar(barInfo)
+            or (not frame:IsShown() and cabConfig and cabConfig.hideWhenInactive)
+        )
+        if shouldRefresh
+            and cabConfig
+            and (barInfo.barType == "custom_continuous"
+                or barInfo.barType == "custom_segmented"
+                or barInfo.barType == "custom_overlay")
+            and GetHiddenCustomAuraWakeUnit(cabConfig) == unit then
+            UpdateCustomAuraBar(barInfo)
+        end
+    end
+end
+
 ------------------------------------------------------------------------
 -- Styling: Custom aura bars
 ------------------------------------------------------------------------
@@ -2376,24 +2417,11 @@ local function OnUpdate(self, elapsed)
                 UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache)
             elseif barInfo.barType == "stagger_continuous" then
                 UpdateStaggerBar(barInfo.frame, settings)
-            elseif barInfo.barType == "custom_continuous"
-                or barInfo.barType == "custom_segmented"
-                or barInfo.barType == "custom_overlay" then
+            elseif barInfo.barType == "custom_continuous" then
                 UpdateCustomAuraBar(barInfo)
                 if barInfo._isIndependent and barInfo.cabConfig then
                     ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
                 end
-                if barInfo.barType == "custom_continuous" then
-                    AnimateCustomAuraBarIndicator(barInfo.frame)
-                end
-            end
-        elseif barInfo.frame and barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
-            -- Frame hidden by hideWhenInactive; still update so it can re-show when aura returns
-            UpdateCustomAuraBar(barInfo)
-            if barInfo._isIndependent and barInfo.cabConfig then
-                ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
-            end
-            if barInfo.barType == "custom_continuous" then
                 AnimateCustomAuraBarIndicator(barInfo.frame)
             end
         end
@@ -2471,6 +2499,10 @@ local function EnableEventFrame()
 
                 local removedIDs = updateInfo.removedAuraInstanceIDs
                 local updatedIDs = updateInfo.updatedAuraInstanceIDs
+                local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
+                if hasAuraChange then
+                    RefreshEventDrivenCustomAuraBarsForUnit(unit)
+                end
                 if not removedIDs and not updatedIDs then return end
 
                 for _, barInfo in ipairs(resourceBarFrames) do
@@ -2514,6 +2546,7 @@ local function EnableEventFrame()
                         bar._pandemicGraceSuppressed = nil
                     end
                 end
+                RefreshEventDrivenCustomAuraBarsForUnit("target")
             end
         end)
     end
