@@ -67,7 +67,9 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
         return cur == maxCharges
     end
 
-    return not button._chargeRecharging and not button._zeroChargesConfirmed
+    -- Secret / restricted charge states do not reliably prove a spell is fully
+    -- capped, so keep capped-charge glow conservative there.
+    return false
 end
 
 local function ApplyCountTextStyle(button, style)

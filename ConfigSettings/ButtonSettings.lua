@@ -1497,7 +1497,7 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
                                 cappedCb:SetCallback("OnValueChanged", function(widget, event, val)
                                     overrides.readyGlowOnlyAtMaxCharges = val == true
                                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                    if val and (overrides.readyGlowDuration or 0) > 0 then
+                                    if val and (GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0 then
                                         PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
                                     end
                                     CooldownCompanion:UpdateAllCooldowns()
@@ -1514,12 +1514,12 @@ local function BuildOverridesTab(scroll, buttonData, infoButtons)
 
                                 local durCb = AceGUI:Create("CheckBox")
                                 durCb:SetLabel("Auto-Hide After Duration")
-                                durCb:SetValue((overrides.readyGlowDuration or 0) > 0)
+                                durCb:SetValue((GetEffectiveOverrideValue("readyGlowDuration") or 0) > 0)
                                 durCb:SetFullWidth(true)
                                 durCb:SetCallback("OnValueChanged", function(widget, event, val)
                                     overrides.readyGlowDuration = val and 3 or 0
                                     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                    if val and overrides.readyGlowOnlyAtMaxCharges then
+                                    if val and GetEffectiveOverrideValue("readyGlowOnlyAtMaxCharges") then
                                         PrimeSelectedReadyGlowCappedChargeTransition(CS.selectedGroup, CS.selectedButton)
                                     end
                                     CooldownCompanion:UpdateAllCooldowns()
