@@ -254,6 +254,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local isSpell = buttonType == "spell"
     local isItem = buttonType == "item"
     local isEquipItem = buttonType == "equipitem"
+    local isItemLike = isItem or isEquipItem
     local isPassive = buttonData.isPassive == true
     local hasCharges = buttonData.hasCharges == true
     local auraTracking = buttonData.auraTracking == true
@@ -852,7 +853,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.secondaryCooldown:SetCooldown(0, 0)
                 button._secondaryCdActive = false
             end
-        elseif isItem then
+        elseif isItemLike then
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonId)
             local probeIsGCDOnly = false
             if cdDuration and cdDuration > 0 then
@@ -929,7 +930,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button.cooldown:SetCooldown(0, 0)
                 end
             end
-        elseif isItem then
+        elseif isItemLike then
             button._isEquippableNotEquipped = false
             local isEquippable = IsItemEquippable(buttonData)
             if isEquippable and not C_Item.IsEquippedItem(buttonId) then
@@ -1114,7 +1115,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if usesChargeBehavior then
         -- Default to non-zero each tick; set true only when a current probe confirms zero.
         button._mainCDShown = false
-        if isItem then
+        if isItemLike then
             -- Items: 0 charges = on cooldown. No GCD to filter.
             local chargeCount = C_Item.GetItemCount(buttonId, false, true)
             button._mainCDShown = (chargeCount == 0)
@@ -1190,7 +1191,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- info is unavailable (nil-fallback probe). Otherwise use addon state.
     -- _cooldownDeferred: timer hasn't started (e.g. Healthstone in combat, Feign
     -- Death while buff active).  Treat as "on cooldown" for dimming/visibility.
-    if isItem then
+    if isItemLike then
         button._desatCooldownActive = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
             or button._cooldownDeferred or false
     elseif usesChargeBehavior then
@@ -1255,8 +1256,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        elseif isItem then
-        UpdateItemChargeTracking(button, buttonData)
+        elseif isItemLike then
+            UpdateItemChargeTracking(button, buttonData)
 
         -- Detect recharging via stored item cooldown values
         button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
@@ -1286,7 +1287,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
-    if isItem and not hasCharges and not IsItemEquippable(buttonData) then
+    if isItemLike and not hasCharges and not IsItemEquippable(buttonData) then
         local count = C_Item.GetItemCount(buttonId)
         if button._itemCount ~= count then
             button._itemCount = count

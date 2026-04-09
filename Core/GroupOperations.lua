@@ -27,6 +27,14 @@ local function HasPendingGroupLayoutWork(addon)
         end
     end
 
+    if addon._dormantFrames then
+        for _, frame in pairs(addon._dormantFrames) do
+            if frame and (frame._strataDirty or frame._sizeDirty or frame._layoutDirty or frame._anchorDirty) then
+                return true
+            end
+        end
+    end
+
     if addon.containerFrames then
         for _, frame in pairs(addon.containerFrames) do
             if frame and frame:IsShown() and frame._anchorDirty then
@@ -1142,6 +1150,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                             self._groupLayoutWorkPending = true
                             self:UpdateGroupLayout(groupId)
                         end
+                        self:UpdateGroupLayoutWorkPending()
                     end
                 end
             end
@@ -1241,8 +1250,6 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
 
-    self:UpdateGroupLayoutWorkPending()
-
     return frame
 end
 
@@ -1283,6 +1290,10 @@ function CooldownCompanion:UpdateAllCooldowns()
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
         end
+    end
+
+    if self._groupLayoutWorkPending then
+        self:UpdateAllGroupLayouts()
     end
 end
 
