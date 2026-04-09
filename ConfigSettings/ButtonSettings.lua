@@ -99,6 +99,54 @@ local function BuildSortedSoundOptionOrder(soundOptions)
     return order
 end
 
+local SOUND_PREVIEW_ICON_ATLAS = "chatframe-button-icon-voicechat"
+
+local function ConfigureSoundPreviewRow(item, buttonData)
+    if not (item and item.frame and item.text) then return end
+
+    local previewBtn = item._cdcSoundPreviewBtn
+    if not previewBtn then
+        previewBtn = CreateFrame("Button", nil, item.frame)
+        previewBtn:SetSize(16, 16)
+        previewBtn:SetHighlightAtlas(SOUND_PREVIEW_ICON_ATLAS)
+        if previewBtn:GetHighlightTexture() then
+            previewBtn:GetHighlightTexture():SetAlpha(0.3)
+        end
+        local icon = previewBtn:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(12, 12)
+        icon:SetPoint("CENTER")
+        icon:SetAtlas(SOUND_PREVIEW_ICON_ATLAS, false)
+        previewBtn._cdcSoundPreviewIcon = icon
+        previewBtn:SetScript("OnClick", function(self)
+            local previewValue = self._cdcSoundValue
+            local previewButtonData = self._cdcButtonData
+            if previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY and previewButtonData then
+                CooldownCompanion:PreviewSoundAlertSelection(previewButtonData, previewValue)
+            end
+        end)
+        item._cdcSoundPreviewBtn = previewBtn
+    end
+
+    previewBtn:SetParent(item.frame)
+    previewBtn:SetFrameLevel(item.frame:GetFrameLevel() + 1)
+    previewBtn:ClearAllPoints()
+    previewBtn:SetPoint("RIGHT", item.frame, "RIGHT", -18, 0)
+    previewBtn._cdcButtonData = buttonData
+
+    local previewValue = item.userdata and item.userdata.value
+    local hasPreview = previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY
+    previewBtn._cdcSoundValue = hasPreview and previewValue or nil
+    previewBtn:SetShown(hasPreview)
+
+    item.text:ClearAllPoints()
+    item.text:SetPoint("TOPLEFT", item.frame, "TOPLEFT", 18, 0)
+    if hasPreview then
+        item.text:SetPoint("BOTTOMRIGHT", previewBtn, "LEFT", -4, 0)
+    else
+        item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", -8, 0)
+    end
+end
+
 local function IsValidAuraUnit(unit)
     return unit == "player" or unit == "target"
 end
@@ -200,22 +248,10 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
             soundDrop:SetCallback("OnOpened", function(widget)
                 if not widget.pullout then return end
 
-                -- Inline preview: click the right-side badge on a row to test that sound
+                -- Inline preview: click the sound icon on a row to test that sound
                 -- without selecting it or closing the dropdown.
                 for _, item in widget.pullout:IterateItems() do
-                    if item.SetUtilityAction then
-                        local itemValue = item and item.userdata and item.userdata.value
-                        if itemValue and itemValue ~= "None" then
-                            item:SetUtilityAction(function(itemWidget)
-                                local previewValue = itemWidget and itemWidget.userdata and itemWidget.userdata.value
-                                if previewValue and previewValue ~= "None" then
-                                    CooldownCompanion:PreviewSoundAlertSelection(buttonData, previewValue)
-                                end
-                            end)
-                        else
-                            item:SetUtilityAction(nil)
-                        end
-                    end
+                    ConfigureSoundPreviewRow(item, buttonData)
                 end
             end)
 
