@@ -842,6 +842,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._desaturated = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
+    button._readyGlowMaxChargesStartTime = nil
+    button._readyGlowMaxChargesActive = nil
+    button._readyGlowMaxChargesSpellID = nil
     button._noCooldown = nil
     button._vertexR = nil
     button._vertexG = nil

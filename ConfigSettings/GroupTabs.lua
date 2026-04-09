@@ -52,6 +52,44 @@ local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 
+local function PrimeReadyGlowCappedChargeTransitions(groupId)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if not (frame and frame.buttons) then
+        return
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        local buttonData = button.buttonData
+        if buttonData
+           and buttonData.type == "spell"
+           and buttonData.hasCharges == true
+           and not buttonData._hasDisplayCount then
+            button._readyGlowMaxChargesSpellID = button._displaySpellId or buttonData.id
+            button._readyGlowMaxChargesStartTime = nil
+            button._readyGlowMaxChargesActive = false
+        end
+    end
+end
+
+local function PrimeReadyGlowNormalTransitions(groupId)
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if not (frame and frame.buttons) then
+        return
+    end
+
+    local now = GetTime()
+    for _, button in ipairs(frame.buttons) do
+        local buttonData = button.buttonData
+        if buttonData
+           and not buttonData.isPassive
+           and button._noCooldown ~= true
+           and button._visibilityHidden ~= true
+           and button._desatCooldownActive ~= true then
+            button._readyGlowStartTime = now
+        end
+    end
+end
+
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
@@ -1272,7 +1310,7 @@ local function BuildEffectsTab(container)
     local readyPromoteBtn = CreateCheckboxPromoteButton(readyEnableCb, readyAdvBtn, "readyGlow", group, style)
     CreateInfoButton(readyEnableCb.frame, readyPromoteBtn, "LEFT", "RIGHT", 4, 0, {
         "Ready Glow",
-        {"Adds a glow effect around buttons whose spells or items are off cooldown and ready to use.", 1, 1, 1, true},
+        {"Adds a glow to spells/items that are not on cooldown.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     if readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none" then
@@ -1287,6 +1325,29 @@ local function BuildEffectsTab(container)
     container:AddChild(readyCombatCb)
     ApplyCheckboxIndent(readyCombatCb, 20)
 
+    local readyChargesCb = AceGUI:Create("CheckBox")
+    readyChargesCb:SetLabel("Glow When Charges Are Capped")
+    readyChargesCb:SetValue(style.readyGlowOnlyAtMaxCharges or false)
+    readyChargesCb:SetFullWidth(true)
+    readyChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.readyGlowOnlyAtMaxCharges = val == true
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        if (style.readyGlowDuration or 0) > 0 then
+            if val then
+                PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+            else
+                PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+            end
+        end
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    container:AddChild(readyChargesCb)
+    ApplyCheckboxIndent(readyChargesCb, 20)
+    CreateInfoButton(readyChargesCb.frame, readyChargesCb.checkbg, "LEFT", "RIGHT", readyChargesCb.text:GetStringWidth() + 6, 0, {
+        "Glow When Charges Are Capped",
+        {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
     local readyDurCb = AceGUI:Create("CheckBox")
     readyDurCb:SetLabel("Auto-Hide After Duration")
     readyDurCb:SetValue((style.readyGlowDuration or 0) > 0)
@@ -1294,6 +1355,14 @@ local function BuildEffectsTab(container)
     readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowDuration = val and 3 or 0
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        if val then
+            if style.readyGlowOnlyAtMaxCharges then
+                PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
+            else
+                PrimeReadyGlowNormalTransitions(CS.selectedGroup)
+            end
+        end
+        CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(readyDurCb)
@@ -1317,7 +1386,7 @@ local function BuildEffectsTab(container)
     end)
 
     local readyPreviewBtn = AceGUI:Create("Button")
-    readyPreviewBtn:SetText("Preview Ready Glow (3s)")
+    readyPreviewBtn:SetText("Preview Ready Glow Style (3s)")
     readyPreviewBtn:SetFullWidth(true)
     readyPreviewBtn:SetCallback("OnClick", function()
         CooldownCompanion:PlayGroupReadyGlowPreview(CS.selectedGroup, 3)

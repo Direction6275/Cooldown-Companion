@@ -118,6 +118,27 @@ local function IsSpellGCDOnly(info, secrecy)
     end
 end
 
+local function IsReadyGlowMaxChargeEligible(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.hasCharges == true
+        and not buttonData._hasDisplayCount
+end
+
+local function IsReadyGlowAtMaxCharges(button, buttonData)
+    if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
+        return false
+    end
+
+    local cur = button._currentReadableCharges
+    local maxCharges = buttonData.maxCharges
+    if button._chargeCountReadable == true and cur ~= nil and maxCharges ~= nil then
+        return cur == maxCharges
+    end
+
+    return not button._chargeRecharging and not button._zeroChargesConfirmed
+end
+
 -- Deferred spell cooldown detection: distinguish true held cooldowns from
 -- start-recovery / empower recovery windows. In 12.0.1, unrelated spells can
 -- transiently report isEnabled=false, isActive=false, and a positive
@@ -1233,6 +1254,27 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargeRecharging = (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
             or button._cooldownDeferred or false
       end
+    end
+
+    if IsReadyGlowMaxChargeEligible(buttonData) then
+        local readyGlowSpellID = cooldownSpellId or buttonData.id
+        if button._readyGlowMaxChargesSpellID ~= readyGlowSpellID then
+            button._readyGlowMaxChargesSpellID = readyGlowSpellID
+            button._readyGlowMaxChargesStartTime = nil
+            button._readyGlowMaxChargesActive = nil
+        end
+
+        local isCapped = IsReadyGlowAtMaxCharges(button, buttonData)
+        if button._readyGlowMaxChargesActive ~= true and isCapped then
+            button._readyGlowMaxChargesStartTime = now
+        elseif not isCapped then
+            button._readyGlowMaxChargesStartTime = nil
+        end
+        button._readyGlowMaxChargesActive = isCapped
+    else
+        button._readyGlowMaxChargesSpellID = nil
+        button._readyGlowMaxChargesActive = nil
+        button._readyGlowMaxChargesStartTime = nil
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
