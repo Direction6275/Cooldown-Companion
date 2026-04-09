@@ -100,9 +100,40 @@ local function BuildSortedSoundOptionOrder(soundOptions)
 end
 
 local SOUND_PREVIEW_ICON_ATLAS = "chatframe-button-icon-voicechat"
+local SOUND_PREVIEW_TEXT_LEFT_OFFSET = 18
+local SOUND_PREVIEW_TEXT_RIGHT_OFFSET = -8
+local SOUND_PREVIEW_TEXT_GAP = -4
+local SOUND_PREVIEW_BUTTON_RIGHT_OFFSET = -18
+
+local function ResetSoundPreviewRow(item)
+    if not (item and item.frame and item.text) then return end
+
+    local previewBtn = item._cdcSoundPreviewBtn
+    if previewBtn then
+        previewBtn:SetShown(false)
+        previewBtn._cdcButtonData = nil
+        previewBtn._cdcSoundValue = nil
+        previewBtn:ClearAllPoints()
+    end
+
+    item.text:ClearAllPoints()
+    item.text:SetPoint("TOPLEFT", item.frame, "TOPLEFT", SOUND_PREVIEW_TEXT_LEFT_OFFSET, 0)
+    item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
+end
 
 local function ConfigureSoundPreviewRow(item, buttonData)
     if not (item and item.frame and item.text) then return end
+
+    if not item._cdcSoundPreviewCleanupInstalled then
+        item._cdcSoundPreviewCleanupInstalled = true
+        local prevOnRelease = item.events and item.events["OnRelease"]
+        item:SetCallback("OnRelease", function(widget, event)
+            if prevOnRelease then
+                prevOnRelease(widget, event)
+            end
+            ResetSoundPreviewRow(widget)
+        end)
+    end
 
     local previewBtn = item._cdcSoundPreviewBtn
     if not previewBtn then
@@ -130,7 +161,7 @@ local function ConfigureSoundPreviewRow(item, buttonData)
     previewBtn:SetParent(item.frame)
     previewBtn:SetFrameLevel(item.frame:GetFrameLevel() + 1)
     previewBtn:ClearAllPoints()
-    previewBtn:SetPoint("RIGHT", item.frame, "RIGHT", -18, 0)
+    previewBtn:SetPoint("RIGHT", item.frame, "RIGHT", SOUND_PREVIEW_BUTTON_RIGHT_OFFSET, 0)
     previewBtn._cdcButtonData = buttonData
 
     local previewValue = item.userdata and item.userdata.value
@@ -139,11 +170,11 @@ local function ConfigureSoundPreviewRow(item, buttonData)
     previewBtn:SetShown(hasPreview)
 
     item.text:ClearAllPoints()
-    item.text:SetPoint("TOPLEFT", item.frame, "TOPLEFT", 18, 0)
+    item.text:SetPoint("TOPLEFT", item.frame, "TOPLEFT", SOUND_PREVIEW_TEXT_LEFT_OFFSET, 0)
     if hasPreview then
-        item.text:SetPoint("BOTTOMRIGHT", previewBtn, "LEFT", -4, 0)
+        item.text:SetPoint("BOTTOMRIGHT", previewBtn, "LEFT", SOUND_PREVIEW_TEXT_GAP, 0)
     else
-        item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", -8, 0)
+        item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
     end
 end
 
