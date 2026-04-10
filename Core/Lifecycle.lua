@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 -- Localize frequently-used globals for faster access
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
+local pairs = pairs
 local wipe = wipe
 local ipairs = ipairs
 local select = select
@@ -322,6 +323,26 @@ function CooldownCompanion:OnDisable()
 end
 
 function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
+    if event == "SPELL_UPDATE_USES" and spellID then
+        local matchesConditionalCastCountEvent = CooldownCompanion.MatchesConditionalCastCountEvent
+        local matchedCastCountButton = false
+        for _, group in pairs(self.db.profile.groups) do
+            for _, bd in ipairs(group.buttons) do
+                if bd.type == "spell"
+                        and not bd.hasCharges
+                        and matchesConditionalCastCountEvent
+                        and matchesConditionalCastCountEvent(bd, spellID, baseSpellID) then
+                    bd._castCountCandidate = true
+                    bd._castCountEventSpellID = spellID
+                    bd._castCountSelf = (bd.id == spellID) or nil
+                    matchedCastCountButton = true
+                end
+            end
+        end
+        if matchedCastCountButton then
+            self._hasDisplayCountCandidates = true
+        end
+    end
     if self._hasDisplayCountCandidates then
         self:RefreshChargeFlags("spell")
     end

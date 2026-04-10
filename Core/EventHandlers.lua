@@ -121,12 +121,15 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                 end
                 local hasRealCharges = buttonData.hasCharges and true or nil
                 local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
-                buttonData._castCountCandidate = nil
+                local hadCastCountCandidate = (buttonData._castCountCandidate == true)
+                local castCountSelf = buttonData._castCountSelf
+                local castCountEventSpellID = buttonData._castCountEventSpellID
                 buttonData._castCountConfirmed = nil
                 buttonData._castCountSeeded = nil
-                buttonData._castCountSelf = nil
-                buttonData._castCountEventSpellID = nil
                 if chargeInfo then
+                    buttonData._castCountCandidate = nil
+                    buttonData._castCountSelf = nil
+                    buttonData._castCountEventSpellID = nil
                     buttonData._hasDisplayCount = nil
                     local mc = chargeInfo.maxCharges
                     if mc > 1 then
@@ -180,6 +183,19 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     -- Auto-enable count text when a spell exposes a readable display count.
                     if buttonData._hasDisplayCount and buttonData.showChargeText == nil then
                         buttonData.showChargeText = true
+                    end
+                    if buttonData._hasDisplayCount then
+                        buttonData._castCountCandidate = nil
+                        buttonData._castCountSelf = nil
+                        buttonData._castCountEventSpellID = nil
+                    elseif hadCastCountCandidate then
+                        buttonData._castCountCandidate = true
+                        buttonData._castCountSelf = castCountSelf
+                        buttonData._castCountEventSpellID = castCountEventSpellID
+                    else
+                        buttonData._castCountCandidate = nil
+                        buttonData._castCountSelf = nil
+                        buttonData._castCountEventSpellID = nil
                     end
                 end
                 buttonData.hasCharges = hasRealCharges

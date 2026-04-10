@@ -74,9 +74,37 @@ local CAST_COUNT_SPELL_FAMILIES = {
     },
 }
 
+-- Conditional cast-count text is narrower than the always-on allowlist above.
+-- These families only render count text when a vetted transform/use event has
+-- opted the button in, and only for the approved live display spell(s).
+local CONDITIONAL_CAST_COUNT_SPELL_FAMILIES = {
+    [6343] = {
+        buttons = {
+            [6343] = true, -- Thunder Clap button that can transform into Thunderblast
+        },
+        eventSpells = {
+            [6343] = true,   -- base spell payload
+            [435222] = true, -- Thunderblast override payload
+        },
+        displaySpells = {
+            [435222] = true, -- only Thunderblast should render count text
+        },
+    },
+}
+
 local function GetCastCountFamily(buttonData)
     if not buttonData then return nil end
     for _, family in pairs(CAST_COUNT_SPELL_FAMILIES) do
+        if family.buttons[buttonData.id] then
+            return family
+        end
+    end
+    return nil
+end
+
+local function GetConditionalCastCountFamily(buttonData)
+    if not buttonData then return nil end
+    for _, family in pairs(CONDITIONAL_CAST_COUNT_SPELL_FAMILIES) do
         if family.buttons[buttonData.id] then
             return family
         end
@@ -105,6 +133,25 @@ local function GetCastCountSpellID(buttonData, currentSpellID)
 end
 CooldownCompanion.GetCastCountSpellID = GetCastCountSpellID
 
+local function MatchesConditionalCastCountEvent(buttonData, spellID, baseSpellID)
+    local family = GetConditionalCastCountFamily(buttonData)
+    if not family then return false end
+    return (spellID and family.eventSpells[spellID] == true)
+        or (baseSpellID and family.eventSpells[baseSpellID] == true)
+        or false
+end
+CooldownCompanion.MatchesConditionalCastCountEvent = MatchesConditionalCastCountEvent
+
+local function GetConditionalCastCountSpellID(buttonData, currentSpellID)
+    local family = GetConditionalCastCountFamily(buttonData)
+    if not family or not currentSpellID then return nil end
+    if family.displaySpells[currentSpellID] then
+        return currentSpellID
+    end
+    return nil
+end
+CooldownCompanion.GetConditionalCastCountSpellID = GetConditionalCastCountSpellID
+
 local function UsesChargeBehavior(buttonData)
     if not buttonData then
         return false
@@ -121,6 +168,7 @@ CooldownCompanion.UsesChargeBehavior = UsesChargeBehavior
 local function UsesChargeTextLane(buttonData)
     if not buttonData then return false end
     return UsesChargeBehavior(buttonData)
+        or buttonData._castCountCandidate == true
         or HasCastCountText(buttonData)
         or buttonData.isPassive == true
 end
