@@ -11,7 +11,8 @@ local LibDeflate = LibStub("LibDeflate")
 
 local COMPRESSION_CONFIG = { level = 9 }
 local COMPACT_FORMAT_KEY = "_cdcExportFormat"
-local CURRENT_COMPACT_FORMAT_VALUE = "compact2"
+local CURRENT_COMPACT_FORMAT_VALUE = "compact3"
+local PREVIOUS_COMPACT_FORMAT_VALUE = "compact2"
 local LEGACY_COMPACT_FORMAT_VALUE = "compact1"
 
 local LOAD_CONDITIONS_DEFAULTS = {
@@ -497,11 +498,15 @@ local COMPACT_ENTITY_DEFAULTS = {
     },
 }
 
+COMPACT_PROFILE_DEFAULTS[PREVIOUS_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_PROFILE_DEFAULTS[CURRENT_COMPACT_FORMAT_VALUE])
+COMPACT_PROFILE_DEFAULTS[PREVIOUS_COMPACT_FORMAT_VALUE].auraTextureLibrary.recentProcOverlays = {}
+COMPACT_ENTITY_DEFAULTS[PREVIOUS_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_ENTITY_DEFAULTS[CURRENT_COMPACT_FORMAT_VALUE])
+
 -- compact1 shipped before defaults were version-pinned. Freeze it against the
 -- original baseline so older compact strings do not drift as live defaults
 -- evolve in later releases.
-COMPACT_PROFILE_DEFAULTS[LEGACY_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_PROFILE_DEFAULTS[CURRENT_COMPACT_FORMAT_VALUE])
-COMPACT_ENTITY_DEFAULTS[LEGACY_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_ENTITY_DEFAULTS[CURRENT_COMPACT_FORMAT_VALUE])
+COMPACT_PROFILE_DEFAULTS[LEGACY_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_PROFILE_DEFAULTS[PREVIOUS_COMPACT_FORMAT_VALUE])
+COMPACT_ENTITY_DEFAULTS[LEGACY_COMPACT_FORMAT_VALUE] = CopyTable(COMPACT_ENTITY_DEFAULTS[PREVIOUS_COMPACT_FORMAT_VALUE])
 
 local function CopyValue(value)
     if type(value) == "table" then
@@ -1192,7 +1197,9 @@ local function DecodeSharedPayload(text)
     end
 
     local formatVersion = data[COMPACT_FORMAT_KEY]
-    if formatVersion == LEGACY_COMPACT_FORMAT_VALUE or formatVersion == CURRENT_COMPACT_FORMAT_VALUE then
+    if formatVersion == LEGACY_COMPACT_FORMAT_VALUE
+        or formatVersion == PREVIOUS_COMPACT_FORMAT_VALUE
+        or formatVersion == CURRENT_COMPACT_FORMAT_VALUE then
         data[COMPACT_FORMAT_KEY] = nil
         RehydrateCompactPayload(data, formatVersion)
     end

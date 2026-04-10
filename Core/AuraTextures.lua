@@ -1118,133 +1118,22 @@ local function MigrateLegacySharedMediaFavorites(store)
 end
 
 local GetAuraTextureFavoriteStore
-local AreAuraTextureFavoriteRecordsEquivalent
-local BuildBlizzardProcOverlayEntries
-local DoesAuraTextureVariantMatchRecord
 
 local function IsLegacyProcFavoriteKey(favoriteKey)
     return type(favoriteKey) == "string" and string_find(favoriteKey, "^favorite:legacy%-proc:", 1, false) ~= nil
 end
 
-local function FindCanonicalBlizzardProcFavoriteKey(record, procEntries)
-    local matchKey = nil
-
-    for _, entry in ipairs(procEntries or {}) do
-        if DoesAuraTextureVariantMatchRecord(entry, record) then
-            if matchKey and matchKey ~= entry.key then
-                return nil
-            end
-            matchKey = entry.key
-        end
-    end
-
-    return matchKey
-end
-
-local function BuildLegacyRecentFavoriteRecord(storedKey, value)
-    local sourceValue = tonumber(value and value.sourceValue)
-    if not sourceValue or sourceValue <= 0 then
-        return nil
-    end
-
-    local locationSubtitle = BuildLocationSubtitle(value.locationType)
-    local label = type(value.label) == "string" and value.label
-        or type(value.spellName) == "string" and value.spellName .. " Proc Overlay"
-        or ("File " .. tostring(sourceValue))
-    local record = ReadAuraTextureFavoriteRecord({
-        favoriteKey = "favorite:legacy-proc:" .. tostring(storedKey),
-        label = label,
-        originCategoryKey = FILTER_BLIZZARD_PROC,
-        sourceType = "file",
-        sourceValue = sourceValue,
-        layoutAgnostic = true,
-        locationType = nil,
-        color = CopyColor(value.color) or { 1, 1, 1, 1 },
-        blendMode = NormalizeBlendMode(value.blendMode or "ADD"),
-        scale = tonumber(value.scale) or 1,
-        subtitle = tostring(value.spellID or "?") .. "  |  File " .. tostring(sourceValue) .. "  |  " .. locationSubtitle,
-        searchText = string_lower(
-            label .. " " .. tostring(value.spellID or "") .. " " .. tostring(sourceValue) .. " " .. locationSubtitle
-        ),
-    })
-
-    return record
-end
-
-local function CanonicalizeLegacyProcFavoriteRecords(favorites, procEntries)
-    if type(favorites) ~= "table" then
+local function CleanupLegacyRecentArtifacts(store)
+    if type(store) ~= "table" then
         return
     end
 
-    local updates = {}
-    local removals = {}
-
-    for favoriteKey, favoriteValue in pairs(favorites) do
-        local favoriteRecord = ReadAuraTextureFavoriteRecord(favoriteValue)
-        if not favoriteRecord then
-            removals[#removals + 1] = favoriteKey
-        elseif favoriteRecord.originCategoryKey == FILTER_BLIZZARD_PROC and IsLegacyProcFavoriteKey(favoriteRecord.favoriteKey) then
-            local canonicalKey = FindCanonicalBlizzardProcFavoriteKey(favoriteRecord, procEntries)
-            if canonicalKey and canonicalKey ~= favoriteKey then
-                local existingRecord = ReadAuraTextureFavoriteRecord(favorites[canonicalKey])
-                if not existingRecord or AreAuraTextureFavoriteRecordsEquivalent(existingRecord, favoriteRecord) then
-                    favoriteRecord.favoriteKey = canonicalKey
-                    updates[canonicalKey] = favoriteRecord
-                    removals[#removals + 1] = favoriteKey
-                end
-            end
-        end
-    end
-
-    for _, favoriteKey in ipairs(removals) do
-        favorites[favoriteKey] = nil
-    end
-    for favoriteKey, favoriteRecord in pairs(updates) do
-        favorites[favoriteKey] = favoriteRecord
-    end
-end
-
-local function MigrateLegacyRecentProcOverlayFavorites(store)
-    if type(store) ~= "table" or type(store.recentProcOverlays) ~= "table" then
-        return
-    end
-
-    local legacyRecent = store.recentProcOverlays
-    local favorites = GetAuraTextureFavoriteStore(store)
-    local procEntries = BuildBlizzardProcOverlayEntries()
-    if not favorites then
-        store.recentProcOverlays = nil
-        return
-    end
-
-    CanonicalizeLegacyProcFavoriteRecords(favorites, procEntries)
-
-    for storedKey, storedValue in pairs(legacyRecent) do
-        local migratedRecord = BuildLegacyRecentFavoriteRecord(storedKey, storedValue)
-        if migratedRecord then
-            local canonicalKey = FindCanonicalBlizzardProcFavoriteKey(migratedRecord, procEntries)
-            if canonicalKey then
-                local existingRecord = ReadAuraTextureFavoriteRecord(favorites[canonicalKey])
-                if not existingRecord or AreAuraTextureFavoriteRecordsEquivalent(existingRecord, migratedRecord) then
-                    migratedRecord.favoriteKey = canonicalKey
-                end
-            end
-
-            local alreadySaved = false
-            for favoriteKey, favoriteValue in pairs(favorites) do
-                local favoriteRecord = ReadAuraTextureFavoriteRecord(favoriteValue)
-                if favoriteRecord then
-                    if AreAuraTextureFavoriteRecordsEquivalent(favoriteRecord, migratedRecord) then
-                        alreadySaved = true
-                        break
-                    end
-                else
-                    favorites[favoriteKey] = nil
-                end
-            end
-
-            if not alreadySaved then
-                favorites[migratedRecord.favoriteKey] = migratedRecord
+    if type(store.textureFavorites) == "table" then
+        for favoriteKey, favoriteValue in pairs(store.textureFavorites) do
+            local favoriteRecord = ReadAuraTextureFavoriteRecord(favoriteValue)
+            if IsLegacyProcFavoriteKey(favoriteKey)
+                or (favoriteRecord and IsLegacyProcFavoriteKey(favoriteRecord.favoriteKey)) then
+                store.textureFavorites[favoriteKey] = nil
             end
         end
     end
@@ -1261,6 +1150,7 @@ GetAuraTextureFavoriteStore = function(store)
     end
 
     MigrateLegacySharedMediaFavorites(store)
+    CleanupLegacyRecentArtifacts(store)
     return store.textureFavorites
 end
 
@@ -1379,60 +1269,6 @@ local function AreTextureColorsEqual(a, b)
             return false
         end
     end
-    return true
-end
-
-DoesAuraTextureVariantMatchRecord = function(entry, record)
-    if type(entry) ~= "table" or type(record) ~= "table" then
-        return false
-    end
-
-    if entry.sourceType ~= record.sourceType or entry.sourceValue ~= record.sourceValue or entry.mediaType ~= record.mediaType then
-        return false
-    end
-    if (entry.layoutAgnostic == true) ~= (record.layoutAgnostic == true) then
-        return false
-    end
-    if NormalizeTextureLayout(entry.locationType) ~= NormalizeTextureLayout(record.locationType) then
-        return false
-    end
-    if not AreTextureNumbersEqual(entry.scale or 1, record.scale or 1) then
-        return false
-    end
-    if NormalizeBlendMode(entry.blendMode) ~= NormalizeBlendMode(record.blendMode) then
-        return false
-    end
-    if not AreTextureColorsEqual(entry.color, record.color) then
-        return false
-    end
-
-    return true
-end
-
-AreAuraTextureFavoriteRecordsEquivalent = function(a, b)
-    if type(a) ~= "table" or type(b) ~= "table" then
-        return false
-    end
-
-    if a.sourceType ~= b.sourceType or a.sourceValue ~= b.sourceValue or a.mediaType ~= b.mediaType then
-        return false
-    end
-    if a.layoutAgnostic ~= b.layoutAgnostic then
-        return false
-    end
-    if NormalizeTextureLayout(a.locationType) ~= NormalizeTextureLayout(b.locationType) then
-        return false
-    end
-    if not AreTextureNumbersEqual(a.scale or 1, b.scale or 1) then
-        return false
-    end
-    if NormalizeBlendMode(a.blendMode) ~= NormalizeBlendMode(b.blendMode) then
-        return false
-    end
-    if not AreTextureColorsEqual(a.color, b.color) then
-        return false
-    end
-
     return true
 end
 
@@ -1870,7 +1706,7 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
         profile.auraTextureLibrary.sharedMediaFavorites = {}
     end
     MigrateLegacySharedMediaFavorites(profile.auraTextureLibrary)
-    MigrateLegacyRecentProcOverlayFavorites(profile.auraTextureLibrary)
+    CleanupLegacyRecentArtifacts(profile.auraTextureLibrary)
     return profile.auraTextureLibrary
 end
 
@@ -2123,7 +1959,7 @@ function CooldownCompanion:RemoveCustomAuraTexture(pathOrKey)
     store.customTextures[pathKey] = nil
 end
 
-BuildBlizzardProcOverlayEntries = function()
+local function BuildBlizzardProcOverlayEntries()
     local overlayLibrary = ST._spellActivationOverlayLibrary
     local rows = overlayLibrary and overlayLibrary.entries
     local entries = {}
