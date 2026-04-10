@@ -213,7 +213,8 @@ local function ApplyTexturePreviewSource(texture, settings)
 
     local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
         settings.sourceType,
-        settings.sourceValue
+        settings.sourceValue,
+        settings.mediaType
     )
 
     if resolvedSourceType == "atlas" then

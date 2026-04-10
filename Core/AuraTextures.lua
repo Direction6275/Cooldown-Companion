@@ -6,6 +6,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local LSM = LibStub("LibSharedMedia-3.0")
 
 local C_Item_IsUsableItem = C_Item.IsUsableItem
 local C_Spell_GetSpellName = C_Spell.GetSpellName
@@ -50,6 +51,8 @@ local LOCATION_LEFTRIGHTOUTSIDE = SCREEN_LOCATION.LeftRightOutside or 11
 local FILTER_SYMBOLS = "symbols"
 local FILTER_BLIZZARD_PROC = "blizzardProc"
 local FILTER_CUSTOM = "custom"
+local FILTER_SHAREDMEDIA = "sharedMedia"
+local FILTER_FAVORITES = "favorites"
 local FILTER_OTHER = "other"
 local FILTER_RECENT = "recent"
 local MAX_RECENT_OVERLAYS = 200
@@ -71,6 +74,25 @@ local LOCATION_LABELS = {
     [LOCATION_LEFTRIGHT] = "Left + Right",
     [LOCATION_TOPBOTTOM] = "Top + Bottom",
     [LOCATION_LEFTRIGHTOUTSIDE] = "Left + Right Outside",
+}
+
+local SHARED_MEDIA_SOURCE_TYPE = "sharedMedia"
+local SHARED_MEDIA_TYPE_ORDER = {
+    "background",
+    "border",
+    "statusbar",
+}
+
+local SHARED_MEDIA_TYPE_SORT = {
+    background = 1,
+    border = 2,
+    statusbar = 3,
+}
+
+local SHARED_MEDIA_TYPE_LABELS = {
+    background = "Background",
+    border = "Border",
+    statusbar = "Status Bar",
 }
 
 local TEXTURE_LAYOUT_LABELS = {
@@ -629,6 +651,8 @@ local FILTER_OPTIONS = {
     [FILTER_SYMBOLS] = "Symbols",
     [FILTER_BLIZZARD_PROC] = "Blizzard Proc Overlays",
     [FILTER_CUSTOM] = "Custom",
+    [FILTER_SHAREDMEDIA] = "SharedMedia",
+    [FILTER_FAVORITES] = "Favorites",
     [FILTER_OTHER] = "Other",
     [FILTER_RECENT] = "Recent Proc Overlays",
 }
@@ -856,13 +880,109 @@ local function BuildLocationSubtitle(locationType)
 end
 
 local function NormalizeAuraTextureSourceType(sourceType)
-    if sourceType == "atlas" or sourceType == "file" then
+    if sourceType == "atlas" or sourceType == "file" or sourceType == SHARED_MEDIA_SOURCE_TYPE then
         return sourceType
     end
     return nil
 end
 
-function CooldownCompanion:ResolveAuraTextureAsset(sourceType, sourceValue)
+local function NormalizeSharedMediaType(mediaType)
+    if mediaType == "background" or mediaType == "border" or mediaType == "statusbar" then
+        return mediaType
+    end
+    return nil
+end
+
+local function BuildSharedMediaLibraryKey(mediaType, mediaKey)
+    local normalizedType = NormalizeSharedMediaType(mediaType)
+    if not normalizedType or type(mediaKey) ~= "string" or mediaKey == "" then
+        return nil
+    end
+
+    return "lsm:" .. normalizedType .. ":" .. mediaKey
+end
+
+local function ParseSharedMediaLibraryKey(libraryKey)
+    if type(libraryKey) ~= "string" then
+        return nil, nil
+    end
+
+    local mediaType, mediaKey = libraryKey:match("^lsm:([^:]+):(.+)$")
+    mediaType = NormalizeSharedMediaType(mediaType)
+    if not mediaType or type(mediaKey) ~= "string" or mediaKey == "" then
+        return nil, nil
+    end
+
+    return mediaType, mediaKey
+end
+
+local function BuildSharedMediaLabel(mediaKey, savedLabel)
+    if type(savedLabel) == "string" and savedLabel ~= "" then
+        return savedLabel
+    end
+    if type(mediaKey) == "string" and mediaKey ~= "" then
+        return mediaKey
+    end
+    return "SharedMedia Texture"
+end
+
+local function BuildSharedMediaEntry(mediaType, mediaKey, savedLabel, options)
+    options = type(options) == "table" and options or {}
+
+    local normalizedType = NormalizeSharedMediaType(mediaType)
+    if not normalizedType or type(mediaKey) ~= "string" or mediaKey == "" then
+        return nil
+    end
+
+    local label = BuildSharedMediaLabel(mediaKey, savedLabel)
+    local isFavorite = options.isFavorite == true
+    local isSavedFavorite = options.isSavedFavorite == true
+    local isMissing = options.isMissing == true
+    local categoryKey = isFavorite and FILTER_FAVORITES or FILTER_SHAREDMEDIA
+    local typeLabel = SHARED_MEDIA_TYPE_LABELS[normalizedType] or normalizedType
+    local stateLabel = isMissing and "Missing or unavailable"
+        or (isFavorite and "Favorite" or (isSavedFavorite and "Favorited" or "SharedMedia"))
+    local subtitle = typeLabel .. "  |  " .. stateLabel
+
+    return {
+        key = BuildSharedMediaLibraryKey(normalizedType, mediaKey),
+        libraryKey = BuildSharedMediaLibraryKey(normalizedType, mediaKey),
+        label = label,
+        categoryKey = categoryKey,
+        category = FILTER_OPTIONS[categoryKey],
+        sourceType = SHARED_MEDIA_SOURCE_TYPE,
+        sourceValue = mediaKey,
+        mediaType = normalizedType,
+        layoutAgnostic = true,
+        color = { 1, 1, 1, 1 },
+        blendMode = "BLEND",
+        subtitle = subtitle,
+        searchText = string_lower(label .. " " .. mediaKey .. " " .. normalizedType .. " " .. stateLabel),
+        isFavorite = isFavorite,
+        isSavedFavorite = isSavedFavorite,
+        isMissingSharedMedia = isMissing,
+        canFavorite = not isFavorite and not isSavedFavorite and not isMissing,
+        canRemoveFavorite = isFavorite,
+    }
+end
+
+local function ReadSharedMediaFavoriteRecord(value)
+    if type(value) ~= "table" then
+        return nil, nil, nil
+    end
+
+    local mediaType = NormalizeSharedMediaType(value.mediaType)
+    local mediaKey = value.key or value.mediaKey or value.sourceValue
+    mediaKey = type(mediaKey) == "string" and string_trim(mediaKey) or nil
+    local label = type(value.label) == "string" and value.label or nil
+    if not mediaType or not mediaKey or mediaKey == "" then
+        return nil, nil, nil
+    end
+
+    return mediaType, mediaKey, label
+end
+
+function CooldownCompanion:ResolveAuraTextureAsset(sourceType, sourceValue, mediaType)
     local normalizedSourceType = NormalizeAuraTextureSourceType(sourceType)
 
     if normalizedSourceType == "atlas" then
@@ -875,6 +995,19 @@ function CooldownCompanion:ResolveAuraTextureAsset(sourceType, sourceValue)
     if normalizedSourceType == "file" then
         if sourceValue ~= nil then
             return "file", sourceValue
+        end
+        return nil
+    end
+
+    if normalizedSourceType == SHARED_MEDIA_SOURCE_TYPE then
+        local normalizedMediaType = NormalizeSharedMediaType(mediaType)
+        if not normalizedMediaType or type(sourceValue) ~= "string" or sourceValue == "" then
+            return nil
+        end
+
+        local resolvedPath = LSM:Fetch(normalizedMediaType, sourceValue, true)
+        if type(resolvedPath) == "string" and resolvedPath ~= "" then
+            return "file", resolvedPath
         end
         return nil
     end
@@ -904,7 +1037,9 @@ local function NormalizeAuraTextureSettings(settings)
     settings.x = tonumber(settings.x or settings.xOffset) or 0
     settings.y = tonumber(settings.y or settings.yOffset) or 0
     settings.anchor = nil
-    settings.mediaType = nil
+    settings.mediaType = settings.sourceType == SHARED_MEDIA_SOURCE_TYPE
+        and NormalizeSharedMediaType(settings.mediaType)
+        or nil
     settings.xOffset = nil
     settings.yOffset = nil
     settings.color = CopyColor(settings.color) or { 1, 1, 1, 1 }
@@ -954,6 +1089,10 @@ function CooldownCompanion:DoesAuraTexturePickerEntryMatchSelection(entry, selec
     end
 
     if entry.sourceType ~= selection.sourceType or entry.sourceValue ~= selection.sourceValue then
+        return false
+    end
+
+    if entry.sourceType == SHARED_MEDIA_SOURCE_TYPE and entry.mediaType ~= selection.mediaType then
         return false
     end
 
@@ -1091,6 +1230,7 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
 
     settings.sourceType = entry.sourceType
     settings.sourceValue = entry.sourceValue
+    settings.mediaType = entry.mediaType
     settings.libraryKey = entry.libraryKey or entry.key
     settings.label = entry.label
     settings.locationType = entryLocationType or NormalizeTextureLayout(settings.locationType)
@@ -1125,6 +1265,7 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
         libraryKey = entry.libraryKey or entry.key,
         sourceType = entry.sourceType,
         sourceValue = entry.sourceValue,
+        mediaType = entry.mediaType,
         label = entry.label,
         scale = entry.scale or (base and base.scale) or 1,
         alpha = base and base.alpha or 1,
@@ -1314,16 +1455,160 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
     if type(profile.auraTextureLibrary) ~= "table" then
         profile.auraTextureLibrary = {
             customTextures = {},
+            sharedMediaFavorites = {},
             recentProcOverlays = {},
         }
     end
     if type(profile.auraTextureLibrary.customTextures) ~= "table" then
         profile.auraTextureLibrary.customTextures = {}
     end
+    if type(profile.auraTextureLibrary.sharedMediaFavorites) ~= "table" then
+        profile.auraTextureLibrary.sharedMediaFavorites = {}
+    end
     if type(profile.auraTextureLibrary.recentProcOverlays) ~= "table" then
         profile.auraTextureLibrary.recentProcOverlays = {}
     end
     return profile.auraTextureLibrary
+end
+
+function CooldownCompanion:GetSharedMediaAuraTextureEntries()
+    local store = self:EnsureAuraTextureLibraryStore()
+    local favorites = store and store.sharedMediaFavorites or nil
+    local entries = {}
+
+    for _, mediaType in ipairs(SHARED_MEDIA_TYPE_ORDER) do
+        for _, mediaKey in ipairs(LSM:List(mediaType) or {}) do
+            local savedFavorite = favorites and favorites[BuildSharedMediaLibraryKey(mediaType, mediaKey)] or nil
+            local _, _, savedLabel = ReadSharedMediaFavoriteRecord(savedFavorite)
+            local entry = BuildSharedMediaEntry(
+                mediaType,
+                mediaKey,
+                savedLabel,
+                {
+                    isSavedFavorite = savedFavorite ~= nil,
+                }
+            )
+            if entry then
+                entries[#entries + 1] = entry
+            end
+        end
+    end
+
+    table_sort(entries, function(a, b)
+        local aLabel = string_lower(a.label or "")
+        local bLabel = string_lower(b.label or "")
+        if aLabel == bLabel then
+            local aType = SHARED_MEDIA_TYPE_SORT[a.mediaType] or 99
+            local bType = SHARED_MEDIA_TYPE_SORT[b.mediaType] or 99
+            if aType == bType then
+                return (a.sourceValue or "") < (b.sourceValue or "")
+            end
+            return aType < bType
+        end
+        return aLabel < bLabel
+    end)
+
+    return entries
+end
+
+function CooldownCompanion:GetFavoriteAuraTextureEntries()
+    local store = self:EnsureAuraTextureLibraryStore()
+    local favorites = store and store.sharedMediaFavorites or nil
+    local entries = {}
+
+    for storedKey, storedValue in pairs(favorites or {}) do
+        local mediaType, mediaKey, savedLabel = ReadSharedMediaFavoriteRecord(storedValue)
+        local libraryKey = BuildSharedMediaLibraryKey(mediaType, mediaKey)
+        if not libraryKey then
+            favorites[storedKey] = nil
+        else
+            if libraryKey ~= storedKey then
+                favorites[libraryKey] = storedValue
+                favorites[storedKey] = nil
+            end
+
+            local entry = BuildSharedMediaEntry(
+                mediaType,
+                mediaKey,
+                savedLabel,
+                {
+                    isFavorite = true,
+                    isMissing = LSM:Fetch(mediaType, mediaKey, true) == nil,
+                }
+            )
+            if entry then
+                entries[#entries + 1] = entry
+            else
+                favorites[libraryKey] = nil
+            end
+        end
+    end
+
+    table_sort(entries, function(a, b)
+        if a.isMissingSharedMedia ~= b.isMissingSharedMedia then
+            return not a.isMissingSharedMedia
+        end
+
+        local aLabel = string_lower(a.label or "")
+        local bLabel = string_lower(b.label or "")
+        if aLabel == bLabel then
+            return (a.libraryKey or a.key or "") < (b.libraryKey or b.key or "")
+        end
+        return aLabel < bLabel
+    end)
+
+    return entries
+end
+
+function CooldownCompanion:SaveFavoriteAuraTexture(mediaType, mediaKey, label)
+    local normalizedType = NormalizeSharedMediaType(mediaType)
+    local normalizedKey = type(mediaKey) == "string" and string_trim(mediaKey) or nil
+    local libraryKey = BuildSharedMediaLibraryKey(normalizedType, normalizedKey)
+    if not libraryKey then
+        return nil
+    end
+
+    local store = self:EnsureAuraTextureLibraryStore()
+    if not store then
+        return nil
+    end
+
+    store.sharedMediaFavorites[libraryKey] = {
+        mediaType = normalizedType,
+        key = normalizedKey,
+        label = BuildSharedMediaLabel(normalizedKey, label),
+    }
+
+    return BuildSharedMediaEntry(
+        normalizedType,
+        normalizedKey,
+        store.sharedMediaFavorites[libraryKey].label,
+        {
+            isFavorite = true,
+            isMissing = LSM:Fetch(normalizedType, normalizedKey, true) == nil,
+        }
+    )
+end
+
+function CooldownCompanion:RemoveFavoriteAuraTexture(libraryKeyOrMediaType, mediaKey)
+    local store = self:EnsureAuraTextureLibraryStore()
+    if not store then
+        return
+    end
+
+    local libraryKey = nil
+    if mediaKey ~= nil then
+        libraryKey = BuildSharedMediaLibraryKey(libraryKeyOrMediaType, mediaKey)
+    else
+        local mediaType, parsedKey = ParseSharedMediaLibraryKey(libraryKeyOrMediaType)
+        libraryKey = BuildSharedMediaLibraryKey(mediaType, parsedKey)
+    end
+
+    if not libraryKey then
+        return
+    end
+
+    store.sharedMediaFavorites[libraryKey] = nil
 end
 
 function CooldownCompanion:GetCustomAuraTextureEntries()
@@ -1671,8 +1956,22 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
     local filter = FILTER_OPTIONS[filterValue] and filterValue or FILTER_SYMBOLS
     local entries = {}
 
-    if filter == FILTER_CUSTOM then
-        return self:GetCustomAuraTextureEntries()
+    if filter == FILTER_SHAREDMEDIA then
+        for _, entry in ipairs(self:GetSharedMediaAuraTextureEntries()) do
+            if query == "" or string_find(entry.searchText, query, 1, true) then
+                entries[#entries + 1] = entry
+            end
+        end
+        return entries
+    end
+
+    if filter == FILTER_FAVORITES then
+        for _, entry in ipairs(self:GetFavoriteAuraTextureEntries()) do
+            if query == "" or string_find(entry.searchText, query, 1, true) then
+                entries[#entries + 1] = entry
+            end
+        end
+        return entries
     end
 
     if filter == FILTER_RECENT then
@@ -1698,7 +1997,14 @@ function CooldownCompanion:GetAuraTexturePickerEntries(searchText, filterValue)
 end
 
 function CooldownCompanion:GetAuraTexturePickerFilters()
-    return FILTER_OPTIONS, { FILTER_SYMBOLS, FILTER_BLIZZARD_PROC, FILTER_CUSTOM, FILTER_OTHER, FILTER_RECENT }
+    return FILTER_OPTIONS, {
+        FILTER_SYMBOLS,
+        FILTER_BLIZZARD_PROC,
+        FILTER_SHAREDMEDIA,
+        FILTER_FAVORITES,
+        FILTER_OTHER,
+        FILTER_RECENT,
+    }
 end
 
 function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
@@ -1711,9 +2017,9 @@ function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
         return FILTER_RECENT
     end
 
-    local customEntry = self:FindAuraTexturePickerEntry(self:GetCustomAuraTextureEntries(), selection)
-    if customEntry then
-        return FILTER_CUSTOM
+    local favoriteEntry = self:FindAuraTexturePickerEntry(self:GetFavoriteAuraTextureEntries(), selection)
+    if favoriteEntry then
+        return FILTER_FAVORITES
     end
 
     local builtinEntry = self:FindAuraTexturePickerEntry(BuildBuiltinEntries(), selection)
@@ -1721,8 +2027,9 @@ function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
         return builtinEntry.categoryKey or FILTER_OTHER
     end
 
-    if self:IsCustomAuraTextureSelection(selection) then
-        return FILTER_CUSTOM
+    local sharedMediaEntry = self:FindAuraTexturePickerEntry(self:GetSharedMediaAuraTextureEntries(), selection)
+    if sharedMediaEntry or selection.sourceType == SHARED_MEDIA_SOURCE_TYPE then
+        return FILTER_SHAREDMEDIA
     end
 
     if selection.sourceType == "file" then
@@ -1735,7 +2042,8 @@ end
 local function ApplyTextureSource(texture, settings)
     local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
         settings.sourceType,
-        settings.sourceValue
+        settings.sourceValue,
+        settings.mediaType
     )
 
     if resolvedSourceType == "atlas" then
