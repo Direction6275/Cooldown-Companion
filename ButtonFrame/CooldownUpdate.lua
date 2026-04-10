@@ -59,6 +59,7 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
+local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
 local TARGET_SWITCH_SAFETY_CAP = 0.60
 
 local function AuraDataHasTimer(auraData)
@@ -1005,12 +1006,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
             if not hasCastCountText and buttonData._castCountCandidate then
-                if buttonData._castCountEventSpellID
-                        and (cooldownSpellId == buttonData._castCountEventSpellID
-                            or (buttonData._castCountEventSpellID == buttonData.id
-                                and cooldownSpellId ~= buttonData.id)) then
-                    conditionalCastCountSpellID = cooldownSpellId
-                end
+                conditionalCastCountSpellID = GetConditionalCastCountSpellID(buttonData, cooldownSpellId)
             end
 
             if not displayCountShown and hasCastCountText then

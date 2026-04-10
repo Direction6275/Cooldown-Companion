@@ -324,12 +324,14 @@ end
 
 function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
     if event == "SPELL_UPDATE_USES" and spellID then
+        local matchesConditionalCastCountEvent = CooldownCompanion.MatchesConditionalCastCountEvent
         local matchedCastCountButton = false
         for _, group in pairs(self.db.profile.groups) do
             for _, bd in ipairs(group.buttons) do
                 if bd.type == "spell"
                         and not bd.hasCharges
-                        and (bd.id == spellID or bd.id == baseSpellID) then
+                        and matchesConditionalCastCountEvent
+                        and matchesConditionalCastCountEvent(bd, spellID, baseSpellID) then
                     bd._castCountCandidate = true
                     bd._castCountEventSpellID = spellID
                     bd._castCountSelf = (bd.id == spellID) or nil
