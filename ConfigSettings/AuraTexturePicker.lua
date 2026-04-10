@@ -72,7 +72,10 @@ end
 
 local function FindEntryForSelection(entries, selection)
     if CooldownCompanion.FindAuraTexturePickerEntry then
-        return CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
+        local matchedEntry = CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
+        if matchedEntry then
+            return matchedEntry
+        end
     end
 
     if type(selection) ~= "table" then
@@ -451,7 +454,7 @@ local function OpenAuraTexturePicker(opts)
 
         if #entries == 0 then
             if IsFavoritesFilter(currentFilter) and currentSearch == "" then
-                statusLabel:SetText("No SharedMedia favorites yet. Browse SharedMedia and click + to save one here.")
+                statusLabel:SetText("No favorite textures yet. Browse any category and click + to save one here.")
             elseif IsFavoritesFilter(currentFilter) then
                 statusLabel:SetText("No favorite textures matched the current search.")
             elseif IsSharedMediaFilter(currentFilter) then
@@ -462,9 +465,9 @@ local function OpenAuraTexturePicker(opts)
         elseif IsFavoritesFilter(currentFilter) then
             statusLabel:SetText(("Showing %d favorite textures. Click the red X to remove one."):format(#entries))
         elseif IsSharedMediaFilter(currentFilter) then
-            statusLabel:SetText(("Showing %d SharedMedia textures. Click + to save a favorite."):format(#entries))
+            statusLabel:SetText(("Showing %d SharedMedia textures. Click + to favorite one, or the red X to remove it from Favorites."):format(#entries))
         else
-            statusLabel:SetText(("Showing %d textures."):format(#entries))
+            statusLabel:SetText(("Showing %d textures. Click + to favorite one, or the red X to remove it from Favorites."):format(#entries))
         end
 
         local matchedSelected = FindEntryForSelection(entries, currentSelection)
@@ -534,10 +537,10 @@ local function OpenAuraTexturePicker(opts)
                     GameTooltip:SetOwner(thumb._deleteBtn, "ANCHOR_LEFT")
                     if thumb._deleteBtn._actionMode == "addFavorite" then
                         GameTooltip:AddLine("Add To Favorites")
-                        GameTooltip:AddLine("Save this SharedMedia texture in the Favorites category.", 1, 1, 1, true)
+                        GameTooltip:AddLine("Save this texture in the Favorites category.", 1, 1, 1, true)
                     elseif thumb._deleteBtn._actionMode == "removeFavorite" then
                         GameTooltip:AddLine("Remove From Favorites")
-                        GameTooltip:AddLine("Keep the texture available in SharedMedia, but remove it from Favorites.", 1, 1, 1, true)
+                        GameTooltip:AddLine("Keep the texture in its normal category, but remove it from Favorites.", 1, 1, 1, true)
                     end
                     GameTooltip:Show()
                 end)
@@ -559,14 +562,14 @@ local function OpenAuraTexturePicker(opts)
                 end)
                 thumb._deleteBtn:SetScript("OnClick", function()
                     if thumb._deleteBtn._actionMode == "addFavorite" then
-                        local savedEntry = CooldownCompanion:SaveFavoriteAuraTexture(entry.mediaType, entry.sourceValue, entry.label)
+                        local savedEntry = CooldownCompanion:SaveFavoriteAuraTexture(entry)
                         if savedEntry then
                             statusLabel:SetText((savedEntry.label or "Texture") .. " added to Favorites.")
                         else
-                            statusLabel:SetText("That SharedMedia texture could not be added to Favorites.")
+                            statusLabel:SetText("That texture could not be added to Favorites.")
                         end
                     elseif thumb._deleteBtn._actionMode == "removeFavorite" then
-                        CooldownCompanion:RemoveFavoriteAuraTexture(entry.libraryKey or entry.key)
+                        CooldownCompanion:RemoveFavoriteAuraTexture(entry)
                         if selectedEntry == entry and IsFavoritesFilter(currentFilter) then
                             selectedEntry = nil
                         end

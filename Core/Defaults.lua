@@ -32,7 +32,7 @@ local defaults = {
             bars = {},
         },
         auraTextureLibrary = {
-            recentProcOverlays = {},
+            textureFavorites = {},
         },
         groups = {
             --[[

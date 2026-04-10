@@ -720,6 +720,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
 
     if displayMode == "textures" then
         db.groups[groupId].textureSettings = {
+            blendMode = "BLEND",
             point = "CENTER",
             relativePoint = "CENTER",
             relativeTo = "UIParent",
