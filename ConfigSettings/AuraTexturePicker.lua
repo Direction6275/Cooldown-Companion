@@ -332,18 +332,22 @@ local function OpenAuraTexturePicker(opts)
         thumb._selected = selected
 
         local deleteBtn = CreateFrame("Button", nil, thumb)
-        deleteBtn:SetSize(16, 16)
-        deleteBtn:SetPoint("TOPRIGHT", thumb, "TOPRIGHT", -2, -2)
+        deleteBtn:SetSize(22, 22)
+        deleteBtn:SetPoint("TOPRIGHT", thumb, "TOPRIGHT", -1, -1)
         deleteBtn:Hide()
         thumb._deleteBtn = deleteBtn
 
         local deleteTex = deleteBtn:CreateTexture(nil, "ARTWORK")
-        deleteTex:SetAllPoints()
+        deleteTex:SetPoint("TOPLEFT", 2, -2)
+        deleteTex:SetPoint("BOTTOMRIGHT", -2, 2)
         deleteTex:SetAtlas("common-icon-redx", false)
         deleteBtn._icon = deleteTex
 
-        local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         deleteText:SetPoint("CENTER")
+        deleteText:SetJustifyH("CENTER")
+        deleteText:SetJustifyV("MIDDLE")
+        deleteText:SetScale(1.75)
         deleteText:Hide()
         deleteBtn._text = deleteText
 
@@ -380,7 +384,7 @@ local function OpenAuraTexturePicker(opts)
             end
             if button._text then
                 button._text:SetText("+")
-                button._text:SetTextColor(0.45, 1, 0.45, 1)
+                button._text:SetTextColor(0.55, 1, 0.55, 1)
                 button._text:Show()
             end
             return
