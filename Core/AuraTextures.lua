@@ -1109,14 +1109,37 @@ local function MigrateLegacySharedMediaFavorites(store)
                 favoriteEntry.favoriteOriginCategoryKey = FILTER_SHAREDMEDIA
                 favorites[libraryKey] = favorites[libraryKey] or BuildAuraTextureFavoriteRecord(favoriteEntry)
             end
-        else
-            legacyFavorites[storedKey] = nil
         end
+
+        legacyFavorites[storedKey] = nil
     end
+
+    store.sharedMediaFavorites = nil
 end
 
 local GetAuraTextureFavoriteStore
 local AreAuraTextureFavoriteRecordsEquivalent
+local BuildBlizzardProcOverlayEntries
+local DoesAuraTextureVariantMatchRecord
+
+local function IsLegacyProcFavoriteKey(favoriteKey)
+    return type(favoriteKey) == "string" and string_find(favoriteKey, "^favorite:legacy%-proc:", 1, false) ~= nil
+end
+
+local function FindCanonicalBlizzardProcFavoriteKey(record, procEntries)
+    local matchKey = nil
+
+    for _, entry in ipairs(procEntries or {}) do
+        if DoesAuraTextureVariantMatchRecord(entry, record) then
+            if matchKey and matchKey ~= entry.key then
+                return nil
+            end
+            matchKey = entry.key
+        end
+    end
+
+    return matchKey
+end
 
 local function BuildLegacyRecentFavoriteRecord(storedKey, value)
     local sourceValue = tonumber(value and value.sourceValue)
@@ -1148,6 +1171,39 @@ local function BuildLegacyRecentFavoriteRecord(storedKey, value)
     return record
 end
 
+local function CanonicalizeLegacyProcFavoriteRecords(favorites, procEntries)
+    if type(favorites) ~= "table" then
+        return
+    end
+
+    local updates = {}
+    local removals = {}
+
+    for favoriteKey, favoriteValue in pairs(favorites) do
+        local favoriteRecord = ReadAuraTextureFavoriteRecord(favoriteValue)
+        if not favoriteRecord then
+            removals[#removals + 1] = favoriteKey
+        elseif favoriteRecord.originCategoryKey == FILTER_BLIZZARD_PROC and IsLegacyProcFavoriteKey(favoriteRecord.favoriteKey) then
+            local canonicalKey = FindCanonicalBlizzardProcFavoriteKey(favoriteRecord, procEntries)
+            if canonicalKey and canonicalKey ~= favoriteKey then
+                local existingRecord = ReadAuraTextureFavoriteRecord(favorites[canonicalKey])
+                if not existingRecord or AreAuraTextureFavoriteRecordsEquivalent(existingRecord, favoriteRecord) then
+                    favoriteRecord.favoriteKey = canonicalKey
+                    updates[canonicalKey] = favoriteRecord
+                    removals[#removals + 1] = favoriteKey
+                end
+            end
+        end
+    end
+
+    for _, favoriteKey in ipairs(removals) do
+        favorites[favoriteKey] = nil
+    end
+    for favoriteKey, favoriteRecord in pairs(updates) do
+        favorites[favoriteKey] = favoriteRecord
+    end
+end
+
 local function MigrateLegacyRecentProcOverlayFavorites(store)
     if type(store) ~= "table" or type(store.recentProcOverlays) ~= "table" then
         return
@@ -1155,14 +1211,25 @@ local function MigrateLegacyRecentProcOverlayFavorites(store)
 
     local legacyRecent = store.recentProcOverlays
     local favorites = GetAuraTextureFavoriteStore(store)
+    local procEntries = BuildBlizzardProcOverlayEntries()
     if not favorites then
         store.recentProcOverlays = nil
         return
     end
 
+    CanonicalizeLegacyProcFavoriteRecords(favorites, procEntries)
+
     for storedKey, storedValue in pairs(legacyRecent) do
         local migratedRecord = BuildLegacyRecentFavoriteRecord(storedKey, storedValue)
         if migratedRecord then
+            local canonicalKey = FindCanonicalBlizzardProcFavoriteKey(migratedRecord, procEntries)
+            if canonicalKey then
+                local existingRecord = ReadAuraTextureFavoriteRecord(favorites[canonicalKey])
+                if not existingRecord or AreAuraTextureFavoriteRecordsEquivalent(existingRecord, migratedRecord) then
+                    migratedRecord.favoriteKey = canonicalKey
+                end
+            end
+
             local alreadySaved = false
             for favoriteKey, favoriteValue in pairs(favorites) do
                 local favoriteRecord = ReadAuraTextureFavoriteRecord(favoriteValue)
@@ -1315,6 +1382,33 @@ local function AreTextureColorsEqual(a, b)
     return true
 end
 
+DoesAuraTextureVariantMatchRecord = function(entry, record)
+    if type(entry) ~= "table" or type(record) ~= "table" then
+        return false
+    end
+
+    if entry.sourceType ~= record.sourceType or entry.sourceValue ~= record.sourceValue or entry.mediaType ~= record.mediaType then
+        return false
+    end
+    if (entry.layoutAgnostic == true) ~= (record.layoutAgnostic == true) then
+        return false
+    end
+    if NormalizeTextureLayout(entry.locationType) ~= NormalizeTextureLayout(record.locationType) then
+        return false
+    end
+    if not AreTextureNumbersEqual(entry.scale or 1, record.scale or 1) then
+        return false
+    end
+    if NormalizeBlendMode(entry.blendMode) ~= NormalizeBlendMode(record.blendMode) then
+        return false
+    end
+    if not AreTextureColorsEqual(entry.color, record.color) then
+        return false
+    end
+
+    return true
+end
+
 AreAuraTextureFavoriteRecordsEquivalent = function(a, b)
     if type(a) ~= "table" or type(b) ~= "table" then
         return false
@@ -1358,10 +1452,6 @@ function CooldownCompanion:DoesAuraTexturePickerEntryMatchSelection(entry, selec
 
     if entry.sourceType == SHARED_MEDIA_SOURCE_TYPE and entry.mediaType ~= selection.mediaType then
         return false
-    end
-
-    if entry.isFavoriteRecord then
-        return true
     end
 
     if not entry.layoutAgnostic then
@@ -1430,13 +1520,17 @@ function CooldownCompanion:FindAuraTexturePickerEntryByAsset(entries, selection)
         return nil
     end
 
+    local matchedEntry = nil
     for _, entry in ipairs(entries or {}) do
         if self:DoesAuraTexturePickerEntryMatchSelectionAsset(entry, selection) then
-            return entry
+            if matchedEntry ~= nil then
+                return nil
+            end
+            matchedEntry = entry
         end
     end
 
-    return nil
+    return matchedEntry
 end
 
 function CooldownCompanion:IsAuraTextureButtonSupported(buttonData)
@@ -2029,7 +2123,7 @@ function CooldownCompanion:RemoveCustomAuraTexture(pathOrKey)
     store.customTextures[pathKey] = nil
 end
 
-local function BuildBlizzardProcOverlayEntries()
+BuildBlizzardProcOverlayEntries = function()
     local overlayLibrary = ST._spellActivationOverlayLibrary
     local rows = overlayLibrary and overlayLibrary.entries
     local entries = {}
