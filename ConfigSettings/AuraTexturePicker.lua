@@ -15,8 +15,10 @@ pickerParkingFrame:Hide()
 local pickerThumbnailPool = {}
 local pickerScrollFrame = nil
 local pickerScrollChild = nil
-local customTextureValidationFrame = CreateFrame("Frame", nil, UIParent)
-customTextureValidationFrame:Hide()
+-- Keep this probe detached from UIParent. A hidden UIParent-backed texture can
+-- report 0x0 even after IsObjectLoaded() returns true, which causes false
+-- negatives for valid custom imports.
+local customTextureValidationFrame = CreateFrame("Frame")
 local customTextureValidationTexture = customTextureValidationFrame:CreateTexture(nil, "ARTWORK")
 -- Request blocking loads here so valid custom textures can report their native
 -- size immediately when the user adds them to the saved custom shelf.
@@ -41,17 +43,15 @@ local function ValidateCustomTexturePath(path)
 
     if not customTextureValidationTexture:IsObjectLoaded() then
         customTextureValidationTexture:SetTexture(nil)
-        return nil, nil, nil, "Texture has not finished loading yet. Check the path and try again."
+        return nil, nil, nil, "WoW did not finish loading this file. Check the path and export format, then restart the game if you just added it."
     end
 
     local width, height = customTextureValidationTexture:GetSize()
-    if type(width) ~= "number" or width <= 0 or type(height) ~= "number" or height <= 0 then
-        customTextureValidationTexture:SetTexture(nil)
-        return nil, nil, nil, "Texture size could not be read. Check the file and try again."
-    end
+    local normalizedWidth = type(width) == "number" and width > 0 and width or nil
+    local normalizedHeight = type(height) == "number" and height > 0 and height or nil
 
     customTextureValidationTexture:SetTexture(nil)
-    return normalizedPath, width, height, nil
+    return normalizedPath, normalizedWidth, normalizedHeight, nil
 end
 
 local function BuildPreviewSelection(groupId, buttonIndex, entry)
@@ -714,6 +714,9 @@ local function OpenAuraTexturePicker(opts)
         selectedEntry = entry
         stagedClear = false
         RebuildGrid()
+        if width == nil or height == nil then
+            statusLabel:SetText("Texture imported, but WoW did not report its native size. The panel will use the default texture size until you adjust it.")
+        end
     end)
 
     applyBtn:SetCallback("OnClick", function()
