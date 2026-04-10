@@ -120,6 +120,7 @@ local COMPACT_PROFILE_DEFAULTS = {
             bars = {},
         },
         auraTextureLibrary = {
+            textureFavorites = {},
             recentProcOverlays = {},
         },
         globalStyle = {
