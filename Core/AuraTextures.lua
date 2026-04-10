@@ -1141,17 +1141,27 @@ local function CleanupLegacyRecentArtifacts(store)
     store.recentProcOverlays = nil
 end
 
-GetAuraTextureFavoriteStore = function(store)
+function CooldownCompanion:NormalizeAuraTextureLibraryStore(store)
     if type(store) ~= "table" then
         return nil
     end
+
+    if type(store.customTextures) ~= "table" then
+        store.customTextures = {}
+    end
+
     if type(store.textureFavorites) ~= "table" then
         store.textureFavorites = {}
     end
 
     MigrateLegacySharedMediaFavorites(store)
     CleanupLegacyRecentArtifacts(store)
-    return store.textureFavorites
+    return store
+end
+
+GetAuraTextureFavoriteStore = function(store)
+    local normalizedStore = CooldownCompanion:NormalizeAuraTextureLibraryStore(store)
+    return normalizedStore and normalizedStore.textureFavorites or nil
 end
 
 local function ApplyFavoriteStateToEntry(entry, favorites)
@@ -1325,48 +1335,6 @@ function CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
     end
 
     return nil
-end
-
-function CooldownCompanion:DoesAuraTexturePickerEntryMatchSelectionAsset(entry, selection)
-    if type(entry) ~= "table" or type(selection) ~= "table" then
-        return false
-    end
-
-    if entry.sourceType ~= selection.sourceType or entry.sourceValue ~= selection.sourceValue then
-        return false
-    end
-
-    if entry.sourceType == SHARED_MEDIA_SOURCE_TYPE and entry.mediaType ~= selection.mediaType then
-        return false
-    end
-
-    if not entry.layoutAgnostic then
-        local entryLocationType = NormalizeTextureLayout(entry.locationType)
-        local selectionLocationType = NormalizeTextureLayout(selection.locationType)
-        if entryLocationType ~= selectionLocationType then
-            return false
-        end
-    end
-
-    return true
-end
-
-function CooldownCompanion:FindAuraTexturePickerEntryByAsset(entries, selection)
-    if type(selection) ~= "table" then
-        return nil
-    end
-
-    local matchedEntry = nil
-    for _, entry in ipairs(entries or {}) do
-        if self:DoesAuraTexturePickerEntryMatchSelectionAsset(entry, selection) then
-            if matchedEntry ~= nil then
-                return nil
-            end
-            matchedEntry = entry
-        end
-    end
-
-    return matchedEntry
 end
 
 function CooldownCompanion:IsAuraTextureButtonSupported(buttonData)
@@ -1693,21 +1661,10 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
         profile.auraTextureLibrary = {
             customTextures = {},
             textureFavorites = {},
-            sharedMediaFavorites = {},
         }
     end
-    if type(profile.auraTextureLibrary.customTextures) ~= "table" then
-        profile.auraTextureLibrary.customTextures = {}
-    end
-    if type(profile.auraTextureLibrary.textureFavorites) ~= "table" then
-        profile.auraTextureLibrary.textureFavorites = {}
-    end
-    if type(profile.auraTextureLibrary.sharedMediaFavorites) ~= "table" then
-        profile.auraTextureLibrary.sharedMediaFavorites = {}
-    end
-    MigrateLegacySharedMediaFavorites(profile.auraTextureLibrary)
-    CleanupLegacyRecentArtifacts(profile.auraTextureLibrary)
-    return profile.auraTextureLibrary
+
+    return self:NormalizeAuraTextureLibraryStore(profile.auraTextureLibrary)
 end
 
 function CooldownCompanion:GetSharedMediaAuraTextureEntries()
@@ -2156,7 +2113,6 @@ function CooldownCompanion:GetAuraTexturePickerFilterForSelection(selection)
     end
 
     local builtinEntry = self:FindAuraTexturePickerEntry(BuildBuiltinEntries(), selection)
-        or self:FindAuraTexturePickerEntryByAsset(BuildBuiltinEntries(), selection)
     if builtinEntry then
         return builtinEntry.categoryKey or FILTER_OTHER
     end

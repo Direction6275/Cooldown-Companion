@@ -883,11 +883,88 @@ local function RehydrateScopedStore(store, defaultKey, formatVersion)
     return store
 end
 
+local function NormalizeTextureLibraryStore(store)
+    if type(store) ~= "table" then
+        return store
+    end
+
+    if type(CooldownCompanion.NormalizeAuraTextureLibraryStore) == "function" then
+        return CooldownCompanion:NormalizeAuraTextureLibraryStore(store)
+    end
+
+    if type(store.customTextures) ~= "table" then
+        store.customTextures = {}
+    end
+    if type(store.textureFavorites) ~= "table" then
+        store.textureFavorites = {}
+    end
+
+    local legacyFavorites = store.sharedMediaFavorites
+    if type(legacyFavorites) == "table" then
+        for storedKey, storedValue in pairs(legacyFavorites) do
+            if type(storedValue) == "string" then
+                store.textureFavorites[storedValue] = store.textureFavorites[storedValue] or storedValue
+            elseif type(storedValue) == "table" then
+                local favoriteKey = storedValue.favoriteKey
+                if type(favoriteKey) == "string" then
+                    store.textureFavorites[favoriteKey] = store.textureFavorites[favoriteKey] or CopyTable(storedValue)
+                end
+            end
+            legacyFavorites[storedKey] = nil
+        end
+    end
+
+    if type(store.textureFavorites) == "table" then
+        for favoriteKey, favoriteValue in pairs(store.textureFavorites) do
+            local storedFavoriteKey = type(favoriteValue) == "table" and favoriteValue.favoriteKey or nil
+            if (type(favoriteKey) == "string" and string.find(favoriteKey, "^favorite:legacy%-proc:"))
+                or (type(storedFavoriteKey) == "string" and string.find(storedFavoriteKey, "^favorite:legacy%-proc:")) then
+                store.textureFavorites[favoriteKey] = nil
+            end
+        end
+    end
+
+    store.sharedMediaFavorites = nil
+    store.recentProcOverlays = nil
+    return store
+end
+
+local function NormalizeTextureLibraryProfile(profile)
+    if type(profile) ~= "table" then
+        return profile
+    end
+
+    if type(profile.auraTextureLibrary) ~= "table" then
+        return profile
+    end
+
+    profile.auraTextureLibrary = NormalizeTextureLibraryStore(profile.auraTextureLibrary)
+    return profile
+end
+
+local function NormalizeTextureLibraryPayload(data)
+    if type(data) ~= "table" then
+        return data
+    end
+
+    if type(data.profile) == "table" then
+        data.profile = NormalizeTextureLibraryProfile(data.profile)
+        return data
+    end
+
+    if data.type then
+        return data
+    end
+
+    return NormalizeTextureLibraryProfile(data)
+end
+
 local function CompactProfile(profile, formatVersion)
     if type(profile) ~= "table" then
         return profile
     end
 
+    profile = NormalizeTextureLibraryProfile(CopyTable(profile))
     local profileDefaults = GetDefaultsProfile(formatVersion)
     local globalStyleDefaults = profile.globalStyle or profileDefaults.globalStyle or {}
     local compact = {}
@@ -992,7 +1069,7 @@ local function RehydrateProfile(profile, formatVersion)
         end
     end
 
-    return profile
+    return NormalizeTextureLibraryProfile(profile)
 end
 
 local function CompactEntityPayload(payload, formatVersion)
@@ -1142,14 +1219,14 @@ local function RehydrateCompactPayload(data, formatVersion)
 
     if data.profile and type(data.profile) == "table" then
         data.profile = RehydrateProfile(data.profile, formatVersion)
-        return data
+        return NormalizeTextureLibraryPayload(data)
     end
 
     if data.type then
         return RehydrateEntityPayload(data, formatVersion)
     end
 
-    return RehydrateProfile(data, formatVersion)
+    return NormalizeTextureLibraryProfile(RehydrateProfile(data, formatVersion))
 end
 
 local function EncodeSharedPayload(payload, exportKind)
@@ -1178,7 +1255,11 @@ local function DecodeSharedPayload(text)
     end
 
     if isLegacy then
-        return AceSerializer:Deserialize(trimmed)
+        local success, data = AceSerializer:Deserialize(trimmed)
+        if success and type(data) == "table" then
+            data = NormalizeTextureLibraryPayload(data)
+        end
+        return success, data
     end
 
     local decoded = LibDeflate:DecodeForPrint(normalized)
@@ -1201,7 +1282,9 @@ local function DecodeSharedPayload(text)
         or formatVersion == PREVIOUS_COMPACT_FORMAT_VALUE
         or formatVersion == CURRENT_COMPACT_FORMAT_VALUE then
         data[COMPACT_FORMAT_KEY] = nil
-        RehydrateCompactPayload(data, formatVersion)
+        data = RehydrateCompactPayload(data, formatVersion)
+    else
+        data = NormalizeTextureLibraryPayload(data)
     end
 
     return true, data

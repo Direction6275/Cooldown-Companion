@@ -78,13 +78,6 @@ local function FindEntryForSelection(entries, selection)
         end
     end
 
-    if CooldownCompanion.FindAuraTexturePickerEntryByAsset then
-        local matchedEntry = CooldownCompanion:FindAuraTexturePickerEntryByAsset(entries, selection)
-        if matchedEntry then
-            return matchedEntry
-        end
-    end
-
     if type(selection) ~= "table" then
         return nil
     end
