@@ -72,11 +72,17 @@ function CooldownCompanion:OnInitialize()
 
     -- Re-apply fonts/textures when shared media used elsewhere in the addon updates.
     LSM.RegisterCallback(self, "LibSharedMedia_Registered", function(event, mediatype, key)
-        if mediatype == "font" or mediatype == "statusbar" then
-            if mediatype == "font" and ST._InvalidateFontCache then
+        if mediatype == "font" then
+            if ST._InvalidateFontCache then
                 ST._InvalidateFontCache()
             end
             self:RefreshAllMedia()
+        elseif mediatype == "statusbar" or mediatype == "background" or mediatype == "border" then
+            self:RefreshAllMedia()
+            self:RefreshConfigPanel()
+            if ST._configState and ST._configState.RefreshAuraTexturePicker then
+                ST._configState.RefreshAuraTexturePicker()
+            end
         elseif mediatype == "sound" then
             self:RefreshConfigPanel()
         end
