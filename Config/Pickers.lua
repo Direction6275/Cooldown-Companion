@@ -22,7 +22,6 @@ local pickAuraTextureOverlay = nil
 local pickAuraTextureCallback = nil
 local AURA_TEXTURE_FILTER_SYMBOLS = "symbols"
 local AURA_TEXTURE_FILTER_OTHER = "other"
-local AURA_TEXTURE_FILTER_RECENT = "recent"
 
 ------------------------------------------------------------------------
 -- Secret-safe value helpers

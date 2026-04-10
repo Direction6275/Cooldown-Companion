@@ -121,7 +121,6 @@ local COMPACT_PROFILE_DEFAULTS = {
         },
         auraTextureLibrary = {
             textureFavorites = {},
-            recentProcOverlays = {},
         },
         globalStyle = {
             buttonSize = 36,

@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - Core/AuraTextures.lua
-    Blizzard-first aura texture library, recent proc capture, and runtime
-    texture rendering for aura-capable buttons.
+    Blizzard-first aura texture library and runtime texture rendering
+    for aura-capable buttons.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -54,7 +54,6 @@ local FILTER_CUSTOM = "custom"
 local FILTER_SHAREDMEDIA = "sharedMedia"
 local FILTER_FAVORITES = "favorites"
 local FILTER_OTHER = "other"
-local MAX_RECENT_OVERLAYS = 200
 local DEFAULT_TEXTURE_SIZE = 128
 local UI_PARENT_NAME = "UIParent"
 local NUDGE_BTN_SIZE = 12
@@ -856,18 +855,6 @@ local function RotateOffset(x, y, radians)
     return (x * cosAngle) - (y * sinAngle), (x * sinAngle) + (y * cosAngle)
 end
 
-local function BuildRecentOverlayKey(fileDataID, locationType, scale, r, g, b)
-    return string_format(
-        "%s:%s:%s:%s:%s:%s",
-        tostring(fileDataID),
-        tostring(locationType),
-        tostring(scale),
-        tostring(r),
-        tostring(g),
-        tostring(b)
-    )
-end
-
 local function BuildLocationSubtitle(locationType)
     if LOCATION_LABELS[locationType] then
         return LOCATION_LABELS[locationType]
@@ -1128,7 +1115,77 @@ local function MigrateLegacySharedMediaFavorites(store)
     end
 end
 
-local function GetAuraTextureFavoriteStore(store)
+local GetAuraTextureFavoriteStore
+local AreAuraTextureFavoriteRecordsEquivalent
+
+local function BuildLegacyRecentFavoriteRecord(storedKey, value)
+    local sourceValue = tonumber(value and value.sourceValue)
+    if not sourceValue or sourceValue <= 0 then
+        return nil
+    end
+
+    local locationSubtitle = BuildLocationSubtitle(value.locationType)
+    local label = type(value.label) == "string" and value.label
+        or type(value.spellName) == "string" and value.spellName .. " Proc Overlay"
+        or ("File " .. tostring(sourceValue))
+    local record = ReadAuraTextureFavoriteRecord({
+        favoriteKey = "favorite:legacy-proc:" .. tostring(storedKey),
+        label = label,
+        originCategoryKey = FILTER_BLIZZARD_PROC,
+        sourceType = "file",
+        sourceValue = sourceValue,
+        layoutAgnostic = true,
+        locationType = nil,
+        color = CopyColor(value.color) or { 1, 1, 1, 1 },
+        blendMode = NormalizeBlendMode(value.blendMode or "ADD"),
+        scale = tonumber(value.scale) or 1,
+        subtitle = tostring(value.spellID or "?") .. "  |  File " .. tostring(sourceValue) .. "  |  " .. locationSubtitle,
+        searchText = string_lower(
+            label .. " " .. tostring(value.spellID or "") .. " " .. tostring(sourceValue) .. " " .. locationSubtitle
+        ),
+    })
+
+    return record
+end
+
+local function MigrateLegacyRecentProcOverlayFavorites(store)
+    if type(store) ~= "table" or type(store.recentProcOverlays) ~= "table" then
+        return
+    end
+
+    local legacyRecent = store.recentProcOverlays
+    local favorites = GetAuraTextureFavoriteStore(store)
+    if not favorites then
+        store.recentProcOverlays = nil
+        return
+    end
+
+    for storedKey, storedValue in pairs(legacyRecent) do
+        local migratedRecord = BuildLegacyRecentFavoriteRecord(storedKey, storedValue)
+        if migratedRecord then
+            local alreadySaved = false
+            for favoriteKey, favoriteValue in pairs(favorites) do
+                local favoriteRecord = ReadAuraTextureFavoriteRecord(favoriteValue)
+                if favoriteRecord then
+                    if AreAuraTextureFavoriteRecordsEquivalent(favoriteRecord, migratedRecord) then
+                        alreadySaved = true
+                        break
+                    end
+                else
+                    favorites[favoriteKey] = nil
+                end
+            end
+
+            if not alreadySaved then
+                favorites[migratedRecord.favoriteKey] = migratedRecord
+            end
+        end
+    end
+
+    store.recentProcOverlays = nil
+end
+
+GetAuraTextureFavoriteStore = function(store)
     if type(store) ~= "table" then
         return nil
     end
@@ -1255,6 +1312,33 @@ local function AreTextureColorsEqual(a, b)
             return false
         end
     end
+    return true
+end
+
+AreAuraTextureFavoriteRecordsEquivalent = function(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then
+        return false
+    end
+
+    if a.sourceType ~= b.sourceType or a.sourceValue ~= b.sourceValue or a.mediaType ~= b.mediaType then
+        return false
+    end
+    if a.layoutAgnostic ~= b.layoutAgnostic then
+        return false
+    end
+    if NormalizeTextureLayout(a.locationType) ~= NormalizeTextureLayout(b.locationType) then
+        return false
+    end
+    if not AreTextureNumbersEqual(a.scale or 1, b.scale or 1) then
+        return false
+    end
+    if NormalizeBlendMode(a.blendMode) ~= NormalizeBlendMode(b.blendMode) then
+        return false
+    end
+    if not AreTextureColorsEqual(a.color, b.color) then
+        return false
+    end
+
     return true
 end
 
@@ -1680,7 +1764,6 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
             customTextures = {},
             textureFavorites = {},
             sharedMediaFavorites = {},
-            recentProcOverlays = {},
         }
     end
     if type(profile.auraTextureLibrary.customTextures) ~= "table" then
@@ -1692,10 +1775,8 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
     if type(profile.auraTextureLibrary.sharedMediaFavorites) ~= "table" then
         profile.auraTextureLibrary.sharedMediaFavorites = {}
     end
-    if type(profile.auraTextureLibrary.recentProcOverlays) ~= "table" then
-        profile.auraTextureLibrary.recentProcOverlays = {}
-    end
     MigrateLegacySharedMediaFavorites(profile.auraTextureLibrary)
+    MigrateLegacyRecentProcOverlayFavorites(profile.auraTextureLibrary)
     return profile.auraTextureLibrary
 end
 
@@ -1946,101 +2027,6 @@ function CooldownCompanion:RemoveCustomAuraTexture(pathOrKey)
     end
 
     store.customTextures[pathKey] = nil
-end
-
-function CooldownCompanion:RecordRecentAuraTextureOverlay(spellID, fileDataID, locationType, scale, r, g, b)
-    if type(fileDataID) ~= "number" or fileDataID <= 0 then
-        return
-    end
-
-    local store = self:EnsureAuraTextureLibraryStore()
-    if not store then
-        return
-    end
-
-    local key = BuildRecentOverlayKey(fileDataID, locationType, scale, r, g, b)
-    local recent = store.recentProcOverlays
-    local spellName = C_Spell.GetSpellName(spellID) or ("Spell " .. tostring(spellID))
-
-    recent[key] = {
-        key = key,
-        spellID = spellID,
-        spellName = spellName,
-        label = spellName .. " Proc Overlay",
-        sourceType = "file",
-        sourceValue = fileDataID,
-        locationType = locationType,
-        color = {
-            Clamp((tonumber(r) or 255) / 255, 0, 1),
-            Clamp((tonumber(g) or 255) / 255, 0, 1),
-            Clamp((tonumber(b) or 255) / 255, 0, 1),
-            1,
-        },
-        blendMode = "ADD",
-        scale = tonumber(scale) or 1,
-        lastSeenAt = time(),
-    }
-
-    local keys = {}
-    for overlayKey in pairs(recent) do
-        keys[#keys + 1] = overlayKey
-    end
-    if #keys <= MAX_RECENT_OVERLAYS then
-        return
-    end
-
-    table_sort(keys, function(a, b)
-        local aTime = recent[a] and recent[a].lastSeenAt or 0
-        local bTime = recent[b] and recent[b].lastSeenAt or 0
-        return aTime > bTime
-    end)
-
-    for index = MAX_RECENT_OVERLAYS + 1, #keys do
-        recent[keys[index]] = nil
-    end
-end
-
-function CooldownCompanion:GetRecentAuraTextureEntries()
-    local store = self:EnsureAuraTextureLibraryStore()
-    local entries = {}
-    local recent = store and store.recentProcOverlays or nil
-
-    if recent then
-        for key, entry in pairs(recent) do
-            local label = entry.label or entry.spellName or ("File " .. tostring(entry.sourceValue))
-            local locationSubtitle = BuildLocationSubtitle(entry.locationType)
-            entries[#entries + 1] = {
-                key = "recent:" .. key,
-                label = label,
-                category = "Recent Proc Overlays",
-                sourceType = "file",
-                sourceValue = entry.sourceValue,
-                -- Recent proc captures should behave like the Blizzard proc library:
-                -- choose the art from the browser, then let the texture panel layout control
-                -- decide whether it renders as Single, Left + Right, etc. Keeping the raw
-                -- captured location here would make a recent pick silently overwrite the
-                -- panel layout with hidden right/bottom/outside values.
-                locationType = nil,
-                layoutAgnostic = true,
-                color = CopyColor(entry.color) or { 1, 1, 1, 1 },
-                blendMode = NormalizeBlendMode(entry.blendMode),
-                subtitle = tostring(entry.spellID or "?") .. "  |  File " .. tostring(entry.sourceValue) .. "  |  " .. locationSubtitle,
-                searchText = string_lower(label .. " " .. tostring(entry.spellID or "") .. " " .. tostring(entry.sourceValue) .. " " .. locationSubtitle),
-                lastSeenAt = entry.lastSeenAt or 0,
-            }
-        end
-    end
-
-    table_sort(entries, function(a, b)
-        local aTime = a.lastSeenAt or 0
-        local bTime = b.lastSeenAt or 0
-        if aTime == bTime then
-            return a.label < b.label
-        end
-        return aTime > bTime
-    end)
-
-    return entries
 end
 
 local function BuildBlizzardProcOverlayEntries()

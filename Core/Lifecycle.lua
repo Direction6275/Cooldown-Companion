@@ -120,7 +120,6 @@ function CooldownCompanion:OnEnable()
     -- Spell activation overlay (proc glow) events
     -- Track state via events instead of polling IsSpellOverlayed
     -- (that API is AllowedWhenUntainted — calling from addon code causes taint)
-    self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_SHOW", "OnProcOverlayShow")
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "OnProcGlowShow")
     self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "OnProcGlowHide")
 
@@ -358,10 +357,6 @@ end
 function CooldownCompanion:OnProcGlowShow(event, spellID)
     self.procOverlaySpells[spellID] = true
     self:UpdateAllCooldowns()
-end
-
-function CooldownCompanion:OnProcOverlayShow(event, spellID, overlayFileDataID, locationType, scale, r, g, b)
-    self:RecordRecentAuraTextureOverlay(spellID, overlayFileDataID, locationType, scale, r, g, b)
 end
 
 function CooldownCompanion:OnProcGlowHide(event, spellID)

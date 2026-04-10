@@ -33,7 +33,6 @@ local defaults = {
         },
         auraTextureLibrary = {
             textureFavorites = {},
-            recentProcOverlays = {},
         },
         groups = {
             --[[
