@@ -936,11 +936,12 @@ local function BuildSharedMediaEntry(mediaType, mediaKey, savedLabel, options)
 
     local label = BuildSharedMediaLabel(mediaKey, savedLabel)
     local isFavorite = options.isFavorite == true
+    local isSavedFavorite = options.isSavedFavorite == true
     local isMissing = options.isMissing == true
     local categoryKey = isFavorite and FILTER_FAVORITES or FILTER_SHAREDMEDIA
     local typeLabel = SHARED_MEDIA_TYPE_LABELS[normalizedType] or normalizedType
     local stateLabel = isMissing and "Missing or unavailable"
-        or (isFavorite and "Favorite" or "SharedMedia")
+        or (isFavorite and "Favorite" or (isSavedFavorite and "Favorited" or "SharedMedia"))
     local subtitle = typeLabel .. "  |  " .. stateLabel
 
     return {
@@ -958,8 +959,9 @@ local function BuildSharedMediaEntry(mediaType, mediaKey, savedLabel, options)
         subtitle = subtitle,
         searchText = string_lower(label .. " " .. mediaKey .. " " .. normalizedType .. " " .. stateLabel),
         isFavorite = isFavorite,
+        isSavedFavorite = isSavedFavorite,
         isMissingSharedMedia = isMissing,
-        canFavorite = not isFavorite and not isMissing,
+        canFavorite = not isFavorite and not isSavedFavorite and not isMissing,
         canRemoveFavorite = isFavorite,
     }
 end
@@ -1470,11 +1472,22 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
 end
 
 function CooldownCompanion:GetSharedMediaAuraTextureEntries()
+    local store = self:EnsureAuraTextureLibraryStore()
+    local favorites = store and store.sharedMediaFavorites or nil
     local entries = {}
 
     for _, mediaType in ipairs(SHARED_MEDIA_TYPE_ORDER) do
         for _, mediaKey in ipairs(LSM:List(mediaType) or {}) do
-            local entry = BuildSharedMediaEntry(mediaType, mediaKey, nil, nil)
+            local savedFavorite = favorites and favorites[BuildSharedMediaLibraryKey(mediaType, mediaKey)] or nil
+            local _, _, savedLabel = ReadSharedMediaFavoriteRecord(savedFavorite)
+            local entry = BuildSharedMediaEntry(
+                mediaType,
+                mediaKey,
+                savedLabel,
+                {
+                    isSavedFavorite = savedFavorite ~= nil,
+                }
+            )
             if entry then
                 entries[#entries + 1] = entry
             end
