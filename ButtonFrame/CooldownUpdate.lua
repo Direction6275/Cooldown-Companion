@@ -1008,8 +1008,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if buttonData._castCountEventSpellID
                         and cooldownSpellId == buttonData._castCountEventSpellID then
                     conditionalCastCountSpellID = cooldownSpellId
-                elseif buttonData._castCountSelf and cooldownSpellId == buttonData.id then
-                    conditionalCastCountSpellID = buttonData.id
                 end
             end
 
