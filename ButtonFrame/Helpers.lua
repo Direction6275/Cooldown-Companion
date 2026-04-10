@@ -121,6 +121,7 @@ CooldownCompanion.UsesChargeBehavior = UsesChargeBehavior
 local function UsesChargeTextLane(buttonData)
     if not buttonData then return false end
     return UsesChargeBehavior(buttonData)
+        or buttonData._castCountCandidate == true
         or HasCastCountText(buttonData)
         or buttonData.isPassive == true
 end

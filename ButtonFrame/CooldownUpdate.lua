@@ -995,12 +995,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 and button.style and button.style.showChargeText then
             local displayCountShown = false
             local hasCastCountText = HasCastCountText(buttonData)
+            local conditionalCastCountSpellID
             if buttonData._hasDisplayCount then
                 local displayCount = button.count:GetText()
                 if issecretvalue(displayCount) then
                     displayCountShown = true
                 elseif displayCount and displayCount ~= "" then
                     displayCountShown = true
+                end
+            end
+            if not hasCastCountText and buttonData._castCountCandidate then
+                if buttonData._castCountEventSpellID
+                        and cooldownSpellId == buttonData._castCountEventSpellID then
+                    conditionalCastCountSpellID = cooldownSpellId
+                elseif buttonData._castCountSelf and cooldownSpellId == buttonData.id then
+                    conditionalCastCountSpellID = buttonData.id
                 end
             end
 
@@ -1018,10 +1027,24 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 else
                     button.count:SetText("")
                 end
+            elseif not displayCountShown and conditionalCastCountSpellID then
+                -- Conditional cast-count text is tied to the live override spell
+                -- identified by SPELL_UPDATE_USES. This keeps transformed spells
+                -- like Thunderblast showing text without making the base spell
+                -- render a stale or always-on count.
+                button._chargeText = nil
+                local castCount = C_Spell.GetSpellCastCount(conditionalCastCountSpellID)
+                if issecretvalue(castCount) then
+                    button.count:SetText(castCount)
+                elseif castCount and castCount > 0 then
+                    button.count:SetText(castCount)
+                else
+                    button.count:SetText("")
+                end
             elseif not displayCountShown then
                 button.count:SetText("")
             end
-        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData)) and buttonData.type == "spell"
+        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell"
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
             -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
