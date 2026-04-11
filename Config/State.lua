@@ -425,11 +425,11 @@ local function GenerateFolderName(base)
 end
 
 ------------------------------------------------------------------------
--- Folder icon picker
+-- Shared icon picker helpers
 ------------------------------------------------------------------------
-local function EnsureFolderIconPickerFrame()
-    if CS.folderIconPickerFrame then
-        return CS.folderIconPickerFrame
+local function EnsureConfigIconPickerFrame(spec)
+    if CS[spec.cacheKey] then
+        return CS[spec.cacheKey]
     end
 
     if not CreateAndInitFromMixin
@@ -440,7 +440,7 @@ local function EnsureFolderIconPickerFrame()
         return nil
     end
 
-    local frame = CreateFrame("Frame", "CDCFolderIconPickerFrame", UIParent, "IconSelectorPopupFrameTemplate")
+    local frame = CreateFrame("Frame", spec.frameName, UIParent, "IconSelectorPopupFrameTemplate")
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -459,24 +459,34 @@ local function EnsureFolderIconPickerFrame()
     -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
     frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
 
+    frame._cdcPickerSpec = spec
+
+    if spec.configureFrame then
+        spec.configureFrame(frame)
+    end
+
     function frame:OnHide()
         IconSelectorPopupFrameTemplateMixin.OnHide(self)
         if self.iconDataProvider then
             self.iconDataProvider:Release()
             self.iconDataProvider = nil
         end
-        self._cdcFolderId = nil
         self.IconSelector:SetSelectedCallback(nil)
+        if self._cdcPickerSpec and self._cdcPickerSpec.clearContext then
+            self._cdcPickerSpec.clearContext(self)
+        else
+            self._cdcPickerContext = nil
+        end
     end
 
     function frame:OkayButton_OnClick()
-        local folderId = self._cdcFolderId
         local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
         local db = CooldownCompanion.db and CooldownCompanion.db.profile
-        local folder = db and db.folders and db.folders[folderId]
-        if folder and IsValidIconTexture(iconTexture) then
-            folder.manualIcon = iconTexture
-            CooldownCompanion:RefreshConfigPanel()
+        local spec = self._cdcPickerSpec
+        local context = self._cdcPickerContext
+        local entity = db and spec and spec.validateContext and spec.validateContext(context, db)
+        if entity and IsValidIconTexture(iconTexture) and spec and spec.applySelection then
+            spec.applySelection(iconTexture, entity, context, db)
         end
         IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
     end
@@ -485,20 +495,20 @@ local function EnsureFolderIconPickerFrame()
         IconSelectorPopupFrameTemplateMixin.CancelButton_OnClick(self)
     end
 
-    CS.folderIconPickerFrame = frame
+    CS[spec.cacheKey] = frame
     return frame
 end
 
-local function OpenFolderIconPicker(folderId)
+local function OpenConfigIconPicker(spec, context)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local folder = db and db.folders and db.folders[folderId]
-    if not folder then
+    local entity = db and spec.validateContext and spec.validateContext(context, db)
+    if not entity then
         return false
     end
 
-    local pickerFrame = EnsureFolderIconPickerFrame()
+    local pickerFrame = EnsureConfigIconPickerFrame(spec)
     if not pickerFrame then
-        CooldownCompanion:Print("Folder icon picker is unavailable on this client build.")
+        CooldownCompanion:Print(spec.unavailableMessage)
         return false
     end
 
@@ -506,14 +516,16 @@ local function OpenFolderIconPicker(folderId)
         pickerFrame:Hide()
     end
 
-    pickerFrame._cdcFolderId = folderId
+    if pickerFrame.iconDataProvider then
+        pickerFrame.iconDataProvider:Release()
+        pickerFrame.iconDataProvider = nil
+    end
+
+    pickerFrame._cdcPickerContext = context
     pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
     pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
 
-    local currentIcon = folder.manualIcon
-    if not IsValidIconTexture(currentIcon) then
-        currentIcon = GetAutoFolderIcon(folderId, db)
-    end
+    local currentIcon = spec.getCurrentIcon and spec.getCurrentIcon(entity, context, db)
 
     local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
     if not selectedIndex then
@@ -544,255 +556,116 @@ local function OpenFolderIconPicker(folderId)
     return true
 end
 
-------------------------------------------------------------------------
--- Button icon picker (per-entry icon art override)
-------------------------------------------------------------------------
-local function EnsureButtonIconPickerFrame()
-    if CS.buttonIconPickerFrame then
-        return CS.buttonIconPickerFrame
-    end
-
-    if not CreateAndInitFromMixin
-        or not IconDataProviderMixin
-        or not IconDataProviderExtraType
-        or not IconSelectorPopupFrameTemplateMixin
-        or not IconSelectorPopupFrameIconFilterTypes then
-        return nil
-    end
-
-    local frame = CreateFrame("Frame", "CDCButtonIconPickerFrame", UIParent, "IconSelectorPopupFrameTemplate")
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetFrameLevel(200)
-    frame:SetToplevel(true)
-    frame:SetClampedToScreen(true)
+local function ConfigureButtonIconPickerFrame(frame)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    frame.BorderBox.EditBoxHeaderText:Hide()
-    frame.BorderBox.IconSelectorEditBox:Hide()
-
-    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
-    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
-    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
-    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
-    -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
-    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
-    frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
-
-    function frame:OnHide()
-        IconSelectorPopupFrameTemplateMixin.OnHide(self)
-        if self.iconDataProvider then
-            self.iconDataProvider:Release()
-            self.iconDataProvider = nil
-        end
-        self._cdcGroupId = nil
-        self._cdcButtonIndex = nil
-        self.IconSelector:SetSelectedCallback(nil)
-    end
-
-    function frame:OkayButton_OnClick()
-        local groupId = self._cdcGroupId
-        local buttonIndex = self._cdcButtonIndex
-        local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
-        local db = CooldownCompanion.db and CooldownCompanion.db.profile
-        local group = db and db.groups and db.groups[groupId]
-        local buttonData = group and group.buttons and group.buttons[buttonIndex]
-        if buttonData and IsValidIconTexture(iconTexture) then
-            buttonData.manualIcon = iconTexture
-            CooldownCompanion:RefreshGroupFrame(groupId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
-    end
-
-    function frame:CancelButton_OnClick()
-        IconSelectorPopupFrameTemplateMixin.CancelButton_OnClick(self)
-    end
-
-    CS.buttonIconPickerFrame = frame
-    return frame
 end
 
-local function OpenButtonIconPicker(groupId, buttonIndex)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = db and db.groups and db.groups[groupId]
-    local buttonData = group and group.buttons and group.buttons[buttonIndex]
-    if not buttonData then
-        return false
-    end
-
-    local pickerFrame = EnsureButtonIconPickerFrame()
-    if not pickerFrame then
-        CooldownCompanion:Print("Icon picker is unavailable on this client build.")
-        return false
-    end
-
-    if pickerFrame:IsShown() then
-        pickerFrame:Hide()
-    end
-
-    pickerFrame._cdcGroupId = groupId
-    pickerFrame._cdcButtonIndex = buttonIndex
-    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
-    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
-
-    local currentIcon = buttonData.manualIcon
-    if not IsValidIconTexture(currentIcon) then
-        currentIcon = GetButtonIcon(buttonData)
-    end
-
-    local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
-    if not selectedIndex then
-        selectedIndex = 1
-        currentIcon = pickerFrame:GetIconByIndex(selectedIndex)
-    end
-
-    pickerFrame.IconSelector:SetSelectionsDataProvider(
-        function(selectionIndex)
-            return pickerFrame:GetIconByIndex(selectionIndex)
-        end,
-        function()
-            return pickerFrame:GetNumIcons()
+local FOLDER_ICON_PICKER_SPEC = {
+    cacheKey = "folderIconPickerFrame",
+    frameName = "CDCFolderIconPickerFrame",
+    unavailableMessage = "Folder icon picker is unavailable on this client build.",
+    validateContext = function(context, db)
+        local folderId = context and context.folderId
+        return db and db.folders and db.folders[folderId]
+    end,
+    getCurrentIcon = function(folder, context, db)
+        local currentIcon = folder.manualIcon
+        if not IsValidIconTexture(currentIcon) then
+            currentIcon = GetAutoFolderIcon(context.folderId, db)
         end
-    )
-    pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
-    pickerFrame.IconSelector:ScrollToSelectedIndex()
-    pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
-    pickerFrame:SetSelectedIconText()
-    pickerFrame.BorderBox.OkayButton:Enable()
+        return currentIcon
+    end,
+    applySelection = function(iconTexture, folder)
+        folder.manualIcon = iconTexture
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    clearContext = function(frame)
+        frame._cdcPickerContext = nil
+    end,
+}
 
-    pickerFrame.IconSelector:SetSelectedCallback(function(_, icon)
-        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(icon)
-        pickerFrame:SetSelectedIconText()
-    end)
+local BUTTON_ICON_PICKER_SPEC = {
+    cacheKey = "buttonIconPickerFrame",
+    frameName = "CDCButtonIconPickerFrame",
+    unavailableMessage = "Icon picker is unavailable on this client build.",
+    configureFrame = ConfigureButtonIconPickerFrame,
+    validateContext = function(context, db)
+        local groupId = context and context.groupId
+        local buttonIndex = context and context.buttonIndex
+        local group = db and db.groups and db.groups[groupId]
+        return group and group.buttons and group.buttons[buttonIndex]
+    end,
+    getCurrentIcon = function(buttonData)
+        local currentIcon = buttonData.manualIcon
+        if not IsValidIconTexture(currentIcon) then
+            currentIcon = GetButtonIcon(buttonData)
+        end
+        return currentIcon
+    end,
+    applySelection = function(iconTexture, buttonData, context)
+        buttonData.manualIcon = iconTexture
+        CooldownCompanion:RefreshGroupFrame(context.groupId)
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    clearContext = function(frame)
+        frame._cdcPickerContext = nil
+    end,
+}
 
-    pickerFrame:Show()
-    return true
+local CONTAINER_ICON_PICKER_SPEC = {
+    cacheKey = "containerIconPickerFrame",
+    frameName = "CDCContainerIconPickerFrame",
+    unavailableMessage = "Icon picker is unavailable on this client build.",
+    validateContext = function(context, db)
+        local containerId = context and context.containerId
+        return db and db.groupContainers and db.groupContainers[containerId]
+    end,
+    getCurrentIcon = function(container, context, db)
+        local currentIcon = container.manualIcon
+        if not IsValidIconTexture(currentIcon) then
+            currentIcon = GetContainerIcon(context.containerId, db)
+        end
+        return currentIcon
+    end,
+    applySelection = function(iconTexture, container)
+        container.manualIcon = iconTexture
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    clearContext = function(frame)
+        frame._cdcPickerContext = nil
+    end,
+}
+
+------------------------------------------------------------------------
+-- Folder icon picker
+------------------------------------------------------------------------
+local function OpenFolderIconPicker(folderId)
+    return OpenConfigIconPicker(FOLDER_ICON_PICKER_SPEC, {
+        folderId = folderId,
+    })
+end
+
+------------------------------------------------------------------------
+-- Button icon picker (per-entry icon art override)
+------------------------------------------------------------------------
+local function OpenButtonIconPicker(groupId, buttonIndex)
+    return OpenConfigIconPicker(BUTTON_ICON_PICKER_SPEC, {
+        groupId = groupId,
+        buttonIndex = buttonIndex,
+    })
 end
 
 ------------------------------------------------------------------------
 -- Container icon picker (per-group icon in Column 1)
 ------------------------------------------------------------------------
-local function EnsureContainerIconPickerFrame()
-    if CS.containerIconPickerFrame then
-        return CS.containerIconPickerFrame
-    end
-
-    if not CreateAndInitFromMixin
-        or not IconDataProviderMixin
-        or not IconDataProviderExtraType
-        or not IconSelectorPopupFrameTemplateMixin
-        or not IconSelectorPopupFrameIconFilterTypes then
-        return nil
-    end
-
-    local frame = CreateFrame("Frame", "CDCContainerIconPickerFrame", UIParent, "IconSelectorPopupFrameTemplate")
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetFrameLevel(200)
-    frame:SetToplevel(true)
-    frame:SetClampedToScreen(true)
-    frame.BorderBox.EditBoxHeaderText:Hide()
-    frame.BorderBox.IconSelectorEditBox:Hide()
-
-    -- Override strata/level: the template hardcodes IconSelector to HIGH strata
-    -- and BorderBox to frameLevel 50, both below FULLSCREEN_DIALOG where CC lives.
-    frame.IconSelector:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame.IconSelector:SetFrameLevel(frame:GetFrameLevel() + 10)
-    frame.BorderBox:SetFrameLevel(frame:GetFrameLevel() + 5)
-    -- Dropdown menu popup must be at TOOLTIP strata so it renders above the picker.
-    -- The menu system mirrors ownerRegion strata when it is TOOLTIP (MenuManagerMixin:AcquireMenu).
-    frame.BorderBox.IconTypeDropdown:SetFrameStrata("TOOLTIP")
-
-    function frame:OnHide()
-        IconSelectorPopupFrameTemplateMixin.OnHide(self)
-        if self.iconDataProvider then
-            self.iconDataProvider:Release()
-            self.iconDataProvider = nil
-        end
-        self._cdcContainerId = nil
-        self.IconSelector:SetSelectedCallback(nil)
-    end
-
-    function frame:OkayButton_OnClick()
-        local containerId = self._cdcContainerId
-        local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
-        local db = CooldownCompanion.db and CooldownCompanion.db.profile
-        local container = db and db.groupContainers and db.groupContainers[containerId]
-        if container and IsValidIconTexture(iconTexture) then
-            container.manualIcon = iconTexture
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
-    end
-
-    function frame:CancelButton_OnClick()
-        IconSelectorPopupFrameTemplateMixin.CancelButton_OnClick(self)
-    end
-
-    CS.containerIconPickerFrame = frame
-    return frame
-end
-
 local function OpenContainerIconPicker(containerId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local container = db and db.groupContainers and db.groupContainers[containerId]
-    if not container then
-        return false
-    end
-
-    local pickerFrame = EnsureContainerIconPickerFrame()
-    if not pickerFrame then
-        CooldownCompanion:Print("Icon picker is unavailable on this client build.")
-        return false
-    end
-
-    if pickerFrame:IsShown() then
-        pickerFrame:Hide()
-    end
-
-    pickerFrame._cdcContainerId = containerId
-    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
-    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
-
-    local currentIcon = container.manualIcon
-    if not IsValidIconTexture(currentIcon) then
-        currentIcon = GetContainerIcon(containerId, db)
-    end
-
-    local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
-    if not selectedIndex then
-        selectedIndex = 1
-        currentIcon = pickerFrame:GetIconByIndex(selectedIndex)
-    end
-
-    pickerFrame.IconSelector:SetSelectionsDataProvider(
-        function(selectionIndex)
-            return pickerFrame:GetIconByIndex(selectionIndex)
-        end,
-        function()
-            return pickerFrame:GetNumIcons()
-        end
-    )
-    pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
-    pickerFrame.IconSelector:ScrollToSelectedIndex()
-    pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
-    pickerFrame:SetSelectedIconText()
-    pickerFrame.BorderBox.OkayButton:Enable()
-
-    pickerFrame.IconSelector:SetSelectedCallback(function(_, icon)
-        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(icon)
-        pickerFrame:SetSelectedIconText()
-    end)
-
-    pickerFrame:Show()
-    return true
+    return OpenConfigIconPicker(CONTAINER_ICON_PICKER_SPEC, {
+        containerId = containerId,
+    })
 end
 
 ------------------------------------------------------------------------
