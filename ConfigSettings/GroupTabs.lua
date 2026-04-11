@@ -108,13 +108,13 @@ local BuildBarEffectsTab = ST._BuildBarEffectsTab
 local BuildTextAppearanceTab = ST._BuildTextAppearanceTab
 
 local TEXTURE_BLEND_OPTIONS = {
-    ADD = "Add",
-    BLEND = "Blend",
+    BLEND = "Normal / Original",
+    ADD = "Soft / Transparent",
 }
 
 local TEXTURE_BLEND_ORDER = {
-    "ADD",
     "BLEND",
+    "ADD",
 }
 
 local TEXTURE_PREVIEW_WIDTH = 240
@@ -1793,7 +1793,7 @@ local function BuildAppearanceTab(container)
         end
 
         local blendDrop = AceGUI:Create("Dropdown")
-        blendDrop:SetLabel("Blend Mode")
+        blendDrop:SetLabel("Texture Look")
         blendDrop:SetList(TEXTURE_BLEND_OPTIONS, TEXTURE_BLEND_ORDER)
         blendDrop:SetValue(settings.blendMode or "BLEND")
         blendDrop:SetFullWidth(true)

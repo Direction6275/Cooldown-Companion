@@ -454,20 +454,20 @@ local function OpenAuraTexturePicker(opts)
 
         if #entries == 0 then
             if IsFavoritesFilter(currentFilter) and currentSearch == "" then
-                statusLabel:SetText("No favorite textures yet. Browse any category and click + to save one here.")
+                statusLabel:SetText("No favorites yet. Click + to save one.")
             elseif IsFavoritesFilter(currentFilter) then
-                statusLabel:SetText("No favorite textures matched the current search.")
+                statusLabel:SetText("No favorite textures found.")
             elseif IsSharedMediaFilter(currentFilter) then
-                statusLabel:SetText("No SharedMedia textures matched the current search.")
+                statusLabel:SetText("No SharedMedia textures found.")
             else
-                statusLabel:SetText("No textures matched the current search.")
+                statusLabel:SetText("No textures found.")
             end
         elseif IsFavoritesFilter(currentFilter) then
-            statusLabel:SetText(("Showing %d favorite textures. Click the red X to remove one."):format(#entries))
+            statusLabel:SetText(("%d favorite textures. X removes."):format(#entries))
         elseif IsSharedMediaFilter(currentFilter) then
-            statusLabel:SetText(("Showing %d SharedMedia textures. Click + to favorite one, or the red X to remove it from Favorites."):format(#entries))
+            statusLabel:SetText(("%d SharedMedia textures. + saves, X removes."):format(#entries))
         else
-            statusLabel:SetText(("Showing %d textures. Click + to favorite one, or the red X to remove it from Favorites."):format(#entries))
+            statusLabel:SetText(("%d textures. + saves, X removes."):format(#entries))
         end
 
         local matchedSelected = FindEntryForSelection(entries, currentSelection)
