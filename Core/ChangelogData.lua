@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.12.2",
         "1.12.1",
         "1.12",
         "1.11",
@@ -16,6 +17,20 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.12.2"] = {
+            markdown = [[
+## Polish | QoL
+- **Texture Panels**:
+  - **SharedMedia:** The texture picker now lets you save SharedMedia textures. The custom import system has been replaced by this. If wanting to add custom textures, sync them via `SharedMedia_MyMedia` in your AddOns folder.
+  - **Favorites**: Favorite any texture in the browser by clicking the + sign in the top right of the texture preview. This adds the texture to the new favorites category, making it much easier to reuse the textures you like most.
+  - **Clearer texture browser controls:** Texture panel labels, browser messages, and favorite actions are now easier to understand at a glance.
+  - **More blend-ready texture options:** More default texture panels and saved favorites now keep their intended blend look automatically.
+
+## Bug Fixes
+
+- **Charge/use text:** Cleaned up some more issues with this text element.
+]],
+        },
         ["1.12.1"] = {
             markdown = [[
 ## New Features
