@@ -78,8 +78,6 @@ local PROFILE_DEFAULT_KEYS = {
     globalStyle = "globalStyle",
     locked = "locked",
     cdmHidden = "cdmHidden",
-    groupContainers = "groupContainers",
-    folders = "folders",
     resourceBars = "resourceBars",
     castBar = "castBar",
     frameAnchoring = "frameAnchoring",
@@ -1038,6 +1036,13 @@ local function RehydrateProfile(profile, formatVersion)
         if profile[key] ~= nil then
             profile[key] = RehydrateScopedStore(profile[key], defaultKey, formatVersion)
         end
+    end
+
+    if type(profile.groupContainers) ~= "table" then
+        profile.groupContainers = {}
+    end
+    if type(profile.folders) ~= "table" then
+        profile.folders = {}
     end
 
     local globalStyleDefaults = profile.globalStyle or profileDefaults.globalStyle or {}

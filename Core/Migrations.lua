@@ -33,22 +33,18 @@ end
 function CooldownCompanion:IsUnsupportedLegacyProfile(profile)
     if type(profile) ~= "table" then return false end
 
-    local groups = rawget(profile, "groups")
-    local containers = rawget(profile, "groupContainers")
-    local hasContainersField = rawget(profile, "groupContainers") ~= nil
+    local groups = profile.groups
+    local containers = profile.groupContainers
+    local hasContainerTable = type(containers) == "table"
 
     -- Treat profile-shaped payloads without container-era storage as unsupported.
-    if LooksLikeProfilePayload(profile) and not hasContainersField then
-        return true
-    end
-
-    if hasContainersField and type(containers) ~= "table" then
+    if LooksLikeProfilePayload(profile) and not hasContainerTable then
         return true
     end
 
     return type(groups) == "table"
         and next(groups) ~= nil
-        and (type(containers) ~= "table" or not next(containers))
+        and not next(containers)
 end
 
 function CooldownCompanion:GetLegacySupportCutoffMessage(dataLabel)
