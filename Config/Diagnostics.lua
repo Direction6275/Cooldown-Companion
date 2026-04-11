@@ -1045,6 +1045,8 @@ local function OpenDiagnosticDecodePanel()
             compactText = preparedText
         end
         if compactText:sub(1, 2) == "^1" then
+            decodedDiagnostic = nil
+            outputBox:SetText("")
             CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
             return
         end

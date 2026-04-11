@@ -75,12 +75,20 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
         self:UnloadGroup(groupId)
     end
 
-    for _, frame in pairs(self.containerFrames or {}) do
+    for containerId, frame in pairs(self.containerFrames or {}) do
         frame:Hide()
+        self.containerFrames[containerId] = nil
     end
 
     for _, frame in pairs(self._dormantFrames or {}) do
         frame:Hide()
+    end
+
+    if self.RevertResourceBars then
+        self:RevertResourceBars()
+    end
+    if self.RevertCastBar then
+        self:RevertCastBar()
     end
 end
 
