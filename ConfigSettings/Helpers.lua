@@ -3,6 +3,7 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
+local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
 -- Helper: tint AceGUI Heading labels with player class color
 local function ColorHeading(heading)
@@ -1016,7 +1017,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         if targetVal then
             local enemyOnlyVal = config.forceAlphaTargetEnemyOnly or false
             local enemyOnlyCb = AceGUI:Create("CheckBox")
-            enemyOnlyCb:SetLabel("    Enemy Only")
+            enemyOnlyCb:SetLabel("Enemy Only")
             enemyOnlyCb:SetValue(enemyOnlyVal)
             enemyOnlyCb:SetFullWidth(true)
             enemyOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1024,6 +1025,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
                 refreshFn()
             end)
             container:AddChild(enemyOnlyCb)
+            ApplyCheckboxIndent(enemyOnlyCb, 20)
         end
 
         local mouseoverVal = config.forceAlphaMouseover or false

@@ -12,6 +12,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local math_abs = math.abs
 
 ------------------------------------------------------------------------
 -- State
@@ -298,7 +299,9 @@ function CooldownCompanion:ApplyFrameAnchoring()
             accumulator = 0
             if not groupFrame or not groupFrame:IsShown() then return end
             local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
-            if alpha ~= lastAlpha then
+            local playerNeedsSync = playerFrameRef and math_abs((playerFrameRef:GetAlpha() or 1) - alpha) > 0.001
+            local targetNeedsSync = targetFrameRef and math_abs((targetFrameRef:GetAlpha() or 1) - alpha) > 0.001
+            if alpha ~= lastAlpha or playerNeedsSync or targetNeedsSync then
                 lastAlpha = alpha
                 if playerFrameRef then playerFrameRef:SetAlpha(alpha) end
                 if targetFrameRef then targetFrameRef:SetAlpha(alpha) end
