@@ -67,6 +67,7 @@ local GetVerticalSideFallback = RB.GetVerticalSideFallback
 local GetEffectiveAnchorGroupId = RB.GetEffectiveAnchorGroupId
 local GetPlayerClassID = RB.GetPlayerClassID
 local GetSpecCustomAuraBars = RB.GetSpecCustomAuraBars
+local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
@@ -1691,21 +1692,25 @@ local function UpdateCustomAuraBar(barInfo)
     local auraPreview = bar and bar._barAuraActivePreview
     local pandemicPreview = bar and bar._pandemicPreview
     local indicatorPreview = isActive and (auraPreview or pandemicPreview)
+    local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
     local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(cabConfig.spellID)
-    local auraUnit = viewerFrame and viewerFrame.auraDataUnit or "player"
+    local auraUnit = configUnit
     local instId = viewerFrame and viewerFrame.auraInstanceID
     if instId then
-        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnit, instId)
-        if auraData then
-            auraPresent = true
-            applications = auraData.applications or 0
-            if isActive then
-                stacks = 1
-            else
-                stacks = applications
-            end
-            if needsDuration then
-                durationObj = C_UnitAuras.GetAuraDuration(auraUnit, instId)
+        local viewerUnit = viewerFrame.auraDataUnit or configUnit
+        if viewerUnit == configUnit then
+            local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(configUnit, instId)
+            if auraData then
+                auraPresent = true
+                applications = auraData.applications or 0
+                if isActive then
+                    stacks = 1
+                else
+                    stacks = applications
+                end
+                if needsDuration then
+                    durationObj = C_UnitAuras.GetAuraDuration(configUnit, instId)
+                end
             end
         end
     end
@@ -1728,7 +1733,7 @@ local function UpdateCustomAuraBar(barInfo)
         local inPandemic = false
         if pandemicPreview then
             inPandemic = true
-        elseif auraPresent and cabConfig.showPandemicGlow == true and viewerFrame then
+        elseif configUnit == "target" and auraPresent and cabConfig.showPandemicGlow == true and viewerFrame then
             local pi = viewerFrame.PandemicIcon
             if bar._pandemicGraceSuppressed then
                 bar._pandemicGraceSuppressed = nil
@@ -1908,14 +1913,7 @@ local function GetHiddenCustomAuraWakeUnit(cabConfig)
     if not cabConfig or not cabConfig.spellID then
         return nil
     end
-
-    local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(cabConfig.spellID)
-    local viewerUnit = viewerFrame and viewerFrame.auraDataUnit
-    if viewerUnit == "player" or viewerUnit == "target" then
-        return viewerUnit
-    end
-
-    return C_Spell.IsSpellHarmful(cabConfig.spellID) and "target" or "player"
+    return EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
 end
 
 local function IsEventDrivenCustomAuraBar(barInfo)
@@ -2539,7 +2537,7 @@ local function EnableEventFrame()
                     local cabConfig = barInfo and barInfo.cabConfig
                     if barInfo and barInfo.barType == "custom_continuous"
                         and cabConfig and cabConfig.trackingMode == "active"
-                        and bar and bar._auraUnit == "target" then
+                        and bar and EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
                         bar._auraInstanceID = nil
                         bar._inPandemic = nil
                         bar._pandemicGraceStart = nil

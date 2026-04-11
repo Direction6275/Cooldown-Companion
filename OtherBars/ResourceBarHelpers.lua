@@ -127,6 +127,35 @@ local function GetSpecCustomAuraBars(settings)
     return settings.customAuraBars[specID]
 end
 
+local function IsValidCustomAuraUnit(unit)
+    return unit == "player" or unit == "target"
+end
+
+local function GetDefaultCustomAuraUnit(spellID)
+    return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
+end
+
+local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(cabConfig) == "table" then
+        resolvedSpellID = cabConfig.spellID
+    end
+
+    if type(cabConfig) == "table" then
+        if IsValidCustomAuraUnit(unit) then
+            cabConfig.auraUnit = unit
+        elseif not IsValidCustomAuraUnit(cabConfig.auraUnit) and resolvedSpellID then
+            cabConfig.auraUnit = GetDefaultCustomAuraUnit(resolvedSpellID)
+        end
+
+        if IsValidCustomAuraUnit(cabConfig.auraUnit) then
+            return cabConfig.auraUnit
+        end
+    end
+
+    return GetDefaultCustomAuraUnit(resolvedSpellID)
+end
+
 local function CreateDefaultLayoutOrder()
     return {
         resources = {},
@@ -566,6 +595,9 @@ RB.GetAnchorGroupFrame = GetAnchorGroupFrame
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.GetSpecCustomAuraBars = GetSpecCustomAuraBars
+RB.IsValidCustomAuraUnit = IsValidCustomAuraUnit
+RB.GetDefaultCustomAuraUnit = GetDefaultCustomAuraUnit
+RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.CreateDefaultLayoutOrder = CreateDefaultLayoutOrder
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetAnchorOffset = GetAnchorOffset
