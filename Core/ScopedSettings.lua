@@ -8,8 +8,11 @@ local rawget = rawget
 local tonumber = tonumber
 local type = type
 local sort = table.sort
-local RB = ST._RB
-local EnsureCustomAuraBarAuraUnit = RB and RB.EnsureCustomAuraBarAuraUnit
+
+local function GetEnsureCustomAuraBarAuraUnit()
+    local rb = ST and ST._RB
+    return rb and rb.EnsureCustomAuraBarAuraUnit
+end
 
 local SCOPED_BAR_SYSTEMS = {
     resourceBars = {
@@ -427,13 +430,14 @@ local function SanitizeResourceBarAnchors(settings)
         return
     end
 
+    local ensureCustomAuraBarAuraUnit = GetEnsureCustomAuraBarAuraUnit()
     for _, specBars in pairs(settings.customAuraBars) do
         if type(specBars) == "table" then
             for _, customAuraBar in pairs(specBars) do
                 if type(customAuraBar) == "table" then
                     customAuraBar.independentAnchorGroupId = SanitizeAnchorGroupID(customAuraBar.independentAnchorGroupId)
-                    if EnsureCustomAuraBarAuraUnit then
-                        EnsureCustomAuraBarAuraUnit(customAuraBar, customAuraBar.spellID)
+                    if ensureCustomAuraBarAuraUnit then
+                        ensureCustomAuraBarAuraUnit(customAuraBar, customAuraBar.spellID)
                     end
                 end
             end
