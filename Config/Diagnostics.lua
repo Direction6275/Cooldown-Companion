@@ -1038,14 +1038,15 @@ local function OpenDiagnosticDecodePanel()
     decodeBtn:SetCallback("OnClick", function()
         local text = inputBox:GetText()
         if not text or text == "" then return end
-        local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
+        local preparedText, compactText = PrepareSharedImportText(text)
         if not preparedText then return end
-        if isLegacyImport then
-            CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
-            return
-        end
         if compactText:sub(1, 8) == "CDCdiag:" then
             preparedText = compactText:sub(9)
+            compactText = preparedText
+        end
+        if compactText:sub(1, 2) == "^1" then
+            CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
+            return
         end
         local success, data = DecodeSharedPayload(preparedText)
         if not success or type(data) ~= "table" then
