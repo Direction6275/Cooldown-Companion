@@ -59,6 +59,31 @@ function CooldownCompanion:RefreshAllMedia()
     self:ApplyCastBarSettings()
 end
 
+function CooldownCompanion:ClearUnsupportedProfileRuntime()
+    if InCombatLockdown() then
+        self._pendingUnsupportedLegacyHide = true
+        return
+    end
+
+    self._pendingUnsupportedLegacyHide = nil
+
+    local activeGroupIds = {}
+    for groupId in pairs(self.groupFrames or {}) do
+        activeGroupIds[#activeGroupIds + 1] = groupId
+    end
+    for _, groupId in ipairs(activeGroupIds) do
+        self:UnloadGroup(groupId)
+    end
+
+    for _, frame in pairs(self.containerFrames or {}) do
+        frame:Hide()
+    end
+
+    for _, frame in pairs(self._dormantFrames or {}) do
+        frame:Hide()
+    end
+end
+
 function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
@@ -966,6 +991,11 @@ function CooldownCompanion:CreateAllGroupFrames()
 end
 
 function CooldownCompanion:RefreshAllGroups()
+    if self._unsupportedLegacyProfile then
+        self:ClearUnsupportedProfileRuntime()
+        return
+    end
+
     -- Defer entire refresh during combat — protected frame operations
     -- (Show/Hide/SetSize/SetPoint/SetFrameStrata/RegisterForDrag/EnableMouse)
     -- are all blocked. Per-tick cooldown updates continue independently.
@@ -1036,6 +1066,11 @@ end
 -- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
 -- caused by full button repopulation.
 function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+    if self._unsupportedLegacyProfile then
+        self:ClearUnsupportedProfileRuntime()
+        return
+    end
+
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then

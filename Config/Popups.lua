@@ -1082,6 +1082,11 @@ local function ImportGroupData(text)
         CooldownCompanion:Print("Imported " .. containerCount .. " groups.")
 
     elseif data.type == "folder" and data.folder then
+        if data.groups then
+            CooldownCompanion:NotifyLegacySupportCutoff("folder import")
+            return false
+        end
+
         local folderId = db.nextFolderId
         db.nextFolderId = folderId + 1
         local importedManualIcon = data.folder.manualIcon
@@ -1285,9 +1290,6 @@ local function ImportGroupData(text)
                 end
             end
 
-        elseif data.groups then
-            CooldownCompanion:NotifyLegacySupportCutoff("folder import")
-            return false
         end
         CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
 

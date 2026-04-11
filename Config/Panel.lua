@@ -2191,6 +2191,7 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileChanged", function()
         ResetConfigForProfileChange()
         if not CooldownCompanion:RunAllMigrations() then
+            CooldownCompanion:ClearUnsupportedProfileRuntime()
             return
         end
 
@@ -2232,6 +2233,7 @@ function CooldownCompanion:SetupConfig()
         end
 
         if not CooldownCompanion:RunAllMigrations() then
+            CooldownCompanion:ClearUnsupportedProfileRuntime()
             return
         end
 
@@ -2243,6 +2245,7 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetConfigForProfileChange()
         if not CooldownCompanion:RunAllMigrations() then
+            CooldownCompanion:ClearUnsupportedProfileRuntime()
             return
         end
 

@@ -16,16 +16,39 @@ local rawget = rawget
 local LEGACY_SUPPORT_FLOOR_VERSION = "1.10"
 local LEGACY_UNSUPPORTED_MAX_VERSION = "1.9"
 
+local function LooksLikeProfilePayload(profile)
+    return rawget(profile, "groups") ~= nil
+        or rawget(profile, "groupContainers") ~= nil
+        or rawget(profile, "globalStyle") ~= nil
+        or rawget(profile, "nextGroupId") ~= nil
+        or rawget(profile, "nextContainerId") ~= nil
+        or rawget(profile, "nextFolderId") ~= nil
+        or rawget(profile, "folders") ~= nil
+        or rawget(profile, "bars") ~= nil
+        or rawget(profile, "resourceBars") ~= nil
+        or rawget(profile, "castBar") ~= nil
+        or rawget(profile, "frameAnchoring") ~= nil
+end
+
 function CooldownCompanion:IsUnsupportedLegacyProfile(profile)
     if type(profile) ~= "table" then return false end
 
     local groups = rawget(profile, "groups")
-    if type(groups) ~= "table" or not next(groups) then
-        return false
+    local containers = rawget(profile, "groupContainers")
+    local hasContainersField = rawget(profile, "groupContainers") ~= nil
+
+    -- Treat profile-shaped payloads without container-era storage as unsupported.
+    if LooksLikeProfilePayload(profile) and not hasContainersField then
+        return true
     end
 
-    local containers = rawget(profile, "groupContainers")
-    return type(containers) ~= "table" or not next(containers)
+    if hasContainersField and type(containers) ~= "table" then
+        return true
+    end
+
+    return type(groups) == "table"
+        and next(groups) ~= nil
+        and (type(containers) ~= "table" or not next(containers))
 end
 
 function CooldownCompanion:GetLegacySupportCutoffMessage(dataLabel)
@@ -56,6 +79,7 @@ function CooldownCompanion:RunAllMigrations()
 
     self._unsupportedLegacyProfile = false
     self._unsupportedLegacyProfileNotified = nil
+    self._pendingUnsupportedLegacyHide = nil
 
     self:MigrateGroupOwnership()
     self:MigrateFolderOwnership()

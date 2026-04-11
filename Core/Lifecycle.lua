@@ -425,6 +425,12 @@ end
 function CooldownCompanion:OnCombatEnd()
     self:UpdateAllCooldowns()
     self:ApplyCdmAlpha()
+    if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
+        self._pendingUnsupportedLegacyHide = nil
+        self._pendingFullRefresh = nil
+        self._pendingVisibilityRefresh = nil
+        self:ClearUnsupportedProfileRuntime()
+    end
     -- Full refresh supersedes visibility-only refresh
     if self._pendingFullRefresh then
         self._pendingFullRefresh = nil
