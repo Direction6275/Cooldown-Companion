@@ -25,6 +25,7 @@ local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
 local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
 local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
+local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -125,7 +126,7 @@ local function GetSelectedEntryHeaderName()
     local profile = GetConfigProfile()
     local group = profile and profile.groups and profile.groups[CS.selectedGroup]
     local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
-    return buttonData and NormalizeHeaderName(buttonData.name)
+    return buttonData and NormalizeHeaderName(GetConfigEntryDisplayName(buttonData))
 end
 
 local function GetSelectedPanelHeaderName(selection)

@@ -12,6 +12,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 -- Imports from earlier Config/ files
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local GetButtonIcon = ST._GetButtonIcon
+local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local GenerateFolderName = ST._GenerateFolderName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
@@ -1753,50 +1754,7 @@ local function RefreshColumn2()
                     CleanRecycledEntry(entry)
                     local usable = CooldownCompanion:IsButtonUsable(buttonData)
 
-                    local entryName = buttonData.name
-                    if buttonData.type == "spell" then
-                        local child
-                        if buttonData.cdmChildSlot then
-                            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-                            child = allChildren and allChildren[buttonData.cdmChildSlot]
-                        else
-                            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-                        end
-                        if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
-                            local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
-                            if spellName then entryName = spellName end
-                        else
-                            -- Resolve through GetOverrideSpell so base-stored
-                            -- IDs display the current transform name.
-                            local raw = C_Spell.GetOverrideSpell(buttonData.id)
-                            local displayId = (raw and raw ~= 0) and raw or buttonData.id
-                            local spellName = C_Spell.GetSpellName(displayId)
-                            if spellName then entryName = spellName end
-                        end
-                        if buttonData.cdmChildSlot then
-                            entryName = entryName .. " #" .. buttonData.cdmChildSlot
-                        end
-                        local addedAs = buttonData.addedAs
-                        if addedAs ~= "spell" and addedAs ~= "aura" then
-                            addedAs = buttonData.isPassive and "aura" or "spell"
-                        end
-                        local icons = ""
-                        if addedAs ~= "aura" then
-                            icons = icons .. "|A:ui_adv_atk:15:15|a"
-                        end
-                        if addedAs == "aura" or buttonData.auraTracking then
-                            icons = icons .. "|A:ui_adv_health:15:15|a"
-                        end
-                        if icons ~= "" then
-                            entryName = entryName .. "  " .. icons
-                        end
-                    elseif buttonData.type == "item" then
-                        if C_Item.IsEquippableItem(buttonData.id) then
-                            entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
-                        else
-                            entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
-                        end
-                    end
+                    local entryName = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
                     entry:SetText(entryName or ("Unknown " .. buttonData.type))
                     entry:SetImage(GetButtonIcon(buttonData))
                     entry:SetImageSize(32, 32)

@@ -311,6 +311,70 @@ local function GetButtonIcon(buttonData)
     return 134400
 end
 
+local function GetConfigEntryDisplayName(buttonData, opts)
+    if not buttonData then
+        return nil
+    end
+
+    opts = opts or {}
+    local includeDecorations = opts.includeDecorations == true
+    local entryName = buttonData.name
+
+    if buttonData.type == "spell" then
+        local child
+        if buttonData.cdmChildSlot then
+            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
+            child = allChildren and allChildren[buttonData.cdmChildSlot]
+        else
+            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
+        end
+
+        if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
+            local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
+            if spellName then
+                entryName = spellName
+            end
+        else
+            local raw = C_Spell.GetOverrideSpell(buttonData.id)
+            local displayId = (raw and raw ~= 0) and raw or buttonData.id
+            local spellName = C_Spell.GetSpellName(displayId)
+            if spellName then
+                entryName = spellName
+            end
+        end
+
+        if buttonData.cdmChildSlot then
+            entryName = (entryName or ("Unknown " .. tostring(buttonData.type))) .. " #" .. buttonData.cdmChildSlot
+        end
+
+        if includeDecorations then
+            local addedAs = buttonData.addedAs
+            if addedAs ~= "spell" and addedAs ~= "aura" then
+                addedAs = buttonData.isPassive and "aura" or "spell"
+            end
+            local icons = ""
+            if addedAs ~= "aura" then
+                icons = icons .. "|A:ui_adv_atk:15:15|a"
+            end
+            if addedAs == "aura" or buttonData.auraTracking then
+                icons = icons .. "|A:ui_adv_health:15:15|a"
+            end
+            if icons ~= "" then
+                entryName = (entryName or ("Unknown " .. tostring(buttonData.type))) .. "  " .. icons
+            end
+        end
+    elseif buttonData.type == "item" and includeDecorations then
+        entryName = entryName or ("Unknown " .. tostring(buttonData.type))
+        if C_Item.IsEquippableItem(buttonData.id) then
+            entryName = entryName .. "  |A:Crosshair_repairnpc_32:15:15|a"
+        else
+            entryName = entryName .. "  |A:auctionhouse-icon-coin-gold:12:12|a"
+        end
+    end
+
+    return entryName
+end
+
 ------------------------------------------------------------------------
 -- Helper: Get icon for a group (from its first button)
 ------------------------------------------------------------------------
@@ -1686,6 +1750,7 @@ ST._ClearCol1PreviewHost = ClearCol1PreviewHost
 ST._ClearCol2PreviewHost = ClearCol2PreviewHost
 ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
+ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
 ST._GetGroupIcon = GetGroupIcon
 ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
