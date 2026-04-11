@@ -75,7 +75,9 @@ local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
 local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
+local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
+local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForSpell
 
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
@@ -1595,7 +1597,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
     local cab = customBars[selectedSlot]
     local capturedIdx = selectedSlot
     EnsureCustomAuraIndependentConfig(cab, settings)
-    local resolvedAuraUnit = EnsureCustomAuraBarAuraUnit(cab, cab.spellID)
+    local resolvedAuraUnit = GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
 
     local function ClassColorText(text)
         local safeText = tostring(text or "")
@@ -1764,7 +1766,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 local bars = CooldownCompanion:GetSpecCustomAuraBars()
                 bars[capturedIdx].spellID = entry.id
                 bars[capturedIdx].label = C_Spell.GetSpellName(entry.id) or ""
-                EnsureCustomAuraBarAuraUnit(bars[capturedIdx], entry.id)
+                RefreshCustomAuraBarAuraUnitForSpell(bars[capturedIdx], entry.id)
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
@@ -1782,7 +1784,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 else
                     bars[capturedIdx].label = ""
                 end
-                EnsureCustomAuraBarAuraUnit(bars[capturedIdx], id)
+                RefreshCustomAuraBarAuraUnitForSpell(bars[capturedIdx], id)
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
@@ -1815,7 +1817,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 if val ~= "player" and val ~= "target" then
                     return
                 end
-                EnsureCustomAuraBarAuraUnit(customBars[capturedIdx], customBars[capturedIdx].spellID, val)
+                EnsureCustomAuraBarAuraUnit(customBars[capturedIdx], customBars[capturedIdx].spellID, val, true)
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
