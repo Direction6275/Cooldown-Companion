@@ -127,6 +127,73 @@ local function GetSpecCustomAuraBars(settings)
     return settings.customAuraBars[specID]
 end
 
+local function IsValidCustomAuraUnit(unit)
+    return unit == "player" or unit == "target"
+end
+
+local function GetDefaultCustomAuraUnit(spellID)
+    return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
+end
+
+local function HasExplicitCustomAuraBarAuraUnit(cabConfig)
+    return type(cabConfig) == "table"
+        and cabConfig.auraUnitExplicit == true
+        and IsValidCustomAuraUnit(cabConfig.auraUnit)
+end
+
+local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(cabConfig) == "table" then
+        resolvedSpellID = cabConfig.spellID
+    end
+
+    if type(cabConfig) == "table" and IsValidCustomAuraUnit(cabConfig.auraUnit) then
+        return cabConfig.auraUnit
+    end
+
+    return GetDefaultCustomAuraUnit(resolvedSpellID)
+end
+
+local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(cabConfig) == "table" then
+        resolvedSpellID = cabConfig.spellID
+    end
+
+    if type(cabConfig) == "table" then
+        local wasExplicit = HasExplicitCustomAuraBarAuraUnit(cabConfig)
+        local resolvedUnit = IsValidCustomAuraUnit(unit) and unit
+            or GetResolvedCustomAuraBarAuraUnit(cabConfig, resolvedSpellID)
+
+        cabConfig.auraUnit = resolvedUnit
+
+        if IsValidCustomAuraUnit(unit) then
+            cabConfig.auraUnitExplicit = explicit == false and nil or true
+        elseif not wasExplicit then
+            cabConfig.auraUnitExplicit = nil
+        end
+
+        if IsValidCustomAuraUnit(cabConfig.auraUnit) then
+            return cabConfig.auraUnit
+        end
+    end
+
+    return GetDefaultCustomAuraUnit(resolvedSpellID)
+end
+
+local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(cabConfig) == "table" then
+        resolvedSpellID = cabConfig.spellID
+    end
+
+    if HasExplicitCustomAuraBarAuraUnit(cabConfig) then
+        return cabConfig.auraUnit
+    end
+
+    return EnsureCustomAuraBarAuraUnit(cabConfig, resolvedSpellID, GetDefaultCustomAuraUnit(resolvedSpellID), false)
+end
+
 local function CreateDefaultLayoutOrder()
     return {
         resources = {},
@@ -566,6 +633,11 @@ RB.GetAnchorGroupFrame = GetAnchorGroupFrame
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.GetSpecCustomAuraBars = GetSpecCustomAuraBars
+RB.IsValidCustomAuraUnit = IsValidCustomAuraUnit
+RB.GetDefaultCustomAuraUnit = GetDefaultCustomAuraUnit
+RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
+RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
+RB.RefreshCustomAuraBarAuraUnitForSpell = RefreshCustomAuraBarAuraUnitForSpell
 RB.CreateDefaultLayoutOrder = CreateDefaultLayoutOrder
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetAnchorOffset = GetAnchorOffset
