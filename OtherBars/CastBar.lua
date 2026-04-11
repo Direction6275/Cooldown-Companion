@@ -1403,6 +1403,11 @@ end
 -- Evaluate: central decision point
 ------------------------------------------------------------------------
 function CooldownCompanion:EvaluateCastBar()
+    if self._unsupportedLegacyProfile then
+        self:RevertCastBar()
+        return
+    end
+
     local settings = GetCastBarSettings()
     if not settings or not settings.enabled then
         self:RevertCastBar()
