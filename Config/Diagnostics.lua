@@ -617,7 +617,8 @@ local function FormatDiagnosticAsText(diag)
         end
     end
 
-    -- Legacy/orphan groups (no parentContainerId — pre-container or broken data)
+    -- Orphaned panels/groups: unsupported old data should be blocked at the
+    -- import/load boundary, so anything listed here is broken container-era data.
     if p.groups then
         local orphanIds = {}
         for gid, g in pairs(p.groups) do
@@ -628,7 +629,7 @@ local function FormatDiagnosticAsText(diag)
         end
         if #orphanIds > 0 then
             table.sort(orphanIds)
-            add("--- Legacy Groups ---")
+            add("--- Orphaned Panels ---")
             for _, gid in ipairs(orphanIds) do
                 local g = p.groups[gid]
                 local visStr
@@ -946,6 +947,10 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
     button2 = "Cancel",
     OnAccept = function()
         if decodedDiagnostic and decodedDiagnostic.profile then
+            if CooldownCompanion:IsUnsupportedLegacyProfile(decodedDiagnostic.profile) then
+                CooldownCompanion:NotifyLegacySupportCutoff("diagnostic profile")
+                return
+            end
             local db = CooldownCompanion.db
             wipe(db.profile)
             for k, v in pairs(decodedDiagnostic.profile) do
@@ -983,7 +988,9 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
                 end
             end
             CooldownCompanion:ClearMigrationSentinels()
-            CooldownCompanion:RunAllMigrations()
+            if not CooldownCompanion:RunAllMigrations() then
+                return
+            end
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
             CooldownCompanion:Print("Diagnostic profile imported.")
@@ -1035,6 +1042,13 @@ local function OpenDiagnosticDecodePanel()
         if not preparedText then return end
         if compactText:sub(1, 8) == "CDCdiag:" then
             preparedText = compactText:sub(9)
+            compactText = preparedText
+        end
+        if compactText:sub(1, 2) == "^1" then
+            decodedDiagnostic = nil
+            outputBox:SetText("")
+            CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
+            return
         end
         local success, data = DecodeSharedPayload(preparedText)
         if not success or type(data) ~= "table" then

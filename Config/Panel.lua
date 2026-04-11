@@ -43,7 +43,11 @@ local function GetVersionFooterText()
     if version ~= "" and version ~= "unknown" and version ~= "dev" and not version:match("^[Vv]") then
         version = "v" .. version
     end
-    return version .. "  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default")
+    local footer = version .. "  |  " .. (CooldownCompanion.db:GetCurrentProfile() or "Default")
+    if CooldownCompanion._unsupportedLegacyProfile then
+        footer = footer .. "  |  Unsupported Profile"
+    end
+    return footer
 end
 
 local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
@@ -2190,7 +2194,13 @@ function CooldownCompanion:SetupConfig()
     -- Profile callbacks to refresh on profile change
     self.db.RegisterCallback(self, "OnProfileChanged", function()
         ResetConfigForProfileChange()
-        CooldownCompanion:RunAllMigrations()
+        if not CooldownCompanion:RunAllMigrations() then
+            CooldownCompanion:ClearUnsupportedProfileRuntime()
+            if CS.configFrame and CS.configFrame.frame:IsShown() then
+                self:RefreshConfigPanel()
+            end
+            return
+        end
 
         if CS.configFrame and CS.configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -2229,7 +2239,13 @@ function CooldownCompanion:SetupConfig()
             end
         end
 
-        CooldownCompanion:RunAllMigrations()
+        if not CooldownCompanion:RunAllMigrations() then
+            CooldownCompanion:ClearUnsupportedProfileRuntime()
+            if CS.configFrame and CS.configFrame.frame:IsShown() then
+                self:RefreshConfigPanel()
+            end
+            return
+        end
 
         if CS.configFrame and CS.configFrame.frame:IsShown() then
             self:RefreshConfigPanel()
@@ -2238,7 +2254,13 @@ function CooldownCompanion:SetupConfig()
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetConfigForProfileChange()
-        CooldownCompanion:RunAllMigrations()
+        if not CooldownCompanion:RunAllMigrations() then
+            CooldownCompanion:ClearUnsupportedProfileRuntime()
+            if CS.configFrame and CS.configFrame.frame:IsShown() then
+                self:RefreshConfigPanel()
+            end
+            return
+        end
 
         if CS.configFrame and CS.configFrame.frame:IsShown() then
             self:RefreshConfigPanel()

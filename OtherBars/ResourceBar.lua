@@ -3354,6 +3354,11 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:EvaluateResourceBars()
+    if self._unsupportedLegacyProfile then
+        self:RevertResourceBars()
+        return
+    end
+
     local settings = GetResourceBarSettings()
     if not settings or not settings.enabled then
         DisableLifecycleEvents()

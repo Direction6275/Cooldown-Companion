@@ -345,6 +345,44 @@ local function RefreshColumn1(preserveDrag)
     -- Ensure folders table exists
     if not db.folders then db.folders = {} end
 
+    if CooldownCompanion._unsupportedLegacyProfile then
+        if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(20)
+        spacer.noAutoHeight = true
+        CS.col1Scroll:AddChild(spacer)
+
+        local header = AceGUI:Create("Label")
+        header:SetText("This profile is unsupported.")
+        header:SetFullWidth(true)
+        header:SetJustifyH("CENTER")
+        header:SetFont((GameFontNormal:GetFont()), 15, "")
+        header.label:SetWordWrap(true)
+        header.label:SetNonSpaceWrap(true)
+        header.label:SetMaxLines(0)
+        CS.col1Scroll:AddChild(header)
+
+        local descSpacer = AceGUI:Create("SimpleGroup")
+        descSpacer:SetFullWidth(true)
+        descSpacer:SetHeight(6)
+        descSpacer.noAutoHeight = true
+        CS.col1Scroll:AddChild(descSpacer)
+
+        local desc = AceGUI:Create("Label")
+        desc:SetText(CooldownCompanion:GetLegacySupportCutoffMessage("profile"))
+        desc:SetFullWidth(true)
+        desc:SetJustifyH("CENTER")
+        desc:SetFont((GameFontNormal:GetFont()), 12, "")
+        desc:SetColor(0.7, 0.7, 0.7)
+        desc.label:SetWordWrap(true)
+        desc.label:SetNonSpaceWrap(true)
+        desc.label:SetMaxLines(0)
+        CS.col1Scroll:AddChild(desc)
+        return
+    end
+
     -- Count current children in scroll widget
     local function CountScrollChildren()
         local children = { CS.col1Scroll.content:GetChildren() }

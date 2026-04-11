@@ -1038,6 +1038,13 @@ local function RehydrateProfile(profile, formatVersion)
         end
     end
 
+    if type(profile.groupContainers) ~= "table" then
+        profile.groupContainers = {}
+    end
+    if type(profile.folders) ~= "table" then
+        profile.folders = {}
+    end
+
     local globalStyleDefaults = profile.globalStyle or profileDefaults.globalStyle or {}
 
     if type(profile.groups) == "table" then
@@ -1255,11 +1262,7 @@ local function DecodeSharedPayload(text)
     end
 
     if isLegacy then
-        local success, data = AceSerializer:Deserialize(trimmed)
-        if success and type(data) == "table" then
-            data = NormalizeTextureLibraryPayload(data)
-        end
-        return success, data
+        return false, nil
     end
 
     local decoded = LibDeflate:DecodeForPrint(normalized)

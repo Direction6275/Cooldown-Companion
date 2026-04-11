@@ -406,8 +406,13 @@ local MAX_IMPORT_LENGTH = 500000
 local function DecodeProfileImport(popup)
     local text = popup.EditBox:GetText()
     if not text or text == "" then return nil end
-    local preparedText, compactText = PrepareSharedImportText(text)
+    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
     if not preparedText then return nil end
+
+    if isLegacyImport then
+        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
+        return nil
+    end
 
     if #compactText > MAX_IMPORT_LENGTH then
         CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
@@ -439,6 +444,10 @@ local function DecodeProfileImport(popup)
         CooldownCompanion:Print("Import failed: profile data is malformed.")
         return nil
     end
+    if CooldownCompanion:IsUnsupportedLegacyProfile(data) then
+        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
+        return nil
+    end
     return data
 end
 
@@ -447,6 +456,11 @@ end
 -- their original createdBy so they appear in the browse-other-characters
 -- module instead of being flattened into the current character.
 local function ApplyProfileImport(data)
+    if CooldownCompanion:IsUnsupportedLegacyProfile(data) then
+        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
+        return false
+    end
+
     local db = CooldownCompanion.db
     local exporterCharKey = data._exporterCharKey
     local exportedCharInfo = data._characterInfo
@@ -553,26 +567,14 @@ local function ApplyProfileImport(data)
         end
     end
 
-    -- Detect legacy (pre-container) profile before sentinels are cleared.
-    local isLegacyProfile = not db.profile.groupContainers or not next(db.profile.groupContainers)
-
     CooldownCompanion:ClearMigrationSentinels()
-    CooldownCompanion:RunAllMigrations()
-
-    -- Legacy profiles have folder specs on folders, not containers.
-    -- MigrateGroupsToContainers wraps groups but the folder-spec cascade
-    -- is skipped (ClearMigrationSentinels forces the sentinel to true).
-    -- Cascade manually now that migration has created the containers.
-    if isLegacyProfile and db.profile.folders then
-        for folderId, folder in pairs(db.profile.folders) do
-            if folder.specs and next(folder.specs) then
-                CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-            end
-        end
+    if not CooldownCompanion:RunAllMigrations() then
+        return false
     end
 
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
+    return true
 end
 
 StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
@@ -581,9 +583,11 @@ StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
     button2 = "Cancel",
     OnAccept = function()
         if pendingProfileImport then
-            ApplyProfileImport(pendingProfileImport)
+            local imported = ApplyProfileImport(pendingProfileImport)
             pendingProfileImport = nil
-            CooldownCompanion:Print("Profile imported.")
+            if imported then
+                CooldownCompanion:Print("Profile imported.")
+            end
         end
     end,
     OnCancel = function()
@@ -881,8 +885,12 @@ ST._EncodeExportData = EncodeExportData
 
 local function ImportGroupData(text)
     if not text or text == "" then return false end
-    local preparedText, compactText = PrepareSharedImportText(text)
+    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
     if not preparedText then return false end
+    if isLegacyImport then
+        CooldownCompanion:NotifyLegacySupportCutoff("import string")
+        return false
+    end
     if #compactText > MAX_IMPORT_LENGTH then
         CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
         return false
@@ -907,35 +915,14 @@ local function ImportGroupData(text)
 
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
-    local v1FolderImportId  -- set by v1 folder branch for post-migration spec cascade
 
     if data.type == "group" and data.group then
-        local groupId = db.nextGroupId
-        db.nextGroupId = groupId + 1
-        local group = CopyTable(data.group)
-        group.createdBy = charKey
-        group.isGlobal = false
-        group.order = groupId
-        group.folderId = nil
-        db.groups[groupId] = group
-        CooldownCompanion:CreateGroupFrame(groupId)
-        CooldownCompanion:Print("Imported group: " .. (group.name or "Unnamed"))
+        CooldownCompanion:NotifyLegacySupportCutoff("group import")
+        return false
 
     elseif data.type == "groups" and data.groups then
-        local count = 0
-        for _, srcGroup in ipairs(data.groups) do
-            local groupId = db.nextGroupId
-            db.nextGroupId = groupId + 1
-            local group = CopyTable(srcGroup)
-            group.createdBy = charKey
-            group.isGlobal = false
-            group.order = groupId
-            group.folderId = nil
-            db.groups[groupId] = group
-            CooldownCompanion:CreateGroupFrame(groupId)
-            count = count + 1
-        end
-        CooldownCompanion:Print("Imported " .. count .. " groups.")
+        CooldownCompanion:NotifyLegacySupportCutoff("group import")
+        return false
 
     elseif data.type == "containers" and data.containers then
         -- Import multiple containers with their panels
@@ -1095,6 +1082,11 @@ local function ImportGroupData(text)
         CooldownCompanion:Print("Imported " .. containerCount .. " groups.")
 
     elseif data.type == "folder" and data.folder then
+        if data.groups then
+            CooldownCompanion:NotifyLegacySupportCutoff("folder import")
+            return false
+        end
+
         local folderId = db.nextFolderId
         db.nextFolderId = folderId + 1
         local importedManualIcon = data.folder.manualIcon
@@ -1298,22 +1290,6 @@ local function ImportGroupData(text)
                 end
             end
 
-        elseif data.groups then
-            -- v1 format: flat groups (migration wraps each in a container).
-            -- Flag for post-migration spec cascade (see below).
-            v1FolderImportId = folderId
-            for _, srcGroup in ipairs(data.groups) do
-                local groupId = db.nextGroupId
-                db.nextGroupId = groupId + 1
-                local group = CopyTable(srcGroup)
-                group.createdBy = charKey
-                group.isGlobal = false
-                group.order = groupId
-                group.folderId = folderId
-                db.groups[groupId] = group
-                CooldownCompanion:CreateGroupFrame(groupId)
-                count = count + 1
-            end
         end
         CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
 
@@ -1452,56 +1428,8 @@ local function ImportGroupData(text)
     end
 
     CooldownCompanion:ClearMigrationSentinels()
-    CooldownCompanion:RunAllMigrations()
-
-    -- v1 folder imports rely on MigrateGroupsToContainers to wrap flat groups
-    -- into containers, but ClearMigrationSentinels forces
-    -- _migratedFolderSpecsToContainers = true (to protect existing data),
-    -- so the one-time folder→container spec cascade is skipped.
-    -- Cascade manually now that migration has created the containers.
-    -- Also lock the migration-created containers and clean up stale anchor
-    -- references (the groups' old relativeTo values point to containers that
-    -- existed on the source character but not here).
-    if v1FolderImportId then
-        CooldownCompanion:ApplyFolderSpecFilterToChildren(v1FolderImportId)
-        for cid, ctr in pairs(db.groupContainers) do
-            if ctr.folderId == v1FolderImportId then
-                ctr.locked = true
-                if ctr.anchor then
-                    local rt = ctr.anchor.relativeTo
-                    if rt then
-                        local refId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
-                        if refId then
-                            local ref = db.groupContainers[refId]
-                            if not ref or ref.folderId ~= v1FolderImportId then
-                                ctr.anchor = {
-                                    point = "CENTER",
-                                    relativeTo = "UIParent",
-                                    relativePoint = "CENTER",
-                                    x = 0,
-                                    y = 0,
-                                }
-                                local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[cid]
-                                if cf then CooldownCompanion:AnchorContainerFrame(cf, ctr.anchor) end
-                            end
-                        else
-                            local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
-                            if groupRef then
-                                ctr.anchor = {
-                                    point = "CENTER",
-                                    relativeTo = "UIParent",
-                                    relativePoint = "CENTER",
-                                    x = 0,
-                                    y = 0,
-                                }
-                                local cf = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[cid]
-                                if cf then CooldownCompanion:AnchorContainerFrame(cf, ctr.anchor) end
-                            end
-                        end
-                    end
-                end
-            end
-        end
+    if not CooldownCompanion:RunAllMigrations() then
+        return false
     end
 
     CooldownCompanion:RefreshConfigPanel()

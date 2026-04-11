@@ -1634,25 +1634,11 @@ local function ContainersHaveForeignSpecs(containers, requireGlobal)
     return false
 end
 
--- Legacy compat: used by folder-level checks
-local function GetEffectiveGroupSpecFilter(group, db)
-    if not group then return nil end
-    if group.folderId and db and db.folders then
-        local folder = db.folders[group.folderId]
-        if folder and folder.specs and next(folder.specs) then
-            return folder.specs
-        end
-    end
-    return group.specs
-end
-
 local function GroupsHaveForeignSpecs(groups, requireGlobal)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
     local playerSpecIds = BuildPlayerSpecSet()
     for _, g in ipairs(groups) do
         if not requireGlobal or g.isGlobal then
-            local effectiveSpecs = GetEffectiveGroupSpecFilter(g, db)
-            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+            if SpecSetHasForeignSpecs(g.specs, playerSpecIds) then
                 return true
             end
         end

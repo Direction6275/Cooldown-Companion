@@ -91,6 +91,25 @@ function CooldownCompanion:OnInitialize()
     self:Print("Cooldown Companion loaded. Use /cdc to open settings. Use /cdc help for commands.")
 end
 
+function CooldownCompanion:EnsureRuntimeInitialized()
+    self.alphaState = self.alphaState or {}
+
+    if not self.updateTicker then
+        self.updateTicker = C_Timer.NewTicker(0.1, function()
+            -- Read assisted combat recommended spell (plain table field, no API call)
+            if AssistedCombatManager then
+                self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
+            end
+
+            self:UpdateAllCooldowns()
+            self:UpdateAllGroupLayouts()
+            self._cooldownsDirty = false
+        end)
+    end
+
+    self:InitAlphaUpdateFrame()
+end
+
 function CooldownCompanion:OnEnable()
     -- Register cooldown events — set dirty flag, let ticker do the actual update.
     -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
@@ -248,32 +267,20 @@ function CooldownCompanion:OnEnable()
     -- Cache current spec before creating frames (visibility depends on it)
     self:CacheCurrentSpec()
 
-    -- Run all data migrations (ownership, alpha, display mode, style, etc.)
-    self:RunAllMigrations()
+    -- Keep runtime scaffolding alive even if the active profile is unsupported.
+    -- That lets the user switch to a supported profile in the same session
+    -- without requiring /reload to recreate the ticker and alpha systems.
+    self:EnsureRuntimeInitialized()
 
-    -- Initialize alpha fade state (runtime only, not saved)
-    self.alphaState = {}
+    -- Run all data migrations (ownership, alpha, display mode, style, etc.)
+    if not self:RunAllMigrations() then
+        return
+    end
 
     -- Create all container frames, then group (panel) frames
     self:CreateAllContainerFrames()
     self:CreateAllGroupFrames()
     self:FinalizeContainerAnchorsToScreenOffsets()
-
-    -- Start a ticker to update cooldowns periodically
-    -- This ensures cooldowns update even if events don't fire
-    self.updateTicker = C_Timer.NewTicker(0.1, function()
-        -- Read assisted combat recommended spell (plain table field, no API call)
-        if AssistedCombatManager then
-            self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
-        end
-
-        self:UpdateAllCooldowns()
-        self:UpdateAllGroupLayouts()
-        self._cooldownsDirty = false
-    end)
-
-    -- Start the alpha fade OnUpdate frame (~30Hz for smooth fading)
-    self:InitAlphaUpdateFrame()
 end
 
 function CooldownCompanion:MarkCooldownsDirty()
@@ -418,6 +425,12 @@ end
 function CooldownCompanion:OnCombatEnd()
     self:UpdateAllCooldowns()
     self:ApplyCdmAlpha()
+    if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
+        self._pendingUnsupportedLegacyHide = nil
+        self._pendingFullRefresh = nil
+        self._pendingVisibilityRefresh = nil
+        self:ClearUnsupportedProfileRuntime()
+    end
     -- Full refresh supersedes visibility-only refresh
     if self._pendingFullRefresh then
         self._pendingFullRefresh = nil
