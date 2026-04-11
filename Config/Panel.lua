@@ -99,6 +99,55 @@ local function CountSelections(selectionSet)
     return count
 end
 
+local function GetConfigProfile()
+    return CooldownCompanion.db and CooldownCompanion.db.profile
+end
+
+local function NormalizeHeaderName(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+    local trimmed = name:match("^%s*(.-)%s*$")
+    if not trimmed or trimmed == "" then
+        return nil
+    end
+    return trimmed
+end
+
+local function GetSelectedEntryHeaderName()
+    if not (CS.selectedGroup and CS.selectedButton) then
+        return nil
+    end
+    if next(CS.selectedButtons) then
+        return nil
+    end
+
+    local profile = GetConfigProfile()
+    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
+    local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
+    return buttonData and NormalizeHeaderName(buttonData.name)
+end
+
+local function GetSelectedPanelHeaderName(selection)
+    if not selection or selection.panelMultiCount >= 2 or not CS.selectedGroup then
+        return nil
+    end
+
+    local profile = GetConfigProfile()
+    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
+    return group and NormalizeHeaderName(group.name)
+end
+
+local function GetSelectedGroupHeaderName(selection)
+    if not selection or selection.groupMultiCount >= 2 or not CS.selectedContainer or CS.selectedGroup then
+        return nil
+    end
+
+    local profile = GetConfigProfile()
+    local container = profile and profile.groupContainers and profile.groupContainers[CS.selectedContainer]
+    return container and NormalizeHeaderName(container.name)
+end
+
 local function GetConfigSelectionSummary()
     return {
         panelMultiCount = CountSelections(CS.selectedPanels),
@@ -140,6 +189,10 @@ local function GetColumn3HeaderTitle(selection)
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
+    local entryName = GetSelectedEntryHeaderName()
+    if entryName then
+        return "Entry: " .. entryName
+    end
     return "Button Settings"
 end
 
@@ -148,7 +201,15 @@ local function GetColumn4HeaderTitle(selection)
     if mode == "layout_order" then
         return GetLayoutOrderColumnTitle()
     elseif mode == "panel" then
+        local panelName = GetSelectedPanelHeaderName(selection)
+        if panelName then
+            return "Panel: " .. panelName
+        end
         return "Panel Settings"
+    end
+    local groupName = GetSelectedGroupHeaderName(selection)
+    if groupName then
+        return "Group: " .. groupName
     end
     return "Group Settings"
 end
