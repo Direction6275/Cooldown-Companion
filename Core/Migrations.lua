@@ -10,11 +10,53 @@ local Masque = CooldownCompanion.Masque
 local pairs = pairs
 local ipairs = ipairs
 local type = type
+local next = next
+local rawget = rawget
+
+local LEGACY_SUPPORT_FLOOR_VERSION = "1.10"
+local LEGACY_UNSUPPORTED_MAX_VERSION = "1.9"
+
+function CooldownCompanion:IsUnsupportedLegacyProfile(profile)
+    if type(profile) ~= "table" then return false end
+
+    local groups = rawget(profile, "groups")
+    if type(groups) ~= "table" or not next(groups) then
+        return false
+    end
+
+    local containers = rawget(profile, "groupContainers")
+    return type(containers) ~= "table" or not next(containers)
+end
+
+function CooldownCompanion:GetLegacySupportCutoffMessage(dataLabel)
+    dataLabel = dataLabel or "data"
+    return ("This build supports Cooldown Companion %s and newer. This %s appears to come from %s or older. Use an older addon version first if you need to recover it."):format(
+        LEGACY_SUPPORT_FLOOR_VERSION,
+        dataLabel,
+        LEGACY_UNSUPPORTED_MAX_VERSION
+    )
+end
+
+function CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
+    self:Print(self:GetLegacySupportCutoffMessage(dataLabel))
+end
 
 -- Consolidated entry point: runs all migrations in the correct order.
 -- Called from OnEnable, OnProfileChanged, OnProfileCopied, OnProfileReset,
 -- and after profile import to ensure every profile is fully migrated.
 function CooldownCompanion:RunAllMigrations()
+    if self:IsUnsupportedLegacyProfile(self.db and self.db.profile) then
+        self._unsupportedLegacyProfile = true
+        if not self._unsupportedLegacyProfileNotified then
+            self:NotifyLegacySupportCutoff("profile")
+            self._unsupportedLegacyProfileNotified = true
+        end
+        return false
+    end
+
+    self._unsupportedLegacyProfile = false
+    self._unsupportedLegacyProfileNotified = nil
+
     self:MigrateGroupOwnership()
     self:MigrateFolderOwnership()
     self:MigrateOrphanedGroups()
@@ -47,7 +89,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateChoiceTalentConditions()
     self:MigrateNewDefaults()
     self:MigrateCharacterScopedBarSettings()
-    self:MigrateGroupsToContainers()
+    self:MigratePanelAnchorCenter()
     self:MigrateContainerAnchorsToScreenOffsets()
     self:MigrateContainerAlphaToPanel()
     self:MigrateStrataOrderExpansion()
@@ -55,6 +97,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateLayoutOrderToSpecKeyed()
     self:MigrateBaseSpellResolution()
     self:MigrateSpecColorsToSpecOverrides()
+    return true
 end
 
 -- Clear all migration sentinel flags so migrations re-evaluate the actual data.
@@ -78,19 +121,16 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
-    profile._migratedContainersV1 = nil
     profile._migratedContainerAnchorsToScreenOffsets = nil
     profile._migratedContainerAlphaToPanel = nil
     profile._migratedContainerHeroTalentStamps = nil
+    profile._migratedPanelAnchorCenter = nil
     profile._migratedStrataOrder6 = nil
     profile._migratedCustomAuraSlots5 = nil
     profile._migratedCustomAuraSlots5v2 = nil
     profile._migratedBaseSpells = nil
     profile._migratedLayoutOrder = nil
     profile._migratedSpecOverrides = nil
-    -- Folder-spec-to-container clearing is a one-time historical migration
-    -- that must never re-run on imported data — always mark as complete.
-    profile._migratedFolderSpecsToContainers = true
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1398,188 +1438,26 @@ function CooldownCompanion:MigrateCharacterScopedBarSettings()
     self:EnsureCurrentCharacterScopedBarSettings()
 end
 
-------------------------------------------------------------------------
--- MigrateGroupsToContainers: Wraps each existing group in a container.
--- Groups become "panels" (parentContainerId set), containers own the
--- organizational/visibility/alpha fields that previously lived on groups.
-------------------------------------------------------------------------
+function CooldownCompanion:MigratePanelAnchorCenter()
+    local profile = self.db and self.db.profile
+    if not profile or profile._migratedPanelAnchorCenter then return end
 
--- Fields that move from group (panel) to container during migration.
--- These are cleared from the panel after copying to the container.
-local CONTAINER_FIELDS = {
-    -- Organizational
-    "folderId", "createdBy", "isGlobal", "enabled", "locked",
-    -- Visibility / filtering
-    "specs", "heroTalents",
-    -- Anchor & strata (container owns the position; panel re-anchors to container frame)
-    "anchor", "frameStrata",
-    -- Alpha fade system
-    "baselineAlpha",
-    "forceAlphaInCombat", "forceAlphaOutOfCombat",
-    "forceAlphaRegularMounted", "forceAlphaDragonriding",
-    "forceAlphaTargetExists", "forceAlphaMouseover",
-    "forceHideInCombat", "forceHideOutOfCombat",
-    "forceHideRegularMounted", "forceHideDragonriding",
-    "treatTravelFormAsMounted",
-    "fadeDelay", "fadeInDuration", "fadeOutDuration",
-}
-
--- "loadConditions" moves entirely from the group to the container.
-local LOAD_CONDITIONS_KEY = "loadConditions"
-
-function CooldownCompanion:MigrateGroupsToContainers()
-    local profile = self.db.profile
-
-    -- Fix panels migrated with TOPLEFT anchor (should be CENTER to match all
-    -- other panel creation paths).  Runs before the sentinel check so it
-    -- patches existing migrated data.
-    if profile._migratedContainersV1 and not profile._migratedPanelAnchorCenter then
-        local containers = profile.groupContainers or {}
-        for groupId, group in pairs(profile.groups) do
-            local pcid = group.parentContainerId
-            if pcid and containers[pcid] then
-                local a = group.anchor
-                if a and a.point == "TOPLEFT"
-                   and a.relativeTo == "CooldownCompanionContainer" .. pcid
-                   and a.relativePoint == "TOPLEFT"
-                   and (a.x or 0) == 0 and (a.y or 0) == 0 then
-                    a.point = "CENTER"
-                    a.relativePoint = "CENTER"
-                end
+    local containers = profile.groupContainers or {}
+    for _, group in pairs(profile.groups or {}) do
+        local pcid = group.parentContainerId
+        if pcid and containers[pcid] then
+            local a = group.anchor
+            if a and a.point == "TOPLEFT"
+               and a.relativeTo == "CooldownCompanionContainer" .. pcid
+               and a.relativePoint == "TOPLEFT"
+               and (a.x or 0) == 0 and (a.y or 0) == 0 then
+                a.point = "CENTER"
+                a.relativePoint = "CENTER"
             end
         end
-        profile._migratedPanelAnchorCenter = true
     end
 
-    if profile._migratedContainersV1 then
-        -- Backfill sentinel for profiles migrated before this guard existed
-        if not profile._migratedFolderSpecsToContainers then
-            profile._migratedFolderSpecsToContainers = true
-        end
-        return
-    end
-
-    -- Ensure tables exist (may be first load after schema addition)
-    if not profile.groupContainers then
-        profile.groupContainers = {}
-    end
-    if not profile.nextContainerId then
-        profile.nextContainerId = 1
-    end
-
-    -- Skip if there are no groups to migrate
-    if not next(profile.groups) then
-        profile._migratedContainersV1 = true
-        return
-    end
-
-    for groupId, group in pairs(profile.groups) do
-        -- Skip groups already linked to a container (e.g. from container import)
-        if group.parentContainerId then
-            -- Verify the container actually exists
-            if profile.groupContainers[group.parentContainerId] then
-                -- Already migrated — nothing to do
-            else
-                -- Orphaned reference — clear it so this group gets wrapped below
-                group.parentContainerId = nil
-            end
-        end
-        if group.parentContainerId then
-            -- Skip — already linked to a valid container
-        else
-
-        local containerId = profile.nextContainerId
-        profile.nextContainerId = containerId + 1
-
-        -- Build the container from group fields
-        local container = {
-            name = group.name or ("Group " .. groupId),
-            order = group.order or groupId,
-        }
-
-        -- Copy organizational/visibility/alpha fields to container
-        for _, key in ipairs(CONTAINER_FIELDS) do
-            local val = group[key]
-            if val ~= nil then
-                if type(val) == "table" then
-                    container[key] = CopyTable(val)
-                else
-                    container[key] = val
-                end
-            end
-        end
-
-        -- Copy loadConditions to container
-        if group[LOAD_CONDITIONS_KEY] and type(group[LOAD_CONDITIONS_KEY]) == "table" then
-            container[LOAD_CONDITIONS_KEY] = CopyTable(group[LOAD_CONDITIONS_KEY])
-        end
-
-        -- Ensure container has required defaults
-        if container.enabled == nil then container.enabled = true end
-        if container.locked == nil then container.locked = false end
-        if container.baselineAlpha == nil then container.baselineAlpha = 1 end
-        if container.fadeDelay == nil then container.fadeDelay = 1 end
-        if container.fadeInDuration == nil then container.fadeInDuration = 0.2 end
-        if container.fadeOutDuration == nil then container.fadeOutDuration = 0.2 end
-        if not container.anchor then
-            container.anchor = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", x = 0, y = 0 }
-        end
-
-        profile.groupContainers[containerId] = container
-
-        -- Update the panel (group): link to container, set panel identity
-        group.parentContainerId = containerId
-        group.name = "Panel 1"
-        group.order = 1
-
-        -- Re-anchor panel to the container frame (CENTER matches all other panel creation paths)
-        group.anchor = {
-            point = "CENTER",
-            relativeTo = "CooldownCompanionContainer" .. containerId,
-            relativePoint = "CENTER",
-            x = 0,
-            y = 0,
-        }
-
-        -- Clear fields that now live on the container
-        for _, key in ipairs(CONTAINER_FIELDS) do
-            -- anchor was already replaced above; skip re-clearing
-            if key ~= "anchor" then
-                group[key] = nil
-            end
-        end
-        group[LOAD_CONDITIONS_KEY] = nil
-
-        end -- close else (group without parentContainerId)
-    end
-
-    -- One-time migration: move folder spec/hero filters to containers.
-    -- Guarded by its own sentinel (_migratedFolderSpecsToContainers) that
-    -- is NOT cleared by ClearMigrationSentinels, because folder specs are
-    -- a normal runtime feature post-migration — they should not be stripped
-    -- every time migrations re-run after an import.
-    if not profile._migratedFolderSpecsToContainers then
-        if profile.folders then
-            for folderId, folder in pairs(profile.folders) do
-                if folder.specs and next(folder.specs) then
-                    -- Copy folder specs to each child container that doesn't already have them
-                    for containerId, container in pairs(profile.groupContainers) do
-                        if container.folderId == folderId and not container.specs then
-                            container.specs = CopyTable(folder.specs)
-                            if folder.heroTalents and next(folder.heroTalents) then
-                                container.heroTalents = CopyTable(folder.heroTalents)
-                            end
-                        end
-                    end
-                    folder.specs = nil
-                    folder.heroTalents = nil
-                end
-            end
-        end
-        profile._migratedFolderSpecsToContainers = true
-    end
-
-    profile._migratedContainersV1 = true
+    profile._migratedPanelAnchorCenter = true
 end
 
 function CooldownCompanion:MigrateContainerAnchorsToScreenOffsets()

@@ -1255,11 +1255,7 @@ local function DecodeSharedPayload(text)
     end
 
     if isLegacy then
-        local success, data = AceSerializer:Deserialize(trimmed)
-        if success and type(data) == "table" then
-            data = NormalizeTextureLibraryPayload(data)
-        end
-        return success, data
+        return false, nil
     end
 
     local decoded = LibDeflate:DecodeForPrint(normalized)
