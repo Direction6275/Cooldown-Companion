@@ -192,7 +192,10 @@ function CooldownCompanion:OnEnable()
     -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
     if not self._unitTargetFrame then
         self._unitTargetFrame = CreateFrame("Frame")
-        self._unitTargetFrame:SetScript("OnEvent", function()
+        self._unitTargetFrame:SetScript("OnEvent", function(_, event, unitToken)
+            if ST._QueueInheritedUnitFrameAlphaResync then
+                ST._QueueInheritedUnitFrameAlphaResync()
+            end
             self._cooldownsDirty = true
             self:UpdateAllCooldowns()
         end)

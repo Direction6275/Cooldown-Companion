@@ -12,6 +12,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local math_abs = math.abs
 
 ------------------------------------------------------------------------
 -- State
@@ -27,6 +28,7 @@ local playerFrameRef = nil
 local targetFrameRef = nil
 local alphaSyncFrame = nil
 local pendingReevaluate = false
+local rapidAlphaSyncUntil = 0
 
 -- Combat deferral: any positioning attempt during combat is coalesced into a
 -- single full re-evaluation once PLAYER_REGEN_ENABLED fires.
@@ -86,6 +88,34 @@ local function GetAnchorGroupFrame(settings)
     if not groupId then return nil end
     return CooldownCompanion.groupFrames[groupId]
 end
+
+local function SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
+    if not groupFrame or not groupFrame:IsShown() then return nil end
+    local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
+    if playerFrame then playerFrame:SetAlpha(alpha) end
+    if targetFrame then targetFrame:SetAlpha(alpha) end
+    return alpha
+end
+
+local function ResyncInheritedUnitFrameAlpha()
+    local latest = GetFrameAnchoringSettings()
+    if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return nil end
+    local groupFrame = GetAnchorGroupFrame(latest)
+    return SyncInheritedUnitFrameAlpha(groupFrame, playerFrameRef, targetFrameRef)
+end
+
+local function QueueInheritedUnitFrameAlphaResync()
+    local latest = GetFrameAnchoringSettings()
+    if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return end
+
+    rapidAlphaSyncUntil = GetTime() + 0.2
+    ResyncInheritedUnitFrameAlpha()
+    C_Timer.After(0, function()
+        ResyncInheritedUnitFrameAlpha()
+    end)
+end
+
+ST._QueueInheritedUnitFrameAlphaResync = QueueInheritedUnitFrameAlphaResync
 
 --- Auto-detect which unit frame addon is active.
 local function AutoDetectUnitFrameAddon()
@@ -281,9 +311,7 @@ function CooldownCompanion:ApplyFrameAnchoring()
         end
 
         -- Apply alpha immediately — use natural alpha to avoid config override cascade
-        local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
-        if playerFrame then playerFrame:SetAlpha(groupAlpha) end
-        if targetFrame then targetFrame:SetAlpha(groupAlpha) end
+        local groupAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame) or 1
 
         -- Start alpha sync OnUpdate (~30Hz polling)
         if not alphaSyncFrame then
@@ -293,15 +321,19 @@ function CooldownCompanion:ApplyFrameAnchoring()
         local accumulator = 0
         local SYNC_INTERVAL = 1 / 30
         alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+            local now = GetTime()
+            local rapidSyncActive = now < rapidAlphaSyncUntil
             accumulator = accumulator + dt
-            if accumulator < SYNC_INTERVAL then return end
-            accumulator = 0
+            if not rapidSyncActive then
+                if accumulator < SYNC_INTERVAL then return end
+                accumulator = 0
+            end
             if not groupFrame or not groupFrame:IsShown() then return end
             local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
-            if alpha ~= lastAlpha then
-                lastAlpha = alpha
-                if playerFrameRef then playerFrameRef:SetAlpha(alpha) end
-                if targetFrameRef then targetFrameRef:SetAlpha(alpha) end
+            local playerNeedsSync = playerFrameRef and math_abs((playerFrameRef:GetAlpha() or 1) - alpha) > 0.001
+            local targetNeedsSync = targetFrameRef and math_abs((targetFrameRef:GetAlpha() or 1) - alpha) > 0.001
+            if alpha ~= lastAlpha or playerNeedsSync or targetNeedsSync then
+                lastAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrameRef, targetFrameRef) or alpha
             end
         end)
     else
@@ -414,6 +446,12 @@ local function InstallHooks()
     -- still needs unit-frame anchoring re-evaluation.
     hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
         QueueFrameAnchoringReevaluate()
+    end)
+
+    hooksecurefunc(CooldownCompanion, "OnTargetChanged", function()
+        local s = GetFrameAnchoringSettings()
+        if not (isApplied and s and s.enabled and s.inheritAlpha) then return end
+        QueueInheritedUnitFrameAlphaResync()
     end)
 end
 

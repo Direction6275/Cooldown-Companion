@@ -196,6 +196,7 @@ local defaults = {
                     forceAlphaRegularMounted = false,
                     forceAlphaDragonriding = false,
                     forceAlphaTargetExists = false,
+                    forceAlphaTargetEnemyOnly = false,
                     forceAlphaMouseover = false,
                     -- Force-hidden conditions (drive alpha to 0)
                     forceHideInCombat = false,
@@ -471,6 +472,7 @@ local defaults = {
             forceAlphaRegularMounted = false,
             forceAlphaDragonriding = false,
             forceAlphaTargetExists = false,
+            forceAlphaTargetEnemyOnly = false,
             forceAlphaMouseover = false,
             forceHideInCombat = false,
             forceHideOutOfCombat = false,
