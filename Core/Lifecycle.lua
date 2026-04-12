@@ -193,18 +193,8 @@ function CooldownCompanion:OnEnable()
     if not self._unitTargetFrame then
         self._unitTargetFrame = CreateFrame("Frame")
         self._unitTargetFrame:SetScript("OnEvent", function(_, event, unitToken)
-            local hasTarget = UnitExists("target")
-            local isEnemy = hasTarget and UnitCanAttack("player", "target") and true or false
-            self:Print(string.format(
-                "[FrameAlphaDebug %.3f] %s(%s) target=%s enemy=%s",
-                GetTime(),
-                event or "UNIT_TARGET",
-                unitToken or "?",
-                hasTarget and "true" or "false",
-                isEnemy and "true" or "false"
-            ))
             if ST._QueueInheritedUnitFrameAlphaResync then
-                ST._QueueInheritedUnitFrameAlphaResync("UNIT_TARGET(player)")
+                ST._QueueInheritedUnitFrameAlphaResync()
             end
             self._cooldownsDirty = true
             self:UpdateAllCooldowns()
