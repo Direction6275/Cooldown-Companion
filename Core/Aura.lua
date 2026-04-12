@@ -303,6 +303,15 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
 end
 
 function CooldownCompanion:OnTargetChanged()
+    local hasTarget = UnitExists("target")
+    local isEnemy = hasTarget and UnitCanAttack("player", "target") and true or false
+    self:Print(string.format(
+        "[FrameAlphaDebug %.3f] PLAYER_TARGET_CHANGED target=%s enemy=%s",
+        GetTime(),
+        hasTarget and "true" or "false",
+        isEnemy and "true" or "false"
+    ))
+
     if not UnitExists("target") then
         -- Deselected target: clear all target aura state immediately
         self:ClearAuraUnit("target")
