@@ -974,6 +974,6 @@ function CooldownCompanion:OnViewerSpellOverrideUpdated(event, baseSpellID, over
     end
     -- Refresh icons/names now that the viewer child's overrideSpellID is current
     self:OnSpellUpdateIcon()
-    -- Update config panel if open (name, icon, usability may have changed)
-    self:RefreshConfigPanel()
+    -- Coalesce config updates while shapeshift/form override events settle.
+    self:QueueOverrideConfigRefresh(baseSpellID, overrideSpellID)
 end

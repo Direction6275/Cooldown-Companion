@@ -235,6 +235,171 @@ local function ApplyConfigColumnTitles(frame)
     frame.col4:SetTitle(GetColumn4HeaderTitle(selection))
 end
 
+local function SaveScrollState(widget)
+    if not widget then return nil end
+    local state = widget.status or widget.localstatus
+    if not state then return nil end
+
+    local offset = tonumber(state.offset) or 0
+    local scrollvalue = tonumber(state.scrollvalue) or 0
+    if offset <= 0 and scrollvalue <= 0 then
+        return nil
+    end
+
+    return {
+        offset = state.offset,
+        scrollvalue = state.scrollvalue,
+    }
+end
+
+local function RestoreScrollState(widget, saved)
+    if not (widget and saved) then return end
+    local state = widget.status or widget.localstatus
+    if not state then return end
+    state.offset = saved.offset
+    state.scrollvalue = saved.scrollvalue
+end
+
+local function ClearScrollState(widget)
+    if not widget then return end
+    local state = widget.status or widget.localstatus
+    if not state then return end
+    state.offset = nil
+    state.scrollvalue = nil
+end
+
+local pendingOverrideConfigRefreshToken = 0
+local pendingOverrideSpellIds = {}
+
+local function IsConfigFrameOpenForRefresh()
+    return CS.configFrame
+        and CS.configFrame.frame
+        and CS.configFrame.frame:IsShown()
+        and not CS.talentPickerMode
+end
+
+local function IsConfigSpellOverrideRefreshMode()
+    if not IsConfigFrameOpenForRefresh() then
+        return false
+    end
+    if CS.browseMode or CS.resourceBarPanelActive then
+        return false
+    end
+    if CountSelections(CS.selectedGroups) >= 2 then
+        return false
+    end
+    return CS.selectedContainer ~= nil
+end
+
+local function IsPendingOverrideSpellId(spellID, pendingSpellIds)
+    return spellID and spellID ~= 0 and pendingSpellIds and pendingSpellIds[spellID] == true
+end
+
+local function DoesButtonReferencePendingOverrideSpell(buttonData, pendingSpellIds)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+    if IsPendingOverrideSpellId(buttonData.id, pendingSpellIds) then
+        return true
+    end
+
+    local overrideSpellID = C_Spell.GetOverrideSpell(buttonData.id)
+    return IsPendingOverrideSpellId(overrideSpellID, pendingSpellIds)
+end
+
+local function GetSelectedConfigButtonData()
+    if not (CS.selectedGroup and CS.selectedButton) then
+        return nil
+    end
+    if next(CS.selectedButtons) then
+        return nil
+    end
+
+    local profile = GetConfigProfile()
+    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
+    return group and group.buttons and group.buttons[CS.selectedButton]
+end
+
+function CooldownCompanion:DoesCurrentConfigSelectionReferenceSpell(pendingSpellIds)
+    if not IsConfigSpellOverrideRefreshMode() then
+        return false
+    end
+
+    local selectedButtonData = GetSelectedConfigButtonData()
+    if DoesButtonReferencePendingOverrideSpell(selectedButtonData, pendingSpellIds) then
+        return true
+    end
+
+    local panels = self:GetPanels(CS.selectedContainer)
+    for _, panelInfo in ipairs(panels or {}) do
+        local panelId = panelInfo.groupId
+        local panel = panelInfo.group
+        local entriesVisible = not CS.collapsedPanels[panelId]
+        if entriesVisible and panel and panel.buttons then
+            for _, buttonData in ipairs(panel.buttons) do
+                if DoesButtonReferencePendingOverrideSpell(buttonData, pendingSpellIds) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
+    if not self:DoesCurrentConfigSelectionReferenceSpell(pendingSpellIds) then
+        return false
+    end
+
+    local savedCol2 = SaveScrollState(CS.col2Scroll)
+    local savedButtonSettings = SaveScrollState(CS.buttonSettingsScroll)
+    local selectedEntryAffected = DoesButtonReferencePendingOverrideSpell(GetSelectedConfigButtonData(), pendingSpellIds)
+
+    RefreshColumn2()
+    if selectedEntryAffected then
+        RefreshColumn3()
+    end
+    ApplyConfigColumnTitles(CS.configFrame)
+
+    RestoreScrollState(CS.col2Scroll, savedCol2)
+    if selectedEntryAffected then
+        RestoreScrollState(CS.buttonSettingsScroll, savedButtonSettings)
+    end
+
+    return true
+end
+
+function CooldownCompanion:QueueOverrideConfigRefresh(baseSpellID, overrideSpellID)
+    if not IsConfigFrameOpenForRefresh() then
+        return
+    end
+
+    if baseSpellID and baseSpellID ~= 0 then
+        pendingOverrideSpellIds[baseSpellID] = true
+    end
+    if overrideSpellID and overrideSpellID ~= 0 then
+        pendingOverrideSpellIds[overrideSpellID] = true
+    end
+    if not next(pendingOverrideSpellIds) then
+        return
+    end
+
+    pendingOverrideConfigRefreshToken = pendingOverrideConfigRefreshToken + 1
+    local token = pendingOverrideConfigRefreshToken
+    C_Timer.After(0.1, function()
+        if pendingOverrideConfigRefreshToken ~= token then return end
+        if not IsConfigFrameOpenForRefresh() then
+            wipe(pendingOverrideSpellIds)
+            return
+        end
+
+        local queuedSpellIds = pendingOverrideSpellIds
+        pendingOverrideSpellIds = {}
+        self:RefreshConfigForSpellOverride(queuedSpellIds)
+    end)
+end
+
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
@@ -1984,33 +2149,6 @@ function CooldownCompanion:RefreshConfigPanel()
     end
 
     -- Save AceGUI scroll state before any column rebuilds.
-    local function saveScroll(widget)
-        if not widget then return nil end
-        local s = widget.status or widget.localstatus
-        if s then
-            local offset = tonumber(s.offset) or 0
-            local scrollvalue = tonumber(s.scrollvalue) or 0
-            if offset > 0 or scrollvalue > 0 then
-                return { offset = s.offset, scrollvalue = s.scrollvalue }
-            end
-        end
-    end
-    local function restoreScroll(widget, saved)
-        if not saved or not widget then return end
-        local s = widget.status or widget.localstatus
-        if s then
-            s.offset = saved.offset
-            s.scrollvalue = saved.scrollvalue
-        end
-    end
-    local function clearScroll(widget)
-        if not widget then return end
-        local s = widget.status or widget.localstatus
-        if s then
-            s.offset = nil
-            s.scrollvalue = nil
-        end
-    end
     local function getAutoAddScrollKey()
         local state = CS.autoAddFlowState
         if not (CS.autoAddFlowActive and state) then return nil end
@@ -2049,17 +2187,17 @@ function CooldownCompanion:RefreshConfigPanel()
         return col3._customAuraSubScroll or col3._customAuraScroll
     end
 
-    local saved1   = saveScroll(CS.col1Scroll)
-    local saved2   = saveScroll(CS.col2Scroll)
+    local saved1   = SaveScrollState(CS.col1Scroll)
+    local saved2   = SaveScrollState(CS.col2Scroll)
     local col2Before = CS.configFrame and CS.configFrame.col2
-    local savedBarsStyling = saveScroll(getBarsStylingScrollWidget(col2Before))
+    local savedBarsStyling = SaveScrollState(getBarsStylingScrollWidget(col2Before))
     local savedBarsStylingKey = getBarsStylingScrollKey()
     local col3Before = CS.configFrame and CS.configFrame.col3
-    local savedCab = saveScroll(getCustomAuraScrollWidget(col3Before))
+    local savedCab = SaveScrollState(getCustomAuraScrollWidget(col3Before))
     local savedCabKey = getCustomAuraScrollKey()
-    local savedAaf = col3Before and col3Before._autoAddScroll and saveScroll(col3Before._autoAddScroll)
+    local savedAaf = col3Before and col3Before._autoAddScroll and SaveScrollState(col3Before._autoAddScroll)
     local savedAafKey = getAutoAddScrollKey()
-    local savedBtn = saveScroll(buttonSettingsScroll)
+    local savedBtn = SaveScrollState(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
         RefreshProfileBar(CS.configFrame.profileBar)
@@ -2078,16 +2216,16 @@ function CooldownCompanion:RefreshConfigPanel()
     ApplyConfigColumnTitles(CS.configFrame)
 
     -- Restore AceGUI scroll state.
-    restoreScroll(CS.col1Scroll, saved1)
-    restoreScroll(CS.col2Scroll, saved2)
+    RestoreScrollState(CS.col1Scroll, saved1)
+    RestoreScrollState(CS.col2Scroll, saved2)
     local col2After = CS.configFrame and CS.configFrame.col2
     local barsStylingAfter = getBarsStylingScrollWidget(col2After)
     if barsStylingAfter then
         local currentBarsKey = getBarsStylingScrollKey()
         if savedBarsStyling and savedBarsStylingKey and currentBarsKey and savedBarsStylingKey == currentBarsKey then
-            restoreScroll(barsStylingAfter, savedBarsStyling)
+            RestoreScrollState(barsStylingAfter, savedBarsStyling)
         else
-            clearScroll(barsStylingAfter)
+            ClearScrollState(barsStylingAfter)
         end
     end
     local col3After = CS.configFrame and CS.configFrame.col3
@@ -2095,20 +2233,20 @@ function CooldownCompanion:RefreshConfigPanel()
     if customAuraAfter then
         local currentCabKey = getCustomAuraScrollKey()
         if savedCab and savedCabKey and currentCabKey and savedCabKey == currentCabKey then
-            restoreScroll(customAuraAfter, savedCab)
+            RestoreScrollState(customAuraAfter, savedCab)
         else
-            clearScroll(customAuraAfter)
+            ClearScrollState(customAuraAfter)
         end
     end
     if col3After and col3After._autoAddScroll then
         local currentAafKey = getAutoAddScrollKey()
         if savedAaf and savedAafKey and currentAafKey and savedAafKey == currentAafKey then
-            restoreScroll(col3After._autoAddScroll, savedAaf)
+            RestoreScrollState(col3After._autoAddScroll, savedAaf)
         else
-            clearScroll(col3After._autoAddScroll)
+            ClearScrollState(col3After._autoAddScroll)
         end
     end
-    restoreScroll(buttonSettingsScroll, savedBtn)
+    RestoreScrollState(buttonSettingsScroll, savedBtn)
 
 end
 
