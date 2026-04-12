@@ -105,6 +105,9 @@ local function ResyncInheritedUnitFrameAlpha()
 end
 
 local function QueueInheritedUnitFrameAlphaResync()
+    local latest = GetFrameAnchoringSettings()
+    if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return end
+
     rapidAlphaSyncUntil = GetTime() + 0.2
     ResyncInheritedUnitFrameAlpha()
     C_Timer.After(0, function()
