@@ -14,6 +14,17 @@ local function GetEnsureCustomAuraBarAuraUnit()
     return rb and rb.EnsureCustomAuraBarAuraUnit
 end
 
+local function BackfillLegacyResourceAuraUnit(resourceAuraEntry)
+    if type(resourceAuraEntry) ~= "table" then
+        return
+    end
+    if resourceAuraEntry.auraUnit == "player" or resourceAuraEntry.auraUnit == "target" then
+        return
+    end
+    resourceAuraEntry.auraUnit = "player"
+    resourceAuraEntry.auraUnitExplicit = nil
+end
+
 local SCOPED_BAR_SYSTEMS = {
     resourceBars = {
         storeKey = "resourceBarsByChar",
@@ -254,6 +265,8 @@ local function ClearLegacyResourceAuraOverlayFields(resource)
     resource.auraActiveColor = nil
     resource.auraColorTrackingMode = nil
     resource.auraColorMaxStacks = nil
+    resource.auraUnit = nil
+    resource.auraUnitExplicit = nil
 end
 
 local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
@@ -284,6 +297,7 @@ local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
                             filteredEntries = {}
                         end
                         filteredEntries[numericSpecID] = CopyTable(entry)
+                        BackfillLegacyResourceAuraUnit(filteredEntries[numericSpecID])
                     end
                 end
             end
@@ -303,6 +317,7 @@ local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
                         auraColorMaxStacks = resource.auraColorMaxStacks,
                     },
                 }
+                BackfillLegacyResourceAuraUnit(resource.auraOverlayEntries[currentSpecID])
                 ClearLegacyResourceAuraOverlayFields(resource)
                 hasLegacyData = false
             end

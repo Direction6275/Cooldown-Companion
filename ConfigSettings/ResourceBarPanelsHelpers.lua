@@ -69,6 +69,9 @@ local SPEC_RESOURCES_CONFIG = RB.SPEC_RESOURCES_CONFIG
 local IsAstralPowerAvailableForCurrentDruidSpec = RB.IsAstralPowerAvailableForCurrentDruidSpec
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
+local GetResolvedResourceAuraUnit = RB.GetResolvedResourceAuraUnit
+local EnsureResourceAuraUnit = RB.EnsureResourceAuraUnit
+local RefreshResourceAuraUnitForSpell = RB.RefreshResourceAuraUnitForSpell
 
 ------------------------------------------------------------------------
 -- Aura bar autocomplete cache (TrackedBuff + TrackedBar spells only)
@@ -367,6 +370,30 @@ local function GetResourceAuraEntryConfig(resource, specID)
     return nil
 end
 
+local function GetOrCreateResourceAuraEntryConfig(resource, specID)
+    if type(resource) ~= "table" or not specID then
+        return nil
+    end
+
+    if type(resource.auraOverlayEntries) ~= "table" then
+        resource.auraOverlayEntries = {}
+    end
+
+    local entry = resource.auraOverlayEntries[specID]
+    if type(entry) ~= "table" then
+        entry = resource.auraOverlayEntries[tostring(specID)]
+        if type(entry) == "table" then
+            resource.auraOverlayEntries[tostring(specID)] = nil
+            resource.auraOverlayEntries[specID] = entry
+        else
+            entry = {}
+            resource.auraOverlayEntries[specID] = entry
+        end
+    end
+
+    return entry
+end
+
 local function IsResourceAuraOverlayEnabledConfig(resource)
     if type(resource) ~= "table" then
         return false
@@ -496,6 +523,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
     end
 
     local spellID = tonumber(entry and entry.auraColorSpellID) or nil
+    local resolvedAuraUnit = GetResolvedResourceAuraUnit and GetResolvedResourceAuraUnit(entry, spellID) or "player"
     local spellEdit = AceGUI:Create("EditBox")
     if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
     spellEdit:SetLabel(resourceName .. " Aura (Spell ID or Name)")
@@ -539,6 +567,34 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
     end
 
     AddCdmAuraReadinessWarning(container, spellID)
+
+    local auraUnitDrop = AceGUI:Create("Dropdown")
+    auraUnitDrop:SetLabel("Aura Unit")
+    auraUnitDrop:SetList({
+        player = "Player",
+        target = "Target",
+    }, { "player", "target" })
+    auraUnitDrop:SetValue(resolvedAuraUnit)
+    auraUnitDrop:SetFullWidth(true)
+    auraUnitDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        if val ~= "player" and val ~= "target" then
+            return
+        end
+        if options.onAuraUnitChanged then
+            options.onAuraUnitChanged(val)
+        end
+    end)
+    container:AddChild(auraUnitDrop)
+    CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT",
+        4, 0, {
+        "Aura Unit",
+        {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs and procs on yourself.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
+    local auraUnitSpacer = AceGUI:Create("Label")
+    auraUnitSpacer:SetText(" ")
+    auraUnitSpacer:SetFullWidth(true)
+    container:AddChild(auraUnitSpacer)
 
     local _auraProxy = { auraActiveColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR) }
     AddColorPicker(container, _auraProxy, "auraActiveColor", resourceName .. " Aura Active Color", DEFAULT_RESOURCE_AURA_ACTIVE_COLOR, false,
@@ -621,6 +677,8 @@ local function ClearLegacyResourceAuraFieldsConfig(resource)
     resource.auraActiveColor = nil
     resource.auraColorTrackingMode = nil
     resource.auraColorMaxStacks = nil
+    resource.auraUnit = nil
+    resource.auraUnitExplicit = nil
 end
 
 local function ClearResourceAuraEntryConfig(powerType, resource, specID)
@@ -690,41 +748,59 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
 
     AddResourceAuraEntryFields(container, powerType, resourceName, entryForSpec, {
         onSpellChanged = function(id)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
+            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+            if not entry then
+                return
             end
-            res.auraOverlayEntries[currentSpecID].auraColorSpellID = id
+            entry.auraColorSpellID = id
+            if RefreshResourceAuraUnitForSpell then
+                RefreshResourceAuraUnitForSpell(entry, id)
+            end
+            ClearLegacyResourceAuraFieldsConfig(res)
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+        onAuraUnitChanged = function(val)
+            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+            if not entry then
+                return
+            end
+            if EnsureResourceAuraUnit then
+                EnsureResourceAuraUnit(entry, entry.auraColorSpellID, val, true)
+            else
+                entry.auraUnit = val
+                entry.auraUnitExplicit = true
+            end
             ClearLegacyResourceAuraFieldsConfig(res)
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
         end,
         onColorChanged = function(r, g, b)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
+            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+            if not entry then
+                return
             end
-            res.auraOverlayEntries[currentSpecID].auraActiveColor = { r, g, b }
+            entry.auraActiveColor = { r, g, b }
         end,
         onColorConfirmed = function(r, g, b)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
+            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+            if not entry then
+                return
             end
-            res.auraOverlayEntries[currentSpecID].auraActiveColor = { r, g, b }
+            entry.auraActiveColor = { r, g, b }
             ClearLegacyResourceAuraFieldsConfig(res)
             CooldownCompanion:ApplyResourceBars()
         end,
         onTrackingChanged = function(val)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
+            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+            if not entry then
+                return
             end
-            res.auraOverlayEntries[currentSpecID].auraColorTrackingMode = val
+            entry.auraColorTrackingMode = val
             if val == "stacks" then
-                local current = tonumber(res.auraOverlayEntries[currentSpecID].auraColorMaxStacks)
+                local current = tonumber(entry.auraColorMaxStacks)
                 if not current or current < 2 then
-                    res.auraOverlayEntries[currentSpecID].auraColorMaxStacks = 2
+                    entry.auraColorMaxStacks = 2
                 end
             end
             ClearLegacyResourceAuraFieldsConfig(res)
@@ -732,11 +808,11 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
             CooldownCompanion:RefreshConfigPanel()
         end,
         onMaxStacksChanged = function(parsed)
-            if not res.auraOverlayEntries then res.auraOverlayEntries = {} end
-            if not res.auraOverlayEntries[currentSpecID] then
-                res.auraOverlayEntries[currentSpecID] = {}
+            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+            if not entry then
+                return
             end
-            res.auraOverlayEntries[currentSpecID].auraColorMaxStacks = parsed
+            entry.auraColorMaxStacks = parsed
             ClearLegacyResourceAuraFieldsConfig(res)
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()

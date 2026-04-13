@@ -194,6 +194,73 @@ local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
     return EnsureCustomAuraBarAuraUnit(cabConfig, resolvedSpellID, GetDefaultCustomAuraUnit(resolvedSpellID), false)
 end
 
+local function IsValidResourceAuraUnit(unit)
+    return unit == "player" or unit == "target"
+end
+
+local function GetDefaultResourceAuraUnit(spellID)
+    return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
+end
+
+local function HasExplicitResourceAuraUnit(resourceAuraEntry)
+    return type(resourceAuraEntry) == "table"
+        and resourceAuraEntry.auraUnitExplicit == true
+        and IsValidResourceAuraUnit(resourceAuraEntry.auraUnit)
+end
+
+local function GetResolvedResourceAuraUnit(resourceAuraEntry, spellID)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
+        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
+    end
+
+    if type(resourceAuraEntry) == "table" and IsValidResourceAuraUnit(resourceAuraEntry.auraUnit) then
+        return resourceAuraEntry.auraUnit
+    end
+
+    return GetDefaultResourceAuraUnit(resolvedSpellID)
+end
+
+local function EnsureResourceAuraUnit(resourceAuraEntry, spellID, unit, explicit)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
+        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
+    end
+
+    if type(resourceAuraEntry) == "table" then
+        local wasExplicit = HasExplicitResourceAuraUnit(resourceAuraEntry)
+        local resolvedUnit = IsValidResourceAuraUnit(unit) and unit
+            or GetResolvedResourceAuraUnit(resourceAuraEntry, resolvedSpellID)
+
+        resourceAuraEntry.auraUnit = resolvedUnit
+
+        if IsValidResourceAuraUnit(unit) then
+            resourceAuraEntry.auraUnitExplicit = explicit == false and nil or true
+        elseif not wasExplicit then
+            resourceAuraEntry.auraUnitExplicit = nil
+        end
+
+        if IsValidResourceAuraUnit(resourceAuraEntry.auraUnit) then
+            return resourceAuraEntry.auraUnit
+        end
+    end
+
+    return GetDefaultResourceAuraUnit(resolvedSpellID)
+end
+
+local function RefreshResourceAuraUnitForSpell(resourceAuraEntry, spellID)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
+        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
+    end
+
+    if HasExplicitResourceAuraUnit(resourceAuraEntry) then
+        return resourceAuraEntry.auraUnit
+    end
+
+    return EnsureResourceAuraUnit(resourceAuraEntry, resolvedSpellID, GetDefaultResourceAuraUnit(resolvedSpellID), false)
+end
+
 local function CreateDefaultLayoutOrder()
     return {
         resources = {},
@@ -638,6 +705,12 @@ RB.GetDefaultCustomAuraUnit = GetDefaultCustomAuraUnit
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.RefreshCustomAuraBarAuraUnitForSpell = RefreshCustomAuraBarAuraUnitForSpell
+RB.IsValidResourceAuraUnit = IsValidResourceAuraUnit
+RB.GetDefaultResourceAuraUnit = GetDefaultResourceAuraUnit
+RB.HasExplicitResourceAuraUnit = HasExplicitResourceAuraUnit
+RB.GetResolvedResourceAuraUnit = GetResolvedResourceAuraUnit
+RB.EnsureResourceAuraUnit = EnsureResourceAuraUnit
+RB.RefreshResourceAuraUnitForSpell = RefreshResourceAuraUnitForSpell
 RB.CreateDefaultLayoutOrder = CreateDefaultLayoutOrder
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetAnchorOffset = GetAnchorOffset
