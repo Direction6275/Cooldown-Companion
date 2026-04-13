@@ -31,6 +31,7 @@ local GetResourceColors = RB.GetResourceColors
 local GetContinuousTickConfig = RB.GetContinuousTickConfig
 local GetSafeRGBColor = RB.GetSafeRGBColor
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
+local GetResolvedResourceAuraUnit = RB.GetResolvedResourceAuraUnit
 
 ------------------------------------------------------------------------
 -- Resource Aura Overlay
@@ -158,9 +159,11 @@ local function GetResourceAuraState(powerType, settings, auraActiveCache)
         return nil, nil, false
     end
 
+    local configUnit = GetResolvedResourceAuraUnit and GetResolvedResourceAuraUnit(auraEntry, auraSpellID) or "player"
+    local cacheKey = configUnit .. ":" .. auraSpellID
     local cached
     if auraActiveCache then
-        cached = auraActiveCache[auraSpellID]
+        cached = auraActiveCache[cacheKey]
     end
 
     if not cached then
@@ -170,20 +173,23 @@ local function GetResourceAuraState(powerType, settings, auraActiveCache)
             local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[auraSpellID]
             local instId = viewerFrame and viewerFrame.auraInstanceID
             if instId then
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
-                if auraData then
-                    cached.active = true
-                    if type(auraData.applications) == "number" then
-                        -- applications can be secret in combat for some auras.
-                        -- Keep as pass-through only (no Lua math/comparisons).
-                        cached.applications = auraData.applications
-                        cached.hasApplications = true
+                local viewerUnit = viewerFrame.auraDataUnit or configUnit
+                if viewerUnit == configUnit then
+                    local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(configUnit, instId)
+                    if auraData then
+                        cached.active = true
+                        if type(auraData.applications) == "number" then
+                            -- applications can be secret in combat for some auras.
+                            -- Keep as pass-through only (no Lua math/comparisons).
+                            cached.applications = auraData.applications
+                            cached.hasApplications = true
+                        end
                     end
                 end
             end
         end
 
-        if not cached.active then
+        if not cached.active and configUnit == "player" then
             -- Fallback for non-CDM spell IDs. In combat, secret aura restrictions can
             -- cause this API to return nil for some active auras.
             local auraData = C_UnitAuras.GetPlayerAuraBySpellID(auraSpellID)
@@ -199,7 +205,7 @@ local function GetResourceAuraState(powerType, settings, auraActiveCache)
         end
 
         if auraActiveCache then
-            auraActiveCache[auraSpellID] = cached
+            auraActiveCache[cacheKey] = cached
         end
     end
 

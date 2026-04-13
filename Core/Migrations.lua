@@ -1313,6 +1313,8 @@ local function ClearLegacyResourceAuraOverlayFields(resource)
     resource.auraActiveColor = nil
     resource.auraColorTrackingMode = nil
     resource.auraColorMaxStacks = nil
+    resource.auraUnit = nil
+    resource.auraUnitExplicit = nil
 end
 
 function CooldownCompanion:MigrateResourceAuraOverlayEntries()
