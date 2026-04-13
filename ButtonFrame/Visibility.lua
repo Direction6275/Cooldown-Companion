@@ -60,6 +60,8 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
        and not buttonData.hideWhileUnusable then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
+        button._visibilityReasonBits = 0
+        button._visibilityReasonMode = "visible"
         return
     end
 
@@ -167,15 +169,21 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
                     local group = groupId and CooldownCompanion.db.profile.groups[groupId]
                     button._visibilityHidden = false
                     button._visibilityAlphaOverride = group and group.baselineAlpha or 0.3
+                    button._visibilityReasonBits = hideReasons
+                    button._visibilityReasonMode = "dimmed"
                     return
                 end
             end
         end
         button._visibilityHidden = true
         button._visibilityAlphaOverride = nil
+        button._visibilityReasonBits = hideReasons
+        button._visibilityReasonMode = "hidden"
     else
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
+        button._visibilityReasonBits = 0
+        button._visibilityReasonMode = "visible"
     end
 end
 
