@@ -407,6 +407,9 @@ end
 
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
+    if CancelFirstIconPanelTutorial then
+        CancelFirstIconPanelTutorial("profile_changed")
+    end
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
     wipe(CS.collapsedPanels)

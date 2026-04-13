@@ -16,8 +16,6 @@ local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
-local NotifyTutorialAction = ST._NotifyTutorialAction
-local ConsumeTutorialAutoAddSeed = ST._ConsumeTutorialAutoAddSeed
 
 local ICON_FALLBACK = 134400
 local ACTION_BAR_COUNT = 6
@@ -1057,14 +1055,6 @@ local function RenderStep3(container, state)
         local applyResult = ApplyPreviewToGroup(state.groupID, preview, state.selectedEntries, true)
         if applyResult and applyResult.applied then
             PersistAutoAddPrefs(state)
-            if NotifyTutorialAction then
-                NotifyTutorialAction("auto_add_applied", {
-                    groupId = state.groupID,
-                    firstAddedButtonIndex = applyResult.firstAddedButtonIndex,
-                    addedButtonIndexes = applyResult.addedButtonIndexes,
-                    totalAdded = applyResult.totalAdded,
-                })
-            end
             CancelAutoAddFlow()
             RefreshFlowUI()
         end
@@ -1097,14 +1087,13 @@ local function OpenAutoAddFlow()
     end
 
     local prefs = EnsureAutoAddPrefs()
-    local tutorialSeed = ConsumeTutorialAutoAddSeed and ConsumeTutorialAutoAddSeed(groupID)
     CS.autoAddFlowSerial = (tonumber(CS.autoAddFlowSerial) or 0) + 1
     CS.autoAddFlowActive = true
     CS.autoAddFlowState = {
         groupID = groupID,
         step = AUTO_ADD_STEP_SOURCE,
-        source = NormalizeSource((tutorialSeed and tutorialSeed.source) or prefs.lastSource),
-        selectedBars = NormalizeBarSelection((tutorialSeed and tutorialSeed.selectedBars) or prefs.selectedBars),
+        source = NormalizeSource(prefs.lastSource),
+        selectedBars = NormalizeBarSelection(prefs.selectedBars),
         selectedEntries = {},
         preview = nil,
         hasInteractedStep2 = false,

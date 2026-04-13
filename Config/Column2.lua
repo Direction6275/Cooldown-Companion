@@ -2362,11 +2362,6 @@ local function RefreshColumn2()
                         autoAddBtn:SetCallback("OnClick", function()
                             CS.selectedGroup = CS.addingToPanelId
                             OpenAutoAddFlow()
-                            if NotifyTutorialAction then
-                                NotifyTutorialAction("auto_add_opened", {
-                                    groupId = CS.addingToPanelId,
-                                })
-                            end
                         end)
                         autoAddBtn:SetCallback("OnEnter", function(widget)
                             GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")

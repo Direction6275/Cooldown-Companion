@@ -700,28 +700,9 @@ local function NotifyTutorialAction(action, payload)
     end
 end
 
-local function ConsumeTutorialAutoAddSeed(groupID)
-    local runtime = GetRuntime()
-    if not (runtime and runtime.active) then
-        return nil
-    end
-    if runtime.step ~= "open_auto_add" then
-        return nil
-    end
-    if groupID ~= CS.selectedGroup then
-        return nil
-    end
-
-    return {
-        source = "actionbars",
-        selectedBars = { true, true, true, true, true, true },
-    }
-end
-
 ST._MaybeAutoStartFirstIconPanelTutorial = MaybeAutoStartFirstIconPanelTutorial
 ST._StartFirstIconPanelTutorial = StartFirstIconPanelTutorial
 ST._CancelFirstIconPanelTutorial = CancelFirstIconPanelTutorial
 ST._NotifyTutorialAction = NotifyTutorialAction
 ST._RebuildTutorialAnchors = RebuildTutorialAnchors
 ST._RefreshTutorialPlacement = RefreshTutorialPlacement
-ST._ConsumeTutorialAutoAddSeed = ConsumeTutorialAutoAddSeed
