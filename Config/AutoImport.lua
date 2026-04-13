@@ -16,6 +16,8 @@ local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
+local NotifyTutorialAction = ST._NotifyTutorialAction
+local ConsumeTutorialAutoAddSeed = ST._ConsumeTutorialAutoAddSeed
 
 local ICON_FALLBACK = 134400
 local ACTION_BAR_COUNT = 6
@@ -626,6 +628,7 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
 
     local addedSpells, addedAuras, addedItems = 0, 0, 0
     local applySkipped = 0
+    local addedButtonIndexes = {}
 
     for _, entry in ipairs(preview.spells) do
         if selectedEntries[entry.importKey] then
@@ -635,8 +638,13 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
                 if IsSpellInCDMCooldown(entry.id) and IsSpellInCDMBuffBar(entry.id) then
                     forceAura = false
                 end
-                CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, nil, forceAura)
-                addedSpells = addedSpells + 1
+                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, nil, forceAura)
+                if buttonIndex then
+                    addedSpells = addedSpells + 1
+                    addedButtonIndexes[#addedButtonIndexes + 1] = buttonIndex
+                else
+                    applySkipped = applySkipped + 1
+                end
             else
                 applySkipped = applySkipped + 1
             end
@@ -648,8 +656,13 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
             local spellInfo = C_Spell.GetSpellInfo(entry.id)
             if spellInfo and spellInfo.name then
                 local isPassive = IsPassiveOrProc(entry.id) and true or nil
-                CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, isPassive, true)
-                addedAuras = addedAuras + 1
+                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, isPassive, true)
+                if buttonIndex then
+                    addedAuras = addedAuras + 1
+                    addedButtonIndexes[#addedButtonIndexes + 1] = buttonIndex
+                else
+                    applySkipped = applySkipped + 1
+                end
             else
                 applySkipped = applySkipped + 1
             end
@@ -660,8 +673,13 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
         if selectedEntries[entry.importKey] then
             if C_Item.GetItemSpell(entry.id) then
                 local itemName = C_Item.GetItemNameByID(entry.id) or entry.name or ("Item " .. entry.id)
-                CooldownCompanion:AddButtonToGroup(groupID, "item", entry.id, itemName)
-                addedItems = addedItems + 1
+                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "item", entry.id, itemName)
+                if buttonIndex then
+                    addedItems = addedItems + 1
+                    addedButtonIndexes[#addedButtonIndexes + 1] = buttonIndex
+                else
+                    applySkipped = applySkipped + 1
+                end
             else
                 applySkipped = applySkipped + 1
             end
@@ -680,7 +698,16 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
         .. addedItems .. " items). "
         .. applySkipped .. " skipped during apply."
     )
-    return true
+    return {
+        applied = true,
+        totalAdded = totalAdded,
+        addedSpells = addedSpells,
+        addedAuras = addedAuras,
+        addedItems = addedItems,
+        applySkipped = applySkipped,
+        addedButtonIndexes = addedButtonIndexes,
+        firstAddedButtonIndex = addedButtonIndexes[1],
+    }
 end
 
 local function CountSelectedBars(selectedBars)
@@ -1027,8 +1054,17 @@ local function RenderStep3(container, state)
             return
         end
 
-        if ApplyPreviewToGroup(state.groupID, preview, state.selectedEntries, true) then
+        local applyResult = ApplyPreviewToGroup(state.groupID, preview, state.selectedEntries, true)
+        if applyResult and applyResult.applied then
             PersistAutoAddPrefs(state)
+            if NotifyTutorialAction then
+                NotifyTutorialAction("auto_add_applied", {
+                    groupId = state.groupID,
+                    firstAddedButtonIndex = applyResult.firstAddedButtonIndex,
+                    addedButtonIndexes = applyResult.addedButtonIndexes,
+                    totalAdded = applyResult.totalAdded,
+                })
+            end
             CancelAutoAddFlow()
             RefreshFlowUI()
         end
@@ -1061,13 +1097,14 @@ local function OpenAutoAddFlow()
     end
 
     local prefs = EnsureAutoAddPrefs()
+    local tutorialSeed = ConsumeTutorialAutoAddSeed and ConsumeTutorialAutoAddSeed(groupID)
     CS.autoAddFlowSerial = (tonumber(CS.autoAddFlowSerial) or 0) + 1
     CS.autoAddFlowActive = true
     CS.autoAddFlowState = {
         groupID = groupID,
         step = AUTO_ADD_STEP_SOURCE,
-        source = NormalizeSource(prefs.lastSource),
-        selectedBars = NormalizeBarSelection(prefs.selectedBars),
+        source = NormalizeSource((tutorialSeed and tutorialSeed.source) or prefs.lastSource),
+        selectedBars = NormalizeBarSelection((tutorialSeed and tutorialSeed.selectedBars) or prefs.selectedBars),
         selectedEntries = {},
         preview = nil,
         hasInteractedStep2 = false,

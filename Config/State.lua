@@ -130,6 +130,12 @@ ST._configState = {
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
     newInput = "",
+    tutorialAnchors = {},
+    tutorialFrame = nil,
+    tutorialHighlight = nil,
+    tutorialArrow = nil,
+    tutorialRuntime = nil,
+    tutorialButton = nil,
 
     -- Main frame reference
     configFrame = nil,
@@ -204,6 +210,7 @@ ST._configState = {
     -- Auto Add flow state (Column 3 wizard mode)
     autoAddFlowActive = false,
     autoAddFlowState = nil,
+    autoAddFlowSerial = 0,
     configShiftTooltipActive = nil,
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)

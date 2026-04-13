@@ -12,6 +12,13 @@ local defaults = {
             lastSeenVersion = nil,
             fontSize = 13,
         },
+        tutorials = {
+            firstIconPanel = {
+                completed = false,
+                dismissed = false,
+                lastVersionSeen = nil,
+            },
+        },
     },
     profile = {
         minimap = {

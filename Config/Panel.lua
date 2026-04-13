@@ -26,6 +26,11 @@ local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
 local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
+local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
+local StartFirstIconPanelTutorial = ST._StartFirstIconPanelTutorial
+local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
+local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
+local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -510,6 +515,9 @@ local function CreateConfigPanel()
     -- isCollapsing flag prevents cleanup when collapsing (vs truly closing)
     local isCollapsing = false
     content:HookScript("OnHide", function()
+        if CancelFirstIconPanelTutorial then
+            CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
+        end
         if isCollapsing then return end
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
@@ -849,6 +857,30 @@ local function CreateConfigPanel()
     end)
     browseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    local tutorialBtn = CreateFrame("Button", nil, content, "MainHelpPlateButton")
+    tutorialBtn:SetScale(0.5)
+    tutorialBtn:SetFrameLevel(content:GetFrameLevel() + 5)
+    if tutorialBtn.BigIPulse then
+        tutorialBtn.BigIPulse:Hide()
+    end
+    if tutorialBtn.RingPulse then
+        tutorialBtn.RingPulse:Hide()
+    end
+    tutorialBtn:SetScript("OnClick", function()
+        CloseDropDownMenus()
+        if StartFirstIconPanelTutorial then
+            StartFirstIconPanelTutorial(true)
+        end
+    end)
+    tutorialBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Tutorial")
+        GameTooltip:AddLine("Replay the first icon panel tutorial.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    tutorialBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    CS.tutorialButton = tutorialBtn
+
     local changelogOverlay
     local changelogBtn
     local changelogBtnBorder = nil
@@ -896,6 +928,7 @@ local function CreateConfigPanel()
     cdmBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
     browseBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", browseBtn, "LEFT", -4, 0)
+    tutorialBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", 4, 1)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -2248,6 +2281,13 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     RestoreScrollState(buttonSettingsScroll, savedBtn)
 
+    if RebuildTutorialAnchors then
+        RebuildTutorialAnchors()
+    end
+    if RefreshTutorialPlacement then
+        RefreshTutorialPlacement()
+    end
+
 end
 
 ------------------------------------------------------------------------
@@ -2270,6 +2310,9 @@ function CooldownCompanion:ToggleConfig()
             end
             CooldownCompanion:RefreshConfigPanel()
             MaybeAutoOpenChangelog()
+            if MaybeAutoStartFirstIconPanelTutorial then
+                MaybeAutoStartFirstIconPanelTutorial()
+            end
         end)
         return -- AceGUI Frame is already shown on creation
     end
@@ -2290,6 +2333,9 @@ function CooldownCompanion:ToggleConfig()
         CS.configFrame.frame:Show()
         self:RefreshConfigPanel()
         MaybeAutoOpenChangelog()
+        if MaybeAutoStartFirstIconPanelTutorial then
+            MaybeAutoStartFirstIconPanelTutorial()
+        end
     end
 end
 

@@ -15,6 +15,7 @@ local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local GetButtonIcon = ST._GetButtonIcon
 local CDM_VIEWER_NAMES = ST._CDM_VIEWER_NAMES
+local NotifyTutorialAction = ST._NotifyTutorialAction
 
 -- After a successful add, set selection state to the new button so the
 -- next RefreshConfigPanel shows its settings in Column 3.
@@ -697,6 +698,13 @@ local function OnAutocompleteSelect(entry)
         added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura)
     end
     if added then
+        if NotifyTutorialAction and CS.selectedGroup and CS.selectedButton then
+            NotifyTutorialAction("inline_add_succeeded", {
+                groupId = CS.selectedGroup,
+                buttonIndex = CS.selectedButton,
+                rawInput = entry.name,
+            })
+        end
         CS.newInput = ""
         CS.pendingEditBoxFocus = true
         CooldownCompanion:RefreshConfigPanel()
