@@ -411,6 +411,85 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     return inferredAuraSpellID
 end
 
+function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return nil
+    end
+
+    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+
+    local function ResolveSingleSpellID(rawIDs)
+        if not rawIDs then
+            return nil
+        end
+
+        local resolvedID
+        for id in tostring(rawIDs):gmatch("%d+") do
+            local numericID = tonumber(id)
+            if numericID and numericID ~= 0 then
+                if resolvedID and resolvedID ~= numericID then
+                    return nil
+                end
+                resolvedID = numericID
+            end
+        end
+
+        return resolvedID
+    end
+
+    local explicitAuraID = ResolveSingleSpellID(buttonData.auraSpellID)
+    if explicitAuraID then
+        return explicitAuraID
+    end
+
+    local resolvedAuraID = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+    if resolvedAuraID then
+        return resolvedAuraID
+    end
+
+    local buffViewerFrame = self:ResolveBuffViewerFrameForSpell(baseId)
+        or (baseId ~= buttonData.id and self:ResolveBuffViewerFrameForSpell(buttonData.id))
+    if not (buffViewerFrame and type(buffViewerFrame.cooldownInfo) == "table") then
+        return nil
+    end
+
+    local info = buffViewerFrame.cooldownInfo
+    local metadataCandidate
+    for _, spellID in ipairs({info.spellID, info.overrideSpellID, info.overrideTooltipSpellID}) do
+        local numericID = tonumber(spellID)
+        if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+            if metadataCandidate and metadataCandidate ~= numericID then
+                return nil
+            end
+            metadataCandidate = numericID
+        end
+    end
+    if info.linkedSpellIDs then
+        for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
+            local numericID = tonumber(linkedSpellID)
+            if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+                if metadataCandidate and metadataCandidate ~= numericID then
+                    return nil
+                end
+                metadataCandidate = numericID
+            end
+        end
+    end
+
+    return metadataCandidate
+end
+
+function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
+    local resolvedSpellID = self:ResolveStandaloneAuraDefaultSpellID(buttonData)
+    if resolvedSpellID then
+        return C_Spell.IsSpellHarmful(resolvedSpellID) and "target" or "player"
+    end
+    if buttonData and buttonData.id then
+        return C_Spell.IsSpellHarmful(buttonData.id) and "target" or "player"
+    end
+    return "player"
+end
+
 function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
     local data = {
         hasAssociatedAura = false,
@@ -571,7 +650,7 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
     end
 
     if buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then
-        buttonData.auraUnit = C_Spell.IsSpellHarmful(buttonData.id) and "target" or "player"
+        buttonData.auraUnit = self:ResolveStandaloneAuraDefaultUnit(buttonData)
         changed = true
     end
 
