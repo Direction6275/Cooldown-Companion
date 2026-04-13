@@ -1188,9 +1188,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 if overrideBuffs then
                     newButton.auraSpellID = overrideBuffs
                 end
-                if C_Spell.IsSpellHarmful(id) then
-                    newButton.auraUnit = "target"
-                end
             end
         end
     end
@@ -1199,9 +1196,18 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         group.buttons[buttonIndex].auraTracking = false
     end
 
+    local newButton = group.buttons[buttonIndex]
+    if buttonType == "spell"
+        and newButton
+        and newButton.addedAs == "aura"
+        and newButton.auraUnit ~= "player"
+        and newButton.auraUnit ~= "target" then
+        newButton.auraUnit = self:ResolveStandaloneAuraDefaultUnit(newButton)
+    end
+
     if buttonType == "spell" and forceAura ~= false then
         self:NormalizeStandaloneAuraButtonData(
-            group.buttons[buttonIndex],
+            newButton,
             group.buttons,
             { trustExplicitAuraLabel = true }
         )
