@@ -785,7 +785,7 @@ local function NotifyTutorialAction(action, payload)
         return
     end
 
-    if action == "group_created" and (runtime.step == "groups_column_intro" or runtime.step == "create_group") then
+    if action == "group_created" and (runtime.step == "welcome" or runtime.step == "groups_column_intro" or runtime.step == "create_group") then
         runtime.createdGroup = true
         CS.selectedButton = nil
         wipe(CS.selectedButtons)
