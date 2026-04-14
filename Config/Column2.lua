@@ -2359,6 +2359,10 @@ local function RefreshColumn2()
                         local autoAddBtn = AceGUI:Create("Button")
                         autoAddBtn:SetText("Auto Add")
                         autoAddBtn:SetRelativeWidth(0.49)
+                        local tutorialRuntime = CS.tutorialRuntime
+                        local deemphasizeAutoAdd = tutorialRuntime
+                            and tutorialRuntime.active
+                            and (tutorialRuntime.step == "add_box_intro" or tutorialRuntime.step == "add_one_spell")
                         autoAddBtn:SetCallback("OnClick", function()
                             CS.selectedGroup = CS.addingToPanelId
                             OpenAutoAddFlow()
@@ -2367,11 +2371,17 @@ local function RefreshColumn2()
                             GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
                             GameTooltip:AddLine("Auto Add")
                             GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
+                            if deemphasizeAutoAdd then
+                                GameTooltip:AddLine("Optional during the tutorial. The guided path uses the add box above.", 0.8, 0.8, 0.8, true)
+                            end
                             GameTooltip:Show()
                         end)
                         autoAddBtn:SetCallback("OnLeave", function()
                             GameTooltip:Hide()
                         end)
+                        if autoAddBtn.frame then
+                            autoAddBtn.frame:SetAlpha(deemphasizeAutoAdd and 0.62 or 1)
+                        end
                         panelMeta.autoAddButtonFrame = autoAddBtn.frame
                         addRow:AddChild(autoAddBtn)
                     end

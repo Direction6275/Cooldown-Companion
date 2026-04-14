@@ -1143,6 +1143,7 @@ local function CreateConfigPanel()
     profileBar:SetPoint("LEFT", profileGear, "RIGHT", 8, 0)
     profileBar:SetPoint("RIGHT", content, "RIGHT", -20, 0)
     profileBar:Hide()
+    CS.profileBar = profileBar
 
     local function SyncModeToggleWithProfileBar()
         if not modeStatusRow then return end
@@ -1182,6 +1183,7 @@ local function CreateConfigPanel()
     modeToggleButton.frame:ClearAllPoints()
     modeToggleButton.frame:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
     modeToggleButton.frame:Show()
+    CS.modeToggleButton = modeToggleButton.frame
 
     modeValueText = modeToggleButton.text
 

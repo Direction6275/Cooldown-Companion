@@ -23,15 +23,25 @@ local format = string.format
 
 local TUTORIAL_ID = "firstIconPanel"
 local TUTORIAL_SOLID_GLOW_COLOR = { 1, 0.9, 0.18, 1 }
+local TUTORIAL_SIDE_PLACEMENT_OFFSET = 44
+local TUTORIAL_FRAME_WIDTH = 316
+local TUTORIAL_FRAME_MIN_HEIGHT = 142
+local TUTORIAL_FRAME_MAX_HEIGHT = 320
+local TUTORIAL_TEXT_WIDTH = 266
+local TUTORIAL_TOP_CONTENT_PADDING = 52
+local TUTORIAL_BOTTOM_CONTENT_PADDING = 48
 local STEP_ORDER = {
     "welcome",
+    "groups_column_intro",
     "create_group",
+    "panels_column_intro",
     "create_panel",
-    "panel_area",
-    "inline_add_area",
-    "add_one_ability",
-    "edit_one_entry",
-    "panel_wide_settings",
+    "panel_area_intro",
+    "add_one_spell",
+    "entry_settings_intro",
+    "panel_settings_intro",
+    "view_modes_intro",
+    "help_tooltips_intro",
     "finish",
 }
 
@@ -43,54 +53,73 @@ end
 local STEP_DATA = {
     welcome = {
         title = "First Icon Panel",
-        text = "Groups hold one or more panels. This tutorial helps you build your first real icon panel and add one real ability to it.",
+        text = "This tutorial will walk you through adding a single spell to track and explain some basics about the add-on along the way.",
         placement = "center",
+    },
+    groups_column_intro = {
+        title = "Groups",
+        text = "Groups are containers for panels. By default, groups belong to the character they are created on.",
+        anchor = "groups_column_area",
+        placement = "right",
     },
     create_group = {
         title = "Create a Group",
-        text = "A group is the top-level container that holds your panels. Click New Group to create your first group.",
+        text = "Click New Group to create a group.",
         anchor = "new_group_button",
         placement = "above",
     },
+    panels_column_intro = {
+        title = "Panels",
+        text = "Panels are containers for the things you want to track, like spells, auras, and items. The type of panel you choose determines how tracked entries are displayed.\n\nRead the descriptions of each type of panel in the column to become familiar with available panel types.",
+        anchor = "panels_column_area",
+        placement = "right",
+    },
     create_panel = {
         title = "Create an Icon Panel",
-        text = "Panels live inside a group and hold the abilities you want to track. Click Icon Panel to create your first real panel.",
+        text = "Click Icon Panel to create a new icon panel.",
         anchor = "icon_panel_button",
         placement = "above",
     },
-    panel_area = {
+    panel_area_intro = {
         title = "This Is the Panel",
-        text = "This panel is where the abilities in this group will appear.",
+        text = "This is an empty icon panel. Let's add something to track.",
         anchor = "selected_panel_area",
         placement = "right",
     },
-    inline_add_area = {
-        title = "This Is the Add Box",
-        text = "This add box searches as you type so you can pick a matching spell or item from the dropdown.",
-        anchor = "selected_panel_add_input",
-        placement = "right",
-    },
-    add_one_ability = {
+    add_one_spell = {
         title = "Add Your First Ability",
-        text = "Begin typing an ability name, then choose it from the dropdown by clicking it or highlighting it with the arrow keys and pressing Enter.",
+        text = "Type the name of a spell your character can use in the edit box.\n\nAs you type, the addon will attempt to help you narrow down what you're looking for. Add the spell by clicking on it in the dropdown or using arrow keys + Enter.",
         anchor = "selected_panel_add_input",
         placement = "right",
     },
-    edit_one_entry = {
-        title = "Edit One Entry",
-        text = "Each ability can be adjusted without changing the rest of the panel. Your new entry is selected, and Column 3 changes only this entry.",
+    entry_settings_intro = {
+        title = "Entry Settings",
+        text = "This column is dedicated to editing and styling single, specific entries. Aura tracking settings, per-button visibility rules, sound alerts, and more is configured in this column.",
         anchor = "col3_area",
         placement = "right",
     },
-    panel_wide_settings = {
-        title = "Panel-Wide Settings",
-        text = "Panels also have settings that affect every entry they contain. Column 4 changes the whole panel, not just the selected entry.",
+    panel_settings_intro = {
+        title = "Panel Settings",
+        text = "This column is dedicated to editing and styling all entries in a panel. Panel layout, text elements, and indicators are all found here.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that means you can expand advanced settings for it.",
         anchor = "col4_area",
         placement = "left",
     },
+    view_modes_intro = {
+        title = "Bars And Frames",
+        text = "This button switches between the main Buttons view and optional extras like resource bars, cast bar anchoring and styling, and unit frame anchoring.",
+        anchor = "mode_toggle_button",
+        placement = "above",
+    },
+    help_tooltips_intro = {
+        title = "More Help",
+        text = "Tooltips are spread throughout the config in order to help explain some of the less obvious aspects of the addon. Be sure to read them as you're exploring.",
+        anchor = "panels_info_button",
+        highlightAnchor = "column_info_buttons_area",
+        placement = "below",
+    },
     finish = {
         title = "Tutorial Complete",
-        text = "This panel is part of your real profile now. You can keep adding abilities here one at a time, use Auto Add later for bulk setup, or replay this later from the Tutorial button.",
+        text = "You can watch this tutorial again later by clicking the Tutorial button in the top-right corner.",
         anchor = "tutorial_button",
         placement = "below",
     },
@@ -105,6 +134,14 @@ end
 
 local function GetStepNumber(step)
     return tonumber(STEP_INDEX[step]) or 1
+end
+
+local function GetPreviousStep(step)
+    local index = STEP_INDEX[step]
+    if not index or index <= 1 then
+        return nil
+    end
+    return STEP_ORDER[index - 1]
 end
 
 local function GetTutorialState()
@@ -164,20 +201,31 @@ local function SetStep(step)
 end
 
 local function GetAnchor(name)
-    local frame = CS.tutorialAnchors and CS.tutorialAnchors[name]
-    if frame and frame.IsShown and frame:IsShown() then
-        return frame
+    local anchor = CS.tutorialAnchors and CS.tutorialAnchors[name]
+    if type(anchor) == "table" and anchor[1] then
+        for _, frame in ipairs(anchor) do
+            if frame and frame.IsShown and frame:IsShown() then
+                return anchor
+            end
+        end
+        return nil
+    end
+    if anchor and anchor.IsShown and anchor:IsShown() then
+        return anchor
     end
     return nil
 end
 
 local function HideHighlight()
-    if CS.tutorialHighlight then
-        if CS.tutorialHighlight._cdcGlow and HideGlowStyles then
-            HideGlowStyles(CS.tutorialHighlight._cdcGlow)
+    local highlights = CS.tutorialHighlights
+    if highlights then
+        for _, highlight in ipairs(highlights) do
+            if highlight._cdcGlow and HideGlowStyles then
+                HideGlowStyles(highlight._cdcGlow)
+            end
+            highlight:ClearAllPoints()
+            highlight:Hide()
         end
-        CS.tutorialHighlight:ClearAllPoints()
-        CS.tutorialHighlight:Hide()
     end
 end
 
@@ -204,7 +252,7 @@ local function EnsureTutorialFrame()
 
     local parent = (CS.configFrame and CS.configFrame.frame) or UIParent
     local frame = CreateFrame("Frame", nil, parent, "GlowBoxTemplate")
-    frame:SetSize(316, 170)
+    frame:SetSize(TUTORIAL_FRAME_WIDTH, TUTORIAL_FRAME_MIN_HEIGHT)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetFrameLevel(parent:GetFrameLevel() + 40)
     frame:SetClampedToScreen(true)
@@ -229,7 +277,7 @@ local function EnsureTutorialFrame()
     bodyText:SetJustifyV("TOP")
     bodyText:SetSpacing(2)
     bodyText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -33)
-    bodyText:SetWidth(266)
+    bodyText:SetWidth(TUTORIAL_TEXT_WIDTH)
     frame.bodyText = bodyText
 
     local arrow = CreateFrame("Frame", nil, frame, "GlowBoxArrowTemplate")
@@ -270,24 +318,7 @@ local function EnsureTutorialFrame()
     closeButton:GetHighlightTexture():SetAlpha(0.3)
     frame.CloseButton = closeButton
 
-    local highlight = CreateFrame("Frame", nil, UIParent)
-    highlight:SetFrameStrata("TOOLTIP")
-    highlight:SetFrameLevel(2000)
-    highlight:SetToplevel(true)
-    highlight:EnableMouse(false)
-    highlight:Hide()
-    if CreateGlowContainer then
-        highlight._cdcGlow = CreateGlowContainer(highlight, 48, false)
-        if highlight._cdcGlow.solidFrame then
-            highlight._cdcGlow.solidFrame:SetFrameStrata("TOOLTIP")
-            highlight._cdcGlow.solidFrame:SetFrameLevel(highlight:GetFrameLevel() + 1)
-        end
-        if highlight._cdcGlow.procFrame then
-            highlight._cdcGlow.procFrame:SetFrameStrata("TOOLTIP")
-            highlight._cdcGlow.procFrame:SetFrameLevel(highlight:GetFrameLevel() + 2)
-        end
-    end
-    CS.tutorialHighlight = highlight
+    CS.tutorialHighlights = CS.tutorialHighlights or {}
 
     frame:SetScript("OnHide", function()
         HideHighlight()
@@ -308,6 +339,49 @@ local function EnsureTutorialFrame()
 
     CS.tutorialFrame = frame
     return frame
+end
+
+local function GetOrCreateHighlight(index)
+    CS.tutorialHighlights = CS.tutorialHighlights or {}
+    local highlight = CS.tutorialHighlights[index]
+    if highlight then
+        return highlight
+    end
+
+    highlight = CreateFrame("Frame", nil, UIParent)
+    highlight:SetFrameStrata("TOOLTIP")
+    highlight:SetFrameLevel(2000)
+    highlight:SetToplevel(true)
+    highlight:EnableMouse(false)
+    highlight:Hide()
+    if CreateGlowContainer then
+        highlight._cdcGlow = CreateGlowContainer(highlight, 48, false)
+        if highlight._cdcGlow.solidFrame then
+            highlight._cdcGlow.solidFrame:SetFrameStrata("TOOLTIP")
+            highlight._cdcGlow.solidFrame:SetFrameLevel(highlight:GetFrameLevel() + 1)
+        end
+        if highlight._cdcGlow.procFrame then
+            highlight._cdcGlow.procFrame:SetFrameStrata("TOOLTIP")
+            highlight._cdcGlow.procFrame:SetFrameLevel(highlight:GetFrameLevel() + 2)
+        end
+    end
+    CS.tutorialHighlights[index] = highlight
+    return highlight
+end
+
+local function ResizeTutorialFrame(frame)
+    if not frame or not frame.bodyText then
+        return
+    end
+
+    local bodyText = frame.bodyText
+    bodyText:SetWidth(TUTORIAL_TEXT_WIDTH)
+
+    local textHeight = math.ceil(bodyText:GetStringHeight() or 0)
+    local desiredHeight = TUTORIAL_TOP_CONTENT_PADDING + textHeight + TUTORIAL_BOTTOM_CONTENT_PADDING
+    local clampedHeight = math.min(TUTORIAL_FRAME_MAX_HEIGHT, math.max(TUTORIAL_FRAME_MIN_HEIGHT, desiredHeight))
+
+    frame:SetHeight(clampedHeight)
 end
 
 local function ResetTutorialButton(button)
@@ -358,6 +432,17 @@ local function AdvanceStep(nextStep)
     end
 end
 
+local function GoToPreviousStep()
+    local runtime = GetRuntime()
+    if not runtime then
+        return
+    end
+    local previousStep = GetPreviousStep(runtime.step)
+    if previousStep then
+        AdvanceStep(previousStep)
+    end
+end
+
 local function NormalizeTutorialContext()
     if not IsConfigVisible() then
         return
@@ -366,6 +451,9 @@ local function NormalizeTutorialContext()
     local configFrame = CS.configFrame
     if configFrame and configFrame.HideChangelogOverlay then
         configFrame.HideChangelogOverlay()
+    end
+    if CS.profileBar and CS.profileBar:IsShown() then
+        CS.profileBar:Hide()
     end
 
     if CS.talentPickerMode and CooldownCompanion.CloseTalentPicker then
@@ -409,34 +497,70 @@ local function ConfigureButtonsForStep(frame, step)
 
     if step == "welcome" then
         SetTutorialButton(frame.leftButton, "Skip", DismissTutorial)
-        SetTutorialButton(frame.rightButton, "Start Tutorial", function()
+        SetTutorialButton(frame.rightButton, "Next", function()
+            AdvanceStep("groups_column_intro")
+        end)
+    elseif step == "groups_column_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+        SetTutorialButton(frame.rightButton, "Next", function()
             AdvanceStep("create_group")
         end)
-    elseif step == "panel_area" then
-        SetTutorialButton(frame.leftButton, "Skip Tutorial", DismissTutorial)
+    elseif step == "create_group" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+        if GetRuntime() and GetRuntime().createdGroup then
+            SetTutorialButton(frame.rightButton, "Next", function()
+                AdvanceStep("panels_column_intro")
+            end)
+        end
+    elseif step == "panels_column_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("inline_add_area")
+            AdvanceStep("create_panel")
         end)
-    elseif step == "inline_add_area" then
-        SetTutorialButton(frame.leftButton, "Skip Tutorial", DismissTutorial)
+    elseif step == "create_panel" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+        if GetRuntime() and GetRuntime().createdPanel then
+            SetTutorialButton(frame.rightButton, "Next", function()
+                AdvanceStep("panel_area_intro")
+            end)
+        end
+    elseif step == "panel_area_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("add_one_ability")
+            AdvanceStep("add_one_spell")
         end)
-    elseif step == "edit_one_entry" then
-        SetTutorialButton(frame.leftButton, "Skip Tutorial", DismissTutorial)
+    elseif step == "add_one_spell" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+        if GetRuntime() and GetRuntime().addedEntry then
+            SetTutorialButton(frame.rightButton, "Next", function()
+                AdvanceStep("entry_settings_intro")
+            end)
+        end
+    elseif step == "entry_settings_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("panel_wide_settings")
+            AdvanceStep("panel_settings_intro")
         end)
-    elseif step == "panel_wide_settings" then
-        SetTutorialButton(frame.leftButton, "Skip Tutorial", DismissTutorial)
+    elseif step == "panel_settings_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+        SetTutorialButton(frame.rightButton, "Next", function()
+            AdvanceStep("view_modes_intro")
+        end)
+    elseif step == "view_modes_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+        SetTutorialButton(frame.rightButton, "Next", function()
+            AdvanceStep("help_tooltips_intro")
+        end)
+    elseif step == "help_tooltips_intro" then
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         SetTutorialButton(frame.rightButton, "Next", function()
             AdvanceStep("finish")
         end)
     elseif step == "finish" then
-        SetTutorialButton(frame.leftButton, "Replay Later", CompleteTutorial)
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         SetTutorialButton(frame.rightButton, "Finish", CompleteTutorial)
     else
-        SetTutorialButton(frame.leftButton, "Skip Tutorial", DismissTutorial)
+        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
     end
 end
 
@@ -446,11 +570,41 @@ local function UpdateHighlight(anchor)
         return
     end
 
-    local highlight = CS.tutorialHighlight
-    if not highlight then
+    if type(anchor) == "table" and anchor[1] then
+        HideHighlight()
+        local used = 0
+        for _, frame in ipairs(anchor) do
+            if frame and frame.IsShown and frame:IsShown() then
+                used = used + 1
+                local highlight = GetOrCreateHighlight(used)
+                highlight:ClearAllPoints()
+                highlight:SetParent(UIParent)
+                highlight:SetPoint("TOPLEFT", frame, "TOPLEFT", -1, 1)
+                highlight:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 1, -1)
+                highlight:Show()
+                if highlight._cdcGlow and ShowGlowStyle then
+                    ShowGlowStyle(highlight._cdcGlow, "solid", highlight, TUTORIAL_SOLID_GLOW_COLOR, {
+                        size = 3,
+                        defaultAlpha = 1,
+                    })
+                end
+            end
+        end
+        local highlights = CS.tutorialHighlights or {}
+        for index = used + 1, #highlights do
+            local extra = highlights[index]
+            if extra then
+                if extra._cdcGlow and HideGlowStyles then
+                    HideGlowStyles(extra._cdcGlow)
+                end
+                extra:ClearAllPoints()
+                extra:Hide()
+            end
+        end
         return
     end
 
+    local highlight = GetOrCreateHighlight(1)
     highlight:ClearAllPoints()
     highlight:SetParent(UIParent)
     highlight:SetPoint("TOPLEFT", anchor, "TOPLEFT", -1, 1)
@@ -461,6 +615,17 @@ local function UpdateHighlight(anchor)
             size = 3,
             defaultAlpha = 1,
         })
+    end
+    local highlights = CS.tutorialHighlights or {}
+    for index = 2, #highlights do
+        local extra = highlights[index]
+        if extra then
+            if extra._cdcGlow and HideGlowStyles then
+                HideGlowStyles(extra._cdcGlow)
+            end
+            extra:ClearAllPoints()
+            extra:Hide()
+        end
     end
 end
 
@@ -499,7 +664,7 @@ end
 local function PositionFrame(frame, anchor, placement)
     frame:ClearAllPoints()
 
-    if not anchor or placement == "center" then
+    if not anchor and placement == "center" then
         local parent = (CS.configFrame and CS.configFrame.frame) or UIParent
         frame:SetPoint("CENTER", parent, "CENTER", 0, 0)
         if frame.arrow then
@@ -509,14 +674,17 @@ local function PositionFrame(frame, anchor, placement)
         return
     end
 
-    if placement == "above" then
+    if placement == "center" then
+        local parent = (CS.configFrame and CS.configFrame.frame) or UIParent
+        frame:SetPoint("CENTER", parent, "CENTER", 0, 0)
+    elseif placement == "above" then
         frame:SetPoint("BOTTOM", anchor, "TOP", 0, 18)
     elseif placement == "below" then
         frame:SetPoint("TOP", anchor, "BOTTOM", 0, -18)
     elseif placement == "left" then
-        frame:SetPoint("RIGHT", anchor, "LEFT", -20, 0)
+        frame:SetPoint("RIGHT", anchor, "LEFT", -TUTORIAL_SIDE_PLACEMENT_OFFSET, 0)
     elseif placement == "right" then
-        frame:SetPoint("LEFT", anchor, "RIGHT", 20, 0)
+        frame:SetPoint("LEFT", anchor, "RIGHT", TUTORIAL_SIDE_PLACEMENT_OFFSET, 0)
     else
         frame:SetPoint("CENTER", anchor, "CENTER", 0, 0)
     end
@@ -555,6 +723,12 @@ local function RefreshTutorialPlacement()
     frame:SetFrameLevel(CS.configFrame.frame:GetFrameLevel() + 40)
 
     local step = runtime.step or "welcome"
+    if step == "view_modes_intro" and CS.profileBar and CS.profileBar:IsShown() then
+        CS.profileBar:Hide()
+        if ST._RebuildTutorialAnchors then
+            ST._RebuildTutorialAnchors()
+        end
+    end
     local data = STEP_DATA[step] or STEP_DATA.welcome
     local titleText = frame.titleText
     if titleText then
@@ -563,9 +737,14 @@ local function RefreshTutorialPlacement()
     frame.stepLabel:SetText(format("%d of %d", GetStepNumber(step), #STEP_ORDER))
     frame.bodyText:SetText(data.text or "")
     ConfigureButtonsForStep(frame, step)
+    ResizeTutorialFrame(frame)
 
-    local anchor = data.anchor and GetAnchor(data.anchor) or nil
-    PositionFrame(frame, anchor, data.placement)
+    local placementAnchor = data.anchor and GetAnchor(data.anchor) or nil
+    local highlightAnchor = data.highlightAnchor and GetAnchor(data.highlightAnchor) or placementAnchor
+    PositionFrame(frame, placementAnchor, data.placement)
+    if highlightAnchor ~= placementAnchor then
+        UpdateHighlight(highlightAnchor)
+    end
     frame:Show()
 end
 
@@ -590,8 +769,34 @@ local function RebuildTutorialAnchors()
     end
     wipe(anchors)
 
+    local infoButtons = CS.columnInfoButtons
+    if infoButtons and #infoButtons > 0 then
+        local shownButtons = {}
+        for _, button in ipairs(infoButtons) do
+            if button and button.IsShown and button:IsShown() then
+                table.insert(shownButtons, button)
+            end
+        end
+        if #shownButtons > 0 then
+            anchors.column_info_buttons_area = shownButtons
+        end
+    end
+
     if CS.tutorialButton then
         anchors.tutorial_button = CS.tutorialButton
+    end
+    if CS.modeToggleButton and CS.modeToggleButton:IsShown() then
+        anchors.mode_toggle_button = CS.modeToggleButton
+    end
+
+    if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
+        anchors.groups_column_area = CS.configFrame.col1.frame
+    end
+    if CS.configFrame and CS.configFrame.col2 and CS.configFrame.col2.frame then
+        anchors.panels_column_area = CS.configFrame.col2.frame
+        if CS.configFrame.col2._infoBtn and CS.configFrame.col2._infoBtn:IsShown() then
+            anchors.panels_info_button = CS.configFrame.col2._infoBtn
+        end
     end
 
     local col1Widgets = CS.col1BarWidgets or {}
@@ -641,6 +846,9 @@ local function StartFirstIconPanelTutorial(isReplay)
         active = true,
         isReplay = isReplay == true,
         step = "welcome",
+        createdGroup = false,
+        createdPanel = false,
+        addedEntry = false,
     }
 
     RebuildTutorialAnchors()
@@ -675,27 +883,30 @@ local function NotifyTutorialAction(action, payload)
     end
 
     if action == "group_created" and runtime.step == "create_group" then
+        runtime.createdGroup = true
         CS.selectedButton = nil
         wipe(CS.selectedButtons)
         wipe(CS.selectedPanels)
         wipe(CS.selectedGroups)
-        AdvanceStep("create_panel")
+        AdvanceStep("panels_column_intro")
     elseif action == "panel_created" and runtime.step == "create_panel" then
         if payload and payload.displayMode == "icons" then
+            runtime.createdPanel = true
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
             wipe(CS.selectedPanels)
             wipe(CS.selectedGroups)
-            AdvanceStep("panel_area")
+            AdvanceStep("panel_area_intro")
         end
-    elseif action == "inline_add_succeeded" and (runtime.step == "panel_area" or runtime.step == "inline_add_area" or runtime.step == "add_one_ability") then
+    elseif action == "inline_add_succeeded" and runtime.step == "add_one_spell" then
         if payload and payload.groupId and payload.buttonIndex then
+            runtime.addedEntry = true
             CS.selectedGroup = payload.groupId
             CS.selectedButton = payload.buttonIndex
             wipe(CS.selectedButtons)
             wipe(CS.selectedPanels)
             wipe(CS.selectedGroups)
-            AdvanceStep("edit_one_entry")
+            AdvanceStep("entry_settings_intro")
         end
     end
 end
