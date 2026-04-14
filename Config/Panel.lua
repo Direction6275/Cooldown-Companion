@@ -26,6 +26,11 @@ local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
 local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
+local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
+local StartFirstIconPanelTutorial = ST._StartFirstIconPanelTutorial
+local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
+local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
+local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -402,6 +407,9 @@ end
 
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
+    if CancelFirstIconPanelTutorial then
+        CancelFirstIconPanelTutorial("profile_changed")
+    end
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
     wipe(CS.collapsedPanels)
@@ -510,6 +518,9 @@ local function CreateConfigPanel()
     -- isCollapsing flag prevents cleanup when collapsing (vs truly closing)
     local isCollapsing = false
     content:HookScript("OnHide", function()
+        if CancelFirstIconPanelTutorial then
+            CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
+        end
         if isCollapsing then return end
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
@@ -901,6 +912,7 @@ local function CreateConfigPanel()
     gearIcon:SetAllPoints()
     gearBtn:SetHighlightTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearBtn:GetHighlightTexture():SetAlpha(0.3)
+    CS.gearButton = gearBtn
 
     -- Gear dropdown menu
     gearBtn:SetScript("OnClick", function()
@@ -948,13 +960,24 @@ local function CreateConfigPanel()
             UIDropDownMenu_AddButton(info3, level)
 
             local info4 = UIDropDownMenu_CreateInfo()
-            info4.text = "  Join Discord"
+            info4.text = "  Replay Tutorial"
             info4.notCheckable = true
             info4.func = function()
                 CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DISCORD_INVITE")
+                if StartFirstIconPanelTutorial then
+                    StartFirstIconPanelTutorial(true)
+                end
             end
             UIDropDownMenu_AddButton(info4, level)
+
+            local info5 = UIDropDownMenu_CreateInfo()
+            info5.text = "  Join Discord"
+            info5.notCheckable = true
+            info5.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DISCORD_INVITE")
+            end
+            UIDropDownMenu_AddButton(info5, level)
         end, "MENU")
         CS.gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)
@@ -1107,6 +1130,7 @@ local function CreateConfigPanel()
     profileBar:SetPoint("LEFT", profileGear, "RIGHT", 8, 0)
     profileBar:SetPoint("RIGHT", content, "RIGHT", -20, 0)
     profileBar:Hide()
+    CS.profileBar = profileBar
 
     local function SyncModeToggleWithProfileBar()
         if not modeStatusRow then return end
@@ -1146,6 +1170,7 @@ local function CreateConfigPanel()
     modeToggleButton.frame:ClearAllPoints()
     modeToggleButton.frame:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
     modeToggleButton.frame:Show()
+    CS.modeToggleButton = modeToggleButton.frame
 
     modeValueText = modeToggleButton.text
 
@@ -2248,6 +2273,13 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     RestoreScrollState(buttonSettingsScroll, savedBtn)
 
+    if RebuildTutorialAnchors then
+        RebuildTutorialAnchors()
+    end
+    if RefreshTutorialPlacement then
+        RefreshTutorialPlacement()
+    end
+
 end
 
 ------------------------------------------------------------------------
@@ -2270,6 +2302,9 @@ function CooldownCompanion:ToggleConfig()
             end
             CooldownCompanion:RefreshConfigPanel()
             MaybeAutoOpenChangelog()
+            if MaybeAutoStartFirstIconPanelTutorial then
+                MaybeAutoStartFirstIconPanelTutorial()
+            end
         end)
         return -- AceGUI Frame is already shown on creation
     end
@@ -2290,6 +2325,9 @@ function CooldownCompanion:ToggleConfig()
         CS.configFrame.frame:Show()
         self:RefreshConfigPanel()
         MaybeAutoOpenChangelog()
+        if MaybeAutoStartFirstIconPanelTutorial then
+            MaybeAutoStartFirstIconPanelTutorial()
+        end
     end
 end
 

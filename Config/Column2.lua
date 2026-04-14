@@ -30,6 +30,7 @@ local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
+local NotifyTutorialAction = ST._NotifyTutorialAction
 
 local function HideAllBarWidgets(col2)
     if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
@@ -1051,9 +1052,18 @@ local function RefreshColumn2()
                 local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "icons")
                 if newPanelId then
                     CS.selectedGroup = newPanelId
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
                     CS.addingToPanelId = newPanelId
                     CS.pendingEditBoxFocus = true
                     CooldownCompanion:RefreshConfigPanel()
+                    if NotifyTutorialAction then
+                        NotifyTutorialAction("panel_created", {
+                            containerId = CS.selectedContainer,
+                            panelId = newPanelId,
+                            displayMode = "icons",
+                        })
+                    end
                 end
             end
 
@@ -1114,6 +1124,9 @@ local function RefreshColumn2()
             iconPanelBtn.frame:SetWidth(panelBtnWidth)
             iconPanelBtn.frame:SetHeight(28)
             iconPanelBtn.frame:Show()
+            if CS.tutorialAnchors then
+                CS.tutorialAnchors.icon_panel_button = iconPanelBtn.frame
+            end
             table.insert(CS.col2BarWidgets, iconPanelBtn)
 
             local barPanelBtn = AceGUI:Create("Button")
@@ -1307,6 +1320,10 @@ local function RefreshColumn2()
                 isCollapsed = isCollapsed and true or false,
                 displayMode = panel.displayMode,
                 buttonRows = {},
+                addRowFrame = nil,
+                addInputFrame = nil,
+                manualAddButtonFrame = nil,
+                autoAddButtonFrame = nil,
             }
 
             -- Class-colored accent separator between panels
@@ -2250,6 +2267,22 @@ local function RefreshColumn2()
                     inputBox:SetText(CS.newInput)
                     inputBox:DisableButton(true)
                     inputBox:SetFullWidth(true)
+                    panelMeta.addInputFrame = inputBox.frame
+
+                    local function NotifyTutorialInlineAddSuccess(addTargetGroupId, rawInput)
+                        if not NotifyTutorialAction then
+                            return
+                        end
+                        local selectedButton = CS.selectedButton
+                        if addTargetGroupId and selectedButton then
+                            NotifyTutorialAction("inline_add_succeeded", {
+                                groupId = addTargetGroupId,
+                                buttonIndex = selectedButton,
+                                rawInput = rawInput,
+                            })
+                        end
+                    end
+
                     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
                         if CS.ConsumeAutocompleteEnter() then return end
                         CS.HideAutocomplete()
@@ -2258,6 +2291,7 @@ local function RefreshColumn2()
                             local addTargetGroupId = CS.addingToPanelId
                             CS.selectedGroup = addTargetGroupId
                             if TryAdd(CS.newInput) then
+                                NotifyTutorialInlineAddSuccess(addTargetGroupId, CS.newInput)
                                 CS.newInput = ""
                                 local targetGroup = CooldownCompanion.db.profile.groups[addTargetGroupId]
                                 if not (targetGroup and targetGroup.displayMode == "textures") then
@@ -2298,15 +2332,18 @@ local function RefreshColumn2()
                     local addRow = AceGUI:Create("SimpleGroup")
                     addRow:SetFullWidth(true)
                     addRow:SetLayout("Flow")
+                    panelMeta.addRowFrame = addRow.frame
 
                     local manualAddBtn = AceGUI:Create("Button")
                     manualAddBtn:SetText("Manual Add")
                     manualAddBtn:SetRelativeWidth(panel.displayMode == "textures" and 1 or 0.49)
+                    panelMeta.manualAddButtonFrame = manualAddBtn.frame
                     manualAddBtn:SetCallback("OnClick", function()
                         if CS.newInput ~= "" and CS.addingToPanelId then
                             local addTargetGroupId = CS.addingToPanelId
                             CS.selectedGroup = addTargetGroupId
                             if TryAdd(CS.newInput) then
+                                NotifyTutorialInlineAddSuccess(addTargetGroupId, CS.newInput)
                                 CS.newInput = ""
                                 local targetGroup = CooldownCompanion.db.profile.groups[addTargetGroupId]
                                 if not (targetGroup and targetGroup.displayMode == "textures") then
@@ -2322,6 +2359,10 @@ local function RefreshColumn2()
                         local autoAddBtn = AceGUI:Create("Button")
                         autoAddBtn:SetText("Auto Add")
                         autoAddBtn:SetRelativeWidth(0.49)
+                        local tutorialRuntime = CS.tutorialRuntime
+                        local deemphasizeAutoAdd = tutorialRuntime
+                            and tutorialRuntime.active
+                            and (tutorialRuntime.step == "add_box_intro" or tutorialRuntime.step == "add_one_spell")
                         autoAddBtn:SetCallback("OnClick", function()
                             CS.selectedGroup = CS.addingToPanelId
                             OpenAutoAddFlow()
@@ -2330,11 +2371,18 @@ local function RefreshColumn2()
                             GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
                             GameTooltip:AddLine("Auto Add")
                             GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
+                            if deemphasizeAutoAdd then
+                                GameTooltip:AddLine("Optional during the tutorial. The guided path uses the add box above.", 0.8, 0.8, 0.8, true)
+                            end
                             GameTooltip:Show()
                         end)
                         autoAddBtn:SetCallback("OnLeave", function()
                             GameTooltip:Hide()
                         end)
+                        if autoAddBtn.frame then
+                            autoAddBtn.frame:SetAlpha(deemphasizeAutoAdd and 0.62 or 1)
+                        end
+                        panelMeta.autoAddButtonFrame = autoAddBtn.frame
                         addRow:AddChild(autoAddBtn)
                     end
 

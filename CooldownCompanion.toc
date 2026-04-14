@@ -79,6 +79,7 @@ OtherBars\ResourceBarVisuals.lua
 OtherBars\ResourceBar.lua
 Core\FrameAnchoring.lua
 Config\State.lua
+Config\Tutorial.lua
 Config\ExportCodec.lua
 Config\Popups.lua
 Config\Diagnostics.lua

@@ -32,6 +32,7 @@ local EncodeExportData = ST._EncodeExportData
 local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
+local NotifyTutorialAction = ST._NotifyTutorialAction
 
 ------------------------------------------------------------------------
 -- Clear all selection state (container, panel, button, multi-select)
@@ -1828,6 +1829,12 @@ local function RefreshColumn1(preserveDrag)
             CS.selectedButton = nil
             wipe(CS.selectedButtons)
             CooldownCompanion:RefreshConfigPanel()
+            if NotifyTutorialAction then
+                NotifyTutorialAction("group_created", {
+                    containerId = containerId,
+                    groupId = groupId,
+                })
+            end
         end)
         newGroupBtn.frame:SetParent(CS.col1ButtonBar)
         newGroupBtn.frame:ClearAllPoints()
@@ -1835,6 +1842,9 @@ local function RefreshColumn1(preserveDrag)
         newGroupBtn.frame:SetWidth(thirdW)
         newGroupBtn.frame:SetHeight(28)
         newGroupBtn.frame:Show()
+        if CS.tutorialAnchors then
+            CS.tutorialAnchors.new_group_button = newGroupBtn.frame
+        end
         table.insert(CS.col1BarWidgets, newGroupBtn)
 
         local newFolderBtn = AceGUI:Create("Button")
