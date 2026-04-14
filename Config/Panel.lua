@@ -860,30 +860,6 @@ local function CreateConfigPanel()
     end)
     browseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    local tutorialBtn = CreateFrame("Button", nil, content, "MainHelpPlateButton")
-    tutorialBtn:SetScale(0.5)
-    tutorialBtn:SetFrameLevel(content:GetFrameLevel() + 5)
-    if tutorialBtn.BigIPulse then
-        tutorialBtn.BigIPulse:Hide()
-    end
-    if tutorialBtn.RingPulse then
-        tutorialBtn.RingPulse:Hide()
-    end
-    tutorialBtn:SetScript("OnClick", function()
-        CloseDropDownMenus()
-        if StartFirstIconPanelTutorial then
-            StartFirstIconPanelTutorial(true)
-        end
-    end)
-    tutorialBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Tutorial")
-        GameTooltip:AddLine("Replay the first icon panel tutorial.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    tutorialBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    CS.tutorialButton = tutorialBtn
-
     local changelogOverlay
     local changelogBtn
     local changelogBtnBorder = nil
@@ -931,12 +907,12 @@ local function CreateConfigPanel()
     cdmBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
     browseBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", browseBtn, "LEFT", -4, 0)
-    tutorialBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", 4, 1)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
     gearBtn:SetHighlightTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearBtn:GetHighlightTexture():SetAlpha(0.3)
+    CS.gearButton = gearBtn
 
     -- Gear dropdown menu
     gearBtn:SetScript("OnClick", function()
@@ -984,13 +960,24 @@ local function CreateConfigPanel()
             UIDropDownMenu_AddButton(info3, level)
 
             local info4 = UIDropDownMenu_CreateInfo()
-            info4.text = "  Join Discord"
+            info4.text = "  Replay Tutorial"
             info4.notCheckable = true
             info4.func = function()
                 CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DISCORD_INVITE")
+                if StartFirstIconPanelTutorial then
+                    StartFirstIconPanelTutorial(true)
+                end
             end
             UIDropDownMenu_AddButton(info4, level)
+
+            local info5 = UIDropDownMenu_CreateInfo()
+            info5.text = "  Join Discord"
+            info5.notCheckable = true
+            info5.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DISCORD_INVITE")
+            end
+            UIDropDownMenu_AddButton(info5, level)
         end, "MENU")
         CS.gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)

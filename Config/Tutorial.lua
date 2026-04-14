@@ -25,11 +25,11 @@ local TUTORIAL_ID = "firstIconPanel"
 local TUTORIAL_SOLID_GLOW_COLOR = { 1, 0.9, 0.18, 1 }
 local TUTORIAL_SIDE_PLACEMENT_OFFSET = 44
 local TUTORIAL_FRAME_WIDTH = 316
-local TUTORIAL_FRAME_MIN_HEIGHT = 142
+local TUTORIAL_FRAME_MIN_HEIGHT = 90
 local TUTORIAL_FRAME_MAX_HEIGHT = 320
 local TUTORIAL_TEXT_WIDTH = 266
-local TUTORIAL_TOP_CONTENT_PADDING = 52
-local TUTORIAL_BOTTOM_CONTENT_PADDING = 48
+local TUTORIAL_TOP_CONTENT_PADDING = 48
+local TUTORIAL_BOTTOM_CONTENT_PADDING = 42
 local STEP_ORDER = {
     "welcome",
     "groups_column_intro",
@@ -41,7 +41,6 @@ local STEP_ORDER = {
     "entry_settings_intro",
     "panel_settings_intro",
     "view_modes_intro",
-    "help_tooltips_intro",
     "finish",
 }
 
@@ -110,17 +109,10 @@ local STEP_DATA = {
         anchor = "mode_toggle_button",
         placement = "above",
     },
-    help_tooltips_intro = {
-        title = "More Help",
-        text = "Tooltips are spread throughout the config in order to help explain some of the less obvious aspects of the addon. Be sure to read them as you're exploring.",
-        anchor = "panels_info_button",
-        highlightAnchor = "column_info_buttons_area",
-        placement = "below",
-    },
     finish = {
         title = "Tutorial Complete",
-        text = "You can watch this tutorial again later by clicking the Tutorial button in the top-right corner.",
-        anchor = "tutorial_button",
+        text = "You can watch this tutorial again later from the gear menu in the top-right corner.",
+        anchor = "gear_button",
         placement = "below",
     },
 }
@@ -201,31 +193,20 @@ local function SetStep(step)
 end
 
 local function GetAnchor(name)
-    local anchor = CS.tutorialAnchors and CS.tutorialAnchors[name]
-    if type(anchor) == "table" and anchor[1] then
-        for _, frame in ipairs(anchor) do
-            if frame and frame.IsShown and frame:IsShown() then
-                return anchor
-            end
-        end
-        return nil
-    end
-    if anchor and anchor.IsShown and anchor:IsShown() then
-        return anchor
+    local frame = CS.tutorialAnchors and CS.tutorialAnchors[name]
+    if frame and frame.IsShown and frame:IsShown() then
+        return frame
     end
     return nil
 end
 
 local function HideHighlight()
-    local highlights = CS.tutorialHighlights
-    if highlights then
-        for _, highlight in ipairs(highlights) do
-            if highlight._cdcGlow and HideGlowStyles then
-                HideGlowStyles(highlight._cdcGlow)
-            end
-            highlight:ClearAllPoints()
-            highlight:Hide()
+    if CS.tutorialHighlight then
+        if CS.tutorialHighlight._cdcGlow and HideGlowStyles then
+            HideGlowStyles(CS.tutorialHighlight._cdcGlow)
         end
+        CS.tutorialHighlight:ClearAllPoints()
+        CS.tutorialHighlight:Hide()
     end
 end
 
@@ -318,7 +299,24 @@ local function EnsureTutorialFrame()
     closeButton:GetHighlightTexture():SetAlpha(0.3)
     frame.CloseButton = closeButton
 
-    CS.tutorialHighlights = CS.tutorialHighlights or {}
+    local highlight = CreateFrame("Frame", nil, UIParent)
+    highlight:SetFrameStrata("TOOLTIP")
+    highlight:SetFrameLevel(2000)
+    highlight:SetToplevel(true)
+    highlight:EnableMouse(false)
+    highlight:Hide()
+    if CreateGlowContainer then
+        highlight._cdcGlow = CreateGlowContainer(highlight, 48, false)
+        if highlight._cdcGlow.solidFrame then
+            highlight._cdcGlow.solidFrame:SetFrameStrata("TOOLTIP")
+            highlight._cdcGlow.solidFrame:SetFrameLevel(highlight:GetFrameLevel() + 1)
+        end
+        if highlight._cdcGlow.procFrame then
+            highlight._cdcGlow.procFrame:SetFrameStrata("TOOLTIP")
+            highlight._cdcGlow.procFrame:SetFrameLevel(highlight:GetFrameLevel() + 2)
+        end
+    end
+    CS.tutorialHighlight = highlight
 
     frame:SetScript("OnHide", function()
         HideHighlight()
@@ -339,34 +337,6 @@ local function EnsureTutorialFrame()
 
     CS.tutorialFrame = frame
     return frame
-end
-
-local function GetOrCreateHighlight(index)
-    CS.tutorialHighlights = CS.tutorialHighlights or {}
-    local highlight = CS.tutorialHighlights[index]
-    if highlight then
-        return highlight
-    end
-
-    highlight = CreateFrame("Frame", nil, UIParent)
-    highlight:SetFrameStrata("TOOLTIP")
-    highlight:SetFrameLevel(2000)
-    highlight:SetToplevel(true)
-    highlight:EnableMouse(false)
-    highlight:Hide()
-    if CreateGlowContainer then
-        highlight._cdcGlow = CreateGlowContainer(highlight, 48, false)
-        if highlight._cdcGlow.solidFrame then
-            highlight._cdcGlow.solidFrame:SetFrameStrata("TOOLTIP")
-            highlight._cdcGlow.solidFrame:SetFrameLevel(highlight:GetFrameLevel() + 1)
-        end
-        if highlight._cdcGlow.procFrame then
-            highlight._cdcGlow.procFrame:SetFrameStrata("TOOLTIP")
-            highlight._cdcGlow.procFrame:SetFrameLevel(highlight:GetFrameLevel() + 2)
-        end
-    end
-    CS.tutorialHighlights[index] = highlight
-    return highlight
 end
 
 local function ResizeTutorialFrame(frame)
@@ -549,11 +519,6 @@ local function ConfigureButtonsForStep(frame, step)
     elseif step == "view_modes_intro" then
         SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("help_tooltips_intro")
-        end)
-    elseif step == "help_tooltips_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
             AdvanceStep("finish")
         end)
     elseif step == "finish" then
@@ -570,41 +535,10 @@ local function UpdateHighlight(anchor)
         return
     end
 
-    if type(anchor) == "table" and anchor[1] then
-        HideHighlight()
-        local used = 0
-        for _, frame in ipairs(anchor) do
-            if frame and frame.IsShown and frame:IsShown() then
-                used = used + 1
-                local highlight = GetOrCreateHighlight(used)
-                highlight:ClearAllPoints()
-                highlight:SetParent(UIParent)
-                highlight:SetPoint("TOPLEFT", frame, "TOPLEFT", -1, 1)
-                highlight:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 1, -1)
-                highlight:Show()
-                if highlight._cdcGlow and ShowGlowStyle then
-                    ShowGlowStyle(highlight._cdcGlow, "solid", highlight, TUTORIAL_SOLID_GLOW_COLOR, {
-                        size = 3,
-                        defaultAlpha = 1,
-                    })
-                end
-            end
-        end
-        local highlights = CS.tutorialHighlights or {}
-        for index = used + 1, #highlights do
-            local extra = highlights[index]
-            if extra then
-                if extra._cdcGlow and HideGlowStyles then
-                    HideGlowStyles(extra._cdcGlow)
-                end
-                extra:ClearAllPoints()
-                extra:Hide()
-            end
-        end
+    local highlight = CS.tutorialHighlight
+    if not highlight then
         return
     end
-
-    local highlight = GetOrCreateHighlight(1)
     highlight:ClearAllPoints()
     highlight:SetParent(UIParent)
     highlight:SetPoint("TOPLEFT", anchor, "TOPLEFT", -1, 1)
@@ -615,17 +549,6 @@ local function UpdateHighlight(anchor)
             size = 3,
             defaultAlpha = 1,
         })
-    end
-    local highlights = CS.tutorialHighlights or {}
-    for index = 2, #highlights do
-        local extra = highlights[index]
-        if extra then
-            if extra._cdcGlow and HideGlowStyles then
-                HideGlowStyles(extra._cdcGlow)
-            end
-            extra:ClearAllPoints()
-            extra:Hide()
-        end
     end
 end
 
@@ -739,12 +662,8 @@ local function RefreshTutorialPlacement()
     ConfigureButtonsForStep(frame, step)
     ResizeTutorialFrame(frame)
 
-    local placementAnchor = data.anchor and GetAnchor(data.anchor) or nil
-    local highlightAnchor = data.highlightAnchor and GetAnchor(data.highlightAnchor) or placementAnchor
-    PositionFrame(frame, placementAnchor, data.placement)
-    if highlightAnchor ~= placementAnchor then
-        UpdateHighlight(highlightAnchor)
-    end
+    local anchor = data.anchor and GetAnchor(data.anchor) or nil
+    PositionFrame(frame, anchor, data.placement)
     frame:Show()
 end
 
@@ -769,21 +688,8 @@ local function RebuildTutorialAnchors()
     end
     wipe(anchors)
 
-    local infoButtons = CS.columnInfoButtons
-    if infoButtons and #infoButtons > 0 then
-        local shownButtons = {}
-        for _, button in ipairs(infoButtons) do
-            if button and button.IsShown and button:IsShown() then
-                table.insert(shownButtons, button)
-            end
-        end
-        if #shownButtons > 0 then
-            anchors.column_info_buttons_area = shownButtons
-        end
-    end
-
-    if CS.tutorialButton then
-        anchors.tutorial_button = CS.tutorialButton
+    if CS.gearButton and CS.gearButton:IsShown() then
+        anchors.gear_button = CS.gearButton
     end
     if CS.modeToggleButton and CS.modeToggleButton:IsShown() then
         anchors.mode_toggle_button = CS.modeToggleButton
@@ -794,9 +700,6 @@ local function RebuildTutorialAnchors()
     end
     if CS.configFrame and CS.configFrame.col2 and CS.configFrame.col2.frame then
         anchors.panels_column_area = CS.configFrame.col2.frame
-        if CS.configFrame.col2._infoBtn and CS.configFrame.col2._infoBtn:IsShown() then
-            anchors.panels_info_button = CS.configFrame.col2._infoBtn
-        end
     end
 
     local col1Widgets = CS.col1BarWidgets or {}
