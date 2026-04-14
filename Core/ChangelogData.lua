@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.12.4",
         "1.12.3",
         "1.12.2",
         "1.12.1",
@@ -18,6 +19,21 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.12.4"] = {
+            markdown = [[
+## New Features
+
+- **First time user tutorial:** New setups now get a guided walkthrough for creating their first icon panel and adding a spell. You can replay the tutorial later from the gear menu in the top right of the config.
+
+## Polish | QoL
+
+- **Player or target choice for resource aura overlays:** Resource aura overlays also received the unit specification that has been applied to aura tracking in panels and custom aura bars in order to protect the display from showing incorrect information.
+
+## Bug Fixes
+
+- **Target-based standalone auras:** Standalone aura entries that should watch your target now default there more reliably instead of being set to yourself by mistake, like Shatter for Frost Mage.
+]],
+        },
         ["1.12.3"] = {
             markdown = [[
 ## Polish | QoL
