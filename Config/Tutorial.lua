@@ -587,7 +587,7 @@ end
 local function PositionFrame(frame, anchor, placement)
     frame:ClearAllPoints()
 
-    if not anchor and placement == "center" then
+    if not anchor then
         local parent = (CS.configFrame and CS.configFrame.frame) or UIParent
         frame:SetPoint("CENTER", parent, "CENTER", 0, 0)
         if frame.arrow then
@@ -785,14 +785,14 @@ local function NotifyTutorialAction(action, payload)
         return
     end
 
-    if action == "group_created" and runtime.step == "create_group" then
+    if action == "group_created" and (runtime.step == "groups_column_intro" or runtime.step == "create_group") then
         runtime.createdGroup = true
         CS.selectedButton = nil
         wipe(CS.selectedButtons)
         wipe(CS.selectedPanels)
         wipe(CS.selectedGroups)
         AdvanceStep("panels_column_intro")
-    elseif action == "panel_created" and runtime.step == "create_panel" then
+    elseif action == "panel_created" and (runtime.step == "panels_column_intro" or runtime.step == "create_panel") then
         if payload and payload.displayMode == "icons" then
             runtime.createdPanel = true
             CS.selectedButton = nil
@@ -801,7 +801,7 @@ local function NotifyTutorialAction(action, payload)
             wipe(CS.selectedGroups)
             AdvanceStep("panel_area_intro")
         end
-    elseif action == "inline_add_succeeded" and runtime.step == "add_one_spell" then
+    elseif action == "inline_add_succeeded" and (runtime.step == "panel_area_intro" or runtime.step == "add_one_spell") then
         if payload and payload.groupId and payload.buttonIndex then
             runtime.addedEntry = true
             CS.selectedGroup = payload.groupId
