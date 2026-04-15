@@ -241,9 +241,18 @@ end
 
 function CooldownCompanion:CachePlayerState()
     local inInstance, instanceType = IsInInstance()
-    if inInstance and instanceType == "scenario" then
-        local _, _, difficultyID = GetInstanceInfo()
-        self._currentInstanceType = (difficultyID == 208) and "delve" or "scenario"
+    local _, reportedInstanceType, difficultyID = GetInstanceInfo()
+    local mapID = C_Map.GetBestMapForUnit("player")
+    -- Outdoor delves can disagree across APIs, so treat any verified delve signal
+    -- as authoritative before falling back to the generic instance classification.
+    local isDelve = C_PartyInfo.IsDelveInProgress()
+        or (reportedInstanceType == "scenario" and difficultyID == 208)
+        or (mapID and C_DelvesUI.HasActiveDelve(mapID))
+        or C_DelvesUI.HasActiveDelve()
+    if isDelve then
+        self._currentInstanceType = "delve"
+    elseif inInstance and instanceType == "scenario" then
+        self._currentInstanceType = "scenario"
     else
         self._currentInstanceType = inInstance and instanceType or "none"
     end
