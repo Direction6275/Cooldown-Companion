@@ -3552,6 +3552,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local isUnlocked = group and group.locked == false
     local hasPreviewSelection = type(driverButton._auraTexturePreviewSelection) == "table"
     local triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false
+    local triggerSoundVisible = false
     local showTexture = false
 
     if settings then
@@ -3573,7 +3574,8 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
-        self:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)
+        triggerSoundVisible = settings ~= nil and triggerMatched
+        self:UpdateTriggerPanelSoundAlerts(frame, group, triggerSoundVisible)
     end
 
     if not settings or not showTexture then
