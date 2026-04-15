@@ -1424,6 +1424,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Per-button visibility evaluation (after charge tracking)
+    button._procOverlayActive = procOverlayActive
     EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive, procOverlayActive)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
@@ -1492,8 +1493,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
     end
-
-    button._procOverlayActive = procOverlayActive
 
     -- Unusable/out-of-range state for text mode {unusable}/{oor} conditionals
     if button._isText then

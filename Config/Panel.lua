@@ -1919,7 +1919,11 @@ local function CreateConfigPanel()
                 ST._BuildCustomNameSection(scroll, buttonData)
             end
         elseif tab == "soundalerts" then
-            ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            if group.displayMode == "trigger" then
+                ST._BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+            else
+                ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end

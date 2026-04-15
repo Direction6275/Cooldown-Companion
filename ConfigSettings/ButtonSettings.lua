@@ -71,6 +71,7 @@ local function BuildButtonSettingsTabs(group)
     if GroupUsesTriggerPanelEntries(group) then
         return {
             { value = "settings", text = "Condition" },
+            { value = "soundalerts", text = "Sound Alerts" },
         }
     end
 
@@ -122,6 +123,7 @@ local function ResetSoundPreviewRow(item)
     if previewBtn then
         previewBtn:SetShown(false)
         previewBtn._cdcButtonData = nil
+        previewBtn._cdcGroup = nil
         previewBtn._cdcSoundValue = nil
         previewBtn:ClearAllPoints()
     end
@@ -131,7 +133,7 @@ local function ResetSoundPreviewRow(item)
     item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
 end
 
-local function ConfigureSoundPreviewRow(item, buttonData)
+local function ConfigureSoundPreviewRow(item, buttonData, group)
     if not (item and item.frame and item.text) then return end
 
     if not item._cdcSoundPreviewCleanupInstalled then
@@ -161,7 +163,10 @@ local function ConfigureSoundPreviewRow(item, buttonData)
         previewBtn:SetScript("OnClick", function(self)
             local previewValue = self._cdcSoundValue
             local previewButtonData = self._cdcButtonData
-            if previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY and previewButtonData then
+            local previewGroup = self._cdcGroup
+            if previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY and previewGroup then
+                CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(previewGroup, previewValue)
+            elseif previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY and previewButtonData then
                 CooldownCompanion:PreviewSoundAlertSelection(previewButtonData, previewValue)
             end
         end)
@@ -173,6 +178,7 @@ local function ConfigureSoundPreviewRow(item, buttonData)
     previewBtn:ClearAllPoints()
     previewBtn:SetPoint("RIGHT", item.frame, "RIGHT", SOUND_PREVIEW_BUTTON_RIGHT_OFFSET, 0)
     previewBtn._cdcButtonData = buttonData
+    previewBtn._cdcGroup = group
 
     local previewValue = item.userdata and item.userdata.value
     local hasPreview = previewValue and previewValue ~= SOUND_ALERT_NONE_OPTION_KEY
@@ -319,6 +325,60 @@ local function BuildSpellSoundAlertsTab(scroll, buttonData, infoButtons)
     end
 
     BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
+end
+
+local function BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, infoButtons)
+    if not (group and group.displayMode == "trigger") then
+        return
+    end
+
+    local soundHeading = AceGUI:Create("Heading")
+    soundHeading:SetText("Sound Alerts")
+    ColorHeading(soundHeading)
+    soundHeading:SetHeight(22)
+    soundHeading:SetFullWidth(true)
+    soundHeading.label:ClearAllPoints()
+    soundHeading.label:SetPoint("CENTER", soundHeading.frame, "CENTER", 0, 2)
+    soundHeading.left:ClearAllPoints()
+    soundHeading.left:SetPoint("LEFT", soundHeading.frame, "LEFT", 3, 0)
+    soundHeading.left:SetPoint("RIGHT", soundHeading.label, "LEFT", -5, 0)
+    soundHeading.right:ClearAllPoints()
+    soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
+    soundHeading.right:SetPoint("LEFT", soundHeading.label, "RIGHT", 5, 0)
+    scroll:AddChild(soundHeading)
+
+    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
+        "Sound Alerts",
+        {"Plays when the trigger texture appears. This is panel-level and not tied to any one condition. Uses the Master channel and follows your game's Master volume setting.", 1, 1, 1, true},
+    }, infoButtons)
+    soundHeading.right:ClearAllPoints()
+    soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
+    soundHeading.right:SetPoint("LEFT", soundInfoBtn, "RIGHT", 4, 0)
+
+    local soundOptions = CooldownCompanion:GetSoundAlertOptions()
+    local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
+
+    local row = AceGUI:Create("SimpleGroup")
+    row:SetFullWidth(true)
+    row:SetLayout("Flow")
+
+    local soundDrop = AceGUI:Create("Dropdown")
+    soundDrop:SetLabel(CooldownCompanion:GetTriggerPanelSoundAlertEventLabel("onShow"))
+    soundDrop:SetList(soundOptions, soundOptionOrder)
+    soundDrop:SetValue(CooldownCompanion:GetTriggerPanelSoundAlertSelection(group, "onShow"))
+    soundDrop:SetFullWidth(true)
+    soundDrop:SetCallback("OnOpened", function(widget)
+        if not widget.pullout then return end
+        for _, item in widget.pullout:IterateItems() do
+            ConfigureSoundPreviewRow(item, buttonData, group)
+        end
+    end)
+    soundDrop:SetCallback("OnValueChanged", function(_, _, value)
+        CooldownCompanion:SetTriggerPanelSoundAlertEvent(group, "onShow", value)
+    end)
+
+    row:AddChild(soundDrop)
+    scroll:AddChild(row)
 end
 
 local function BuildTriggerConditionSettings(scroll, buttonData)
@@ -1352,7 +1412,9 @@ local function RefreshButtonSettingsColumn()
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group))
 
-        if GroupUsesTriggerPanelEntries(group) and CS.buttonSettingsTab ~= "settings" then
+        if GroupUsesTriggerPanelEntries(group)
+            and CS.buttonSettingsTab ~= "settings"
+            and CS.buttonSettingsTab ~= "soundalerts" then
             CS.buttonSettingsTab = "settings"
         elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
             CS.buttonSettingsTab = "settings"
@@ -1917,4 +1979,5 @@ ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildCustomKeybindSection = BuildCustomKeybindSection
 ST._BuildOverridesTab = BuildOverridesTab
 ST._BuildSpellSoundAlertsTab = BuildSpellSoundAlertsTab
+ST._BuildTriggerPanelSoundAlertsTab = BuildTriggerPanelSoundAlertsTab
 ST._BuildTriggerConditionSettings = BuildTriggerConditionSettings
