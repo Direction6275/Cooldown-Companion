@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.12.5",
         "1.12.4",
         "1.12.3",
         "1.12.2",
@@ -19,6 +20,13 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.12.5"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Outdoor delve load conditions:** Delve-based load conditions now recognize outdoor delves more reliably, so panels meant to appear there should show and hide correctly.
+]],
+        },
         ["1.12.4"] = {
             markdown = [[
 ## New Features
