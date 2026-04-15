@@ -406,7 +406,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Make it movable when unlocked. Texture panels use direct texture dragging
     -- instead of the standard panel drag handle.
-    local isTextureMode = group.displayMode == "textures"
+    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
     frame:SetMovable(true)
     frame:EnableMouse((not isLocked) and (not isTextureMode))
     frame:RegisterForDrag("LeftButton")
@@ -714,7 +714,7 @@ local function GetButtonDimensions(group)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
-    local isTextureMode = group.displayMode == "textures"
+    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
     local w, h
     if isTextureMode then
         w, h = 1, 1
@@ -759,6 +759,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
+    local isTriggerMode = group.displayMode == "trigger"
 
     -- Clear existing buttons (remove from Masque first if enabled)
     for _, button in ipairs(frame.buttons) do
@@ -827,23 +828,27 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
             else
                 button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
-                if group.displayMode == "textures" then
+                if group.displayMode == "textures" or isTriggerMode then
                     button:SetAlpha(0)
                     button._lastVisAlpha = 0
                 end
             end
 
-            -- Position the button using visibleIndex for gap-free layout
-            local yOffset = headerHeight
-            local row, col
-            if orientation == "horizontal" then
-                row = math_floor((visibleIndex - 1) / buttonsPerRow)
-                col = (visibleIndex - 1) % buttonsPerRow
+            if isTriggerMode then
+                button:SetPoint("CENTER", frame, "CENTER", 0, 0)
             else
-                col = math_floor((visibleIndex - 1) / buttonsPerRow)
-                row = (visibleIndex - 1) % buttonsPerRow
+                -- Position the button using visibleIndex for gap-free layout
+                local yOffset = headerHeight
+                local row, col
+                if orientation == "horizontal" then
+                    row = math_floor((visibleIndex - 1) / buttonsPerRow)
+                    col = (visibleIndex - 1) % buttonsPerRow
+                else
+                    col = math_floor((visibleIndex - 1) / buttonsPerRow)
+                    row = (visibleIndex - 1) % buttonsPerRow
+                end
+                button:SetPoint(growthAnchor, frame, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + yOffset))
             end
-            button:SetPoint(growthAnchor, frame, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + yOffset))
 
             button:Show()
             table_insert(frame.buttons, button)
@@ -856,7 +861,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
 
     -- Resize the frame to fit visible buttons
-    frame.visibleButtonCount = visibleIndex
+    frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
     frame._layoutDirty = false
     frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
@@ -1087,7 +1092,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update drag handle text and lock state
     local hasButtons = #group.buttons > 0
-    local isTextureMode = group.displayMode == "textures"
+    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
     if frame.dragHandle then
         if frame.dragHandle.text then
             frame.dragHandle.text:SetText(group.name)
@@ -1296,7 +1301,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if not frame or not group then return end
 
     local isLocked = GetContainerState(groupId)
-    local isTextureMode = group.displayMode == "textures"
+    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
 
     -- When locked: group container is always fully non-interactive
     -- Texture panels also keep the backing group frame non-interactive while

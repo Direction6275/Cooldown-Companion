@@ -63,7 +63,17 @@ local function GroupUsesTexturePanelEntries(group)
     return group and (group.displayMode or "icons") == "textures"
 end
 
+local function GroupUsesTriggerPanelEntries(group)
+    return group and group.displayMode == "trigger"
+end
+
 local function BuildButtonSettingsTabs(group)
+    if GroupUsesTriggerPanelEntries(group) then
+        return {
+            { value = "settings", text = "Condition" },
+        }
+    end
+
     local tabs = {
         { value = "settings", text = "Settings" },
         { value = "soundalerts", text = "Sound Alerts" },
@@ -309,6 +319,71 @@ local function BuildSpellSoundAlertsTab(scroll, buttonData, infoButtons)
     end
 
     BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
+end
+
+local function BuildTriggerConditionSettings(scroll, buttonData)
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then
+        return
+    end
+
+    CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Condition")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local checkOptions, checkOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
+    local checkDrop = AceGUI:Create("Dropdown")
+    checkDrop:SetLabel("Check")
+    checkDrop:SetList(checkOptions, checkOrder)
+    checkDrop:SetValue(buttonData.triggerCondition)
+    checkDrop:SetFullWidth(true)
+    checkDrop:SetCallback("OnValueChanged", function(_, _, value)
+        buttonData.triggerCondition = value
+        CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(checkDrop)
+
+    local expectedOptions, expectedOrder = CooldownCompanion:GetTriggerConditionExpectedOptions(buttonData.triggerCondition)
+    local stateDrop = AceGUI:Create("Dropdown")
+    stateDrop:SetLabel("State")
+    stateDrop:SetList(expectedOptions, expectedOrder)
+    stateDrop:SetValue(buttonData.triggerExpected == false and "false" or "true")
+    stateDrop:SetFullWidth(true)
+    stateDrop:SetCallback("OnValueChanged", function(_, _, value)
+        buttonData.triggerExpected = value ~= "false"
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(stateDrop)
+
+    if buttonData.type == "spell" and buttonData.triggerCondition == "auraActive" then
+        local isHarmful = C_Spell.IsSpellHarmful(buttonData.id)
+        EnsureAuraUnitChoice(buttonData, isHarmful)
+
+        local auraUnitDrop = AceGUI:Create("Dropdown")
+        auraUnitDrop:SetLabel("Aura Unit")
+        auraUnitDrop:SetList({
+            player = "Player",
+            target = "Target",
+        }, { "player", "target" })
+        auraUnitDrop:SetValue(buttonData.auraUnit)
+        auraUnitDrop:SetFullWidth(true)
+        auraUnitDrop:SetCallback("OnValueChanged", function(_, _, value)
+            if value ~= "player" and value ~= "target" then
+                return
+            end
+            EnsureAuraUnitChoice(buttonData, isHarmful, value)
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(auraUnitDrop)
+    end
 end
 
 local function BuildSpellSettings(scroll, buttonData, infoButtons)
@@ -1277,7 +1352,9 @@ local function RefreshButtonSettingsColumn()
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group))
 
-        if GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
+        if GroupUsesTriggerPanelEntries(group) and CS.buttonSettingsTab ~= "settings" then
+            CS.buttonSettingsTab = "settings"
+        elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
             CS.buttonSettingsTab = "settings"
         end
 
@@ -1286,7 +1363,11 @@ local function RefreshButtonSettingsColumn()
         bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or "settings")
     else
         bsCol.bsTabGroup.frame:Hide()
-        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Show() end
+        if bsCol.bsPlaceholder then
+            local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            bsCol.bsPlaceholder:SetText(GroupUsesTriggerPanelEntries(group) and "Select a condition" or "Select a spell or item to configure")
+            bsCol.bsPlaceholder:Show()
+        end
     end
 end
 
@@ -1836,3 +1917,4 @@ ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildCustomKeybindSection = BuildCustomKeybindSection
 ST._BuildOverridesTab = BuildOverridesTab
 ST._BuildSpellSoundAlertsTab = BuildSpellSoundAlertsTab
+ST._BuildTriggerConditionSettings = BuildTriggerConditionSettings

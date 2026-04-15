@@ -549,7 +549,7 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
-    if group.displayMode == "textures" then return false end
+    if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
 
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end

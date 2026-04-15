@@ -312,6 +312,8 @@ local function ApplyPreviewModeBadge(texture, displayMode)
         texture:SetAtlas("poi-workorders", false)
     elseif displayMode == "textures" then
         texture:SetTexture(134400)
+    elseif displayMode == "trigger" then
+        texture:SetTexture(134400)
     else
         texture:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
     end

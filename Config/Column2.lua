@@ -64,6 +64,10 @@ local PANEL_TYPE_TOOLTIPS = {
         title = "Texture Panel",
         description = "One custom texture for a single spell or item.",
     },
+    trigger = {
+        title = "Trigger Panel",
+        description = "One texture shown when all conditions match.",
+    },
 }
 
 local function EnsureRowBadge(frame, key, atlas, iconSize)
@@ -141,6 +145,23 @@ end
 
 local function CanTexturePanelAcceptEntry(group)
     return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
+end
+
+local function IsTriggerPanelGroup(group)
+    return group and group.displayMode == "trigger"
+end
+
+local function GetTriggerRowDisplayText(buttonData)
+    local targetText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+        or buttonData.name
+        or ("Unknown " .. tostring(buttonData.type))
+    if CooldownCompanion.GetTriggerConditionSummary then
+        local summary = CooldownCompanion:GetTriggerConditionSummary(buttonData)
+        if summary and summary ~= "" then
+            return targetText .. "  |cff888888" .. summary .. "|r"
+        end
+    end
+    return targetText
 end
 
 local function ResolveColumn2TooltipSpellId(buttonData)
@@ -640,6 +661,8 @@ local function RefreshColumn2()
                 modeBadge:SetAtlas("poi-workorders", false)
             elseif panel.displayMode == "textures" then
                 modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+            elseif panel.displayMode == "trigger" then
+                modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
             else
                 modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
             end
@@ -1115,6 +1138,18 @@ local function RefreshColumn2()
                 end
             end
 
+            local function CreateTriggerPanel()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "trigger")
+                if newPanelId then
+                    CS.selectedGroup = newPanelId
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
+                    CS.addingToPanelId = newPanelId
+                    CS.pendingEditBoxFocus = true
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+
             local iconPanelBtn = AceGUI:Create("Button")
             iconPanelBtn:SetText("Icon Panel")
             iconPanelBtn:SetCallback("OnClick", CreateIconPanel)
@@ -1165,6 +1200,15 @@ local function RefreshColumn2()
                     info.func = function()
                         CloseDropDownMenus()
                         CreateTexturePanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Trigger Panel"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        CreateTriggerPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end, "MENU")
@@ -1439,6 +1483,8 @@ local function RefreshColumn2()
                 elseif panel.displayMode == "text" then
                     modeBadge:SetAtlas("poi-workorders", false)
                 elseif panel.displayMode == "textures" then
+                    modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                elseif panel.displayMode == "trigger" then
                     modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
                 else
                     modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
@@ -1721,6 +1767,7 @@ local function RefreshColumn2()
                                 { mode = "bars", label = "Bars" },
                                 { mode = "text", label = "Text" },
                                 { mode = "textures", label = "Textures" },
+                                { mode = "trigger", label = "Trigger" },
                             }
                             for _, m in ipairs(switchModes) do
                                 if ctxPanel.displayMode ~= m.mode then
@@ -1944,7 +1991,9 @@ local function RefreshColumn2()
                     CleanRecycledEntry(entry)
                     local usable = CooldownCompanion:IsButtonUsable(buttonData)
 
-                    local entryName = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+                    local entryName = IsTriggerPanelGroup(panel)
+                        and GetTriggerRowDisplayText(buttonData)
+                        or GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
                     entry:SetText(entryName or ("Unknown " .. buttonData.type))
                     entry:SetImage(GetButtonIcon(buttonData))
                     entry:SetImageSize(32, 32)
@@ -2092,7 +2141,7 @@ local function RefreshColumn2()
                             end
                             wipe(CS.selectedPanels)
 
-                            if IsControlKeyDown() then
+                            if IsControlKeyDown() and not IsTriggerPanelGroup(panel) then
                                 if CS.selectedButtons[btnIndex] then
                                     CS.selectedButtons[btnIndex] = nil
                                 else
@@ -2335,7 +2384,7 @@ local function RefreshColumn2()
                     panelMeta.addRowFrame = addRow.frame
 
                     local manualAddBtn = AceGUI:Create("Button")
-                    manualAddBtn:SetText("Manual Add")
+                    manualAddBtn:SetText(IsTriggerPanelGroup(panel) and "Add Condition" or "Manual Add")
                     manualAddBtn:SetRelativeWidth(panel.displayMode == "textures" and 1 or 0.49)
                     panelMeta.manualAddButtonFrame = manualAddBtn.frame
                     manualAddBtn:SetCallback("OnClick", function()

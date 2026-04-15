@@ -167,7 +167,12 @@ local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
         return
     end
 
-    local settings = self:GetTexturePanelSettings(group, true)
+    local settings
+    if group.displayMode == "trigger" then
+        settings = self:GetTriggerPanelSignalSettings(group, true)
+    else
+        settings = self:GetTexturePanelSettings(group, true)
+    end
     local frame = self.groupFrames and self.groupFrames[groupId]
     local anchor = type(group.anchor) == "table" and group.anchor or nil
     local point = (anchor and anchor.point) or "CENTER"
@@ -208,7 +213,12 @@ local function SyncGroupAnchorFromTexturePanelSettings(self, group)
         return
     end
 
-    local settings = self:GetTexturePanelSettings(group)
+    local settings
+    if group.displayMode == "trigger" then
+        settings = self:GetTriggerPanelSignalSettings(group)
+    else
+        settings = self:GetTexturePanelSettings(group)
+    end
     if not settings then
         return
     end
@@ -727,6 +737,17 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
             x = 0,
             y = 0,
         }
+    elseif displayMode == "trigger" then
+        db.groups[groupId].triggerSettings = {
+            signal = {
+                blendMode = "BLEND",
+                point = "CENTER",
+                relativePoint = "CENTER",
+                relativeTo = "UIParent",
+                x = 0,
+                y = 0,
+            },
+        }
     end
 
     self:CreateGroupFrame(groupId)
@@ -820,7 +841,7 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     end
 
     local oldMode = group.displayMode
-    if oldMode == "textures" and newMode ~= "textures" then
+    if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
         -- Leaving texture mode should carry the standalone texture position
         -- back into the normal panel anchor so the panel does not jump back.
         SyncGroupAnchorFromTexturePanelSettings(self, group)
@@ -833,10 +854,27 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
         self:ToggleGroupMasque(groupId, false)
     end
-    if newMode == "textures" then
+    if newMode == "textures" or newMode == "trigger" then
         -- Entering texture mode switches from group.anchor to textureSettings,
         -- so convert the panel's current on-screen position once here.
         SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
+    end
+    if newMode == "trigger" then
+        group.triggerSettings = group.triggerSettings or {
+            signal = {
+                blendMode = "BLEND",
+                point = "CENTER",
+                relativePoint = "CENTER",
+                relativeTo = "UIParent",
+                x = 0,
+                y = 0,
+            },
+        }
+        if self.NormalizeTriggerConditionRowData then
+            for _, buttonData in ipairs(group.buttons or {}) do
+                self:NormalizeTriggerConditionRowData(buttonData)
+            end
+        end
     end
     self:RefreshGroupFrame(groupId)
     return true
@@ -1211,6 +1249,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             group.buttons,
             { trustExplicitAuraLabel = true }
         )
+    end
+
+    if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then
+        self:NormalizeTriggerConditionRowData(newButton)
     end
 
     self:RefreshGroupFrame(groupId)
