@@ -1568,11 +1568,17 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
         buttonData.triggerExpected = nil
     end
 
-    if buttonData.type == "spell" and (buttonData.isPassive == true or buttonData.triggerCondition == "auraActive") then
-        buttonData.auraTracking = true
-        buttonData.auraIndicatorEnabled = true
-        if buttonData.addedAs ~= "aura" and buttonData.isPassive == true then
-            buttonData.addedAs = "aura"
+    if buttonData.type == "spell" then
+        local shouldAuraTrack = buttonData.isPassive == true or buttonData.triggerCondition == "auraActive"
+        if shouldAuraTrack then
+            buttonData.auraTracking = true
+            buttonData.auraIndicatorEnabled = true
+            if buttonData.addedAs ~= "aura" and buttonData.isPassive == true then
+                buttonData.addedAs = "aura"
+            end
+        else
+            buttonData.auraTracking = false
+            buttonData.auraIndicatorEnabled = false
         end
     end
 
@@ -2880,22 +2886,28 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     if conditionKey == "rangeActive" then
         local buttonData = button.buttonData
         if not buttonData or buttonData.isPassive then
-            return false
+            return nil
         end
 
         if buttonData.type == "spell" then
-            return button._spellOutOfRange ~= true
+            if button._spellOutOfRange == nil then
+                return nil
+            end
+            return button._spellOutOfRange == false
         end
 
         if buttonData.type == "item" or buttonData.type == "equipitem" then
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
                 local inRange = C_Item.IsItemInRange(buttonData.id, "target")
-                return inRange ~= false
+                if inRange == nil then
+                    return nil
+                end
+                return inRange == true
             end
-            return true
+            return nil
         end
 
-        return false
+        return nil
     end
 
     if conditionKey == "usable" then
@@ -2979,19 +2991,31 @@ local function DoesTriggerPanelMatch(frame)
         return false
     end
 
-    local buttons = frame.buttons
-    if type(buttons) ~= "table" or #buttons == 0 then
+    local group = frame.groupId and ResolveGroup(frame.groupId) or nil
+    local configuredRows = group and group.buttons
+    if type(configuredRows) ~= "table" or #configuredRows == 0 then
         return false
     end
 
-    for _, button in ipairs(buttons) do
-        local buttonData = button.buttonData
+    local runtimeButtonsByIndex = {}
+    for _, button in ipairs(frame.buttons or {}) do
+        if button and button.index then
+            runtimeButtonsByIndex[button.index] = button
+        end
+    end
+
+    for rowIndex, buttonData in ipairs(configuredRows) do
         local conditionKey = buttonData and NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
         if not conditionKey then
             return false
         end
 
-        local actualState = EvaluateTriggerRowCondition(button, conditionKey)
+        local runtimeButton = runtimeButtonsByIndex[rowIndex]
+        if not runtimeButton then
+            return false
+        end
+
+        local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
         if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
             local expected = buttonData.triggerExpected ~= false
             if actualState ~= expected then
@@ -3559,7 +3583,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         if hasPreviewSelection then
             showTexture = true
         elseif isTriggerPanel then
-            showTexture = triggerMatched
+            showTexture = triggerMatched or isEditing or isUnlocked
         elseif isEditing then
             showTexture = true
         elseif isConfigForceVisible then
@@ -3628,7 +3652,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
-    local bypassModuleAlpha = hasPreviewSelection or ((not isTriggerPanel) and (isEditing or isConfigForceVisible or isUnlocked))
+    local bypassModuleAlpha = hasPreviewSelection or isEditing or isConfigForceVisible or isUnlocked
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     if alphaModuleId then
         if bypassModuleAlpha then
@@ -3671,10 +3695,16 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         driverButton._lastVisAlpha = 0
     end
     if ST.SetFrameClickThroughRecursive then
-        -- The visible texture host is intentionally non-interactive. Make the hidden
-        -- backing button fully click/hover-through too, so tooltip-enabled icon panels
-        -- do not leave an invisible hotspot behind after switching to texture mode.
-        ST.SetFrameClickThroughRecursive(driverButton, true, true)
+        -- The visible texture host is intentionally non-interactive. Make every hidden
+        -- backing button fully click/hover-through too, so stacked trigger rows do not
+        -- leave invisible tooltip hotspots behind the visible texture.
+        if isTriggerPanel and frame and type(frame.buttons) == "table" then
+            for _, backingButton in ipairs(frame.buttons) do
+                ST.SetFrameClickThroughRecursive(backingButton, true, true)
+            end
+        else
+            ST.SetFrameClickThroughRecursive(driverButton, true, true)
+        end
     end
 end
 
