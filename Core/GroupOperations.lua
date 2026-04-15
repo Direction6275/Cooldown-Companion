@@ -1217,6 +1217,8 @@ function CooldownCompanion:UnloadGroup(groupId)
     else
         frame:Hide()
     end
+    frame._triggerSoundInitialized = true
+    frame._triggerSoundWasVisible = false
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil

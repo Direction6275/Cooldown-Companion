@@ -3004,32 +3004,41 @@ local function DoesTriggerPanelMatch(frame)
         end
     end
 
+    local activeRowCount = 0
     for rowIndex, buttonData in ipairs(configuredRows) do
-        local conditionKey = buttonData and NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-        if not conditionKey then
+        if type(buttonData) ~= "table" then
             return false
         end
 
-        local runtimeButton = runtimeButtonsByIndex[rowIndex]
-        if not runtimeButton then
-            return false
-        end
-
-        local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
-        if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-            local expected = buttonData.triggerExpected ~= false
-            if actualState ~= expected then
+        if buttonData.enabled ~= false
+            and (not CooldownCompanion.IsButtonUsable or CooldownCompanion:IsButtonUsable(buttonData)) then
+            local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
+            if not conditionKey then
                 return false
             end
-        else
-            local expectedState = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
-            if actualState ~= expectedState then
+
+            activeRowCount = activeRowCount + 1
+            local runtimeButton = runtimeButtonsByIndex[rowIndex]
+            if not runtimeButton then
                 return false
+            end
+
+            local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
+            if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+                local expected = buttonData.triggerExpected ~= false
+                if actualState ~= expected then
+                    return false
+                end
+            else
+                local expectedState = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+                if actualState ~= expectedState then
+                    return false
+                end
             end
         end
     end
 
-    return true
+    return activeRowCount > 0
 end
 
 local function ApplyTextureIndicatorEffects(host, button, group)
@@ -3493,8 +3502,13 @@ local function IsStandaloneTextureEditingButton(button)
         return false
     end
 
-    if CS.selectedButton == nil and (CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout") then
-        return true
+    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout" then
+        if CooldownCompanion:IsTriggerPanelGroup(group) then
+            return true
+        end
+        if CS.selectedButton == nil then
+            return true
+        end
     end
 
     local pickerWindow = CS.auraTexturePickerWindow

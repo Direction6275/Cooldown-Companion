@@ -105,6 +105,25 @@ local function GetConfiguredAuraUnit(buttonData)
     return buttonData.auraUnit or "player"
 end
 
+local function DispatchStandaloneTextureVisual(button)
+    if not button then
+        return
+    end
+
+    local group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
+    if group and group.displayMode == "trigger" then
+        local frame = button:GetParent()
+        local runtimeButtons = frame and frame.buttons
+        if type(runtimeButtons) == "table" and runtimeButtons[#runtimeButtons] == button then
+            CooldownCompanion:UpdateAuraTextureVisual(runtimeButtons[1] or button)
+        end
+        return
+    end
+
+    CooldownCompanion:UpdateAuraTextureVisual(button)
+end
+
 -- GCD-only detection: is the spell's cooldown just the global cooldown?
 -- NeverSecret path uses direct field comparison (precise at GCD boundaries).
 -- Secret path uses isOnGCD + _gcdActive (coarser, avoids secret arithmetic).
@@ -1467,7 +1486,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
             end
-            CooldownCompanion:UpdateAuraTextureVisual(button)
+            DispatchStandaloneTextureVisual(button)
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1483,7 +1502,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
-            CooldownCompanion:UpdateAuraTextureVisual(button)
+            DispatchStandaloneTextureVisual(button)
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1530,9 +1549,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateTextDisplay(button)
     elseif button._isBar then
         UpdateBarDisplay(button)
-        CooldownCompanion:UpdateAuraTextureVisual(button)
+        DispatchStandaloneTextureVisual(button)
     else
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
-        CooldownCompanion:UpdateAuraTextureVisual(button)
+        DispatchStandaloneTextureVisual(button)
     end
 end
