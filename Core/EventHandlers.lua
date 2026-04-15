@@ -46,7 +46,9 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and not bd.isPassive and button.style and button.style.showOutOfRange then
+        if bd.type == "spell"
+            and not bd.isPassive
+            and ((button.style and button.style.showOutOfRange) or bd.triggerCondition == "rangeActive") then
             newSet[bd.id] = true
         end
     end)
@@ -134,21 +136,12 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     local mc = chargeInfo.maxCharges
                     if mc > 1 then
                         hasRealCharges = true
-                        if mc > (buttonData.maxCharges or 0) then
+                        if mc ~= buttonData.maxCharges then
                             buttonData.maxCharges = mc
                         end
                         -- Auto-enable charge text when first promoted to charge-based.
                         if buttonData.showChargeText == nil then
                             buttonData.showChargeText = true
-                        end
-
-                        -- Secondary source: display count
-                        local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
-                        if not issecretvalue(rawDisplayCount) then
-                            local displayCount = tonumber(rawDisplayCount)
-                            if displayCount and displayCount > (buttonData.maxCharges or 0) then
-                                buttonData.maxCharges = displayCount
-                            end
                         end
                     else
                         hasRealCharges = nil

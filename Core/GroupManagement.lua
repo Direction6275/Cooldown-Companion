@@ -1124,15 +1124,6 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 group.buttons[buttonIndex]._hasDisplayCount = nil
                 group.buttons[buttonIndex].showChargeText = true
                 group.buttons[buttonIndex].maxCharges = mc
-
-                -- Secondary: display count
-                local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
-                if not issecretvalue(rawDisplayCount) then
-                    local displayCount = tonumber(rawDisplayCount)
-                    if displayCount and displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
-                        group.buttons[buttonIndex].maxCharges = displayCount
-                    end
-                end
             end
         else
             local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)

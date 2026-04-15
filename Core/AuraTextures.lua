@@ -731,22 +731,29 @@ local TRIGGER_CONDITION_LABELS = {
     cooldownActive = "Cooldown",
     auraActive = "Aura",
     procActive = "Proc",
+    rangeActive = "Range",
     usable = "Usable",
     chargesRecharging = "Charges",
+    chargeState = "Charges",
+    countState = "Count",
 }
 
 local TRIGGER_EXPECTED_LABELS = {
     cooldownActive = {
-        ["true"] = "Active",
-        ["false"] = "Not Active",
+        ["true"] = "On Cooldown",
+        ["false"] = "Off Cooldown",
     },
     auraActive = {
         ["true"] = "Active",
-        ["false"] = "Not Active",
+        ["false"] = "Inactive",
     },
     procActive = {
         ["true"] = "Active",
-        ["false"] = "Not Active",
+        ["false"] = "Inactive",
+    },
+    rangeActive = {
+        ["true"] = "In Range",
+        ["false"] = "Out of Range",
     },
     usable = {
         ["true"] = "Usable",
@@ -758,10 +765,23 @@ local TRIGGER_EXPECTED_LABELS = {
     },
 }
 
+local TRIGGER_STATE_LABELS = {
+    chargeState = {
+        full = "Full",
+        missing = "Missing",
+        zero = "Zero",
+    },
+    countState = {
+        full = "Full",
+        missing = "Missing",
+        zero = "Zero",
+    },
+}
+
 local TRIGGER_CONDITION_ORDERS = {
-    spell = { "cooldownActive", "auraActive", "procActive", "usable", "chargesRecharging" },
+    spell = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" },
     passiveSpell = { "auraActive", "procActive" },
-    item = { "cooldownActive", "usable", "chargesRecharging" },
+    item = { "cooldownActive", "rangeActive", "usable" },
 }
 
 local function CopyColor(color)
@@ -846,17 +866,32 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
     end
 
     if buttonData.type == "item" or buttonData.type == "equipitem" then
-        return TRIGGER_CONDITION_ORDERS.item
+        local order = { "cooldownActive", "rangeActive", "usable" }
+        if buttonData.hasCharges == true then
+            order[#order + 1] = "chargeState"
+        end
+        return order
     end
 
     if buttonData.type == "spell" and buttonData.isPassive == true then
-        return TRIGGER_CONDITION_ORDERS.passiveSpell
+        return { "auraActive", "procActive" }
     end
 
-    return TRIGGER_CONDITION_ORDERS.spell
+    local order = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" }
+    if buttonData.hasCharges == true and not buttonData._hasDisplayCount then
+        order[#order + 1] = "chargeState"
+    end
+    if buttonData._hasDisplayCount == true then
+        order[#order + 1] = "countState"
+    end
+    return order
 end
 
 local function NormalizeTriggerConditionKey(buttonData, conditionKey)
+    if conditionKey == "chargesRecharging" then
+        return conditionKey
+    end
+
     local order = GetTriggerConditionOrderForButtonData(buttonData)
     for _, validKey in ipairs(order) do
         if conditionKey == validKey then
@@ -864,6 +899,20 @@ local function NormalizeTriggerConditionKey(buttonData, conditionKey)
         end
     end
     return order[1]
+end
+
+local function NormalizeTriggerStateKey(conditionKey, stateKey)
+    if not TRIGGER_STATE_LABELS[conditionKey] then
+        return nil
+    end
+
+    for _, validKey in ipairs({ "full", "missing", "zero" }) do
+        if stateKey == validKey then
+            return validKey
+        end
+    end
+
+    return "full"
 end
 
 local VALID_POINTS = {
@@ -1511,7 +1560,13 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
     end
 
     buttonData.triggerCondition = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-    buttonData.triggerExpected = buttonData.triggerExpected ~= false
+    if TRIGGER_EXPECTED_LABELS[buttonData.triggerCondition] ~= nil then
+        buttonData.triggerExpected = buttonData.triggerExpected ~= false
+        buttonData.triggerState = nil
+    else
+        buttonData.triggerState = NormalizeTriggerStateKey(buttonData.triggerCondition, buttonData.triggerState)
+        buttonData.triggerExpected = nil
+    end
 
     if buttonData.type == "spell" and (buttonData.isPassive == true or buttonData.triggerCondition == "auraActive") then
         buttonData.auraTracking = true
@@ -1526,6 +1581,9 @@ end
 
 function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
     local order = GetTriggerConditionOrderForButtonData(buttonData)
+    if type(buttonData) == "table" and buttonData.triggerCondition == "chargesRecharging" then
+        order[#order + 1] = "chargesRecharging"
+    end
     local options = {}
     for _, key in ipairs(order) do
         options[key] = TRIGGER_CONDITION_LABELS[key]
@@ -1534,8 +1592,41 @@ function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
 end
 
 function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
+    if TRIGGER_STATE_LABELS[conditionKey] then
+        return TRIGGER_STATE_LABELS[conditionKey], { "full", "missing", "zero" }
+    end
+
     local options = TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive
     return options, { "true", "false" }
+end
+
+function CooldownCompanion:GetTriggerConditionStateValue(buttonData)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        return buttonData.triggerExpected == false and "false" or "true"
+    end
+
+    return NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+end
+
+function CooldownCompanion:SetTriggerConditionStateValue(buttonData, value)
+    if type(buttonData) ~= "table" then
+        return
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        buttonData.triggerExpected = (value ~= "false")
+        buttonData.triggerState = nil
+        return
+    end
+
+    buttonData.triggerState = NormalizeTriggerStateKey(conditionKey, value)
+    buttonData.triggerExpected = nil
 end
 
 function CooldownCompanion:GetTriggerConditionSummary(buttonData)
@@ -1545,7 +1636,13 @@ function CooldownCompanion:GetTriggerConditionSummary(buttonData)
 
     local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
     local conditionLabel = TRIGGER_CONDITION_LABELS[conditionKey]
-    local stateLabel = (TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive)[buttonData.triggerExpected == false and "false" or "true"]
+    local stateLabel
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        stateLabel = (TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive)[buttonData.triggerExpected == false and "false" or "true"]
+    else
+        local stateKey = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+        stateLabel = TRIGGER_STATE_LABELS[conditionKey] and TRIGGER_STATE_LABELS[conditionKey][stateKey]
+    end
     if not conditionLabel or not stateLabel then
         return nil
     end
@@ -2780,6 +2877,27 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         return button._procOverlayActive == true
     end
 
+    if conditionKey == "rangeActive" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.isPassive then
+            return false
+        end
+
+        if buttonData.type == "spell" then
+            return button._spellOutOfRange ~= true
+        end
+
+        if buttonData.type == "item" or buttonData.type == "equipitem" then
+            if not InCombatLockdown() or UnitCanAttack("player", "target") then
+                local inRange = C_Item.IsItemInRange(buttonData.id, "target")
+                return inRange ~= false
+            end
+            return true
+        end
+
+        return false
+    end
+
     if conditionKey == "usable" then
         local buttonData = button.buttonData
         if not buttonData or buttonData.isPassive then
@@ -2796,6 +2914,61 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
 
     if conditionKey == "chargesRecharging" then
         return button._chargeRecharging == true
+    end
+
+    if conditionKey == "chargeState" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.hasCharges ~= true then
+            return nil
+        end
+
+        local currentCharges = button._currentReadableCharges
+        local maxCharges = buttonData.maxCharges
+        if currentCharges ~= nil then
+            if currentCharges <= 0 then
+                return "zero"
+            end
+            if maxCharges ~= nil and maxCharges > 0 then
+                if currentCharges >= maxCharges then
+                    return "full"
+                end
+                return "missing"
+            end
+        end
+
+        if button._zeroChargesConfirmed == true then
+            return "zero"
+        end
+        if button._chargeRecharging == true then
+            return "missing"
+        end
+        if button._chargeRecharging == false then
+            return "full"
+        end
+        return nil
+    end
+
+    if conditionKey == "countState" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData._hasDisplayCount ~= true then
+            return nil
+        end
+
+        local currentCount = button._currentReadableCharges
+        local maxCount = buttonData.maxCharges
+        if currentCount == nil then
+            return nil
+        end
+        if currentCount <= 0 then
+            return "zero"
+        end
+        if maxCount ~= nil and maxCount > 0 then
+            if currentCount >= maxCount then
+                return "full"
+            end
+            return "missing"
+        end
+        return nil
     end
 
     return false
@@ -2818,9 +2991,17 @@ local function DoesTriggerPanelMatch(frame)
             return false
         end
 
-        local expected = buttonData.triggerExpected ~= false
-        if EvaluateTriggerRowCondition(button, conditionKey) ~= expected then
-            return false
+        local actualState = EvaluateTriggerRowCondition(button, conditionKey)
+        if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+            local expected = buttonData.triggerExpected ~= false
+            if actualState ~= expected then
+                return false
+            end
+        else
+            local expectedState = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+            if actualState ~= expectedState then
+                return false
+            end
         end
     end
 
