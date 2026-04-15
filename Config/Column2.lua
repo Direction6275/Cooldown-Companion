@@ -656,6 +656,9 @@ local function RefreshColumn2()
             end
             modeBadge:ClearAllPoints()
             modeBadge:SetSize(16, 16)
+            if modeBadge.SetDesaturated then
+                modeBadge:SetDesaturated(false)
+            end
             modeBadge:SetVertexColor(1, 1, 1, 1)
             if panel.displayMode == "bars" then
                 modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
@@ -665,6 +668,9 @@ local function RefreshColumn2()
                 modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
             elseif panel.displayMode == "trigger" then
                 modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                if modeBadge.SetDesaturated then
+                    modeBadge:SetDesaturated(true)
+                end
                 modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
             else
                 modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
@@ -1481,6 +1487,9 @@ local function RefreshColumn2()
                 end
                 modeBadge:ClearAllPoints()
                 modeBadge:SetSize(16, 16)
+                if modeBadge.SetDesaturated then
+                    modeBadge:SetDesaturated(false)
+                end
                 modeBadge:SetVertexColor(1, 1, 1, 1)
                 if panel.displayMode == "bars" then
                     modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
@@ -1490,6 +1499,9 @@ local function RefreshColumn2()
                     modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
                 elseif panel.displayMode == "trigger" then
                     modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                    if modeBadge.SetDesaturated then
+                        modeBadge:SetDesaturated(true)
+                    end
                     modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
                 else
                     modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
