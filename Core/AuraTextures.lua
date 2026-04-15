@@ -3375,13 +3375,13 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     if settings then
         if hasPreviewSelection then
             showTexture = true
+        elseif isTriggerPanel then
+            showTexture = frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false
         elseif isEditing then
             showTexture = true
         elseif isConfigForceVisible then
             showTexture = true
         elseif isUnlocked then
-            showTexture = true
-        elseif isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) then
             showTexture = true
         elseif driverButton:GetParent()
             and driverButton:GetParent():IsShown()
@@ -3440,7 +3440,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
-    local bypassModuleAlpha = isEditing or isConfigForceVisible or isUnlocked
+    local bypassModuleAlpha = hasPreviewSelection or ((not isTriggerPanel) and (isEditing or isConfigForceVisible or isUnlocked))
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     if alphaModuleId then
         if bypassModuleAlpha then
