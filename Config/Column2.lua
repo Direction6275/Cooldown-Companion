@@ -47,6 +47,7 @@ local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
+local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.82, 0.0 }
 local PANEL_TYPE_TOOLTIPS = {
     icons = {
         title = "Icon Panel",
@@ -655,6 +656,7 @@ local function RefreshColumn2()
             end
             modeBadge:ClearAllPoints()
             modeBadge:SetSize(16, 16)
+            modeBadge:SetVertexColor(1, 1, 1, 1)
             if panel.displayMode == "bars" then
                 modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
             elseif panel.displayMode == "text" then
@@ -663,6 +665,7 @@ local function RefreshColumn2()
                 modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
             elseif panel.displayMode == "trigger" then
                 modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
             else
                 modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
             end
@@ -1478,6 +1481,7 @@ local function RefreshColumn2()
                 end
                 modeBadge:ClearAllPoints()
                 modeBadge:SetSize(16, 16)
+                modeBadge:SetVertexColor(1, 1, 1, 1)
                 if panel.displayMode == "bars" then
                     modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
                 elseif panel.displayMode == "text" then
@@ -1486,6 +1490,7 @@ local function RefreshColumn2()
                     modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
                 elseif panel.displayMode == "trigger" then
                     modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                    modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
                 else
                     modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
                 end
