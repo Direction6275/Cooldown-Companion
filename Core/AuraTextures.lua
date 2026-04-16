@@ -13,6 +13,7 @@ local C_Spell_GetSpellName = C_Spell.GetSpellName
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local GetTime = GetTime
 local ipairs = ipairs
+local issecretvalue = issecretvalue
 local math_abs = math.abs
 local math_cos = math.cos
 local math_floor = math.floor
@@ -735,7 +736,8 @@ local TRIGGER_CONDITION_LABELS = {
     usable = "Usable",
     chargesRecharging = "Charges",
     chargeState = "Charges",
-    countState = "Count",
+    countTextActive = "Count Text",
+    countState = "Display Count",
 }
 
 local TRIGGER_EXPECTED_LABELS = {
@@ -762,6 +764,10 @@ local TRIGGER_EXPECTED_LABELS = {
     chargesRecharging = {
         ["true"] = "Recharging",
         ["false"] = "Not Recharging",
+    },
+    countTextActive = {
+        ["true"] = "Shown",
+        ["false"] = "Hidden",
     },
 }
 
@@ -878,11 +884,14 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
     end
 
     local order = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" }
-    if buttonData.hasCharges == true and not buttonData._hasDisplayCount then
+    if buttonData.hasCharges == true then
         order[#order + 1] = "chargeState"
-    end
-    if buttonData._hasDisplayCount == true then
-        order[#order + 1] = "countState"
+    elseif CooldownCompanion.HasNonChargeCountTextBehavior
+            and CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) then
+        order[#order + 1] = "countTextActive"
+        if buttonData._hasDisplayCount == true then
+            order[#order + 1] = "countState"
+        end
     end
     return order
 end
@@ -2960,9 +2969,24 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         return nil
     end
 
+    if conditionKey == "countTextActive" then
+        local buttonData = button.buttonData
+        if not buttonData
+                or not CooldownCompanion.HasNonChargeCountTextBehavior
+                or not CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) then
+            return nil
+        end
+
+        local countText = button.count and button.count:GetText() or nil
+        if issecretvalue(countText) then
+            return true
+        end
+        return countText ~= nil and countText ~= ""
+    end
+
     if conditionKey == "countState" then
         local buttonData = button.buttonData
-        if not buttonData or buttonData._hasDisplayCount ~= true then
+        if not buttonData or buttonData._hasDisplayCount ~= true or buttonData.hasCharges == true then
             return nil
         end
 

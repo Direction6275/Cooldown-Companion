@@ -117,6 +117,11 @@ local function HasCastCountText(buttonData)
 end
 CooldownCompanion.HasCastCountText = HasCastCountText
 
+local function HasConditionalCastCountText(buttonData)
+    return GetConditionalCastCountFamily(buttonData) ~= nil
+end
+CooldownCompanion.HasConditionalCastCountText = HasConditionalCastCountText
+
 local function GetCastCountSpellID(buttonData, currentSpellID)
     local family = GetCastCountFamily(buttonData)
     if not family then return nil end
@@ -162,6 +167,19 @@ local function UsesChargeBehavior(buttonData)
     return buttonData.hasCharges == true or buttonData._hasDisplayCount == true
 end
 CooldownCompanion.UsesChargeBehavior = UsesChargeBehavior
+
+local function HasNonChargeCountTextBehavior(buttonData)
+    if not buttonData or buttonData.type ~= "spell" then
+        return false
+    end
+    if buttonData.hasCharges == true then
+        return false
+    end
+    return buttonData._hasDisplayCount == true
+        or HasCastCountText(buttonData)
+        or HasConditionalCastCountText(buttonData)
+end
+CooldownCompanion.HasNonChargeCountTextBehavior = HasNonChargeCountTextBehavior
 
 -- Count text intentionally shares the charge font lane for real charges,
 -- Blizzard display/use counts, and spell cast-count stacks.
