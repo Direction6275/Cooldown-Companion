@@ -924,6 +924,7 @@ local function NormalizeTriggerStateKey(conditionKey, stateKey)
     return "full"
 end
 
+
 local VALID_POINTS = {
     TOPLEFT = true,
     TOP = true,
@@ -1563,22 +1564,134 @@ function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId, createIfMiss
     return NormalizeAuraTextureSettings(group.triggerSettings.signal)
 end
 
+function CooldownCompanion:BuildLegacyTriggerConditionClause(buttonData)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
+    if not conditionKey then
+        return nil
+    end
+
+    local clause = { key = conditionKey }
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        clause.expected = buttonData.triggerExpected ~= false
+    else
+        clause.state = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+    end
+
+    return clause
+end
+
+function CooldownCompanion:NormalizeTriggerConditionClause(buttonData, clause, usedKeys)
+    if type(clause) ~= "table" then
+        return nil
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(
+        buttonData,
+        clause.key or clause.conditionKey or clause.triggerCondition
+    )
+    if not conditionKey or (usedKeys and usedKeys[conditionKey]) then
+        return nil
+    end
+
+    local normalized = { key = conditionKey }
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        normalized.expected = clause.expected ~= false and clause.expected ~= "false"
+    else
+        normalized.state = NormalizeTriggerStateKey(conditionKey, clause.state or clause.triggerState)
+    end
+
+    if usedKeys then
+        usedKeys[conditionKey] = true
+    end
+
+    return normalized
+end
+
+function CooldownCompanion:GetTriggerConditionClauses(buttonData)
+    if type(buttonData) ~= "table" then
+        return {}
+    end
+
+    local normalizedClauses = {}
+    local usedKeys = {}
+    local sourceClauses = type(buttonData.triggerConditions) == "table" and buttonData.triggerConditions or nil
+
+    if sourceClauses then
+        for _, clause in ipairs(sourceClauses) do
+            local normalizedClause = self:NormalizeTriggerConditionClause(buttonData, clause, usedKeys)
+            if normalizedClause then
+                normalizedClauses[#normalizedClauses + 1] = normalizedClause
+            end
+        end
+    end
+
+    if #normalizedClauses == 0 then
+        local legacyClause = self:BuildLegacyTriggerConditionClause(buttonData)
+        if legacyClause then
+            usedKeys[legacyClause.key] = true
+            normalizedClauses[1] = legacyClause
+        end
+    end
+
+    if #normalizedClauses == 0 then
+        local fallbackKey = NormalizeTriggerConditionKey(buttonData, nil)
+        if fallbackKey then
+            if TRIGGER_EXPECTED_LABELS[fallbackKey] ~= nil then
+                normalizedClauses[1] = {
+                    key = fallbackKey,
+                    expected = true,
+                }
+            else
+                normalizedClauses[1] = {
+                    key = fallbackKey,
+                    state = NormalizeTriggerStateKey(fallbackKey, nil),
+                }
+            end
+        end
+    end
+
+    return normalizedClauses
+end
+
 function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
     if type(buttonData) ~= "table" then
         return nil
     end
 
-    buttonData.triggerCondition = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-    if TRIGGER_EXPECTED_LABELS[buttonData.triggerCondition] ~= nil then
-        buttonData.triggerExpected = buttonData.triggerExpected ~= false
-        buttonData.triggerState = nil
-    else
-        buttonData.triggerState = NormalizeTriggerStateKey(buttonData.triggerCondition, buttonData.triggerState)
-        buttonData.triggerExpected = nil
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local primaryClause = clauses[1]
+    if primaryClause then
+        buttonData.triggerCondition = primaryClause.key
+        if TRIGGER_EXPECTED_LABELS[primaryClause.key] ~= nil then
+            buttonData.triggerExpected = primaryClause.expected ~= false
+            buttonData.triggerState = nil
+        else
+            buttonData.triggerState = NormalizeTriggerStateKey(primaryClause.key, primaryClause.state)
+            buttonData.triggerExpected = nil
+        end
+    end
+
+    if type(buttonData.triggerConditions) == "table" then
+        buttonData.triggerConditions = clauses
     end
 
     if buttonData.type == "spell" then
-        local shouldAuraTrack = buttonData.isPassive == true or buttonData.triggerCondition == "auraActive"
+        local hasAuraClause = false
+        for _, clause in ipairs(clauses) do
+            if clause.key == "auraActive" then
+                hasAuraClause = true
+                break
+            end
+        end
+
+        local shouldAuraTrack = buttonData.isPassive == true
+            or buttonData.addedAs == "aura"
+            or buttonData.auraTracking == true
+            or hasAuraClause
         if shouldAuraTrack then
             buttonData.auraTracking = true
             buttonData.auraIndicatorEnabled = true
@@ -1594,16 +1707,48 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
     return buttonData
 end
 
-function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
+function CooldownCompanion:TriggerRowUsesCondition(buttonData, conditionKey)
+    if type(buttonData) ~= "table" or type(conditionKey) ~= "string" then
+        return false
+    end
+
+    for _, clause in ipairs(self:GetTriggerConditionClauses(buttonData)) do
+        if clause.key == conditionKey then
+            return true
+        end
+    end
+
+    return false
+end
+
+function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
     local order = GetTriggerConditionOrderForButtonData(buttonData)
-    if type(buttonData) == "table" and buttonData.triggerCondition == "chargesRecharging" then
+    local excluded = {}
+    if type(excludedKeys) == "table" then
+        for _, key in ipairs(excludedKeys) do
+            if type(key) == "string" then
+                excluded[key] = true
+            end
+        end
+        for key, value in pairs(excludedKeys) do
+            if value == true and type(key) == "string" then
+                excluded[key] = true
+            end
+        end
+    end
+
+    if self:TriggerRowUsesCondition(buttonData, "chargesRecharging") then
         order[#order + 1] = "chargesRecharging"
     end
     local options = {}
+    local filteredOrder = {}
     for _, key in ipairs(order) do
-        options[key] = TRIGGER_CONDITION_LABELS[key]
+        if not excluded[key] then
+            options[key] = TRIGGER_CONDITION_LABELS[key]
+            filteredOrder[#filteredOrder + 1] = key
+        end
     end
-    return options, order
+    return options, filteredOrder
 end
 
 function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
@@ -1615,33 +1760,108 @@ function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
     return options, { "true", "false" }
 end
 
-function CooldownCompanion:GetTriggerConditionStateValue(buttonData)
+function CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex)
     if type(buttonData) ~= "table" then
         return nil
     end
 
-    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-        return buttonData.triggerExpected == false and "false" or "true"
+    local clause = self:GetTriggerConditionClauses(buttonData)[clauseIndex or 1]
+    if not clause then
+        return nil
     end
 
-    return NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        return clause.expected == false and "false" or "true"
+    end
+
+    return NormalizeTriggerStateKey(conditionKey, clause.state)
 end
 
-function CooldownCompanion:SetTriggerConditionStateValue(buttonData, value)
+function CooldownCompanion:SetTriggerConditionClauses(buttonData, clauses)
     if type(buttonData) ~= "table" then
         return
     end
 
-    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-        buttonData.triggerExpected = (value ~= "false")
-        buttonData.triggerState = nil
+    buttonData.triggerConditions = clauses
+    self:NormalizeTriggerConditionRowData(buttonData)
+end
+
+function CooldownCompanion:SetTriggerConditionKey(buttonData, clauseIndex, conditionKey)
+    if type(buttonData) ~= "table" then
         return
     end
 
-    buttonData.triggerState = NormalizeTriggerStateKey(conditionKey, value)
-    buttonData.triggerExpected = nil
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local clause = clauses[clauseIndex]
+    if not clause then
+        return
+    end
+
+    clause.key = conditionKey
+    clause.expected = nil
+    clause.state = nil
+    self:SetTriggerConditionClauses(buttonData, clauses)
+end
+
+function CooldownCompanion:SetTriggerConditionStateValue(buttonData, value, clauseIndex)
+    if type(buttonData) ~= "table" then
+        return
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local clause = clauses[clauseIndex or 1]
+    if not clause then
+        return
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        clause.expected = (value ~= "false")
+        clause.state = nil
+        self:SetTriggerConditionClauses(buttonData, clauses)
+        return
+    end
+
+    clause.state = NormalizeTriggerStateKey(conditionKey, value)
+    clause.expected = nil
+    self:SetTriggerConditionClauses(buttonData, clauses)
+end
+
+function CooldownCompanion:AddTriggerConditionClause(buttonData, conditionKey)
+    if type(buttonData) ~= "table" then
+        return false
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local excludedKeys = {}
+    for _, clause in ipairs(clauses) do
+        excludedKeys[#excludedKeys + 1] = clause.key
+    end
+
+    local _, order = self:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
+    if #order == 0 then
+        return false
+    end
+
+    clauses[#clauses + 1] = { key = conditionKey or order[1] }
+    self:SetTriggerConditionClauses(buttonData, clauses)
+    return true
+end
+
+function CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex)
+    if type(buttonData) ~= "table" then
+        return false
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    if #clauses <= 1 or not clauses[clauseIndex] then
+        return false
+    end
+
+    table.remove(clauses, clauseIndex)
+    self:SetTriggerConditionClauses(buttonData, clauses)
+    return true
 end
 
 function CooldownCompanion:GetTriggerConditionSummary(buttonData)
@@ -1649,20 +1869,27 @@ function CooldownCompanion:GetTriggerConditionSummary(buttonData)
         return nil
     end
 
-    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-    local conditionLabel = TRIGGER_CONDITION_LABELS[conditionKey]
-    local stateLabel
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-        stateLabel = (TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive)[buttonData.triggerExpected == false and "false" or "true"]
-    else
-        local stateKey = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
-        stateLabel = TRIGGER_STATE_LABELS[conditionKey] and TRIGGER_STATE_LABELS[conditionKey][stateKey]
+    local summaries = {}
+    for _, clause in ipairs(self:GetTriggerConditionClauses(buttonData)) do
+        local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+        local conditionLabel = TRIGGER_CONDITION_LABELS[conditionKey]
+        local stateLabel
+        if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+            stateLabel = (TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive)[clause.expected == false and "false" or "true"]
+        else
+            local stateKey = NormalizeTriggerStateKey(conditionKey, clause.state)
+            stateLabel = TRIGGER_STATE_LABELS[conditionKey] and TRIGGER_STATE_LABELS[conditionKey][stateKey]
+        end
+        if conditionLabel and stateLabel then
+            summaries[#summaries + 1] = conditionLabel .. " " .. stateLabel
+        end
     end
-    if not conditionLabel or not stateLabel then
+
+    if #summaries == 0 then
         return nil
     end
 
-    return conditionLabel .. " " .. stateLabel
+    return table_concat(summaries, " AND ")
 end
 
 function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfMissing)
@@ -3036,8 +3263,8 @@ local function DoesTriggerPanelMatch(frame)
 
         if buttonData.enabled ~= false
             and (not CooldownCompanion.IsButtonUsable or CooldownCompanion:IsButtonUsable(buttonData)) then
-            local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
-            if not conditionKey then
+            local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
+            if #clauses == 0 then
                 return false
             end
 
@@ -3047,16 +3274,23 @@ local function DoesTriggerPanelMatch(frame)
                 return false
             end
 
-            local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
-            if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-                local expected = buttonData.triggerExpected ~= false
-                if actualState ~= expected then
+            for _, clause in ipairs(clauses) do
+                local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+                if not conditionKey then
                     return false
                 end
-            else
-                local expectedState = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
-                if actualState ~= expectedState then
-                    return false
+
+                local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
+                if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+                    local expected = clause.expected ~= false
+                    if actualState ~= expected then
+                        return false
+                    end
+                else
+                    local expectedState = NormalizeTriggerStateKey(conditionKey, clause.state)
+                    if actualState ~= expectedState then
+                        return false
+                    end
                 end
             end
         end
