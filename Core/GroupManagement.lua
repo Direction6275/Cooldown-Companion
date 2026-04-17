@@ -739,6 +739,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         }
     elseif displayMode == "trigger" then
         db.groups[groupId].triggerSettings = {
+            displayType = "texture",
             signal = {
                 blendMode = "BLEND",
                 point = "CENTER",
@@ -866,6 +867,7 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     end
     if newMode == "trigger" then
         group.triggerSettings = group.triggerSettings or {
+            displayType = "texture",
             signal = {
                 blendMode = "BLEND",
                 point = "CENTER",
@@ -875,6 +877,9 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
                 y = 0,
             },
         }
+        if group.triggerSettings.displayType == nil then
+            group.triggerSettings.displayType = "texture"
+        end
         if self.NormalizeTriggerConditionRowData then
             for _, buttonData in ipairs(group.buttons or {}) do
                 self:NormalizeTriggerConditionRowData(buttonData)

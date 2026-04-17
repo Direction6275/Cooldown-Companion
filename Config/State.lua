@@ -687,6 +687,42 @@ local BUTTON_ICON_PICKER_SPEC = {
     end,
 }
 
+local TRIGGER_PANEL_ICON_PICKER_SPEC = {
+    cacheKey = "triggerPanelIconPickerFrame",
+    frameName = "CDCTriggerPanelIconPickerFrame",
+    unavailableMessage = "Icon picker is unavailable on this client build.",
+    configureFrame = ConfigureButtonIconPickerFrame,
+    validateContext = function(context, db)
+        local groupId = context and context.groupId
+        local group = db and db.groups and db.groups[groupId]
+        return group and group.displayMode == "trigger" and group or nil
+    end,
+    getCurrentIcon = function(group)
+        local settings = CooldownCompanion.GetTriggerPanelIconSettings
+            and CooldownCompanion:GetTriggerPanelIconSettings(group, true)
+            or nil
+        local currentIcon = settings and settings.manualIcon or nil
+        if not IsValidIconTexture(currentIcon) then
+            currentIcon = 134400
+        end
+        return currentIcon
+    end,
+    applySelection = function(iconTexture, group)
+        local settings = CooldownCompanion.GetTriggerPanelIconSettings
+            and CooldownCompanion:GetTriggerPanelIconSettings(group, true)
+            or nil
+        if not settings then
+            return
+        end
+        settings.manualIcon = iconTexture
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    clearContext = function(frame)
+        frame._cdcPickerContext = nil
+    end,
+}
+
 local CONTAINER_ICON_PICKER_SPEC = {
     cacheKey = "containerIconPickerFrame",
     frameName = "CDCContainerIconPickerFrame",
@@ -727,6 +763,15 @@ local function OpenButtonIconPicker(groupId, buttonIndex)
     return OpenConfigIconPicker(BUTTON_ICON_PICKER_SPEC, {
         groupId = groupId,
         buttonIndex = buttonIndex,
+    })
+end
+
+------------------------------------------------------------------------
+-- Trigger panel icon picker (panel-level manual icon for trigger display)
+------------------------------------------------------------------------
+local function OpenTriggerPanelIconPicker(groupId)
+    return OpenConfigIconPicker(TRIGGER_PANEL_ICON_PICKER_SPEC, {
+        groupId = groupId,
     })
 end
 
@@ -1749,6 +1794,7 @@ ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
 ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._OpenButtonIconPicker = OpenButtonIconPicker
+ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker
 ST._IsValidIconTexture = IsValidIconTexture
 ST._GenerateFolderName = GenerateFolderName
