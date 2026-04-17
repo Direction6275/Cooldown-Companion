@@ -4279,6 +4279,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
         local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
         local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
+        CooldownCompanion.HideStandaloneDisplayVisuals(host)
         hostWidth = geometry.boundsWidth
         hostHeight = geometry.boundsHeight
         host:SetSize(hostWidth, hostHeight)

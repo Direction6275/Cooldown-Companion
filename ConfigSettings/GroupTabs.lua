@@ -768,15 +768,18 @@ local function BuildTriggerTextAppearanceTab(container, group)
         RefreshStandaloneTriggerDisplay(groupId)
     end
 
-    local textBox = AceGUI:Create("EditBox")
+    local textBox = AceGUI:Create("MultiLineEditBox")
     textBox:SetLabel("Display Text")
-    textBox:DisableButton(true)
-    textBox:SetText(settings.value or "")
     textBox:SetFullWidth(true)
-    textBox:SetCallback("OnTextChanged", function(_, _, value)
+    textBox:SetNumLines(4)
+    textBox.button:Hide()
+    textBox:SetText(settings.value or "")
+    local function HandleTextChanged(_, _, value)
         settings.value = value or ""
         RefreshTextPreview()
-    end)
+    end
+    textBox:SetCallback("OnTextChanged", HandleTextChanged)
+    textBox:SetCallback("OnEnterPressed", HandleTextChanged)
     container:AddChild(textBox)
 
     AddFontControls(container, settings, "text", {
