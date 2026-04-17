@@ -598,11 +598,7 @@ local function OpenConfigIconPicker(spec, context)
 
     local currentIcon = spec.getCurrentIcon and spec.getCurrentIcon(entity, context, db)
 
-    local selectedIndex = pickerFrame:GetIndexOfIcon(currentIcon)
-    if not selectedIndex then
-        selectedIndex = 1
-        currentIcon = pickerFrame:GetIconByIndex(selectedIndex)
-    end
+    local selectedIndex = currentIcon and pickerFrame:GetIndexOfIcon(currentIcon) or nil
 
     pickerFrame.IconSelector:SetSelectionsDataProvider(
         function(selectionIndex)
@@ -612,15 +608,24 @@ local function OpenConfigIconPicker(spec, context)
             return pickerFrame:GetNumIcons()
         end
     )
-    pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
-    pickerFrame.IconSelector:ScrollToSelectedIndex()
-    pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
-    pickerFrame:SetSelectedIconText()
-    pickerFrame.BorderBox.OkayButton:Enable()
+    if selectedIndex then
+        pickerFrame.IconSelector:SetSelectedIndex(selectedIndex)
+        pickerFrame.IconSelector:ScrollToSelectedIndex()
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
+        pickerFrame:SetSelectedIconText()
+        pickerFrame.BorderBox.OkayButton:Enable()
+    else
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(nil)
+        if pickerFrame.BorderBox.SelectedIconArea.SelectedIconText then
+            pickerFrame.BorderBox.SelectedIconArea.SelectedIconText:SetText("No icon selected")
+        end
+        pickerFrame.BorderBox.OkayButton:Disable()
+    end
 
     pickerFrame.IconSelector:SetSelectedCallback(function(_, icon)
         pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(icon)
         pickerFrame:SetSelectedIconText()
+        pickerFrame.BorderBox.OkayButton:Enable()
     end)
 
     pickerFrame:Show()
@@ -701,11 +706,7 @@ local TRIGGER_PANEL_ICON_PICKER_SPEC = {
         local settings = CooldownCompanion.GetTriggerPanelIconSettings
             and CooldownCompanion:GetTriggerPanelIconSettings(group, true)
             or nil
-        local currentIcon = settings and settings.manualIcon or nil
-        if not IsValidIconTexture(currentIcon) then
-            currentIcon = 134400
-        end
-        return currentIcon
+        return settings and settings.manualIcon or nil
     end,
     applySelection = function(iconTexture, group)
         local settings = CooldownCompanion.GetTriggerPanelIconSettings
