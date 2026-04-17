@@ -91,6 +91,9 @@ local function UpdateDisplayCountTracking(button, buttonData, spellID)
     local cur
     if not secretDisplayCount then
         cur = tonumber(rawDisplayCount)
+        if cur == nil and rawDisplayCount == "" and buttonData._displayCountFamily == true then
+            cur = 0
+        end
     end
 
     button._currentReadableCharges = cur

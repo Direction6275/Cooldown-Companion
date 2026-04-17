@@ -13,6 +13,7 @@ local C_Spell_GetSpellName = C_Spell.GetSpellName
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local GetTime = GetTime
 local ipairs = ipairs
+local issecretvalue = issecretvalue
 local math_abs = math.abs
 local math_cos = math.cos
 local math_floor = math.floor
@@ -727,6 +728,68 @@ local TEXTURE_INDICATOR_DEFAULTS = {
     },
 }
 
+local TRIGGER_CONDITION_LABELS = {
+    cooldownActive = "Cooldown",
+    auraActive = "Aura",
+    procActive = "Proc",
+    rangeActive = "Range",
+    usable = "Usable",
+    chargesRecharging = "Charge Recharge",
+    chargeState = "Charge State",
+    countTextActive = "Count Text",
+    countState = "Display Count",
+}
+
+local TRIGGER_EXPECTED_LABELS = {
+    cooldownActive = {
+        ["true"] = "On Cooldown",
+        ["false"] = "Off Cooldown",
+    },
+    auraActive = {
+        ["true"] = "Active",
+        ["false"] = "Inactive",
+    },
+    procActive = {
+        ["true"] = "Active",
+        ["false"] = "Inactive",
+    },
+    rangeActive = {
+        ["true"] = "In Range",
+        ["false"] = "Out of Range",
+    },
+    usable = {
+        ["true"] = "Usable",
+        ["false"] = "Unusable",
+    },
+    chargesRecharging = {
+        ["true"] = "Recharging",
+        ["false"] = "Not Recharging",
+    },
+    countTextActive = {
+        ["true"] = "Shown",
+        ["false"] = "Hidden",
+    },
+}
+
+local TRIGGER_STATE_LABELS = {
+    chargeState = {
+        full = "Full",
+        missing = "Missing",
+        zero = "Zero",
+    },
+    countState = {
+        full = "Full",
+        missing = "Missing",
+        zero = "Zero",
+    },
+}
+
+local TRIGGER_CONDITION_ORDERS = {
+    spell = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" },
+    passiveSpell = { "auraActive", "procActive" },
+    item = { "cooldownActive", "rangeActive", "usable" },
+}
+
 local function CopyColor(color)
     if type(color) ~= "table" then
         return nil
@@ -802,6 +865,67 @@ local function NormalizeTextureIndicatorStore(styleTable)
 
     return store
 end
+
+local function GetTriggerConditionOrderForButtonData(buttonData)
+    if type(buttonData) ~= "table" then
+        return TRIGGER_CONDITION_ORDERS.spell
+    end
+
+    if buttonData.type == "item" or buttonData.type == "equipitem" then
+        local order = { "cooldownActive", "rangeActive", "usable" }
+        if buttonData.hasCharges == true then
+            order[#order + 1] = "chargesRecharging"
+            order[#order + 1] = "chargeState"
+        end
+        return order
+    end
+
+    if buttonData.type == "spell" and buttonData.isPassive == true then
+        return { "auraActive", "procActive" }
+    end
+
+    local order = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" }
+    if buttonData.hasCharges == true then
+        order[#order + 1] = "chargesRecharging"
+        order[#order + 1] = "chargeState"
+    elseif CooldownCompanion.HasNonChargeCountTextBehavior
+            and CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) then
+        order[#order + 1] = "countTextActive"
+        if buttonData._hasDisplayCount == true or buttonData._displayCountFamily == true then
+            order[#order + 1] = "countState"
+        end
+    end
+    return order
+end
+
+local function NormalizeTriggerConditionKey(buttonData, conditionKey)
+    local order = GetTriggerConditionOrderForButtonData(buttonData)
+    if conditionKey == nil then
+        return order[1]
+    end
+
+    for _, validKey in ipairs(order) do
+        if conditionKey == validKey then
+            return conditionKey
+        end
+    end
+    return nil
+end
+
+local function NormalizeTriggerStateKey(conditionKey, stateKey)
+    if not TRIGGER_STATE_LABELS[conditionKey] then
+        return nil
+    end
+
+    for _, validKey in ipairs({ "full", "missing", "zero" }) do
+        if stateKey == validKey then
+            return validKey
+        end
+    end
+
+    return "full"
+end
+
 
 local VALID_POINTS = {
     TOPLEFT = true,
@@ -1347,6 +1471,14 @@ function CooldownCompanion:IsTexturePanelGroup(group)
     return type(group) == "table" and group.displayMode == "textures"
 end
 
+function CooldownCompanion:IsTriggerPanelGroup(group)
+    return type(group) == "table" and group.displayMode == "trigger"
+end
+
+function CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    return self:IsTexturePanelGroup(group) or self:IsTriggerPanelGroup(group)
+end
+
 function CooldownCompanion:GetTexturePanelLocationOptions()
     local options = {}
     for _, locationType in ipairs(LOCATION_ORDER) do
@@ -1397,6 +1529,384 @@ function CooldownCompanion:GetTexturePanelSettings(groupOrId, createIfMissing)
     end
 
     return NormalizeAuraTextureSettings(group.textureSettings)
+end
+
+function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" then
+        return nil
+    end
+
+    if type(group.triggerSettings) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings = {}
+    end
+
+    if type(group.triggerSettings.signal) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings.signal = {
+            blendMode = "BLEND",
+            locationType = LOCATION_CENTER,
+            pairSpacing = DEFAULT_TEXTURE_PAIR_SPACING,
+            rotation = 0,
+            stretchX = 0,
+            stretchY = 0,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = UI_PARENT_NAME,
+            x = 0,
+            y = 0,
+        }
+    end
+
+    return NormalizeAuraTextureSettings(group.triggerSettings.signal)
+end
+
+function CooldownCompanion:BuildLegacyTriggerConditionClause(buttonData)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, buttonData.triggerCondition)
+    if not conditionKey then
+        return nil
+    end
+
+    local clause = { key = conditionKey }
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        clause.expected = buttonData.triggerExpected ~= false
+    else
+        clause.state = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
+    end
+
+    return clause
+end
+
+function CooldownCompanion:NormalizeTriggerConditionClause(buttonData, clause, usedKeys)
+    if type(clause) ~= "table" then
+        return nil
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(
+        buttonData,
+        clause.key or clause.conditionKey or clause.triggerCondition
+    )
+    if not conditionKey or (usedKeys and usedKeys[conditionKey]) then
+        return nil
+    end
+
+    local normalized = { key = conditionKey }
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        normalized.expected = clause.expected ~= false and clause.expected ~= "false"
+    else
+        normalized.state = NormalizeTriggerStateKey(conditionKey, clause.state or clause.triggerState)
+    end
+
+    if usedKeys then
+        usedKeys[conditionKey] = true
+    end
+
+    return normalized
+end
+
+function CooldownCompanion:GetTriggerConditionClauses(buttonData)
+    if type(buttonData) ~= "table" then
+        return {}
+    end
+
+    local normalizedClauses = {}
+    local usedKeys = {}
+    local sourceClauses = type(buttonData.triggerConditions) == "table" and buttonData.triggerConditions or nil
+
+    if sourceClauses then
+        for _, clause in ipairs(sourceClauses) do
+            local normalizedClause = self:NormalizeTriggerConditionClause(buttonData, clause, usedKeys)
+            if normalizedClause then
+                normalizedClauses[#normalizedClauses + 1] = normalizedClause
+            end
+        end
+
+        if #normalizedClauses == 0 then
+            return {}
+        end
+    end
+
+    if #normalizedClauses == 0 then
+        local legacyClause = self:BuildLegacyTriggerConditionClause(buttonData)
+        if legacyClause then
+            usedKeys[legacyClause.key] = true
+            normalizedClauses[1] = legacyClause
+        elseif buttonData.triggerCondition ~= nil then
+            return {}
+        end
+    end
+
+    if #normalizedClauses == 0 then
+        local fallbackKey = NormalizeTriggerConditionKey(buttonData, nil)
+        if fallbackKey then
+            if TRIGGER_EXPECTED_LABELS[fallbackKey] ~= nil then
+                normalizedClauses[1] = {
+                    key = fallbackKey,
+                    expected = true,
+                }
+            else
+                normalizedClauses[1] = {
+                    key = fallbackKey,
+                    state = NormalizeTriggerStateKey(fallbackKey, nil),
+                }
+            end
+        end
+    end
+
+    return normalizedClauses
+end
+
+function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local primaryClause = clauses[1]
+    if primaryClause then
+        buttonData.triggerCondition = primaryClause.key
+        if TRIGGER_EXPECTED_LABELS[primaryClause.key] ~= nil then
+            buttonData.triggerExpected = primaryClause.expected ~= false
+            buttonData.triggerState = nil
+        else
+            buttonData.triggerState = NormalizeTriggerStateKey(primaryClause.key, primaryClause.state)
+            buttonData.triggerExpected = nil
+        end
+    end
+
+    if type(buttonData.triggerConditions) == "table" and #clauses > 0 then
+        buttonData.triggerConditions = clauses
+    end
+
+    if buttonData.type == "spell" then
+        local hasAuraClause = false
+        for _, clause in ipairs(clauses) do
+            if clause.key == "auraActive" then
+                hasAuraClause = true
+                break
+            end
+        end
+
+        local shouldAuraTrack = buttonData.isPassive == true
+            or buttonData.addedAs == "aura"
+            or hasAuraClause
+        if shouldAuraTrack then
+            buttonData.auraTracking = true
+            buttonData.auraIndicatorEnabled = true
+            if buttonData.addedAs ~= "aura" and buttonData.isPassive == true then
+                buttonData.addedAs = "aura"
+            end
+        else
+            buttonData.auraTracking = false
+            buttonData.auraIndicatorEnabled = false
+        end
+    end
+
+    return buttonData
+end
+
+function CooldownCompanion:TriggerRowUsesCondition(buttonData, conditionKey)
+    if type(buttonData) ~= "table" or type(conditionKey) ~= "string" then
+        return false
+    end
+
+    for _, clause in ipairs(self:GetTriggerConditionClauses(buttonData)) do
+        if clause.key == conditionKey then
+            return true
+        end
+    end
+
+    return false
+end
+
+function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
+    local order = GetTriggerConditionOrderForButtonData(buttonData)
+    local excluded = {}
+    if type(excludedKeys) == "table" then
+        for _, key in ipairs(excludedKeys) do
+            if type(key) == "string" then
+                excluded[key] = true
+            end
+        end
+        for key, value in pairs(excludedKeys) do
+            if value == true and type(key) == "string" then
+                excluded[key] = true
+            end
+        end
+    end
+
+    local options = {}
+    local filteredOrder = {}
+    for _, key in ipairs(order) do
+        if not excluded[key] then
+            options[key] = TRIGGER_CONDITION_LABELS[key]
+            filteredOrder[#filteredOrder + 1] = key
+        end
+    end
+    return options, filteredOrder
+end
+
+function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
+    if TRIGGER_STATE_LABELS[conditionKey] then
+        return TRIGGER_STATE_LABELS[conditionKey], { "full", "missing", "zero" }
+    end
+
+    local options = TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive
+    return options, { "true", "false" }
+end
+
+function CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local clause = self:GetTriggerConditionClauses(buttonData)[clauseIndex or 1]
+    if not clause then
+        return nil
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        return clause.expected == false and "false" or "true"
+    end
+
+    return NormalizeTriggerStateKey(conditionKey, clause.state)
+end
+
+function CooldownCompanion:SetTriggerConditionClauses(buttonData, clauses)
+    if type(buttonData) ~= "table" then
+        return
+    end
+
+    buttonData.triggerConditions = clauses
+    self:NormalizeTriggerConditionRowData(buttonData)
+end
+
+function CooldownCompanion:SetTriggerConditionKey(buttonData, clauseIndex, conditionKey)
+    if type(buttonData) ~= "table" then
+        return
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local clause = clauses[clauseIndex]
+    if not clause then
+        return
+    end
+
+    clause.key = conditionKey
+    clause.expected = nil
+    clause.state = nil
+    self:SetTriggerConditionClauses(buttonData, clauses)
+end
+
+function CooldownCompanion:SetTriggerConditionStateValue(buttonData, value, clauseIndex)
+    if type(buttonData) ~= "table" then
+        return
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local clause = clauses[clauseIndex or 1]
+    if not clause then
+        return
+    end
+
+    local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+        clause.expected = (value ~= "false")
+        clause.state = nil
+        self:SetTriggerConditionClauses(buttonData, clauses)
+        return
+    end
+
+    clause.state = NormalizeTriggerStateKey(conditionKey, value)
+    clause.expected = nil
+    self:SetTriggerConditionClauses(buttonData, clauses)
+end
+
+function CooldownCompanion:AddTriggerConditionClause(buttonData, conditionKey)
+    if type(buttonData) ~= "table" then
+        return false
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    local excludedKeys = {}
+    for _, clause in ipairs(clauses) do
+        excludedKeys[#excludedKeys + 1] = clause.key
+    end
+
+    local _, order = self:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
+    if #order == 0 then
+        return false
+    end
+
+    clauses[#clauses + 1] = { key = conditionKey or order[1] }
+    self:SetTriggerConditionClauses(buttonData, clauses)
+    return true
+end
+
+function CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex)
+    if type(buttonData) ~= "table" then
+        return false
+    end
+
+    local clauses = self:GetTriggerConditionClauses(buttonData)
+    if #clauses <= 1 or not clauses[clauseIndex] then
+        return false
+    end
+
+    table.remove(clauses, clauseIndex)
+    self:SetTriggerConditionClauses(buttonData, clauses)
+    return true
+end
+
+function CooldownCompanion:GetTriggerConditionSummary(buttonData)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local summaries = {}
+    for _, clause in ipairs(self:GetTriggerConditionClauses(buttonData)) do
+        local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+        local conditionLabel = TRIGGER_CONDITION_LABELS[conditionKey]
+        local stateLabel
+        if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+            stateLabel = (TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive)[clause.expected == false and "false" or "true"]
+        else
+            local stateKey = NormalizeTriggerStateKey(conditionKey, clause.state)
+            stateLabel = TRIGGER_STATE_LABELS[conditionKey] and TRIGGER_STATE_LABELS[conditionKey][stateKey]
+        end
+        if conditionLabel and stateLabel then
+            summaries[#summaries + 1] = conditionLabel .. " " .. stateLabel
+        end
+    end
+
+    if #summaries == 0 then
+        return nil
+    end
+
+    return table_concat(summaries, " AND ")
+end
+
+function CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, maxVisibleClauses)
+    if type(buttonData) ~= "table" then
+        return nil
+    end
+
+    local count = #self:GetTriggerConditionClauses(buttonData)
+    if count <= 0 then
+        return nil
+    end
+
+    return "Conditions: " .. count
 end
 
 function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfMissing)
@@ -2609,6 +3119,205 @@ local function IsTextureIndicatorSectionActive(button, sectionKey, config)
     return false
 end
 
+local function EvaluateTriggerRowCondition(button, conditionKey)
+    if not button then
+        return false
+    end
+
+    if conditionKey == "cooldownActive" then
+        return button._desatCooldownActive == true
+    end
+
+    if conditionKey == "auraActive" then
+        return button._auraActive == true
+    end
+
+    if conditionKey == "procActive" then
+        return button._procOverlayActive == true
+    end
+
+    if conditionKey == "rangeActive" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.isPassive then
+            return nil
+        end
+
+        if buttonData.type == "spell" then
+            if button._spellOutOfRange == nil then
+                return nil
+            end
+            return button._spellOutOfRange == false
+        end
+
+        if buttonData.type == "item" or buttonData.type == "equipitem" then
+            if not InCombatLockdown() or UnitCanAttack("player", "target") then
+                local inRange = C_Item.IsItemInRange(buttonData.id, "target")
+                if inRange == nil then
+                    return nil
+                end
+                return inRange == true
+            end
+            return nil
+        end
+
+        return nil
+    end
+
+    if conditionKey == "usable" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.isPassive then
+            return false
+        end
+        if buttonData.type == "spell" then
+            return C_Spell_IsSpellUsable(buttonData.id)
+        end
+        if buttonData.type == "item" or buttonData.type == "equipitem" then
+            return C_Item_IsUsableItem(buttonData.id)
+        end
+        return false
+    end
+
+    if conditionKey == "chargesRecharging" then
+        return button._chargeRecharging == true
+    end
+
+    if conditionKey == "chargeState" then
+        local buttonData = button.buttonData
+        if not buttonData or buttonData.hasCharges ~= true then
+            return nil
+        end
+
+        local currentCharges = button._currentReadableCharges
+        local maxCharges = buttonData.maxCharges
+        if currentCharges ~= nil then
+            if currentCharges <= 0 then
+                return "zero"
+            end
+            if maxCharges ~= nil and maxCharges > 0 then
+                if currentCharges >= maxCharges then
+                    return "full"
+                end
+                return "missing"
+            end
+        end
+
+        if button._zeroChargesConfirmed == true then
+            return "zero"
+        end
+        if button._chargeRecharging == true then
+            return "missing"
+        end
+        if button._chargeRecharging == false then
+            return "full"
+        end
+        return nil
+    end
+
+    if conditionKey == "countTextActive" then
+        local buttonData = button.buttonData
+        if not buttonData
+                or not CooldownCompanion.HasNonChargeCountTextBehavior
+                or not CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) then
+            return nil
+        end
+
+        local countText = button.count and button.count:GetText() or nil
+        if issecretvalue(countText) then
+            return true
+        end
+        return countText ~= nil and countText ~= ""
+    end
+
+    if conditionKey == "countState" then
+        local buttonData = button.buttonData
+        if not buttonData
+                or (buttonData._hasDisplayCount ~= true and buttonData._displayCountFamily ~= true)
+                or buttonData.hasCharges == true
+        then
+            return nil
+        end
+
+        local currentCount = button._currentReadableCharges
+        local maxCount = buttonData.maxCharges
+        if currentCount == nil then
+            return nil
+        end
+        if currentCount <= 0 then
+            return "zero"
+        end
+        if maxCount ~= nil and maxCount > 0 then
+            if currentCount >= maxCount then
+                return "full"
+            end
+            return "missing"
+        end
+        return nil
+    end
+
+    return false
+end
+
+local function DoesTriggerPanelMatch(frame)
+    if not frame then
+        return false
+    end
+
+    local group = frame.groupId and ResolveGroup(frame.groupId) or nil
+    local configuredRows = group and group.buttons
+    if type(configuredRows) ~= "table" or #configuredRows == 0 then
+        return false
+    end
+
+    local runtimeButtonsByIndex = {}
+    for _, button in ipairs(frame.buttons or {}) do
+        if button and button.index then
+            runtimeButtonsByIndex[button.index] = button
+        end
+    end
+
+    local activeRowCount = 0
+    for rowIndex, buttonData in ipairs(configuredRows) do
+        if type(buttonData) ~= "table" then
+            return false
+        end
+
+        if buttonData.enabled ~= false then
+            local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
+            if #clauses == 0 then
+                return false
+            end
+
+            activeRowCount = activeRowCount + 1
+            local runtimeButton = runtimeButtonsByIndex[rowIndex]
+            if not runtimeButton then
+                return false
+            end
+
+            for _, clause in ipairs(clauses) do
+                local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
+                if not conditionKey then
+                    return false
+                end
+
+                local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
+                if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+                    local expected = clause.expected ~= false
+                    if actualState ~= expected then
+                        return false
+                    end
+                else
+                    local expectedState = NormalizeTriggerStateKey(conditionKey, clause.state)
+                    if actualState ~= expectedState then
+                        return false
+                    end
+                end
+            end
+        end
+    end
+
+    return activeRowCount > 0
+end
+
 local function ApplyTextureIndicatorEffects(host, button, group)
     if not host or not button or type(group) ~= "table" then
         return
@@ -2719,7 +3428,12 @@ local function SaveTextureHostPosition(host)
 
     local owner = host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-    local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+    local settings
+    if group and CooldownCompanion:IsTriggerPanelGroup(group) then
+        settings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
+    else
+        settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+    end
     if not settings or not settings.sourceType then
         return
     end
@@ -2765,7 +3479,12 @@ local function EnsureAuraTextureNudger(host)
         local _, _, _, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-        local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+        local settings
+        if group and CooldownCompanion:IsTriggerPanelGroup(group) then
+            settings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
+        else
+            settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+        end
         if settings then
             settings.x = math_floor((x or 0) * 10 + 0.5) / 10
             settings.y = math_floor((y or 0) * 10 + 0.5) / 10
@@ -3046,7 +3765,7 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     button.auraTextureHost = nil
 end
 
-local function IsTexturePanelEditingButton(button)
+local function IsStandaloneTextureEditingButton(button)
     local CS = ST._configState
     if not CS or not CS.configFrame or not CS.configFrame.frame or not CS.configFrame.frame:IsShown() then
         return false
@@ -3056,12 +3775,17 @@ local function IsTexturePanelEditingButton(button)
     end
 
     local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not CooldownCompanion:IsTexturePanelGroup(group) then
+    if not CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         return false
     end
 
-    if CS.selectedButton == nil and (CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout") then
-        return true
+    if CS.panelSettingsTab == "appearance" or CS.panelSettingsTab == "effects" or CS.panelSettingsTab == "layout" then
+        if CooldownCompanion:IsTriggerPanelGroup(group) then
+            return true
+        end
+        if CS.selectedButton == nil then
+            return true
+        end
     end
 
     local pickerWindow = CS.auraTexturePickerWindow
@@ -3081,6 +3805,18 @@ local function IsTexturePanelConfigForceVisible(button)
     return ST.IsConfigButtonForceVisible(button)
 end
 
+local function GetStandaloneTextureSettings(group)
+    if CooldownCompanion:IsTriggerPanelGroup(group) then
+        return CooldownCompanion:GetTriggerPanelSignalSettings(group)
+    end
+
+    if CooldownCompanion:IsTexturePanelGroup(group) then
+        return CooldownCompanion:GetTexturePanelSettings(group)
+    end
+
+    return nil
+end
+
 local function ResolveActiveAuraTextureSettings(button)
     local preview = button._auraTexturePreviewSelection
     if type(preview) == "table" then
@@ -3088,15 +3824,15 @@ local function ResolveActiveAuraTextureSettings(button)
     end
 
     local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not CooldownCompanion:IsTexturePanelGroup(group) then
+    if not CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         return nil
     end
 
-    local settings = CooldownCompanion:GetTexturePanelSettings(group)
+    local settings = GetStandaloneTextureSettings(group)
     if not settings or not settings.sourceType or settings.sourceValue == nil then
         return nil
     end
-    if not settings.enabled and not IsTexturePanelEditingButton(button) then
+    if not settings.enabled and not IsStandaloneTextureEditingButton(button) then
         return nil
     end
 
@@ -3109,44 +3845,64 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not self:IsTexturePanelGroup(group) then
+    if not self:IsStandaloneTexturePanelGroup(group) then
         self:HideAuraTextureVisual(button)
         return
     end
 
-    local settings = ResolveActiveAuraTextureSettings(button)
-    local isEditing = IsTexturePanelEditingButton(button)
-    local isConfigForceVisible = IsTexturePanelConfigForceVisible(button)
+    local frame = button:GetParent()
+    local isTriggerPanel = self:IsTriggerPanelGroup(group)
+    local driverButton = button
+    if isTriggerPanel then
+        driverButton = frame and frame.buttons and frame.buttons[1] or nil
+        if not driverButton then
+            self:HideAuraTextureVisual(button)
+            return
+        end
+    end
+
+    local settings = ResolveActiveAuraTextureSettings(driverButton)
+    local isEditing = IsStandaloneTextureEditingButton(driverButton)
+    local isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton)
     local isUnlocked = group and group.locked == false
-    local hasPreviewSelection = type(button._auraTexturePreviewSelection) == "table"
+    local hasPreviewSelection = type(driverButton._auraTexturePreviewSelection) == "table"
+    local triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false
+    local triggerSoundVisible = false
     local showTexture = false
 
     if settings then
         if hasPreviewSelection then
             showTexture = true
+        elseif isTriggerPanel then
+            showTexture = triggerMatched or isEditing or isUnlocked
         elseif isEditing then
             showTexture = true
         elseif isConfigForceVisible then
             showTexture = true
         elseif isUnlocked then
             showTexture = true
-        elseif button:GetParent()
-            and button:GetParent():IsShown()
-            and not (button._rawVisibilityHidden == true) then
+        elseif driverButton:GetParent()
+            and driverButton:GetParent():IsShown()
+            and not (driverButton._rawVisibilityHidden == true) then
             showTexture = true
         end
     end
 
+    if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
+        triggerSoundVisible = settings ~= nil and triggerMatched
+        self:UpdateTriggerPanelSoundAlerts(frame, group, triggerSoundVisible)
+    end
+
     if not settings or not showTexture then
-        self:HideAuraTextureVisual(button)
-        if button:GetAlpha() ~= 0 then
-            button:SetAlpha(0)
-            button._lastVisAlpha = 0
+        self:HideAuraTextureVisual(driverButton)
+        if driverButton:GetAlpha() ~= 0 then
+            driverButton:SetAlpha(0)
+            driverButton._lastVisAlpha = 0
         end
         return
     end
 
-    local host = EnsureAuraTextureHost(button)
+    local host = EnsureAuraTextureHost(driverButton)
     local relativeFrame = UIParent
     local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
     local alpha = Clamp(baseAlpha, 0, 1)
@@ -3154,8 +3910,8 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
     local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
 
-    host:SetFrameStrata(button:GetFrameStrata())
-    host:SetFrameLevel((button:GetFrameLevel() or 1) + 20)
+    host:SetFrameStrata(driverButton:GetFrameStrata())
+    host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host)
     host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
     if host.visualRoot then
@@ -3170,10 +3926,10 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local shown = LayoutTexturePieces(host, settings, geometry, alpha)
 
     if not shown then
-        self:HideAuraTextureVisual(button)
-        if button:GetAlpha() ~= 0 then
-            button:SetAlpha(0)
-            button._lastVisAlpha = 0
+        self:HideAuraTextureVisual(driverButton)
+        if driverButton:GetAlpha() ~= 0 then
+            driverButton:SetAlpha(0)
+            driverButton._lastVisAlpha = 0
         end
         return
     end
@@ -3181,12 +3937,14 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     host._activeTextureSettings = settings
     host._activeTextureGeometry = geometry
     SetTextureIndicatorBaseVisuals(host)
-    ApplyTextureIndicatorEffects(host, button, group)
+    if not isTriggerPanel then
+        ApplyTextureIndicatorEffects(host, driverButton, group)
+    end
 
-    local alphaModuleId = GetTexturePanelAlphaModuleId(button._groupId)
-    local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(button)
-    local bypassModuleAlpha = isEditing or isConfigForceVisible or isUnlocked
-    local visibilityAlpha = Clamp(button._rawVisibilityAlphaOverride or 1, 0, 1)
+    local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
+    local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
+    local bypassModuleAlpha = hasPreviewSelection or isEditing or isConfigForceVisible or isUnlocked
+    local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     if alphaModuleId then
         if bypassModuleAlpha then
             self:UnregisterModuleAlpha(alphaModuleId, true)
@@ -3204,7 +3962,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         host:SetAlpha(bypassModuleAlpha and (layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1) or visibilityAlpha)
     end
 
-    local savedSettings = group and group.textureSettings or nil
+    local savedSettings = isTriggerPanel and group and group.triggerSettings and group.triggerSettings.signal or group and group.textureSettings or nil
     host._dragEnabled = isUnlocked and type(savedSettings) == "table" and savedSettings.sourceType ~= nil
     host:EnableMouse(false)
     SetAuraTextureOutlineShown(host, false)
@@ -3223,15 +3981,21 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             host.nudger:SetShown(showHeader)
         end
     end
-    if button:GetAlpha() ~= 0 then
-        button:SetAlpha(0)
-        button._lastVisAlpha = 0
+    if driverButton:GetAlpha() ~= 0 then
+        driverButton:SetAlpha(0)
+        driverButton._lastVisAlpha = 0
     end
     if ST.SetFrameClickThroughRecursive then
-        -- The visible texture host is intentionally non-interactive. Make the hidden
-        -- backing button fully click/hover-through too, so tooltip-enabled icon panels
-        -- do not leave an invisible hotspot behind after switching to texture mode.
-        ST.SetFrameClickThroughRecursive(button, true, true)
+        -- The visible texture host is intentionally non-interactive. Make every hidden
+        -- backing button fully click/hover-through too, so stacked trigger rows do not
+        -- leave invisible tooltip hotspots behind the visible texture.
+        if isTriggerPanel and frame and type(frame.buttons) == "table" then
+            for _, backingButton in ipairs(frame.buttons) do
+                ST.SetFrameClickThroughRecursive(backingButton, true, true)
+            end
+        else
+            ST.SetFrameClickThroughRecursive(driverButton, true, true)
+        end
     end
 end
 

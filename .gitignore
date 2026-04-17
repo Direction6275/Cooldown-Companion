@@ -10,3 +10,4 @@ wiki/
 nul
 agent-reference/
 .local-tools/
+scripts/regenerate-spell-api-reference.mjs

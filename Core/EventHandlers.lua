@@ -46,7 +46,10 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and not bd.isPassive and button.style and button.style.showOutOfRange then
+        if bd.type == "spell"
+            and not bd.isPassive
+            and ((button.style and button.style.showOutOfRange)
+                or (self.TriggerRowUsesCondition and self:TriggerRowUsesCondition(bd, "rangeActive"))) then
             newSet[bd.id] = true
         end
     end)
@@ -66,7 +69,10 @@ function CooldownCompanion:UpdateRangeCheckRegistrations()
 end
 
 function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInRange, checksRange)
-    local outOfRange = checksRange and not isInRange
+    local outOfRange = nil
+    if checksRange then
+        outOfRange = not isInRange
+    end
     self:ForEachButton(function(button, bd)
         if bd.type == "spell" and bd.id == spellIdentifier then
             button._spellOutOfRange = outOfRange
@@ -131,24 +137,16 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     buttonData._castCountSelf = nil
                     buttonData._castCountEventSpellID = nil
                     buttonData._hasDisplayCount = nil
+                    buttonData._displayCountFamily = nil
                     local mc = chargeInfo.maxCharges
                     if mc > 1 then
                         hasRealCharges = true
-                        if mc > (buttonData.maxCharges or 0) then
+                        if mc ~= buttonData.maxCharges then
                             buttonData.maxCharges = mc
                         end
                         -- Auto-enable charge text when first promoted to charge-based.
                         if buttonData.showChargeText == nil then
                             buttonData.showChargeText = true
-                        end
-
-                        -- Secondary source: display count
-                        local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
-                        if not issecretvalue(rawDisplayCount) then
-                            local displayCount = tonumber(rawDisplayCount)
-                            if displayCount and displayCount > (buttonData.maxCharges or 0) then
-                                buttonData.maxCharges = displayCount
-                            end
                         end
                     else
                         hasRealCharges = nil
@@ -167,6 +165,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         local displayCount = tonumber(rawDisplayCount)
                         if displayCount ~= nil then
                             buttonData._hasDisplayCount = true
+                            buttonData._displayCountFamily = true
                             if displayCount > (buttonData.maxCharges or 0) then
                                 buttonData.maxCharges = displayCount
                             end
@@ -179,6 +178,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         -- so the button does not temporarily fall out of the
                         -- count-bearing path until the value becomes readable.
                         buttonData._hasDisplayCount = true
+                        buttonData._displayCountFamily = true
                     end
                     -- Auto-enable count text when a spell exposes a readable display count.
                     if buttonData._hasDisplayCount and buttonData.showChargeText == nil then

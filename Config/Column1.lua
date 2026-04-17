@@ -966,6 +966,7 @@ local function RefreshColumn1(preserveDrag)
                             { mode = "bars", label = "Bar Panel" },
                             { mode = "text", label = "Text Panel" },
                             { mode = "textures", label = "Texture Panel" },
+                            { mode = "trigger", label = "Trigger Panel" },
                         }
                         for _, m in ipairs(modes) do
                             local info = UIDropDownMenu_CreateInfo()

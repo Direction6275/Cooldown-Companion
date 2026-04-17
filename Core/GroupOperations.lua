@@ -54,6 +54,13 @@ end
 
 -- Re-apply all media after a SharedMedia pack registers new fonts/textures
 function CooldownCompanion:RefreshAllMedia()
+    -- SharedMedia registrations from other addons can fire during startup before
+    -- the aura texture runtime has finished attaching its visual methods.
+    if type(self.UpdateAuraTextureVisual) ~= "function"
+        or type(self.HideAuraTextureVisual) ~= "function" then
+        return
+    end
+
     self:RefreshAllGroups()
     self:ApplyResourceBars()
     self:ApplyCastBarSettings()
@@ -549,7 +556,7 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
-    if group.displayMode == "textures" then return false end
+    if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
 
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
@@ -1217,6 +1224,8 @@ function CooldownCompanion:UnloadGroup(groupId)
     else
         frame:Hide()
     end
+    frame._triggerSoundInitialized = nil
+    frame._triggerSoundWasVisible = nil
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil

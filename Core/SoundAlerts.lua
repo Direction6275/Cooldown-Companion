@@ -61,6 +61,9 @@ local SOUND_ALERT_EVENT_LABELS = {
     onAuraRemoved = "On Aura Removed",
 }
 local CHARGE_AVAILABLE_MERGED_LABEL = "Available / Charge Gained"
+local TRIGGER_PANEL_SOUND_EVENT_LABELS = {
+    onShow = "Triggered",
+}
 
 local SPELL_SOUND_ALERT_EVENTS = {
     available = true,
@@ -96,6 +99,15 @@ local function AddCooldownIDForSpell(spellToCooldownIDs, spellID, cooldownID)
         spellToCooldownIDs[spellID] = entry
     end
     entry[cooldownID] = true
+end
+
+local function ResolveGroup(groupOrId)
+    if type(groupOrId) == "table" then
+        return groupOrId
+    end
+
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    return profile and profile.groups and profile.groups[groupOrId] or nil
 end
 
 function CooldownCompanion:RebuildSoundAlertSpellMap()
@@ -343,6 +355,68 @@ function CooldownCompanion:GetButtonSoundAlertChannel(buttonData)
     return DEFAULT_SOUND_CHANNEL
 end
 
+function CooldownCompanion:GetTriggerPanelSoundAlertConfig(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" or group.displayMode ~= "trigger" then
+        return nil
+    end
+
+    if type(group.triggerSettings) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings = {}
+    end
+
+    local cfg = group.triggerSettings.soundAlerts
+    if not cfg and createIfMissing then
+        cfg = {}
+        group.triggerSettings.soundAlerts = cfg
+    end
+
+    return cfg
+end
+
+function CooldownCompanion:GetTriggerPanelSoundAlertSelection(groupOrId, eventKey)
+    if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
+        return SOUND_NONE_KEY
+    end
+
+    local cfg = self:GetTriggerPanelSoundAlertConfig(groupOrId, false)
+    local soundName = cfg and cfg[eventKey]
+    return soundName or SOUND_NONE_KEY
+end
+
+function CooldownCompanion:SetTriggerPanelSoundAlertEvent(groupOrId, eventKey, soundName)
+    if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
+        return
+    end
+
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" or group.displayMode ~= "trigger" then
+        return
+    end
+
+    local cfg = self:GetTriggerPanelSoundAlertConfig(group, true)
+    if not cfg then
+        return
+    end
+
+    if not soundName or soundName == SOUND_NONE_KEY then
+        cfg[eventKey] = nil
+    else
+        cfg[eventKey] = soundName
+    end
+
+    if not next(cfg) then
+        group.triggerSettings.soundAlerts = nil
+    end
+end
+
+function CooldownCompanion:GetTriggerPanelSoundAlertEventLabel(eventKey)
+    return TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] or eventKey
+end
+
 function CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
     local events = cfg and cfg.events
@@ -481,6 +555,13 @@ local function GetButtonSpeechText(buttonData)
     return "Cooldown alert"
 end
 
+local function GetTriggerPanelSpeechText(group)
+    if type(group) == "table" and type(group.name) == "string" and group.name ~= "" then
+        return group.name
+    end
+    return "Trigger alert"
+end
+
 local function PlaySharedMediaSound(soundName, channel, speechText)
     if not soundName or soundName == SOUND_NONE_KEY then return false end
 
@@ -517,6 +598,11 @@ function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end
 
+function CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(groupOrId, soundName)
+    local group = ResolveGroup(groupOrId)
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
+end
+
 function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
     if UsesChargeBehavior(buttonData) and eventKey == "chargeGained" then
         eventKey = "available"
@@ -530,6 +616,20 @@ function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
     if not soundName then return false end
 
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+end
+
+function CooldownCompanion:PlayTriggerPanelSoundAlertEvent(groupOrId, eventKey)
+    if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
+        return false
+    end
+
+    local group = ResolveGroup(groupOrId)
+    local soundName = self:GetTriggerPanelSoundAlertSelection(group, eventKey)
+    if not soundName or soundName == SOUND_NONE_KEY then
+        return false
+    end
+
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
 end
 
 function CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData, spellIDOverride)
@@ -565,6 +665,12 @@ end
 function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isOnGCD, cooldownActive, auraActive, currentCharges, _maxCharges, chargeRecharging, chargeCooldownStartTime)
     local buttonData = button and button.buttonData
     if not buttonData or buttonData.type ~= "spell" then return end
+
+    local group = button._groupId and ResolveGroup(button._groupId) or nil
+    if group and group.displayMode == "trigger" then
+        button._sndInitialized = nil
+        return
+    end
 
     local enabledEvents = self:GetEnabledSoundAlertEventsForButton(buttonData, cooldownSpellID)
     if not enabledEvents and cooldownSpellID and cooldownSpellID ~= buttonData.id then
@@ -637,4 +743,24 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
     if chargeCooldownStartTime ~= nil then
         button._sndPrevChargeCooldownStart = chargeCooldownStartTime
     end
+end
+
+function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)
+    if not frame or type(group) ~= "table" or group.displayMode ~= "trigger" then
+        return
+    end
+
+    triggerMatched = triggerMatched == true
+
+    if not frame._triggerSoundInitialized then
+        frame._triggerSoundInitialized = true
+        frame._triggerSoundWasVisible = triggerMatched
+        return
+    end
+
+    if triggerMatched and not frame._triggerSoundWasVisible then
+        self:PlayTriggerPanelSoundAlertEvent(group, "onShow")
+    end
+
+    frame._triggerSoundWasVisible = triggerMatched
 end

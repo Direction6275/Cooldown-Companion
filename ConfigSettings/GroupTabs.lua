@@ -399,9 +399,26 @@ local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
     end)
 end
 
-local function GetTexturePanelCommitCallback(group)
+local function GetStandaloneTextureSettings(group, createIfMissing)
+    if not group then
+        return nil
+    end
+    if group.displayMode == "trigger" then
+        return CooldownCompanion:GetTriggerPanelSignalSettings(group, createIfMissing)
+    end
+    return CooldownCompanion:GetTexturePanelSettings(group, createIfMissing)
+end
+
+local function GetStandaloneTextureSelectionLabel(group, settings)
+    if not settings or not settings.sourceType then
+        return nil
+    end
+    return settings.label or tostring(settings.sourceValue)
+end
+
+local function GetStandaloneTextureCommitCallback(group)
     return function(selection)
-        local liveSettings = CooldownCompanion:GetTexturePanelSettings(group, true)
+        local liveSettings = GetStandaloneTextureSettings(group, true)
         if not liveSettings then
             return
         end
@@ -424,16 +441,22 @@ local function GetTexturePanelCommitCallback(group)
     end
 end
 
-local function OpenOrRebindTexturePanelPicker(group, settings, forceOpen)
-    if not (group and group.buttons and group.buttons[1] and CS.StartPickAuraTexture) then
+local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
+    if not (group and CS.StartPickAuraTexture) then
         return
     end
 
+    local buttonIndex
+    if group.displayMode == "trigger" then
+        buttonIndex = nil
+    else
+        buttonIndex = group.buttons and group.buttons[1] and 1 or nil
+    end
     local pickerOpts = {
         groupId = CS.selectedGroup,
-        buttonIndex = 1,
+        buttonIndex = buttonIndex,
         initialSelection = settings and settings.sourceType and settings or nil,
-        callback = GetTexturePanelCommitCallback(group),
+        callback = GetStandaloneTextureCommitCallback(group),
     }
 
     if forceOpen or not (CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen()) then
@@ -458,8 +481,8 @@ local function BuildLayoutTab(container)
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
 
-    if group.displayMode == "textures" then
-        local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
+    if group.displayMode == "textures" or group.displayMode == "trigger" then
+        local settings = GetStandaloneTextureSettings(group, true)
         if not settings then
             return
         end
@@ -530,7 +553,7 @@ local function BuildLayoutTab(container)
         })
 
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-            OpenOrRebindTexturePanelPicker(group, settings, false)
+            OpenOrRebindStandaloneTexturePicker(group, settings, false)
         end
         RefreshTextureVisual()
         return
@@ -1123,6 +1146,10 @@ local function BuildEffectsTab(container)
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
 
+    if group.displayMode == "trigger" then
+        return
+    end
+
     if group.displayMode == "textures" then
         local indicators = GetTextureIndicatorStore(group)
         if not indicators then
@@ -1634,8 +1661,9 @@ local function BuildAppearanceTab(container)
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
 
-    if group.displayMode == "textures" then
-        local settings = CooldownCompanion:GetTexturePanelSettings(group, true)
+    if group.displayMode == "textures" or group.displayMode == "trigger" then
+        local isTriggerPanel = group.displayMode == "trigger"
+        local settings = GetStandaloneTextureSettings(group, true)
         if not settings then
             return
         end
@@ -1657,19 +1685,21 @@ local function BuildAppearanceTab(container)
         end
 
         local heading = AceGUI:Create("Heading")
-        heading:SetText("Texture Panel")
+        heading:SetText(isTriggerPanel and "Trigger Texture" or "Texture Panel")
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
 
-        CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
-            "Texture Panel",
-            {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
-            " ",
-            {"Its single entry decides when that texture appears.", 1, 1, 1, true},
-        }, tabInfoButtons)
+        if not isTriggerPanel then
+            CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+                "Texture Panel",
+                {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
+                " ",
+                {"Its single entry decides when that texture appears.", 1, 1, 1, true},
+            }, tabInfoButtons)
+        end
 
-        if not buttonData then
+        if not buttonData and not isTriggerPanel then
             local emptyLabel = AceGUI:Create("Label")
             emptyLabel:SetFullWidth(true)
             emptyLabel:SetText("|cff888888Add one entry in Column 2 first. The texture browser will open after that.|r")
@@ -1681,7 +1711,7 @@ local function BuildAppearanceTab(container)
             return
         end
 
-        local selectionLabel = CooldownCompanion:GetTexturePanelSelectionLabel(group)
+        local selectionLabel = GetStandaloneTextureSelectionLabel(group, settings)
 
         local previewGroup = AceGUI:Create("SimpleGroup")
         previewGroup:SetFullWidth(true)
@@ -1728,7 +1758,7 @@ local function BuildAppearanceTab(container)
         browseBtn:SetText("Browse / Change")
         browseBtn:SetRelativeWidth(0.49)
         browseBtn:SetCallback("OnClick", function()
-            OpenOrRebindTexturePanelPicker(group, settings, true)
+            OpenOrRebindStandaloneTexturePicker(group, settings, true)
         end)
         actionRow:AddChild(browseBtn)
 
@@ -1738,26 +1768,28 @@ local function BuildAppearanceTab(container)
         clearBtn:SetRelativeWidth(0.49)
         clearBtn:SetCallback("OnClick", function()
             CooldownCompanion:ClearAllAuraTexturePickerPreviews()
-            GetTexturePanelCommitCallback(group)(nil)
+            GetStandaloneTextureCommitCallback(group)(nil)
         end)
         actionRow:AddChild(clearBtn)
 
         if not selectionLabel then
-            local emptyStateLabel = AceGUI:Create("Label")
-            emptyStateLabel:SetFullWidth(true)
-            emptyStateLabel:SetText("|cff888888Pick a texture to show the rest of the display controls.|r")
-            container:AddChild(emptyStateLabel)
+            if not isTriggerPanel then
+                local emptyStateLabel = AceGUI:Create("Label")
+                emptyStateLabel:SetFullWidth(true)
+                emptyStateLabel:SetText("|cff888888Pick a texture to show the rest of the display controls.|r")
+                container:AddChild(emptyStateLabel)
+            end
 
             local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
             if shouldOpenPicker then
                 CS.pendingTexturePickerOpen = nil
                 C_Timer.After(0, function()
                     if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
-                        OpenOrRebindTexturePanelPicker(group, settings, true)
+                        OpenOrRebindStandaloneTexturePicker(group, settings, true)
                     end
                 end)
             elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-                OpenOrRebindTexturePanelPicker(group, settings, false)
+                OpenOrRebindStandaloneTexturePicker(group, settings, false)
             end
 
             RefreshTextureVisual()
@@ -1870,11 +1902,11 @@ local function BuildAppearanceTab(container)
             CS.pendingTexturePickerOpen = nil
             C_Timer.After(0, function()
                 if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
-                    OpenOrRebindTexturePanelPicker(group, settings, true)
+                    OpenOrRebindStandaloneTexturePicker(group, settings, true)
                 end
             end)
         elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-            OpenOrRebindTexturePanelPicker(group, settings, false)
+            OpenOrRebindStandaloneTexturePicker(group, settings, false)
         end
 
         RefreshTextureVisual()

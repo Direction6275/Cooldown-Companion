@@ -44,7 +44,12 @@ end
 local function BuildPreviewSelection(groupId, buttonIndex, entry)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
-    local baseSettings = group and CooldownCompanion:GetTexturePanelSettings(group)
+    local baseSettings
+    if group and group.displayMode == "trigger" then
+        baseSettings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
+    else
+        baseSettings = group and CooldownCompanion:GetTexturePanelSettings(group)
+    end
     return CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
 end
 
@@ -272,13 +277,13 @@ local function OpenAuraTexturePicker(opts)
     end
 
     local function ClearStagedPreview()
-        if currentGroupId and currentButtonIndex then
+        if currentGroupId then
             CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
         end
     end
 
     local function StageEntryPreview(entry)
-        if not (currentGroupId and currentButtonIndex) then
+        if not currentGroupId then
             return
         end
         if not entry then

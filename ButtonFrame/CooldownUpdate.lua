@@ -105,6 +105,25 @@ local function GetConfiguredAuraUnit(buttonData)
     return buttonData.auraUnit or "player"
 end
 
+local function DispatchStandaloneTextureVisual(button)
+    if not button then
+        return
+    end
+
+    local group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
+    if group and group.displayMode == "trigger" then
+        local frame = button:GetParent()
+        local runtimeButtons = frame and frame.buttons
+        if type(runtimeButtons) == "table" and runtimeButtons[#runtimeButtons] == button then
+            CooldownCompanion:UpdateAuraTextureVisual(runtimeButtons[1] or button)
+        end
+        return
+    end
+
+    CooldownCompanion:UpdateAuraTextureVisual(button)
+end
+
 -- GCD-only detection: is the spell's cooldown just the global cooldown?
 -- NeverSecret path uses direct field comparison (precise at GCD boundaries).
 -- Secret path uses isOnGCD + _gcdActive (coarser, avoids secret arithmetic).
@@ -971,7 +990,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-    elseif usesChargeBehavior and buttonData._hasDisplayCount and buttonData.type == "spell" then
+    elseif usesChargeBehavior
+        and (buttonData._hasDisplayCount or buttonData._displayCountFamily)
+        and buttonData.type == "spell"
+    then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
     elseif not usesChargeBehavior then
         -- hasCharges cleared: wipe stale charge state.
@@ -997,7 +1019,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local displayCountShown = false
             local hasCastCountText = HasCastCountText(buttonData)
             local conditionalCastCountSpellID
-            if buttonData._hasDisplayCount then
+            if buttonData._hasDisplayCount or buttonData._displayCountFamily then
                 local displayCount = button.count:GetText()
                 if issecretvalue(displayCount) then
                     displayCountShown = true
@@ -1040,7 +1062,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             elseif not displayCountShown then
                 button.count:SetText("")
             end
-        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell"
+        elseif (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell"
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
             -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
@@ -1136,7 +1158,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Prevents short lockout cooldowns (e.g., dragonriding flyout abilities)
             -- from being misclassified as "zero charges".
             button._mainCDShown = (button._currentReadableCharges == 0)
-        elseif buttonData.type == "spell" and buttonData._hasDisplayCount then
+        elseif buttonData.type == "spell" and (buttonData._hasDisplayCount or buttonData._displayCountFamily) then
             -- Secret display counts do not expose a readable number in combat for
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
@@ -1424,17 +1446,25 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Per-button visibility evaluation (after charge tracking)
+    button._procOverlayActive = procOverlayActive
     EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive, procOverlayActive)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
 
+    local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
+    local isTriggerPanel = group and group.displayMode == "trigger"
+    if isTriggerPanel then
+        button._visibilityHidden = true
+        button._visibilityAlphaOverride = 0
+    end
+
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
     local forceVisibleByConfig = IsConfigButtonForceVisible(button)
-    if forceVisibleByConfig then
+    if forceVisibleByConfig and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
     end
-    button._forceVisibleByConfig = forceVisibleByConfig or nil
+    button._forceVisibleByConfig = (forceVisibleByConfig and not isTriggerPanel) or nil
 
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
@@ -1451,7 +1481,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Apply visibility alpha or early-return for hidden buttons
-    local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
     if not group or not group.compactLayout then
         -- Non-compact mode: alpha=0 for hidden, restore for visible
         if button._visibilityHidden then
@@ -1460,7 +1489,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
             end
-            CooldownCompanion:UpdateAuraTextureVisual(button)
+            DispatchStandaloneTextureVisual(button)
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1476,7 +1505,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
-            CooldownCompanion:UpdateAuraTextureVisual(button)
+            DispatchStandaloneTextureVisual(button)
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1486,8 +1515,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
     end
-
-    button._procOverlayActive = procOverlayActive
 
     -- Unusable/out-of-range state for text mode {unusable}/{oor} conditionals
     if button._isText then
@@ -1525,9 +1552,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateTextDisplay(button)
     elseif button._isBar then
         UpdateBarDisplay(button)
-        CooldownCompanion:UpdateAuraTextureVisual(button)
+        DispatchStandaloneTextureVisual(button)
     else
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
-        CooldownCompanion:UpdateAuraTextureVisual(button)
+        DispatchStandaloneTextureVisual(button)
     end
 end

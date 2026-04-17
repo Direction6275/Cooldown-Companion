@@ -1904,18 +1904,26 @@ local function CreateConfigPanel()
         if not buttonData then return end
 
         if tab == "settings" then
-            if buttonData.type == "spell" then
-                ST._BuildSpellSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
-                ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
-                ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            if group.displayMode == "trigger" then
+                ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            else
+                if buttonData.type == "spell" then
+                    ST._BuildSpellSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
+                    ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
+                    ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                end
+                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                ST._BuildCustomKeybindSection(scroll, buttonData)
+                ST._BuildCustomNameSection(scroll, buttonData)
             end
-            ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            ST._BuildCustomKeybindSection(scroll, buttonData)
-            ST._BuildCustomNameSection(scroll, buttonData)
         elseif tab == "soundalerts" then
-            ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            if group.displayMode == "trigger" then
+                ST._BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+            else
+                ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
@@ -1945,7 +1953,7 @@ local function CreateConfigPanel()
     -- Placeholder label shown when no button is selected
     local bsPlaceholderLabel = col3.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bsPlaceholderLabel:SetPoint("TOPLEFT", col3.content, "TOPLEFT", -1, 0)
-    bsPlaceholderLabel:SetText("Select a spell or item to configure")
+    bsPlaceholderLabel:SetText("Select an entry to configure")
     bsPlaceholderLabel:Show()
     col3.bsPlaceholder = bsPlaceholderLabel
 

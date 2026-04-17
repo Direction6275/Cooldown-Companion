@@ -47,6 +47,7 @@ local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
+local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.82, 0.0 }
 local PANEL_TYPE_TOOLTIPS = {
     icons = {
         title = "Icon Panel",
@@ -63,6 +64,10 @@ local PANEL_TYPE_TOOLTIPS = {
     textures = {
         title = "Texture Panel",
         description = "One custom texture for a single spell or item.",
+    },
+    trigger = {
+        title = "Trigger Panel",
+        description = "One texture shown when all conditions match.",
     },
 }
 
@@ -141,6 +146,61 @@ end
 
 local function CanTexturePanelAcceptEntry(group)
     return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
+end
+
+local function IsTriggerPanelGroup(group)
+    return group and group.displayMode == "trigger"
+end
+
+local function TriggerRowNeedsAuraIndicator(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    if buttonData.isPassive == true or buttonData.addedAs == "aura" then
+        return true
+    end
+
+    return CooldownCompanion.TriggerRowUsesCondition
+        and CooldownCompanion:TriggerRowUsesCondition(buttonData, "auraActive")
+        or false
+end
+
+local function GetTriggerRowDisplayText(buttonData)
+    local targetText
+    if buttonData and buttonData.type == "spell" then
+        targetText = GetConfigEntryDisplayName(buttonData)
+            or buttonData.name
+            or ("Unknown " .. tostring(buttonData.type))
+
+        local addedAs = buttonData.addedAs
+        if addedAs ~= "spell" and addedAs ~= "aura" then
+            addedAs = buttonData.isPassive and "aura" or "spell"
+        end
+
+        local icons = ""
+        if addedAs ~= "aura" then
+            icons = icons .. "|A:ui_adv_atk:15:15|a"
+        end
+        if TriggerRowNeedsAuraIndicator(buttonData) then
+            icons = icons .. "|A:ui_adv_health:15:15|a"
+        end
+        if icons ~= "" then
+            targetText = targetText .. "  " .. icons
+        end
+    else
+        targetText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+            or buttonData.name
+            or ("Unknown " .. tostring(buttonData.type))
+    end
+
+    if CooldownCompanion.GetCompactTriggerConditionSummary then
+        local summary = CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, 2)
+        if summary and summary ~= "" then
+            return targetText .. "  |cff888888" .. summary .. "|r"
+        end
+    end
+    return targetText
 end
 
 local function ResolveColumn2TooltipSpellId(buttonData)
@@ -634,12 +694,22 @@ local function RefreshColumn2()
             end
             modeBadge:ClearAllPoints()
             modeBadge:SetSize(16, 16)
+            if modeBadge.SetDesaturated then
+                modeBadge:SetDesaturated(false)
+            end
+            modeBadge:SetVertexColor(1, 1, 1, 1)
             if panel.displayMode == "bars" then
                 modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
             elseif panel.displayMode == "text" then
                 modeBadge:SetAtlas("poi-workorders", false)
             elseif panel.displayMode == "textures" then
                 modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+            elseif panel.displayMode == "trigger" then
+                modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                if modeBadge.SetDesaturated then
+                    modeBadge:SetDesaturated(true)
+                end
+                modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
             else
                 modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
             end
@@ -1115,6 +1185,18 @@ local function RefreshColumn2()
                 end
             end
 
+            local function CreateTriggerPanel()
+                local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, "trigger")
+                if newPanelId then
+                    CS.selectedGroup = newPanelId
+                    CS.selectedButton = nil
+                    wipe(CS.selectedButtons)
+                    CS.addingToPanelId = newPanelId
+                    CS.pendingEditBoxFocus = true
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+
             local iconPanelBtn = AceGUI:Create("Button")
             iconPanelBtn:SetText("Icon Panel")
             iconPanelBtn:SetCallback("OnClick", CreateIconPanel)
@@ -1165,6 +1247,15 @@ local function RefreshColumn2()
                     info.func = function()
                         CloseDropDownMenus()
                         CreateTexturePanel()
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Trigger Panel"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        CreateTriggerPanel()
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end, "MENU")
@@ -1434,12 +1525,22 @@ local function RefreshColumn2()
                 end
                 modeBadge:ClearAllPoints()
                 modeBadge:SetSize(16, 16)
+                if modeBadge.SetDesaturated then
+                    modeBadge:SetDesaturated(false)
+                end
+                modeBadge:SetVertexColor(1, 1, 1, 1)
                 if panel.displayMode == "bars" then
                     modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
                 elseif panel.displayMode == "text" then
                     modeBadge:SetAtlas("poi-workorders", false)
                 elseif panel.displayMode == "textures" then
                     modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                elseif panel.displayMode == "trigger" then
+                    modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+                    if modeBadge.SetDesaturated then
+                        modeBadge:SetDesaturated(true)
+                    end
+                    modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
                 else
                     modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
                 end
@@ -1944,7 +2045,9 @@ local function RefreshColumn2()
                     CleanRecycledEntry(entry)
                     local usable = CooldownCompanion:IsButtonUsable(buttonData)
 
-                    local entryName = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+                    local entryName = IsTriggerPanelGroup(panel)
+                        and GetTriggerRowDisplayText(buttonData)
+                        or GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
                     entry:SetText(entryName or ("Unknown " .. buttonData.type))
                     entry:SetImage(GetButtonIcon(buttonData))
                     entry:SetImageSize(32, 32)
@@ -2006,7 +2109,12 @@ local function RefreshColumn2()
                             soundBadge:Show()
                         end
 
-                        if buttonData.auraTracking then
+                        local showAuraBadge = buttonData.auraTracking
+                        if IsTriggerPanelGroup(panel) then
+                            showAuraBadge = TriggerRowNeedsAuraIndicator(buttonData)
+                        end
+
+                        if showAuraBadge then
                             auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
                             auraBadge:SetFrameLevel(rowBadgeLevel)
                             local auraReady, auraStatus = IsAuraTrackingConfigReady(buttonData, cdmEnabled)
@@ -2335,7 +2443,7 @@ local function RefreshColumn2()
                     panelMeta.addRowFrame = addRow.frame
 
                     local manualAddBtn = AceGUI:Create("Button")
-                    manualAddBtn:SetText("Manual Add")
+                    manualAddBtn:SetText(IsTriggerPanelGroup(panel) and "Add Condition" or "Manual Add")
                     manualAddBtn:SetRelativeWidth(panel.displayMode == "textures" and 1 or 0.49)
                     panelMeta.manualAddButtonFrame = manualAddBtn.frame
                     manualAddBtn:SetCallback("OnClick", function()
