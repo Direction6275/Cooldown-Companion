@@ -152,10 +152,48 @@ local function IsTriggerPanelGroup(group)
     return group and group.displayMode == "trigger"
 end
 
+local function TriggerRowNeedsAuraIndicator(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+
+    if buttonData.isPassive == true or buttonData.addedAs == "aura" then
+        return true
+    end
+
+    return CooldownCompanion.TriggerRowUsesCondition
+        and CooldownCompanion:TriggerRowUsesCondition(buttonData, "auraActive")
+        or false
+end
+
 local function GetTriggerRowDisplayText(buttonData)
-    local targetText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
-        or buttonData.name
-        or ("Unknown " .. tostring(buttonData.type))
+    local targetText
+    if buttonData and buttonData.type == "spell" then
+        targetText = GetConfigEntryDisplayName(buttonData)
+            or buttonData.name
+            or ("Unknown " .. tostring(buttonData.type))
+
+        local addedAs = buttonData.addedAs
+        if addedAs ~= "spell" and addedAs ~= "aura" then
+            addedAs = buttonData.isPassive and "aura" or "spell"
+        end
+
+        local icons = ""
+        if addedAs ~= "aura" then
+            icons = icons .. "|A:ui_adv_atk:15:15|a"
+        end
+        if TriggerRowNeedsAuraIndicator(buttonData) then
+            icons = icons .. "|A:ui_adv_health:15:15|a"
+        end
+        if icons ~= "" then
+            targetText = targetText .. "  " .. icons
+        end
+    else
+        targetText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+            or buttonData.name
+            or ("Unknown " .. tostring(buttonData.type))
+    end
+
     if CooldownCompanion.GetCompactTriggerConditionSummary then
         local summary = CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, 2)
         if summary and summary ~= "" then
@@ -2072,7 +2110,12 @@ local function RefreshColumn2()
                             soundBadge:Show()
                         end
 
-                        if buttonData.auraTracking then
+                        local showAuraBadge = buttonData.auraTracking
+                        if IsTriggerPanelGroup(panel) then
+                            showAuraBadge = TriggerRowNeedsAuraIndicator(buttonData)
+                        end
+
+                        if showAuraBadge then
                             auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
                             auraBadge:SetFrameLevel(rowBadgeLevel)
                             local auraReady, auraStatus = IsAuraTrackingConfigReady(buttonData, cdmEnabled)
