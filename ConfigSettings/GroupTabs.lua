@@ -23,6 +23,9 @@ local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
+local OpenTriggerPanelIconPicker = ST._OpenTriggerPanelIconPicker
+local ApplyEdgePositions = ST._ApplyEdgePositions
+local ApplyIconTexCoord = ST._ApplyIconTexCoord
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -466,6 +469,333 @@ local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
     end
 end
 
+local TRIGGER_DISPLAY_TYPE_OPTIONS = {
+    texture = "Texture",
+    icon = "Icon",
+    text = "Text",
+}
+
+local TRIGGER_DISPLAY_TYPE_ORDER = {
+    "texture",
+    "icon",
+    "text",
+}
+
+local function RefreshStandaloneTriggerDisplay(groupId)
+    local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+    if button then
+        CooldownCompanion:UpdateAuraTextureVisual(button)
+    else
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+    end
+end
+
+local function AddTriggerDisplayTypeDropdown(container, group)
+    local displayDrop = AceGUI:Create("Dropdown")
+    displayDrop:SetLabel("Display Type")
+    displayDrop:SetList(TRIGGER_DISPLAY_TYPE_OPTIONS, TRIGGER_DISPLAY_TYPE_ORDER)
+    displayDrop:SetValue(CooldownCompanion:GetTriggerPanelDisplayType(group, true))
+    displayDrop:SetFullWidth(true)
+    displayDrop:SetCallback("OnValueChanged", function(_, _, value)
+        local triggerSettings = group.triggerSettings or {}
+        group.triggerSettings = triggerSettings
+        triggerSettings.displayType = value or "texture"
+        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+        RefreshStandaloneTriggerDisplay(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(displayDrop)
+end
+
+local function CreateTriggerPreviewCanvas(container, height)
+    local previewGroup = AceGUI:Create("SimpleGroup")
+    previewGroup:SetFullWidth(true)
+    previewGroup:SetHeight(height)
+    previewGroup:SetLayout("Fill")
+    container:AddChild(previewGroup)
+
+    local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
+    previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
+    previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, height - 4)
+    appearanceTabElements[#appearanceTabElements + 1] = previewFrame
+
+    local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
+    previewShade:SetAllPoints()
+    previewShade:SetColorTexture(0, 0, 0, 0.42)
+
+    return previewFrame
+end
+
+local function BuildTriggerIconAppearanceTab(container, group)
+    local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
+    local groupId = CS.selectedGroup
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Trigger Icon")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local previewFrame = CreateTriggerPreviewCanvas(container, TEXTURE_PREVIEW_HEIGHT + 4)
+    local iconHolder = CreateFrame("Frame", nil, previewFrame)
+    iconHolder:SetPoint("CENTER")
+    iconHolder:SetSize(DEFAULT_TEXTURE_PREVIEW_SIZE, DEFAULT_TEXTURE_PREVIEW_SIZE)
+
+    local previewBg = iconHolder:CreateTexture(nil, "BACKGROUND")
+    previewBg:SetAllPoints()
+
+    local previewIcon = iconHolder:CreateTexture(nil, "ARTWORK")
+    local previewBorders = {}
+    for index = 1, 4 do
+        previewBorders[index] = iconHolder:CreateTexture(nil, "OVERLAY")
+    end
+    local clearBtn
+
+    local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    placeholder:SetPoint("CENTER")
+    placeholder:SetJustifyH("CENTER")
+    placeholder:SetText("No icon selected")
+    placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
+
+    local function RefreshIconPreview()
+        local width = settings.maintainAspectRatio and (settings.buttonSize or ST.BUTTON_SIZE)
+            or (settings.iconWidth or settings.buttonSize or ST.BUTTON_SIZE)
+        local height = settings.maintainAspectRatio and (settings.buttonSize or ST.BUTTON_SIZE)
+            or (settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE)
+        local borderSize = settings.borderSize or ST.DEFAULT_BORDER_SIZE
+        local bgColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
+        local borderColor = settings.borderColor or { 0, 0, 0, 1 }
+        local tintColor = settings.iconTintColor or { 1, 1, 1, 1 }
+        local hasIcon = ST._IsValidIconTexture(settings.manualIcon)
+
+        iconHolder:SetSize(width, height)
+        previewIcon:ClearAllPoints()
+        previewIcon:SetPoint("TOPLEFT", borderSize, -borderSize)
+        previewIcon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+
+        if hasIcon then
+            previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0.5)
+            previewBg:Show()
+            for _, border in ipairs(previewBorders) do
+                border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
+                border:Show()
+            end
+            ApplyEdgePositions(previewBorders, iconHolder, borderSize)
+            previewIcon:SetTexture(settings.manualIcon)
+            previewIcon:SetVertexColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] ~= nil and tintColor[4] or 1)
+            ApplyIconTexCoord(previewIcon, width, height)
+            previewIcon:Show()
+            placeholder:Hide()
+        else
+            previewBg:Hide()
+            for _, border in ipairs(previewBorders) do
+                border:Hide()
+            end
+            previewIcon:Hide()
+            placeholder:Show()
+        end
+
+        if clearBtn then
+            clearBtn:SetDisabled(not hasIcon)
+        end
+
+        RefreshStandaloneTriggerDisplay(groupId)
+    end
+
+    local actionRow = AceGUI:Create("SimpleGroup")
+    actionRow:SetFullWidth(true)
+    actionRow:SetLayout("Flow")
+    container:AddChild(actionRow)
+
+    local browseBtn = AceGUI:Create("Button")
+    browseBtn:SetText("Choose Icon")
+    browseBtn:SetRelativeWidth(0.49)
+    browseBtn:SetCallback("OnClick", function()
+        OpenTriggerPanelIconPicker(groupId)
+    end)
+    actionRow:AddChild(browseBtn)
+
+    clearBtn = AceGUI:Create("Button")
+    clearBtn:SetText("Clear")
+    clearBtn:SetRelativeWidth(0.49)
+    clearBtn:SetDisabled(not ST._IsValidIconTexture(settings.manualIcon))
+    clearBtn:SetCallback("OnClick", function()
+        settings.manualIcon = nil
+        RefreshIconPreview()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    actionRow:AddChild(clearBtn)
+
+    local squareCb = AceGUI:Create("CheckBox")
+    squareCb:SetLabel("Square Icons")
+    squareCb:SetValue(settings.maintainAspectRatio ~= false)
+    squareCb:SetFullWidth(true)
+    squareCb:SetCallback("OnValueChanged", function(_, _, value)
+        settings.maintainAspectRatio = value ~= false
+        if settings.maintainAspectRatio then
+            local size = settings.buttonSize or ST.BUTTON_SIZE
+            settings.iconWidth = size
+            settings.iconHeight = size
+        end
+        RefreshIconPreview()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(squareCb)
+
+    if settings.maintainAspectRatio ~= false then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Button Size")
+        sizeSlider:SetSliderValues(10, 150, 0.1)
+        sizeSlider:SetValue(settings.buttonSize or ST.BUTTON_SIZE)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(_, _, value)
+            settings.buttonSize = value
+            settings.iconWidth = value
+            settings.iconHeight = value
+            RefreshIconPreview()
+        end)
+        HookSliderEditBox(sizeSlider)
+        container:AddChild(sizeSlider)
+    else
+        local widthSlider = AceGUI:Create("Slider")
+        widthSlider:SetLabel("Icon Width")
+        widthSlider:SetSliderValues(10, 150, 0.1)
+        widthSlider:SetValue(settings.iconWidth or settings.buttonSize or ST.BUTTON_SIZE)
+        widthSlider:SetFullWidth(true)
+        widthSlider:SetCallback("OnValueChanged", function(_, _, value)
+            settings.iconWidth = value
+            RefreshIconPreview()
+        end)
+        HookSliderEditBox(widthSlider)
+        container:AddChild(widthSlider)
+
+        local heightSlider = AceGUI:Create("Slider")
+        heightSlider:SetLabel("Icon Height")
+        heightSlider:SetSliderValues(10, 150, 0.1)
+        heightSlider:SetValue(settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE)
+        heightSlider:SetFullWidth(true)
+        heightSlider:SetCallback("OnValueChanged", function(_, _, value)
+            settings.iconHeight = value
+            RefreshIconPreview()
+        end)
+        HookSliderEditBox(heightSlider)
+        container:AddChild(heightSlider)
+    end
+
+    local borderSlider = AceGUI:Create("Slider")
+    borderSlider:SetLabel("Border Size")
+    borderSlider:SetSliderValues(0, 5, 0.1)
+    borderSlider:SetValue(settings.borderSize or ST.DEFAULT_BORDER_SIZE)
+    borderSlider:SetFullWidth(true)
+    borderSlider:SetCallback("OnValueChanged", function(_, _, value)
+        settings.borderSize = value
+        RefreshIconPreview()
+    end)
+    HookSliderEditBox(borderSlider)
+    container:AddChild(borderSlider)
+
+    AddColorPicker(container, settings, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, RefreshIconPreview, RefreshIconPreview)
+    AddColorPicker(container, settings, "iconTintColor", "Base Icon Color", { 1, 1, 1, 1 }, true, RefreshIconPreview, RefreshIconPreview)
+    AddColorPicker(container, settings, "backgroundColor", "Background Color", { 0, 0, 0, 0.5 }, true, RefreshIconPreview, RefreshIconPreview)
+
+    RefreshIconPreview()
+end
+
+local function BuildTriggerTextAppearanceTab(container, group)
+    local settings = CooldownCompanion:GetTriggerPanelTextSettings(group, true)
+    local groupId = CS.selectedGroup
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Trigger Text")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local previewFrame = CreateTriggerPreviewCanvas(container, 120)
+    local textHolder = CreateFrame("Frame", nil, previewFrame)
+    textHolder:SetPoint("CENTER")
+    textHolder:SetSize(1, 1)
+
+    local previewBg = textHolder:CreateTexture(nil, "BACKGROUND")
+    previewBg:SetAllPoints()
+
+    local previewBorders = {}
+    for index = 1, 4 do
+        previewBorders[index] = textHolder:CreateTexture(nil, "OVERLAY")
+    end
+
+    local previewText = textHolder:CreateFontString(nil, "OVERLAY")
+    previewText:SetJustifyV("MIDDLE")
+    previewText:SetWordWrap(false)
+
+    local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    placeholder:SetPoint("CENTER")
+    placeholder:SetJustifyH("CENTER")
+    placeholder:SetText("No text entered")
+    placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
+
+    local function RefreshTextPreview()
+        local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
+        local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
+        local hasText = CooldownCompanion.HasTriggerTextValue(settings)
+        local insetX = 2
+        local insetY = 1
+
+        if hasText then
+            local frameWidth, frameHeight
+            frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
+            textHolder:SetSize(frameWidth, frameHeight)
+            textHolder:ClearAllPoints()
+            textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+        else
+            textHolder:SetSize(1, 1)
+            textHolder:ClearAllPoints()
+            textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+        end
+        previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
+        for _, border in ipairs(previewBorders) do
+            border:Hide()
+        end
+
+        previewText:ClearAllPoints()
+        previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
+        previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -insetX, insetY)
+        previewText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] ~= nil and fontColor[4] or 1)
+        previewText:SetShown(hasText)
+        placeholder:SetShown(not hasText)
+
+        RefreshStandaloneTriggerDisplay(groupId)
+    end
+
+    local textBox = AceGUI:Create("MultiLineEditBox")
+    textBox:SetLabel("Display Text")
+    textBox:SetFullWidth(true)
+    textBox:SetNumLines(4)
+    textBox.button:Hide()
+    textBox:SetText(settings.value or "")
+    local function HandleTextChanged(_, _, value)
+        settings.value = value or ""
+        RefreshTextPreview()
+    end
+    textBox:SetCallback("OnTextChanged", HandleTextChanged)
+    textBox:SetCallback("OnEnterPressed", HandleTextChanged)
+    container:AddChild(textBox)
+
+    AddFontControls(container, settings, "text", {
+        size = 12,
+        sizeMin = 6,
+        sizeMax = 72,
+        font = "Friz Quadrata TT",
+        outline = "OUTLINE",
+    }, RefreshTextPreview)
+
+    AddColorPicker(container, settings, "textFontColor", "Text Color", { 1, 1, 1, 1 }, true, RefreshTextPreview, RefreshTextPreview)
+    AddColorPicker(container, settings, "textBgColor", "Background Color", { 0, 0, 0, 0 }, true, RefreshTextPreview, RefreshTextPreview)
+
+    RefreshTextPreview()
+end
+
 local function BuildLayoutTab(container)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
@@ -487,18 +817,21 @@ local function BuildLayoutTab(container)
             return
         end
         local textureGroupId = CS.selectedGroup
+        local isTriggerPanel = group.displayMode == "trigger"
+        local positionHeadingText = isTriggerPanel and "Trigger Display Position" or "Texture Position"
+        local anchorLabel = isTriggerPanel and "Display Point" or "Texture Point"
 
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
 
         local heading = AceGUI:Create("Heading")
-        heading:SetText("Texture Position")
+        heading:SetText(positionHeadingText)
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
 
-        AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, "Texture Point")
+        AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, anchorLabel)
         AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
         AddOffsetSliders(container, settings, "x", "y", {
             x = 0,
@@ -1660,6 +1993,18 @@ local function BuildAppearanceTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+
+    if group.displayMode == "trigger" then
+        AddTriggerDisplayTypeDropdown(container, group)
+        local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
+        if displayType == "icon" then
+            BuildTriggerIconAppearanceTab(container, group)
+            return
+        elseif displayType == "text" then
+            BuildTriggerTextAppearanceTab(container, group)
+            return
+        end
+    end
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then
         local isTriggerPanel = group.displayMode == "trigger"

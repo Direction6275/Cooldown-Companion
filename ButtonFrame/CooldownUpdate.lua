@@ -109,6 +109,9 @@ local function DispatchStandaloneTextureVisual(button)
     if not button then
         return
     end
+    if type(CooldownCompanion.UpdateAuraTextureVisual) ~= "function" then
+        return
+    end
 
     local group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil

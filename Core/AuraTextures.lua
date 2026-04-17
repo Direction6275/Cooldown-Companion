@@ -1566,6 +1566,151 @@ function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId, createIfMiss
     return NormalizeAuraTextureSettings(group.triggerSettings.signal)
 end
 
+function CooldownCompanion.NormalizeTriggerDisplayType(displayType)
+    if displayType == "icon" or displayType == "text" then
+        return displayType
+    end
+    return "texture"
+end
+
+function CooldownCompanion.IsValidTriggerPanelIconTexture(iconTexture)
+    local iconType = type(iconTexture)
+    if iconType ~= "number" and iconType ~= "string" then
+        return false
+    end
+
+    local probe = CooldownCompanion._triggerPanelIconValidationTexture
+    if not probe then
+        local holder = CreateFrame("Frame", nil, UIParent)
+        holder:Hide()
+        probe = holder:CreateTexture(nil, "ARTWORK")
+        holder.texture = probe
+        CooldownCompanion._triggerPanelIconValidationTexture = probe
+    end
+
+    probe:SetTexture(nil)
+    probe:SetTexture(iconTexture)
+    local resolvedTexture = probe:GetTexture()
+    probe:SetTexture(nil)
+
+    return resolvedTexture ~= nil
+end
+
+function CooldownCompanion.NormalizeTriggerIconSettings(settings)
+    if type(settings) ~= "table" then
+        return nil
+    end
+
+    settings.manualIcon = CooldownCompanion.IsValidTriggerPanelIconTexture(settings.manualIcon)
+            and settings.manualIcon
+        or nil
+    settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
+    settings.buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
+    settings.iconWidth = Clamp(tonumber(settings.iconWidth) or settings.buttonSize, 10, 150)
+    settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
+    settings.borderSize = Clamp(tonumber(settings.borderSize) or 1, 0, 5)
+    settings.borderColor = CopyColor(settings.borderColor) or { 0, 0, 0, 1 }
+    settings.backgroundColor = CopyColor(settings.backgroundColor) or { 0, 0, 0, 0.5 }
+    settings.iconTintColor = CopyColor(settings.iconTintColor) or { 1, 1, 1, 1 }
+
+    return settings
+end
+
+function CooldownCompanion.NormalizeTriggerTextSettings(settings)
+    if type(settings) ~= "table" then
+        return nil
+    end
+
+    settings.value = type(settings.value) == "string" and settings.value or ""
+    settings.textFont = type(settings.textFont) == "string" and settings.textFont or "Friz Quadrata TT"
+    settings.textFontSize = Clamp(tonumber(settings.textFontSize) or 12, 6, 72)
+    settings.textFontOutline = type(settings.textFontOutline) == "string" and settings.textFontOutline or "OUTLINE"
+    settings.textFontColor = CopyColor(settings.textFontColor) or { 1, 1, 1, 1 }
+    settings.textBgColor = CopyColor(settings.textBgColor) or { 0, 0, 0, 0 }
+
+    return settings
+end
+
+function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" then
+        return "texture"
+    end
+
+    if type(group.triggerSettings) ~= "table" then
+        if not createIfMissing then
+            return "texture"
+        end
+        group.triggerSettings = {}
+    end
+
+    group.triggerSettings.displayType = CooldownCompanion.NormalizeTriggerDisplayType(group.triggerSettings.displayType)
+    return group.triggerSettings.displayType
+end
+
+function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" then
+        return nil
+    end
+
+    if type(group.triggerSettings) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings = {}
+    end
+
+    if type(group.triggerSettings.icon) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings.icon = {
+            manualIcon = nil,
+            maintainAspectRatio = true,
+            buttonSize = 36,
+            iconWidth = 36,
+            iconHeight = 36,
+            borderSize = 1,
+            borderColor = { 0, 0, 0, 1 },
+            backgroundColor = { 0, 0, 0, 0.5 },
+            iconTintColor = { 1, 1, 1, 1 },
+        }
+    end
+
+    return CooldownCompanion.NormalizeTriggerIconSettings(group.triggerSettings.icon)
+end
+
+function CooldownCompanion:GetTriggerPanelTextSettings(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" then
+        return nil
+    end
+
+    if type(group.triggerSettings) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings = {}
+    end
+
+    if type(group.triggerSettings.text) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings.text = {
+            value = "",
+            textFont = "Friz Quadrata TT",
+            textFontSize = 12,
+            textFontOutline = "OUTLINE",
+            textFontColor = { 1, 1, 1, 1 },
+            textBgColor = { 0, 0, 0, 0 },
+        }
+    end
+
+    return CooldownCompanion.NormalizeTriggerTextSettings(group.triggerSettings.text)
+end
+
 function CooldownCompanion:BuildLegacyTriggerConditionClause(buttonData)
     if type(buttonData) ~= "table" then
         return nil
@@ -3429,12 +3574,17 @@ local function SaveTextureHostPosition(host)
     local owner = host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
     local settings
+    local requiresConfiguredTexture = false
     if group and CooldownCompanion:IsTriggerPanelGroup(group) then
         settings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
     else
         settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+        requiresConfiguredTexture = true
     end
-    if not settings or not settings.sourceType then
+    if not settings then
+        return
+    end
+    if requiresConfiguredTexture and not settings.sourceType then
         return
     end
 
@@ -3684,6 +3834,111 @@ local function EnsureAuraTextureHost(button)
     return host
 end
 
+function CooldownCompanion.EnsureTriggerIconVisual(host)
+    if host.iconFrame then
+        return host.iconFrame
+    end
+
+    local frame = CreateFrame("Frame", nil, host.visualRoot)
+    frame:SetPoint("CENTER")
+    frame:SetSize(36, 36)
+    frame:Hide()
+
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints()
+
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+
+    frame.borderTextures = {}
+    for index = 1, 4 do
+        frame.borderTextures[index] = frame:CreateTexture(nil, "OVERLAY")
+    end
+
+    host.iconFrame = frame
+    return frame
+end
+
+function CooldownCompanion.EnsureTriggerTextVisual(host)
+    if host.textFrame then
+        return host.textFrame
+    end
+
+    local frame = CreateFrame("Frame", nil, host.visualRoot)
+    frame:SetPoint("CENTER")
+    frame:SetSize(200, 20)
+    frame:Hide()
+
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints()
+
+    frame.borderTextures = {}
+    for index = 1, 4 do
+        frame.borderTextures[index] = frame:CreateTexture(nil, "OVERLAY")
+    end
+
+    frame.text = frame:CreateFontString(nil, "OVERLAY")
+    frame.text:SetPoint("TOPLEFT", 2, -1)
+    frame.text:SetPoint("BOTTOMRIGHT", -2, 1)
+    frame.text:SetJustifyV("MIDDLE")
+    frame.text:SetWordWrap(false)
+
+    host.textFrame = frame
+    return frame
+end
+
+function CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    if not host then
+        return
+    end
+
+    if host.primaryTexture then
+        host.primaryTexture:Hide()
+    end
+    if host.secondaryTexture then
+        host.secondaryTexture:Hide()
+    end
+    if host.iconFrame then
+        host.iconFrame:Hide()
+    end
+    if host.textFrame then
+        host.textFrame:Hide()
+    end
+end
+
+function CooldownCompanion.GetTriggerIconDimensions(settings)
+    if settings.maintainAspectRatio then
+        local size = settings.buttonSize or 36
+        return size, size
+    end
+    return settings.iconWidth or 36, settings.iconHeight or 36
+end
+
+function CooldownCompanion.HasTriggerTextValue(settings)
+    return type(settings) == "table" and type(settings.value) == "string" and string_trim(settings.value) ~= ""
+end
+
+function CooldownCompanion.GetTriggerTextDisplayMetrics(fontString, settings)
+    if not fontString or type(settings) ~= "table" then
+        return 1, 1, 2, 1
+    end
+
+    local insetX = 2
+    local insetY = 1
+    local font = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
+
+    fontString:ClearAllPoints()
+    fontString:SetWordWrap(false)
+    fontString:SetJustifyV("MIDDLE")
+    fontString:SetJustifyH("CENTER")
+    fontString:SetWidth(0)
+    fontString:SetFont(font, settings.textFontSize or 12, settings.textFontOutline or "OUTLINE")
+    fontString:SetText(settings.value or "")
+
+    local textWidth = math_max(1, math_floor((fontString:GetStringWidth() or 0) + 0.999))
+    local textHeight = math_max(1, math_floor((fontString:GetStringHeight() or 0) + 0.999))
+    return textWidth + (insetX * 2), textHeight + (insetY * 2), insetX, insetY
+end
+
 local function GetTexturePanelAlphaModuleId(groupId)
     if not groupId then
         return nil
@@ -3721,8 +3976,8 @@ function CooldownCompanion:HideAuraTextureVisual(button)
         host._isDragging = nil
         host:StopMovingOrSizing()
     end
-    host.primaryTexture:Hide()
-    host.secondaryTexture:Hide()
+    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    host._activeDisplayType = nil
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
@@ -3817,26 +4072,149 @@ local function GetStandaloneTextureSettings(group)
     return nil
 end
 
-local function ResolveActiveAuraTextureSettings(button)
-    local preview = button._auraTexturePreviewSelection
-    if type(preview) == "table" then
-        return NormalizeAuraTextureSettings(preview)
+function CooldownCompanion.GetStandaloneDisplayType(group)
+    if CooldownCompanion:IsTriggerPanelGroup(group) then
+        return CooldownCompanion:GetTriggerPanelDisplayType(group, true)
     end
+    if CooldownCompanion:IsTexturePanelGroup(group) then
+        return "texture"
+    end
+    return nil
+end
 
+function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
     local group = button._groupId and ResolveGroup(button._groupId) or nil
     if not CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
-        return nil
+        return nil, nil
+    end
+
+    local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
+    local preview = button._auraTexturePreviewSelection
+    if displayType == "texture" and type(preview) == "table" then
+        return "texture", NormalizeAuraTextureSettings(preview)
+    end
+
+    if displayType == "icon" then
+        local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, false)
+        if not settings or settings.manualIcon == nil then
+            return "icon", nil
+        end
+        return "icon", settings
+    end
+
+    if displayType == "text" then
+        local settings = CooldownCompanion:GetTriggerPanelTextSettings(group, false)
+        if not settings or not CooldownCompanion.HasTriggerTextValue(settings) then
+            return "text", nil
+        end
+        return "text", settings
     end
 
     local settings = GetStandaloneTextureSettings(group)
     if not settings or not settings.sourceType or settings.sourceValue == nil then
-        return nil
+        return "texture", nil
     end
     if not settings.enabled and not IsStandaloneTextureEditingButton(button) then
-        return nil
+        return "texture", nil
     end
 
-    return settings
+    return "texture", settings
+end
+
+function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
+    local iconFrame = CooldownCompanion.EnsureTriggerIconVisual(host)
+    local width, height = CooldownCompanion.GetTriggerIconDimensions(settings)
+    local borderSize = settings.borderSize or 0
+    local iconTint = settings.iconTintColor or { 1, 1, 1, 1 }
+    local backgroundColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    local borderColor = settings.borderColor or { 0, 0, 0, 1 }
+
+    ResetTextureIndicatorTransformState(host)
+    StopAllTextureIndicatorEffects(host)
+    host:SetScript("OnUpdate", nil)
+    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
+    host._activeDisplayType = "icon"
+
+    host:SetSize(width, height)
+    host.visualRoot:SetSize(width, height)
+
+    iconFrame:SetSize(width, height)
+    iconFrame.bg:SetColorTexture(
+        backgroundColor[1] or 0,
+        backgroundColor[2] or 0,
+        backgroundColor[3] or 0,
+        backgroundColor[4] ~= nil and backgroundColor[4] or 0.5
+    )
+    iconFrame.icon:ClearAllPoints()
+    iconFrame.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
+    iconFrame.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    iconFrame.icon:SetTexture(settings.manualIcon)
+    iconFrame.icon:SetVertexColor(
+        iconTint[1] or 1,
+        iconTint[2] or 1,
+        iconTint[3] or 1,
+        iconTint[4] ~= nil and iconTint[4] or 1
+    )
+    ST._ApplyIconTexCoord(iconFrame.icon, width, height)
+
+    for _, border in ipairs(iconFrame.borderTextures) do
+        border:SetColorTexture(
+            borderColor[1] or 0,
+            borderColor[2] or 0,
+            borderColor[3] or 0,
+            borderColor[4] ~= nil and borderColor[4] or 1
+        )
+    end
+    ST._ApplyEdgePositions(iconFrame.borderTextures, iconFrame, borderSize)
+    iconFrame:Show()
+
+    return true
+end
+
+function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
+    local textFrame = CooldownCompanion.EnsureTriggerTextVisual(host)
+    local textColor = settings.textFontColor or { 1, 1, 1, 1 }
+    local backgroundColor = settings.textBgColor or { 0, 0, 0, 0 }
+    local frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(textFrame.text, settings)
+
+    ResetTextureIndicatorTransformState(host)
+    StopAllTextureIndicatorEffects(host)
+    host:SetScript("OnUpdate", nil)
+    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+
+    host._activeTextureSettings = nil
+    host._activeTextureGeometry = nil
+    host._activeDisplayType = "text"
+
+    host:SetSize(frameWidth, frameHeight)
+    host.visualRoot:SetSize(frameWidth, frameHeight)
+
+    textFrame:SetSize(frameWidth, frameHeight)
+    textFrame.bg:SetColorTexture(
+        backgroundColor[1] or 0,
+        backgroundColor[2] or 0,
+        backgroundColor[3] or 0,
+        backgroundColor[4] ~= nil and backgroundColor[4] or 0
+    )
+    for _, border in ipairs(textFrame.borderTextures) do
+        border:Hide()
+    end
+
+    textFrame.text:SetTextColor(
+        textColor[1] or 1,
+        textColor[2] or 1,
+        textColor[3] or 1,
+        textColor[4] ~= nil and textColor[4] or 1
+    )
+    textFrame.text:ClearAllPoints()
+    textFrame.text:SetPoint("TOPLEFT", textFrame, "TOPLEFT", insetX, -insetY)
+    textFrame.text:SetPoint("BOTTOMRIGHT", textFrame, "BOTTOMRIGHT", -insetX, insetY)
+    textFrame:Show()
+
+    return true
 end
 
 function CooldownCompanion:UpdateAuraTextureVisual(button)
@@ -3861,39 +4239,39 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         end
     end
 
-    local settings = ResolveActiveAuraTextureSettings(driverButton)
+    local displayType, settings = CooldownCompanion.ResolveActiveStandaloneDisplay(driverButton)
     local isEditing = IsStandaloneTextureEditingButton(driverButton)
     local isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton)
     local isUnlocked = group and group.locked == false
-    local hasPreviewSelection = type(driverButton._auraTexturePreviewSelection) == "table"
+    local hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table"
     local triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false
     local triggerSoundVisible = false
-    local showTexture = false
+    local showDisplay = false
 
     if settings then
         if hasPreviewSelection then
-            showTexture = true
+            showDisplay = true
         elseif isTriggerPanel then
-            showTexture = triggerMatched or isEditing or isUnlocked
+            showDisplay = triggerMatched or isEditing or isUnlocked
         elseif isEditing then
-            showTexture = true
+            showDisplay = true
         elseif isConfigForceVisible then
-            showTexture = true
+            showDisplay = true
         elseif isUnlocked then
-            showTexture = true
+            showDisplay = true
         elseif driverButton:GetParent()
             and driverButton:GetParent():IsShown()
             and not (driverButton._rawVisibilityHidden == true) then
-            showTexture = true
+            showDisplay = true
         end
     end
 
     if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
-        triggerSoundVisible = settings ~= nil and triggerMatched
+        triggerSoundVisible = settings ~= nil and triggerMatched and showDisplay
         self:UpdateTriggerPanelSoundAlerts(frame, group, triggerSoundVisible)
     end
 
-    if not settings or not showTexture then
+    if not settings or not showDisplay then
         self:HideAuraTextureVisual(driverButton)
         if driverButton:GetAlpha() ~= 0 then
             driverButton:SetAlpha(0)
@@ -3904,26 +4282,61 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 
     local host = EnsureAuraTextureHost(driverButton)
     local relativeFrame = UIParent
-    local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
-    local alpha = Clamp(baseAlpha, 0, 1)
-    local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
-    local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
-    local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
+    local sharedSettings = GetStandaloneTextureSettings(group) or {
+        point = "CENTER",
+        relativePoint = "CENTER",
+        x = 0,
+        y = 0,
+    }
+    local hostWidth, hostHeight
+    local shown = false
+    local bypassModuleAlpha = hasPreviewSelection or isEditing or isConfigForceVisible or isUnlocked
 
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host)
-    host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
-    if host.visualRoot then
-        host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+
+    if displayType == "texture" then
+        local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
+        local alpha = Clamp(baseAlpha, 0, 1)
+        local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
+        local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
+        local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * settings.scale, sourceHeight * settings.scale)
+        CooldownCompanion.HideStandaloneDisplayVisuals(host)
+        hostWidth = geometry.boundsWidth
+        hostHeight = geometry.boundsHeight
+        host:SetSize(hostWidth, hostHeight)
+        if host.visualRoot then
+            host.visualRoot:SetSize(hostWidth, hostHeight)
+        end
+        shown = LayoutTexturePieces(host, settings, geometry, alpha)
+        if shown then
+            host._activeTextureSettings = settings
+            host._activeTextureGeometry = geometry
+            host._activeDisplayType = "texture"
+            SetTextureIndicatorBaseVisuals(host)
+            if not isTriggerPanel then
+                ApplyTextureIndicatorEffects(host, driverButton, group)
+            else
+                StopAllTextureIndicatorEffects(host)
+            end
+        end
+    elseif displayType == "icon" then
+        hostWidth, hostHeight = CooldownCompanion.GetTriggerIconDimensions(settings)
+        host:SetSize(hostWidth, hostHeight)
+        if host.visualRoot then
+            host.visualRoot:SetSize(hostWidth, hostHeight)
+        end
+        shown = CooldownCompanion.ApplyTriggerIconVisual(host, settings)
+    elseif displayType == "text" then
+        shown = CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     end
+
     if not host._isDragging then
         host:ClearAllPoints()
-        host:SetPoint(settings.point, relativeFrame, settings.relativePoint, settings.x, settings.y)
+        host:SetPoint(sharedSettings.point, relativeFrame, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
     end
     host:Show()
-
-    local shown = LayoutTexturePieces(host, settings, geometry, alpha)
 
     if not shown then
         self:HideAuraTextureVisual(driverButton)
@@ -3934,16 +4347,8 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         return
     end
 
-    host._activeTextureSettings = settings
-    host._activeTextureGeometry = geometry
-    SetTextureIndicatorBaseVisuals(host)
-    if not isTriggerPanel then
-        ApplyTextureIndicatorEffects(host, driverButton, group)
-    end
-
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
-    local bypassModuleAlpha = hasPreviewSelection or isEditing or isConfigForceVisible or isUnlocked
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     if alphaModuleId then
         if bypassModuleAlpha then
@@ -3963,7 +4368,15 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local savedSettings = isTriggerPanel and group and group.triggerSettings and group.triggerSettings.signal or group and group.textureSettings or nil
-    host._dragEnabled = isUnlocked and type(savedSettings) == "table" and savedSettings.sourceType ~= nil
+    local hasSavedDisplay = false
+    if displayType == "texture" then
+        hasSavedDisplay = type(savedSettings) == "table" and savedSettings.sourceType ~= nil
+    elseif displayType == "icon" then
+        hasSavedDisplay = settings.manualIcon ~= nil
+    elseif displayType == "text" then
+        hasSavedDisplay = CooldownCompanion.HasTriggerTextValue(settings)
+    end
+    host._dragEnabled = isUnlocked and hasSavedDisplay
     host:EnableMouse(false)
     SetAuraTextureOutlineShown(host, false)
     if host.dragHandle and host.coordLabel then
@@ -3972,7 +4385,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             local _, _, _, currentX, currentY = host:GetPoint()
             UpdateTextureHostCoordLabel(host, currentX, currentY)
         else
-            UpdateTextureHostCoordLabel(host, settings.x, settings.y)
+            UpdateTextureHostCoordLabel(host, sharedSettings.x, sharedSettings.y)
         end
         local showHeader = host._dragEnabled == true
         host.dragHandle:SetShown(showHeader)
