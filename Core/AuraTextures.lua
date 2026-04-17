@@ -1573,12 +1573,35 @@ function CooldownCompanion.NormalizeTriggerDisplayType(displayType)
     return "texture"
 end
 
+function CooldownCompanion.IsValidTriggerPanelIconTexture(iconTexture)
+    local iconType = type(iconTexture)
+    if iconType ~= "number" and iconType ~= "string" then
+        return false
+    end
+
+    local probe = CooldownCompanion._triggerPanelIconValidationTexture
+    if not probe then
+        local holder = CreateFrame("Frame", nil, UIParent)
+        holder:Hide()
+        probe = holder:CreateTexture(nil, "ARTWORK")
+        holder.texture = probe
+        CooldownCompanion._triggerPanelIconValidationTexture = probe
+    end
+
+    probe:SetTexture(nil)
+    probe:SetTexture(iconTexture)
+    local resolvedTexture = probe:GetTexture()
+    probe:SetTexture(nil)
+
+    return resolvedTexture ~= nil
+end
+
 function CooldownCompanion.NormalizeTriggerIconSettings(settings)
     if type(settings) ~= "table" then
         return nil
     end
 
-    settings.manualIcon = (type(settings.manualIcon) == "number" or type(settings.manualIcon) == "string")
+    settings.manualIcon = CooldownCompanion.IsValidTriggerPanelIconTexture(settings.manualIcon)
             and settings.manualIcon
         or nil
     settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
@@ -4060,17 +4083,17 @@ function CooldownCompanion.GetStandaloneDisplayType(group)
 end
 
 function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
-    local preview = button._auraTexturePreviewSelection
-    if type(preview) == "table" then
-        return "texture", NormalizeAuraTextureSettings(preview)
-    end
-
     local group = button._groupId and ResolveGroup(button._groupId) or nil
     if not CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         return nil, nil
     end
 
     local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
+    local preview = button._auraTexturePreviewSelection
+    if displayType == "texture" and type(preview) == "table" then
+        return "texture", NormalizeAuraTextureSettings(preview)
+    end
+
     if displayType == "icon" then
         local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, false)
         if not settings or settings.manualIcon == nil then
@@ -4220,7 +4243,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local isEditing = IsStandaloneTextureEditingButton(driverButton)
     local isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton)
     local isUnlocked = group and group.locked == false
-    local hasPreviewSelection = type(driverButton._auraTexturePreviewSelection) == "table"
+    local hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table"
     local triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false
     local triggerSoundVisible = false
     local showDisplay = false
