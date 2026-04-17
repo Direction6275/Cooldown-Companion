@@ -1822,7 +1822,6 @@ local function RefreshColumn2()
                                 { mode = "bars", label = "Bars" },
                                 { mode = "text", label = "Text" },
                                 { mode = "textures", label = "Textures" },
-                                { mode = "trigger", label = "Trigger" },
                             }
                             for _, m in ipairs(switchModes) do
                                 if ctxPanel.displayMode ~= m.mode then

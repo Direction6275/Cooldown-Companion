@@ -835,12 +835,17 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
+    local oldMode = group.displayMode
+    if oldMode ~= newMode and (oldMode == "trigger" or newMode == "trigger") then
+        self:Print("Trigger Panels cannot be converted. Create a new Trigger Panel instead.")
+        return false
+    end
+
     if newMode == "textures" and #group.buttons > 1 then
         self:Print("Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.")
         return false
     end
 
-    local oldMode = group.displayMode
     if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
         -- Leaving texture mode should carry the standalone texture position
         -- back into the normal panel anchor so the panel does not jump back.

@@ -899,17 +899,17 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
 end
 
 local function NormalizeTriggerConditionKey(buttonData, conditionKey)
-    if conditionKey == "chargesRecharging" then
-        return conditionKey
+    local order = GetTriggerConditionOrderForButtonData(buttonData)
+    if conditionKey == nil then
+        return order[1]
     end
 
-    local order = GetTriggerConditionOrderForButtonData(buttonData)
     for _, validKey in ipairs(order) do
         if conditionKey == validKey then
             return conditionKey
         end
     end
-    return order[1]
+    return nil
 end
 
 local function NormalizeTriggerStateKey(conditionKey, stateKey)
@@ -1629,6 +1629,10 @@ function CooldownCompanion:GetTriggerConditionClauses(buttonData)
                 normalizedClauses[#normalizedClauses + 1] = normalizedClause
             end
         end
+
+        if #normalizedClauses == 0 then
+            return {}
+        end
     end
 
     if #normalizedClauses == 0 then
@@ -1636,6 +1640,8 @@ function CooldownCompanion:GetTriggerConditionClauses(buttonData)
         if legacyClause then
             usedKeys[legacyClause.key] = true
             normalizedClauses[1] = legacyClause
+        elseif buttonData.triggerCondition ~= nil then
+            return {}
         end
     end
 
@@ -1677,7 +1683,7 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
         end
     end
 
-    if type(buttonData.triggerConditions) == "table" then
+    if type(buttonData.triggerConditions) == "table" and #clauses > 0 then
         buttonData.triggerConditions = clauses
     end
 
@@ -1692,7 +1698,6 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
 
         local shouldAuraTrack = buttonData.isPassive == true
             or buttonData.addedAs == "aura"
-            or buttonData.auraTracking == true
             or hasAuraClause
         if shouldAuraTrack then
             buttonData.auraTracking = true
