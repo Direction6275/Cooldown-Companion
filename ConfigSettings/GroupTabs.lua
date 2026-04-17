@@ -738,7 +738,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local function RefreshTextPreview()
         local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
         local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
-        local hasText = settings.value and settings.value ~= ""
+        local hasText = CooldownCompanion.HasTriggerTextValue(settings)
         local insetX = 2
         local insetY = 1
 
