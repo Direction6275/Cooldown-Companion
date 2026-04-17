@@ -828,7 +828,7 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
 
         scroll:AddChild(row)
 
-        if #clauses > 1 then
+        local function AddRemoveConditionRow()
             local removeRow = AceGUI:Create("SimpleGroup")
             removeRow:SetFullWidth(true)
             removeRow:SetLayout("Flow")
@@ -846,19 +846,29 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
             scroll:AddChild(removeRow)
         end
 
-        if clause.key == "auraActive"
+        local hasInlineAuraSettings = clause.key == "auraActive"
             and not auraSettingsAttached
             and buttonData.type == "spell"
-            and (buttonData.auraTracking == true or buttonData.isPassive == true or buttonData.addedAs == "aura") then
+            and (buttonData.auraTracking == true or buttonData.isPassive == true or buttonData.addedAs == "aura")
+
+        if #clauses > 1 and not hasInlineAuraSettings then
+            AddRemoveConditionRow()
+        end
+
+        if hasInlineAuraSettings then
             BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons, {
                 allowPassiveManualRecovery = true,
                 showAuraToggle = false,
                 showAuraIconToggle = false,
-                showAuraStateLabelWhenToggleHidden = true,
+                showAuraStateLabelWhenToggleHidden = false,
                 showHeading = false,
                 useCollapse = false,
             })
             auraSettingsAttached = true
+
+            if #clauses > 1 then
+                AddRemoveConditionRow()
+            end
         end
 
         local conditionSpacer = AceGUI:Create("Label")
@@ -908,7 +918,7 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
             allowPassiveManualRecovery = true,
             showAuraToggle = false,
             showAuraIconToggle = false,
-            showAuraStateLabelWhenToggleHidden = true,
+            showAuraStateLabelWhenToggleHidden = false,
             showHeading = true,
             useCollapse = false,
         })
