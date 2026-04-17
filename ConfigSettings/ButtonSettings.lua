@@ -779,12 +779,6 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
     CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
     local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Condition")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
     local auraSettingsAttached = false
     for clauseIndex, clause in ipairs(clauses) do
         scroll:AddChild(CreateCenteredSubHeading("Condition " .. clauseIndex))
