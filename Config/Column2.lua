@@ -67,7 +67,7 @@ local PANEL_TYPE_TOOLTIPS = {
     },
     trigger = {
         title = "Trigger Panel",
-        description = "Shows one standalone display when all enabled entries match.",
+        description = "Add spell or item entries, then set conditions on each one. The display appears only when every enabled entry meets its conditions.",
     },
 }
 
