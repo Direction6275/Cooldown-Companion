@@ -933,6 +933,7 @@ local BADGE_RIGHT_PAD = 4
 
 local function CleanRecycledEntry(entry)
     if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
+    if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
     if entry.frame._cdcBadges then
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
     end
