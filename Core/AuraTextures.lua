@@ -734,8 +734,8 @@ local TRIGGER_CONDITION_LABELS = {
     procActive = "Proc",
     rangeActive = "Range",
     usable = "Usable",
-    chargesRecharging = "Charges",
-    chargeState = "Charges",
+    chargesRecharging = "Charge Recharge",
+    chargeState = "Charge State",
     countTextActive = "Count Text",
     countState = "Display Count",
 }
