@@ -69,7 +69,10 @@ function CooldownCompanion:UpdateRangeCheckRegistrations()
 end
 
 function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInRange, checksRange)
-    local outOfRange = checksRange and not isInRange
+    local outOfRange = nil
+    if checksRange then
+        outOfRange = not isInRange
+    end
     self:ForEachButton(function(button, bd)
         if bd.type == "spell" and bd.id == spellIdentifier then
             button._spellOutOfRange = outOfRange

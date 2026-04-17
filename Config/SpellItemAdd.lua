@@ -48,6 +48,14 @@ local function IsTexturePanelTarget(groupId)
     return group and group.displayMode == "textures"
 end
 
+local function IsTriggerPanelTarget(groupId)
+    local group = groupId and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[groupId]
+    return group and group.displayMode == "trigger"
+end
+
 -- File-local state
 local autocompleteDropdown
 
@@ -109,7 +117,10 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             return false
         end
         -- Multi-CDM-child: if passive/proc spell has multiple CDM entries, auto-add one button per child
-        if passiveOrProc and not IsTexturePanelTarget(CS.selectedGroup) then
+        if passiveOrProc
+            and not IsTexturePanelTarget(CS.selectedGroup)
+            and not IsTriggerPanelTarget(CS.selectedGroup)
+        then
             local allChildren = CooldownCompanion.viewerAuraAllChildren[spellId]
             if allChildren and #allChildren > 1 then
                 local count = #allChildren
