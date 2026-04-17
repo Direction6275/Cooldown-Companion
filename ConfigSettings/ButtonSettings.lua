@@ -910,19 +910,6 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
         scroll:AddChild(addRow)
     end
 
-    local shouldShowAuraConfig = buttonData.type == "spell"
-        and (buttonData.auraTracking == true or buttonData.isPassive == true or buttonData.addedAs == "aura")
-
-    if shouldShowAuraConfig and not auraSettingsAttached then
-        BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons, {
-            allowPassiveManualRecovery = true,
-            showAuraToggle = false,
-            showAuraIconToggle = false,
-            showAuraStateLabelWhenToggleHidden = false,
-            showHeading = true,
-            useCollapse = false,
-        })
-    end
 end
 
 local function BuildSpellSettings(scroll, buttonData, infoButtons)

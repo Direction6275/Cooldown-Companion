@@ -156,8 +156,8 @@ local function GetTriggerRowDisplayText(buttonData)
     local targetText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
         or buttonData.name
         or ("Unknown " .. tostring(buttonData.type))
-    if CooldownCompanion.GetTriggerConditionSummary then
-        local summary = CooldownCompanion:GetTriggerConditionSummary(buttonData)
+    if CooldownCompanion.GetCompactTriggerConditionSummary then
+        local summary = CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, 2)
         if summary and summary ~= "" then
             return targetText .. "  |cff888888" .. summary .. "|r"
         end
