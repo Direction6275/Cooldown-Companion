@@ -51,25 +51,111 @@ local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.18, 0.78 }
 local PANEL_TYPE_TOOLTIPS = {
     icons = {
         title = "Icon Panel",
-        description = "Classic cooldown icons for spells or items.",
+        description = "Shows spells or items as classic cooldown icons.",
     },
     bars = {
         title = "Bar Panel",
-        description = "Bar timers with names and durations.",
+        description = "Shows spells or items as timer bars with names and durations.",
     },
     text = {
         title = "Text Panel",
-        description = "Text-only entries for compact status lists.",
+        description = "Shows text-only entries for compact readouts and status lists.",
     },
     textures = {
         title = "Texture Panel",
-        description = "One custom texture for a single spell or item.",
+        description = "Shows one standalone texture for a single spell or item.",
     },
     trigger = {
         title = "Trigger Panel",
-        description = "One texture shown when all conditions match.",
+        description = "Shows one standalone display when all enabled entries match.",
     },
 }
+
+local function GetPanelTypeTooltip(displayMode)
+    return PANEL_TYPE_TOOLTIPS[displayMode] or PANEL_TYPE_TOOLTIPS.icons
+end
+
+local function ShowPanelTypeTooltip(owner, displayMode)
+    local tooltip = GetPanelTypeTooltip(displayMode)
+    if not tooltip then
+        return
+    end
+
+    GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+    GameTooltip:AddLine(tooltip.title, 1, 0.82, 0, true)
+    GameTooltip:AddLine(tooltip.description, 1, 1, 1, true)
+    GameTooltip:Show()
+end
+
+local function AddPanelTypeMenuTooltip(info, displayMode)
+    local tooltip = GetPanelTypeTooltip(displayMode)
+    if not tooltip then
+        return
+    end
+
+    info.tooltipTitle = tooltip.title
+    info.tooltipText = tooltip.description
+    info.tooltipOnButton = true
+end
+
+local function EnsurePanelTypeTooltipTarget(header)
+    local target = header._cdcModeBadgeHitRect
+    if not target then
+        target = CreateFrame("Button", nil, header.frame)
+        target:SetSize(18, 18)
+        target:SetPropagateMouseClicks(true)
+        target:SetPropagateMouseMotion(true)
+        target:SetScript("OnEnter", function(self)
+            ShowPanelTypeTooltip(self, self._cdcDisplayMode)
+        end)
+        target:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        header._cdcModeBadgeHitRect = target
+    end
+
+    target:SetFrameStrata(header.frame:GetFrameStrata())
+    target:SetFrameLevel(header.frame:GetFrameLevel() + 20)
+    return target
+end
+
+local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
+    local modeBadge = header._cdcModeBadge
+    if not modeBadge then
+        modeBadge = header.frame:CreateTexture(nil, "ARTWORK")
+        header._cdcModeBadge = modeBadge
+    end
+
+    modeBadge:ClearAllPoints()
+    modeBadge:SetSize(16, 16)
+    if modeBadge.SetDesaturated then
+        modeBadge:SetDesaturated(false)
+    end
+    modeBadge:SetVertexColor(1, 1, 1, 1)
+    if displayMode == "bars" then
+        modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
+    elseif displayMode == "text" then
+        modeBadge:SetAtlas("poi-workorders", false)
+    elseif displayMode == "textures" then
+        modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+    elseif displayMode == "trigger" then
+        modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+        if modeBadge.SetDesaturated then
+            modeBadge:SetDesaturated(true)
+        end
+        modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
+    else
+        modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
+    end
+    modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textWidth / 2) - 2, 0)
+    modeBadge:Show()
+
+    local tooltipTarget = EnsurePanelTypeTooltipTarget(header)
+    tooltipTarget._cdcDisplayMode = displayMode
+    tooltipTarget:ClearAllPoints()
+    tooltipTarget:SetPoint("CENTER", modeBadge, "CENTER")
+    tooltipTarget:Show()
+end
 
 local function EnsureRowBadge(frame, key, atlas, iconSize)
     local badge = frame[key]
@@ -687,38 +773,11 @@ local function RefreshColumn2()
             header:SetImage("Interface\\BUTTONS\\WHITE8X8")
             header.image:SetAlpha(0)
 
-            local modeBadge = header._cdcModeBadge
-            if not modeBadge then
-                modeBadge = header.frame:CreateTexture(nil, "ARTWORK")
-                header._cdcModeBadge = modeBadge
-            end
-            modeBadge:ClearAllPoints()
-            modeBadge:SetSize(16, 16)
-            if modeBadge.SetDesaturated then
-                modeBadge:SetDesaturated(false)
-            end
-            modeBadge:SetVertexColor(1, 1, 1, 1)
-            if panel.displayMode == "bars" then
-                modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
-            elseif panel.displayMode == "text" then
-                modeBadge:SetAtlas("poi-workorders", false)
-            elseif panel.displayMode == "textures" then
-                modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
-            elseif panel.displayMode == "trigger" then
-                modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
-                if modeBadge.SetDesaturated then
-                    modeBadge:SetDesaturated(true)
-                end
-                modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
-            else
-                modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
-            end
-            modeBadge:Show()
             header:SetFullWidth(true)
             header:SetFontObject(GameFontHighlight)
             header:SetJustifyH("CENTER")
             local textW = header.label:GetStringWidth()
-            modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
+            ConfigurePanelTypeBadge(header, panel.displayMode, textW)
 
             -- Disabled badge (shown when panel is individually disabled)
             local disabledBadge = header.frame._cdcHeaderDisabledBadge
@@ -1200,6 +1259,12 @@ local function RefreshColumn2()
             local iconPanelBtn = AceGUI:Create("Button")
             iconPanelBtn:SetText("Icon Panel")
             iconPanelBtn:SetCallback("OnClick", CreateIconPanel)
+            iconPanelBtn:SetCallback("OnEnter", function(widget)
+                ShowPanelTypeTooltip(widget.frame, "icons")
+            end)
+            iconPanelBtn:SetCallback("OnLeave", function()
+                GameTooltip:Hide()
+            end)
             iconPanelBtn.frame:SetParent(CS.col2ButtonBar)
             iconPanelBtn.frame:ClearAllPoints()
             iconPanelBtn.frame:SetPoint("TOPLEFT", CS.col2ButtonBar, "TOPLEFT", 0, -1)
@@ -1214,6 +1279,12 @@ local function RefreshColumn2()
             local barPanelBtn = AceGUI:Create("Button")
             barPanelBtn:SetText("Bar Panel")
             barPanelBtn:SetCallback("OnClick", CreateBarPanel)
+            barPanelBtn:SetCallback("OnEnter", function(widget)
+                ShowPanelTypeTooltip(widget.frame, "bars")
+            end)
+            barPanelBtn:SetCallback("OnLeave", function()
+                GameTooltip:Hide()
+            end)
             barPanelBtn.frame:SetParent(CS.col2ButtonBar)
             barPanelBtn.frame:ClearAllPoints()
             barPanelBtn.frame:SetPoint("LEFT", iconPanelBtn.frame, "RIGHT", 3, 0)
@@ -1235,6 +1306,7 @@ local function RefreshColumn2()
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = "Text Panel"
                     info.notCheckable = true
+                    AddPanelTypeMenuTooltip(info, "text")
                     info.func = function()
                         CloseDropDownMenus()
                         CreateTextPanel()
@@ -1244,6 +1316,7 @@ local function RefreshColumn2()
                     info = UIDropDownMenu_CreateInfo()
                     info.text = "Texture Panel"
                     info.notCheckable = true
+                    AddPanelTypeMenuTooltip(info, "textures")
                     info.func = function()
                         CloseDropDownMenus()
                         CreateTexturePanel()
@@ -1253,6 +1326,7 @@ local function RefreshColumn2()
                     info = UIDropDownMenu_CreateInfo()
                     info.text = "Trigger Panel"
                     info.notCheckable = true
+                    AddPanelTypeMenuTooltip(info, "trigger")
                     info.func = function()
                         CloseDropDownMenus()
                         CreateTriggerPanel()
@@ -1367,6 +1441,7 @@ local function RefreshColumn2()
                 PANEL_TYPE_TOOLTIPS.bars,
                 PANEL_TYPE_TOOLTIPS.text,
                 PANEL_TYPE_TOOLTIPS.textures,
+                PANEL_TYPE_TOOLTIPS.trigger,
             }
 
             for index, entry in ipairs(helpEntries) do
@@ -1518,39 +1593,12 @@ local function RefreshColumn2()
                 header.image:SetAlpha(0)
 
                 -- Mode badge overlay (pooled on widget, same pattern as old Column 1)
-                local modeBadge = header._cdcModeBadge
-                if not modeBadge then
-                    modeBadge = header.frame:CreateTexture(nil, "ARTWORK")
-                    header._cdcModeBadge = modeBadge
-                end
-                modeBadge:ClearAllPoints()
-                modeBadge:SetSize(16, 16)
-                if modeBadge.SetDesaturated then
-                    modeBadge:SetDesaturated(false)
-                end
-                modeBadge:SetVertexColor(1, 1, 1, 1)
-                if panel.displayMode == "bars" then
-                    modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
-                elseif panel.displayMode == "text" then
-                    modeBadge:SetAtlas("poi-workorders", false)
-                elseif panel.displayMode == "textures" then
-                    modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
-                elseif panel.displayMode == "trigger" then
-                    modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
-                    if modeBadge.SetDesaturated then
-                        modeBadge:SetDesaturated(true)
-                    end
-                    modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
-                else
-                    modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
-                end
-                modeBadge:Show()
                 header:SetFullWidth(true)
                 header:SetFontObject(GameFontHighlight)
                 header:SetJustifyH("CENTER")
                 -- Position badge to the left of centered text
                 local textW = header.label:GetStringWidth()
-                modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textW / 2) - 2, 0)
+                ConfigurePanelTypeBadge(header, panel.displayMode, textW)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
                 -- Anchor unlock badge (shown when panel is individually unlocked)
@@ -2442,9 +2490,11 @@ local function RefreshColumn2()
                     addRow:SetLayout("Flow")
                     panelMeta.addRowFrame = addRow.frame
 
+                    local isTriggerPanel = IsTriggerPanelGroup(panel)
+
                     local manualAddBtn = AceGUI:Create("Button")
-                    manualAddBtn:SetText(IsTriggerPanelGroup(panel) and "Add Condition" or "Manual Add")
-                    manualAddBtn:SetRelativeWidth(panel.displayMode == "textures" and 1 or 0.49)
+                    manualAddBtn:SetText(isTriggerPanel and "Add Entry" or "Manual Add")
+                    manualAddBtn:SetRelativeWidth((panel.displayMode == "textures" or isTriggerPanel) and 1 or 0.49)
                     panelMeta.manualAddButtonFrame = manualAddBtn.frame
                     manualAddBtn:SetCallback("OnClick", function()
                         if CS.newInput ~= "" and CS.addingToPanelId then
@@ -2463,7 +2513,7 @@ local function RefreshColumn2()
                     end)
                     addRow:AddChild(manualAddBtn)
 
-                    if panel.displayMode ~= "textures" then
+                    if panel.displayMode ~= "textures" and not isTriggerPanel then
                         local autoAddBtn = AceGUI:Create("Button")
                         autoAddBtn:SetText("Auto Add")
                         autoAddBtn:SetRelativeWidth(0.49)

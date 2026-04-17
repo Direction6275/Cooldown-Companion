@@ -1549,7 +1549,7 @@ local function RefreshButtonSettingsColumn()
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then
             local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-            bsCol.bsPlaceholder:SetText(GroupUsesTriggerPanelEntries(group) and "Select a condition" or "Select a spell or item to configure")
+            bsCol.bsPlaceholder:SetText(GroupUsesTriggerPanelEntries(group) and "Select an entry to configure" or "Select a spell or item to configure")
             bsCol.bsPlaceholder:Show()
         end
     end
