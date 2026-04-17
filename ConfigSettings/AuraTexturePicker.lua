@@ -277,13 +277,13 @@ local function OpenAuraTexturePicker(opts)
     end
 
     local function ClearStagedPreview()
-        if currentGroupId and currentButtonIndex then
+        if currentGroupId then
             CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
         end
     end
 
     local function StageEntryPreview(entry)
-        if not (currentGroupId and currentButtonIndex) then
+        if not currentGroupId then
             return
         end
         if not entry then

@@ -469,6 +469,22 @@ function CooldownCompanion:SetAuraTexturePickerPreview(groupId, buttonIndex, sel
         return
     end
 
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if group and group.displayMode == "trigger" and buttonIndex == nil then
+        for _, button in ipairs(frame.buttons) do
+            button._auraTexturePreviewSelection = selection and CopyTable(selection) or nil
+        end
+        local driverButton = frame.buttons and frame.buttons[1] or nil
+        if driverButton then
+            if driverButton.UpdateCooldown then
+                driverButton:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(driverButton)
+            end
+        end
+        return
+    end
+
     for _, button in ipairs(frame.buttons) do
         if button.index == buttonIndex then
             button._auraTexturePreviewSelection = selection and CopyTable(selection) or nil

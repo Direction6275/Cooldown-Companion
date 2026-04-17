@@ -446,7 +446,12 @@ local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
         return
     end
 
-    local buttonIndex = group.buttons and group.buttons[1] and 1 or nil
+    local buttonIndex
+    if group.displayMode == "trigger" then
+        buttonIndex = nil
+    else
+        buttonIndex = group.buttons and group.buttons[1] and 1 or nil
+    end
     local pickerOpts = {
         groupId = CS.selectedGroup,
         buttonIndex = buttonIndex,
