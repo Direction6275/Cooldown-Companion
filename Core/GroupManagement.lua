@@ -1127,6 +1127,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             if mc > 1 then
                 group.buttons[buttonIndex].hasCharges = true
                 group.buttons[buttonIndex]._hasDisplayCount = nil
+                group.buttons[buttonIndex]._displayCountFamily = nil
                 group.buttons[buttonIndex].showChargeText = true
                 group.buttons[buttonIndex].maxCharges = mc
             end
@@ -1136,6 +1137,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 local displayCount = tonumber(rawDisplayCount)
                 if displayCount ~= nil then
                     group.buttons[buttonIndex]._hasDisplayCount = true
+                    group.buttons[buttonIndex]._displayCountFamily = true
                     group.buttons[buttonIndex].showChargeText = true
                     if displayCount > (group.buttons[buttonIndex].maxCharges or 0) then
                         group.buttons[buttonIndex].maxCharges = displayCount

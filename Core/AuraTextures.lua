@@ -891,7 +891,7 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
     elseif CooldownCompanion.HasNonChargeCountTextBehavior
             and CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) then
         order[#order + 1] = "countTextActive"
-        if buttonData._hasDisplayCount == true then
+        if buttonData._hasDisplayCount == true or buttonData._displayCountFamily == true then
             order[#order + 1] = "countState"
         end
     end
@@ -3230,7 +3230,10 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
 
     if conditionKey == "countState" then
         local buttonData = button.buttonData
-        if not buttonData or buttonData._hasDisplayCount ~= true or buttonData.hasCharges == true then
+        if not buttonData
+                or (buttonData._hasDisplayCount ~= true and buttonData._displayCountFamily ~= true)
+                or buttonData.hasCharges == true
+        then
             return nil
         end
 

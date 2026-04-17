@@ -990,7 +990,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-    elseif usesChargeBehavior and buttonData._hasDisplayCount and buttonData.type == "spell" then
+    elseif usesChargeBehavior
+        and (buttonData._hasDisplayCount or buttonData._displayCountFamily)
+        and buttonData.type == "spell"
+    then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
     elseif not usesChargeBehavior then
         -- hasCharges cleared: wipe stale charge state.
@@ -1016,7 +1019,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local displayCountShown = false
             local hasCastCountText = HasCastCountText(buttonData)
             local conditionalCastCountSpellID
-            if buttonData._hasDisplayCount then
+            if buttonData._hasDisplayCount or buttonData._displayCountFamily then
                 local displayCount = button.count:GetText()
                 if issecretvalue(displayCount) then
                     displayCountShown = true
@@ -1059,7 +1062,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             elseif not displayCountShown then
                 button.count:SetText("")
             end
-        elseif (buttonData._hasDisplayCount or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell"
+        elseif (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell"
                 and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
             -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
@@ -1155,7 +1158,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- Prevents short lockout cooldowns (e.g., dragonriding flyout abilities)
             -- from being misclassified as "zero charges".
             button._mainCDShown = (button._currentReadableCharges == 0)
-        elseif buttonData.type == "spell" and buttonData._hasDisplayCount then
+        elseif buttonData.type == "spell" and (buttonData._hasDisplayCount or buttonData._displayCountFamily) then
             -- Secret display counts do not expose a readable number in combat for
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.

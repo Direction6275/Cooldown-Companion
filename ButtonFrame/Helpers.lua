@@ -164,7 +164,9 @@ local function UsesChargeBehavior(buttonData)
     if buttonData.type == "spell" and buttonData.addedAs == "aura" then
         return false
     end
-    return buttonData.hasCharges == true or buttonData._hasDisplayCount == true
+    return buttonData.hasCharges == true
+        or buttonData._hasDisplayCount == true
+        or buttonData._displayCountFamily == true
 end
 CooldownCompanion.UsesChargeBehavior = UsesChargeBehavior
 
@@ -176,6 +178,7 @@ local function HasNonChargeCountTextBehavior(buttonData)
         return false
     end
     return buttonData._hasDisplayCount == true
+        or buttonData._displayCountFamily == true
         or HasCastCountText(buttonData)
         or HasConditionalCastCountText(buttonData)
 end

@@ -137,6 +137,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     buttonData._castCountSelf = nil
                     buttonData._castCountEventSpellID = nil
                     buttonData._hasDisplayCount = nil
+                    buttonData._displayCountFamily = nil
                     local mc = chargeInfo.maxCharges
                     if mc > 1 then
                         hasRealCharges = true
@@ -164,6 +165,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         local displayCount = tonumber(rawDisplayCount)
                         if displayCount ~= nil then
                             buttonData._hasDisplayCount = true
+                            buttonData._displayCountFamily = true
                             if displayCount > (buttonData.maxCharges or 0) then
                                 buttonData.maxCharges = displayCount
                             end
@@ -176,6 +178,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                         -- so the button does not temporarily fall out of the
                         -- count-bearing path until the value becomes readable.
                         buttonData._hasDisplayCount = true
+                        buttonData._displayCountFamily = true
                     end
                     -- Auto-enable count text when a spell exposes a readable display count.
                     if buttonData._hasDisplayCount and buttonData.showChargeText == nil then
