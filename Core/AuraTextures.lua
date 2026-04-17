@@ -3274,8 +3274,7 @@ local function DoesTriggerPanelMatch(frame)
             return false
         end
 
-        if buttonData.enabled ~= false
-            and (not CooldownCompanion.IsButtonUsable or CooldownCompanion:IsButtonUsable(buttonData)) then
+        if buttonData.enabled ~= false then
             local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
             if #clauses == 0 then
                 return false
