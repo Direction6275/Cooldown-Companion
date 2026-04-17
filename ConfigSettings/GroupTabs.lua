@@ -725,13 +725,11 @@ local function BuildTriggerTextAppearanceTab(container, group)
     placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
 
     local function RefreshTextPreview()
-        local borderSize = settings.textBorderSize or 0
         local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
-        local borderColor = settings.textBorderColor or { 0, 0, 0, 1 }
         local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
         local hasText = settings.value and settings.value ~= ""
-        local insetX = borderSize + 2
-        local insetY = borderSize + 1
+        local insetX = 2
+        local insetY = 1
 
         if hasText then
             local frameWidth, frameHeight
@@ -746,9 +744,8 @@ local function BuildTriggerTextAppearanceTab(container, group)
         end
         previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
         for _, border in ipairs(previewBorders) do
-            border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
+            border:Hide()
         end
-        ApplyEdgePositions(previewBorders, textHolder, borderSize)
 
         previewText:ClearAllPoints()
         previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
@@ -781,20 +778,6 @@ local function BuildTriggerTextAppearanceTab(container, group)
 
     AddColorPicker(container, settings, "textFontColor", "Text Color", { 1, 1, 1, 1 }, true, RefreshTextPreview, RefreshTextPreview)
     AddColorPicker(container, settings, "textBgColor", "Background Color", { 0, 0, 0, 0 }, true, RefreshTextPreview, RefreshTextPreview)
-
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(settings.textBorderSize or 0)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(_, _, value)
-        settings.textBorderSize = value
-        RefreshTextPreview()
-    end)
-    HookSliderEditBox(borderSlider)
-    container:AddChild(borderSlider)
-
-    AddColorPicker(container, settings, "textBorderColor", "Border Color", { 0, 0, 0, 1 }, true, RefreshTextPreview, RefreshTextPreview)
 
     RefreshTextPreview()
 end

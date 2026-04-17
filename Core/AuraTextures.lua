@@ -1604,8 +1604,6 @@ function CooldownCompanion.NormalizeTriggerTextSettings(settings)
     settings.textFontOutline = type(settings.textFontOutline) == "string" and settings.textFontOutline or "OUTLINE"
     settings.textFontColor = CopyColor(settings.textFontColor) or { 1, 1, 1, 1 }
     settings.textBgColor = CopyColor(settings.textBgColor) or { 0, 0, 0, 0 }
-    settings.textBorderSize = Clamp(tonumber(settings.textBorderSize) or 0, 0, 5)
-    settings.textBorderColor = CopyColor(settings.textBorderColor) or { 0, 0, 0, 1 }
 
     return settings
 end
@@ -1684,8 +1682,6 @@ function CooldownCompanion:GetTriggerPanelTextSettings(groupOrId, createIfMissin
             textFontOutline = "OUTLINE",
             textFontColor = { 1, 1, 1, 1 },
             textBgColor = { 0, 0, 0, 0 },
-            textBorderSize = 0,
-            textBorderColor = { 0, 0, 0, 1 },
         }
     end
 
@@ -3903,9 +3899,8 @@ function CooldownCompanion.GetTriggerTextDisplayMetrics(fontString, settings)
         return 1, 1, 2, 1
     end
 
-    local borderSize = settings.textBorderSize or 0
-    local insetX = borderSize + 2
-    local insetY = borderSize + 1
+    local insetX = 2
+    local insetY = 1
     local font = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
 
     fontString:ClearAllPoints()
@@ -4158,10 +4153,8 @@ end
 
 function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     local textFrame = CooldownCompanion.EnsureTriggerTextVisual(host)
-    local borderSize = settings.textBorderSize or 0
     local textColor = settings.textFontColor or { 1, 1, 1, 1 }
     local backgroundColor = settings.textBgColor or { 0, 0, 0, 0 }
-    local borderColor = settings.textBorderColor or { 0, 0, 0, 1 }
     local frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(textFrame.text, settings)
 
     ResetTextureIndicatorTransformState(host)
@@ -4184,14 +4177,8 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
         backgroundColor[4] ~= nil and backgroundColor[4] or 0
     )
     for _, border in ipairs(textFrame.borderTextures) do
-        border:SetColorTexture(
-            borderColor[1] or 0,
-            borderColor[2] or 0,
-            borderColor[3] or 0,
-            borderColor[4] ~= nil and borderColor[4] or 1
-        )
+        border:Hide()
     end
-    ST._ApplyEdgePositions(textFrame.borderTextures, textFrame, borderSize)
 
     textFrame.text:SetTextColor(
         textColor[1] or 1,
