@@ -874,6 +874,7 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
     if buttonData.type == "item" or buttonData.type == "equipitem" then
         local order = { "cooldownActive", "rangeActive", "usable" }
         if buttonData.hasCharges == true then
+            order[#order + 1] = "chargesRecharging"
             order[#order + 1] = "chargeState"
         end
         return order
@@ -885,6 +886,7 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
 
     local order = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" }
     if buttonData.hasCharges == true then
+        order[#order + 1] = "chargesRecharging"
         order[#order + 1] = "chargeState"
     elseif CooldownCompanion.HasNonChargeCountTextBehavior
             and CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) then
@@ -1737,9 +1739,6 @@ function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKe
         end
     end
 
-    if self:TriggerRowUsesCondition(buttonData, "chargesRecharging") then
-        order[#order + 1] = "chargesRecharging"
-    end
     local options = {}
     local filteredOrder = {}
     for _, key in ipairs(order) do
