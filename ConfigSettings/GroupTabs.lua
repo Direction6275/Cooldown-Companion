@@ -123,8 +123,6 @@ local TEXTURE_BLEND_ORDER = {
 local TEXTURE_PREVIEW_WIDTH = 240
 local TEXTURE_PREVIEW_HEIGHT = 170
 local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
-local DEFAULT_TRIGGER_TEXT_WIDTH = 200
-local DEFAULT_TRIGGER_TEXT_HEIGHT = 20
 local MIN_TEXTURE_PAIR_SPACING = -5
 local MAX_TEXTURE_PAIR_SPACING = 5
 local MIN_TEXTURE_ROTATION = -180
@@ -706,7 +704,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local previewFrame = CreateTriggerPreviewCanvas(container, 120)
     local textHolder = CreateFrame("Frame", nil, previewFrame)
     textHolder:SetPoint("CENTER")
-    textHolder:SetSize(settings.textWidth or DEFAULT_TRIGGER_TEXT_WIDTH, settings.textHeight or DEFAULT_TRIGGER_TEXT_HEIGHT)
+    textHolder:SetSize(1, 1)
 
     local previewBg = textHolder:CreateTexture(nil, "BACKGROUND")
     previewBg:SetAllPoints()
@@ -718,7 +716,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
 
     local previewText = textHolder:CreateFontString(nil, "OVERLAY")
     previewText:SetJustifyV("MIDDLE")
-    previewText:SetWordWrap(true)
+    previewText:SetWordWrap(false)
 
     local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     placeholder:SetPoint("CENTER")
@@ -727,16 +725,25 @@ local function BuildTriggerTextAppearanceTab(container, group)
     placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
 
     local function RefreshTextPreview()
-        local width = settings.textWidth or DEFAULT_TRIGGER_TEXT_WIDTH
-        local height = settings.textHeight or DEFAULT_TRIGGER_TEXT_HEIGHT
         local borderSize = settings.textBorderSize or 0
         local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
         local borderColor = settings.textBorderColor or { 0, 0, 0, 1 }
         local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
-        local font = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
         local hasText = settings.value and settings.value ~= ""
+        local insetX = borderSize + 2
+        local insetY = borderSize + 1
 
-        textHolder:SetSize(math_min(width, TEXTURE_PREVIEW_WIDTH - 8), height)
+        if hasText then
+            local frameWidth, frameHeight
+            frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
+            textHolder:SetSize(frameWidth, frameHeight)
+            textHolder:ClearAllPoints()
+            textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+        else
+            textHolder:SetSize(1, 1)
+            textHolder:ClearAllPoints()
+            textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+        end
         previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
         for _, border in ipairs(previewBorders) do
             border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
@@ -744,12 +751,9 @@ local function BuildTriggerTextAppearanceTab(container, group)
         ApplyEdgePositions(previewBorders, textHolder, borderSize)
 
         previewText:ClearAllPoints()
-        previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", borderSize + 2, -1)
-        previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -(borderSize + 2), 1)
-        previewText:SetFont(font, settings.textFontSize or 12, settings.textFontOutline or "OUTLINE")
+        previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
+        previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -insetX, insetY)
         previewText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] ~= nil and fontColor[4] or 1)
-        previewText:SetJustifyH(settings.textAlignment or "LEFT")
-        previewText:SetText(settings.value or "")
         previewText:SetShown(hasText)
         placeholder:SetShown(not hasText)
 
@@ -767,30 +771,6 @@ local function BuildTriggerTextAppearanceTab(container, group)
     end)
     container:AddChild(textBox)
 
-    local widthSlider = AceGUI:Create("Slider")
-    widthSlider:SetLabel("Text Width")
-    widthSlider:SetSliderValues(50, 600, 1)
-    widthSlider:SetValue(settings.textWidth or DEFAULT_TRIGGER_TEXT_WIDTH)
-    widthSlider:SetFullWidth(true)
-    widthSlider:SetCallback("OnValueChanged", function(_, _, value)
-        settings.textWidth = value
-        RefreshTextPreview()
-    end)
-    HookSliderEditBox(widthSlider)
-    container:AddChild(widthSlider)
-
-    local heightSlider = AceGUI:Create("Slider")
-    heightSlider:SetLabel("Text Height")
-    heightSlider:SetSliderValues(10, 100, 1)
-    heightSlider:SetValue(settings.textHeight or DEFAULT_TRIGGER_TEXT_HEIGHT)
-    heightSlider:SetFullWidth(true)
-    heightSlider:SetCallback("OnValueChanged", function(_, _, value)
-        settings.textHeight = value
-        RefreshTextPreview()
-    end)
-    HookSliderEditBox(heightSlider)
-    container:AddChild(heightSlider)
-
     AddFontControls(container, settings, "text", {
         size = 12,
         sizeMin = 6,
@@ -798,21 +778,6 @@ local function BuildTriggerTextAppearanceTab(container, group)
         font = "Friz Quadrata TT",
         outline = "OUTLINE",
     }, RefreshTextPreview)
-
-    local alignDrop = AceGUI:Create("Dropdown")
-    alignDrop:SetLabel("Text Alignment")
-    alignDrop:SetList({
-        LEFT = "Left",
-        CENTER = "Center",
-        RIGHT = "Right",
-    }, { "LEFT", "CENTER", "RIGHT" })
-    alignDrop:SetValue(settings.textAlignment or "LEFT")
-    alignDrop:SetFullWidth(true)
-    alignDrop:SetCallback("OnValueChanged", function(_, _, value)
-        settings.textAlignment = value or "LEFT"
-        RefreshTextPreview()
-    end)
-    container:AddChild(alignDrop)
 
     AddColorPicker(container, settings, "textFontColor", "Text Color", { 1, 1, 1, 1 }, true, RefreshTextPreview, RefreshTextPreview)
     AddColorPicker(container, settings, "textBgColor", "Background Color", { 0, 0, 0, 0 }, true, RefreshTextPreview, RefreshTextPreview)

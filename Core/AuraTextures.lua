@@ -1599,15 +1599,10 @@ function CooldownCompanion.NormalizeTriggerTextSettings(settings)
     end
 
     settings.value = type(settings.value) == "string" and settings.value or ""
-    settings.textWidth = Clamp(tonumber(settings.textWidth) or 200, 50, 600)
-    settings.textHeight = Clamp(tonumber(settings.textHeight) or 20, 10, 100)
     settings.textFont = type(settings.textFont) == "string" and settings.textFont or "Friz Quadrata TT"
     settings.textFontSize = Clamp(tonumber(settings.textFontSize) or 12, 6, 72)
     settings.textFontOutline = type(settings.textFontOutline) == "string" and settings.textFontOutline or "OUTLINE"
     settings.textFontColor = CopyColor(settings.textFontColor) or { 1, 1, 1, 1 }
-    settings.textAlignment = settings.textAlignment == "RIGHT" and "RIGHT"
-        or settings.textAlignment == "CENTER" and "CENTER"
-        or "LEFT"
     settings.textBgColor = CopyColor(settings.textBgColor) or { 0, 0, 0, 0 }
     settings.textBorderSize = Clamp(tonumber(settings.textBorderSize) or 0, 0, 5)
     settings.textBorderColor = CopyColor(settings.textBorderColor) or { 0, 0, 0, 1 }
@@ -1684,13 +1679,10 @@ function CooldownCompanion:GetTriggerPanelTextSettings(groupOrId, createIfMissin
         end
         group.triggerSettings.text = {
             value = "",
-            textWidth = 200,
-            textHeight = 20,
             textFont = "Friz Quadrata TT",
             textFontSize = 12,
             textFontOutline = "OUTLINE",
             textFontColor = { 1, 1, 1, 1 },
-            textAlignment = "LEFT",
             textBgColor = { 0, 0, 0, 0 },
             textBorderSize = 0,
             textBorderColor = { 0, 0, 0, 1 },
@@ -3869,7 +3861,7 @@ function CooldownCompanion.EnsureTriggerTextVisual(host)
     frame.text:SetPoint("TOPLEFT", 2, -1)
     frame.text:SetPoint("BOTTOMRIGHT", -2, 1)
     frame.text:SetJustifyV("MIDDLE")
-    frame.text:SetWordWrap(true)
+    frame.text:SetWordWrap(false)
 
     host.textFrame = frame
     return frame
@@ -3904,6 +3896,29 @@ end
 
 function CooldownCompanion.HasTriggerTextValue(settings)
     return type(settings) == "table" and type(settings.value) == "string" and string_trim(settings.value) ~= ""
+end
+
+function CooldownCompanion.GetTriggerTextDisplayMetrics(fontString, settings)
+    if not fontString or type(settings) ~= "table" then
+        return 1, 1, 2, 1
+    end
+
+    local borderSize = settings.textBorderSize or 0
+    local insetX = borderSize + 2
+    local insetY = borderSize + 1
+    local font = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
+
+    fontString:ClearAllPoints()
+    fontString:SetWordWrap(false)
+    fontString:SetJustifyV("MIDDLE")
+    fontString:SetJustifyH("CENTER")
+    fontString:SetWidth(0)
+    fontString:SetFont(font, settings.textFontSize or 12, settings.textFontOutline or "OUTLINE")
+    fontString:SetText(settings.value or "")
+
+    local textWidth = math_max(1, math_floor((fontString:GetStringWidth() or 0) + 0.999))
+    local textHeight = math_max(1, math_floor((fontString:GetStringHeight() or 0) + 0.999))
+    return textWidth + (insetX * 2), textHeight + (insetY * 2), insetX, insetY
 end
 
 local function GetTexturePanelAlphaModuleId(groupId)
@@ -4147,7 +4162,7 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     local textColor = settings.textFontColor or { 1, 1, 1, 1 }
     local backgroundColor = settings.textBgColor or { 0, 0, 0, 0 }
     local borderColor = settings.textBorderColor or { 0, 0, 0, 1 }
-    local font = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
+    local frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(textFrame.text, settings)
 
     ResetTextureIndicatorTransformState(host)
     StopAllTextureIndicatorEffects(host)
@@ -4158,10 +4173,10 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     host._activeTextureGeometry = nil
     host._activeDisplayType = "text"
 
-    host:SetSize(settings.textWidth, settings.textHeight)
-    host.visualRoot:SetSize(settings.textWidth, settings.textHeight)
+    host:SetSize(frameWidth, frameHeight)
+    host.visualRoot:SetSize(frameWidth, frameHeight)
 
-    textFrame:SetSize(settings.textWidth, settings.textHeight)
+    textFrame:SetSize(frameWidth, frameHeight)
     textFrame.bg:SetColorTexture(
         backgroundColor[1] or 0,
         backgroundColor[2] or 0,
@@ -4178,18 +4193,15 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     end
     ST._ApplyEdgePositions(textFrame.borderTextures, textFrame, borderSize)
 
-    textFrame.text:SetFont(font, settings.textFontSize or 12, settings.textFontOutline or "OUTLINE")
     textFrame.text:SetTextColor(
         textColor[1] or 1,
         textColor[2] or 1,
         textColor[3] or 1,
         textColor[4] ~= nil and textColor[4] or 1
     )
-    textFrame.text:SetJustifyH(settings.textAlignment or "LEFT")
     textFrame.text:ClearAllPoints()
-    textFrame.text:SetPoint("TOPLEFT", borderSize + 2, -1)
-    textFrame.text:SetPoint("BOTTOMRIGHT", -(borderSize + 2), 1)
-    textFrame.text:SetText(settings.value or "")
+    textFrame.text:SetPoint("TOPLEFT", textFrame, "TOPLEFT", insetX, -insetY)
+    textFrame.text:SetPoint("BOTTOMRIGHT", textFrame, "BOTTOMRIGHT", -insetX, insetY)
     textFrame:Show()
 
     return true
@@ -4306,12 +4318,6 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         end
         shown = CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     elseif displayType == "text" then
-        hostWidth = settings.textWidth
-        hostHeight = settings.textHeight
-        host:SetSize(hostWidth, hostHeight)
-        if host.visualRoot then
-            host.visualRoot:SetSize(hostWidth, hostHeight)
-        end
         shown = CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     end
 
