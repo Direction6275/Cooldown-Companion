@@ -2158,7 +2158,7 @@ local function RefreshColumn2()
                             end
                             wipe(CS.selectedPanels)
 
-                            if IsControlKeyDown() and not IsTriggerPanelGroup(panel) then
+                            if IsControlKeyDown() then
                                 if CS.selectedButtons[btnIndex] then
                                     CS.selectedButtons[btnIndex] = nil
                                 else

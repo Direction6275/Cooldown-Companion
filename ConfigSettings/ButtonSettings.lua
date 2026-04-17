@@ -1076,6 +1076,9 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
 
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local isTriggerPanel = GroupUsesTriggerPanelEntries(group)
+
     local dupBtn = AceGUI:Create("Button")
     dupBtn:SetText("Duplicate Selected")
     dupBtn:SetFullWidth(true)
@@ -1220,25 +1223,23 @@ local function RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices
     end)
     scroll:AddChild(delBtn)
 
-    -- Batch visibility settings when all selected share the same type
-    if uniformType then
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if group then
-            local visSpacer = AceGUI:Create("Label")
-            visSpacer:SetText(" ")
-            visSpacer:SetFullWidth(true)
-            scroll:AddChild(visSpacer)
+    -- Trigger panels intentionally stay on the base multi-select actions only.
+    -- Other panel types keep their existing batch visibility section.
+    if uniformType and group and not isTriggerPanel then
+        local visSpacer = AceGUI:Create("Label")
+        visSpacer:SetText(" ")
+        visSpacer:SetFullWidth(true)
+        scroll:AddChild(visSpacer)
 
-            -- Use the first selected button as a representative for non-batch reads
-            local repData = group.buttons[multiIndices[1]]
-            if repData then
-                ST._BuildVisibilitySettings(scroll, repData, CS.buttonSettingsInfoButtons, {
-                    group = group,
-                    uniformType = uniformType,
-                })
-                if CooldownCompanion.db.profile.hideInfoButtons then
-                    for _, btn in ipairs(CS.buttonSettingsInfoButtons) do btn:Hide() end
-                end
+        -- Use the first selected button as a representative for non-batch reads
+        local repData = group.buttons[multiIndices[1]]
+        if repData then
+            ST._BuildVisibilitySettings(scroll, repData, CS.buttonSettingsInfoButtons, {
+                group = group,
+                uniformType = uniformType,
+            })
+            if CooldownCompanion.db.profile.hideInfoButtons then
+                for _, btn in ipairs(CS.buttonSettingsInfoButtons) do btn:Hide() end
             end
         end
     end
