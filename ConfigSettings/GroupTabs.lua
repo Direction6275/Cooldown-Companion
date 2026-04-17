@@ -550,6 +550,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     for index = 1, 4 do
         previewBorders[index] = iconHolder:CreateTexture(nil, "OVERLAY")
     end
+    local clearBtn
 
     local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     placeholder:SetPoint("CENTER")
@@ -569,24 +570,34 @@ local function BuildTriggerIconAppearanceTab(container, group)
         local hasIcon = ST._IsValidIconTexture(settings.manualIcon)
 
         iconHolder:SetSize(width, height)
-        previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0.5)
         previewIcon:ClearAllPoints()
         previewIcon:SetPoint("TOPLEFT", borderSize, -borderSize)
         previewIcon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
-        for _, border in ipairs(previewBorders) do
-            border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
-        end
-        ApplyEdgePositions(previewBorders, iconHolder, borderSize)
 
         if hasIcon then
+            previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0.5)
+            previewBg:Show()
+            for _, border in ipairs(previewBorders) do
+                border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
+                border:Show()
+            end
+            ApplyEdgePositions(previewBorders, iconHolder, borderSize)
             previewIcon:SetTexture(settings.manualIcon)
             previewIcon:SetVertexColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] ~= nil and tintColor[4] or 1)
             ApplyIconTexCoord(previewIcon, width, height)
             previewIcon:Show()
             placeholder:Hide()
         else
+            previewBg:Hide()
+            for _, border in ipairs(previewBorders) do
+                border:Hide()
+            end
             previewIcon:Hide()
             placeholder:Show()
+        end
+
+        if clearBtn then
+            clearBtn:SetDisabled(not hasIcon)
         end
 
         RefreshStandaloneTriggerDisplay(groupId)
@@ -605,7 +616,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     end)
     actionRow:AddChild(browseBtn)
 
-    local clearBtn = AceGUI:Create("Button")
+    clearBtn = AceGUI:Create("Button")
     clearBtn:SetText("Clear")
     clearBtn:SetRelativeWidth(0.49)
     clearBtn:SetDisabled(not ST._IsValidIconTexture(settings.manualIcon))
