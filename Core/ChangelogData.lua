@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13",
         "1.12.5",
         "1.12.4",
         "1.12.3",
@@ -20,6 +21,17 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13"] = {
+            markdown = [[
+## New Features
+
+- **Trigger panels for compound alerts:** You can now build a trigger panel that only appears when every enabled entry meets its conditions, giving you one cleaner signal for more complex setups.
+  - Combine multiple checks on the same entry, including cooldowns, buffs, debuffs, charges, range, count text, and similar conditions, without needing duplicate rows.
+  - Choose whether the triggered result shows as a texture, a manual icon, or custom text.
+  - Add sound alerts and active effects like Pulse, Color Shift, Bounce, and Shrink / Expand where they fit.
+  - Preview the display more cleanly while editing, and get clearer tooltips and wording so trigger panel setup is easier to understand.
+]],
+        },
         ["1.12.5"] = {
             markdown = [[
 ## Bug Fixes
