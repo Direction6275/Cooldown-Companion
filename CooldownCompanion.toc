@@ -48,6 +48,10 @@ Core\Init.lua
 Core\Defaults.lua
 Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua
+Core\AuraTexturesBuiltins.lua
+Core\AuraTexturesPicker.lua
+Core\AuraTexturesEffects.lua
+Core\AuraTexturesDisplay.lua
 Core\ChangelogData.lua
 Core\Changelog.lua
 Core\ScopedSettings.lua
