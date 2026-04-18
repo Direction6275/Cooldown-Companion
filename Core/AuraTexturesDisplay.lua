@@ -27,6 +27,7 @@ local NormalizeAnchorPoint = AT.NormalizeAnchorPoint
 local NormalizeAuraTextureSettings = AT.NormalizeAuraTextureSettings
 local ResolveGroup = AT.ResolveGroup
 local LayoutTexturePieces = AT.LayoutTexturePieces
+local SetTextureIndicatorBaseVisuals = AT.SetTextureIndicatorBaseVisuals
 local StopAllTextureIndicatorEffects = AT.StopAllTextureIndicatorEffects
 local ApplyTextureIndicatorEffects = AT.ApplyTextureIndicatorEffects
 local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
@@ -837,6 +838,7 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
             host._activeTextureSettings = settings
             host._activeTextureGeometry = geometry
             host._activeDisplayType = "texture"
+            SetTextureIndicatorBaseVisuals(host)
             if isTriggerPanel then
                 self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)
             else
