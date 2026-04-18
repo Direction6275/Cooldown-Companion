@@ -728,7 +728,8 @@ end
 local function BuildTriggerTextAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelTextSettings(group, true)
     local groupId = CS.selectedGroup
-    local maxTextLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 80
+    local maxTextLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 120
+    local maxTextLines = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LINES or 4
 
     local heading = AceGUI:Create("Heading")
     heading:SetText("Trigger Text")
@@ -751,7 +752,9 @@ local function BuildTriggerTextAppearanceTab(container, group)
 
     local previewText = textHolder:CreateFontString(nil, "OVERLAY")
     previewText:SetJustifyV("MIDDLE")
+    previewText:SetJustifyH("CENTER")
     previewText:SetWordWrap(false)
+    previewText:SetMaxLines(0)
 
     local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     placeholder:SetPoint("CENTER")
@@ -762,22 +765,27 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local function RefreshTextPreview()
         local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
         local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
+        local textAlignment = settings.textAlignment or "CENTER"
         local hasText = CooldownCompanion.HasTriggerTextValue(settings)
         local insetX = 2
         local insetY = 1
 
         if hasText then
-            local frameWidth, frameHeight, textWidth, textHeight
-            frameWidth, frameHeight, insetX, insetY, textWidth, textHeight = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
+            local frameWidth, frameHeight, textWidth, textHeight, lineCount
+            frameWidth, frameHeight, insetX, insetY, textWidth, textHeight, lineCount = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
             textHolder:SetSize(frameWidth, frameHeight)
             textHolder:ClearAllPoints()
             textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
             previewText:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)), textHeight or math_max(1, frameHeight - (insetY * 2)))
+            previewText:SetWordWrap((lineCount or 1) > 1)
+            previewText:SetJustifyV((lineCount or 1) > 1 and "TOP" or "MIDDLE")
         else
             textHolder:SetSize(1, 1)
             textHolder:ClearAllPoints()
             textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
             previewText:SetSize(1, 1)
+            previewText:SetWordWrap(false)
+            previewText:SetJustifyV("MIDDLE")
         end
         previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
         for _, border in ipairs(previewBorders) do
@@ -785,7 +793,9 @@ local function BuildTriggerTextAppearanceTab(container, group)
         end
 
         previewText:ClearAllPoints()
-        previewText:SetPoint("CENTER", textHolder, "CENTER", 0, 0)
+        previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
+        previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -insetX, insetY)
+        previewText:SetJustifyH(textAlignment)
         previewText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] ~= nil and fontColor[4] or 1)
         previewText:SetShown(hasText)
         placeholder:SetShown(not hasText)
@@ -793,19 +803,30 @@ local function BuildTriggerTextAppearanceTab(container, group)
         RefreshStandaloneTriggerDisplay(groupId)
     end
 
-    local textBox = AceGUI:Create("EditBox")
+    local textBox = AceGUI:Create("MultiLineEditBox")
     textBox:SetLabel("Display Text")
     textBox:SetFullWidth(true)
-    textBox:DisableButton(true)
-    textBox:SetMaxLetters(maxTextLength)
+    textBox:SetNumLines(maxTextLines)
+    textBox.button:Hide()
     textBox:SetText(settings.value or "")
-    local function HandleTextChanged(_, _, value)
-        settings.value = type(value) == "string" and value:sub(1, maxTextLength) or ""
+    local function HandleTextChanged(widget, _, value)
+        local sanitized = CooldownCompanion.SanitizeTriggerPanelTextValue and CooldownCompanion.SanitizeTriggerPanelTextValue(value) or (value or "")
+        settings.value = sanitized
+        if widget and widget.SetText and widget:GetText() ~= sanitized and not widget._ccSyncingText then
+            widget._ccSyncingText = true
+            widget:SetText(sanitized)
+            widget._ccSyncingText = nil
+        end
         RefreshTextPreview()
     end
     textBox:SetCallback("OnTextChanged", HandleTextChanged)
-    textBox:SetCallback("OnEnterPressed", HandleTextChanged)
     container:AddChild(textBox)
+
+    local limitLabel = AceGUI:Create("Label")
+    limitLabel:SetFullWidth(true)
+    limitLabel:SetText("Up to " .. maxTextLines .. " lines and " .. maxTextLength .. " total characters.")
+    limitLabel:SetColor(0.7, 0.7, 0.7)
+    container:AddChild(limitLabel)
 
     AddFontControls(container, settings, "text", {
         size = 12,
@@ -814,6 +835,17 @@ local function BuildTriggerTextAppearanceTab(container, group)
         font = "Friz Quadrata TT",
         outline = "OUTLINE",
     }, RefreshTextPreview)
+
+    local alignDrop = AceGUI:Create("Dropdown")
+    alignDrop:SetLabel("Alignment")
+    alignDrop:SetList({ LEFT = "Left", CENTER = "Center", RIGHT = "Right" })
+    alignDrop:SetValue(settings.textAlignment or "CENTER")
+    alignDrop:SetFullWidth(true)
+    alignDrop:SetCallback("OnValueChanged", function(_, _, value)
+        settings.textAlignment = value
+        RefreshTextPreview()
+    end)
+    container:AddChild(alignDrop)
 
     AddColorPicker(container, settings, "textFontColor", "Text Color", { 1, 1, 1, 1 }, true, RefreshTextPreview, RefreshTextPreview)
     AddColorPicker(container, settings, "textBgColor", "Background Color", { 0, 0, 0, 0 }, true, RefreshTextPreview, RefreshTextPreview)

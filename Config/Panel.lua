@@ -540,6 +540,9 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
         CooldownCompanion:ClearAllTextureIndicatorPreviews()
+        if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+            CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+        end
         CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         CooldownCompanion:StopCastBarPreview()
         if ClearConfigShiftTooltipHover then
