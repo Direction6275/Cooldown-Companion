@@ -8,6 +8,12 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 
+CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH = 80
+CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_X = 4
+CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_Y = 2
+CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_X = 6
+CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_Y = 4
+
 local C_Item_IsUsableItem = C_Item.IsUsableItem
 local C_Spell_GetSpellName = C_Spell.GetSpellName
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
@@ -1653,6 +1659,32 @@ function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId, createIfMiss
     return CooldownCompanion.NormalizeTriggerPanelEffectStore(group.triggerSettings)
 end
 
+function CooldownCompanion:GetTextureIndicatorTransformTarget(host)
+    if not host then
+        return nil
+    end
+
+    if host._activeDisplayType == "icon" and host.iconFrame then
+        return host.iconFrame
+    end
+
+    if host._activeDisplayType == "text" and host.textFrame then
+        return host.textFrame
+    end
+
+    return host.visualRoot
+end
+
+function CooldownCompanion:ResetTextureIndicatorRootState(host)
+    if not host or not host.visualRoot then
+        return
+    end
+
+    host.visualRoot:SetScale(1)
+    host.visualRoot:ClearAllPoints()
+    host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+end
+
 function CooldownCompanion.NormalizeTriggerDisplayType(displayType)
     if displayType == "icon" or displayType == "text" then
         return displayType
@@ -1708,7 +1740,8 @@ function CooldownCompanion.NormalizeTriggerTextSettings(settings)
         return nil
     end
 
-    settings.value = type(settings.value) == "string" and settings.value or ""
+    local maxLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 80
+    settings.value = type(settings.value) == "string" and settings.value:sub(1, maxLength) or ""
     settings.textFont = type(settings.textFont) == "string" and settings.textFont or "Friz Quadrata TT"
     settings.textFontSize = Clamp(tonumber(settings.textFontSize) or 12, 6, 72)
     settings.textFontOutline = type(settings.textFontOutline) == "string" and settings.textFontOutline or "OUTLINE"
@@ -3046,13 +3079,24 @@ local function SetTextureIndicatorBaseVisuals(host)
 end
 
 local function ResetTextureIndicatorTransformState(host)
-    if not host or not host.visualRoot then
+    if not host then
         return
     end
 
-    host.visualRoot:SetScale(1)
-    host.visualRoot:ClearAllPoints()
-    host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+    local target = CooldownCompanion:GetTextureIndicatorTransformTarget(host)
+    if not target then
+        return
+    end
+
+    local relativeFrame = target == host.visualRoot and host or target:GetParent() or host.visualRoot
+    if not relativeFrame then
+        return
+    end
+
+    target:SetScale(1)
+    target:ClearAllPoints()
+    target:SetPoint("CENTER", relativeFrame, "CENTER", 0, 0)
+
 end
 
 local function GetTextureIndicatorLoopPhase(now, duration)
@@ -3094,6 +3138,12 @@ end
 
 TextureIndicatorOnUpdate = function(self)
     if not self or not self.visualRoot or not self._activeDisplayType then
+        RefreshTextureIndicatorUpdater(self)
+        return
+    end
+
+    local transformTarget = CooldownCompanion:GetTextureIndicatorTransformTarget(self)
+    if not transformTarget then
         RefreshTextureIndicatorUpdater(self)
         return
     end
@@ -3145,7 +3195,7 @@ TextureIndicatorOnUpdate = function(self)
         local shrinkT = 0.5 - (0.5 * math_cos(shrinkPhase * 2 * math_pi))
         scale = 1 - ((1 - DEFAULT_TEXTURE_SHRINK_SCALE) * shrinkT)
     end
-    self.visualRoot:SetScale(scale)
+    transformTarget:SetScale(scale)
 
     local bounceOffsetY = 0
     if self._textureBounceActive then
@@ -3163,8 +3213,8 @@ TextureIndicatorOnUpdate = function(self)
         end
     end
 
-    self.visualRoot:ClearAllPoints()
-    self.visualRoot:SetPoint("CENTER", self, "CENTER", 0, bounceOffsetY)
+    transformTarget:ClearAllPoints()
+    transformTarget:SetPoint("CENTER", transformTarget == self.visualRoot and self or transformTarget:GetParent() or self.visualRoot, "CENTER", 0, bounceOffsetY)
 end
 
 local function StopTextureIndicatorAnimation(host, effectType)
@@ -3654,6 +3704,7 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
             ((host:GetHeight() and host:GetHeight() > 0) and host:GetHeight() or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12
         )
     )
+    local allowShrinkExpand = host._activeDisplayType ~= "text"
 
     SetTextureIndicatorAnimation(
         host,
@@ -3664,8 +3715,8 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
     SetTextureIndicatorAnimation(
         host,
         TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
-        effects.shrinkExpand and effects.shrinkExpand.enabled == true,
-        effects.shrinkExpand and effects.shrinkExpand.speed or nil
+        allowShrinkExpand and effects.shrinkExpand and effects.shrinkExpand.enabled == true,
+        allowShrinkExpand and effects.shrinkExpand and effects.shrinkExpand.speed or nil
     )
     SetTextureIndicatorAnimation(
         host,
@@ -4044,10 +4095,11 @@ function CooldownCompanion.EnsureTriggerTextVisual(host)
     end
 
     frame.text = frame:CreateFontString(nil, "OVERLAY")
-    frame.text:SetPoint("TOPLEFT", 2, -1)
-    frame.text:SetPoint("BOTTOMRIGHT", -2, 1)
+    frame.text:SetPoint("CENTER", frame, "CENTER", 0, 0)
     frame.text:SetJustifyV("MIDDLE")
+    frame.text:SetJustifyH("CENTER")
     frame.text:SetWordWrap(false)
+    frame.text:SetMaxLines(1)
 
     host.textFrame = frame
     return frame
@@ -4086,24 +4138,30 @@ end
 
 function CooldownCompanion.GetTriggerTextDisplayMetrics(fontString, settings)
     if not fontString or type(settings) ~= "table" then
-        return 1, 1, 2, 1
+        return 1, 1, CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_X or 4, CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_Y or 2, 1, 1
     end
 
-    local insetX = 2
-    local insetY = 1
+    local insetX = CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_X or 4
+    local insetY = CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_Y or 2
+    local overflowX = CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_X or 6
+    local overflowY = CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_Y or 4
     local font = CooldownCompanion:FetchFont(settings.textFont or "Friz Quadrata TT")
 
     fontString:ClearAllPoints()
     fontString:SetWordWrap(false)
+    fontString:SetMaxLines(1)
     fontString:SetJustifyV("MIDDLE")
     fontString:SetJustifyH("CENTER")
     fontString:SetWidth(0)
     fontString:SetFont(font, settings.textFontSize or 12, settings.textFontOutline or "OUTLINE")
     fontString:SetText(settings.value or "")
 
-    local textWidth = math_max(1, math_floor((fontString:GetStringWidth() or 0) + 0.999))
+    local measuredWidth = fontString.GetUnboundedStringWidth and fontString:GetUnboundedStringWidth() or fontString:GetStringWidth()
+    local textWidth = math_max(1, math_floor((measuredWidth or 0) + 0.999))
     local textHeight = math_max(1, math_floor((fontString:GetStringHeight() or 0) + 0.999))
-    return textWidth + (insetX * 2), textHeight + (insetY * 2), insetX, insetY
+    textWidth = textWidth + (overflowX * 2)
+    textHeight = textHeight + (overflowY * 2)
+    return textWidth + (insetX * 2), textHeight + (insetY * 2), insetX, insetY, textWidth, textHeight
 end
 
 local function GetTexturePanelAlphaModuleId(groupId)
@@ -4296,9 +4354,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     local backgroundColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderColor = settings.borderColor or { 0, 0, 0, 1 }
 
-    ResetTextureIndicatorTransformState(host)
-    StopAllTextureIndicatorEffects(host)
-    host:SetScript("OnUpdate", nil)
+    CooldownCompanion:ResetTextureIndicatorRootState(host)
     CooldownCompanion.HideStandaloneDisplayVisuals(host)
 
     host._activeTextureSettings = nil
@@ -4347,11 +4403,9 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     local textFrame = CooldownCompanion.EnsureTriggerTextVisual(host)
     local textColor = settings.textFontColor or { 1, 1, 1, 1 }
     local backgroundColor = settings.textBgColor or { 0, 0, 0, 0 }
-    local frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(textFrame.text, settings)
+    local frameWidth, frameHeight, insetX, insetY, textWidth, textHeight = CooldownCompanion.GetTriggerTextDisplayMetrics(textFrame.text, settings)
 
-    ResetTextureIndicatorTransformState(host)
-    StopAllTextureIndicatorEffects(host)
-    host:SetScript("OnUpdate", nil)
+    CooldownCompanion:ResetTextureIndicatorRootState(host)
     CooldownCompanion.HideStandaloneDisplayVisuals(host)
 
     host._activeTextureSettings = nil
@@ -4381,8 +4435,8 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
         textColor[4] ~= nil and textColor[4] or 1
     )
     textFrame.text:ClearAllPoints()
-    textFrame.text:SetPoint("TOPLEFT", textFrame, "TOPLEFT", insetX, -insetY)
-    textFrame.text:SetPoint("BOTTOMRIGHT", textFrame, "BOTTOMRIGHT", -insetX, insetY)
+    textFrame.text:SetPoint("CENTER", textFrame, "CENTER", 0, 0)
+    textFrame.text:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)), textHeight or math_max(1, frameHeight - (insetY * 2)))
     textFrame:Show()
 
     return true

@@ -728,6 +728,7 @@ end
 local function BuildTriggerTextAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelTextSettings(group, true)
     local groupId = CS.selectedGroup
+    local maxTextLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 80
 
     local heading = AceGUI:Create("Heading")
     heading:SetText("Trigger Text")
@@ -766,15 +767,17 @@ local function BuildTriggerTextAppearanceTab(container, group)
         local insetY = 1
 
         if hasText then
-            local frameWidth, frameHeight
-            frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
+            local frameWidth, frameHeight, textWidth, textHeight
+            frameWidth, frameHeight, insetX, insetY, textWidth, textHeight = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
             textHolder:SetSize(frameWidth, frameHeight)
             textHolder:ClearAllPoints()
             textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+            previewText:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)), textHeight or math_max(1, frameHeight - (insetY * 2)))
         else
             textHolder:SetSize(1, 1)
             textHolder:ClearAllPoints()
             textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+            previewText:SetSize(1, 1)
         end
         previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
         for _, border in ipairs(previewBorders) do
@@ -782,8 +785,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
         end
 
         previewText:ClearAllPoints()
-        previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
-        previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -insetX, insetY)
+        previewText:SetPoint("CENTER", textHolder, "CENTER", 0, 0)
         previewText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] ~= nil and fontColor[4] or 1)
         previewText:SetShown(hasText)
         placeholder:SetShown(not hasText)
@@ -791,14 +793,14 @@ local function BuildTriggerTextAppearanceTab(container, group)
         RefreshStandaloneTriggerDisplay(groupId)
     end
 
-    local textBox = AceGUI:Create("MultiLineEditBox")
+    local textBox = AceGUI:Create("EditBox")
     textBox:SetLabel("Display Text")
     textBox:SetFullWidth(true)
-    textBox:SetNumLines(4)
-    textBox.button:Hide()
+    textBox:DisableButton(true)
+    textBox:SetMaxLetters(maxTextLength)
     textBox:SetText(settings.value or "")
     local function HandleTextChanged(_, _, value)
-        settings.value = value or ""
+        settings.value = type(value) == "string" and value:sub(1, maxTextLength) or ""
         RefreshTextPreview()
     end
     textBox:SetCallback("OnTextChanged", HandleTextChanged)
@@ -1524,6 +1526,21 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     BuildTextureIndicatorSpeedSlider(container, config, def.speedLabel)
 end
 
+local function GetTriggerPanelEffectOrderForDisplayType(group)
+    local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
+    if displayType ~= "text" then
+        return TEXTURE_INDICATOR_EFFECT_ORDER
+    end
+
+    local order = {}
+    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+        if effectKey ~= "shrinkExpand" then
+            order[#order + 1] = effectKey
+        end
+    end
+    return order
+end
+
 local function BuildEffectsTab(container)
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -1555,7 +1572,8 @@ local function BuildEffectsTab(container)
         end
 
         local anyEnabled = false
-        for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+        local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
+        for _, effectKey in ipairs(effectOrder) do
             BuildTriggerPanelEffectSection(container, effects, effectKey)
             if effects[effectKey] and effects[effectKey].enabled then
                 anyEnabled = true
