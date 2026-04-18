@@ -28,6 +28,7 @@ local readyPreviewTokens = {}
 local readyButtonPreviewTokens = {}
 local kphPreviewTokens = {}
 local textureIndicatorPreviewTokens = {}
+local triggerEffectPreviewTokens = {}
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
@@ -450,6 +451,44 @@ function CooldownCompanion:ClearAllTextureIndicatorPreviews()
             button._textureReadyPreview = nil
             button._textureUnusablePreview = nil
             button._textureIndicatorPreviewDirty = false
+            if button.UpdateCooldown then
+                button:UpdateCooldown()
+            else
+                self:UpdateAuraTextureVisual(button)
+            end
+        end
+    end
+end
+
+function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
+    local frame = self.groupFrames[groupId]
+    if not frame then
+        return
+    end
+
+    if not show then
+        triggerEffectPreviewTokens[groupId] = (triggerEffectPreviewTokens[groupId] or 0) + 1
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        button._triggerEffectsPreview = show or nil
+        if button.UpdateCooldown then
+            button:UpdateCooldown()
+        else
+            self:UpdateAuraTextureVisual(button)
+        end
+    end
+end
+
+function CooldownCompanion:PlayTriggerPanelEffectsPreview(groupId, durationSeconds)
+    PlayGroupPreview(self, groupId, durationSeconds, triggerEffectPreviewTokens, self.SetTriggerPanelEffectsPreview)
+end
+
+function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    wipe(triggerEffectPreviewTokens)
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            button._triggerEffectsPreview = nil
             if button.UpdateCooldown then
                 button:UpdateCooldown()
             else

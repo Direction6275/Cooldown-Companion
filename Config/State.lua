@@ -615,10 +615,9 @@ local function OpenConfigIconPicker(spec, context)
         pickerFrame:SetSelectedIconText()
         pickerFrame.BorderBox.OkayButton:Enable()
     else
+        pickerFrame.IconSelector:SetSelectedIndex(nil)
         pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(nil)
-        if pickerFrame.BorderBox.SelectedIconArea.SelectedIconText then
-            pickerFrame.BorderBox.SelectedIconArea.SelectedIconText:SetText("No icon selected")
-        end
+        pickerFrame:SetSelectedIconText()
         pickerFrame.BorderBox.OkayButton:Disable()
     end
 

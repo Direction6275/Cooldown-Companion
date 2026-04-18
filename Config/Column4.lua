@@ -183,6 +183,9 @@ local function RefreshColumn4(container)
             CS.panelSettingsTab = tab
             if tab ~= "effects" then
                 CooldownCompanion:ClearAllTextureIndicatorPreviews()
+                if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+                    CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+                end
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs

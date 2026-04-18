@@ -168,6 +168,29 @@ local function GetTextureIndicatorStore(group)
     return CooldownCompanion:GetTexturePanelIndicatorSettings(group, true)
 end
 
+local TRIGGER_PANEL_EFFECT_DEFS = {
+    pulse = {
+        label = "Pulse",
+        speedLabel = "Pulse Duration",
+    },
+    colorShift = {
+        label = "Color Shift",
+        speedLabel = "Shift Duration",
+    },
+    shrinkExpand = {
+        label = "Shrink / Expand",
+        speedLabel = "Cycle Duration",
+    },
+    bounce = {
+        label = "Bounce",
+        speedLabel = "Bounce Duration",
+    },
+}
+
+local function GetTriggerPanelEffectStore(group)
+    return CooldownCompanion:GetTriggerPanelEffectSettings(group, true)
+end
+
 local function GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
     local used = {}
     if type(indicators) ~= "table" then
@@ -527,6 +550,22 @@ local function CreateTriggerPreviewCanvas(container, height)
     return previewFrame
 end
 
+local function FitPreviewContentToCanvas(contentFrame, canvasFrame, contentWidth, contentHeight, padding)
+    if not contentFrame or not canvasFrame then
+        return
+    end
+
+    padding = padding or 8
+    local canvasWidth = canvasFrame:GetWidth() or TEXTURE_PREVIEW_WIDTH
+    local canvasHeight = canvasFrame:GetHeight() or 0
+    local availableWidth = math_max(1, canvasWidth - (padding * 2))
+    local availableHeight = math_max(1, canvasHeight - (padding * 2))
+    local widthScale = availableWidth / math_max(1, contentWidth or 1)
+    local heightScale = availableHeight / math_max(1, contentHeight or 1)
+    local scale = math_min(1, widthScale, heightScale)
+    contentFrame:SetScale(scale)
+end
+
 local function BuildTriggerIconAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
     local groupId = CS.selectedGroup
@@ -705,6 +744,8 @@ end
 local function BuildTriggerTextAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelTextSettings(group, true)
     local groupId = CS.selectedGroup
+    local maxTextLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 120
+    local maxTextLines = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LINES or 4
 
     local heading = AceGUI:Create("Heading")
     heading:SetText("Trigger Text")
@@ -727,7 +768,9 @@ local function BuildTriggerTextAppearanceTab(container, group)
 
     local previewText = textHolder:CreateFontString(nil, "OVERLAY")
     previewText:SetJustifyV("MIDDLE")
+    previewText:SetJustifyH("CENTER")
     previewText:SetWordWrap(false)
+    previewText:SetMaxLines(0)
 
     local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     placeholder:SetPoint("CENTER")
@@ -738,20 +781,29 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local function RefreshTextPreview()
         local bgColor = settings.textBgColor or { 0, 0, 0, 0 }
         local fontColor = settings.textFontColor or { 1, 1, 1, 1 }
+        local textAlignment = settings.textAlignment or "CENTER"
         local hasText = CooldownCompanion.HasTriggerTextValue(settings)
         local insetX = 2
         local insetY = 1
 
+        textHolder:SetScale(1)
         if hasText then
-            local frameWidth, frameHeight
-            frameWidth, frameHeight, insetX, insetY = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
+            local frameWidth, frameHeight, textWidth, textHeight, lineCount
+            frameWidth, frameHeight, insetX, insetY, textWidth, textHeight, lineCount = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
             textHolder:SetSize(frameWidth, frameHeight)
             textHolder:ClearAllPoints()
             textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+            previewText:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)), textHeight or math_max(1, frameHeight - (insetY * 2)))
+            previewText:SetWordWrap((lineCount or 1) > 1)
+            previewText:SetJustifyV((lineCount or 1) > 1 and "TOP" or "MIDDLE")
+            FitPreviewContentToCanvas(textHolder, previewFrame, frameWidth, frameHeight, 8)
         else
             textHolder:SetSize(1, 1)
             textHolder:ClearAllPoints()
             textHolder:SetPoint("CENTER", previewFrame, "CENTER", 0, 0)
+            previewText:SetSize(1, 1)
+            previewText:SetWordWrap(false)
+            previewText:SetJustifyV("MIDDLE")
         end
         previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0)
         for _, border in ipairs(previewBorders) do
@@ -761,6 +813,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
         previewText:ClearAllPoints()
         previewText:SetPoint("TOPLEFT", textHolder, "TOPLEFT", insetX, -insetY)
         previewText:SetPoint("BOTTOMRIGHT", textHolder, "BOTTOMRIGHT", -insetX, insetY)
+        previewText:SetJustifyH(textAlignment)
         previewText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] ~= nil and fontColor[4] or 1)
         previewText:SetShown(hasText)
         placeholder:SetShown(not hasText)
@@ -771,16 +824,27 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local textBox = AceGUI:Create("MultiLineEditBox")
     textBox:SetLabel("Display Text")
     textBox:SetFullWidth(true)
-    textBox:SetNumLines(4)
+    textBox:SetNumLines(maxTextLines)
     textBox.button:Hide()
     textBox:SetText(settings.value or "")
-    local function HandleTextChanged(_, _, value)
-        settings.value = value or ""
+    local function HandleTextChanged(widget, _, value)
+        local sanitized = CooldownCompanion.SanitizeTriggerPanelTextValue and CooldownCompanion.SanitizeTriggerPanelTextValue(value) or (value or "")
+        settings.value = sanitized
+        if widget and widget.SetText and widget:GetText() ~= sanitized and not widget._ccSyncingText then
+            widget._ccSyncingText = true
+            widget:SetText(sanitized)
+            widget._ccSyncingText = nil
+        end
         RefreshTextPreview()
     end
     textBox:SetCallback("OnTextChanged", HandleTextChanged)
-    textBox:SetCallback("OnEnterPressed", HandleTextChanged)
     container:AddChild(textBox)
+
+    local limitLabel = AceGUI:Create("Label")
+    limitLabel:SetFullWidth(true)
+    limitLabel:SetText("Up to " .. maxTextLines .. " lines and " .. maxTextLength .. " total characters.")
+    limitLabel:SetColor(0.7, 0.7, 0.7)
+    container:AddChild(limitLabel)
 
     AddFontControls(container, settings, "text", {
         size = 12,
@@ -789,6 +853,17 @@ local function BuildTriggerTextAppearanceTab(container, group)
         font = "Friz Quadrata TT",
         outline = "OUTLINE",
     }, RefreshTextPreview)
+
+    local alignDrop = AceGUI:Create("Dropdown")
+    alignDrop:SetLabel("Alignment")
+    alignDrop:SetList({ LEFT = "Left", CENTER = "Center", RIGHT = "Right" })
+    alignDrop:SetValue(settings.textAlignment or "CENTER")
+    alignDrop:SetFullWidth(true)
+    alignDrop:SetCallback("OnValueChanged", function(_, _, value)
+        settings.textAlignment = value
+        RefreshTextPreview()
+    end)
+    container:AddChild(alignDrop)
 
     AddColorPicker(container, settings, "textFontColor", "Text Color", { 1, 1, 1, 1 }, true, RefreshTextPreview, RefreshTextPreview)
     AddColorPicker(container, settings, "textBgColor", "Background Color", { 0, 0, 0, 0 }, true, RefreshTextPreview, RefreshTextPreview)
@@ -810,6 +885,9 @@ local function BuildLayoutTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    end
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then
         local settings = GetStandaloneTextureSettings(group, true)
@@ -1458,6 +1536,61 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     container:AddChild(previewBtn)
 end
 
+local function BuildTriggerPanelEffectSection(container, effects, effectKey)
+    local config = effects and effects[effectKey]
+    local def = TRIGGER_PANEL_EFFECT_DEFS[effectKey]
+    if not config or not def then
+        return
+    end
+
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel(def.label)
+    enableCb:SetValue(config.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(_, _, value)
+        config.enabled = value == true
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    local advKey = "triggerEffect_" .. effectKey
+    local advExpanded = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled)
+    if not advExpanded or not config.enabled then
+        return
+    end
+
+    if effectKey == "colorShift" then
+        AddColorPicker(
+            container,
+            config,
+            "color",
+            "Shift Color",
+            { 1, 1, 1, 1 },
+            true,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end
+        )
+    end
+
+    BuildTextureIndicatorSpeedSlider(container, config, def.speedLabel)
+end
+
+local function GetTriggerPanelEffectOrderForDisplayType(group)
+    local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
+    if displayType ~= "text" then
+        return TEXTURE_INDICATOR_EFFECT_ORDER
+    end
+
+    local order = {}
+    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+        if effectKey ~= "shrinkExpand" then
+            order[#order + 1] = effectKey
+        end
+    end
+    return order
+end
+
 local function BuildEffectsTab(container)
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -1478,8 +1611,33 @@ local function BuildEffectsTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    end
 
     if group.displayMode == "trigger" then
+        local effects = GetTriggerPanelEffectStore(group)
+        if not effects then
+            return
+        end
+
+        local anyEnabled = false
+        local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
+        for _, effectKey in ipairs(effectOrder) do
+            BuildTriggerPanelEffectSection(container, effects, effectKey)
+            if effects[effectKey] and effects[effectKey].enabled then
+                anyEnabled = true
+            end
+        end
+
+        local previewBtn = AceGUI:Create("Button")
+        previewBtn:SetText("Preview Effects (3s)")
+        previewBtn:SetFullWidth(true)
+        previewBtn:SetDisabled(not anyEnabled)
+        previewBtn:SetCallback("OnClick", function()
+            CooldownCompanion:PlayTriggerPanelEffectsPreview(CS.selectedGroup, 3)
+        end)
+        container:AddChild(previewBtn)
         return
     end
 
@@ -1993,6 +2151,9 @@ local function BuildAppearanceTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    end
 
     if group.displayMode == "trigger" then
         AddTriggerDisplayTypeDropdown(container, group)
