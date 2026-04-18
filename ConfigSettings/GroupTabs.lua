@@ -550,6 +550,22 @@ local function CreateTriggerPreviewCanvas(container, height)
     return previewFrame
 end
 
+local function FitPreviewContentToCanvas(contentFrame, canvasFrame, contentWidth, contentHeight, padding)
+    if not contentFrame or not canvasFrame then
+        return
+    end
+
+    padding = padding or 8
+    local canvasWidth = canvasFrame:GetWidth() or TEXTURE_PREVIEW_WIDTH
+    local canvasHeight = canvasFrame:GetHeight() or 0
+    local availableWidth = math_max(1, canvasWidth - (padding * 2))
+    local availableHeight = math_max(1, canvasHeight - (padding * 2))
+    local widthScale = availableWidth / math_max(1, contentWidth or 1)
+    local heightScale = availableHeight / math_max(1, contentHeight or 1)
+    local scale = math_min(1, widthScale, heightScale)
+    contentFrame:SetScale(scale)
+end
+
 local function BuildTriggerIconAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
     local groupId = CS.selectedGroup
@@ -770,6 +786,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
         local insetX = 2
         local insetY = 1
 
+        textHolder:SetScale(1)
         if hasText then
             local frameWidth, frameHeight, textWidth, textHeight, lineCount
             frameWidth, frameHeight, insetX, insetY, textWidth, textHeight, lineCount = CooldownCompanion.GetTriggerTextDisplayMetrics(previewText, settings)
@@ -779,6 +796,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
             previewText:SetSize(textWidth or math_max(1, frameWidth - (insetX * 2)), textHeight or math_max(1, frameHeight - (insetY * 2)))
             previewText:SetWordWrap((lineCount or 1) > 1)
             previewText:SetJustifyV((lineCount or 1) > 1 and "TOP" or "MIDDLE")
+            FitPreviewContentToCanvas(textHolder, previewFrame, frameWidth, frameHeight, 8)
         else
             textHolder:SetSize(1, 1)
             textHolder:ClearAllPoints()
