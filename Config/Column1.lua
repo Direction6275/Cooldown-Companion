@@ -34,6 +34,8 @@ local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local NotifyTutorialAction = ST._NotifyTutorialAction
 
+local GenerateGroupName
+
 ------------------------------------------------------------------------
 -- Clear all selection state (container, panel, button, multi-select)
 ------------------------------------------------------------------------
@@ -253,6 +255,555 @@ local function RenderBrowseMode()
             SetupGroupRowIndicators(entry, container)
         end
     end
+end
+
+local PANEL_CREATION_MODES = {
+    { mode = "icons", label = "Icon Panel" },
+    { mode = "bars", label = "Bar Panel" },
+    { mode = "text", label = "Text Panel" },
+    { mode = "textures", label = "Texture Panel" },
+    { mode = "trigger", label = "Trigger Panel" },
+}
+
+local function BuildContainerExportPayload(db, containerId, container)
+    local sortedPanels = CooldownCompanion:GetPanels(containerId)
+    local panels = {}
+    for _, entry in ipairs(sortedPanels) do
+        local panelData = BuildGroupExportData(entry.group)
+        panelData._originalGroupId = entry.groupId
+        panels[#panels + 1] = panelData
+    end
+    return {
+        type = "container",
+        version = 1,
+        container = BuildContainerExportData(container),
+        panels = panels,
+        _originalContainerId = containerId,
+    }
+end
+
+local function BuildSelectedContainersExportPayload(db, selectedGroups)
+    local orderedCids = {}
+    for cid in pairs(selectedGroups) do
+        local container = db.groupContainers[cid]
+        if container then
+            orderedCids[#orderedCids + 1] = {
+                cid = cid,
+                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
+            }
+        end
+    end
+    table.sort(orderedCids, function(a, b) return a.order < b.order end)
+
+    local exportContainers = {}
+    for _, item in ipairs(orderedCids) do
+        local container = db.groupContainers[item.cid]
+        if container then
+            local payload = BuildContainerExportPayload(db, item.cid, container)
+            exportContainers[#exportContainers + 1] = {
+                container = payload.container,
+                panels = payload.panels,
+                _originalContainerId = payload._originalContainerId,
+            }
+        end
+    end
+
+    return {
+        type = "containers",
+        version = 1,
+        containers = exportContainers,
+    }
+end
+
+local function GetFolderTargetsForSection(db, charKey, section)
+    local folderList = {}
+    for fid, folder in pairs(db.folders) do
+        if folder.section == section then
+            if section == "char" and folder.createdBy and folder.createdBy ~= charKey then
+                -- skip: belongs to another character
+            else
+                folderList[#folderList + 1] = {
+                    id = fid,
+                    name = folder.name,
+                    order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
+                }
+            end
+        end
+    end
+    table.sort(folderList, function(a, b) return a.order < b.order end)
+    return folderList
+end
+
+local function ShowContainerContextMenu(db, charKey, containerId, container)
+    if not CS.groupContextMenu then
+        CS.groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+
+    UIDropDownMenu_Initialize(CS.groupContextMenu, function(self, level, menuList)
+        level = level or 1
+        if level == 1 then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "Rename"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_RENAME_GROUP", container.name, { containerId = containerId })
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = container.isGlobal and "Make Character-Only" or "Make Global"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                if container.isGlobal and container.specs and ContainersHaveForeignSpecs({ container }, false) then
+                    ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
+                    return
+                end
+                CooldownCompanion:ToggleGroupGlobal(containerId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            local containerSection = container.isGlobal and "global" or "char"
+            local folderTargets = GetFolderTargetsForSection(db, charKey, containerSection)
+            if #folderTargets > 0 or container.folderId then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Move to Folder"
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = "MOVE_TO_FOLDER"
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = (container.enabled ~= false) and "Disable" or "Enable"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                container.enabled = not (container.enabled ~= false)
+                CooldownCompanion:RefreshContainerPanels(containerId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Duplicate"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
+                if newContainerId then
+                    CS.selectedContainer = newContainerId
+                    CS.selectedGroup = nil
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = next(CS.selectedGroups) and "Export Selected" or "Export"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                local payload = next(CS.selectedGroups)
+                    and BuildSelectedContainersExportPayload(db, CS.selectedGroups)
+                    or BuildContainerExportPayload(db, containerId, container)
+                local exportString = EncodeExportData(payload)
+                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = container.locked and "Unlock" or "Lock"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                container.locked = not container.locked
+                CooldownCompanion:UpdateContainerDragHandle(containerId, container.locked)
+                CooldownCompanion:RefreshContainerPanels(containerId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            do
+                local isCurrentlyEligible
+                if container.isGlobal then
+                    isCurrentlyEligible = container.anchorEligible == true
+                else
+                    isCurrentlyEligible = container.anchorEligible ~= false
+                end
+                info = UIDropDownMenu_CreateInfo()
+                info.text = isCurrentlyEligible and "Exclude from Auto-Anchoring" or "Include in Auto-Anchoring"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    local fresh = db.groupContainers[containerId]
+                    if not fresh then return end
+                    if fresh.isGlobal then
+                        fresh.anchorEligible = not fresh.anchorEligible or nil
+                    else
+                        fresh.anchorEligible = fresh.anchorEligible ~= false and false or nil
+                    end
+                    CooldownCompanion:EvaluateResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:EvaluateCastBar()
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Spec Filter"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                if CS.specExpandedGroupId == containerId then
+                    CS.specExpandedGroupId = nil
+                else
+                    CS.specExpandedGroupId = containerId
+                    CS.specExpandedFolderId = nil
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            if not container.folderId then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Set Group Icon..."
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    OpenContainerIconPicker(containerId)
+                end
+                UIDropDownMenu_AddButton(info, level)
+
+                if IsValidIconTexture(container.manualIcon) then
+                    info = UIDropDownMenu_CreateInfo()
+                    info.text = "Clear Custom Icon"
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        local fresh = db.groupContainers[containerId]
+                        if fresh then
+                            fresh.manualIcon = nil
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Add Panel"
+            info.notCheckable = true
+            info.hasArrow = true
+            info.menuList = "ADD_PANEL"
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "|cffff4444Delete|r"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DELETE_GROUP", container.name, { containerId = containerId })
+            end
+            UIDropDownMenu_AddButton(info, level)
+        elseif menuList == "MOVE_TO_FOLDER" then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "(No Folder)"
+            info.checked = (container.folderId == nil)
+            info.func = function()
+                CloseDropDownMenus()
+                CooldownCompanion:MoveGroupToFolder(containerId, nil)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            local containerSection = container.isGlobal and "global" or "char"
+            for _, folderTarget in ipairs(GetFolderTargetsForSection(db, charKey, containerSection)) do
+                info = UIDropDownMenu_CreateInfo()
+                info.text = folderTarget.name
+                info.checked = (container.folderId == folderTarget.id)
+                info.func = function()
+                    CloseDropDownMenus()
+                    CooldownCompanion:MoveGroupToFolder(containerId, folderTarget.id)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        elseif menuList == "ADD_PANEL" then
+            for _, modeInfo in ipairs(PANEL_CREATION_MODES) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = modeInfo.label
+                info.notCheckable = true
+                local targetMode = modeInfo.mode
+                info.func = function()
+                    CloseDropDownMenus()
+                    local newPanelId = CooldownCompanion:CreatePanel(containerId, targetMode)
+                    if newPanelId then
+                        CS.selectedContainer = containerId
+                        CS.selectedGroup = newPanelId
+                        CS.addingToPanelId = newPanelId
+                        CS.pendingEditBoxFocus = true
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end
+    end, "MENU")
+
+    CS.groupContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, CS.groupContextMenu, "cursor", 0, 0)
+end
+
+local function ShowFolderContextMenu(db, folderId, folder)
+    if not CS.folderContextMenu then
+        CS.folderContextMenu = CreateFrame("Frame", "CDCFolderContextMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+
+    UIDropDownMenu_Initialize(CS.folderContextMenu, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "Rename"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            ShowPopupAboveConfig("CDC_RENAME_FOLDER", folder.name, { folderId = folderId })
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Add Group"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+            CooldownCompanion:MoveGroupToFolder(containerId, folderId)
+            CS.selectedContainer = containerId
+            CS.selectedGroup = nil
+            CS.selectedButton = nil
+            wipe(CS.selectedButtons)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Set Folder Icon..."
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            OpenFolderIconPicker(folderId)
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Clear Custom Icon"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                local currentFolder = db.folders[folderId]
+                if currentFolder then
+                    currentFolder.manualIcon = nil
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = folder.section == "global" and "Make Character Folder" or "Make Global Folder"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            if folder.section == "global" and FolderHasForeignSpecs and FolderHasForeignSpecs(folderId) then
+                ShowPopupAboveConfig("CDC_UNGLOBAL_FOLDER", folder.name, { folderId = folderId })
+                return
+            end
+            CooldownCompanion:ToggleFolderGlobal(folderId)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        local containers = db.groupContainers or {}
+        local anyLocked = false
+        for _, container in pairs(containers) do
+            if container.folderId == folderId and container.locked then
+                anyLocked = true
+                break
+            end
+        end
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = anyLocked and "Unlock All" or "Lock All"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            local newState = not anyLocked
+            for cid, container in pairs(containers) do
+                if container.folderId == folderId then
+                    container.locked = newState
+                    CooldownCompanion:UpdateContainerDragHandle(cid, newState)
+                    CooldownCompanion:RefreshContainerPanels(cid)
+                end
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Spec / Hero Filter"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            if CS.specExpandedFolderId == folderId then
+                CS.specExpandedFolderId = nil
+            else
+                CS.specExpandedFolderId = folderId
+                CS.specExpandedGroupId = nil
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Export Folder"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            local folderData = { name = folder.name }
+            if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
+                folderData.manualIcon = folder.manualIcon
+            end
+            if folder.specs and next(folder.specs) then
+                folderData.specs = CopyTable(folder.specs)
+            end
+            if folder.heroTalents and next(folder.heroTalents) then
+                folderData.heroTalents = CopyTable(folder.heroTalents)
+            end
+
+            local orderedCids = {}
+            for cid, container in pairs(db.groupContainers) do
+                if container.folderId == folderId then
+                    orderedCids[#orderedCids + 1] = {
+                        cid = cid,
+                        order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
+                    }
+                end
+            end
+            table.sort(orderedCids, function(a, b) return a.order < b.order end)
+
+            local exportContainers = {}
+            for _, item in ipairs(orderedCids) do
+                local container = db.groupContainers[item.cid]
+                if container then
+                    local payload = BuildContainerExportPayload(db, item.cid, container)
+                    exportContainers[#exportContainers + 1] = {
+                        container = payload.container,
+                        panels = payload.panels,
+                        _originalContainerId = payload._originalContainerId,
+                    }
+                end
+            end
+
+            local payload = { type = "folder", version = 2, folder = folderData, containers = exportContainers }
+            local exportString = EncodeExportData(payload)
+            ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "|cffff4444Delete Folder|r"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            ShowPopupAboveConfig("CDC_DELETE_FOLDER", folder.name, { folderId = folderId })
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end, "MENU")
+
+    CS.folderContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, CS.folderContextMenu, "cursor", 0, 0)
+end
+
+local function PopulateColumn1ButtonBar()
+    if not CS.col1ButtonBar then
+        return
+    end
+
+    for _, widget in ipairs(CS.col1BarWidgets) do
+        widget:Release()
+    end
+    wipe(CS.col1BarWidgets)
+
+    local barW = CS.col1ButtonBar:GetWidth() or 300
+    local thirdW = (barW - 6) / 3
+
+    local newGroupBtn = AceGUI:Create("Button")
+    newGroupBtn:SetText("New Group")
+    newGroupBtn:SetCallback("OnClick", function()
+        local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+        CS.selectedContainer = containerId
+        CS.selectedGroup = nil
+        CS.selectedButton = nil
+        wipe(CS.selectedButtons)
+        CooldownCompanion:RefreshConfigPanel()
+        if NotifyTutorialAction then
+            NotifyTutorialAction("group_created", {
+                containerId = containerId,
+                groupId = groupId,
+            })
+        end
+    end)
+    newGroupBtn.frame:SetParent(CS.col1ButtonBar)
+    newGroupBtn.frame:ClearAllPoints()
+    newGroupBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
+    newGroupBtn.frame:SetWidth(thirdW)
+    newGroupBtn.frame:SetHeight(28)
+    newGroupBtn.frame:Show()
+    if CS.tutorialAnchors then
+        CS.tutorialAnchors.new_group_button = newGroupBtn.frame
+    end
+    table.insert(CS.col1BarWidgets, newGroupBtn)
+
+    local newFolderBtn = AceGUI:Create("Button")
+    newFolderBtn:SetText("New Folder")
+    newFolderBtn:SetCallback("OnClick", function()
+        CooldownCompanion:CreateFolder(GenerateFolderName("New Folder"), "char")
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    newFolderBtn.frame:SetParent(CS.col1ButtonBar)
+    newFolderBtn.frame:ClearAllPoints()
+    newFolderBtn.frame:SetPoint("LEFT", newGroupBtn.frame, "RIGHT", 3, 0)
+    newFolderBtn.frame:SetWidth(thirdW)
+    newFolderBtn.frame:SetHeight(28)
+    newFolderBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, newFolderBtn)
+
+    local importBtn = AceGUI:Create("Button")
+    importBtn:SetText("Import")
+    importBtn:SetCallback("OnClick", function()
+        ShowPopupAboveConfig("CDC_IMPORT_GROUP")
+    end)
+    importBtn.frame:SetParent(CS.col1ButtonBar)
+    importBtn.frame:ClearAllPoints()
+    importBtn.frame:SetPoint("LEFT", newFolderBtn.frame, "RIGHT", 3, 0)
+    importBtn.frame:SetWidth(thirdW)
+    importBtn.frame:SetHeight(28)
+    importBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, importBtn)
+
+    CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, newFolderBtn.frame, importBtn.frame }
+    CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
+        if self._topRowBtns then
+            local tw = (w - 6) / 3
+            for _, frame in ipairs(self._topRowBtns) do
+                frame:SetWidth(tw)
+            end
+        end
+    end)
 end
 
 ------------------------------------------------------------------------
@@ -677,319 +1228,7 @@ local function RefreshColumn1(preserveDrag)
                 wipe(CS.selectedPanels)
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
-                if not CS.groupContextMenu then
-                    CS.groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
-                end
-                UIDropDownMenu_Initialize(CS.groupContextMenu, function(self, level, menuList)
-                    level = level or 1
-                    if level == 1 then
-                        -- Rename
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = "Rename"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            ShowPopupAboveConfig("CDC_RENAME_GROUP", container.name, { containerId = containerId })
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Toggle Global
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = container.isGlobal and "Make Character-Only" or "Make Global"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            if container.isGlobal and container.specs
-                               and ContainersHaveForeignSpecs({container}, false) then
-                                ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
-                                return
-                            end
-                            CooldownCompanion:ToggleGroupGlobal(containerId)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Move to Folder submenu
-                        local containerSection = container.isGlobal and "global" or "char"
-                        local hasFolders = false
-                        for fid, folder in pairs(db.folders) do
-                            if folder.section == containerSection then
-                                if containerSection == "char" and folder.createdBy and folder.createdBy ~= charKey then
-                                    -- skip: belongs to another character
-                                else
-                                    hasFolders = true
-                                    break
-                                end
-                            end
-                        end
-                        if hasFolders or container.folderId then
-                            info = UIDropDownMenu_CreateInfo()
-                            info.text = "Move to Folder"
-                            info.notCheckable = true
-                            info.hasArrow = true
-                            info.menuList = "MOVE_TO_FOLDER"
-                            UIDropDownMenu_AddButton(info, level)
-                        end
-
-                        -- Toggle On/Off
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = (container.enabled ~= false) and "Disable" or "Enable"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            container.enabled = not (container.enabled ~= false)
-                            CooldownCompanion:RefreshContainerPanels(containerId)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Duplicate
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = "Duplicate"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
-                            if newContainerId then
-                                CS.selectedContainer = newContainerId
-                                CS.selectedGroup = nil
-                                CooldownCompanion:RefreshConfigPanel()
-                            end
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Export
-                        info = UIDropDownMenu_CreateInfo()
-                        if next(CS.selectedGroups) then
-                            info.text = "Export Selected"
-                            info.notCheckable = true
-                            info.func = function()
-                                CloseDropDownMenus()
-                                -- Sort selected containers by order to preserve visual layout
-                                local orderedCids = {}
-                                for cid in pairs(CS.selectedGroups) do
-                                    local c = db.groupContainers[cid]
-                                    if c then
-                                        orderedCids[#orderedCids + 1] = { cid = cid, order = CooldownCompanion:GetOrderForSpec(c, CooldownCompanion._currentSpecId, cid) }
-                                    end
-                                end
-                                table.sort(orderedCids, function(a, b) return a.order < b.order end)
-                                local exportContainers = {}
-                                for _, item in ipairs(orderedCids) do
-                                    local c = db.groupContainers[item.cid]
-                                    local containerData = BuildContainerExportData(c)
-                                    local sortedPanels = CooldownCompanion:GetPanels(item.cid)
-                                    local panels = {}
-                                    for _, entry in ipairs(sortedPanels) do
-                                        local panelData = BuildGroupExportData(entry.group)
-                                        panelData._originalGroupId = entry.groupId
-                                        panels[#panels + 1] = panelData
-                                    end
-                                    exportContainers[#exportContainers + 1] = { container = containerData, panels = panels, _originalContainerId = item.cid }
-                                end
-                                local payload = { type = "containers", version = 1, containers = exportContainers }
-                                local exportString = EncodeExportData(payload)
-                                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-                            end
-                        else
-                            info.text = "Export"
-                            info.notCheckable = true
-                            info.func = function()
-                                CloseDropDownMenus()
-                                -- Export container + all panels (sorted by panel order)
-                                local sortedPanels = CooldownCompanion:GetPanels(containerId)
-                                local panels = {}
-                                for _, entry in ipairs(sortedPanels) do
-                                    local panelData = BuildGroupExportData(entry.group)
-                                    panelData._originalGroupId = entry.groupId
-                                    panels[#panels + 1] = panelData
-                                end
-                                local containerData = BuildContainerExportData(container)
-                                local payload = {
-                                    type = "container",
-                                    version = 1,
-                                    container = containerData,
-                                    panels = panels,
-                                    _originalContainerId = containerId,
-                                }
-                                local exportString = EncodeExportData(payload)
-                                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-                            end
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Lock/Unlock
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = container.locked and "Unlock" or "Lock"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            container.locked = not container.locked
-                            CooldownCompanion:UpdateContainerDragHandle(containerId, container.locked)
-                            CooldownCompanion:RefreshContainerPanels(containerId)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Auto-Anchoring eligibility toggle
-                        do
-                            local isCurrentlyEligible
-                            if container.isGlobal then
-                                isCurrentlyEligible = container.anchorEligible == true
-                            else
-                                isCurrentlyEligible = container.anchorEligible ~= false
-                            end
-                            info = UIDropDownMenu_CreateInfo()
-                            info.text = isCurrentlyEligible
-                                and "Exclude from Auto-Anchoring"
-                                or "Include in Auto-Anchoring"
-                            info.notCheckable = true
-                            info.func = function()
-                                CloseDropDownMenus()
-                                local fresh = db.groupContainers[containerId]
-                                if not fresh then return end
-                                if fresh.isGlobal then
-                                    fresh.anchorEligible = not fresh.anchorEligible or nil
-                                else
-                                    if fresh.anchorEligible ~= false then
-                                        fresh.anchorEligible = false
-                                    else
-                                        fresh.anchorEligible = nil
-                                    end
-                                end
-                                CooldownCompanion:EvaluateResourceBars()
-                                CooldownCompanion:UpdateAnchorStacking()
-                                CooldownCompanion:EvaluateCastBar()
-                                CooldownCompanion:EvaluateFrameAnchoring()
-                                CooldownCompanion:RefreshConfigPanel()
-                            end
-                            UIDropDownMenu_AddButton(info, level)
-                        end
-
-                        -- Spec Filter
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = "Spec Filter"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            if CS.specExpandedGroupId == containerId then
-                                CS.specExpandedGroupId = nil
-                            else
-                                CS.specExpandedGroupId = containerId
-                                CS.specExpandedFolderId = nil
-                            end
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Set Group Icon (only for non-foldered containers)
-                        if not container.folderId then
-                            info = UIDropDownMenu_CreateInfo()
-                            info.text = "Set Group Icon..."
-                            info.notCheckable = true
-                            info.func = function()
-                                CloseDropDownMenus()
-                                OpenContainerIconPicker(containerId)
-                            end
-                            UIDropDownMenu_AddButton(info, level)
-
-                            if IsValidIconTexture(container.manualIcon) then
-                                info = UIDropDownMenu_CreateInfo()
-                                info.text = "Clear Custom Icon"
-                                info.notCheckable = true
-                                info.func = function()
-                                    CloseDropDownMenus()
-                                    local fresh = db.groupContainers[containerId]
-                                    if fresh then
-                                        fresh.manualIcon = nil
-                                        CooldownCompanion:RefreshConfigPanel()
-                                    end
-                                end
-                                UIDropDownMenu_AddButton(info, level)
-                            end
-                        end
-
-                        -- Add Panel submenu
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = "Add Panel"
-                        info.notCheckable = true
-                        info.hasArrow = true
-                        info.menuList = "ADD_PANEL"
-                        UIDropDownMenu_AddButton(info, level)
-
-                        -- Delete
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = "|cffff4444Delete|r"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            ShowPopupAboveConfig("CDC_DELETE_GROUP", container.name, { containerId = containerId })
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-                    elseif menuList == "MOVE_TO_FOLDER" then
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = "(No Folder)"
-                        info.checked = (container.folderId == nil)
-                        info.func = function()
-                            CloseDropDownMenus()
-                            CooldownCompanion:MoveGroupToFolder(containerId, nil)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-
-                        local containerSection = container.isGlobal and "global" or "char"
-                        local folderList = {}
-                        for fid, folder in pairs(db.folders) do
-                            if folder.section == containerSection then
-                                if containerSection == "char" and folder.createdBy and folder.createdBy ~= charKey then
-                                    -- skip: belongs to another character
-                                else
-                                    table.insert(folderList, { id = fid, name = folder.name, order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid) })
-                                end
-                            end
-                        end
-                        table.sort(folderList, function(a, b) return a.order < b.order end)
-                        for _, f in ipairs(folderList) do
-                            info = UIDropDownMenu_CreateInfo()
-                            info.text = f.name
-                            info.checked = (container.folderId == f.id)
-                            info.func = function()
-                                CloseDropDownMenus()
-                                CooldownCompanion:MoveGroupToFolder(containerId, f.id)
-                                CooldownCompanion:RefreshConfigPanel()
-                            end
-                            UIDropDownMenu_AddButton(info, level)
-                        end
-                    elseif menuList == "ADD_PANEL" then
-                        local modes = {
-                            { mode = "icons", label = "Icon Panel" },
-                            { mode = "bars", label = "Bar Panel" },
-                            { mode = "text", label = "Text Panel" },
-                            { mode = "textures", label = "Texture Panel" },
-                            { mode = "trigger", label = "Trigger Panel" },
-                        }
-                        for _, m in ipairs(modes) do
-                            local info = UIDropDownMenu_CreateInfo()
-                            info.text = m.label
-                            info.notCheckable = true
-                            local targetMode = m.mode
-                            info.func = function()
-                                CloseDropDownMenus()
-                                local newPanelId = CooldownCompanion:CreatePanel(containerId, targetMode)
-                                if newPanelId then
-                                    CS.selectedContainer = containerId
-                                    CS.selectedGroup = newPanelId
-                                    CS.addingToPanelId = newPanelId
-                                    CS.pendingEditBoxFocus = true
-                                    CooldownCompanion:RefreshConfigPanel()
-                                end
-                            end
-                            UIDropDownMenu_AddButton(info, level)
-                        end
-                    end
-                end, "MENU")
-                CS.groupContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-                ToggleDropDownMenu(1, nil, CS.groupContextMenu, "cursor", 0, 0)
+                ShowContainerContextMenu(db, charKey, containerId, container)
                 return
             elseif button == "MiddleButton" then
                 container.locked = not container.locked
@@ -1177,7 +1416,7 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: generate a unique group name with the given base
-    local function GenerateGroupName(base)
+    GenerateGroupName = function(base)
         local profile = CooldownCompanion.db.profile
         local existing = {}
         -- Check container names (groups are now "panels" under containers)
@@ -1301,175 +1540,7 @@ local function RefreshColumn1(preserveDrag)
                 CooldownCompanion:Print("Folder " .. (folder.name or "Unknown") .. (newState and " locked." or " unlocked."))
                 return
             elseif button == "RightButton" then
-                if not CS.folderContextMenu then
-                    CS.folderContextMenu = CreateFrame("Frame", "CDCFolderContextMenu", UIParent, "UIDropDownMenuTemplate")
-                end
-                UIDropDownMenu_Initialize(CS.folderContextMenu, function(self, level)
-                    -- Rename
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = "Rename"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        ShowPopupAboveConfig("CDC_RENAME_FOLDER", folder.name, { folderId = folderId })
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Add Group to folder
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Add Group"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-                        CooldownCompanion:MoveGroupToFolder(containerId, folderId)
-                        CS.selectedContainer = containerId
-                        CS.selectedGroup = nil
-                        CS.selectedButton = nil
-                        wipe(CS.selectedButtons)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Manual icon override
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Set Folder Icon..."
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        OpenFolderIconPicker(folderId)
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
-                        info = UIDropDownMenu_CreateInfo()
-                        info.text = "Clear Custom Icon"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            local currentFolder = db.folders[folderId]
-                            if currentFolder then
-                                currentFolder.manualIcon = nil
-                                CooldownCompanion:RefreshConfigPanel()
-                            end
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-                    end
-
-                    -- Toggle Global/Character
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = folder.section == "global" and "Make Character Folder" or "Make Global Folder"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        if folder.section == "global"
-                           and FolderHasForeignSpecs
-                           and FolderHasForeignSpecs(folderId) then
-                            ShowPopupAboveConfig("CDC_UNGLOBAL_FOLDER", folder.name, { folderId = folderId })
-                            return
-                        end
-                        CooldownCompanion:ToggleFolderGlobal(folderId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Lock All / Unlock All (operates on containers in folder)
-                    local containers = db.groupContainers or {}
-                    local anyLocked = false
-                    for _, c in pairs(containers) do
-                        if c.folderId == folderId and c.locked then
-                            anyLocked = true
-                            break
-                        end
-                    end
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = anyLocked and "Unlock All" or "Lock All"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local newState = not anyLocked
-                        for cid, c in pairs(containers) do
-                            if c.folderId == folderId then
-                                c.locked = newState
-                                CooldownCompanion:UpdateContainerDragHandle(cid, newState)
-                                CooldownCompanion:RefreshContainerPanels(cid)
-                            end
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Spec Filter
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Spec / Hero Filter"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        if CS.specExpandedFolderId == folderId then
-                            CS.specExpandedFolderId = nil
-                        else
-                            CS.specExpandedFolderId = folderId
-                            CS.specExpandedGroupId = nil
-                        end
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Export Folder
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Export Folder"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local folderData = { name = folder.name }
-                        if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
-                            folderData.manualIcon = folder.manualIcon
-                        end
-                        if folder.specs and next(folder.specs) then
-                            folderData.specs = CopyTable(folder.specs)
-                        end
-                        if folder.heroTalents and next(folder.heroTalents) then
-                            folderData.heroTalents = CopyTable(folder.heroTalents)
-                        end
-                        -- Collect containers in order, then build export data
-                        local orderedCids = {}
-                        for cid, c in pairs(db.groupContainers) do
-                            if c.folderId == folderId then
-                                orderedCids[#orderedCids + 1] = { cid = cid, order = CooldownCompanion:GetOrderForSpec(c, CooldownCompanion._currentSpecId, cid) }
-                            end
-                        end
-                        table.sort(orderedCids, function(a, b) return a.order < b.order end)
-                        local exportContainers = {}
-                        for _, item in ipairs(orderedCids) do
-                            local c = db.groupContainers[item.cid]
-                            local containerData = BuildContainerExportData(c)
-                            local sortedPanels = CooldownCompanion:GetPanels(item.cid)
-                            local panels = {}
-                            for _, entry in ipairs(sortedPanels) do
-                                local panelData = BuildGroupExportData(entry.group)
-                                panelData._originalGroupId = entry.groupId
-                                panels[#panels + 1] = panelData
-                            end
-                            exportContainers[#exportContainers + 1] = { container = containerData, panels = panels, _originalContainerId = item.cid }
-                        end
-                        local payload = { type = "folder", version = 2, folder = folderData, containers = exportContainers }
-                        local exportString = EncodeExportData(payload)
-                        ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-
-                    -- Delete
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "|cffff4444Delete Folder|r"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        ShowPopupAboveConfig("CDC_DELETE_FOLDER", folder.name, { folderId = folderId })
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-                end, "MENU")
-                CS.folderContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-                ToggleDropDownMenu(1, nil, CS.folderContextMenu, "cursor", 0, 0)
+                ShowFolderContextMenu(db, folderId, folder)
             end
         end)
 
@@ -1810,82 +1881,7 @@ local function RefreshColumn1(preserveDrag)
 
     CS.lastCol1RenderedRows = col1RenderedRows
 
-    -- Refresh the static button bar at the bottom
-    if CS.col1ButtonBar then
-        for _, widget in ipairs(CS.col1BarWidgets) do
-            widget:Release()
-        end
-        wipe(CS.col1BarWidgets)
-
-        -- Single row: "New Group" | "New Folder" | "Import Group" (thirds)
-        local barW = CS.col1ButtonBar:GetWidth() or 300
-        local thirdW = (barW - 6) / 3
-
-        local newGroupBtn = AceGUI:Create("Button")
-        newGroupBtn:SetText("New Group")
-        newGroupBtn:SetCallback("OnClick", function()
-            local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-            CS.selectedContainer = containerId
-            CS.selectedGroup = nil
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            CooldownCompanion:RefreshConfigPanel()
-            if NotifyTutorialAction then
-                NotifyTutorialAction("group_created", {
-                    containerId = containerId,
-                    groupId = groupId,
-                })
-            end
-        end)
-        newGroupBtn.frame:SetParent(CS.col1ButtonBar)
-        newGroupBtn.frame:ClearAllPoints()
-        newGroupBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-        newGroupBtn.frame:SetWidth(thirdW)
-        newGroupBtn.frame:SetHeight(28)
-        newGroupBtn.frame:Show()
-        if CS.tutorialAnchors then
-            CS.tutorialAnchors.new_group_button = newGroupBtn.frame
-        end
-        table.insert(CS.col1BarWidgets, newGroupBtn)
-
-        local newFolderBtn = AceGUI:Create("Button")
-        newFolderBtn:SetText("New Folder")
-        newFolderBtn:SetCallback("OnClick", function()
-            local folderId = CooldownCompanion:CreateFolder(GenerateFolderName("New Folder"), "char")
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        newFolderBtn.frame:SetParent(CS.col1ButtonBar)
-        newFolderBtn.frame:ClearAllPoints()
-        newFolderBtn.frame:SetPoint("LEFT", newGroupBtn.frame, "RIGHT", 3, 0)
-        newFolderBtn.frame:SetWidth(thirdW)
-        newFolderBtn.frame:SetHeight(28)
-        newFolderBtn.frame:Show()
-        table.insert(CS.col1BarWidgets, newFolderBtn)
-
-        local importBtn = AceGUI:Create("Button")
-        importBtn:SetText("Import")
-        importBtn:SetCallback("OnClick", function()
-            ShowPopupAboveConfig("CDC_IMPORT_GROUP")
-        end)
-        importBtn.frame:SetParent(CS.col1ButtonBar)
-        importBtn.frame:ClearAllPoints()
-        importBtn.frame:SetPoint("LEFT", newFolderBtn.frame, "RIGHT", 3, 0)
-        importBtn.frame:SetWidth(thirdW)
-        importBtn.frame:SetHeight(28)
-        importBtn.frame:Show()
-        table.insert(CS.col1BarWidgets, importBtn)
-
-        -- Dynamic equal-width resize
-        CS.col1ButtonBar._topRowBtns = {newGroupBtn.frame, newFolderBtn.frame, importBtn.frame}
-        CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
-            if self._topRowBtns then
-                local tw = (w - 6) / 3
-                for _, f in ipairs(self._topRowBtns) do
-                    f:SetWidth(tw)
-                end
-            end
-        end)
-    end
+    PopulateColumn1ButtonBar()
 end
 
 ------------------------------------------------------------------------

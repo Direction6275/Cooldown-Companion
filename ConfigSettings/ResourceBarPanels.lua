@@ -1388,6 +1388,29 @@ local function EnsureCustomAuraIndependentConfig(cab, settings)
     cab.independentSize.height = ClampCustomAuraIndependentDimension(cab.independentSize.height, settings and (settings.barHeight or settings.barWidth or 12) or 12)
 end
 
+local function ApplyCustomAuraBarPanelChanges(opts)
+    CooldownCompanion:ApplyResourceBars()
+    if opts and opts.updateAnchors then
+        CooldownCompanion:UpdateAnchorStacking()
+    end
+    if opts and opts.refreshConfig then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    if opts and opts.refreshLayoutPreview then
+        RefreshLayoutOrderPreview()
+    end
+end
+
+local function SetCustomAuraBarTrackedSpell(customBars, capturedIdx, spellId)
+    customBars[capturedIdx].spellID = spellId
+    if spellId then
+        customBars[capturedIdx].label = C_Spell.GetSpellName(spellId) or ""
+    else
+        customBars[capturedIdx].label = ""
+    end
+    RefreshCustomAuraBarAuraUnitForSpell(customBars[capturedIdx], spellId)
+end
+
 local function BuildCustomAuraBarAnchorSettings(container, customBars, settings, capturedIdx)
     local cab = customBars[capturedIdx]
     if not cab then return end
@@ -1624,9 +1647,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
         if val and not customBars[capturedIdx].trackingMode then
             customBars[capturedIdx].trackingMode = "active"
         end
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
+        ApplyCustomAuraBarPanelChanges({
+            updateAnchors = true,
+            refreshConfig = true,
+        })
     end)
     container:AddChild(enableCab)
 
@@ -1660,9 +1684,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 CS.customAuraBarSubTabs[capturedIdx] = nil
             end
 
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-            CooldownCompanion:RefreshConfigPanel()
+            ApplyCustomAuraBarPanelChanges({
+                updateAnchors = true,
+                refreshConfig = true,
+            })
         end)
         container:AddChild(independentCb)
     end
@@ -1764,12 +1789,11 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             local function onAuraBarSelect(entry)
                 CS.HideAutocomplete()
                 local bars = CooldownCompanion:GetSpecCustomAuraBars()
-                bars[capturedIdx].spellID = entry.id
-                bars[capturedIdx].label = C_Spell.GetSpellName(entry.id) or ""
-                RefreshCustomAuraBarAuraUnitForSpell(bars[capturedIdx], entry.id)
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
+                SetCustomAuraBarTrackedSpell(bars, capturedIdx, entry.id)
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshConfig = true,
+                })
             end
 
             spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
@@ -1778,16 +1802,11 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 text = text:gsub("%s", "")
                 local id = tonumber(text)
                 local bars = CooldownCompanion:GetSpecCustomAuraBars()
-                bars[capturedIdx].spellID = id
-                if id then
-                    bars[capturedIdx].label = C_Spell.GetSpellName(id) or ""
-                else
-                    bars[capturedIdx].label = ""
-                end
-                RefreshCustomAuraBarAuraUnitForSpell(bars[capturedIdx], id)
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
+                SetCustomAuraBarTrackedSpell(bars, capturedIdx, id)
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshConfig = true,
+                })
             end)
             spellEdit:SetCallback("OnTextChanged", function(widget, event, text)
                 if text and #text >= 1 then
@@ -1818,9 +1837,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     return
                 end
                 EnsureCustomAuraBarAuraUnit(customBars[capturedIdx], customBars[capturedIdx].spellID, val, true)
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshConfig = true,
+                })
             end)
             container:AddChild(auraUnitDrop)
             CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT",
@@ -1845,9 +1865,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             trackDrop:SetFullWidth(true)
             trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 customBars[capturedIdx].trackingMode = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshConfig = true,
+                })
             end)
             container:AddChild(trackDrop)
 
@@ -1864,9 +1885,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     customBars[capturedIdx].maxStacks = val
                 end
                 widget:SetText(tostring(customBars[capturedIdx].maxStacks or 1))
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                RefreshLayoutOrderPreview()
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshLayoutPreview = true,
+                })
             end)
             container:AddChild(maxEdit)
             end
@@ -1884,9 +1906,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             modeDrop:SetFullWidth(true)
             modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 customBars[capturedIdx].displayMode = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshConfig = true,
+                })
             end)
             container:AddChild(modeDrop)
             end

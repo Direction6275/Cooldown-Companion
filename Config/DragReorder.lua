@@ -3682,6 +3682,149 @@ local function CancelDrag()
     end
 end
 
+local function FinishLayoutSlotDrag(state)
+    local cursorX, cursorY = GetRawCursorCoordinates()
+    if state.layoutDrag and state.layoutDrag.resolveDropTarget then
+        state.dropTarget = state.layoutDrag.resolveDropTarget(cursorX, cursorY, state)
+    end
+    if state.layoutDrag and state.layoutDrag.applyDrop then
+        state.layoutDrag.applyDrop(state)
+    end
+    CancelDrag()
+    ResetDragIndicatorStyle()
+end
+
+local function FinishLegacyGroupDrag(state)
+    PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:EvaluateCastBar()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function FinishCol1FolderAwareDrag(state)
+    local dropTarget = state.dropTarget
+    local changed = true
+    if dropTarget then
+        if state.kind == "group" or state.kind == "folder-group" then
+            changed = not IsCol1GroupDropNoOp(state)
+        elseif state.kind == "folder" then
+            changed = not IsCol1FolderDropNoOp(state)
+        end
+    end
+
+    if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
+        local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+        local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
+        if targetSection and targetSection ~= state.sourceSection
+           and state.sourceSection == "global"
+           and sourceContainer and sourceContainer.specs
+           and GroupsHaveForeignSpecs({ sourceContainer }, false) then
+            ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
+                dragState = state,
+            })
+            return
+        end
+    end
+
+    if dropTarget and state.kind == "multi-group" and state.sourceGroupIds then
+        local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+        if targetSection == "char" then
+            local db = CooldownCompanion.db.profile
+            local groupList = {}
+            for cid in pairs(state.sourceGroupIds) do
+                if db.groupContainers[cid] then
+                    groupList[#groupList + 1] = db.groupContainers[cid]
+                end
+            end
+            if GroupsHaveForeignSpecs(groupList, true) then
+                local ids = {}
+                for gid in pairs(state.sourceGroupIds) do
+                    ids[#ids + 1] = gid
+                end
+                ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
+                    groupIds = ids,
+                    callback = function()
+                        ApplyCol1Drop(state)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+                return
+            end
+        end
+    end
+
+    if dropTarget and state.kind == "folder" then
+        local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+        if targetSection and targetSection ~= state.sourceSection
+           and state.sourceSection == "global"
+           and FolderHasForeignSpecs
+           and FolderHasForeignSpecs(state.sourceFolderId) then
+            ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_FOLDER", nil, {
+                dragState = state,
+            })
+            return
+        end
+    end
+
+    if changed then
+        ApplyCol1Drop(state)
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function FinishPanelDrag(state)
+    local dropTarget = state.dropTarget
+    local changed = dropTarget and not IsPanelReorderNoOp(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
+    if changed then
+        wipe(CS.selectedPanels)
+        CS.selectedGroup = state.sourcePanelId
+        CS.selectedButton = nil
+        wipe(CS.selectedButtons)
+        PerformPanelReorder(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
+        for _, entry in ipairs(state.panelDropTargets) do
+            CooldownCompanion:RefreshGroupFrame(entry.panelId)
+        end
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function FinishButtonDrag(state)
+    if state.dropTarget then
+        local dt = state.dropTarget
+        local resolvedIndex = dt.targetIndex
+        if not resolvedIndex then
+            local tg = CooldownCompanion.db.profile.groups[dt.targetPanelId]
+            resolvedIndex = tg and (#tg.buttons + 1) or 1
+        end
+        if dt.targetPanelId == state.groupId then
+            PerformButtonReorder(state.groupId, state.sourceIndex, resolvedIndex)
+            CooldownCompanion:RefreshGroupFrame(state.groupId)
+        else
+            local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
+            local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
+            if buttonData and ButtonHasOverrides(buttonData) then
+                ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
+                    sourcePanelId = state.groupId,
+                    sourceIndex = state.sourceIndex,
+                    targetPanelId = dt.targetPanelId,
+                    targetIndex = resolvedIndex,
+                })
+                return
+            end
+            PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
+            CooldownCompanion:RefreshGroupFrame(state.groupId)
+            CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
+        end
+    else
+        PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
+        CooldownCompanion:RefreshGroupFrame(state.groupId)
+    end
+    CS.selectedButton = nil
+    wipe(CS.selectedButtons)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 local function FinishDrag()
     if not CS.dragState or CS.dragState.phase ~= "active" then
         CancelDrag()
@@ -3689,148 +3832,20 @@ local function FinishDrag()
     end
     local state = CS.dragState
     if state.kind == "layout-slot" then
-        local cursorX, cursorY = GetRawCursorCoordinates()
-        if state.layoutDrag and state.layoutDrag.resolveDropTarget then
-            state.dropTarget = state.layoutDrag.resolveDropTarget(cursorX, cursorY, state)
-        end
-        if state.layoutDrag and state.layoutDrag.applyDrop then
-            state.layoutDrag.applyDrop(state)
-        end
-        CancelDrag()
-        ResetDragIndicatorStyle()
+        FinishLayoutSlotDrag(state)
         return
     end
     CS.showPhantomSections = false  -- clear before CancelDrag to avoid redundant deferred refresh
     CancelDrag()
     ResetDragIndicatorStyle()
     if state.kind == "group" and state.groupIds then
-        -- Legacy flat reorder (column 2 button drags still use this path)
-        PerformGroupReorder(state.sourceIndex, state.dropIndex or state.sourceIndex, state.groupIds)
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:EvaluateCastBar()
-        CooldownCompanion:RefreshConfigPanel()
+        FinishLegacyGroupDrag(state)
     elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" or state.kind == "multi-group" then
-        -- Column 1 folder-aware drop
-        -- Check for cross-section global→char with foreign specs
-        local dropTarget = state.dropTarget
-        local changed = true
-        if dropTarget then
-            if state.kind == "group" or state.kind == "folder-group" then
-                changed = not IsCol1GroupDropNoOp(state)
-            elseif state.kind == "folder" then
-                changed = not IsCol1FolderDropNoOp(state)
-            end
-        end
-        if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
-            local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
-            local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
-            if targetSection and targetSection ~= state.sourceSection
-               and state.sourceSection == "global"
-               and sourceContainer and sourceContainer.specs
-               and GroupsHaveForeignSpecs({sourceContainer}, false) then
-                ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
-                    dragState = state,
-                })
-                return
-            end
-        end
-        -- Check for cross-section global→char with foreign specs (multi-group)
-        if dropTarget and state.kind == "multi-group" and state.sourceGroupIds then
-            local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
-            if targetSection == "char" then
-                local db = CooldownCompanion.db.profile
-                local groupList = {}
-                for cid in pairs(state.sourceGroupIds) do
-                    if db.groupContainers[cid] then groupList[#groupList + 1] = db.groupContainers[cid] end
-                end
-                if GroupsHaveForeignSpecs(groupList, true) then
-                    ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
-                        groupIds = (function()
-                            local ids = {}
-                            for gid in pairs(state.sourceGroupIds) do table.insert(ids, gid) end
-                            return ids
-                        end)(),
-                        callback = function()
-                            ApplyCol1Drop(state)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end,
-                    })
-                    return
-                end
-            end
-        end
-        -- Check for cross-section global→char with foreign specs in folder children
-        if dropTarget and state.kind == "folder" then
-            local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
-            if targetSection and targetSection ~= state.sourceSection
-               and state.sourceSection == "global" then
-                if FolderHasForeignSpecs and FolderHasForeignSpecs(state.sourceFolderId) then
-                    ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_FOLDER", nil, {
-                        dragState = state,
-                    })
-                    return
-                end
-            end
-        end
-        if changed then
-            ApplyCol1Drop(state)
-        end
-        CooldownCompanion:RefreshConfigPanel()
+        FinishCol1FolderAwareDrag(state)
     elseif state.kind == "panel" then
-        local dropTarget = state.dropTarget
-        local changed = dropTarget and not IsPanelReorderNoOp(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
-        if changed then
-            wipe(CS.selectedPanels)
-            CS.selectedGroup = state.sourcePanelId
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            PerformPanelReorder(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
-            -- Refresh all affected panel frames
-            for _, entry in ipairs(state.panelDropTargets) do
-                CooldownCompanion:RefreshGroupFrame(entry.panelId)
-            end
-        end
-        CooldownCompanion:RefreshConfigPanel()
+        FinishPanelDrag(state)
     elseif state.kind == "button" then
-        if state.dropTarget then
-            -- Cross-panel-aware path (multi-panel containers)
-            local dt = state.dropTarget
-            -- Resolve append targets
-            local resolvedIndex = dt.targetIndex
-            if not resolvedIndex then
-                local tg = CooldownCompanion.db.profile.groups[dt.targetPanelId]
-                resolvedIndex = tg and (#tg.buttons + 1) or 1
-            end
-            if dt.targetPanelId == state.groupId then
-                -- Same panel: existing intra-panel reorder
-                PerformButtonReorder(state.groupId, state.sourceIndex, resolvedIndex)
-                CooldownCompanion:RefreshGroupFrame(state.groupId)
-            else
-                -- Cross-panel move
-                local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
-                local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
-                if buttonData and ButtonHasOverrides(buttonData) then
-                    ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
-                        sourcePanelId = state.groupId,
-                        sourceIndex = state.sourceIndex,
-                        targetPanelId = dt.targetPanelId,
-                        targetIndex = resolvedIndex,
-                    })
-                    return  -- popup handles move + refresh
-                end
-                PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
-                CooldownCompanion:RefreshGroupFrame(state.groupId)
-                CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
-            end
-        else
-            -- Legacy single-panel path (no col2RenderedRows)
-            PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
-            CooldownCompanion:RefreshGroupFrame(state.groupId)
-        end
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
-        CooldownCompanion:RefreshConfigPanel()
+        FinishButtonDrag(state)
     end
 end
 

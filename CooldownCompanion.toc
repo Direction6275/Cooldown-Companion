@@ -96,6 +96,7 @@ Config\Column1.lua
 Config\Column2.lua
 Config\Column3.lua
 Config\Column4.lua
+Config\PanelChangelogOverlay.lua
 Config\Panel.lua
 ConfigSettings\Helpers.lua
 ConfigSettings\SectionBuilders.lua
@@ -105,6 +106,8 @@ ConfigSettings\ResourceBarLayoutOrderPreview.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\AuraTexturePicker.lua
+ConfigSettings\ButtonSettingsMultiSelect.lua
+ConfigSettings\ButtonSettingsOverrides.lua
 ConfigSettings\ButtonSettings.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua

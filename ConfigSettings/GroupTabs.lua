@@ -1591,7 +1591,14 @@ local function GetTriggerPanelEffectOrderForDisplayType(group)
     return order
 end
 
-local function BuildEffectsTab(container)
+local function UpdateSelectedGroupStyle(refreshConfig)
+    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    if refreshConfig then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function ClearEffectsTabWidgets()
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
         btn:Hide()
@@ -1604,102 +1611,94 @@ local function BuildEffectsTab(container)
         elem:SetParent(nil)
     end
     wipe(appearanceTabElements)
+end
 
-    if not CS.selectedGroup then return end
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group then return end
-    local style = group.style
-
+local function ResetEffectsTabPreviews()
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
         CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
     end
+end
 
-    if group.displayMode == "trigger" then
-        local effects = GetTriggerPanelEffectStore(group)
-        if not effects then
-            return
-        end
-
-        local anyEnabled = false
-        local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
-        for _, effectKey in ipairs(effectOrder) do
-            BuildTriggerPanelEffectSection(container, effects, effectKey)
-            if effects[effectKey] and effects[effectKey].enabled then
-                anyEnabled = true
-            end
-        end
-
-        local previewBtn = AceGUI:Create("Button")
-        previewBtn:SetText("Preview Effects (3s)")
-        previewBtn:SetFullWidth(true)
-        previewBtn:SetDisabled(not anyEnabled)
-        previewBtn:SetCallback("OnClick", function()
-            CooldownCompanion:PlayTriggerPanelEffectsPreview(CS.selectedGroup, 3)
-        end)
-        container:AddChild(previewBtn)
+local function BuildTriggerEffectsTab(container, group)
+    local effects = GetTriggerPanelEffectStore(group)
+    if not effects then
         return
     end
 
-    if group.displayMode == "textures" then
-        local indicators = GetTextureIndicatorStore(group)
-        if not indicators then
-            return
+    local anyEnabled = false
+    local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
+    for _, effectKey in ipairs(effectOrder) do
+        BuildTriggerPanelEffectSection(container, effects, effectKey)
+        if effects[effectKey] and effects[effectKey].enabled then
+            anyEnabled = true
         end
+    end
 
-        for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
-            BuildTextureIndicatorSection(container, group, indicators, sectionKey)
-        end
+    local previewBtn = AceGUI:Create("Button")
+    previewBtn:SetText("Preview Effects (3s)")
+    previewBtn:SetFullWidth(true)
+    previewBtn:SetDisabled(not anyEnabled)
+    previewBtn:SetCallback("OnClick", function()
+        CooldownCompanion:PlayTriggerPanelEffectsPreview(CS.selectedGroup, 3)
+    end)
+    container:AddChild(previewBtn)
+end
+
+local function BuildTextureEffectsTab(container, group)
+    local indicators = GetTextureIndicatorStore(group)
+    if not indicators then
         return
     end
 
-    -- Branch for bar mode
-    if group.displayMode == "bars" then
-        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-        BuildBarEffectsTab(container, group, style)
-        return
+    for _, sectionKey in ipairs(CooldownCompanion:GetTextureIndicatorSectionOrder()) do
+        BuildTextureIndicatorSection(container, group, indicators, sectionKey)
     end
+end
 
-    -- ================================================================
-    -- Proc Glow enable toggle
-    -- ================================================================
+local function BuildBarModeEffects(container, group, style)
+    CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+    BuildBarEffectsTab(container, group, style)
+end
+
+local function BuildProcGlowSection(container, group, style)
     local procEnableCb = AceGUI:Create("CheckBox")
     procEnableCb:SetLabel("Show Proc Glow")
     procEnableCb:SetValue(style.procGlowStyle ~= "none")
     procEnableCb:SetFullWidth(true)
     procEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.procGlowStyle = val and "glow" or "none"
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+        UpdateSelectedGroupStyle(true)
     end)
     container:AddChild(procEnableCb)
 
     local procAdvExpanded, procAdvBtn = AddAdvancedToggle(procEnableCb, "procGlow", tabInfoButtons, style.procGlowStyle ~= "none")
-    -- Skip promote for aura-tracked buttons (Show Active Aura Glow covers this)
     local procBtnData = CS.selectedButton and group.buttons[CS.selectedButton]
     if not (procBtnData and procBtnData.isPassive) then
         CreateCheckboxPromoteButton(procEnableCb, procAdvBtn, "procGlow", group, style)
     end
 
-    if procAdvExpanded and style.procGlowStyle ~= "none" then
+    if not (procAdvExpanded and style.procGlowStyle ~= "none") then
+        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+        return
+    end
+
     local procCombatCb = AceGUI:Create("CheckBox")
     procCombatCb:SetLabel("Show Only In Combat")
     procCombatCb:SetValue(style.procGlowCombatOnly or false)
     procCombatCb:SetFullWidth(true)
     procCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.procGlowCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
     end)
     container:AddChild(procCombatCb)
     ApplyCheckboxIndent(procCombatCb, 20)
 
-    BuildProcGlowControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    BuildProcGlowControls(container, style, UpdateSelectedGroupStyle)
 
     local procPreviewBtn = AceGUI:Create("Button")
     procPreviewBtn:SetText("Preview Proc Glow (3s)")
@@ -1708,35 +1707,34 @@ local function BuildEffectsTab(container)
         CooldownCompanion:PlayGroupProcGlowPreview(CS.selectedGroup, 3)
     end)
     container:AddChild(procPreviewBtn)
-    else
-    CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-    end -- procAdvExpanded
+end
 
-    -- ================================================================
-    -- Show Aura Glow enable toggle
-    -- ================================================================
+local function BuildAuraGlowSection(container, group, style)
     local auraEnableCb = AceGUI:Create("CheckBox")
     auraEnableCb:SetLabel("Show Aura Glow")
     auraEnableCb:SetValue(style.auraGlowStyle ~= "none")
     auraEnableCb:SetFullWidth(true)
     auraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.auraGlowStyle = val and "pixel" or "none"
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+        UpdateSelectedGroupStyle(true)
     end)
     container:AddChild(auraEnableCb)
 
     local auraAdvExpanded, auraAdvBtn = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, style.auraGlowStyle ~= "none")
     CreateCheckboxPromoteButton(auraEnableCb, auraAdvBtn, "auraIndicator", group, style)
 
-    if auraAdvExpanded and style.auraGlowStyle ~= "none" then
+    if not (auraAdvExpanded and style.auraGlowStyle ~= "none") then
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+        return
+    end
+
     local auraCombatCb = AceGUI:Create("CheckBox")
     auraCombatCb:SetLabel("Show Only In Combat")
     auraCombatCb:SetValue(style.auraGlowCombatOnly or false)
     auraCombatCb:SetFullWidth(true)
     auraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.auraGlowCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
     end)
     container:AddChild(auraCombatCb)
     ApplyCheckboxIndent(auraCombatCb, 20)
@@ -1747,14 +1745,12 @@ local function BuildEffectsTab(container)
     auraInvertCb:SetFullWidth(true)
     auraInvertCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.auraGlowInvert = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
     end)
     container:AddChild(auraInvertCb)
     ApplyCheckboxIndent(auraInvertCb, 20)
 
-    BuildAuraIndicatorControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    BuildAuraIndicatorControls(container, style, UpdateSelectedGroupStyle)
 
     local auraPreviewBtn = AceGUI:Create("Button")
     auraPreviewBtn:SetText("Preview Aura Glow (3s)")
@@ -1763,42 +1759,39 @@ local function BuildEffectsTab(container)
         CooldownCompanion:PlayGroupAuraGlowPreview(CS.selectedGroup, 3)
     end)
     container:AddChild(auraPreviewBtn)
-    else
-    CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-    end -- auraAdvExpanded
+end
 
-    -- ================================================================
-    -- Pandemic Glow
-    -- ================================================================
+local function BuildPandemicGlowSection(container, group, style)
     local pandemicGlowCb = AceGUI:Create("CheckBox")
     pandemicGlowCb:SetLabel("Show Pandemic Glow")
     pandemicGlowCb:SetValue(style.showPandemicGlow ~= false)
     pandemicGlowCb:SetFullWidth(true)
     pandemicGlowCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showPandemicGlow = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+        UpdateSelectedGroupStyle(true)
     end)
     container:AddChild(pandemicGlowCb)
 
     local pandemicAdvExpanded, pandemicAdvBtn = AddAdvancedToggle(pandemicGlowCb, "pandemicGlow", tabInfoButtons, style.showPandemicGlow ~= false)
     CreateCheckboxPromoteButton(pandemicGlowCb, pandemicAdvBtn, "pandemicGlow", group, style)
 
-    if pandemicAdvExpanded and style.showPandemicGlow ~= false then
+    if not (pandemicAdvExpanded and style.showPandemicGlow ~= false) then
+        CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
+        return
+    end
+
     local pandemicCombatCb = AceGUI:Create("CheckBox")
     pandemicCombatCb:SetLabel("Show Only In Combat")
     pandemicCombatCb:SetValue(style.pandemicGlowCombatOnly or false)
     pandemicCombatCb:SetFullWidth(true)
     pandemicCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.pandemicGlowCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
     end)
     container:AddChild(pandemicCombatCb)
     ApplyCheckboxIndent(pandemicCombatCb, 20)
 
-    BuildPandemicGlowControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    BuildPandemicGlowControls(container, style, UpdateSelectedGroupStyle)
 
     local pandemicPreviewBtn = AceGUI:Create("Button")
     pandemicPreviewBtn:SetText("Preview Pandemic Glow (3s)")
@@ -1807,21 +1800,16 @@ local function BuildEffectsTab(container)
         CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
     end)
     container:AddChild(pandemicPreviewBtn)
-    else
-    CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
-    end -- pandemicAdvExpanded
+end
 
-    -- ================================================================
-    -- Ready Glow (glow while off cooldown)
-    -- ================================================================
+local function BuildReadyGlowSection(container, group, style)
     local readyEnableCb = AceGUI:Create("CheckBox")
     readyEnableCb:SetLabel("Show Ready Glow")
     readyEnableCb:SetValue(style.readyGlowStyle and style.readyGlowStyle ~= "none")
     readyEnableCb:SetFullWidth(true)
     readyEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowStyle = val and "solid" or "none"
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+        UpdateSelectedGroupStyle(true)
     end)
     container:AddChild(readyEnableCb)
 
@@ -1832,14 +1820,18 @@ local function BuildEffectsTab(container)
         {"Adds a glow to spells/items that are not on cooldown.", 1, 1, 1, true},
     }, tabInfoButtons)
 
-    if readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none" then
+    if not (readyAdvExpanded and style.readyGlowStyle and style.readyGlowStyle ~= "none") then
+        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+        return
+    end
+
     local readyCombatCb = AceGUI:Create("CheckBox")
     readyCombatCb:SetLabel("Show Only In Combat")
     readyCombatCb:SetValue(style.readyGlowCombatOnly or false)
     readyCombatCb:SetFullWidth(true)
     readyCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
     end)
     container:AddChild(readyCombatCb)
     ApplyCheckboxIndent(readyCombatCb, 20)
@@ -1850,7 +1842,7 @@ local function BuildEffectsTab(container)
     readyChargesCb:SetFullWidth(true)
     readyChargesCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowOnlyAtMaxCharges = val == true
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
         if (style.readyGlowDuration or 0) > 0 then
             if val then
                 PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
@@ -1873,7 +1865,7 @@ local function BuildEffectsTab(container)
     readyDurCb:SetFullWidth(true)
     readyDurCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowDuration = val and 3 or 0
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
         if val then
             if style.readyGlowOnlyAtMaxCharges then
                 PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup)
@@ -1895,14 +1887,12 @@ local function BuildEffectsTab(container)
         readyDurSlider:SetFullWidth(true)
         readyDurSlider:SetCallback("OnValueChanged", function(widget, event, val)
             style.readyGlowDuration = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            UpdateSelectedGroupStyle()
         end)
         container:AddChild(readyDurSlider)
     end
 
-    BuildReadyGlowControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    BuildReadyGlowControls(container, style, UpdateSelectedGroupStyle)
 
     local readyPreviewBtn = AceGUI:Create("Button")
     readyPreviewBtn:SetText("Preview Ready Glow Style (3s)")
@@ -1911,21 +1901,16 @@ local function BuildEffectsTab(container)
         CooldownCompanion:PlayGroupReadyGlowPreview(CS.selectedGroup, 3)
     end)
     container:AddChild(readyPreviewBtn)
-    else
-    CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-    end -- readyAdvExpanded
+end
 
-    -- ================================================================
-    -- Key Press Highlight (glow while keybind is held)
-    -- ================================================================
+local function BuildKeyPressHighlightSection(container, group, style)
     local kphEnableCb = AceGUI:Create("CheckBox")
     kphEnableCb:SetLabel("Show Key Press Highlight")
     kphEnableCb:SetValue(style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none")
     kphEnableCb:SetFullWidth(true)
     kphEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.keyPressHighlightStyle = val and "solid" or "none"
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+        UpdateSelectedGroupStyle(true)
     end)
     container:AddChild(kphEnableCb)
 
@@ -1936,21 +1921,23 @@ local function BuildEffectsTab(container)
         {"Shows a glow overlay on buttons while their action bar keybind is physically held down.", 1, 1, 1, true},
     }, tabInfoButtons)
 
-    if kphAdvExpanded and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none" then
+    if not (kphAdvExpanded and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") then
+        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+        return
+    end
+
     local kphCombatCb = AceGUI:Create("CheckBox")
     kphCombatCb:SetLabel("Show Only In Combat")
     kphCombatCb:SetValue(style.keyPressHighlightCombatOnly or false)
     kphCombatCb:SetFullWidth(true)
     kphCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.keyPressHighlightCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        UpdateSelectedGroupStyle()
     end)
     container:AddChild(kphCombatCb)
     ApplyCheckboxIndent(kphCombatCb, 20)
 
-    BuildKeyPressHighlightControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    BuildKeyPressHighlightControls(container, style, UpdateSelectedGroupStyle)
 
     local kphPreviewBtn = AceGUI:Create("Button")
     kphPreviewBtn:SetText("Preview Key Press Highlight (3s)")
@@ -1959,9 +1946,39 @@ local function BuildEffectsTab(container)
         CooldownCompanion:PlayGroupKeyPressHighlightPreview(CS.selectedGroup, 3)
     end)
     container:AddChild(kphPreviewBtn)
-    else
-    CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-    end -- kphAdvExpanded
+end
+
+local function BuildEffectsTab(container)
+    ClearEffectsTabWidgets()
+
+    if not CS.selectedGroup then return end
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+    local style = group.style
+
+    ResetEffectsTabPreviews()
+
+    if group.displayMode == "trigger" then
+        BuildTriggerEffectsTab(container, group)
+        return
+    end
+
+    if group.displayMode == "textures" then
+        BuildTextureEffectsTab(container, group)
+        return
+    end
+
+    if group.displayMode == "bars" then
+        BuildBarModeEffects(container, group, style)
+        return
+    end
+
+    BuildProcGlowSection(container, group, style)
+    BuildAuraGlowSection(container, group, style)
+
+    BuildPandemicGlowSection(container, group, style)
+    BuildReadyGlowSection(container, group, style)
+    BuildKeyPressHighlightSection(container, group, style)
 
     -- ================================================================
     -- Desaturate on Cooldown
