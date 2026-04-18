@@ -3707,6 +3707,7 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         end
     end
 
+    local freezeGeometryWhileUnlocked = group.locked == false
     local bounceAmplitude = math_max(6, math_min(DEFAULT_TEXTURE_BOUNCE_PIXELS, (host._activeTextureGeometry and host._activeTextureGeometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
 
     SetTextureIndicatorAnimation(
@@ -3718,13 +3719,13 @@ local function ApplyTextureIndicatorEffects(host, button, group)
     SetTextureIndicatorAnimation(
         host,
         TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
-        effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil,
+        (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil,
         effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND].speed or nil
     )
     SetTextureIndicatorAnimation(
         host,
         TEXTURE_INDICATOR_EFFECT_BOUNCE,
-        effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil,
+        (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil,
         effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE].speed or nil,
         bounceAmplitude
     )
@@ -3750,6 +3751,7 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
 
     SetTextureIndicatorBaseVisuals(host)
 
+    local freezeGeometryWhileUnlocked = group.locked == false
     local bounceAmplitude = math_max(
         6,
         math_min(
@@ -3757,7 +3759,7 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
             ((host:GetHeight() and host:GetHeight() > 0) and host:GetHeight() or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12
         )
     )
-    local allowShrinkExpand = host._activeDisplayType ~= "text"
+    local allowShrinkExpand = host._activeDisplayType ~= "text" and not freezeGeometryWhileUnlocked
 
     SetTextureIndicatorAnimation(
         host,
@@ -3774,7 +3776,7 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
     SetTextureIndicatorAnimation(
         host,
         TEXTURE_INDICATOR_EFFECT_BOUNCE,
-        effects.bounce and effects.bounce.enabled == true,
+        (not freezeGeometryWhileUnlocked) and effects.bounce and effects.bounce.enabled == true,
         effects.bounce and effects.bounce.speed or nil,
         bounceAmplitude
     )
@@ -3990,8 +3992,8 @@ local function EnsureAuraTextureDragHandle(host)
 
     local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     coordLabel:SetHeight(15)
-    coordLabel:SetPoint("TOPLEFT", dragHandle, "BOTTOMLEFT", 0, -2)
-    coordLabel:SetPoint("TOPRIGHT", dragHandle, "BOTTOMRIGHT", 0, -2)
+    coordLabel:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, -2)
+    coordLabel:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -2)
     coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     ST.CreatePixelBorders(coordLabel)
