@@ -728,6 +728,33 @@ local TEXTURE_INDICATOR_DEFAULTS = {
     },
 }
 
+CooldownCompanion.TRIGGER_PANEL_EFFECT_ORDER = {
+    TEXTURE_INDICATOR_EFFECT_PULSE,
+    TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT,
+    TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
+    TEXTURE_INDICATOR_EFFECT_BOUNCE,
+}
+
+CooldownCompanion.TRIGGER_PANEL_EFFECT_DEFAULTS = {
+    pulse = {
+        enabled = false,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+    },
+    colorShift = {
+        enabled = false,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+        color = { 1, 1, 1, 1 },
+    },
+    shrinkExpand = {
+        enabled = false,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+    },
+    bounce = {
+        enabled = false,
+        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
+    },
+}
+
 local TRIGGER_CONDITION_LABELS = {
     cooldownActive = "Cooldown",
     auraActive = "Aura",
@@ -861,6 +888,46 @@ local function NormalizeTextureIndicatorStore(styleTable)
     local store = styleTable.textureIndicators
     for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
         store[sectionKey] = NormalizeTextureIndicatorSection(sectionKey, store[sectionKey])
+    end
+
+    return store
+end
+
+function CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, effectData)
+    local defaults = CooldownCompanion.TRIGGER_PANEL_EFFECT_DEFAULTS[effectKey]
+    if not defaults then
+        return nil
+    end
+
+    effectData = type(effectData) == "table" and effectData or {}
+    effectData.enabled = effectData.enabled == true
+    effectData.speed = Clamp(
+        tonumber(effectData.speed) or defaults.speed or DEFAULT_TEXTURE_INDICATOR_SPEED,
+        MIN_TEXTURE_INDICATOR_SPEED,
+        MAX_TEXTURE_INDICATOR_SPEED
+    )
+
+    if defaults.color ~= nil then
+        effectData.color = CopyColor(effectData.color) or CopyColor(defaults.color) or { 1, 1, 1, 1 }
+    else
+        effectData.color = nil
+    end
+
+    return effectData
+end
+
+function CooldownCompanion.NormalizeTriggerPanelEffectStore(triggerSettings)
+    if type(triggerSettings) ~= "table" then
+        return nil
+    end
+
+    if type(triggerSettings.effects) ~= "table" then
+        triggerSettings.effects = {}
+    end
+
+    local store = triggerSettings.effects
+    for _, effectKey in ipairs(CooldownCompanion.TRIGGER_PANEL_EFFECT_ORDER) do
+        store[effectKey] = CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, store[effectKey])
     end
 
     return store
@@ -1564,6 +1631,26 @@ function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId, createIfMiss
     end
 
     return NormalizeAuraTextureSettings(group.triggerSettings.signal)
+end
+
+function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId, createIfMissing)
+    local group = ResolveGroup(groupOrId)
+    if type(group) ~= "table" then
+        return nil
+    end
+
+    if type(group.triggerSettings) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        group.triggerSettings = {}
+    end
+
+    if type(group.triggerSettings.effects) ~= "table" and not createIfMissing then
+        return nil
+    end
+
+    return CooldownCompanion.NormalizeTriggerPanelEffectStore(group.triggerSettings)
 end
 
 function CooldownCompanion.NormalizeTriggerDisplayType(displayType)
@@ -2915,28 +3002,47 @@ local function SetTextureIndicatorBaseVisuals(host)
         return
     end
 
-    local settings = host._activeTextureSettings
-    local geometry = host._activeTextureGeometry
-    if not settings or not geometry then
+    local displayType = host._activeDisplayType
+    if displayType == "texture" then
+        local settings = host._activeTextureSettings
+        local geometry = host._activeTextureGeometry
+        if not settings or not geometry then
+            return
+        end
+
+        local color = settings.color or { 1, 1, 1, 1 }
+        local baseAlpha = Clamp((color[4] or 1) * (settings.alpha or 1), 0.05, 1)
+        local textures = {
+            host.primaryTexture,
+            host.secondaryTexture,
+        }
+
+        for index, texture in ipairs(textures) do
+            local piece = geometry.pieces[index]
+            if texture and piece and texture:IsShown() then
+                ApplyTextureVisual(texture, settings, baseAlpha, piece.flipH, piece.flipV, geometry.rotationRadians)
+            end
+        end
+
+        host._indicatorBaseAlpha = baseAlpha
+        host._indicatorBaseColor = CopyColor(color) or { 1, 1, 1, 1 }
         return
     end
 
-    local color = settings.color or { 1, 1, 1, 1 }
-    local baseAlpha = Clamp((color[4] or 1) * (settings.alpha or 1), 0.05, 1)
-    local textures = {
-        host.primaryTexture,
-        host.secondaryTexture,
-    }
-
-    for index, texture in ipairs(textures) do
-        local piece = geometry.pieces[index]
-        if texture and piece and texture:IsShown() then
-            ApplyTextureVisual(texture, settings, baseAlpha, piece.flipH, piece.flipV, geometry.rotationRadians)
-        end
+    if displayType == "icon" and host.iconFrame and host.iconFrame.icon and host.iconFrame.icon:IsShown() then
+        local color = CopyColor(host._triggerIconBaseColor) or { 1, 1, 1, 1 }
+        host.iconFrame.icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
+        host._indicatorBaseColor = color
+        return
     end
 
-    host._indicatorBaseAlpha = baseAlpha
-    host._indicatorBaseColor = CopyColor(color) or { 1, 1, 1, 1 }
+    if displayType == "text" and host.textFrame and host.textFrame.text and host.textFrame.text:IsShown() then
+        local color = CopyColor(host._triggerTextBaseColor) or { 1, 1, 1, 1 }
+        host.textFrame.text:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
+        host._indicatorBaseColor = color
+    end
 end
 
 local function ResetTextureIndicatorTransformState(host)
@@ -2962,11 +3068,20 @@ local function RefreshTextureIndicatorUpdater(host)
         return
     end
 
+    local hasDisplayVisual = false
+    if host._activeDisplayType == "texture" then
+        hasDisplayVisual = host._activeTextureSettings ~= nil and host._activeTextureGeometry ~= nil
+    elseif host._activeDisplayType == "icon" then
+        hasDisplayVisual = host.iconFrame ~= nil and host.iconFrame:IsShown()
+    elseif host._activeDisplayType == "text" then
+        hasDisplayVisual = host.textFrame ~= nil and host.textFrame:IsShown()
+    end
+
     local wantsManualUpdate = host._textureColorShiftActive
         or host._textureShrinkActive
         or host._textureBounceActive
 
-    if not wantsManualUpdate or not host._activeTextureSettings or not host._activeTextureGeometry then
+    if not wantsManualUpdate or not hasDisplayVisual then
         host:SetScript("OnUpdate", nil)
         ResetTextureIndicatorTransformState(host)
         SetTextureIndicatorBaseVisuals(host)
@@ -2978,12 +3093,11 @@ local function RefreshTextureIndicatorUpdater(host)
 end
 
 TextureIndicatorOnUpdate = function(self)
-    if not self or not self.visualRoot or not self._activeTextureSettings or not self._activeTextureGeometry then
+    if not self or not self.visualRoot or not self._activeDisplayType then
         RefreshTextureIndicatorUpdater(self)
         return
     end
 
-    local settings = self._activeTextureSettings
     local now = GetTime()
     SetTextureIndicatorBaseVisuals(self)
     local baseColor = self._indicatorBaseColor or { 1, 1, 1, 1 }
@@ -2993,22 +3107,27 @@ TextureIndicatorOnUpdate = function(self)
         local shift = self._textureColorShiftColor or { 1, 1, 1, 1 }
         local colorPhase = GetTextureIndicatorLoopPhase(now, self._textureColorShiftSpeed)
         local t = 0.5 - (0.5 * math_cos(colorPhase * 2 * math_pi))
-        local shiftAlpha = Clamp((shift[4] or 1) * (settings.alpha or 1), 0.05, 1)
+        local shiftAlpha = Clamp(shift[4] ~= nil and shift[4] or 1, 0, 1)
         local alpha = baseAlpha + ((shiftAlpha - baseAlpha) * t)
 
-        local primaryTexture = self.primaryTexture
-        if primaryTexture and primaryTexture:IsShown() then
-            primaryTexture:SetVertexColor(
-                (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
-                (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
-                (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
-                alpha
-            )
-        end
+        local shiftedR = (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t)
+        local shiftedG = (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t)
+        local shiftedB = (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t)
 
-        local secondaryTexture = self.secondaryTexture
-        if secondaryTexture and secondaryTexture:IsShown() then
-            secondaryTexture:SetVertexColor(
+        if self._activeDisplayType == "texture" then
+            local primaryTexture = self.primaryTexture
+            if primaryTexture and primaryTexture:IsShown() then
+                primaryTexture:SetVertexColor(shiftedR, shiftedG, shiftedB, alpha)
+            end
+
+            local secondaryTexture = self.secondaryTexture
+            if secondaryTexture and secondaryTexture:IsShown() then
+                secondaryTexture:SetVertexColor(shiftedR, shiftedG, shiftedB, alpha)
+            end
+        elseif self._activeDisplayType == "icon" and self.iconFrame and self.iconFrame.icon and self.iconFrame.icon:IsShown() then
+            self.iconFrame.icon:SetVertexColor(shiftedR, shiftedG, shiftedB, alpha)
+        elseif self._activeDisplayType == "text" and self.textFrame and self.textFrame.text and self.textFrame.text:IsShown() then
+            self.textFrame.text:SetTextColor(
                 (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
                 (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
                 (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t),
@@ -3510,6 +3629,54 @@ local function ApplyTextureIndicatorEffects(host, button, group)
     local colorShift = effectStates[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
     if colorShift then
         StartTextureColorShift(host, colorShift.color, colorShift.speed)
+    else
+        StopTextureColorShift(host)
+    end
+end
+
+function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive)
+    if not host or not button or type(group) ~= "table" then
+        return
+    end
+
+    local effects = CooldownCompanion:GetTriggerPanelEffectSettings(group)
+    if not effects or not effectsActive then
+        StopAllTextureIndicatorEffects(host)
+        return
+    end
+
+    SetTextureIndicatorBaseVisuals(host)
+
+    local bounceAmplitude = math_max(
+        6,
+        math_min(
+            DEFAULT_TEXTURE_BOUNCE_PIXELS,
+            ((host:GetHeight() and host:GetHeight() > 0) and host:GetHeight() or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12
+        )
+    )
+
+    SetTextureIndicatorAnimation(
+        host,
+        TEXTURE_INDICATOR_EFFECT_PULSE,
+        effects.pulse and effects.pulse.enabled == true,
+        effects.pulse and effects.pulse.speed or nil
+    )
+    SetTextureIndicatorAnimation(
+        host,
+        TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
+        effects.shrinkExpand and effects.shrinkExpand.enabled == true,
+        effects.shrinkExpand and effects.shrinkExpand.speed or nil
+    )
+    SetTextureIndicatorAnimation(
+        host,
+        TEXTURE_INDICATOR_EFFECT_BOUNCE,
+        effects.bounce and effects.bounce.enabled == true,
+        effects.bounce and effects.bounce.speed or nil,
+        bounceAmplitude
+    )
+
+    if effects.colorShift and effects.colorShift.enabled == true then
+        StartTextureColorShift(host, effects.colorShift.color, effects.colorShift.speed)
     else
         StopTextureColorShift(host)
     end
@@ -4137,6 +4304,8 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._activeDisplayType = "icon"
+    host._triggerTextBaseColor = nil
+    host._triggerIconBaseColor = CopyColor(iconTint) or { 1, 1, 1, 1 }
 
     host:SetSize(width, height)
     host.visualRoot:SetSize(width, height)
@@ -4188,6 +4357,8 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._activeDisplayType = "text"
+    host._triggerIconBaseColor = nil
+    host._triggerTextBaseColor = CopyColor(textColor) or { 1, 1, 1, 1 }
 
     host:SetSize(frameWidth, frameHeight)
     host.visualRoot:SetSize(frameWidth, frameHeight)
@@ -4217,80 +4388,43 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     return true
 end
 
-function CooldownCompanion:UpdateAuraTextureVisual(button)
-    if not button or button._isText then
-        return
-    end
-
-    local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not self:IsStandaloneTexturePanelGroup(group) then
-        self:HideAuraTextureVisual(button)
-        return
-    end
-
-    local frame = button:GetParent()
-    local isTriggerPanel = self:IsTriggerPanelGroup(group)
-    local driverButton = button
-    if isTriggerPanel then
-        driverButton = frame and frame.buttons and frame.buttons[1] or nil
-        if not driverButton then
-            self:HideAuraTextureVisual(button)
-            return
-        end
-    end
-
-    local displayType, settings = CooldownCompanion.ResolveActiveStandaloneDisplay(driverButton)
-    local isEditing = IsStandaloneTextureEditingButton(driverButton)
-    local isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton)
-    local isUnlocked = group and group.locked == false
-    local hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table"
-    local triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false
-    local triggerSoundVisible = false
-    local showDisplay = false
+function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
+    local state = {
+        isEditing = IsStandaloneTextureEditingButton(driverButton),
+        isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
+        isUnlocked = group and group.locked == false,
+        hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
+        hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
+        triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
+        showDisplay = false,
+    }
 
     if settings then
-        if hasPreviewSelection then
-            showDisplay = true
+        if state.hasPreviewSelection then
+            state.showDisplay = true
         elseif isTriggerPanel then
-            showDisplay = triggerMatched or isEditing or isUnlocked
-        elseif isEditing then
-            showDisplay = true
-        elseif isConfigForceVisible then
-            showDisplay = true
-        elseif isUnlocked then
-            showDisplay = true
+            state.showDisplay = state.triggerMatched or state.hasTriggerEffectPreview or state.isEditing or state.isUnlocked
+        elseif state.isEditing then
+            state.showDisplay = true
+        elseif state.isConfigForceVisible then
+            state.showDisplay = true
+        elseif state.isUnlocked then
+            state.showDisplay = true
         elseif driverButton:GetParent()
             and driverButton:GetParent():IsShown()
             and not (driverButton._rawVisibilityHidden == true) then
-            showDisplay = true
+            state.showDisplay = true
         end
     end
 
-    if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
-        triggerSoundVisible = settings ~= nil and triggerMatched and showDisplay
-        self:UpdateTriggerPanelSoundAlerts(frame, group, triggerSoundVisible)
-    end
+    state.triggerSoundVisible = settings ~= nil and state.triggerMatched and state.showDisplay
+    state.bypassModuleAlpha = state.hasPreviewSelection or state.isEditing or state.isConfigForceVisible or state.isUnlocked
+    return state
+end
 
-    if not settings or not showDisplay then
-        self:HideAuraTextureVisual(driverButton)
-        if driverButton:GetAlpha() ~= 0 then
-            driverButton:SetAlpha(0)
-            driverButton._lastVisAlpha = 0
-        end
-        return
-    end
-
-    local host = EnsureAuraTextureHost(driverButton)
-    local relativeFrame = UIParent
-    local sharedSettings = GetStandaloneTextureSettings(group) or {
-        point = "CENTER",
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
+function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, settings, displayType, isTriggerPanel, effectsActive)
     local hostWidth, hostHeight
     local shown = false
-    local bypassModuleAlpha = hasPreviewSelection or isEditing or isConfigForceVisible or isUnlocked
 
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
@@ -4315,10 +4449,10 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             host._activeTextureGeometry = geometry
             host._activeDisplayType = "texture"
             SetTextureIndicatorBaseVisuals(host)
-            if not isTriggerPanel then
-                ApplyTextureIndicatorEffects(host, driverButton, group)
+            if isTriggerPanel then
+                self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)
             else
-                StopAllTextureIndicatorEffects(host)
+                ApplyTextureIndicatorEffects(host, driverButton, group)
             end
         end
     elseif displayType == "icon" then
@@ -4328,9 +4462,31 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             host.visualRoot:SetSize(hostWidth, hostHeight)
         end
         shown = CooldownCompanion.ApplyTriggerIconVisual(host, settings)
+        if shown and isTriggerPanel then
+            self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)
+        else
+            StopAllTextureIndicatorEffects(host)
+        end
     elseif displayType == "text" then
         shown = CooldownCompanion.ApplyTriggerTextVisual(host, settings)
+        if shown and isTriggerPanel then
+            self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)
+        else
+            StopAllTextureIndicatorEffects(host)
+        end
     end
+
+    return shown
+end
+
+function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
+    local relativeFrame = UIParent
+    local sharedSettings = GetStandaloneTextureSettings(group) or {
+        point = "CENTER",
+        relativePoint = "CENTER",
+        x = 0,
+        y = 0,
+    }
 
     if not host._isDragging then
         host:ClearAllPoints()
@@ -4338,20 +4494,11 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
     host:Show()
 
-    if not shown then
-        self:HideAuraTextureVisual(driverButton)
-        if driverButton:GetAlpha() ~= 0 then
-            driverButton:SetAlpha(0)
-            driverButton._lastVisAlpha = 0
-        end
-        return
-    end
-
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     if alphaModuleId then
-        if bypassModuleAlpha then
+        if visibilityState.bypassModuleAlpha then
             self:UnregisterModuleAlpha(alphaModuleId, true)
             host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
         else
@@ -4364,7 +4511,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             end
         end
     else
-        host:SetAlpha(bypassModuleAlpha and (layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1) or visibilityAlpha)
+        host:SetAlpha(visibilityState.bypassModuleAlpha and (layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1) or visibilityAlpha)
     end
 
     local savedSettings = isTriggerPanel and group and group.triggerSettings and group.triggerSettings.signal or group and group.textureSettings or nil
@@ -4376,7 +4523,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     elseif displayType == "text" then
         hasSavedDisplay = CooldownCompanion.HasTriggerTextValue(settings)
     end
-    host._dragEnabled = isUnlocked and hasSavedDisplay
+    host._dragEnabled = visibilityState.isUnlocked and hasSavedDisplay
     host:EnableMouse(false)
     SetAuraTextureOutlineShown(host, false)
     if host.dragHandle and host.coordLabel then
@@ -4399,9 +4546,6 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         driverButton._lastVisAlpha = 0
     end
     if ST.SetFrameClickThroughRecursive then
-        -- The visible texture host is intentionally non-interactive. Make every hidden
-        -- backing button fully click/hover-through too, so stacked trigger rows do not
-        -- leave invisible tooltip hotspots behind the visible texture.
         if isTriggerPanel and frame and type(frame.buttons) == "table" then
             for _, backingButton in ipairs(frame.buttons) do
                 ST.SetFrameClickThroughRecursive(backingButton, true, true)
@@ -4410,6 +4554,67 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             ST.SetFrameClickThroughRecursive(driverButton, true, true)
         end
     end
+end
+
+function CooldownCompanion:UpdateAuraTextureVisual(button)
+    if not button or button._isText then
+        return
+    end
+
+    local group = button._groupId and ResolveGroup(button._groupId) or nil
+    if not self:IsStandaloneTexturePanelGroup(group) then
+        self:HideAuraTextureVisual(button)
+        return
+    end
+
+    local frame = button:GetParent()
+    local isTriggerPanel = self:IsTriggerPanelGroup(group)
+    local driverButton = button
+    if isTriggerPanel then
+        driverButton = frame and frame.buttons and frame.buttons[1] or nil
+        if not driverButton then
+            self:HideAuraTextureVisual(button)
+            return
+        end
+    end
+
+    local displayType, settings = CooldownCompanion.ResolveActiveStandaloneDisplay(driverButton)
+    local visibilityState = self:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
+
+    if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
+        self:UpdateTriggerPanelSoundAlerts(frame, group, visibilityState.triggerSoundVisible)
+    end
+
+    if not settings or not visibilityState.showDisplay then
+        self:HideAuraTextureVisual(driverButton)
+        if driverButton:GetAlpha() ~= 0 then
+            driverButton:SetAlpha(0)
+            driverButton._lastVisAlpha = 0
+        end
+        return
+    end
+
+    local host = EnsureAuraTextureHost(driverButton)
+    local shown = self:RenderStandaloneDisplay(
+        host,
+        driverButton,
+        group,
+        settings,
+        displayType,
+        isTriggerPanel,
+        visibilityState.triggerMatched or visibilityState.hasTriggerEffectPreview
+    )
+
+    if not shown then
+        self:HideAuraTextureVisual(driverButton)
+        if driverButton:GetAlpha() ~= 0 then
+            driverButton:SetAlpha(0)
+            driverButton._lastVisAlpha = 0
+        end
+        return
+    end
+
+    self:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
 end
 
 function CooldownCompanion:RefreshAllAuraTextureVisuals()

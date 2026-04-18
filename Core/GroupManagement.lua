@@ -748,6 +748,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
                 x = 0,
                 y = 0,
             },
+            effects = {},
         }
     end
 
@@ -876,9 +877,13 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
                 x = 0,
                 y = 0,
             },
+            effects = {},
         }
         if group.triggerSettings.displayType == nil then
             group.triggerSettings.displayType = "texture"
+        end
+        if type(group.triggerSettings.effects) ~= "table" then
+            group.triggerSettings.effects = {}
         end
         if self.NormalizeTriggerConditionRowData then
             for _, buttonData in ipairs(group.buttons or {}) do

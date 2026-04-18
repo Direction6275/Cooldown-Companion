@@ -168,6 +168,29 @@ local function GetTextureIndicatorStore(group)
     return CooldownCompanion:GetTexturePanelIndicatorSettings(group, true)
 end
 
+local TRIGGER_PANEL_EFFECT_DEFS = {
+    pulse = {
+        label = "Pulse",
+        speedLabel = "Pulse Duration",
+    },
+    colorShift = {
+        label = "Color Shift",
+        speedLabel = "Shift Duration",
+    },
+    shrinkExpand = {
+        label = "Shrink / Expand",
+        speedLabel = "Cycle Duration",
+    },
+    bounce = {
+        label = "Bounce",
+        speedLabel = "Bounce Duration",
+    },
+}
+
+local function GetTriggerPanelEffectStore(group)
+    return CooldownCompanion:GetTriggerPanelEffectSettings(group, true)
+end
+
 local function GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
     local used = {}
     if type(indicators) ~= "table" then
@@ -810,6 +833,9 @@ local function BuildLayoutTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    end
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then
         local settings = GetStandaloneTextureSettings(group, true)
@@ -1458,6 +1484,46 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     container:AddChild(previewBtn)
 end
 
+local function BuildTriggerPanelEffectSection(container, effects, effectKey)
+    local config = effects and effects[effectKey]
+    local def = TRIGGER_PANEL_EFFECT_DEFS[effectKey]
+    if not config or not def then
+        return
+    end
+
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel(def.label)
+    enableCb:SetValue(config.enabled)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(_, _, value)
+        config.enabled = value == true
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    local advKey = "triggerEffect_" .. effectKey
+    local advExpanded = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled)
+    if not advExpanded or not config.enabled then
+        return
+    end
+
+    if effectKey == "colorShift" then
+        AddColorPicker(
+            container,
+            config,
+            "color",
+            "Shift Color",
+            { 1, 1, 1, 1 },
+            true,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+            function() CooldownCompanion:RefreshAllAuraTextureVisuals() end
+        )
+    end
+
+    BuildTextureIndicatorSpeedSlider(container, config, def.speedLabel)
+end
+
 local function BuildEffectsTab(container)
     for _, btn in ipairs(tabInfoButtons) do
         btn:ClearAllPoints()
@@ -1478,8 +1544,32 @@ local function BuildEffectsTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    end
 
     if group.displayMode == "trigger" then
+        local effects = GetTriggerPanelEffectStore(group)
+        if not effects then
+            return
+        end
+
+        local anyEnabled = false
+        for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+            BuildTriggerPanelEffectSection(container, effects, effectKey)
+            if effects[effectKey] and effects[effectKey].enabled then
+                anyEnabled = true
+            end
+        end
+
+        local previewBtn = AceGUI:Create("Button")
+        previewBtn:SetText("Preview Effects (3s)")
+        previewBtn:SetFullWidth(true)
+        previewBtn:SetDisabled(not anyEnabled)
+        previewBtn:SetCallback("OnClick", function()
+            CooldownCompanion:PlayTriggerPanelEffectsPreview(CS.selectedGroup, 3)
+        end)
+        container:AddChild(previewBtn)
         return
     end
 
@@ -1993,6 +2083,9 @@ local function BuildAppearanceTab(container)
     local style = group.style
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
+    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
+        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+    end
 
     if group.displayMode == "trigger" then
         AddTriggerDisplayTypeDropdown(container, group)
