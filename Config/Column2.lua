@@ -32,6 +32,8 @@ local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
 
+local IsTriggerPanelGroup
+
 local function HideAllBarWidgets(col2)
     if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
     if col2._resourceStylingTabGroup then col2._resourceStylingTabGroup.frame:Hide() end
@@ -253,8 +255,7 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
         return button
     end
 
-    local iconPanelBtn = PopulateCol2PanelCreationBar._iconPanelBtn
-    iconPanelBtn = CreateButton(
+    local iconPanelBtn = CreateButton(
         "Icon Panel",
         function()
             CreatePanelInSelectedContainer("icons", {
@@ -266,7 +267,6 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
         "TOPLEFT",
         CS.col2ButtonBar
     )
-    PopulateCol2PanelCreationBar._iconPanelBtn = iconPanelBtn
     if CS.tutorialAnchors then
         CS.tutorialAnchors.icon_panel_button = iconPanelBtn.frame
     end
@@ -632,7 +632,7 @@ local function CanTexturePanelAcceptEntry(group)
     return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
 end
 
-local function IsTriggerPanelGroup(group)
+IsTriggerPanelGroup = function(group)
     return group and group.displayMode == "trigger"
 end
 

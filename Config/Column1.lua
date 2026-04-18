@@ -34,6 +34,8 @@ local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local NotifyTutorialAction = ST._NotifyTutorialAction
 
+local GenerateGroupName
+
 ------------------------------------------------------------------------
 -- Clear all selection state (container, panel, button, multi-select)
 ------------------------------------------------------------------------
@@ -1414,7 +1416,7 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: generate a unique group name with the given base
-    local function GenerateGroupName(base)
+    GenerateGroupName = function(base)
         local profile = CooldownCompanion.db.profile
         local existing = {}
         -- Check container names (groups are now "panels" under containers)
