@@ -1941,6 +1941,25 @@ end
 
 local RelayoutBars
 
+local function ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
+    if not entry or not entry.powerType or not entry.cabConfig then
+        return nil
+    end
+
+    -- ApplyResourceBars() can recreate the custom aura bar before the next-frame
+    -- retry fires, so re-resolve the active barInfo instead of trusting the
+    -- captured table/frame from queue time.
+    for _, candidate in ipairs(resourceBarFrames) do
+        if candidate
+            and candidate.powerType == entry.powerType
+            and candidate.cabConfig == entry.cabConfig then
+            return candidate
+        end
+    end
+
+    return nil
+end
+
 local function ProcessDeferredCustomAuraWakeRetries()
     if processingCustomAuraWakeRetryQueue then return end
     if #customAuraWakeRetryQueue == 0 then
@@ -1955,7 +1974,7 @@ local function ProcessDeferredCustomAuraWakeRetries()
 
     local relayoutNeeded = false
     for _, entry in ipairs(queue) do
-        local barInfo = entry.barInfo
+        local barInfo = ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
         local frame = barInfo and barInfo.frame
         local cabConfig = barInfo and barInfo.cabConfig
         if barInfo
@@ -1991,15 +2010,16 @@ local function QueueDeferredCustomAuraWakeRetry(barInfo, unit)
 
     local frame = barInfo and barInfo.frame
     local cabConfig = barInfo and barInfo.cabConfig
-    if not frame or not cabConfig or cabConfig.hideWhenInactive ~= true then return end
+    local powerType = barInfo and barInfo.powerType
+    if not frame or not cabConfig or not powerType or cabConfig.hideWhenInactive ~= true then return end
     if frame:IsShown() then return end
     if GetHiddenCustomAuraWakeUnit(cabConfig) ~= unit then return end
-    if customAuraWakeRetryPending[frame] then return end
+    if customAuraWakeRetryPending[cabConfig] then return end
 
-    customAuraWakeRetryPending[frame] = true
+    customAuraWakeRetryPending[cabConfig] = true
     customAuraWakeRetryQueue[#customAuraWakeRetryQueue + 1] = {
-        barInfo = barInfo,
         cabConfig = cabConfig,
+        powerType = powerType,
         unit = unit,
     }
 
