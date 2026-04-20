@@ -267,6 +267,7 @@ local function GetConditionContextSuffix(cond)
     local className = ResolveConditionClassName(cond)
     local specName = ResolveConditionSpecName(cond)
     local heroName = ResolveConditionHeroName(cond)
+    local conditionName = cond and cond.name or nil
 
     if className then
         parts[#parts + 1] = className
@@ -274,7 +275,7 @@ local function GetConditionContextSuffix(cond)
     if specName then
         parts[#parts + 1] = specName
     end
-    if heroName then
+    if heroName and heroName ~= conditionName then
         parts[#parts + 1] = heroName
     end
 

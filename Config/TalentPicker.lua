@@ -1171,6 +1171,26 @@ local function BuildNodeRecord(configID, nodeID, nodeInfo)
     }
 end
 
+local function BuildHeroSpecNodeRecord(configID, treeID, heroSubTreeID)
+    if not configID or not treeID or not heroSubTreeID then
+        return nil
+    end
+
+    local nodeID, nodeInfo = CooldownCompanion:GetHeroSubTreeRootNode(configID, treeID, heroSubTreeID)
+    if not nodeID or not nodeInfo then
+        return nil
+    end
+
+    local record = BuildNodeRecord(configID, nodeID, nodeInfo)
+    if not record then
+        return nil
+    end
+
+    record.scopeType = "hero"
+    record.displayName = GetHeroDisplayName(configID, heroSubTreeID)
+    return record
+end
+
 local function ComputeBounds(nodeSet)
     local mnX, mxX, mnY, mxY = math.huge, -math.huge, math.huge, -math.huge
     for _, n in ipairs(nodeSet) do
@@ -1284,6 +1304,7 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
         local primaryEntry = node.isChoice
             and GetPrimaryDisplayEntry(node.entries, node.nodeID)
             or node.entries[1]
+        local displayName = node.displayName or (primaryEntry and primaryEntry.name) or nil
 
         btn.icon:SetTexture(primaryEntry.icon)
         btn.icon:SetDesaturated(false)
@@ -1294,7 +1315,7 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
         btn._entryID = nil  -- regular nodes use nil; choice entries set per-entry
         btn._isChoiceNode = node.isChoice
         btn._entries = node.entries
-        btn._talentName = primaryEntry.name
+        btn._talentName = displayName
         btn._spellID = primaryEntry.spellID
         btn._rankText = nil
 
@@ -1311,7 +1332,7 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
                 end
             else
                 HideChoiceFrame()
-                CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, primaryEntry.name, BuildConditionContext(nodeRef.scopeType, nodeRef.subTreeID))
+                CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, displayName, BuildConditionContext(nodeRef.scopeType, nodeRef.subTreeID))
                 RefreshPickerBorders()
             end
         end)
@@ -1392,12 +1413,12 @@ local function RenderNodePanel(panelFrame, nodeSet, nodeIDToBtn, edgePool, btnIn
     return btnIndex
 end
 
-local function RenderHeroChoiceList(panelFrame, nodeSet, nodeIDToBtn, btnIndex)
+local function RenderHeroChoiceList(panelFrame, nodeSet, nodeIDToBtn, btnIndex, leadingNode)
     for _, line in ipairs(heroEdgeLines) do
         line:Hide()
     end
 
-    if not panelFrame or #nodeSet == 0 then
+    if not panelFrame or (#nodeSet == 0 and not leadingNode) then
         return btnIndex
     end
 
@@ -1415,6 +1436,12 @@ local function RenderHeroChoiceList(panelFrame, nodeSet, nodeIDToBtn, btnIndex)
 
     local centeredX = math_max(NODE_PADDING, math_floor((panelFrame:GetWidth() - NODE_SIZE) * 0.5))
     local nextY = HERO_HEADER_HEIGHT + 8
+
+    if leadingNode then
+        btnIndex = PlaceNodesInPanel(panelFrame, { leadingNode }, centeredX - NODE_PADDING, nextY - NODE_PADDING,
+            leadingNode.px, leadingNode.py, leadingNode.px, leadingNode.py, 0, btnIndex, nodeIDToBtn)
+        nextY = nextY + NODE_SIZE + 10
+    end
 
     for _, node in ipairs(orderedNodes) do
         btnIndex = PlaceNodesInPanel(panelFrame, { node }, centeredX - NODE_PADDING, nextY - NODE_PADDING,
@@ -1512,6 +1539,7 @@ PopulateTree = function()
     end
 
     local selectedHeroSubTreeID = pickerSelectedHeroSubTreeID
+    local heroSpecNode = BuildHeroSpecNodeRecord(configID, treeID, selectedHeroSubTreeID)
 
     -- Get tree currencies for class/spec split
     local treeCurrencyInfo = C_Traits.GetTreeCurrencyInfo(configID, treeID, false)
@@ -1568,7 +1596,7 @@ PopulateTree = function()
         end
     end
 
-    local hasHeroChoices = #heroNodes > 0
+    local hasHeroChoices = heroSpecNode ~= nil or #heroNodes > 0
 
     local dualPanel = (#classNodes > 0 and #specNodes > 0)
     local nodeIDToBtn = {}
@@ -1587,7 +1615,7 @@ PopulateTree = function()
     end
 
     if hasHeroChoices then
-        btnIndex = RenderHeroChoiceList(heroTreeFrame, heroNodes, nodeIDToBtn, btnIndex)
+        btnIndex = RenderHeroChoiceList(heroTreeFrame, heroNodes, nodeIDToBtn, btnIndex, heroSpecNode)
     end
 end
 

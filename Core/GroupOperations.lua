@@ -1417,6 +1417,34 @@ end
 -- TALENT NODE CACHE (for per-button talent conditions)
 ------------------------------------------------------------------------
 
+function CooldownCompanion:GetHeroSubTreeRootNode(configID, treeID, heroSubTreeID)
+    if not configID or not treeID or not heroSubTreeID then
+        return nil, nil
+    end
+
+    local nodeIDs = C_Traits.GetTreeNodes(treeID)
+    if not nodeIDs then
+        return nil, nil
+    end
+
+    local bestNodeID, bestNodeInfo = nil, nil
+    for _, nodeID in ipairs(nodeIDs) do
+        local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+        if nodeInfo
+            and nodeInfo.subTreeID == heroSubTreeID
+            and nodeInfo.type ~= Enum.TraitNodeType.SubTreeSelection then
+            if not bestNodeInfo
+                or nodeInfo.posY < bestNodeInfo.posY
+                or (nodeInfo.posY == bestNodeInfo.posY and nodeInfo.posX < bestNodeInfo.posX) then
+                bestNodeID = nodeID
+                bestNodeInfo = nodeInfo
+            end
+        end
+    end
+
+    return bestNodeID, bestNodeInfo
+end
+
 -- Rebuild the runtime talent node cache from the active talent config.
 -- Called on TRAIT_CONFIG_UPDATED, PLAYER_ENTERING_WORLD, spec changes.
 function CooldownCompanion:RebuildTalentNodeCache()
@@ -1435,9 +1463,14 @@ function CooldownCompanion:RebuildTalentNodeCache()
     local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
     if not treeID then return end
 
+    local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+    local heroRootNodeID = nil
+    if activeHeroSubTreeID then
+        heroRootNodeID = self:GetHeroSubTreeRootNode(configID, treeID, activeHeroSubTreeID)
+    end
+
     local nodeIDs = C_Traits.GetTreeNodes(treeID)
     if not nodeIDs then return end
-    local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
 
     for _, nodeID in ipairs(nodeIDs) do
         local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
@@ -1449,7 +1482,10 @@ function CooldownCompanion:RebuildTalentNodeCache()
                 or (
                     activeHeroSubTreeID
                     and nodeInfo.subTreeID == activeHeroSubTreeID
-                    and nodeInfo.type == Enum.TraitNodeType.Selection
+                    and (
+                        nodeInfo.type == Enum.TraitNodeType.Selection
+                        or nodeID == heroRootNodeID
+                    )
                 )
             )
         if includeNode then
