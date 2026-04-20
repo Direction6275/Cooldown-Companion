@@ -149,6 +149,10 @@ local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
 local layoutDirty = false
+local customAuraWakeRetryFrame = nil
+local customAuraWakeRetryQueue = {}
+local customAuraWakeRetryPending = {}
+local processingCustomAuraWakeRetryQueue = false
 local independentWrapperFrame = nil
 local customAuraBarActivePreviewTokens = {}
 local customAuraBarPandemicPreviewTokens = {}
@@ -1922,6 +1926,112 @@ local function IsEventDrivenCustomAuraBar(barInfo)
             or barInfo.barType == "custom_overlay")
 end
 
+local function StopDeferredCustomAuraWakeRetryFrame()
+    if customAuraWakeRetryFrame then
+        customAuraWakeRetryFrame:SetScript("OnUpdate", nil)
+    end
+end
+
+local function ClearDeferredCustomAuraWakeRetries()
+    wipe(customAuraWakeRetryQueue)
+    wipe(customAuraWakeRetryPending)
+    processingCustomAuraWakeRetryQueue = false
+    StopDeferredCustomAuraWakeRetryFrame()
+end
+
+local RelayoutBars
+
+local function ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
+    if not entry or not entry.powerType or not entry.cabConfig then
+        return nil
+    end
+
+    -- ApplyResourceBars() can recreate the custom aura bar before the next-frame
+    -- retry fires, so re-resolve the active barInfo instead of trusting the
+    -- captured table/frame from queue time.
+    for _, candidate in ipairs(resourceBarFrames) do
+        if candidate
+            and candidate.powerType == entry.powerType
+            and candidate.cabConfig == entry.cabConfig then
+            return candidate
+        end
+    end
+
+    return nil
+end
+
+local function ProcessDeferredCustomAuraWakeRetries()
+    if processingCustomAuraWakeRetryQueue then return end
+    if #customAuraWakeRetryQueue == 0 then
+        StopDeferredCustomAuraWakeRetryFrame()
+        return
+    end
+
+    processingCustomAuraWakeRetryQueue = true
+    local queue = customAuraWakeRetryQueue
+    customAuraWakeRetryQueue = {}
+    customAuraWakeRetryPending = {}
+
+    local relayoutNeeded = false
+    for _, entry in ipairs(queue) do
+        local barInfo = ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
+        local frame = barInfo and barInfo.frame
+        local cabConfig = barInfo and barInfo.cabConfig
+        if barInfo
+            and frame
+            and cabConfig
+            and barInfo.cabConfig == entry.cabConfig
+            and IsEventDrivenCustomAuraBar(barInfo)
+            and cabConfig.hideWhenInactive == true
+            and GetHiddenCustomAuraWakeUnit(cabConfig) == entry.unit
+            and not frame:IsShown()
+        then
+            UpdateCustomAuraBar(barInfo)
+            if not barInfo._isIndependent and frame:IsShown() then
+                relayoutNeeded = true
+            end
+        end
+    end
+
+    processingCustomAuraWakeRetryQueue = false
+    StopDeferredCustomAuraWakeRetryFrame()
+
+    if relayoutNeeded then
+        layoutDirty = false
+        RelayoutBars()
+        CooldownCompanion:RepositionCastBar()
+    end
+end
+
+local function QueueDeferredCustomAuraWakeRetry(barInfo, unit)
+    if processingCustomAuraWakeRetryQueue then return end
+    if unit ~= "player" and unit ~= "target" then return end
+    if not IsEventDrivenCustomAuraBar(barInfo) then return end
+
+    local frame = barInfo and barInfo.frame
+    local cabConfig = barInfo and barInfo.cabConfig
+    local powerType = barInfo and barInfo.powerType
+    if not frame or not cabConfig or not powerType or cabConfig.hideWhenInactive ~= true then return end
+    if frame:IsShown() then return end
+    if GetHiddenCustomAuraWakeUnit(cabConfig) ~= unit then return end
+    if customAuraWakeRetryPending[cabConfig] then return end
+
+    customAuraWakeRetryPending[cabConfig] = true
+    customAuraWakeRetryQueue[#customAuraWakeRetryQueue + 1] = {
+        cabConfig = cabConfig,
+        powerType = powerType,
+        unit = unit,
+    }
+
+    if not customAuraWakeRetryFrame then
+        customAuraWakeRetryFrame = CreateFrame("Frame")
+    end
+    customAuraWakeRetryFrame:SetScript("OnUpdate", function(self, _elapsed)
+        self:SetScript("OnUpdate", nil)
+        ProcessDeferredCustomAuraWakeRetries()
+    end)
+end
+
 local function RefreshEventDrivenCustomAuraBarsForUnit(unit)
     if unit ~= "player" and unit ~= "target" then return end
 
@@ -1938,7 +2048,11 @@ local function RefreshEventDrivenCustomAuraBarsForUnit(unit)
                 or barInfo.barType == "custom_segmented"
                 or barInfo.barType == "custom_overlay")
             and GetHiddenCustomAuraWakeUnit(cabConfig) == unit then
+            local wasShown = frame:IsShown()
             UpdateCustomAuraBar(barInfo)
+            if not wasShown and not frame:IsShown() then
+                QueueDeferredCustomAuraWakeRetry(barInfo, unit)
+            end
         end
     end
 end
@@ -2289,7 +2403,7 @@ local function CompareBarOrder(a, b)
     return (a.powerType or 0) < (b.powerType or 0)
 end
 
-local function RelayoutBars()
+RelayoutBars = function()
     if not containerFrameAbove or not containerFrameBelow then return end
     local barSpacing = lastAppliedBarSpacing or 3.6
     local globalThickness = lastAppliedBarThickness or 12
@@ -3146,6 +3260,7 @@ function CooldownCompanion:RevertResourceBars()
     lastAppliedBarSpacing = nil
     lastAppliedBarThickness = nil
     layoutDirty = false
+    ClearDeferredCustomAuraWakeRetries()
 
     -- Stop alpha sync, unregister module alpha, restore alpha
     CooldownCompanion:UnregisterModuleAlpha("rb")
