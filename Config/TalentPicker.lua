@@ -1230,6 +1230,7 @@ local function BuildHeroSpecNodeRecord(configID, treeID, heroSubTreeID)
 
     record.scopeType = "hero"
     record.displayName = GetHeroDisplayName(configID, heroSubTreeID)
+    record.isHeroSpecProxy = true
     return record
 end
 
@@ -1347,6 +1348,7 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
             and GetPrimaryDisplayEntry(node.entries, node.nodeID)
             or node.entries[1]
         local displayName = node.displayName or (primaryEntry and primaryEntry.name) or nil
+        local displaySpellID = node.isHeroSpecProxy and nil or primaryEntry.spellID
 
         btn.icon:SetTexture(primaryEntry.icon)
         btn.icon:SetDesaturated(false)
@@ -1358,7 +1360,7 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
         btn._isChoiceNode = node.isChoice
         btn._entries = node.entries
         btn._talentName = displayName
-        btn._spellID = primaryEntry.spellID
+        btn._spellID = displaySpellID
         btn._rankText = nil
         btn._disabledReason = node.disabledReason
 
@@ -1386,7 +1388,7 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
                 end
             else
                 HideChoiceFrame()
-                CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, displayName, BuildConditionContext(nodeRef.scopeType, nodeRef.subTreeID))
+                CyclePendingState(nodeRef.nodeID, nil, displaySpellID, displayName, BuildConditionContext(nodeRef.scopeType, nodeRef.subTreeID))
                 if nodeRef.scopeType == "hero" and nodeRef.displayName then
                     PopulateTree()
                 else
