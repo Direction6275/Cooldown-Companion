@@ -128,34 +128,63 @@ local function GetStandaloneScreenAnchorPoint(settings)
     return uiCenterX + relOffsetX + x, uiCenterY + relOffsetY + y, point, relativePoint
 end
 
-local function SaveGroupedStandalonePreviewSettings(host, group, settings)
-    local containerFrame = GetGroupedPreviewContainerFrame(group)
-    if not (host and containerFrame and settings and host.GetPoint) then
-        return false
+local function GetTextureHostDisplayCoords(host, point, relativePoint)
+    if not (host and host.GetCenter and host.GetSize) then
+        return nil, nil, nil, nil
     end
 
-    local containerX, containerY = containerFrame:GetCenter()
     local uiCenterX, uiCenterY = UIParent:GetCenter()
     local uiWidth, uiHeight = UIParent:GetSize()
-    local point, relativeFrame, _, x, y = host:GetPoint(1)
-    if not (containerX and containerY and uiCenterX and uiCenterY and uiWidth and uiHeight) then
+    local hostCenterX, hostCenterY = host:GetCenter()
+    local hostWidth, hostHeight = host:GetSize()
+    if not (uiCenterX and uiCenterY and uiWidth and uiHeight and hostCenterX and hostCenterY and hostWidth and hostHeight) then
+        return nil, nil, nil, nil
+    end
+
+    local normalizedPoint = NormalizeAnchorPoint(point or "CENTER")
+    local normalizedRelativePoint = NormalizeAnchorPoint(relativePoint or "CENTER")
+    local pointOffsetX, pointOffsetY = GetAnchorOffset(normalizedPoint, hostWidth, hostHeight)
+    local refOffsetX, refOffsetY = GetAnchorOffset(normalizedRelativePoint, uiWidth, uiHeight)
+    if pointOffsetX == nil or pointOffsetY == nil or refOffsetX == nil or refOffsetY == nil then
+        return nil, nil, normalizedPoint, normalizedRelativePoint
+    end
+
+    local screenAnchorX = hostCenterX + pointOffsetX
+    local screenAnchorY = hostCenterY + pointOffsetY
+    local x = math_floor(((screenAnchorX - (uiCenterX + refOffsetX)) * 10) + 0.5) / 10
+    local y = math_floor(((screenAnchorY - (uiCenterY + refOffsetY)) * 10) + 0.5) / 10
+    return x, y, normalizedPoint, normalizedRelativePoint
+end
+
+local function SaveGroupedStandalonePreviewSettings(host, group, settings)
+    local containerFrame = GetGroupedPreviewContainerFrame(group)
+    if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
         return false
     end
 
-    if relativeFrame ~= containerFrame and not host._wrapperManaged then
+    local point = host:GetPoint(1)
+
+    if not host._wrapperManaged then
+        local _, relativeFrame = host:GetPoint(1)
+        if relativeFrame ~= containerFrame then
+            return false
+        end
+    end
+
+    local x, y, normalizedPoint, normalizedRelativePoint = GetTextureHostDisplayCoords(
+        host,
+        point or settings.point or "CENTER",
+        settings.relativePoint or "CENTER"
+    )
+    if x == nil or y == nil then
         return false
     end
 
-    local relativePoint = settings.relativePoint or "CENTER"
-    local refOffsetX, refOffsetY = GetAnchorOffset(relativePoint, uiWidth, uiHeight)
-    local screenAnchorX = containerX + (x or 0)
-    local screenAnchorY = containerY + (y or 0)
-
-    settings.point = NormalizeAnchorPoint(point or settings.point or "CENTER")
-    settings.relativePoint = NormalizeAnchorPoint(relativePoint)
+    settings.point = normalizedPoint
+    settings.relativePoint = normalizedRelativePoint
     settings.relativeTo = UI_PARENT_NAME
-    settings.x = math_floor(((screenAnchorX - (uiCenterX + refOffsetX)) * 10) + 0.5) / 10
-    settings.y = math_floor(((screenAnchorY - (uiCenterY + refOffsetY)) * 10) + 0.5) / 10
+    settings.x = x
+    settings.y = y
     return true
 end
 
@@ -228,7 +257,7 @@ local function EnsureAuraTextureNudger(host)
 
     local function DoNudge(dx, dy)
         host:AdjustPointsOffset(dx, dy)
-        local _, _, _, x, y = host:GetPoint()
+        local point, _, relativePoint, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
         local settings
@@ -237,11 +266,26 @@ local function EnsureAuraTextureNudger(host)
         else
             settings = group and CooldownCompanion:GetTexturePanelSettings(group)
         end
-        if settings then
-            settings.x = math_floor((x or 0) * 10 + 0.5) / 10
-            settings.y = math_floor((y or 0) * 10 + 0.5) / 10
+        local displayX, displayY
+        if settings and group and group.parentContainerId
+            and CooldownCompanion.IsContainerUnlockPreviewActive
+            and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        then
+            displayX, displayY = GetTextureHostDisplayCoords(
+                host,
+                point or settings.point or "CENTER",
+                settings.relativePoint or "CENTER"
+            )
         end
-        UpdateTextureHostCoordLabel(host, x, y)
+        if displayX == nil or displayY == nil then
+            displayX = math_floor((x or 0) * 10 + 0.5) / 10
+            displayY = math_floor((y or 0) * 10 + 0.5) / 10
+        end
+        if settings then
+            settings.x = displayX
+            settings.y = displayY
+        end
+        UpdateTextureHostCoordLabel(host, displayX, displayY)
         if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
             CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
         end
@@ -1051,7 +1095,25 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     SetAuraTextureOutlineShown(host, visibilityState.isGroupedPreview and (isGroupedPreviewSelected or isGroupedPreviewHovered) or false)
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
-        if host._isDragging then
+        if visibilityState.isGroupedPreview then
+            local point = host:GetPoint(1)
+            local displayX, displayY = GetTextureHostDisplayCoords(
+                host,
+                point or sharedSettings.point or "CENTER",
+                sharedSettings.relativePoint or "CENTER"
+            )
+            if displayX == nil or displayY == nil then
+                if host._isDragging then
+                    local _, _, _, currentX, currentY = host:GetPoint()
+                    displayX = currentX
+                    displayY = currentY
+                else
+                    displayX = sharedSettings.x
+                    displayY = sharedSettings.y
+                end
+            end
+            UpdateTextureHostCoordLabel(host, displayX, displayY)
+        elseif host._isDragging then
             local _, _, _, currentX, currentY = host:GetPoint()
             UpdateTextureHostCoordLabel(host, currentX, currentY)
         else
