@@ -245,6 +245,13 @@ end
 
 local function CyclePendingState(nodeID, entryID, spellID, name, context)
     local existing = GetPendingState(nodeID, entryID)
+    local isHeroSpecProxy = entryID == nil
+        and context
+        and context.heroSubTreeID ~= nil
+        and type(name) == "string"
+        and type(context.heroName) == "string"
+        and name == context.heroName
+
     if not existing then
         if context and context.specID then
             ClearConflictingPendingScopes(context.specID, context.heroSubTreeID)
@@ -255,6 +262,19 @@ local function CyclePendingState(nodeID, entryID, spellID, name, context)
             ClearConflictingPendingScopes(context.specID, context.heroSubTreeID)
         end
         SetPendingState(nodeID, entryID, spellID, name, "not_taken", context)
+        if isHeroSpecProxy then
+            for key, cond in pairs(pendingConditions) do
+                if cond.heroSubTreeID == context.heroSubTreeID
+                    and not (cond.nodeID ~= nil
+                        and cond.entryID == nil
+                        and type(cond.name) == "string"
+                        and type(cond.heroName) == "string"
+                        and cond.name == cond.heroName)
+                    and cond.nodeID ~= nodeID then
+                    pendingConditions[key] = nil
+                end
+            end
+        end
     else
         -- not_taken → clear
         SetPendingState(nodeID, entryID, nil, nil, nil)
@@ -861,7 +881,8 @@ local function EnsureButtons()
         clearBtn:SetWidth(80)
         clearBtn:SetCallback("OnClick", function()
             wipe(pendingConditions)
-            RefreshPickerBorders()
+            HideChoiceFrame()
+            PopulateTree()
         end)
     end
 

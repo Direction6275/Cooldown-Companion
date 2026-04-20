@@ -1546,9 +1546,8 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
         if IsHeroSpecProxyCondition(cond) then
             local show = cond.show or "taken"
             local heroIsActive = activeHeroSubTreeID ~= nil and cond.heroSubTreeID == activeHeroSubTreeID
-            local otherHeroIsActive = activeHeroSubTreeID ~= nil and cond.heroSubTreeID ~= activeHeroSubTreeID
             if show == "not_taken" then
-                if not otherHeroIsActive then
+                if heroIsActive then
                     return false
                 end
             else
