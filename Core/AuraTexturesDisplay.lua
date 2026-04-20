@@ -8,6 +8,7 @@ local CooldownCompanion = ST.Addon
 local AT = ST._AT
 
 local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
 local UIParent = UIParent
 local ipairs = ipairs
 local math_floor = math.floor
@@ -241,6 +242,9 @@ local function EnsureAuraTextureNudger(host)
             settings.y = math_floor((y or 0) * 10 + 0.5) / 10
         end
         UpdateTextureHostCoordLabel(host, x, y)
+        if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+            CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+        end
     end
 
     for _, dir in ipairs(directions) do
@@ -350,6 +354,12 @@ local function EnsureAuraTextureDragHandle(host)
         if not group then
             return
         end
+        if group.parentContainerId
+            and CooldownCompanion.IsContainerUnlockPreviewActive
+            and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        then
+            return
+        end
 
         group.locked = nil
         CooldownCompanion:RefreshGroupFrame(owner._groupId)
@@ -365,13 +375,13 @@ local function EnsureAuraTextureDragHandle(host)
     EnsureAuraTextureNudger(host)
 end
 
-local function SyncAuraTextureControlLevels(host)
+local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
     if not host then
         return
     end
 
-    local strata = host:GetFrameStrata()
-    local baseLevel = host:GetFrameLevel() or 1
+    local strata = raiseAboveWrapper and "FULLSCREEN_DIALOG" or host:GetFrameStrata()
+    local baseLevel = raiseAboveWrapper and 90 or (host:GetFrameLevel() or 1)
 
     if host.dragHandle then
         host.dragHandle:SetFrameStrata(strata)
@@ -906,7 +916,7 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
 
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
-    SyncAuraTextureControlLevels(host)
+    SyncAuraTextureControlLevels(host, false)
 
     if displayType == "texture" then
         local baseAlpha = Clamp((settings.color and settings.color[4] or 1) * settings.alpha, 0.05, 1)
@@ -1020,10 +1030,25 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     elseif displayType == "text" then
         hasSavedDisplay = CooldownCompanion.HasTriggerTextValue(settings)
     end
-    host._dragEnabled = visibilityState.isUnlocked and hasSavedDisplay and not visibilityState.isGroupedPreview
+    local containerId = group and group.parentContainerId or nil
+    local isGroupedPreviewSelected = visibilityState.isGroupedPreview
+        and containerId
+        and self.IsContainerPanelSelected
+        and self:IsContainerPanelSelected(containerId, driverButton._groupId)
+        or false
+    local isGroupedPreviewHovered = visibilityState.isGroupedPreview
+        and containerId
+        and self.IsContainerPanelHovered
+        and self:IsContainerPanelHovered(containerId, driverButton._groupId)
+        or false
+    host._hasSavedDisplay = hasSavedDisplay
+    host._groupedPreviewContainerId = containerId
+    host._dragEnabled = visibilityState.isUnlocked
+        and hasSavedDisplay
+        and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
     host:EnableMouse(false)
-    SetAuraTextureOutlineShown(host, false)
+    SetAuraTextureOutlineShown(host, visibilityState.isGroupedPreview and (isGroupedPreviewSelected or isGroupedPreviewHovered) or false)
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
         if host._isDragging then
@@ -1032,7 +1057,8 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         else
             UpdateTextureHostCoordLabel(host, sharedSettings.x, sharedSettings.y)
         end
-        local showHeader = host._dragEnabled == true and not visibilityState.isGroupedPreview
+        local showHeader = host._dragEnabled == true and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
+        SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
         host.dragHandle:SetShown(showHeader)
         host.coordLabel:SetShown(showHeader)
         if host.nudger then
@@ -1056,6 +1082,83 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     if visibilityState.isGroupedPreview and group and group.parentContainerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(group.parentContainerId)
     end
+end
+
+function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
+    local group = groupId and ResolveGroup(groupId) or nil
+    if not (group and group.parentContainerId and (group.displayMode == "textures" or group.displayMode == "trigger")) then
+        return
+    end
+
+    if not (self.IsContainerUnlockPreviewActive and self:IsContainerUnlockPreviewActive(group.parentContainerId)) then
+        return
+    end
+
+    local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
+    local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+    local host = driverButton and driverButton.auraTextureHost or nil
+    if not host then
+        return
+    end
+
+    local isSelected = self.IsContainerPanelSelected and self:IsContainerPanelSelected(group.parentContainerId, groupId) or false
+    local isHovered = self.IsContainerPanelHovered and self:IsContainerPanelHovered(group.parentContainerId, groupId) or false
+    local showControls = isSelected and host._hasSavedDisplay == true
+
+    host._dragEnabled = showControls
+    SyncAuraTextureControlLevels(host, showControls)
+    SetAuraTextureOutlineShown(host, isSelected or isHovered)
+
+    if host.dragHandle then
+        host.dragHandle:SetShown(showControls)
+    end
+    if host.coordLabel then
+        host.coordLabel:SetShown(showControls)
+    end
+    if host.nudger then
+        host.nudger:SetShown(showControls)
+    end
+end
+
+function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, containerId)
+    local group = groupId and ResolveGroup(groupId) or nil
+    if not (group and group.parentContainerId == containerId) then
+        return false
+    end
+
+    local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
+    local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+    local host = driverButton and driverButton.auraTextureHost or nil
+    if not (host and host:IsShown()) then
+        return false
+    end
+    if InCombatLockdown() and host:IsProtected() then
+        return false
+    end
+
+    host._isDragging = true
+    host:StartMoving()
+    return true
+end
+
+function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, containerId)
+    local group = groupId and ResolveGroup(groupId) or nil
+    if not (group and group.parentContainerId == containerId) then
+        return
+    end
+
+    local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
+    local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+    local host = driverButton and driverButton.auraTextureHost or nil
+    if not host then
+        return
+    end
+
+    host._isDragging = nil
+    if not (InCombatLockdown() and host:IsProtected()) then
+        host:StopMovingOrSizing()
+    end
+    SaveTextureHostPosition(host)
 end
 
 function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)

@@ -1452,6 +1452,9 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
     local cFrame = self.containerFrames and self.containerFrames[containerId]
     if cFrame and cFrame.dragHandle then
         if locked then
+            if self.ClearContainerUnlockState then
+                self:ClearContainerUnlockState(containerId)
+            end
             cFrame.dragHandle:Hide()
             if cFrame.coordLabel then
                 cFrame.coordLabel:Hide()
