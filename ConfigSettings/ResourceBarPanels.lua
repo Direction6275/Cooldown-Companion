@@ -78,6 +78,16 @@ local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
+
+local function IsHeroSpecProxyCondition(cond)
+    return type(cond) == "table"
+        and cond.nodeID ~= nil
+        and cond.heroSubTreeID ~= nil
+        and cond.entryID == nil
+        and type(cond.name) == "string"
+        and type(cond.heroName) == "string"
+        and cond.name == cond.heroName
+end
 local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForSpell
 
 -- Imports from ResourceBarPanelsHelpers
@@ -2328,7 +2338,9 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     local summaryLabel = AceGUI:Create("Label")
                     if condCount > 0 then
                         local firstCond = conditions[1]
-                        local displayIcon = firstCond.spellID and C_Spell.GetSpellTexture(firstCond.spellID)
+                        local displayIcon = not IsHeroSpecProxyCondition(firstCond)
+                            and firstCond.spellID
+                            and C_Spell.GetSpellTexture(firstCond.spellID)
                         if displayIcon then
                             summaryLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
                             summaryLabel:SetImageSize(16, 16)
@@ -2355,7 +2367,9 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                     local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
                     for _, cond in ipairs(conditions) do
                         local condLabel = AceGUI:Create("Label")
-                        local displayIcon = cond.spellID and C_Spell.GetSpellTexture(cond.spellID)
+                        local displayIcon = not IsHeroSpecProxyCondition(cond)
+                            and cond.spellID
+                            and C_Spell.GetSpellTexture(cond.spellID)
                         if displayIcon then
                             condLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
                             condLabel:SetImageSize(16, 16)

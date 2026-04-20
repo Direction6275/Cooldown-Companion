@@ -1413,9 +1413,36 @@ function CooldownCompanion:UnlockAllFrames()
     end
 end
 
-------------------------------------------------------------------------
 -- TALENT NODE CACHE (for per-button talent conditions)
 ------------------------------------------------------------------------
+
+function CooldownCompanion:GetHeroSubTreeRootNode(configID, treeID, heroSubTreeID)
+    if not configID or not treeID or not heroSubTreeID then
+        return nil, nil
+    end
+
+    local nodeIDs = C_Traits.GetTreeNodes(treeID)
+    if not nodeIDs then
+        return nil, nil
+    end
+
+    local bestNodeID, bestNodeInfo = nil, nil
+    for _, nodeID in ipairs(nodeIDs) do
+        local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+        if nodeInfo
+            and nodeInfo.subTreeID == heroSubTreeID
+            and nodeInfo.type ~= Enum.TraitNodeType.SubTreeSelection then
+            if not bestNodeInfo
+                or nodeInfo.posY < bestNodeInfo.posY
+                or (nodeInfo.posY == bestNodeInfo.posY and nodeInfo.posX < bestNodeInfo.posX) then
+                bestNodeID = nodeID
+                bestNodeInfo = nodeInfo
+            end
+        end
+    end
+
+    return bestNodeID, bestNodeInfo
+end
 
 -- Rebuild the runtime talent node cache from the active talent config.
 -- Called on TRAIT_CONFIG_UPDATED, PLAYER_ENTERING_WORLD, spec changes.
@@ -1435,9 +1462,14 @@ function CooldownCompanion:RebuildTalentNodeCache()
     local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
     if not treeID then return end
 
+    local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+    local heroRootNodeID = nil
+    if activeHeroSubTreeID then
+        heroRootNodeID = self:GetHeroSubTreeRootNode(configID, treeID, activeHeroSubTreeID)
+    end
+
     local nodeIDs = C_Traits.GetTreeNodes(treeID)
     if not nodeIDs then return end
-    local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
 
     for _, nodeID in ipairs(nodeIDs) do
         local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
@@ -1449,7 +1481,10 @@ function CooldownCompanion:RebuildTalentNodeCache()
                 or (
                     activeHeroSubTreeID
                     and nodeInfo.subTreeID == activeHeroSubTreeID
-                    and nodeInfo.type == Enum.TraitNodeType.Selection
+                    and (
+                        nodeInfo.type == Enum.TraitNodeType.Selection
+                        or nodeID == heroRootNodeID
+                    )
                 )
             )
         if includeNode then
@@ -1484,6 +1519,16 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
         cache = self._talentNodeCache
     end
 
+    local function IsHeroSpecProxyCondition(cond)
+        return type(cond) == "table"
+            and cond.nodeID ~= nil
+            and cond.heroSubTreeID ~= nil
+            and cond.entryID == nil
+            and type(cond.name) == "string"
+            and type(cond.heroName) == "string"
+            and cond.name == cond.heroName
+    end
+
     for _, cond in ipairs(conditions) do
         if cond.classID and self._playerClassID and cond.classID ~= self._playerClassID then
             return false
@@ -1493,26 +1538,44 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
             return false
         end
 
+        local activeHeroSubTreeID = nil
         if cond.heroSubTreeID then
-            local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+            activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+        end
+
+        if IsHeroSpecProxyCondition(cond) then
+            local show = cond.show or "taken"
+            local heroIsActive = activeHeroSubTreeID ~= nil and cond.heroSubTreeID == activeHeroSubTreeID
+            if show == "not_taken" then
+                if heroIsActive then
+                    return false
+                end
+            else
+                if not heroIsActive then
+                    return false
+                end
+            end
+        elseif cond.heroSubTreeID then
             if cond.heroSubTreeID ~= activeHeroSubTreeID then
                 return false
             end
         end
 
-        local entry = cache and cache[cond.nodeID] or nil
-        local isTaken = entry and entry.activeRank > 0 or false
+        if not IsHeroSpecProxyCondition(cond) then
+            local entry = cache and cache[cond.nodeID] or nil
+            local isTaken = entry and entry.activeRank > 0 or false
 
-        -- For choice nodes: if a specific entryID is required, verify it matches
-        if isTaken and cond.entryID then
-            isTaken = (entry.activeEntryID == cond.entryID)
-        end
+            -- For choice nodes: if a specific entryID is required, verify it matches
+            if isTaken and cond.entryID then
+                isTaken = (entry.activeEntryID == cond.entryID)
+            end
 
-        local show = cond.show or "taken"
-        if show == "not_taken" then
-            if isTaken then return false end
-        else
-            if not isTaken then return false end
+            local show = cond.show or "taken"
+            if show == "not_taken" then
+                if isTaken then return false end
+            else
+                if not isTaken then return false end
+            end
         end
     end
 

@@ -262,11 +262,22 @@ local function ResolveConditionHeroName(cond)
     return nil
 end
 
+local function IsHeroSpecProxyCondition(cond)
+    return type(cond) == "table"
+        and cond.nodeID ~= nil
+        and cond.heroSubTreeID ~= nil
+        and cond.entryID == nil
+        and type(cond.name) == "string"
+        and type(cond.heroName) == "string"
+        and cond.name == cond.heroName
+end
+
 local function GetConditionContextSuffix(cond)
     local parts = {}
     local className = ResolveConditionClassName(cond)
     local specName = ResolveConditionSpecName(cond)
     local heroName = ResolveConditionHeroName(cond)
+    local conditionName = cond and cond.name or nil
 
     if className then
         parts[#parts + 1] = className
@@ -274,7 +285,7 @@ local function GetConditionContextSuffix(cond)
     if specName then
         parts[#parts + 1] = specName
     end
-    if heroName then
+    if heroName and heroName ~= conditionName then
         parts[#parts + 1] = heroName
     end
 
@@ -1187,7 +1198,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             summaryLabel:SetText("|cff888888Multiple conditions|r")
         elseif hasTalent and condCount > 0 then
             local firstCond = conditions[1]
-            local displayIcon = firstCond.spellID and C_Spell.GetSpellTexture(firstCond.spellID)
+            local displayIcon = not IsHeroSpecProxyCondition(firstCond)
+                and firstCond.spellID
+                and C_Spell.GetSpellTexture(firstCond.spellID)
             if displayIcon then
                 summaryLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
                 summaryLabel:SetImageSize(16, 16)
@@ -1219,7 +1232,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
         for _, cond in ipairs(conditions) do
             local condLabel = AceGUI:Create("Label")
-            local displayIcon = cond.spellID and C_Spell.GetSpellTexture(cond.spellID)
+            local displayIcon = not IsHeroSpecProxyCondition(cond)
+                and cond.spellID
+                and C_Spell.GetSpellTexture(cond.spellID)
             if displayIcon then
                 condLabel:SetImage(displayIcon, 0.08, 0.92, 0.08, 0.92)
                 condLabel:SetImageSize(16, 16)
