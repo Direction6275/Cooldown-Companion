@@ -21,6 +21,7 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
+local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
@@ -403,80 +404,12 @@ local function BuildResourceBarPositioningPanel(container)
             end)
             container:AddChild(widthSlider)
 
-            -- Anchor to Frame (editbox + pick button row)
-            local anchorRow = AceGUI:Create("SimpleGroup")
-            anchorRow:SetFullWidth(true)
-            anchorRow:SetLayout("Flow")
-
-            local anchorBox = AceGUI:Create("EditBox")
-            if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
-            anchorBox:SetLabel("Anchor to Frame")
-            local currentRelativeTo = anchor.relativeTo
-            if not currentRelativeTo or currentRelativeTo == "UIParent" then currentRelativeTo = "" end
-            anchorBox:SetText(currentRelativeTo)
-            anchorBox:SetRelativeWidth(0.68)
-            anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
-                if text == "" then
-                    local wasAnchored = anchor.relativeTo and anchor.relativeTo ~= "UIParent"
-                    if wasAnchored then
-                        anchor.point = "CENTER"
-                        anchor.relativeTo = nil
-                        anchor.relativePoint = "CENTER"
-                        anchor.x = 0
-                        anchor.y = 0
-                    else
-                        anchor.relativeTo = nil
-                    end
-                else
-                    local targetFrame = _G[text]
-                    if not targetFrame then
-                        CooldownCompanion:Print("Frame '" .. text .. "' not found.")
-                        CooldownCompanion:RefreshConfigPanel()
-                        return
-                    end
-                    anchor.relativeTo = text
-                end
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            anchorRow:AddChild(anchorBox)
-
-            local pickBtn = AceGUI:Create("Button")
-            pickBtn:SetText("Pick")
-            pickBtn:SetRelativeWidth(0.24)
-            pickBtn:SetCallback("OnClick", function()
-                CS.StartPickFrame(function(name)
-                    if CS.configFrame then
-                        CS.configFrame.frame:Show()
-                    end
-                    if name then
-                        anchor.point = "TOPLEFT"
-                        anchor.relativeTo = name
-                        anchor.relativePoint = "BOTTOMLEFT"
-                        anchor.x = 0
-                        anchor.y = -5
-                        CooldownCompanion:ApplyResourceBars()
-                        CooldownCompanion:UpdateAnchorStacking()
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-            end)
-            anchorRow:AddChild(pickBtn)
-            container:AddChild(anchorRow)
-
-            pickBtn.frame:SetScript("OnUpdate", function(self)
-                self:SetScript("OnUpdate", nil)
-                local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-                if yOfs then
-                    self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-                end
-            end)
-
             local function refreshResourceBarAnchor()
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
             end
+
+            BuildIndependentAnchorTargetRow(container, anchor, refreshResourceBarAnchor)
 
             AddAnchorDropdown(container, anchor, "point", "CENTER", refreshResourceBarAnchor, "Anchor Point")
             AddAnchorDropdown(container, anchor, "relativePoint", "CENTER", refreshResourceBarAnchor, "Relative Point")
