@@ -1413,7 +1413,6 @@ function CooldownCompanion:UnlockAllFrames()
     end
 end
 
-------------------------------------------------------------------------
 -- TALENT NODE CACHE (for per-button talent conditions)
 ------------------------------------------------------------------------
 
@@ -1520,6 +1519,16 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
         cache = self._talentNodeCache
     end
 
+    local function IsHeroSpecProxyCondition(cond)
+        return type(cond) == "table"
+            and cond.nodeID ~= nil
+            and cond.heroSubTreeID ~= nil
+            and cond.entryID == nil
+            and type(cond.name) == "string"
+            and type(cond.heroName) == "string"
+            and cond.name == cond.heroName
+    end
+
     for _, cond in ipairs(conditions) do
         if cond.classID and self._playerClassID and cond.classID ~= self._playerClassID then
             return false
@@ -1529,26 +1538,43 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
             return false
         end
 
+        local activeHeroSubTreeID = nil
         if cond.heroSubTreeID then
-            local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+            activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
+        end
+
+        if IsHeroSpecProxyCondition(cond) then
+            local show = cond.show or "taken"
+            local heroIsActive = activeHeroSubTreeID ~= nil and cond.heroSubTreeID == activeHeroSubTreeID
+            local otherHeroIsActive = activeHeroSubTreeID ~= nil and cond.heroSubTreeID ~= activeHeroSubTreeID
+            if show == "not_taken" then
+                if not otherHeroIsActive then
+                    return false
+                end
+            else
+                if not heroIsActive then
+                    return false
+                end
+            end
+        elseif cond.heroSubTreeID then
             if cond.heroSubTreeID ~= activeHeroSubTreeID then
                 return false
             end
-        end
-
-        local entry = cache and cache[cond.nodeID] or nil
-        local isTaken = entry and entry.activeRank > 0 or false
-
-        -- For choice nodes: if a specific entryID is required, verify it matches
-        if isTaken and cond.entryID then
-            isTaken = (entry.activeEntryID == cond.entryID)
-        end
-
-        local show = cond.show or "taken"
-        if show == "not_taken" then
-            if isTaken then return false end
         else
-            if not isTaken then return false end
+            local entry = cache and cache[cond.nodeID] or nil
+            local isTaken = entry and entry.activeRank > 0 or false
+
+            -- For choice nodes: if a specific entryID is required, verify it matches
+            if isTaken and cond.entryID then
+                isTaken = (entry.activeEntryID == cond.entryID)
+            end
+
+            local show = cond.show or "taken"
+            if show == "not_taken" then
+                if isTaken then return false end
+            else
+                if not isTaken then return false end
+            end
         end
     end
 
