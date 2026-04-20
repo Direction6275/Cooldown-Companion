@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 -- Localize frequently-used globals for faster access
 local pairs = pairs
 local ipairs = ipairs
+local math_abs = math.abs
 local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
@@ -67,6 +68,31 @@ local function GetAnchorOffset(point, width, height)
     if point == "BOTTOM" then return 0, -height / 2 end
     if point == "BOTTOMRIGHT" then return width / 2, -height / 2 end
     return 0, 0
+end
+
+local function GetFrameSizeInUIParentSpace(frame)
+    if not (frame and frame.GetSize) then
+        return nil, nil
+    end
+
+    local width, height = frame:GetSize()
+    if not (width and height) then
+        return nil, nil
+    end
+
+    local frameScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or nil
+    local uiScale = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or nil
+    if frameScale and uiScale and uiScale > 0 then
+        local scaleRatio = frameScale / uiScale
+        width = width * scaleRatio
+        height = height * scaleRatio
+    end
+
+    return width, height
+end
+
+local function RoundPreviewOffset(value)
+    return math_floor(((value or 0) * 10) + 0.5) / 10
 end
 
 local function ApplyUnsafeAnchorVisualFallback(frame, anchor, relativeFrame)
@@ -706,6 +732,10 @@ function CooldownCompanion:SaveGroupPosition(groupId)
 
     UpdateCoordLabel(frame, newX, newY)
     self:RefreshConfigPanel()
+    local containerId = group.parentContainerId
+    if containerId and self.RefreshContainerWrapper then
+        self:RefreshContainerWrapper(containerId)
+    end
 end
 
 -- Compute button width/height from group style (bar mode vs square vs non-square).
@@ -1132,6 +1162,18 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     else
         self:UnloadGroup(groupId)
     end
+
+    if (group.displayMode == "textures" or group.displayMode == "trigger")
+        and self.UpdateAuraTextureVisual
+        and frame
+        and frame.buttons
+        and frame.buttons[1] then
+        self:UpdateAuraTextureVisual(frame.buttons[1])
+    end
+
+    if group.parentContainerId and self.RefreshContainerWrapper then
+        self:RefreshContainerWrapper(group.parentContainerId)
+    end
 end
 
 function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetKind, sourceKind)
@@ -1346,14 +1388,297 @@ end
 -- Container Frames (invisible anchor frames for the Group → Panel hierarchy)
 ------------------------------------------------------------------------
 
+local CONTAINER_WRAPPER_PADDING = 10
+local CONTAINER_WRAPPER_BORDER_SIZE = 2
+local CONTAINER_WRAPPER_LABEL_OFFSET = 2
+local CONTAINER_WRAPPER_HEADER_HEIGHT = 18
+local CONTAINER_PANEL_LABEL_HEIGHT = 15
+local CONTAINER_PANEL_LABEL_MIN_WIDTH = 70
+
+local function GetRelativeFrameRect(referenceFrame, targetFrame)
+    if not (referenceFrame and targetFrame and referenceFrame.GetCenter and targetFrame.GetCenter) then
+        return nil
+    end
+
+    local refX, refY = referenceFrame:GetCenter()
+    local targetX, targetY = targetFrame:GetCenter()
+    local width, height = GetFrameSizeInUIParentSpace(targetFrame)
+    if not (refX and refY and targetX and targetY and width and height) then
+        return nil
+    end
+
+    return {
+        left = targetX - (width / 2) - refX,
+        right = targetX + (width / 2) - refX,
+        bottom = targetY - (height / 2) - refY,
+        top = targetY + (height / 2) - refY,
+        centerX = targetX - refX,
+        centerY = targetY - refY,
+        width = width,
+        height = height,
+    }
+end
+
+local function EnsureContainerPanelLabel(frame, index)
+    frame._containerPanelLabels = frame._containerPanelLabels or {}
+    local labelFrame = frame._containerPanelLabels[index]
+    if labelFrame then
+        return labelFrame
+    end
+
+    labelFrame = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    labelFrame:SetHeight(CONTAINER_PANEL_LABEL_HEIGHT)
+    labelFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    labelFrame:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
+    labelFrame:EnableMouse(false)
+    CreatePixelBorders(labelFrame, 0, 0, 0, 1)
+
+    labelFrame.text = labelFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    labelFrame.text:SetPoint("CENTER")
+    labelFrame.text:SetTextColor(1, 1, 1, 1)
+
+    frame._containerPanelLabels[index] = labelFrame
+    return labelFrame
+end
+
+local function HideContainerPanelLabels(frame)
+    if not frame or not frame._containerPanelLabels then
+        return
+    end
+
+    for _, labelFrame in pairs(frame._containerPanelLabels) do
+        labelFrame:Hide()
+    end
+end
+
+local function EnsureContainerWrapperBorder(wrapper, r, g, b, a)
+    if not wrapper then
+        return
+    end
+
+    local borderTextures = wrapper._containerWrapperBorderTextures
+    if not borderTextures then
+        borderTextures = {}
+        for i = 1, 4 do
+            borderTextures[i] = wrapper:CreateTexture(nil, "BORDER")
+        end
+        wrapper._containerWrapperBorderTextures = borderTextures
+    end
+
+    if wrapper.borderTextures then
+        for _, texture in ipairs(wrapper.borderTextures) do
+            texture:Hide()
+        end
+    end
+
+    local size = CONTAINER_WRAPPER_BORDER_SIZE
+    local top = borderTextures[1]
+    local bottom = borderTextures[2]
+    local left = borderTextures[3]
+    local right = borderTextures[4]
+
+    for _, texture in ipairs(borderTextures) do
+        texture:SetColorTexture(r, g, b, a)
+        texture:Show()
+    end
+
+    PixelUtil.SetPoint(top, "BOTTOMLEFT", wrapper, "TOPLEFT", -size, 0)
+    PixelUtil.SetPoint(top, "BOTTOMRIGHT", wrapper, "TOPRIGHT", size, 0)
+    PixelUtil.SetHeight(top, size, 1)
+
+    PixelUtil.SetPoint(bottom, "TOPLEFT", wrapper, "BOTTOMLEFT", -size, 0)
+    PixelUtil.SetPoint(bottom, "TOPRIGHT", wrapper, "BOTTOMRIGHT", size, 0)
+    PixelUtil.SetHeight(bottom, size, 1)
+
+    PixelUtil.SetPoint(left, "TOPRIGHT", wrapper, "TOPLEFT", 0, size)
+    PixelUtil.SetPoint(left, "BOTTOMRIGHT", wrapper, "BOTTOMLEFT", 0, -size)
+    PixelUtil.SetWidth(left, size, 1)
+
+    PixelUtil.SetPoint(right, "TOPLEFT", wrapper, "TOPRIGHT", 0, size)
+    PixelUtil.SetPoint(right, "BOTTOMLEFT", wrapper, "BOTTOMRIGHT", 0, -size)
+    PixelUtil.SetWidth(right, size, 1)
+end
+
+local function UpdateContainerWrapperLevels(frame)
+    if not (frame and frame.dragHandle) then
+        return
+    end
+
+    local wrapper = frame.dragHandle
+    local strata = "FULLSCREEN_DIALOG"
+    local baseLevel = 60
+
+    wrapper:SetFrameStrata(strata)
+    wrapper:SetFrameLevel(baseLevel)
+
+    if wrapper.header then
+        wrapper.header:SetFrameStrata(strata)
+        wrapper.header:SetFrameLevel(baseLevel + 1)
+    end
+
+    if frame.coordLabel then
+        frame.coordLabel:SetFrameStrata(strata)
+        frame.coordLabel:SetFrameLevel(baseLevel + 2)
+    end
+
+    if frame._containerPanelLabels then
+        for _, labelFrame in pairs(frame._containerPanelLabels) do
+            labelFrame:SetFrameStrata(strata)
+            labelFrame:SetFrameLevel(baseLevel + 3)
+        end
+    end
+
+    if frame.nudger then
+        frame.nudger:SetFrameStrata(strata)
+        frame.nudger:SetFrameLevel(baseLevel + 4)
+        for buttonIndex, btn in ipairs(frame.nudger.buttons or {}) do
+            btn:SetFrameStrata(strata)
+            btn:SetFrameLevel(baseLevel + 5 + buttonIndex)
+        end
+    end
+end
+
+local function GetContainerMemberDisplayRect(self, containerFrame, groupId, group)
+    local groupFrame = self.groupFrames and self.groupFrames[groupId]
+    local rect = nil
+    local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+
+    if isStandaloneDisplay then
+        local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+        local host = driverButton and driverButton.auraTextureHost or nil
+        if host and host:IsShown() then
+            rect = GetRelativeFrameRect(containerFrame, host)
+        end
+    end
+
+    if not rect and not isStandaloneDisplay and groupFrame and groupFrame:IsShown() then
+        rect = GetRelativeFrameRect(containerFrame, groupFrame)
+    end
+
+    if rect then
+        rect.groupId = groupId
+        rect.group = group
+        rect.label = group.name or ("Panel " .. groupId)
+    end
+
+    return rect
+end
+
+function CooldownCompanion:RefreshContainerWrapper(containerId)
+    local frame = self.containerFrames and self.containerFrames[containerId]
+    local container = self.db and self.db.profile and self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
+    if not (frame and container and frame.dragHandle) then
+        return
+    end
+
+    local wrapper = frame.dragHandle
+    local header = wrapper.header
+    HideContainerPanelLabels(frame)
+    UpdateContainerWrapperLevels(frame)
+
+    if container.locked ~= false or not self:IsContainerVisibleToCurrentChar(containerId) then
+        wrapper:Hide()
+        if header then
+            header:Hide()
+        end
+        if frame.coordLabel then
+            frame.coordLabel:Hide()
+        end
+        if frame.nudger then
+            frame.nudger:Hide()
+        end
+        return
+    end
+
+    local previewPanels = self.GetContainerUnlockPreviewPanels and self:GetContainerUnlockPreviewPanels(containerId) or {}
+    local previewRects = {}
+    local minLeft, maxRight, minBottom, maxTop = nil, nil, nil, nil
+
+    for _, panelInfo in ipairs(previewPanels) do
+        local rect = GetContainerMemberDisplayRect(self, frame, panelInfo.groupId, panelInfo.group)
+        if rect then
+            previewRects[#previewRects + 1] = rect
+            minLeft = minLeft and math_min(minLeft, rect.left) or rect.left
+            maxRight = maxRight and math_max(maxRight, rect.right) or rect.right
+            minBottom = minBottom and math_min(minBottom, rect.bottom) or rect.bottom
+            maxTop = maxTop and math_max(maxTop, rect.top) or rect.top
+        end
+    end
+
+    if #previewRects == 0 then
+        wrapper:Hide()
+        if header then
+            header:Hide()
+        end
+        if frame.coordLabel then
+            frame.coordLabel:Hide()
+        end
+        if frame.nudger then
+            frame.nudger:Hide()
+        end
+        return
+    end
+
+    local padding = CONTAINER_WRAPPER_PADDING
+    wrapper:ClearAllPoints()
+    wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", RoundPreviewOffset(minLeft - padding), RoundPreviewOffset(minBottom - padding))
+    wrapper:SetPoint("TOPRIGHT", frame, "CENTER", RoundPreviewOffset(maxRight + padding), RoundPreviewOffset(maxTop + padding))
+    wrapper:SetShown(true)
+
+    if header then
+        local titleText = header.text or wrapper.text
+        if titleText then
+            titleText:SetText(container.name or "Group")
+            header:SetWidth(math_max(96, math_floor((titleText:GetStringWidth() or 0) + 24.5)))
+        else
+            header:SetWidth(96)
+        end
+        header:Show()
+    end
+
+    if frame.coordLabel then
+        frame.coordLabel:SetShown(true)
+    end
+    if frame.nudger then
+        frame.nudger:SetShown(true)
+    end
+
+    for labelIndex, rect in ipairs(previewRects) do
+        local labelFrame = EnsureContainerPanelLabel(frame, labelIndex)
+        labelFrame.text:SetText(rect.label)
+        labelFrame:SetWidth(math_max(CONTAINER_PANEL_LABEL_MIN_WIDTH, math_floor((labelFrame.text:GetStringWidth() or 0) + 16.5)))
+        labelFrame:ClearAllPoints()
+        labelFrame:SetPoint(
+            "BOTTOM",
+            wrapper,
+            "BOTTOMLEFT",
+            RoundPreviewOffset(rect.centerX - minLeft + padding),
+            RoundPreviewOffset(rect.top - minBottom + padding + CONTAINER_WRAPPER_LABEL_OFFSET)
+        )
+        labelFrame:Show()
+    end
+end
+
+function CooldownCompanion:RefreshAllContainerWrappers()
+    if not self.containerFrames then
+        return
+    end
+
+    for containerId in pairs(self.containerFrames) do
+        self:RefreshContainerWrapper(containerId)
+    end
+end
+
 local function CreateContainerNudger(frame, containerId)
     local NUDGE_GAP = 2
 
-    local nudger = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    local nudgerAnchor = frame.dragHandle.header or frame.dragHandle
+    local nudger = CreateFrame("Frame", nil, nudgerAnchor, "BackdropTemplate")
+    nudger.buttons = {}
     nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
-    nudger:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
-    nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
-    nudger:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 5)
+    nudger:SetPoint("BOTTOM", nudgerAnchor, "TOP", 0, 2)
+    nudger:SetFrameStrata(nudgerAnchor:GetFrameStrata())
+    nudger:SetFrameLevel(nudgerAnchor:GetFrameLevel() + 5)
     nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
     CreatePixelBorders(nudger)
@@ -1367,6 +1692,7 @@ local function CreateContainerNudger(frame, containerId)
 
     for _, dir in ipairs(directions) do
         local btn = CreateFrame("Button", nil, nudger)
+        nudger.buttons[#nudger.buttons + 1] = btn
         btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
         btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
         btn:EnableMouse(true)
@@ -1459,24 +1785,32 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame:EnableMouse(not container.locked)
     frame:RegisterForDrag("LeftButton")
 
-    -- Drag handle (visible when unlocked)
+    -- Wrapper outline (visible when unlocked)
     frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", -40, 2)
-    frame.dragHandle:SetSize(80, 15)
+    frame.dragHandle:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.dragHandle:SetSize(1, 1)
     frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    frame.dragHandle:SetBackdropColor(0.15, 0.35, 0.55, 0.9)
-    CreatePixelBorders(frame.dragHandle)
+    frame.dragHandle:SetBackdropColor(0.15, 0.35, 0.55, 0.08)
+    EnsureContainerWrapperBorder(frame.dragHandle, 0.2, 0.8, 1, 0.95)
 
-    frame.dragHandle.text = frame.dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.dragHandle.header = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    frame.dragHandle.header:SetHeight(CONTAINER_WRAPPER_HEADER_HEIGHT)
+    frame.dragHandle.header:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
+    frame.dragHandle.header:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    frame.dragHandle.header:SetBackdropColor(0.15, 0.35, 0.55, 0.92)
+    CreatePixelBorders(frame.dragHandle.header)
+
+    frame.dragHandle.text = frame.dragHandle.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.dragHandle.text:SetPoint("CENTER")
     frame.dragHandle.text:SetText(container.name)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
+    frame.dragHandle.header.text = frame.dragHandle.text
 
     -- Pixel nudger
     frame.nudger = CreateContainerNudger(frame, containerId)
 
     -- Coordinate label
-    frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    frame.coordLabel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.coordLabel:SetHeight(15)
     frame.coordLabel:SetPoint("TOPLEFT", frame.dragHandle, "BOTTOMLEFT", 0, -2)
     frame.coordLabel:SetPoint("TOPRIGHT", frame.dragHandle, "BOTTOMRIGHT", 0, -2)
@@ -1517,13 +1851,30 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         CooldownCompanion:SaveContainerPosition(containerId)
     end)
 
+    frame.dragHandle.header:EnableMouse(true)
+    frame.dragHandle.header:RegisterForDrag("LeftButton")
+    frame.dragHandle.header:SetScript("OnDragStart", function()
+        local c = CooldownCompanion.db.profile.groupContainers[containerId]
+        if c and not c.locked then
+            frame:StartMoving()
+        end
+    end)
+    frame.dragHandle.header:SetScript("OnDragStop", function()
+        frame:StopMovingOrSizing()
+        CooldownCompanion:SaveContainerPosition(containerId)
+    end)
+
     -- Middle-click to lock
-    frame.dragHandle:SetScript("OnMouseUp", function(_, btn)
+    frame.dragHandle.header:SetScript("OnMouseUp", function(_, btn)
         if btn == "MiddleButton" then
             local c = CooldownCompanion.db.profile.groupContainers[containerId]
             if c then
+                if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+                    CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
+                end
                 c.locked = true
-                frame.dragHandle:Hide()
+                CooldownCompanion:UpdateContainerDragHandle(containerId, true)
+                CooldownCompanion:RefreshContainerPanels(containerId)
                 CooldownCompanion:RefreshConfigPanel()
                 CooldownCompanion:Print(c.name .. " locked.")
             end
@@ -1531,6 +1882,8 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     end)
 
     self.containerFrames[containerId] = frame
+    UpdateContainerWrapperLevels(frame)
+    self:RefreshContainerWrapper(containerId)
     frame:Show()
     return frame
 end
@@ -1601,7 +1954,13 @@ function CooldownCompanion:SaveContainerPosition(containerId)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", newX, newY)
 
+    if self.SyncGroupedStandalonePreviewSettings then
+        self:SyncGroupedStandalonePreviewSettings(containerId)
+    end
     UpdateCoordLabel(frame, newX, newY)
+    if self.RefreshContainerWrapper then
+        self:RefreshContainerWrapper(containerId)
+    end
     self:RefreshConfigPanel()
 end
 

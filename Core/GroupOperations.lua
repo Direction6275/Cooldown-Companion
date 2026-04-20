@@ -124,6 +124,84 @@ function CooldownCompanion:GetParentContainer(groupOrGroupId)
     return containers and containers[group.parentContainerId]
 end
 
+function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId)
+    local container = containerOrContainerId
+    local containerId = nil
+
+    if type(containerOrContainerId) == "number" then
+        containerId = containerOrContainerId
+        container = self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
+    elseif type(containerOrContainerId) == "table" then
+        for id, candidate in pairs(self.db.profile.groupContainers or {}) do
+            if candidate == containerOrContainerId then
+                containerId = id
+                break
+            end
+        end
+    end
+
+    if not container then
+        return false
+    end
+    if container.locked ~= false then
+        return false
+    end
+    if containerId and not self:IsContainerVisibleToCurrentChar(containerId) then
+        return false
+    end
+
+    return true
+end
+
+function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
+    opts = opts or {}
+
+    local group = opts.group or self.db.profile.groups[groupId]
+    if not (group and group.parentContainerId) then
+        return false
+    end
+
+    local container = opts.container or self:GetParentContainer(group)
+    if not self:IsContainerUnlockPreviewActive(container) then
+        return false
+    end
+
+    if not (group.buttons and #group.buttons > 0) then
+        return false
+    end
+
+    local checkCharVisibility = opts.checkCharVisibility
+    if checkCharVisibility == nil then
+        checkCharVisibility = true
+    end
+    if checkCharVisibility and groupId and not self:IsGroupVisibleToCurrentChar(groupId) then
+        return false
+    end
+
+    local effectiveSpecs = self:GetEffectiveSpecs(group)
+    if effectiveSpecs and next(effectiveSpecs) then
+        if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+            return false
+        end
+    end
+
+    return true
+end
+
+function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId)
+    local previewPanels = {}
+    local panels = self:GetPanels(containerId)
+    for _, panelInfo in ipairs(panels) do
+        if self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+            group = panelInfo.group,
+            checkCharVisibility = true,
+        }) then
+            previewPanels[#previewPanels + 1] = panelInfo
+        end
+    end
+    return previewPanels
+end
+
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
@@ -480,6 +558,13 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
 
     -- If this panel has a parent container, check container-level state first
     local container = self:GetParentContainer(group)
+    if container and self:IsContainerUnlockPreviewActive(container) then
+        return self:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            container = container,
+            checkCharVisibility = opts.checkCharVisibility,
+        })
+    end
     if container then
         if container.enabled == false then return false end
         if group.enabled == false then return false end
@@ -1075,6 +1160,9 @@ function CooldownCompanion:RefreshAllGroups()
     end
 
     self:FinalizeContainerAnchorsToScreenOffsets()
+    if self.RefreshAllContainerWrappers then
+        self:RefreshAllContainerWrappers()
+    end
 end
 
 -- Refresh only frame-level visibility/load-state without rebuilding buttons.
@@ -1175,6 +1263,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
 
     self:FinalizeContainerAnchorsToScreenOffsets()
+    if self.RefreshAllContainerWrappers then
+        self:RefreshAllContainerWrappers()
+    end
 end
 
 -- Fully unload a group: save/clear button OnUpdate scripts, remove from
@@ -1360,7 +1451,24 @@ end
 function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
     local cFrame = self.containerFrames and self.containerFrames[containerId]
     if cFrame and cFrame.dragHandle then
-        cFrame.dragHandle:SetShown(not locked)
+        if locked then
+            cFrame.dragHandle:Hide()
+            if cFrame.coordLabel then
+                cFrame.coordLabel:Hide()
+            end
+            if cFrame.nudger then
+                cFrame.nudger:Hide()
+            end
+            if cFrame._containerPanelLabels then
+                for _, label in pairs(cFrame._containerPanelLabels) do
+                    label:Hide()
+                end
+            end
+        elseif self.RefreshContainerWrapper then
+            self:RefreshContainerWrapper(containerId)
+        else
+            cFrame.dragHandle:Show()
+        end
     end
 end
 
@@ -1385,6 +1493,7 @@ function CooldownCompanion:LockAllFrames()
             self:UpdateContainerDragHandle(containerId, true)
         end
     end
+    self:RefreshAllGroups()
 end
 
 function CooldownCompanion:UnlockAllFrames()
@@ -1411,6 +1520,7 @@ function CooldownCompanion:UnlockAllFrames()
             self:UpdateContainerDragHandle(containerId, not container or container.locked)
         end
     end
+    self:RefreshAllGroups()
 end
 
 -- TALENT NODE CACHE (for per-button talent conditions)
