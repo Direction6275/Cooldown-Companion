@@ -1560,7 +1560,9 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
             if cond.heroSubTreeID ~= activeHeroSubTreeID then
                 return false
             end
-        else
+        end
+
+        if not IsHeroSpecProxyCondition(cond) then
             local entry = cache and cache[cond.nodeID] or nil
             local isTaken = entry and entry.activeRank > 0 or false
 

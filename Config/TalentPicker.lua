@@ -325,6 +325,21 @@ local function GetConditionState(nodeID, entryID)
     return GetPendingStateForNode(nodeID)
 end
 
+local function IsHeroSpecProxyCondition(cond)
+    return type(cond) == "table"
+        and cond.nodeID ~= nil
+        and cond.heroSubTreeID ~= nil
+        and cond.entryID == nil
+        and type(cond.name) == "string"
+        and type(cond.heroName) == "string"
+        and cond.name == cond.heroName
+end
+
+local function IsHeroSpecProxyNodeDisabled(nodeID)
+    local pending = GetPendingStateForNode(nodeID)
+    return pending and pending.show == "not_taken" and IsHeroSpecProxyCondition(pending)
+end
+
 local function AddPendingTooltipLine(pending, isChoiceNode)
     if not pending then return end
 
@@ -409,7 +424,9 @@ local function CreateNodeButton(parent, index)
             and GetPendingState(self._nodeID, self._entryID)
             or  GetPendingStateForNode(self._nodeID)
         AddPendingTooltipLine(pending, self._isChoiceNode)
-        if self._isChoiceNode then
+        if self._disabledReason then
+            GameTooltip:AddLine(self._disabledReason, 1, 0.82, 0.2, true)
+        elseif self._isChoiceNode then
             GameTooltip:AddLine("Left-click to show or hide choices", 0.5, 0.8, 1)
         else
             GameTooltip:AddLine("Click to cycle condition", 0.5, 0.8, 1)
@@ -459,7 +476,11 @@ local function CreateChoiceButton(parent)
             local pending = GetPendingState(self._nodeID, self._entryID)
             AddPendingTooltipLine(pending, true)
         end
-        GameTooltip:AddLine("Click to cycle a specific choice", 0.5, 0.8, 1)
+        if self._disabledReason then
+            GameTooltip:AddLine(self._disabledReason, 1, 0.82, 0.2, true)
+        else
+            GameTooltip:AddLine("Click to cycle a specific choice", 0.5, 0.8, 1)
+        end
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1318,14 +1339,26 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
         btn._talentName = displayName
         btn._spellID = primaryEntry.spellID
         btn._rankText = nil
+        btn._disabledReason = node.disabledReason
 
         local borderColor, borderSize = GetNodeBorderStyle(node.nodeID, nil)
         SetNodeBorderThickness(btn, borderSize)
         SetNodeBorderColor(btn, borderColor)
+        btn.icon:SetDesaturated(node.disabledInteraction and true or false)
+        if node.disabledInteraction then
+            btn.icon:SetVertexColor(0.5, 0.5, 0.5)
+            btn.highlight:Hide()
+        else
+            btn.icon:SetVertexColor(1, 1, 1)
+            btn.highlight:Show()
+        end
 
         -- Click handler
         local nodeRef = node
         btn:SetScript("OnClick", function(self, mouseButton)
+            if nodeRef.disabledInteraction then
+                return
+            end
             if nodeRef.isChoice and #nodeRef.entries > 1 then
                 if mouseButton == "LeftButton" or mouseButton == nil then
                     ToggleChoiceFrame(self, nodeRef.entries, nodeRef.nodeID, nodeRef.scopeType, nodeRef.subTreeID)
@@ -1333,7 +1366,11 @@ local function PlaceNodesInPanel(scrollChild, nodeSet, panelOffsetX, yOffset,
             else
                 HideChoiceFrame()
                 CyclePendingState(nodeRef.nodeID, nil, primaryEntry.spellID, displayName, BuildConditionContext(nodeRef.scopeType, nodeRef.subTreeID))
-                RefreshPickerBorders()
+                if nodeRef.scopeType == "hero" and nodeRef.displayName then
+                    PopulateTree()
+                else
+                    RefreshPickerBorders()
+                end
             end
         end)
 
@@ -1436,6 +1473,7 @@ local function RenderHeroChoiceList(panelFrame, nodeSet, nodeIDToBtn, btnIndex, 
 
     local centeredX = math_max(NODE_PADDING, math_floor((panelFrame:GetWidth() - NODE_SIZE) * 0.5))
     local nextY = HERO_HEADER_HEIGHT + 8
+    local disableHeroSubTreeRows = leadingNode and IsHeroSpecProxyNodeDisabled(leadingNode.nodeID)
 
     if leadingNode then
         btnIndex = PlaceNodesInPanel(panelFrame, { leadingNode }, centeredX - NODE_PADDING, nextY - NODE_PADDING,
@@ -1444,6 +1482,13 @@ local function RenderHeroChoiceList(panelFrame, nodeSet, nodeIDToBtn, btnIndex, 
     end
 
     for _, node in ipairs(orderedNodes) do
+        if disableHeroSubTreeRows then
+            node.disabledInteraction = true
+            node.disabledReason = "Clear the top hero-spec condition first to edit hero-tree talents."
+        else
+            node.disabledInteraction = nil
+            node.disabledReason = nil
+        end
         btnIndex = PlaceNodesInPanel(panelFrame, { node }, centeredX - NODE_PADDING, nextY - NODE_PADDING,
             node.px, node.py, node.px, node.py, 0, btnIndex, nodeIDToBtn)
         nextY = nextY + NODE_SIZE + 10
