@@ -391,13 +391,21 @@ local function EnsureAuraTextureDragHandle(host)
             return
         end
         if host._dragEnabled then
+            host._dragCancelPending = nil
             host._isDragging = true
             host:StartMoving()
         end
     end)
     dragHandle:SetScript("OnDragStop", function()
+        local cancelSave = host._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        host._dragCancelPending = nil
         host._isDragging = nil
-        host:StopMovingOrSizing()
+        if not (InCombatLockdown() and host:IsProtected()) then
+            host:StopMovingOrSizing()
+        end
+        if cancelSave then
+            return
+        end
         SaveTextureHostPosition(host)
     end)
     dragHandle:SetScript("OnMouseUp", function(_, button)
@@ -485,13 +493,21 @@ local function EnsureAuraTextureHost(button)
         if CooldownCompanion._combatForcedLock or not self._dragEnabled then
             return
         end
+        self._dragCancelPending = nil
         self._isDragging = true
         self:StartMoving()
     end)
 
     host:SetScript("OnDragStop", function(self)
+        local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        self._dragCancelPending = nil
         self._isDragging = nil
-        self:StopMovingOrSizing()
+        if not (InCombatLockdown() and self:IsProtected()) then
+            self:StopMovingOrSizing()
+        end
+        if cancelSave then
+            return
+        end
         SaveTextureHostPosition(self)
     end)
 
@@ -1213,6 +1229,7 @@ function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, contai
         return false
     end
 
+    host._dragCancelPending = nil
     host._isDragging = true
     host:StartMoving()
     return true
@@ -1231,9 +1248,14 @@ function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, contain
         return
     end
 
+    local cancelSave = host._dragCancelPending == true or self._combatForcedLock
+    host._dragCancelPending = nil
     host._isDragging = nil
     if not (InCombatLockdown() and host:IsProtected()) then
         host:StopMovingOrSizing()
+    end
+    if cancelSave then
+        return
     end
     SaveTextureHostPosition(host)
 end

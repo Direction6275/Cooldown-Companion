@@ -538,17 +538,29 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
                 CooldownCompanion:StartContainerMemberPreviewTracking(containerId, self.groupId)
             end
+            self._dragCancelPending = nil
+            self._dragInProgress = true
             self:StartMoving()
         elseif not locked then
+            self._dragCancelPending = nil
+            self._dragInProgress = true
             self:StartMoving()
         end
     end)
 
     frame:SetScript("OnDragStop", function(self)
         local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
-        self:StopMovingOrSizing()
+        local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        self._dragCancelPending = nil
+        self._dragInProgress = nil
+        if not (InCombatLockdown() and self:IsProtected()) then
+            self:StopMovingOrSizing()
+        end
         if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
             CooldownCompanion:StopContainerMemberPreviewTracking(containerId, self.groupId)
+        end
+        if cancelSave then
+            return
         end
         CooldownCompanion:SaveGroupPosition(self.groupId)
     end)
@@ -568,16 +580,28 @@ function CooldownCompanion:CreateGroupFrame(groupId)
             if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
                 CooldownCompanion:StartContainerMemberPreviewTracking(containerId, groupId)
             end
+            frame._dragCancelPending = nil
+            frame._dragInProgress = true
             frame:StartMoving()
         elseif not locked then
+            frame._dragCancelPending = nil
+            frame._dragInProgress = true
             frame:StartMoving()
         end
     end)
     frame.dragHandle:SetScript("OnDragStop", function()
         local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
-        frame:StopMovingOrSizing()
+        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        frame._dragCancelPending = nil
+        frame._dragInProgress = nil
+        if not (InCombatLockdown() and frame:IsProtected()) then
+            frame:StopMovingOrSizing()
+        end
         if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
             CooldownCompanion:StopContainerMemberPreviewTracking(containerId, groupId)
+        end
+        if cancelSave then
+            return
         end
         CooldownCompanion:SaveGroupPosition(groupId)
     end)
@@ -1244,7 +1268,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             frame:Show()
         end
         -- Force 100% alpha while unlocked for easier positioning
-        if not isLocked then
+        if containerPreviewActive or not isLocked then
             frame:SetAlpha(1)
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         else
@@ -1830,6 +1854,8 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
         return false
     end
 
+    groupFrame._dragCancelPending = nil
+    groupFrame._dragInProgress = true
     groupFrame:StartMoving()
     return true
 end
@@ -1850,10 +1876,18 @@ function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
     end
 
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
+    local cancelSave = (groupFrame and groupFrame._dragCancelPending == true) or self._combatForcedLock
     if groupFrame and not (InCombatLockdown() and groupFrame:IsProtected()) then
         groupFrame:StopMovingOrSizing()
     end
+    if groupFrame then
+        groupFrame._dragCancelPending = nil
+        groupFrame._dragInProgress = nil
+    end
     self:StopContainerMemberPreviewTracking(containerId)
+    if cancelSave then
+        return
+    end
     self:SaveGroupPosition(groupId)
 end
 
@@ -2307,11 +2341,21 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         local c = CooldownCompanion.db.profile.groupContainers[self.containerId]
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(self.containerId) then
             CooldownCompanion:SelectContainerWrapper(self.containerId)
+            self._dragCancelPending = nil
+            self._dragInProgress = true
             self:StartMoving()
         end
     end)
     frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
+        local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        self._dragCancelPending = nil
+        self._dragInProgress = nil
+        if not (InCombatLockdown() and self:IsProtected()) then
+            self:StopMovingOrSizing()
+        end
+        if cancelSave then
+            return
+        end
         CooldownCompanion:SaveContainerPosition(self.containerId)
     end)
 
@@ -2322,11 +2366,21 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
+            frame._dragCancelPending = nil
+            frame._dragInProgress = true
             frame:StartMoving()
         end
     end)
     frame.dragHandle:SetScript("OnDragStop", function()
-        frame:StopMovingOrSizing()
+        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        frame._dragCancelPending = nil
+        frame._dragInProgress = nil
+        if not (InCombatLockdown() and frame:IsProtected()) then
+            frame:StopMovingOrSizing()
+        end
+        if cancelSave then
+            return
+        end
         CooldownCompanion:SaveContainerPosition(containerId)
     end)
     frame.dragHandle:SetScript("OnMouseUp", function(_, button)
@@ -2347,11 +2401,21 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle.header._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
+            frame._dragCancelPending = nil
+            frame._dragInProgress = true
             frame:StartMoving()
         end
     end)
     frame.dragHandle.header:SetScript("OnDragStop", function()
-        frame:StopMovingOrSizing()
+        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        frame._dragCancelPending = nil
+        frame._dragInProgress = nil
+        if not (InCombatLockdown() and frame:IsProtected()) then
+            frame:StopMovingOrSizing()
+        end
+        if cancelSave then
+            return
+        end
         CooldownCompanion:SaveContainerPosition(containerId)
     end)
 

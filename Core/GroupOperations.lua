@@ -191,7 +191,22 @@ function CooldownCompanion:BeginCombatForcedLock()
     self._combatForcedLock = true
     self._combatForcedLockSnapshot = snapshot
 
-    for _, frame in pairs(self.groupFrames or {}) do
+    for groupId, frame in pairs(self.groupFrames or {}) do
+        local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+        local active = group and self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+        }) or false
+
+        if frame._dragInProgress then
+            frame._dragCancelPending = true
+            if not frame:IsProtected() then
+                frame:StopMovingOrSizing()
+            end
+            frame._dragInProgress = nil
+        end
         if frame.dragHandle then
             frame.dragHandle:Hide()
         end
@@ -204,6 +219,13 @@ function CooldownCompanion:BeginCombatForcedLock()
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
             if host then
+                if host._isDragging then
+                    host._dragCancelPending = true
+                    if not host:IsProtected() then
+                        host:StopMovingOrSizing()
+                    end
+                    host._isDragging = nil
+                end
                 host._dragEnabled = false
                 if host.dragHandle then
                     host.dragHandle:Hide()
@@ -221,11 +243,30 @@ function CooldownCompanion:BeginCombatForcedLock()
                     edge:Hide()
                 end
             end
+            if not active and self.HideAuraTextureVisual then
+                self:HideAuraTextureVisual(button)
+            end
+        end
+
+        if active then
+            local alphaState = self.alphaState and self.alphaState[groupId]
+            frame:SetAlpha(alphaState and alphaState.currentAlpha or (group and group.baselineAlpha) or 1)
+        elseif frame:IsProtected() then
+            frame:SetAlpha(0)
+        else
+            frame:Hide()
         end
     end
 
     if self.containerFrames then
-        for containerId in pairs(self.containerFrames) do
+        for containerId, frame in pairs(self.containerFrames) do
+            if frame._dragInProgress then
+                frame._dragCancelPending = true
+                if not frame:IsProtected() then
+                    frame:StopMovingOrSizing()
+                end
+                frame._dragInProgress = nil
+            end
             self:UpdateContainerDragHandle(containerId, true)
         end
     end
