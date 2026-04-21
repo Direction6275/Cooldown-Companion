@@ -1456,6 +1456,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
     local isTriggerPanel = group and group.displayMode == "trigger"
+    local forceVisibleByUnlockPreview = group
+        and group.parentContainerId
+        and CooldownCompanion.IsContainerUnlockPreviewActive
+        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        and not isTriggerPanel
     if isTriggerPanel then
         button._visibilityHidden = true
         button._visibilityAlphaOverride = 0
@@ -1463,11 +1468,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
     local forceVisibleByConfig = IsConfigButtonForceVisible(button)
-    if forceVisibleByConfig and not isTriggerPanel then
+    if forceVisibleByUnlockPreview then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = 1
+    elseif forceVisibleByConfig and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
     end
-    button._forceVisibleByConfig = (forceVisibleByConfig and not isTriggerPanel) or nil
+    button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil
 
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden

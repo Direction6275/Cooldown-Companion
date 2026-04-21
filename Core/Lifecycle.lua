@@ -408,6 +408,7 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
+    self:BeginCombatForcedLock()
     self:UpdateAllCooldowns()
     -- Close spellbook during combat to avoid Blizzard secret value errors
     if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
@@ -426,6 +427,7 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
+    local combatLockSnapshot = self:EndCombatForcedLock()
     self:UpdateAllCooldowns()
     self:ApplyCdmAlpha()
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
@@ -441,7 +443,19 @@ function CooldownCompanion:OnCombatEnd()
         self:RefreshAllGroups()
     elseif self._pendingVisibilityRefresh then
         self._pendingVisibilityRefresh = nil
-        self:RefreshAllGroupsVisibilityOnly()
+        if combatLockSnapshot and combatLockSnapshot.hadUnlocked then
+            self:RefreshAllGroups()
+        else
+            self:RefreshAllGroupsVisibilityOnly()
+        end
+    elseif combatLockSnapshot and combatLockSnapshot.hadUnlocked then
+        self:RefreshAllGroups()
+    end
+    if combatLockSnapshot and combatLockSnapshot.hadUnlocked and self.containerFrames then
+        for containerId in pairs(self.containerFrames) do
+            local container = self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
+            self:UpdateContainerDragHandle(containerId, not container or container.locked)
+        end
     end
     -- Reopen config panel if it was open before combat
     if self._configWasOpen then
