@@ -2907,6 +2907,29 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     if not layoutCollapsed then
         container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
+        local function ApplyContainerOffset(axis, value)
+            local oldValue = tonumber(container.anchor[axis]) or 0
+            container.anchor[axis] = value
+
+            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+            if containerFrame then
+                CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+            end
+
+            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+                local deltaX, deltaY = 0, 0
+                if axis == "x" then
+                    deltaX = value - oldValue
+                else
+                    deltaY = value - oldValue
+                end
+                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, deltaX, deltaY)
+            end
+
+            if containerFrame and CooldownCompanion.RefreshContainerWrapper then
+                CooldownCompanion:RefreshContainerWrapper(containerId)
+            end
+        end
 
         -- X Offset
         local xSlider = AceGUI:Create("Slider")
@@ -2914,21 +2937,8 @@ local function BuildContainerGeneralTab(scroll, containerId)
         xSlider:SetSliderValues(-2000, 2000, 0.1)
         xSlider:SetValue(container.anchor.x or 0)
         xSlider:SetFullWidth(true)
-        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            local oldX = tonumber(container.anchor.x) or 0
-            container.anchor.x = val
-            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-            if containerFrame then
-                CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-            end
-            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, val - oldX, 0)
-            end
-            if containerFrame then
-                if CooldownCompanion.RefreshContainerWrapper then
-                    CooldownCompanion:RefreshContainerWrapper(containerId)
-                end
-            end
+        xSlider:SetCallback("OnValueChanged", function(_, _, val)
+            ApplyContainerOffset("x", val)
         end)
         HookSliderEditBox(xSlider)
         scroll:AddChild(xSlider)
@@ -2939,21 +2949,8 @@ local function BuildContainerGeneralTab(scroll, containerId)
         ySlider:SetSliderValues(-2000, 2000, 0.1)
         ySlider:SetValue(container.anchor.y or 0)
         ySlider:SetFullWidth(true)
-        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-            local oldY = tonumber(container.anchor.y) or 0
-            container.anchor.y = val
-            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-            if containerFrame then
-                CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
-            end
-            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, 0, val - oldY)
-            end
-            if containerFrame then
-                if CooldownCompanion.RefreshContainerWrapper then
-                    CooldownCompanion:RefreshContainerWrapper(containerId)
-                end
-            end
+        ySlider:SetCallback("OnValueChanged", function(_, _, val)
+            ApplyContainerOffset("y", val)
         end)
         HookSliderEditBox(ySlider)
         scroll:AddChild(ySlider)

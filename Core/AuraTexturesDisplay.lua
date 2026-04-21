@@ -219,24 +219,14 @@ local function SaveTextureHostPosition(host)
         return
     end
 
-    if SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
-        UpdateTextureHostCoordLabel(host, settings.x, settings.y)
-        CooldownCompanion:UpdateAuraTextureVisual(owner)
-        if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
-            CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
-        end
-        if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        return
+    if not SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
+        local point, _, relPoint, x, y = host:GetPoint(1)
+        settings.point = NormalizeAnchorPoint(point)
+        settings.relativePoint = NormalizeAnchorPoint(relPoint)
+        settings.relativeTo = UI_PARENT_NAME
+        settings.x = math_floor(((x or 0) * 10) + 0.5) / 10
+        settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
     end
-
-    local point, _, relPoint, x, y = host:GetPoint(1)
-    settings.point = NormalizeAnchorPoint(point)
-    settings.relativePoint = NormalizeAnchorPoint(relPoint)
-    settings.relativeTo = UI_PARENT_NAME
-    settings.x = math_floor(((x or 0) * 10) + 0.5) / 10
-    settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
 
     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
     CooldownCompanion:UpdateAuraTextureVisual(owner)
@@ -264,6 +254,38 @@ local function StopGroupedStandaloneWrapperTracking(host)
     if containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
         CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
     end
+end
+
+local function BeginTextureHostDrag(host)
+    if CooldownCompanion._combatForcedLock or not (host and host._dragEnabled) then
+        return false
+    end
+
+    host._dragCancelPending = nil
+    host._isDragging = true
+    StartGroupedStandaloneWrapperTracking(host)
+    host:StartMoving()
+    return true
+end
+
+local function FinishTextureHostDrag(host)
+    if not host then
+        return false
+    end
+
+    local cancelSave = host._dragCancelPending == true or CooldownCompanion._combatForcedLock
+    host._dragCancelPending = nil
+    host._isDragging = nil
+    if not (InCombatLockdown() and host:IsProtected()) then
+        host:StopMovingOrSizing()
+    end
+    StopGroupedStandaloneWrapperTracking(host)
+    if cancelSave then
+        return false
+    end
+
+    SaveTextureHostPosition(host)
+    return true
 end
 
 local function EnsureAuraTextureNudger(host)
@@ -411,28 +433,10 @@ local function EnsureAuraTextureDragHandle(host)
     coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     dragHandle:SetScript("OnDragStart", function()
-        if CooldownCompanion._combatForcedLock then
-            return
-        end
-        if host._dragEnabled then
-            host._dragCancelPending = nil
-            host._isDragging = true
-            StartGroupedStandaloneWrapperTracking(host)
-            host:StartMoving()
-        end
+        BeginTextureHostDrag(host)
     end)
     dragHandle:SetScript("OnDragStop", function()
-        local cancelSave = host._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        host._dragCancelPending = nil
-        host._isDragging = nil
-        if not (InCombatLockdown() and host:IsProtected()) then
-            host:StopMovingOrSizing()
-        end
-        StopGroupedStandaloneWrapperTracking(host)
-        if cancelSave then
-            return
-        end
-        SaveTextureHostPosition(host)
+        FinishTextureHostDrag(host)
     end)
     dragHandle:SetScript("OnMouseUp", function(_, button)
         if button ~= "MiddleButton" then
@@ -516,27 +520,11 @@ local function EnsureAuraTextureHost(button)
     host.secondaryTexture = secondary
 
     host:SetScript("OnDragStart", function(self)
-        if CooldownCompanion._combatForcedLock or not self._dragEnabled then
-            return
-        end
-        self._dragCancelPending = nil
-        self._isDragging = true
-        StartGroupedStandaloneWrapperTracking(self)
-        self:StartMoving()
+        BeginTextureHostDrag(self)
     end)
 
     host:SetScript("OnDragStop", function(self)
-        local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        self._dragCancelPending = nil
-        self._isDragging = nil
-        if not (InCombatLockdown() and self:IsProtected()) then
-            self:StopMovingOrSizing()
-        end
-        StopGroupedStandaloneWrapperTracking(self)
-        if cancelSave then
-            return
-        end
-        SaveTextureHostPosition(self)
+        FinishTextureHostDrag(self)
     end)
 
     CreateAuraTextureOutline(host)
@@ -1256,11 +1244,7 @@ function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, contai
         return false
     end
 
-    host._dragCancelPending = nil
-    host._isDragging = true
-    StartGroupedStandaloneWrapperTracking(host)
-    host:StartMoving()
-    return true
+    return BeginTextureHostDrag(host)
 end
 
 function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, containerId)
@@ -1276,17 +1260,7 @@ function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, contain
         return
     end
 
-    local cancelSave = host._dragCancelPending == true or self._combatForcedLock
-    host._dragCancelPending = nil
-    host._isDragging = nil
-    if not (InCombatLockdown() and host:IsProtected()) then
-        host:StopMovingOrSizing()
-    end
-    StopGroupedStandaloneWrapperTracking(host)
-    if cancelSave then
-        return
-    end
-    SaveTextureHostPosition(host)
+    FinishTextureHostDrag(host)
 end
 
 local function RoundGroupedStandaloneOffset(value)
