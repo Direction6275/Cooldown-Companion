@@ -157,6 +157,23 @@ function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId
     return true
 end
 
+local function ForceCombatMouseLock(frame)
+    if not frame then
+        return
+    end
+
+    local canChangeProtectedState = not frame.CanChangeProtectedState or frame:CanChangeProtectedState()
+    if frame.EnableMouse and canChangeProtectedState then
+        frame:EnableMouse(false)
+    end
+    if frame.SetMouseClickEnabled and canChangeProtectedState then
+        frame:SetMouseClickEnabled(false)
+    end
+    if frame.SetMouseMotionEnabled and canChangeProtectedState then
+        frame:SetMouseMotionEnabled(false)
+    end
+end
+
 function CooldownCompanion:BeginCombatForcedLock()
     if self._combatForcedLock then
         return false
@@ -216,8 +233,12 @@ function CooldownCompanion:BeginCombatForcedLock()
         if frame.nudger then
             frame.nudger:Hide()
         end
+        ForceCombatMouseLock(frame)
+        ForceCombatMouseLock(frame.dragHandle)
+        ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
+            ForceCombatMouseLock(button)
             if host then
                 if host._isDragging then
                     host._dragCancelPending = true
@@ -250,7 +271,11 @@ function CooldownCompanion:BeginCombatForcedLock()
 
         if active then
             local alphaState = self.alphaState and self.alphaState[groupId]
-            frame:SetAlpha(alphaState and alphaState.currentAlpha or (group and group.baselineAlpha) or 1)
+            local frameAlpha = (group and group.baselineAlpha) or 1
+            if alphaState and alphaState.currentAlpha ~= nil then
+                frameAlpha = alphaState.currentAlpha
+            end
+            frame:SetAlpha(frameAlpha)
         elseif frame:IsProtected() then
             frame:SetAlpha(0)
         else

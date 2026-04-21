@@ -2917,12 +2917,14 @@ local function BuildContainerGeneralTab(scroll, containerId)
         xSlider:SetCallback("OnValueChanged", function(widget, event, val)
             local oldX = tonumber(container.anchor.x) or 0
             container.anchor.x = val
-            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, val - oldX, 0)
-            end
             local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
             if containerFrame then
                 CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+            end
+            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, val - oldX, 0)
+            end
+            if containerFrame then
                 if CooldownCompanion.RefreshContainerWrapper then
                     CooldownCompanion:RefreshContainerWrapper(containerId)
                 end
@@ -2940,12 +2942,14 @@ local function BuildContainerGeneralTab(scroll, containerId)
         ySlider:SetCallback("OnValueChanged", function(widget, event, val)
             local oldY = tonumber(container.anchor.y) or 0
             container.anchor.y = val
-            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, 0, val - oldY)
-            end
             local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
             if containerFrame then
                 CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
+            end
+            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+                CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, 0, val - oldY)
+            end
+            if containerFrame then
                 if CooldownCompanion.RefreshContainerWrapper then
                     CooldownCompanion:RefreshContainerWrapper(containerId)
                 end
