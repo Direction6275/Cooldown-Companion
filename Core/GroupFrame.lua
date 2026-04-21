@@ -1511,7 +1511,9 @@ end
 local CONTAINER_WRAPPER_PADDING = 10
 local CONTAINER_WRAPPER_BORDER_SIZE = 2
 local CONTAINER_WRAPPER_LABEL_OFFSET = 2
-local CONTAINER_WRAPPER_HEADER_HEIGHT = 18
+local CONTAINER_WRAPPER_HEADER_HEIGHT = 27
+local CONTAINER_WRAPPER_HEADER_FONT_SIZE = 14
+local CONTAINER_WRAPPER_HEADER_GAP = 4
 local CONTAINER_PANEL_LABEL_HEIGHT = 15
 local CONTAINER_PANEL_LABEL_MIN_WIDTH = 70
 local CONTAINER_MEMBER_DRAG_REFRESH_INTERVAL = 0.05
@@ -2252,13 +2254,19 @@ function CooldownCompanion:CreateContainerFrame(containerId)
 
     frame.dragHandle.header = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
     frame.dragHandle.header:SetHeight(CONTAINER_WRAPPER_HEADER_HEIGHT)
-    frame.dragHandle.header:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
+    frame.dragHandle.header:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, CONTAINER_WRAPPER_HEADER_GAP)
     frame.dragHandle.header:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     frame.dragHandle.header:SetBackdropColor(0.15, 0.35, 0.55, 0.92)
     CreatePixelBorders(frame.dragHandle.header)
 
     frame.dragHandle.text = frame.dragHandle.header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.dragHandle.text:SetPoint("CENTER")
+    do
+        local fontPath, _, fontFlags = frame.dragHandle.text:GetFont()
+        if fontPath then
+            frame.dragHandle.text:SetFont(fontPath, CONTAINER_WRAPPER_HEADER_FONT_SIZE, fontFlags)
+        end
+    end
     frame.dragHandle.text:SetText(container.name)
     frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
     frame.dragHandle.header.text = frame.dragHandle.text
