@@ -275,7 +275,6 @@ function CooldownCompanion:BeginCombatForcedLock()
         ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
-            ForceCombatMouseLock(button)
             if host then
                 if host._isDragging then
                     host._dragCancelPending = true

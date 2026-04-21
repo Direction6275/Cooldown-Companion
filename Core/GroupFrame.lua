@@ -1977,16 +1977,20 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     UpdateContainerWrapperLevels(frame)
 
     if self._combatForcedLock or container.locked ~= false or not self:IsContainerVisibleToCurrentChar(containerId) then
-        self:ClearContainerUnlockState(containerId)
-        wrapper:Hide()
-        if header then
-            header:Hide()
-        end
-        if frame.coordLabel then
-            frame.coordLabel:Hide()
-        end
-        if frame.nudger then
-            frame.nudger:Hide()
+        if self.UpdateContainerDragHandle then
+            self:UpdateContainerDragHandle(containerId, true)
+        else
+            self:ClearContainerUnlockState(containerId)
+            wrapper:Hide()
+            if header then
+                header:Hide()
+            end
+            if frame.coordLabel then
+                frame.coordLabel:Hide()
+            end
+            if frame.nudger then
+                frame.nudger:Hide()
+            end
         end
         frame._isRefreshingContainerWrapper = nil
         return
