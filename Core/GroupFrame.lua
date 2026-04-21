@@ -1229,12 +1229,13 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     self:UpdateGroupClickthrough(groupId)
 
     -- Update visibility — unload if disabled, no buttons, wrong spec/hero, wrong character, or load conditions
-    if CooldownCompanion:IsGroupActive(groupId, {
+    local isActive = CooldownCompanion:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
         checkLoadConditions = true,
         requireButtons = true,
-    }) then
+    })
+    if isActive then
         if InCombatLockdown() and frame:IsProtected() then
             if not frame:IsShown() then
                 self._pendingVisibilityRefresh = true
@@ -1256,7 +1257,8 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         self:UnloadGroup(groupId)
     end
 
-    if (group.displayMode == "textures" or group.displayMode == "trigger")
+    if isActive
+        and (group.displayMode == "textures" or group.displayMode == "trigger")
         and self.UpdateAuraTextureVisual
         and frame
         and frame.buttons
@@ -2185,10 +2187,19 @@ local function CreateContainerNudger(frame, containerId)
             container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
             local cFrame = CooldownCompanion.containerFrames[containerId]
             if cFrame then
+                local oldX = tonumber(container.anchor.x) or 0
+                local oldY = tonumber(container.anchor.y) or 0
                 cFrame:AdjustPointsOffset(dir.dx, dir.dy)
                 local _, _, _, x, y = cFrame:GetPoint()
                 container.anchor.x = math_floor(x * 10 + 0.5) / 10
                 container.anchor.y = math_floor(y * 10 + 0.5) / 10
+                if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+                    CooldownCompanion:SyncGroupedStandalonePreviewSettings(
+                        containerId,
+                        container.anchor.x - oldX,
+                        container.anchor.y - oldY
+                    )
+                end
                 UpdateCoordLabel(cFrame, x, y)
             end
         end
@@ -2425,6 +2436,8 @@ function CooldownCompanion:SaveContainerPosition(containerId)
     local container = self.db.profile.groupContainers[containerId]
     if not frame or not container then return end
     container.anchor = self:NormalizeContainerAnchor(container.anchor)
+    local oldX = tonumber(container.anchor.x) or 0
+    local oldY = tonumber(container.anchor.y) or 0
 
     local cx, cy = frame:GetCenter()
     if not cx then return end
@@ -2444,7 +2457,7 @@ function CooldownCompanion:SaveContainerPosition(containerId)
     frame:SetPoint("CENTER", UIParent, "CENTER", newX, newY)
 
     if self.SyncGroupedStandalonePreviewSettings then
-        self:SyncGroupedStandalonePreviewSettings(containerId)
+        self:SyncGroupedStandalonePreviewSettings(containerId, newX - oldX, newY - oldY)
     end
     UpdateCoordLabel(frame, newX, newY)
     if self.RefreshContainerWrapper then

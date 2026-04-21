@@ -103,11 +103,20 @@ local function GetAnchorOffset(point, width, height)
     return 0, 0
 end
 
-local function GetGroupedPreviewContainerFrame(group)
+local function GetGroupedPreviewContainerFrame(group, groupId)
     if not (group and group.parentContainerId) then
         return nil
     end
     if not (CooldownCompanion.IsContainerUnlockPreviewActive and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)) then
+        return nil
+    end
+    if groupId
+        and CooldownCompanion.IsGroupVisibleInUnlockPreview
+        and not CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            checkCharVisibility = true,
+        })
+    then
         return nil
     end
     return CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[group.parentContainerId] or nil
@@ -156,8 +165,8 @@ local function GetTextureHostDisplayCoords(host, point, relativePoint)
     return x, y, normalizedPoint, normalizedRelativePoint
 end
 
-local function SaveGroupedStandalonePreviewSettings(host, group, settings)
-    local containerFrame = GetGroupedPreviewContainerFrame(group)
+local function SaveGroupedStandalonePreviewSettings(host, group, settings, groupId)
+    local containerFrame = GetGroupedPreviewContainerFrame(group, groupId)
     if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
         return false
     end
@@ -210,7 +219,7 @@ local function SaveTextureHostPosition(host)
         return
     end
 
-    if SaveGroupedStandalonePreviewSettings(host, group, settings) then
+    if SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
         UpdateTextureHostCoordLabel(host, settings.x, settings.y)
         CooldownCompanion:UpdateAuraTextureVisual(owner)
         if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
@@ -921,7 +930,7 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
 end
 
 function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
-    local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group)
+    local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
     local state = {
         isEditing = IsStandaloneTextureEditingButton(driverButton),
@@ -1229,13 +1238,30 @@ function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, contain
     SaveTextureHostPosition(host)
 end
 
-function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
-    if not (containerId and self.GetContainerUnlockPreviewPanels) then
+local function RoundGroupedStandaloneOffset(value)
+    return math_floor(((tonumber(value) or 0) * 10) + 0.5) / 10
+end
+
+local function ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY)
+    if not settings then
+        return false
+    end
+    if deltaX == nil and deltaY == nil then
+        return false
+    end
+
+    settings.x = RoundGroupedStandaloneOffset((tonumber(settings.x) or 0) + (tonumber(deltaX) or 0))
+    settings.y = RoundGroupedStandaloneOffset((tonumber(settings.y) or 0) + (tonumber(deltaY) or 0))
+    return true
+end
+
+function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, deltaX, deltaY)
+    if not (containerId and self.GetPanels) then
         return
     end
 
-    local previewPanels = self:GetContainerUnlockPreviewPanels(containerId)
-    for _, panelInfo in ipairs(previewPanels) do
+    local panels = self:GetPanels(containerId)
+    for _, panelInfo in ipairs(panels) do
         local group = panelInfo.group
         if group and (group.displayMode == "textures" or group.displayMode == "trigger") then
             local groupFrame = self.groupFrames and self.groupFrames[panelInfo.groupId] or nil
@@ -1248,8 +1274,24 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
                 settings = self:GetTexturePanelSettings(group)
             end
 
-            if host and settings and SaveGroupedStandalonePreviewSettings(host, group, settings) then
+            local didSync = false
+            if host
+                and settings
+                and self.IsGroupVisibleInUnlockPreview
+                and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+                    group = group,
+                    groupFrame = groupFrame,
+                    checkCharVisibility = true,
+                })
+                and SaveGroupedStandalonePreviewSettings(host, group, settings, panelInfo.groupId)
+            then
+                didSync = true
                 UpdateTextureHostCoordLabel(host, settings.x, settings.y)
+            end
+            if not didSync and ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY) then
+                if host and host.coordLabel and host:IsShown() then
+                    UpdateTextureHostCoordLabel(host, settings.x, settings.y)
+                end
             end
         end
     end

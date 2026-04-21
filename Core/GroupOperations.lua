@@ -230,7 +230,6 @@ function CooldownCompanion:BeginCombatForcedLock()
         end
     end
 
-    self:RefreshAllGroups()
     return snapshot.hadUnlocked
 end
 
@@ -259,6 +258,14 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     end
 
     if not (group.buttons and #group.buttons > 0) then
+        return false
+    end
+
+    local groupFrame = opts.groupFrame
+    if groupFrame == nil and groupId then
+        groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
+    end
+    if groupFrame and (not groupFrame.buttons or #groupFrame.buttons == 0) then
         return false
     end
 
