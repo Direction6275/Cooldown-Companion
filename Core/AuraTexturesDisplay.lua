@@ -162,7 +162,7 @@ local function SaveGroupedStandalonePreviewSettings(host, group, settings)
         return false
     end
 
-    local point = host:GetPoint(1)
+    local point = settings.point or host:GetPoint(1)
 
     if not host._wrapperManaged then
         local _, relativeFrame = host:GetPoint(1)
@@ -273,7 +273,7 @@ local function EnsureAuraTextureNudger(host)
         then
             displayX, displayY = GetTextureHostDisplayCoords(
                 host,
-                point or settings.point or "CENTER",
+                settings.point or point or "CENTER",
                 settings.relativePoint or "CENTER"
             )
         end
@@ -378,6 +378,9 @@ local function EnsureAuraTextureDragHandle(host)
     coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     dragHandle:SetScript("OnDragStart", function()
+        if CooldownCompanion._combatForcedLock then
+            return
+        end
         if host._dragEnabled then
             host._isDragging = true
             host:StartMoving()
@@ -470,7 +473,7 @@ local function EnsureAuraTextureHost(button)
     host.secondaryTexture = secondary
 
     host:SetScript("OnDragStart", function(self)
-        if not self._dragEnabled then
+        if CooldownCompanion._combatForcedLock or not self._dragEnabled then
             return
         end
         self._isDragging = true
@@ -919,12 +922,13 @@ end
 
 function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group)
+    local combatForcedLock = self._combatForcedLock == true
     local state = {
         isEditing = IsStandaloneTextureEditingButton(driverButton),
         isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
-        isUnlocked = group and (group.locked == false or groupedPreviewFrame ~= nil),
+        isUnlocked = not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
         hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
         hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
         triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
@@ -1096,10 +1100,9 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
         if visibilityState.isGroupedPreview then
-            local point = host:GetPoint(1)
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
-                point or sharedSettings.point or "CENTER",
+                sharedSettings.point or "CENTER",
                 sharedSettings.relativePoint or "CENTER"
             )
             if displayX == nil or displayY == nil then
@@ -1184,7 +1187,7 @@ end
 
 function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, containerId)
     local group = groupId and ResolveGroup(groupId) or nil
-    if not (group and group.parentContainerId == containerId) then
+    if self._combatForcedLock or not (group and group.parentContainerId == containerId) then
         return false
     end
 
@@ -1192,6 +1195,9 @@ function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, contai
     local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
     local host = driverButton and driverButton.auraTextureHost or nil
     if not (host and host:IsShown()) then
+        return false
+    end
+    if host._dragEnabled ~= true or host._hasSavedDisplay ~= true then
         return false
     end
     if InCombatLockdown() and host:IsProtected() then

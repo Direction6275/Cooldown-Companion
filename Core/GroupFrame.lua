@@ -41,6 +41,9 @@ local function GetContainerState(groupId)
     if not profile then return true, 1 end
     local group = profile.groups[groupId]
     if not group then return true, 1 end
+    if CooldownCompanion._combatForcedLock then
+        return true, group.baselineAlpha or 1
+    end
 
     if group.parentContainerId then
         -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
@@ -333,6 +336,7 @@ local function CreateNudger(frame, groupId)
     local NUDGE_GAP = 2
 
     local nudger = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
+    nudger.buttons = {}
     nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
     nudger:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
     nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
@@ -350,6 +354,7 @@ local function CreateNudger(frame, groupId)
 
     for _, dir in ipairs(directions) do
         local btn = CreateFrame("Button", nil, nudger)
+        nudger.buttons[#nudger.buttons + 1] = btn
         btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
         btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
         btn:EnableMouse(true)
@@ -524,7 +529,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame:SetScript("OnDragStart", function(self)
         local locked = GetContainerState(self.groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
-        if previewActive then
+        if CooldownCompanion._combatForcedLock then
+            return
+        elseif previewActive then
             if not selectedInContainer then
                 return
             end
@@ -552,7 +559,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:SetScript("OnDragStart", function()
         local locked = GetContainerState(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
-        if previewActive then
+        if CooldownCompanion._combatForcedLock then
+            return
+        elseif previewActive then
             if not selectedInContainer then
                 return
             end
@@ -1506,6 +1515,8 @@ local CONTAINER_WRAPPER_HEADER_HEIGHT = 18
 local CONTAINER_PANEL_LABEL_HEIGHT = 15
 local CONTAINER_PANEL_LABEL_MIN_WIDTH = 70
 local CONTAINER_MEMBER_DRAG_REFRESH_INTERVAL = 0.05
+local CONTAINER_WRAPPER_FALLBACK_WIDTH = 120
+local CONTAINER_WRAPPER_FALLBACK_HEIGHT = 18
 
 local function GetRelativeFrameRect(referenceFrame, targetFrame)
     if not (referenceFrame and targetFrame and referenceFrame.GetCenter and targetFrame.GetCenter) then
@@ -1794,7 +1805,7 @@ end
 
 function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    if not (containerId and group and group.parentContainerId == containerId) then
+    if self._combatForcedLock or not (containerId and group and group.parentContainerId == containerId) then
         return false
     end
 
@@ -1927,7 +1938,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     HideContainerPanelLabels(frame)
     UpdateContainerWrapperLevels(frame)
 
-    if container.locked ~= false or not self:IsContainerVisibleToCurrentChar(containerId) then
+    if self._combatForcedLock or container.locked ~= false or not self:IsContainerVisibleToCurrentChar(containerId) then
         self:ClearContainerUnlockState(containerId)
         wrapper:Hide()
         if header then
@@ -1970,18 +1981,35 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
 
     local selectedGroupId = frame._containerSelectedGroupId
     local hoveredGroupId = frame._containerHoveredGroupId
+    local headerWidth = 96
+
+    if header then
+        local titleText = header.text or wrapper.text
+        if titleText then
+            titleText:SetText(container.name or "Group")
+            headerWidth = math_max(96, math_floor((titleText:GetStringWidth() or 0) + 24.5))
+        end
+    end
 
     if #previewRects == 0 then
         HideContainerMemberOverlays(frame)
-        wrapper:Hide()
+        local fallbackWidth = math_max(headerWidth, CONTAINER_WRAPPER_FALLBACK_WIDTH)
+        local fallbackHalfWidth = RoundPreviewOffset(fallbackWidth / 2)
+        local fallbackHalfHeight = RoundPreviewOffset(CONTAINER_WRAPPER_FALLBACK_HEIGHT / 2)
+
+        wrapper:ClearAllPoints()
+        wrapper:SetPoint("BOTTOMLEFT", frame, "CENTER", -fallbackHalfWidth, -fallbackHalfHeight)
+        wrapper:SetPoint("TOPRIGHT", frame, "CENTER", fallbackHalfWidth, fallbackHalfHeight)
+        wrapper:SetShown(true)
         if header then
-            header:Hide()
+            header:SetWidth(headerWidth)
+            header:Show()
         end
         if frame.coordLabel then
-            frame.coordLabel:Hide()
+            frame.coordLabel:SetShown(true)
         end
         if frame.nudger then
-            frame.nudger:Hide()
+            frame.nudger:SetShown(true)
         end
         frame._isRefreshingContainerWrapper = nil
         return
@@ -1994,13 +2022,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     wrapper:SetShown(true)
 
     if header then
-        local titleText = header.text or wrapper.text
-        if titleText then
-            titleText:SetText(container.name or "Group")
-            header:SetWidth(math_max(96, math_floor((titleText:GetStringWidth() or 0) + 24.5)))
-        else
-            header:SetWidth(96)
-        end
+        header:SetWidth(headerWidth)
         header:Show()
     end
 
@@ -2040,7 +2062,9 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         overlay:SetBackdropColor(0.15, 0.45, 0.65, fillAlpha)
         EnsureContainerWrapperBorder(overlay, 0.2, 0.8, 1, borderAlpha)
 
-        if not isSelected then
+        local showLabel = hoveredGroupId ~= nil and isHovered and not isSelected
+
+        if showLabel then
             local labelFrame = EnsureContainerPanelLabel(frame, labelIndex)
             labelFrame.text:SetText(rect.label)
             labelFrame:SetWidth(math_max(CONTAINER_PANEL_LABEL_MIN_WIDTH, math_floor((labelFrame.text:GetStringWidth() or 0) + 16.5)))
@@ -2262,7 +2286,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     -- Drag scripts
     frame:SetScript("OnDragStart", function(self)
         local c = CooldownCompanion.db.profile.groupContainers[self.containerId]
-        if c and not c.locked then
+        if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(self.containerId) then
             CooldownCompanion:SelectContainerWrapper(self.containerId)
             self:StartMoving()
         end
@@ -2276,7 +2300,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle:RegisterForDrag("LeftButton")
     frame.dragHandle:SetScript("OnDragStart", function()
         local c = CooldownCompanion.db.profile.groupContainers[containerId]
-        if c and not c.locked then
+        if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
             frame:StartMoving()
@@ -2301,7 +2325,7 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.dragHandle.header:RegisterForDrag("LeftButton")
     frame.dragHandle.header:SetScript("OnDragStart", function()
         local c = CooldownCompanion.db.profile.groupContainers[containerId]
-        if c and not c.locked then
+        if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
             frame.dragHandle.header._suppressClick = true
             CooldownCompanion:SelectContainerWrapper(containerId)
             frame:StartMoving()

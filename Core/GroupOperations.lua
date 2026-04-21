@@ -128,6 +128,10 @@ function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId
     local container = containerOrContainerId
     local containerId = nil
 
+    if self._combatForcedLock then
+        return false
+    end
+
     if type(containerOrContainerId) == "number" then
         containerId = containerOrContainerId
         container = self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
@@ -151,6 +155,94 @@ function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId
     end
 
     return true
+end
+
+function CooldownCompanion:BeginCombatForcedLock()
+    if self._combatForcedLock then
+        return false
+    end
+
+    local snapshot = {
+        containers = {},
+        groups = {},
+        hadUnlocked = false,
+    }
+
+    for containerId, container in pairs(self.db.profile.groupContainers or {}) do
+        if container
+            and container.locked == false
+            and self:IsContainerVisibleToCurrentChar(containerId)
+        then
+            snapshot.containers[containerId] = true
+            snapshot.hadUnlocked = true
+        end
+    end
+
+    for groupId, group in pairs(self.db.profile.groups or {}) do
+        if group
+            and group.locked == false
+            and self:IsGroupVisibleToCurrentChar(groupId)
+        then
+            snapshot.groups[groupId] = true
+            snapshot.hadUnlocked = true
+        end
+    end
+
+    self._combatForcedLock = true
+    self._combatForcedLockSnapshot = snapshot
+
+    for _, frame in pairs(self.groupFrames or {}) do
+        if frame.dragHandle then
+            frame.dragHandle:Hide()
+        end
+        if frame.coordLabel then
+            frame.coordLabel:Hide()
+        end
+        if frame.nudger then
+            frame.nudger:Hide()
+        end
+        for _, button in ipairs(frame.buttons or {}) do
+            local host = button and button.auraTextureHost or nil
+            if host then
+                host._dragEnabled = false
+                if host.dragHandle then
+                    host.dragHandle:Hide()
+                end
+                if host.coordLabel then
+                    host.coordLabel:Hide()
+                end
+                if host.nudger then
+                    host.nudger:Hide()
+                end
+                if host.auraTextureOutlineFill then
+                    host.auraTextureOutlineFill:Hide()
+                end
+                for _, edge in ipairs(host.auraTextureOutlineEdges or {}) do
+                    edge:Hide()
+                end
+            end
+        end
+    end
+
+    if self.containerFrames then
+        for containerId in pairs(self.containerFrames) do
+            self:UpdateContainerDragHandle(containerId, true)
+        end
+    end
+
+    self:RefreshAllGroups()
+    return snapshot.hadUnlocked
+end
+
+function CooldownCompanion:EndCombatForcedLock()
+    if not self._combatForcedLock then
+        return nil
+    end
+
+    local snapshot = self._combatForcedLockSnapshot
+    self._combatForcedLock = nil
+    self._combatForcedLockSnapshot = nil
+    return snapshot
 end
 
 function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
@@ -1451,7 +1543,8 @@ end
 function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
     local cFrame = self.containerFrames and self.containerFrames[containerId]
     if cFrame and cFrame.dragHandle then
-        if locked then
+        local effectiveLocked = locked or self._combatForcedLock
+        if effectiveLocked then
             if self.ClearContainerUnlockState then
                 self:ClearContainerUnlockState(containerId)
             end
@@ -1505,7 +1598,7 @@ function CooldownCompanion:UnlockAllFrames()
         if frame then
             self:UpdateGroupClickthrough(groupId)
             local group = self.db.profile.groups[groupId]
-            local panelUnlocked = group and group.locked == false
+            local panelUnlocked = group and group.locked == false and not self._combatForcedLock
             if frame.dragHandle then
                 if panelUnlocked then
                     frame.dragHandle:Show()
