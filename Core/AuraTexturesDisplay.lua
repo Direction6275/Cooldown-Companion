@@ -222,6 +222,9 @@ local function SaveTextureHostPosition(host)
     if SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
         UpdateTextureHostCoordLabel(host, settings.x, settings.y)
         CooldownCompanion:UpdateAuraTextureVisual(owner)
+        if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+            CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+        end
         if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -237,8 +240,29 @@ local function SaveTextureHostPosition(host)
 
     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
     CooldownCompanion:UpdateAuraTextureVisual(owner)
+    if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+        CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+    end
     if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function StartGroupedStandaloneWrapperTracking(host)
+    local owner = host and host._ownerButton or nil
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    local containerId = group and group.parentContainerId or nil
+    if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
+        CooldownCompanion:StartContainerMemberPreviewTracking(containerId, owner._groupId)
+    end
+end
+
+local function StopGroupedStandaloneWrapperTracking(host)
+    local owner = host and host._ownerButton or nil
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    local containerId = group and group.parentContainerId or nil
+    if containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
+        CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
     end
 end
 
@@ -393,6 +417,7 @@ local function EnsureAuraTextureDragHandle(host)
         if host._dragEnabled then
             host._dragCancelPending = nil
             host._isDragging = true
+            StartGroupedStandaloneWrapperTracking(host)
             host:StartMoving()
         end
     end)
@@ -403,6 +428,7 @@ local function EnsureAuraTextureDragHandle(host)
         if not (InCombatLockdown() and host:IsProtected()) then
             host:StopMovingOrSizing()
         end
+        StopGroupedStandaloneWrapperTracking(host)
         if cancelSave then
             return
         end
@@ -495,6 +521,7 @@ local function EnsureAuraTextureHost(button)
         end
         self._dragCancelPending = nil
         self._isDragging = true
+        StartGroupedStandaloneWrapperTracking(self)
         self:StartMoving()
     end)
 
@@ -505,6 +532,7 @@ local function EnsureAuraTextureHost(button)
         if not (InCombatLockdown() and self:IsProtected()) then
             self:StopMovingOrSizing()
         end
+        StopGroupedStandaloneWrapperTracking(self)
         if cancelSave then
             return
         end
@@ -973,6 +1001,7 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
             state.showDisplay = true
         elseif driverButton:GetParent()
             and driverButton:GetParent():IsShown()
+            and not driverButton:GetParent()._combatForcedHidden
             and not (driverButton._rawVisibilityHidden == true) then
             state.showDisplay = true
         end
@@ -1057,6 +1086,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
                 and currentRelativeFrame == groupedPreviewFrame
                 and currentX ~= nil
                 and currentY ~= nil
+                and groupedPreviewFrame._dragInProgress == true
             if preserveRelativeOffset then
                 host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
             else
@@ -1169,9 +1199,6 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         end
     end
 
-    if visibilityState.isGroupedPreview and group and group.parentContainerId and self.RefreshContainerWrapper then
-        self:RefreshContainerWrapper(group.parentContainerId)
-    end
 end
 
 function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
@@ -1231,6 +1258,7 @@ function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, contai
 
     host._dragCancelPending = nil
     host._isDragging = true
+    StartGroupedStandaloneWrapperTracking(host)
     host:StartMoving()
     return true
 end
@@ -1254,6 +1282,7 @@ function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, contain
     if not (InCombatLockdown() and host:IsProtected()) then
         host:StopMovingOrSizing()
     end
+    StopGroupedStandaloneWrapperTracking(host)
     if cancelSave then
         return
     end
@@ -1385,5 +1414,8 @@ function CooldownCompanion:RefreshAllAuraTextureVisuals()
         for _, button in ipairs(frame.buttons or {}) do
             self:UpdateAuraTextureVisual(button)
         end
+    end
+    if self.RefreshAllContainerWrappers then
+        self:RefreshAllContainerWrappers()
     end
 end

@@ -174,6 +174,48 @@ local function ForceCombatMouseLock(frame)
     end
 end
 
+local function CanSafelyChangeFrameVisibility(frame)
+    if not frame then
+        return false
+    end
+    if not InCombatLockdown() then
+        return true
+    end
+    if frame.CanChangeProtectedState then
+        return frame:CanChangeProtectedState()
+    end
+    return not (frame.IsProtected and frame:IsProtected())
+end
+
+local function SuppressFrameVisibilityForCombat(frame)
+    if not frame then
+        return
+    end
+
+    if CanSafelyChangeFrameVisibility(frame) then
+        frame:Hide()
+        return
+    end
+
+    if frame.GetAlpha and frame._combatForcedAlpha == nil then
+        frame._combatForcedAlpha = frame:GetAlpha()
+    end
+    if frame.SetAlpha then
+        frame:SetAlpha(0)
+    end
+end
+
+local function RestoreFrameVisibilityAfterCombat(frame)
+    if not frame then
+        return
+    end
+
+    if frame._combatForcedAlpha ~= nil and frame.SetAlpha then
+        frame:SetAlpha(frame._combatForcedAlpha)
+    end
+    frame._combatForcedAlpha = nil
+end
+
 function CooldownCompanion:BeginCombatForcedLock()
     if self._combatForcedLock then
         return false
@@ -224,15 +266,10 @@ function CooldownCompanion:BeginCombatForcedLock()
             end
             frame._dragInProgress = nil
         end
-        if frame.dragHandle then
-            frame.dragHandle:Hide()
-        end
-        if frame.coordLabel then
-            frame.coordLabel:Hide()
-        end
-        if frame.nudger then
-            frame.nudger:Hide()
-        end
+        frame._combatForcedHidden = not active or nil
+        SuppressFrameVisibilityForCombat(frame.dragHandle)
+        SuppressFrameVisibilityForCombat(frame.coordLabel)
+        SuppressFrameVisibilityForCombat(frame.nudger)
         ForceCombatMouseLock(frame)
         ForceCombatMouseLock(frame.dragHandle)
         ForceCombatMouseLock(frame.nudger)
@@ -248,15 +285,9 @@ function CooldownCompanion:BeginCombatForcedLock()
                     host._isDragging = nil
                 end
                 host._dragEnabled = false
-                if host.dragHandle then
-                    host.dragHandle:Hide()
-                end
-                if host.coordLabel then
-                    host.coordLabel:Hide()
-                end
-                if host.nudger then
-                    host.nudger:Hide()
-                end
+                SuppressFrameVisibilityForCombat(host.dragHandle)
+                SuppressFrameVisibilityForCombat(host.coordLabel)
+                SuppressFrameVisibilityForCombat(host.nudger)
                 if host.auraTextureOutlineFill then
                     host.auraTextureOutlineFill:Hide()
                 end
@@ -307,6 +338,30 @@ function CooldownCompanion:EndCombatForcedLock()
     local snapshot = self._combatForcedLockSnapshot
     self._combatForcedLock = nil
     self._combatForcedLockSnapshot = nil
+
+    for _, frame in pairs(self.groupFrames or {}) do
+        frame._combatForcedHidden = nil
+        RestoreFrameVisibilityAfterCombat(frame.dragHandle)
+        RestoreFrameVisibilityAfterCombat(frame.coordLabel)
+        RestoreFrameVisibilityAfterCombat(frame.nudger)
+        for _, button in ipairs(frame.buttons or {}) do
+            local host = button and button.auraTextureHost or nil
+            RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
+            RestoreFrameVisibilityAfterCombat(host and host.coordLabel or nil)
+            RestoreFrameVisibilityAfterCombat(host and host.nudger or nil)
+        end
+    end
+
+    for _, frame in pairs(self.containerFrames or {}) do
+        RestoreFrameVisibilityAfterCombat(frame.dragHandle)
+        RestoreFrameVisibilityAfterCombat(frame.dragHandle and frame.dragHandle.header or nil)
+        RestoreFrameVisibilityAfterCombat(frame.coordLabel)
+        RestoreFrameVisibilityAfterCombat(frame.nudger)
+        for _, label in pairs(frame._containerPanelLabels or {}) do
+            RestoreFrameVisibilityAfterCombat(label)
+        end
+    end
+
     return snapshot
 end
 
@@ -1621,16 +1676,13 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
             if self.ClearContainerUnlockState then
                 self:ClearContainerUnlockState(containerId)
             end
-            cFrame.dragHandle:Hide()
-            if cFrame.coordLabel then
-                cFrame.coordLabel:Hide()
-            end
-            if cFrame.nudger then
-                cFrame.nudger:Hide()
-            end
+            SuppressFrameVisibilityForCombat(cFrame.dragHandle)
+            SuppressFrameVisibilityForCombat(cFrame.dragHandle and cFrame.dragHandle.header or nil)
+            SuppressFrameVisibilityForCombat(cFrame.coordLabel)
+            SuppressFrameVisibilityForCombat(cFrame.nudger)
             if cFrame._containerPanelLabels then
                 for _, label in pairs(cFrame._containerPanelLabels) do
-                    label:Hide()
+                    SuppressFrameVisibilityForCombat(label)
                 end
             end
         elseif self.RefreshContainerWrapper then
