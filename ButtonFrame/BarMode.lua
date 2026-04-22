@@ -870,8 +870,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
-    button._postCastGCDHold = nil
-    button._postCastGCDHoldUntil = nil
     if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false

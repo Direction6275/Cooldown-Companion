@@ -377,9 +377,6 @@ end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        -- Mark the cast spell's buttons so ContextuallySecret cooldown logic can
-        -- treat only this cast-start GCD as a potential false GCD-only window.
-        local holdUntil = GetTime() + 2
         self:ForEachButton(function(button, buttonData)
             if buttonData.type == "spell"
                and not buttonData.isPassive then
@@ -395,9 +392,6 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
                         else
                             button._chargesSpent = (button._chargesSpent or 0) + 1
                         end
-                    else
-                        button._postCastGCDHold = true
-                        button._postCastGCDHoldUntil = holdUntil
                     end
                 end
             end
