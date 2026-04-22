@@ -24,11 +24,15 @@ local savedPlayerAnchors = nil   -- array of {point, relativeTo, relativePoint, 
 local savedTargetAnchors = nil
 local savedPlayerAlpha = nil
 local savedTargetAlpha = nil
+local savedPlayerAlphaAttempted = false
+local savedTargetAlphaAttempted = false
 local playerFrameRef = nil
 local targetFrameRef = nil
 local alphaSyncFrame = nil
 local pendingReevaluate = false
 local rapidAlphaSyncUntil = 0
+local alphaHookGuards = setmetatable({}, { __mode = "k" })
+local alphaSetHooksInstalled = setmetatable({}, { __mode = "k" })
 
 -- Combat deferral: any positioning attempt during combat is coalesced into a
 -- single full re-evaluation once PLAYER_REGEN_ENABLED fires.
@@ -105,11 +109,18 @@ local function GetInheritedUnitFrameAlpha(groupFrame)
     return alpha
 end
 
+local function SetUnitFrameAlphaGuarded(frame, alpha)
+    if not frame or alpha == nil then return end
+    alphaHookGuards[frame] = true
+    frame:SetAlpha(alpha)
+    alphaHookGuards[frame] = nil
+end
+
 local function SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
     local alpha = GetInheritedUnitFrameAlpha(groupFrame)
     if alpha == nil then return nil end
-    if playerFrame then playerFrame:SetAlpha(alpha) end
-    if targetFrame then targetFrame:SetAlpha(alpha) end
+    if playerFrame then SetUnitFrameAlphaGuarded(playerFrame, alpha) end
+    if targetFrame then SetUnitFrameAlphaGuarded(targetFrame, alpha) end
     return alpha
 end
 
@@ -142,6 +153,22 @@ local function CaptureRestorableAlpha(frame)
     end
 
     return alpha
+end
+
+local function InstallInheritedAlphaSetHook(frame)
+    if not frame or alphaSetHooksInstalled[frame] then return end
+
+    hooksecurefunc(frame, "SetAlpha", function(self)
+        if alphaHookGuards[self] then return end
+
+        local settings = GetFrameAnchoringSettings()
+        if not (isApplied and settings and settings.enabled and settings.inheritAlpha) then return end
+        if self ~= playerFrameRef and self ~= targetFrameRef then return end
+
+        QueueInheritedUnitFrameAlphaResync()
+    end)
+
+    alphaSetHooksInstalled[frame] = true
 end
 
 --- Auto-detect which unit frame addon is active.
@@ -296,6 +323,8 @@ function CooldownCompanion:ApplyFrameAnchoring()
     -- Store refs for revert
     playerFrameRef = playerFrame
     targetFrameRef = targetFrame
+    InstallInheritedAlphaSetHook(playerFrameRef)
+    InstallInheritedAlphaSetHook(targetFrameRef)
 
     -- Apply player frame anchoring
     local ps = settings.player
@@ -330,11 +359,13 @@ function CooldownCompanion:ApplyFrameAnchoring()
     -- Alpha inheritance
     if settings.inheritAlpha then
         -- Save original alpha (only if not already saved)
-        if playerFrame and savedPlayerAlpha == nil then
+        if playerFrame and not savedPlayerAlphaAttempted then
             savedPlayerAlpha = CaptureRestorableAlpha(playerFrame)
+            savedPlayerAlphaAttempted = true
         end
-        if targetFrame and savedTargetAlpha == nil then
+        if targetFrame and not savedTargetAlphaAttempted then
             savedTargetAlpha = CaptureRestorableAlpha(targetFrame)
+            savedTargetAlphaAttempted = true
         end
 
         -- Apply alpha immediately — use natural alpha to avoid config override cascade
@@ -368,13 +399,15 @@ function CooldownCompanion:ApplyFrameAnchoring()
         end
         rapidAlphaSyncUntil = 0
         if savedPlayerAlpha ~= nil and playerFrameRef then
-            playerFrameRef:SetAlpha(savedPlayerAlpha)
+            SetUnitFrameAlphaGuarded(playerFrameRef, savedPlayerAlpha)
         end
         if savedTargetAlpha ~= nil and targetFrameRef then
-            targetFrameRef:SetAlpha(savedTargetAlpha)
+            SetUnitFrameAlphaGuarded(targetFrameRef, savedTargetAlpha)
         end
         savedPlayerAlpha = nil
         savedTargetAlpha = nil
+        savedPlayerAlphaAttempted = false
+        savedTargetAlphaAttempted = false
     end
 end
 
@@ -398,13 +431,15 @@ function CooldownCompanion:RevertFrameAnchoring()
     end
     rapidAlphaSyncUntil = 0
     if savedPlayerAlpha ~= nil and playerFrameRef then
-        playerFrameRef:SetAlpha(savedPlayerAlpha)
+        SetUnitFrameAlphaGuarded(playerFrameRef, savedPlayerAlpha)
     end
     if savedTargetAlpha ~= nil and targetFrameRef then
-        targetFrameRef:SetAlpha(savedTargetAlpha)
+        SetUnitFrameAlphaGuarded(targetFrameRef, savedTargetAlpha)
     end
     savedPlayerAlpha = nil
     savedTargetAlpha = nil
+    savedPlayerAlphaAttempted = false
+    savedTargetAlphaAttempted = false
 
     -- Restore player frame
     if playerFrameRef and savedPlayerAnchors then
