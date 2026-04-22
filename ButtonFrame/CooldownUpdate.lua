@@ -227,7 +227,7 @@ local function ProbeActionSlotsForSpellID(spellID)
 end
 
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    if not baseSpellID then return nil, nil end
+    if not baseSpellID then return nil, nil, nil end
 
     wipe(actionSlotSeenScratch)
 
@@ -1158,9 +1158,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- and duration > 0).  It can report true during per-cast lockouts
             -- and recharge, so the _chargesSpent heuristic below guards both
             -- this path and the isActive fallback.
-            local slotShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+            local slotShown, _, slotRealShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             if slotShown ~= nil then
-                button._mainCDShown = slotShown and not isGCDOnly
+                button._mainCDShown = slotRealShown
             elseif not auraOverrideActive then
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
                 if spellCooldownInfo then
