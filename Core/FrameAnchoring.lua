@@ -12,7 +12,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local math_abs = math.abs
+local issecretvalue = issecretvalue
 
 ------------------------------------------------------------------------
 -- State
@@ -89,9 +89,25 @@ local function GetAnchorGroupFrame(settings)
     return CooldownCompanion.groupFrames[groupId]
 end
 
-local function SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
+local function GetInheritedUnitFrameAlpha(groupFrame)
     if not groupFrame or not groupFrame:IsShown() then return nil end
-    local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
+
+    local alpha = groupFrame._naturalAlpha
+    if alpha ~= nil then
+        return alpha
+    end
+
+    alpha = groupFrame:GetEffectiveAlpha()
+    if issecretvalue(alpha) or alpha == nil then
+        return nil
+    end
+
+    return alpha
+end
+
+local function SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
+    local alpha = GetInheritedUnitFrameAlpha(groupFrame)
+    if alpha == nil then return nil end
     if playerFrame then playerFrame:SetAlpha(alpha) end
     if targetFrame then targetFrame:SetAlpha(alpha) end
     return alpha
@@ -116,6 +132,17 @@ local function QueueInheritedUnitFrameAlphaResync()
 end
 
 ST._QueueInheritedUnitFrameAlphaResync = QueueInheritedUnitFrameAlphaResync
+
+local function CaptureRestorableAlpha(frame)
+    if not frame then return nil end
+
+    local alpha = frame:GetAlpha()
+    if issecretvalue(alpha) or alpha == nil then
+        return nil
+    end
+
+    return alpha
+end
 
 --- Auto-detect which unit frame addon is active.
 local function AutoDetectUnitFrameAddon()
@@ -303,15 +330,15 @@ function CooldownCompanion:ApplyFrameAnchoring()
     -- Alpha inheritance
     if settings.inheritAlpha then
         -- Save original alpha (only if not already saved)
-        if playerFrame and not savedPlayerAlpha then
-            savedPlayerAlpha = playerFrame:GetAlpha()
+        if playerFrame and savedPlayerAlpha == nil then
+            savedPlayerAlpha = CaptureRestorableAlpha(playerFrame)
         end
-        if targetFrame and not savedTargetAlpha then
-            savedTargetAlpha = targetFrame:GetAlpha()
+        if targetFrame and savedTargetAlpha == nil then
+            savedTargetAlpha = CaptureRestorableAlpha(targetFrame)
         end
 
         -- Apply alpha immediately — use natural alpha to avoid config override cascade
-        local groupAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame) or 1
+        local groupAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
 
         -- Start alpha sync OnUpdate (~30Hz polling)
         if not alphaSyncFrame then
@@ -328,12 +355,10 @@ function CooldownCompanion:ApplyFrameAnchoring()
                 if accumulator < SYNC_INTERVAL then return end
                 accumulator = 0
             end
-            if not groupFrame or not groupFrame:IsShown() then return end
-            local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
-            local playerNeedsSync = playerFrameRef and math_abs((playerFrameRef:GetAlpha() or 1) - alpha) > 0.001
-            local targetNeedsSync = targetFrameRef and math_abs((targetFrameRef:GetAlpha() or 1) - alpha) > 0.001
-            if alpha ~= lastAlpha or playerNeedsSync or targetNeedsSync then
-                lastAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrameRef, targetFrameRef) or alpha
+            local alpha = GetInheritedUnitFrameAlpha(groupFrame)
+            if alpha == nil then return end
+            if rapidSyncActive or alpha ~= lastAlpha then
+                lastAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrameRef, targetFrameRef) or lastAlpha
             end
         end)
     else
@@ -341,14 +366,15 @@ function CooldownCompanion:ApplyFrameAnchoring()
         if alphaSyncFrame then
             alphaSyncFrame:SetScript("OnUpdate", nil)
         end
-        if savedPlayerAlpha and playerFrameRef then
+        rapidAlphaSyncUntil = 0
+        if savedPlayerAlpha ~= nil and playerFrameRef then
             playerFrameRef:SetAlpha(savedPlayerAlpha)
-            savedPlayerAlpha = nil
         end
-        if savedTargetAlpha and targetFrameRef then
+        if savedTargetAlpha ~= nil and targetFrameRef then
             targetFrameRef:SetAlpha(savedTargetAlpha)
-            savedTargetAlpha = nil
         end
+        savedPlayerAlpha = nil
+        savedTargetAlpha = nil
     end
 end
 
@@ -370,10 +396,11 @@ function CooldownCompanion:RevertFrameAnchoring()
     if alphaSyncFrame then
         alphaSyncFrame:SetScript("OnUpdate", nil)
     end
-    if savedPlayerAlpha and playerFrameRef then
+    rapidAlphaSyncUntil = 0
+    if savedPlayerAlpha ~= nil and playerFrameRef then
         playerFrameRef:SetAlpha(savedPlayerAlpha)
     end
-    if savedTargetAlpha and targetFrameRef then
+    if savedTargetAlpha ~= nil and targetFrameRef then
         targetFrameRef:SetAlpha(savedTargetAlpha)
     end
     savedPlayerAlpha = nil
