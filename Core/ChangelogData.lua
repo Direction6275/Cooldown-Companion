@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.1",
         "1.13",
         "1.12.5",
         "1.12.4",
@@ -21,6 +22,28 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.1"] = {
+            markdown = [[
+## New Features
+
+- **Hero spec talent filters:** You can now make entries load only for a specific hero spec, or stay hidden while that hero spec is active, directly from the talent condition picker.
+
+## Polish | QoL
+
+- **Clearer unlocked group editing:** Unlocked groups now show a visible wrapper, clearer headers, and hover highlights so it is easier to see which panels belong together while you edit.
+- **Direct panel editing inside groups:** You can now select, drag, and nudge panels inside an unlocked group without locking and unlocking the whole group first, and the editing UI now hides during combat before restoring your previous unlocked state afterward.
+
+## Bug Fixes
+
+- **Imported panel placement:** Older single-container imports now keep their saved panel position instead of snapping back to the center.
+- **Hidden aura bars appearing late:** Hidden segmented and overlay custom aura bars now appear immediately when an aura is first applied from 0 stacks.
+
+## Other
+
+- **ignoreGCD cooldown handling:** Cooldown-based desaturation and related on-cooldown visuals now use real spell cooldown data instead of being kept active by GCD-only windows, while fallback cases still keep their configured GCD swipe and countdown behavior.
+- **12.0.5 TOC update:** Updated the addon's TOC for WoW 12.0.5.
+]],
+        },
         ["1.13"] = {
             markdown = [[
 ## New Features
