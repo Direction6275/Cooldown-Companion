@@ -187,10 +187,10 @@ end
 local actionSlotSeenScratch = {}
 
 local function ProbeActionSlotsForSpellID(spellID)
-    if not spellID then return false, nil, false, false end
+    if not spellID then return false, nil, false, false, false end
 
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
-    if not slots then return false, nil, false, false end
+    if not slots then return false, nil, false, false, false end
 
     local sawAnySlot = false
     local sawUnknown = false
@@ -200,8 +200,10 @@ local function ProbeActionSlotsForSpellID(spellID)
             actionSlotSeenScratch[slot] = true
             sawAnySlot = true
 
-            local durationObj = C_ActionBar.GetActionCooldownDuration(slot, true)
+            local durationObj = C_ActionBar.GetActionCooldownDuration(slot)
+            local realDurationObj = C_ActionBar.GetActionCooldownDuration(slot, true)
             local shown = false
+            local realShown = false
 
             if durationObj then
                 shown = DurationObjectShowsCooldown(durationObj)
@@ -209,13 +211,19 @@ local function ProbeActionSlotsForSpellID(spellID)
                 sawUnknown = true
             end
 
+            if realDurationObj then
+                realShown = DurationObjectShowsCooldown(realDurationObj)
+            else
+                sawUnknown = true
+            end
+
             if shown then
-                return true, durationObj, sawAnySlot, sawUnknown
+                return true, durationObj, realShown, sawAnySlot, sawUnknown
             end
         end
     end
 
-    return false, nil, sawAnySlot, sawUnknown
+    return false, nil, false, sawAnySlot, sawUnknown
 end
 
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
@@ -226,19 +234,19 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
     local sawAnySlot = false
     local sawUnknown = false
 
-    local shown, durationObj, sawAny, sawUnk = ProbeActionSlotsForSpellID(baseSpellID)
+    local shown, durationObj, realShown, sawAny, sawUnk = ProbeActionSlotsForSpellID(baseSpellID)
     if sawAny then sawAnySlot = true end
     if sawUnk then sawUnknown = true end
     if shown then
-        return true, durationObj
+        return true, durationObj, realShown
     end
 
     if displaySpellID and displaySpellID ~= baseSpellID then
-        shown, durationObj, sawAny, sawUnk = ProbeActionSlotsForSpellID(displaySpellID)
+        shown, durationObj, realShown, sawAny, sawUnk = ProbeActionSlotsForSpellID(displaySpellID)
         if sawAny then sawAnySlot = true end
         if sawUnk then sawUnknown = true end
         if shown then
-            return true, durationObj
+            return true, durationObj, realShown
         end
     end
 
@@ -339,6 +347,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellRealCooldownShown = false
     local actionSlotCooldownShown
     local actionSlotDurationObj
+    local actionSlotRealCooldownShown = false
     -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
     local auraProbeInfo, auraProbeIsGCDOnly
     local auraProbeDuration
@@ -936,11 +945,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Covers vehicle bar, override bar, and rare ContextuallySecret
                 -- spells whose spell-level API is unavailable in combat.
                 if not usesChargeBehavior and buttonData._cooldownSecrecy ~= 0 then
-                    actionSlotCooldownShown, actionSlotDurationObj =
+                    actionSlotCooldownShown, actionSlotDurationObj, actionSlotRealCooldownShown =
                         ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
                     if actionSlotDurationObj then
                         button._durationObj = actionSlotDurationObj
                         button.cooldown:SetCooldownFromDurationObject(actionSlotDurationObj)
+                        isGCDOnly = actionSlotCooldownShown and not actionSlotRealCooldownShown
+                        if isGCDOnly then
+                            isOnGCD = true
+                        end
                         fetchOk = true
                     end
                 end
@@ -1205,7 +1218,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._desatCooldownActive = (button._zeroChargesConfirmed == true)
     else
         if actionSlotCooldownShown ~= nil and spellCooldownInfo == nil then
-            button._desatCooldownActive = actionSlotCooldownShown
+            button._desatCooldownActive = actionSlotRealCooldownShown
         else
             button._desatCooldownActive = (button._durationObj ~= nil) and (not isGCDOnly)
                 or button._cooldownDeferred or false
