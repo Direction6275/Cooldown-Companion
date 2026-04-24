@@ -108,6 +108,24 @@ local function DurationObjectShowsCooldown(durationObj)
     return shown
 end
 
+local BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS = {
+    -- Opt-in only. Execute needs continuity when its base/override cooldown
+    -- APIs briefly expose only GCD data while the old real cooldown object
+    -- still represents lockout; Thunderblast has the same shape but should
+    -- not inherit this bridge.
+    [163201] = {
+        [280735] = true,
+    },
+}
+
+local function SpellUsabilityIsTrue(spellID)
+    if spellID == nil or issecretvalue(spellID) then
+        return false
+    end
+    local isUsable = C_Spell_IsSpellUsable(spellID)
+    return isUsable == true
+end
+
 local function GetConfiguredAuraUnit(buttonData)
     return buttonData.auraUnit or "player"
 end
@@ -237,15 +255,26 @@ local function SelectSpellCooldownResult(current, candidate)
     return CooldownLogic.SelectStrongerCooldownState(current, candidate)
 end
 
+local function ShouldApplyBaseOverrideCooldownBridge(configuredSpellID, displaySpellID)
+    if configuredSpellID == nil or displaySpellID == nil
+            or issecretvalue(configuredSpellID) or issecretvalue(displaySpellID) then
+        return false
+    end
+    local configured = tonumber(configuredSpellID)
+    local display = tonumber(displaySpellID)
+    local displayMap = configured and BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS[configured] or nil
+    return displayMap ~= nil and displayMap[display] == true
+end
+
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
     local displayResult = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy)
     local result = displayResult
-    local baseOverridePair = false
+    local bridgeEligible = false
 
     if cooldownSpellId and cooldownSpellId ~= buttonData.id then
         local displayBaseSpellID = C_Spell.GetBaseSpell(cooldownSpellId)
         if displayBaseSpellID == buttonData.id then
-            baseOverridePair = true
+            bridgeEligible = ShouldApplyBaseOverrideCooldownBridge(buttonData.id, cooldownSpellId)
             local baseResult = EvaluateSpellCooldownLane(buttonData.id, buttonData._cooldownSecrecy)
             result = SelectSpellCooldownResult(
                 result,
@@ -257,7 +286,7 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
         end
     end
 
-    return result, baseOverridePair
+    return result, bridgeEligible
 end
 
 local function CloneCooldownResult(result)
@@ -270,8 +299,8 @@ local function CloneCooldownResult(result)
     return clone
 end
 
-local function ApplyBaseOverrideCooldownBridge(button, result, baseOverridePair)
-    if not baseOverridePair then
+local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, configuredSpellID, displaySpellID)
+    if not bridgeEligible then
         button._baseOverrideCooldownDurationObj = nil
         return result
     end
@@ -285,6 +314,13 @@ local function ApplyBaseOverrideCooldownBridge(button, result, baseOverridePair)
     end
 
     local previousRealDurationObj = button._baseOverrideCooldownDurationObj
+    if result
+            and result.state == COOLDOWN_STATE_GCD
+            and (SpellUsabilityIsTrue(displaySpellID)
+                or SpellUsabilityIsTrue(configuredSpellID)) then
+        button._baseOverrideCooldownDurationObj = nil
+        return result
+    end
     if result
             and result.state == COOLDOWN_STATE_GCD
             and previousRealDurationObj
@@ -502,7 +538,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local spellRealCooldownShown = false
     local spellCooldownResult
-    local spellBaseOverridePair = false
+    local spellBaseOverrideBridgeEligible = false
     local actionSlotCooldownShown
     local actionSlotDurationObj
     local actionSlotRealDurationObj
@@ -1054,8 +1090,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            spellCooldownResult, spellBaseOverridePair = EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
-            spellCooldownResult = ApplyBaseOverrideCooldownBridge(button, spellCooldownResult, spellBaseOverridePair)
+            spellCooldownResult, spellBaseOverrideBridgeEligible =
+                EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
+            spellCooldownResult = ApplyBaseOverrideCooldownBridge(
+                button,
+                spellCooldownResult,
+                spellBaseOverrideBridgeEligible,
+                buttonData.id,
+                cooldownSpellId
+            )
             if spellCooldownResult and spellCooldownResult.fetchOk then
                 spellCooldownInfo = spellCooldownResult.info
                 spellCooldownDuration = spellCooldownResult.durationObj

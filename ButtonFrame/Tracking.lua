@@ -5,6 +5,9 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local issecretvalue = issecretvalue
@@ -155,6 +158,21 @@ local function UpdateItemChargeTracking(button, buttonData)
     end
 end
 
+local function ShouldApplyUnusableTint(button, isUsable, resourceBlocked)
+    if isUsable then
+        return false
+    end
+
+    -- A GCD-only lockout is not a true unusable state for icon tinting. This
+    -- keeps icons visually ready when their real cooldown is over, while still
+    -- allowing resource failures to tint during the GCD.
+    if button._cooldownState == COOLDOWN_STATE_GCD and resourceBlocked ~= true then
+        return false
+    end
+
+    return true
+end
+
 -- Icon tinting: out-of-range red > unusable dimming > aura tint > cooldown tint > base tint.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
@@ -196,15 +214,16 @@ local function UpdateIconTint(button, buttonData, style)
     if not stateOverride and style.showUnusable then
         local uc = style.iconUnusableTintColor
         if buttonData.type == "spell" then
-            local isUsable = C_Spell.IsSpellUsable(buttonData.id)
-            if not isUsable then
+            local spellID = button._displaySpellId or buttonData.id
+            local isUsable, insufficientPower = C_Spell.IsSpellUsable(spellID)
+            if ShouldApplyUnusableTint(button, isUsable, insufficientPower) then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
                 stateOverride = true
             end
         elseif buttonData.type == "item" then
             local usable, noMana = IsUsableItem(buttonData.id)
-            if not usable then
+            if ShouldApplyUnusableTint(button, usable, noMana) then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
                 stateOverride = true
@@ -265,7 +284,8 @@ local function EvaluateDesaturation(button, buttonData, style)
         if style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
         end
-        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._zeroChargesConfirmed then
+        if not wantDesat and buttonData.desaturateWhileZeroCharges
+                and button._chargeState == CHARGE_STATE_ZERO then
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
