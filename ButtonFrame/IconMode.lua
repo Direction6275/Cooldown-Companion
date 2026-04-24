@@ -5,6 +5,9 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local pairs = pairs
@@ -61,13 +64,7 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
         return false
     end
 
-    local cur = button._currentReadableCharges
-    local maxCharges = buttonData.maxCharges
-    if button._chargeCountReadable == true and cur ~= nil and maxCharges ~= nil then
-        return cur == maxCharges
-    end
-
-    return not button._chargeRecharging and not button._zeroChargesConfirmed
+    return button._chargeState == CHARGE_STATE_FULL
 end
 
 local function ApplyCountTextStyle(button, style)
@@ -565,16 +562,14 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         if suppressGCD then
             button.cooldown:Hide()
         else
-            if not button.cooldown:IsShown() then
-                button.cooldown:Show()
-            end
+            button.cooldown:Show()
         end
     end
 
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
     if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges and not button._auraActive then
-        local hasChargesRemaining = (button._zeroChargesConfirmed == false)
+        local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
             if hasChargesRemaining then
@@ -823,6 +818,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._desatCooldownActive = nil
+    button._cooldownState = nil
+    button._chargeState = nil
+    button._baseOverrideCooldownDurationObj = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil

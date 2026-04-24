@@ -49,6 +49,9 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         buttonData.maxCharges = charges.maxCharges
         button.count:SetText("")
         button._chargeText = nil
+        button._chargeDurationObj = nil
+        button._chargeRecharging = false
+        button._chargeState = nil
         return nil
     end
 

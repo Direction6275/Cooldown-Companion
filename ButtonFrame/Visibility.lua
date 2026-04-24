@@ -5,6 +5,11 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
+local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
+local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
@@ -47,7 +52,7 @@ local BASELINE_FALLBACKS = {
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverrideActive, procOverlayActive)
+local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive)
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
@@ -73,17 +78,16 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     -- _cooldownDeferred: treat deferred cooldowns (timer not yet started) as "on CD".
     if buttonData.hideWhileOnCooldown and not button._noCooldown then
         if UsesChargeBehavior(buttonData) then
-            if button._mainCDShown or button._chargeRecharging then
+            if button._chargeState == CHARGE_STATE_ZERO
+                    or button._chargeState == CHARGE_STATE_MISSING then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif buttonData.type == "item" then
-            if (button._itemCdDuration and button._itemCdDuration > 0 and not isGCDOnly)
-                    or button._cooldownDeferred then
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         else
-            if (button._durationObj and not isGCDOnly and not auraOverrideActive)
-                    or button._cooldownDeferred then
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN and not auraOverrideActive then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         end
@@ -92,17 +96,15 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
     if buttonData.hideWhileNotOnCooldown and not button._noCooldown then
         if UsesChargeBehavior(buttonData) then
-            if not button._mainCDShown and not button._chargeRecharging then
+            if button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif buttonData.type == "item" then
-            if (not button._itemCdDuration or button._itemCdDuration == 0 or isGCDOnly)
-                    and not button._cooldownDeferred then
+            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         else
-            if (not button._durationObj or isGCDOnly) and not auraOverrideActive
-                    and not button._cooldownDeferred then
+            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOverrideActive then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         end
@@ -129,7 +131,7 @@ local function EvaluateButtonVisibility(button, buttonData, isGCDOnly, auraOverr
     end
 
     -- Check hideWhileZeroCharges (charge-based spells and items)
-    if buttonData.hideWhileZeroCharges and button._zeroChargesConfirmed then
+    if buttonData.hideWhileZeroCharges and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end
 
