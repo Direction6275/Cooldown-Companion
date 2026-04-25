@@ -5,6 +5,8 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local issecretvalue = issecretvalue
@@ -49,6 +51,9 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         buttonData.maxCharges = charges.maxCharges
         button.count:SetText("")
         button._chargeText = nil
+        button._chargeDurationObj = nil
+        button._chargeRecharging = false
+        button._chargeState = nil
         return nil
     end
 
@@ -155,6 +160,7 @@ end
 -- Icon tinting: out-of-range red > unusable dimming > aura tint > cooldown tint > base tint.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
+    button._unusableTintActive = false
     if buttonData.isPassive then
         local c
         if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive then
@@ -193,18 +199,21 @@ local function UpdateIconTint(button, buttonData, style)
     if not stateOverride and style.showUnusable then
         local uc = style.iconUnusableTintColor
         if buttonData.type == "spell" then
-            local isUsable = C_Spell.IsSpellUsable(buttonData.id)
+            local spellID = button._displaySpellId or buttonData.id
+            local isUsable = C_Spell.IsSpellUsable(spellID)
             if not isUsable then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
                 stateOverride = true
+                button._unusableTintActive = true
             end
         elseif buttonData.type == "item" then
-            local usable, noMana = IsUsableItem(buttonData.id)
+            local usable = IsUsableItem(buttonData.id)
             if not usable then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
                 stateOverride = true
+                button._unusableTintActive = true
             end
         end
     end
@@ -262,7 +271,8 @@ local function EvaluateDesaturation(button, buttonData, style)
         if style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
         end
-        if not wantDesat and buttonData.desaturateWhileZeroCharges and button._zeroChargesConfirmed then
+        if not wantDesat and buttonData.desaturateWhileZeroCharges
+                and button._chargeState == CHARGE_STATE_ZERO then
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then

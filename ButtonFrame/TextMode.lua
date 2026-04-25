@@ -5,6 +5,11 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
+local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
+local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local GetTime = GetTime
@@ -266,30 +271,13 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
         return UsesChargeBehavior(button.buttonData)
     elseif tokenName == "maxcharges" then
         if not UsesChargeBehavior(button.buttonData) then return false end
-        if button._chargeCountReadable == true then
-            local cur = button._currentReadableCharges
-            local mc = button.buttonData.maxCharges
-            return cur ~= nil and mc ~= nil and cur == mc
-        else
-            return not button._chargeRecharging
-        end
+        return button._chargeState == CHARGE_STATE_FULL
     elseif tokenName == "missingcharges" then
         if not UsesChargeBehavior(button.buttonData) then return false end
-        if button._chargeCountReadable == true then
-            local cur = button._currentReadableCharges
-            local mc = button.buttonData.maxCharges
-            return cur ~= nil and mc ~= nil and cur > 0 and cur < mc
-        else
-            return button._chargeRecharging and not button._zeroChargesConfirmed
-        end
+        return button._chargeState == CHARGE_STATE_MISSING
     elseif tokenName == "zerocharges" then
         if not UsesChargeBehavior(button.buttonData) then return false end
-        if button._chargeCountReadable == true then
-            local cur = button._currentReadableCharges
-            return cur ~= nil and cur == 0
-        else
-            return button._zeroChargesConfirmed == true
-        end
+        return button._chargeState == CHARGE_STATE_ZERO
     elseif tokenName == "stacks" then
         return stackDisplayKind ~= nil
     elseif tokenName == "aura" then
@@ -354,8 +342,6 @@ local function SubstituteTokens(button, segments, style, effectState)
     local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
     local auraActive = button._auraActive
     local auraHasTimer = button._auraHasTimer == true
-    local onCooldown = button._cooldownDeferred or (button.cooldown and button.cooldown:IsShown())
-
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
     -- Determine which domain owns it this tick.
     local durationRemaining = nil
@@ -383,7 +369,7 @@ local function SubstituteTokens(button, segments, style, effectState)
     if auraActive then
         auraRemaining = durationRemaining
         auraIsSecret = durationIsSecret
-    elseif button._isGCDOnly then
+    elseif button._cooldownState == COOLDOWN_STATE_GCD then
         -- Suppress GCD-only cooldowns in text mode (not useful information)
     else
         timeRemaining = durationRemaining
@@ -698,7 +684,6 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
-
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])

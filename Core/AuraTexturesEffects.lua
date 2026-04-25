@@ -574,7 +574,8 @@ local function IsTextureIndicatorSectionActive(button, sectionKey, config)
             return false
         end
         if buttonData.type == "spell" then
-            return not C_Spell_IsSpellUsable(buttonData.id)
+            local spellID = button._displaySpellId or buttonData.id
+            return not C_Spell_IsSpellUsable(spellID)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
             return not C_Item_IsUsableItem(buttonData.id)
@@ -635,7 +636,8 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return false
         end
         if buttonData.type == "spell" then
-            return C_Spell_IsSpellUsable(buttonData.id)
+            local spellID = button._displaySpellId or buttonData.id
+            return C_Spell_IsSpellUsable(spellID)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
             return C_Item_IsUsableItem(buttonData.id)
@@ -653,30 +655,7 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return nil
         end
 
-        local currentCharges = button._currentReadableCharges
-        local maxCharges = buttonData.maxCharges
-        if currentCharges ~= nil then
-            if currentCharges <= 0 then
-                return "zero"
-            end
-            if maxCharges ~= nil and maxCharges > 0 then
-                if currentCharges >= maxCharges then
-                    return "full"
-                end
-                return "missing"
-            end
-        end
-
-        if button._zeroChargesConfirmed == true then
-            return "zero"
-        end
-        if button._chargeRecharging == true then
-            return "missing"
-        end
-        if button._chargeRecharging == false then
-            return "full"
-        end
-        return nil
+        return button._chargeState
     end
 
     if conditionKey == "countTextActive" then

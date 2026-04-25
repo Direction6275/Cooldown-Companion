@@ -5,6 +5,10 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
+local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local pairs = pairs
@@ -61,13 +65,7 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
         return false
     end
 
-    local cur = button._currentReadableCharges
-    local maxCharges = buttonData.maxCharges
-    if button._chargeCountReadable == true and cur ~= nil and maxCharges ~= nil then
-        return cur == maxCharges
-    end
-
-    return not button._chargeRecharging and not button._zeroChargesConfirmed
+    return button._chargeState == CHARGE_STATE_FULL
 end
 
 local function ApplyCountTextStyle(button, style)
@@ -558,23 +556,23 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
     -- Passives never suppress — always show cooldown widget for aura swipe
     if fetchOk and not buttonData.isPassive then
-        -- Suppress only for GCD-only state; keep the cooldown swipe visible
-        -- when a real cooldown is active during an overlapping GCD.
-        local suppressGCD = not style.showGCDSwipe and isGCDOnly
+        -- Suppress only true GCD-only state. The extra presentation-state guard
+        -- keeps any explicit real-cooldown presentation from being hidden here.
+        local suppressGCD = not style.showGCDSwipe
+            and isGCDOnly
+            and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
         if suppressGCD then
             button.cooldown:Hide()
         else
-            if not button.cooldown:IsShown() then
-                button.cooldown:Show()
-            end
+            button.cooldown:Show()
         end
     end
 
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
     if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges and not button._auraActive then
-        local hasChargesRemaining = (button._zeroChargesConfirmed == false)
+        local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
             if hasChargesRemaining then
@@ -772,6 +770,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
                and not button._noCooldown
                and (not style.readyGlowCombatOnly or inCombat)
                and button._desatCooldownActive == false
+               and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
                and not (procOverlayActive and style.procGlowStyle ~= "none") then
             if style.readyGlowOnlyAtMaxCharges
                and buttonData.type == "spell"

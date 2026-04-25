@@ -5,6 +5,10 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
+local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local GetTime = GetTime
@@ -265,25 +269,21 @@ end
 local function UpdateBarDisplay(button)
     local style = button.style
 
-    -- Determine onCooldown via nil-checks (secret-safe).
-    -- _durationObj is non-nil only when UpdateButtonCooldown found an active CD/aura.
-    -- _viewerBar is non-nil when a totem/guardian viewer bar is active.
+    -- "On cooldown" for bar color/ready text follows canonical state.
+    -- _durationObj may also hold aura/totem timing and must not imply cooldown.
+    local isChargeButton = UsesChargeBehavior(button.buttonData)
+    local chargeState = button._chargeState
+    local auraTimerActive = button._auraActive and (button._durationObj or button._viewerBar)
     local onCooldown
-    if button._cooldownDeferred then
-        onCooldown = true
-    elseif button._durationObj then
-        onCooldown = not button._barGCDSuppressed
-    elseif button._viewerBar and button._auraActive then
-        onCooldown = not button._barGCDSuppressed
-    elseif button.buttonData.type == "item" then
-        onCooldown = button._itemCdDuration and button._itemCdDuration > 0
-        if onCooldown and button._barGCDSuppressed then
-            onCooldown = false
-        end
+    if isChargeButton then
+        onCooldown = chargeState == CHARGE_STATE_MISSING
+            or chargeState == CHARGE_STATE_ZERO
+    else
+        onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
 
     -- Time text color: switch between cooldown and ready colors
-    local wantReadyTextColor = not onCooldown and style.showBarReadyText
+    local wantReadyTextColor = not onCooldown and not auraTimerActive and style.showBarReadyText
     if button._barReadyTextColor ~= wantReadyTextColor then
         button._barReadyTextColor = wantReadyTextColor
         if wantReadyTextColor then
@@ -299,7 +299,7 @@ local function UpdateBarDisplay(button)
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
     if onCooldown and not button.buttonData.isPassive then
-        if UsesChargeBehavior(button.buttonData) and not button._zeroChargesConfirmed then
+        if isChargeButton and chargeState == CHARGE_STATE_MISSING then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
         else
             wantCdColor = style.barCooldownColor
@@ -345,7 +345,7 @@ local function UpdateBarDisplay(button)
             button._barCdColor = nil
             local resetColor
             if onCooldown then
-                if UsesChargeBehavior(button.buttonData) and not button._zeroChargesConfirmed then
+                if isChargeButton and chargeState == CHARGE_STATE_MISSING then
                     resetColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
                 else
                     resetColor = style.barCooldownColor
