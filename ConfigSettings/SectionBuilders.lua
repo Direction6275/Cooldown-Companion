@@ -365,6 +365,19 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     end
 end
 
+local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback)
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Blizzard CDM Aura Swipe Style")
+    cb:SetValue(styleTable.auraUseBlizzardSwipe == true)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.auraUseBlizzardSwipe = val == true
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+    return cb
+end
+
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
     local locCb = AceGUI:Create("CheckBox")
     locCb:SetLabel("Show Loss of Control")
@@ -1074,6 +1087,7 @@ ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
+ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildIconTintControls = BuildIconTintControls

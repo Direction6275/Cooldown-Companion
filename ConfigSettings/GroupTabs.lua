@@ -48,6 +48,7 @@ local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
+local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
@@ -2676,6 +2677,22 @@ local function BuildAppearanceTab(container)
         AddAnchorDropdown(container, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
         AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
     end -- auraStackAdvExpanded + showAuraStackText
+
+    local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    local auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
+    local auraSwipeInfoAnchor = auraSwipeCb.checkbg
+    local auraSwipeInfoXOff = auraSwipeCb.text:GetStringWidth() + 4
+    if auraSwipePromoteBtn and auraSwipePromoteBtn:IsShown() then
+        auraSwipeInfoAnchor = auraSwipePromoteBtn
+        auraSwipeInfoXOff = 4
+    end
+    CreateInfoButton(auraSwipeCb.frame, auraSwipeInfoAnchor, "LEFT", "RIGHT", auraSwipeInfoXOff, 0, {
+        "Blizzard-style Aura Duration Swipe",
+        {"While this style is shown for an active aura, the Cooldown/Duration Swipe settings do not affect that aura overlay.", 1, 1, 1, true},
+    }, tabInfoButtons)
 
     -- Show Keybind/Custom Text toggle
     local kbCb = AceGUI:Create("CheckBox")

@@ -147,6 +147,7 @@ local defaults = {
                         auraGlowThickness = 4,
                         auraGlowSpeed = 50,
                         auraGlowLines = 8,
+                        auraUseBlizzardSwipe = false,
                         auraGlowInvert = false,
                         auraGlowCombatOnly = false,
                         readyGlowStyle = "none",
@@ -310,6 +311,7 @@ local defaults = {
             auraGlowThickness = 4,
             auraGlowSpeed = 50,
             auraGlowLines = 8,
+            auraUseBlizzardSwipe = false,
             auraGlowInvert = false,
             auraGlowCombatOnly = false,
             readyGlowStyle = "none",
@@ -657,6 +659,11 @@ ST.OVERRIDE_SECTIONS = {
     auraIndicator = {
         label = "Show Aura Glow",
         keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed", "auraGlowLines", "auraGlowInvert", "auraGlowCombatOnly"},
+        modes = {icons = true},
+    },
+    auraDurationSwipe = {
+        label = "Aura Duration Swipe",
+        keys = {"auraUseBlizzardSwipe"},
         modes = {icons = true},
     },
     readyGlow = {

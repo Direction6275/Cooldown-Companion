@@ -31,6 +31,7 @@ local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
+local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
@@ -189,8 +190,8 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local sectionOrder = {
         "borderSettings", "cooldownText", "auraText", "auraStackText",
-        "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
-        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "pandemicGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
+        "auraDurationSwipe", "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
+        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
         "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
         "textFont", "textColors", "textBackground",
     }
@@ -217,6 +218,12 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         procGlow = BuildProcGlowControls,
         pandemicGlow = BuildPandemicGlowControls,
         auraIndicator = BuildAuraIndicatorControls,
+        auraDurationSwipe = function(container, styleTable, onChange)
+            BuildAuraDurationSwipeControls(container, styleTable, function()
+                onChange()
+                CooldownCompanion:UpdateAllCooldowns()
+            end)
+        end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
         barColors = BuildBarColorsControls,
@@ -327,6 +334,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                                     end)
                                     cont:AddChild(auraInvertCb)
                                     ApplyCheckboxIndent(auraInvertCb, 20)
+
                                 end
 
                                 if sectionId == "readyGlow" then

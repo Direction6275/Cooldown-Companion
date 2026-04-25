@@ -55,6 +55,100 @@ local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
+local BLIZZARD_AURA_SWIPE_TEXTURE = "Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe"
+local BLIZZARD_AURA_SWIPE_R = 1
+local BLIZZARD_AURA_SWIPE_G = 0.95
+local BLIZZARD_AURA_SWIPE_B = 0.57
+local BLIZZARD_AURA_SWIPE_A = 0.7
+local BLIZZARD_AURA_SWIPE_TEX_LOW = {x = 0.15, y = 0.15}
+local BLIZZARD_AURA_SWIPE_TEX_HIGH = {x = 0.85, y = 0.85}
+
+local function ApplyAuraBlizzardCooldownLayer(button)
+    if button and button.auraBlizzardCooldown and button.cooldown then
+        button.auraBlizzardCooldown:SetFrameLevel(button.cooldown:GetFrameLevel())
+    end
+end
+
+local function AnchorAuraBlizzardCooldown(button)
+    if not (button and button.auraBlizzardCooldown and button.icon) then
+        return
+    end
+
+    button.auraBlizzardCooldown:ClearAllPoints()
+    button.auraBlizzardCooldown:SetAllPoints(button.icon)
+    button.auraBlizzardCooldown:SetTexCoordRange(BLIZZARD_AURA_SWIPE_TEX_LOW, BLIZZARD_AURA_SWIPE_TEX_HIGH)
+end
+
+local function ApplyDefaultCooldownSwipeStyle(button, style)
+    if not (button and button.cooldown and style) then
+        return
+    end
+
+    local swipeEnabled = style.showCooldownSwipe ~= false
+    local fillEnabled = style.showCooldownSwipeFill ~= false
+    button.cooldown:SetUseAuraDisplayTime(false)
+    button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled and button._hideCooldownChargesActive ~= true)
+    button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
+    button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
+    button.cooldown:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
+    local edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
+    button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+end
+
+local function HideBlizzardAuraSwipe(button, style)
+    if button and button.auraBlizzardCooldown then
+        button.auraBlizzardCooldown:Hide()
+    end
+    if button and button._auraBlizzardSwipeActive then
+        button._auraBlizzardSwipeActive = nil
+        ApplyDefaultCooldownSwipeStyle(button, style)
+    end
+end
+
+local function UpdateBlizzardAuraSwipe(button, style)
+    if not (button and button.auraBlizzardCooldown) then
+        return
+    end
+
+    local enabled = style.auraUseBlizzardSwipe == true
+        and button._auraActive == true
+        and button._auraHasTimer ~= false
+
+    if not enabled then
+        HideBlizzardAuraSwipe(button, style)
+        return
+    end
+
+    local overlay = button.auraBlizzardCooldown
+    overlay:Show()
+    overlay:SetUseAuraDisplayTime(true)
+    overlay:SetDrawSwipe(true)
+    overlay:SetDrawEdge(false)
+    overlay:SetReverse(false)
+    overlay:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
+
+    local rendered = false
+    if button._durationObj then
+        overlay:SetCooldownFromDurationObject(button._durationObj)
+        rendered = overlay:IsShown()
+    else
+        local startMs, durMs = button.cooldown:GetCooldownTimes()
+        if startMs and durMs and not issecretvalue(startMs) and not issecretvalue(durMs) and durMs > 0 then
+            overlay:SetCooldown(startMs / 1000, durMs / 1000)
+            rendered = true
+        end
+    end
+
+    if rendered then
+        overlay:Show()
+        button._auraBlizzardSwipeActive = true
+        button.cooldown:SetUseAuraDisplayTime(true)
+        button.cooldown:SetDrawSwipe(false)
+        button.cooldown:SetDrawEdge(false)
+    else
+        HideBlizzardAuraSwipe(button, style)
+    end
+end
 
 local function IsReadyGlowAtMaxCharges(button, buttonData)
     if not (button and buttonData) then
@@ -141,17 +235,25 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Assisted highlight overlays (multiple styles, all hidden by default)
     button.assistedHighlight = CreateAssistedHighlight(button, style)
 
+    -- Blizzard-style aura duration swipe overlay. This is separate from the
+    -- normal cooldown frame so regular cooldowns keep their existing styling.
+    button.auraBlizzardCooldown = CreateFrame("Cooldown", button:GetName() .. "AuraBlizzardCooldown", button, "CooldownFrameTemplate")
+    AnchorAuraBlizzardCooldown(button)
+    button.auraBlizzardCooldown:SetDrawSwipe(true)
+    button.auraBlizzardCooldown:SetDrawEdge(false)
+    button.auraBlizzardCooldown:SetDrawBling(false)
+    button.auraBlizzardCooldown:SetReverse(false)
+    button.auraBlizzardCooldown:SetSwipeTexture(BLIZZARD_AURA_SWIPE_TEXTURE, 1, 1, 1, 1)
+    button.auraBlizzardCooldown:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
+    button.auraBlizzardCooldown:SetUseAuraDisplayTime(true)
+    button.auraBlizzardCooldown:SetHideCountdownNumbers(true)
+    button.auraBlizzardCooldown:Hide()
+    SetFrameClickThroughRecursive(button.auraBlizzardCooldown, true, true)
+
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
-    local swipeEnabled = style.showCooldownSwipe ~= false
-    local fillEnabled = style.showCooldownSwipeFill ~= false
-    button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
-    button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
-    button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
-    button.cooldown:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
-    local edgeColor = style.cooldownSwipeEdgeColor or {1, 1, 1, 1}
-    button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+    ApplyDefaultCooldownSwipeStyle(button, style)
     button.cooldown:SetHideCountdownNumbers(false) -- Always allow; visibility controlled via text alpha
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
@@ -269,6 +371,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
+    ApplyAuraBlizzardCooldownLayer(button)
 
     -- Store button data
     button.index = index
@@ -327,6 +430,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Re-apply full click-through on overlay frames (the recursive call above
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.auraBlizzardCooldown then
+        SetFrameClickThroughRecursive(button.auraBlizzardCooldown, true, true)
+    end
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
@@ -589,6 +695,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         local fillEnabled = style.showCooldownSwipeFill ~= false
         button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
     end
+
+    UpdateBlizzardAuraSwipe(button, style)
 
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
     if button._secondaryCdTextRegion and button._cdTextRegion then
@@ -887,14 +995,18 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
-    local swipeEnabled = style.showCooldownSwipe ~= false
-    local fillEnabled = style.showCooldownSwipeFill ~= false
-    button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
-    button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
-    button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
-    button.cooldown:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
-    local edgeColor = style.cooldownSwipeEdgeColor or {1, 1, 1, 1}
-    button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+    ApplyDefaultCooldownSwipeStyle(button, style)
+    if button.auraBlizzardCooldown then
+        AnchorAuraBlizzardCooldown(button)
+        button.auraBlizzardCooldown:SetUseAuraDisplayTime(true)
+        button.auraBlizzardCooldown:SetDrawSwipe(true)
+        button.auraBlizzardCooldown:SetDrawEdge(false)
+        button.auraBlizzardCooldown:SetDrawBling(false)
+        button.auraBlizzardCooldown:SetReverse(false)
+        button.auraBlizzardCooldown:SetSwipeTexture(BLIZZARD_AURA_SWIPE_TEXTURE, 1, 1, 1, 1)
+        button.auraBlizzardCooldown:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
+        button.auraBlizzardCooldown:SetHideCountdownNumbers(true)
+    end
 
     -- Update cooldown font settings (default state; per-tick logic handles aura mode)
     local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
@@ -998,6 +1110,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Apply configurable strata ordering (LoC always on top)
     ApplyStrataOrder(button, style.strataOrder)
+    ApplyAuraBlizzardCooldownLayer(button)
     CooldownCompanion:UpdateAuraTextureVisual(button)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
@@ -1011,6 +1124,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Re-apply full click-through on overlay frames (the recursive call above
     -- re-enables motion on them when tooltips are on, causing them to steal hover events)
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.auraBlizzardCooldown then
+        SetFrameClickThroughRecursive(button.auraBlizzardCooldown, true, true)
+    end
     SetFrameClickThroughRecursive(button.locCooldown, true, true)
     if button.procGlow then
         SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
