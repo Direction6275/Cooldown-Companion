@@ -1750,6 +1750,18 @@ local function BuildAuraGlowSection(container, group, style)
     container:AddChild(auraInvertCb)
     ApplyCheckboxIndent(auraInvertCb, 20)
 
+    local auraBlizzardSwipeCb = AceGUI:Create("CheckBox")
+    auraBlizzardSwipeCb:SetLabel("Use Blizzard Aura Swipe")
+    auraBlizzardSwipeCb:SetValue(style.auraUseBlizzardSwipe == true)
+    auraBlizzardSwipeCb:SetFullWidth(true)
+    auraBlizzardSwipeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.auraUseBlizzardSwipe = val == true
+        UpdateSelectedGroupStyle()
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    container:AddChild(auraBlizzardSwipeCb)
+    ApplyCheckboxIndent(auraBlizzardSwipeCb, 20)
+
     BuildAuraIndicatorControls(container, style, UpdateSelectedGroupStyle)
 
     local auraPreviewBtn = AceGUI:Create("Button")
