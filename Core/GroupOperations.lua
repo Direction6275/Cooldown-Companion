@@ -1513,8 +1513,8 @@ function CooldownCompanion:UnloadGroup(groupId)
         end
     end
 
-    -- Delete Masque group
-    self:DeleteMasqueGroup(groupId)
+    -- Drop the runtime Masque reference without deleting the user's saved skin choice.
+    self:UnregisterMasqueGroup(groupId)
 
     -- Clear alpha fade state
     if self.alphaState then

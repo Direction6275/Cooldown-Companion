@@ -1219,9 +1219,10 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         self:AnchorGroupFrame(frame, group.anchor)
 
         -- Keep Masque runtime state aligned without changing the saved user preference.
-        if self:IsGroupMasqueActive(groupId, group) and not self.MasqueGroups[self:GetMasqueStaticId(groupId)] then
+        local masqueActive = self:IsGroupMasqueActive(groupId, group)
+        if masqueActive and not self.MasqueGroups[self:GetMasqueStaticId(groupId)] then
             self:CreateMasqueGroup(groupId)
-        elseif self.Masque and self._masqueGroupKeys and self._masqueGroupKeys[groupId] then
+        elseif not masqueActive and self.Masque and self._masqueGroupKeys and self._masqueGroupKeys[groupId] then
             self:DeactivateGroupMasqueRuntime(groupId)
         end
 
