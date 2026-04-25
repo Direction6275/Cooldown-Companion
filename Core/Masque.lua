@@ -48,10 +48,16 @@ function CooldownCompanion:CreateMasqueGroup(groupId)
     return masqueGroup
 end
 
-function CooldownCompanion:DeleteMasqueGroup(groupId)
+function CooldownCompanion:DeleteMasqueGroup(groupId, forceReacquire)
     if not self.Masque then return end
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     local staticId = self:GetMasqueStaticId(groupId)
     local oldStaticId = self._masqueGroupKeys and self._masqueGroupKeys[groupId]
+
+    if not MasqueGroups[staticId] and (forceReacquire or (group and group.masqueEnabled == true)) then
+        local groupName = group and group.name or ("Group " .. groupId)
+        MasqueGroups[staticId] = self.Masque:Group(ADDON_NAME, groupName, staticId)
+    end
 
     DeleteMasqueGroupByStaticId(staticId)
     if oldStaticId and oldStaticId ~= staticId then
@@ -159,6 +165,7 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
+    local wasMasqueEnabled = group.masqueEnabled == true
     group.masqueEnabled = enable
 
     if not self.Masque then return end
@@ -191,6 +198,6 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
             end
         end
         -- Delete the Masque group
-        self:DeleteMasqueGroup(groupId)
+        self:DeleteMasqueGroup(groupId, wasMasqueEnabled)
     end
 end
