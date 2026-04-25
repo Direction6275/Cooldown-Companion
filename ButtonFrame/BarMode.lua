@@ -845,8 +845,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._cooldownPresentationState = nil
     button._cooldownPresentationDurationObj = nil
     button._chargeState = nil
-    button._baseOverrideCooldownDurationObj = nil
-    button._baseOverrideCooldownLastRealAt = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
