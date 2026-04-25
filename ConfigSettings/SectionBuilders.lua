@@ -334,18 +334,6 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     -- Swipe Fill Opacity (only when fill is visible)
     if styleTable.showCooldownSwipeFill ~= false then
-        local auraBlizzardSwipeCb = AceGUI:Create("CheckBox")
-        auraBlizzardSwipeCb:SetLabel("Use Blizzard Swipe for Aura Durations")
-        auraBlizzardSwipeCb:SetValue(styleTable.auraUseBlizzardSwipe == true)
-        auraBlizzardSwipeCb:SetFullWidth(true)
-        auraBlizzardSwipeCb:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.auraUseBlizzardSwipe = val == true
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-        end)
-        container:AddChild(auraBlizzardSwipeCb)
-        ApplyCheckboxIndent(auraBlizzardSwipeCb, 20)
-
         local alphaSlider = AceGUI:Create("Slider")
         alphaSlider:SetLabel("Swipe Fill Opacity")
         alphaSlider:SetSliderValues(0, 1, 0.05)
@@ -375,6 +363,19 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     if styleTable.showCooldownSwipeEdge ~= false then
         AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
     end
+end
+
+local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback)
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Blizzard CDM Aura Swipe")
+    cb:SetValue(styleTable.auraUseBlizzardSwipe == true)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.auraUseBlizzardSwipe = val == true
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+    return cb
 end
 
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
@@ -1086,6 +1087,7 @@ ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
+ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildIconTintControls = BuildIconTintControls
