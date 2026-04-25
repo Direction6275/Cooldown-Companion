@@ -108,23 +108,25 @@ local function DurationObjectShowsCooldown(durationObj)
     return shown
 end
 
+local function PlainNumber(value)
+    if value == nil or issecretvalue(value) then
+        return nil
+    end
+    return tonumber(value)
+end
+
 local BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS = {
-    -- Opt-in only. Execute needs continuity when its base/override cooldown
-    -- APIs briefly expose only GCD data while the old real cooldown object
-    -- still represents lockout; Thunderblast has the same shape but should
-    -- not inherit this bridge.
+    -- Opt-in only. Execute needs gameplay cooldown continuity when its
+    -- base/override cooldown APIs briefly expose only GCD data even though the
+    -- spell is still locked out. Do not generalize this to every base/override
+    -- pair without runtime evidence; Thunderblast has shown stale behavior
+    -- when broad bridging is applied.
     [163201] = {
         [280735] = true,
     },
 }
 
-local function SpellUsabilityIsTrue(spellID)
-    if spellID == nil or issecretvalue(spellID) then
-        return false
-    end
-    local isUsable = C_Spell_IsSpellUsable(spellID)
-    return isUsable == true
-end
+local EXECUTE_BRIDGE_CONTINUITY_SECONDS = 0.20
 
 local function GetConfiguredAuraUnit(buttonData)
     return buttonData.auraUnit or "player"
@@ -203,6 +205,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
         spellID = spellID,
         fetchOk = false,
         state = COOLDOWN_STATE_READY,
+        apiState = COOLDOWN_STATE_READY,
         realCooldownShown = false,
         isOnGCD = false,
         deferred = false,
@@ -242,6 +245,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
     end
 
+    result.apiState = result.state
     return result
 end
 
@@ -260,8 +264,8 @@ local function ShouldApplyBaseOverrideCooldownBridge(configuredSpellID, displayS
             or issecretvalue(configuredSpellID) or issecretvalue(displaySpellID) then
         return false
     end
-    local configured = tonumber(configuredSpellID)
-    local display = tonumber(displaySpellID)
+    local configured = PlainNumber(configuredSpellID)
+    local display = PlainNumber(displaySpellID)
     local displayMap = configured and BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS[configured] or nil
     return displayMap ~= nil and displayMap[display] == true
 end
@@ -302,6 +306,7 @@ end
 local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, configuredSpellID, displaySpellID)
     if not bridgeEligible then
         button._baseOverrideCooldownDurationObj = nil
+        button._baseOverrideCooldownLastRealAt = nil
         return result
     end
 
@@ -310,31 +315,35 @@ local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, c
             and result.realCooldownShown
             and result.renderDurationObj then
         button._baseOverrideCooldownDurationObj = result.renderDurationObj
+        button._baseOverrideCooldownLastRealAt = GetTime()
+        result.apiState = result.apiState or result.state
+        result.presentationState = COOLDOWN_STATE_COOLDOWN
+        result.presentationDurationObj = result.renderDurationObj
         return result
     end
 
     local previousRealDurationObj = button._baseOverrideCooldownDurationObj
-    if result
-            and result.state == COOLDOWN_STATE_GCD
-            and (SpellUsabilityIsTrue(displaySpellID)
-                or SpellUsabilityIsTrue(configuredSpellID)) then
-        button._baseOverrideCooldownDurationObj = nil
-        return result
-    end
+    local previousRealDurationShown = DurationObjectShowsCooldown(previousRealDurationObj)
+    local previousRealAge = button._baseOverrideCooldownLastRealAt
+        and (GetTime() - button._baseOverrideCooldownLastRealAt) or nil
+    local bridgeWindowActive = previousRealAge ~= nil
+        and previousRealAge <= EXECUTE_BRIDGE_CONTINUITY_SECONDS
     if result
             and result.state == COOLDOWN_STATE_GCD
             and previousRealDurationObj
-            and DurationObjectShowsCooldown(previousRealDurationObj) then
+            and previousRealDurationShown
+            and bridgeWindowActive then
         local bridged = CloneCooldownResult(result)
+        bridged.apiState = result.state
         bridged.state = COOLDOWN_STATE_COOLDOWN
         bridged.renderDurationObj = previousRealDurationObj
-        bridged.realDurationObj = previousRealDurationObj
-        bridged.realCooldownShown = true
-        bridged.bridgeApplied = true
+        bridged.presentationState = COOLDOWN_STATE_COOLDOWN
+        bridged.presentationDurationObj = previousRealDurationObj
         return bridged
     end
 
     button._baseOverrideCooldownDurationObj = nil
+    button._baseOverrideCooldownLastRealAt = nil
     return result
 end
 
@@ -528,7 +537,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local prevAuraDurationObj = button._auraActive and button._durationObj or nil
     button._durationObj = nil
     button._cooldownDeferred = nil
+    button._cooldownApiState = COOLDOWN_STATE_READY
     button._cooldownState = COOLDOWN_STATE_READY
+    button._cooldownPresentationState = COOLDOWN_STATE_READY
+    button._cooldownPresentationDurationObj = nil
     button._chargeState = nil
 
     -- Fetch cooldown data and update the cooldown widget.
@@ -1104,20 +1116,29 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 spellCooldownDuration = spellCooldownResult.durationObj
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
+                button._cooldownApiState = spellCooldownResult.apiState
+                    or spellCooldownResult.state
+                    or COOLDOWN_STATE_READY
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
+                button._cooldownPresentationState = spellCooldownResult.presentationState
+                    or button._cooldownState
+                button._cooldownPresentationDurationObj = spellCooldownResult.presentationDurationObj
+                    or spellCooldownResult.renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
                 isGCDOnly = button._cooldownState == COOLDOWN_STATE_GCD
 
-                if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
-                    if spellCooldownResult.renderDurationObj then
-                        button._durationObj = spellCooldownResult.renderDurationObj
-                        button.cooldown:SetCooldownFromDurationObject(spellCooldownResult.renderDurationObj)
+                if button._cooldownPresentationState == COOLDOWN_STATE_COOLDOWN then
+                    if button._cooldownPresentationDurationObj then
+                        if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
+                            button._durationObj = button._cooldownPresentationDurationObj
+                        end
+                        button.cooldown:SetCooldownFromDurationObject(button._cooldownPresentationDurationObj)
                     else
                         button.cooldown:SetCooldown(0, 0)
                     end
-                elseif button._cooldownState == COOLDOWN_STATE_GCD then
-                    if style.showGCDSwipe == true and spellCooldownResult.renderDurationObj then
-                        button.cooldown:SetCooldownFromDurationObject(spellCooldownResult.renderDurationObj)
+                elseif button._cooldownPresentationState == COOLDOWN_STATE_GCD then
+                    if style.showGCDSwipe == true and button._cooldownPresentationDurationObj then
+                        button.cooldown:SetCooldownFromDurationObject(button._cooldownPresentationDurationObj)
                     else
                         button.cooldown:SetCooldown(0, 0)
                         button.cooldown:Hide()
@@ -1136,6 +1157,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     if actionSlotDurationObj then
                         isOnGCD = actionSlotCooldownShown and not actionSlotRealCooldownShown
                         isGCDOnly = actionSlotCooldownShown and not actionSlotRealCooldownShown
+                        button._cooldownApiState = actionSlotRealCooldownShown
+                            and COOLDOWN_STATE_COOLDOWN
+                            or COOLDOWN_STATE_GCD
                         button._cooldownState = actionSlotRealCooldownShown
                             and COOLDOWN_STATE_COOLDOWN
                             or COOLDOWN_STATE_GCD
@@ -1179,6 +1203,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._itemCdStart = 0
                     button._itemCdDuration = 0
                     button._cooldownDeferred = true
+                    button._cooldownApiState = COOLDOWN_STATE_COOLDOWN
                     button._cooldownState = COOLDOWN_STATE_COOLDOWN
                 else
                     button._itemCdStart = cdStart
@@ -1195,9 +1220,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         end
                     end
                     if cdDuration and cdDuration > 0 then
+                        button._cooldownApiState = isGCDOnly and COOLDOWN_STATE_GCD
+                            or COOLDOWN_STATE_COOLDOWN
                         button._cooldownState = isGCDOnly and COOLDOWN_STATE_GCD
                             or COOLDOWN_STATE_COOLDOWN
                     else
+                        button._cooldownApiState = COOLDOWN_STATE_READY
                         button._cooldownState = COOLDOWN_STATE_READY
                     end
 
@@ -1420,9 +1448,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     button._chargeState = ResolveChargeState(button, buttonData)
 
-    -- Canonical desaturation signal:
-    -- Derived from explicit cooldown/charge state, not cooldown widget visibility.
-    -- _cooldownDeferred is represented as cooldown state for dimming/visibility.
+    -- Cooldown desaturation follows gameplay cooldown state, not raw API state.
+    -- For normal buttons these are the same. For approved blind-gap bridges
+    -- like Execute, the gameplay state intentionally stays "cooldown" so all
+    -- cooldown visuals agree with the player-facing lockout.
     if buttonData.type == "item" then
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then

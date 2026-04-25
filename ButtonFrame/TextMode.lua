@@ -684,9 +684,13 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
+    button._cooldownApiState = nil
     button._cooldownState = nil
+    button._cooldownPresentationState = nil
+    button._cooldownPresentationDurationObj = nil
     button._chargeState = nil
     button._baseOverrideCooldownDurationObj = nil
+    button._baseOverrideCooldownLastRealAt = nil
 
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
