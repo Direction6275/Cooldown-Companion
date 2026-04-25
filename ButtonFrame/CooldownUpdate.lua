@@ -119,19 +119,6 @@ local EXECUTE_TRACE_BASE_SPELL_ID = 163201
 local EXECUTE_TRACE_OVERRIDE_SPELL_ID = 280735
 local EXECUTE_TRACE_MAX_ENTRIES = 800
 
-local BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS = {
-    -- Opt-in only. Execute needs gameplay cooldown continuity when its
-    -- base/override cooldown APIs briefly expose only GCD data even though the
-    -- spell is still locked out. Do not generalize this to every base/override
-    -- pair without runtime evidence; Thunderblast has shown stale behavior
-    -- when broad bridging is applied.
-    [163201] = {
-        [280735] = true,
-    },
-}
-
-local EXECUTE_BRIDGE_CONTINUITY_SECONDS = 0.20
-
 local function SecretSafeValue(value)
     if value == nil then
         return nil
@@ -416,17 +403,6 @@ local function SelectSpellCooldownResult(current, candidate)
     return CooldownLogic.SelectStrongerCooldownState(current, candidate)
 end
 
-local function ShouldApplyBaseOverrideCooldownBridge(configuredSpellID, displaySpellID)
-    if configuredSpellID == nil or displaySpellID == nil
-            or issecretvalue(configuredSpellID) or issecretvalue(displaySpellID) then
-        return false
-    end
-    local configured = PlainNumber(configuredSpellID)
-    local display = PlainNumber(displaySpellID)
-    local displayMap = configured and BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS[configured] or nil
-    return displayMap ~= nil and displayMap[display] == true
-end
-
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
     local displayResult = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy)
     local result = displayResult
@@ -438,7 +414,6 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
     if cooldownSpellId and cooldownSpellId ~= buttonData.id then
         local displayBaseSpellID = C_Spell.GetBaseSpell(cooldownSpellId)
         if displayBaseSpellID == buttonData.id then
-            bridgeEligible = ShouldApplyBaseOverrideCooldownBridge(buttonData.id, cooldownSpellId)
             local baseResult = EvaluateSpellCooldownLane(buttonData.id, buttonData._cooldownSecrecy)
             traceLanes.displayBaseSpellID = displayBaseSpellID
             traceLanes.base = baseResult
@@ -456,19 +431,9 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
     return result, bridgeEligible, traceLanes
 end
 
-local function CloneCooldownResult(result)
-    local clone = {}
-    if result then
-        for key, value in pairs(result) do
-            clone[key] = value
-        end
-    end
-    return clone
-end
-
 local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, configuredSpellID, displaySpellID)
     button._baseOverrideBridgeTrace = {
-        eligible = bridgeEligible == true,
+        eligible = false,
         configuredSpellID = configuredSpellID,
         displaySpellID = displaySpellID,
         preState = result and result.state or nil,
@@ -477,65 +442,10 @@ local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, c
         cleared = false,
     }
 
-    if not bridgeEligible then
-        button._baseOverrideCooldownDurationObj = nil
-        button._baseOverrideCooldownLastRealAt = nil
-        button._baseOverrideBridgeTrace.cleared = true
-        button._baseOverrideBridgeTrace.reason = "not-eligible"
-        return result
-    end
-
-    if result
-            and result.state == COOLDOWN_STATE_COOLDOWN
-            and result.realCooldownShown
-            and result.renderDurationObj then
-        button._baseOverrideCooldownDurationObj = result.renderDurationObj
-        button._baseOverrideCooldownLastRealAt = GetTime()
-        result.apiState = result.apiState or result.state
-        result.presentationState = COOLDOWN_STATE_COOLDOWN
-        result.presentationDurationObj = result.renderDurationObj
-        button._baseOverrideBridgeTrace.storedDirectReal = true
-        button._baseOverrideBridgeTrace.reason = "direct-real"
-        return result
-    end
-
-    local previousRealDurationObj = button._baseOverrideCooldownDurationObj
-    local previousRealDurationShown = DurationObjectShowsCooldown(previousRealDurationObj)
-    local previousRealAge = button._baseOverrideCooldownLastRealAt
-        and (GetTime() - button._baseOverrideCooldownLastRealAt) or nil
-    local bridgeWindowActive = previousRealAge ~= nil
-        and previousRealAge <= EXECUTE_BRIDGE_CONTINUITY_SECONDS
-    button._baseOverrideBridgeTrace.previousRealDurationShown = previousRealDurationShown
-    button._baseOverrideBridgeTrace.previousRealAge = previousRealAge
-    button._baseOverrideBridgeTrace.bridgeWindowActive = bridgeWindowActive
-    if result
-            and result.state == COOLDOWN_STATE_GCD
-            and previousRealDurationObj
-            and previousRealDurationShown
-            and bridgeWindowActive then
-        local bridged = CloneCooldownResult(result)
-        bridged.apiState = result.state
-        bridged.state = COOLDOWN_STATE_COOLDOWN
-        bridged.renderDurationObj = previousRealDurationObj
-        bridged.presentationState = COOLDOWN_STATE_COOLDOWN
-        bridged.presentationDurationObj = previousRealDurationObj
-        button._baseOverrideBridgeTrace.applied = true
-        button._baseOverrideBridgeTrace.reason = "bridged-gcd"
-        return bridged
-    end
-
     button._baseOverrideCooldownDurationObj = nil
     button._baseOverrideCooldownLastRealAt = nil
     button._baseOverrideBridgeTrace.cleared = true
-    if not previousRealDurationObj then
-        button._baseOverrideBridgeTrace.reason = "no-previous-real"
-    elseif not previousRealDurationShown then
-        button._baseOverrideBridgeTrace.reason = "previous-real-not-shown"
-    elseif not bridgeWindowActive then
-        button._baseOverrideBridgeTrace.reason = "bridge-window-expired"
-    else
-        button._baseOverrideBridgeTrace.reason = "state-not-gcd"
-    end
+    button._baseOverrideBridgeTrace.reason = "disabled"
     return result
 end
 
@@ -820,10 +730,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownResult
     local spellCooldownTrace
     local spellBaseOverrideBridgeEligible = false
-    local actionSlotCooldownShown
-    local actionSlotDurationObj
-    local actionSlotRealDurationObj
-    local actionSlotRealCooldownShown = false
     -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
     local auraProbeInfo, auraProbeIsGCDOnly
     local auraProbeDuration
@@ -1421,39 +1327,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 fetchOk = true
             elseif not fetchOk then
-                -- GetSpellCooldown returned nil: fall back to action-slot probe.
-                -- Covers vehicle bar, override bar, and rare ContextuallySecret
-                -- spells whose spell-level API is unavailable in combat.
-                if not usesChargeBehavior and buttonData._cooldownSecrecy ~= 0 then
-                    actionSlotCooldownShown, actionSlotDurationObj, actionSlotRealCooldownShown, actionSlotRealDurationObj =
-                        ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-                    if actionSlotDurationObj then
-                        isOnGCD = actionSlotCooldownShown and not actionSlotRealCooldownShown
-                        isGCDOnly = actionSlotCooldownShown and not actionSlotRealCooldownShown
-                        button._cooldownApiState = actionSlotRealCooldownShown
-                            and COOLDOWN_STATE_COOLDOWN
-                            or COOLDOWN_STATE_GCD
-                        button._cooldownState = actionSlotRealCooldownShown
-                            and COOLDOWN_STATE_COOLDOWN
-                            or COOLDOWN_STATE_GCD
-                        local renderDurationObj = (actionSlotRealCooldownShown and actionSlotRealDurationObj)
-                            or actionSlotDurationObj
-                        if button._cooldownState == COOLDOWN_STATE_COOLDOWN and renderDurationObj then
-                            button._durationObj = renderDurationObj
-                            button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
-                        elseif style.showGCDSwipe == true and renderDurationObj then
-                            button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
-                        else
-                            button.cooldown:SetCooldown(0, 0)
-                            button.cooldown:Hide()
-                        end
-                        fetchOk = true
-                    end
-                end
-                -- Ensure widget is in a known state when all paths failed.
-                if not fetchOk then
-                    button.cooldown:SetCooldown(0, 0)
-                end
+                button.cooldown:SetCooldown(0, 0)
             end
         elseif buttonData.type == "item" then
             button._isEquippableNotEquipped = false
