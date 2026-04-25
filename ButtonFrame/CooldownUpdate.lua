@@ -199,20 +199,28 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
     result.info = info
     if not info then
         if secrecy ~= 0 and ProbeActionSlotCooldownForSpell then
-            local slotShown, durationObj, realShown, realDurationObj = ProbeActionSlotCooldownForSpell(spellID)
-            if slotShown ~= nil then
+            local slotProbe = ProbeActionSlotCooldownForSpell(spellID)
+            if slotProbe.shown ~= nil then
                 result.fetchOk = true
-                result.normalCooldownShown = slotShown == true
-                result.realCooldownShown = realShown == true
-                result.durationObj = durationObj
-                result.realDurationObj = realDurationObj
-                if result.realCooldownShown and realDurationObj then
+                result.normalCooldownShown = slotProbe.shown == true
+                result.realCooldownShown = slotProbe.realShown == true
+                result.durationObj = slotProbe.durationObj
+                result.realDurationObj = slotProbe.realDurationObj
+                if slotProbe.shown and slotProbe.sawUnknown then
                     result.state = COOLDOWN_STATE_COOLDOWN
-                    result.renderDurationObj = realDurationObj
-                elseif slotShown and durationObj then
+                    result.renderDurationObj = slotProbe.realDurationObj or slotProbe.durationObj
+                elseif result.realCooldownShown and slotProbe.realDurationObj then
+                    result.state = COOLDOWN_STATE_COOLDOWN
+                    result.renderDurationObj = slotProbe.realDurationObj
+                elseif slotProbe.shown and slotProbe.durationObj then
                     result.state = COOLDOWN_STATE_GCD
-                    result.renderDurationObj = durationObj
+                    result.renderDurationObj = slotProbe.durationObj
+                    result.isOnGCD = true
                 end
+            elseif slotProbe.sawAnySlot and slotProbe.sawUnknown then
+                result.fetchOk = true
+                result.state = COOLDOWN_STATE_COOLDOWN
+                result.deferred = true
             end
         end
         return result
@@ -310,24 +318,25 @@ local function ResolveChargeState(button, buttonData)
 end
 
 -- Probe action-slot cooldown state for a spell ID pair (base + display override).
--- Returns:
---   shown      : true/false/nil (nil = no slots found or unknown from secret state)
---   durationObj: active LuaDurationObject when shown, else nil
 local actionSlotSeenScratch = {}
 
 local function ProbeActionSlotsForSpellID(spellID)
-    if not spellID then return false, nil, false, false, false, nil end
+    local result = {
+        shown = false,
+        realShown = false,
+        sawAnySlot = false,
+        sawUnknown = false,
+    }
+
+    if not spellID then return result end
 
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
-    if not slots then return false, nil, false, false, false, nil end
-
-    local sawAnySlot = false
-    local sawUnknown = false
+    if not slots then return result end
 
     for _, slot in ipairs(slots) do
         if not actionSlotSeenScratch[slot] then
             actionSlotSeenScratch[slot] = true
-            sawAnySlot = true
+            result.sawAnySlot = true
 
             local durationObj = C_ActionBar.GetActionCooldownDuration(slot)
             local realDurationObj = C_ActionBar.GetActionCooldownDuration(slot, true)
@@ -337,56 +346,69 @@ local function ProbeActionSlotsForSpellID(spellID)
             if durationObj then
                 shown = DurationObjectShowsCooldown(durationObj)
             else
-                sawUnknown = true
+                result.sawUnknown = true
             end
 
             if realDurationObj then
                 realShown = DurationObjectShowsCooldown(realDurationObj)
             else
-                sawUnknown = true
+                result.sawUnknown = true
             end
 
             if shown then
-                return true, durationObj, realShown, sawAnySlot, sawUnknown, realDurationObj
+                result.shown = true
+                result.durationObj = durationObj
+                result.realShown = realShown
+                result.realDurationObj = realDurationObj
+                return result
             end
         end
     end
 
-    return false, nil, false, sawAnySlot, sawUnknown, nil
+    return result
 end
 
 function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    if not baseSpellID then return nil, nil, nil, nil end
+    local result = {
+        shown = nil,
+        realShown = nil,
+        sawAnySlot = false,
+        sawUnknown = false,
+    }
+
+    if not baseSpellID then return result end
 
     wipe(actionSlotSeenScratch)
 
-    local sawAnySlot = false
-    local sawUnknown = false
+    local function mergeProbe(probe)
+        if probe.sawAnySlot then result.sawAnySlot = true end
+        if probe.sawUnknown then result.sawUnknown = true end
+        if probe.shown then
+            result.shown = true
+            result.durationObj = probe.durationObj
+            result.realShown = probe.realShown
+            result.realDurationObj = probe.realDurationObj
+            return true
+        end
+        return false
+    end
 
-    local shown, durationObj, realShown, sawAny, sawUnk, realDurationObj = ProbeActionSlotsForSpellID(baseSpellID)
-    if sawAny then sawAnySlot = true end
-    if sawUnk then sawUnknown = true end
-    if shown then
-        return true, durationObj, realShown, realDurationObj
+    if mergeProbe(ProbeActionSlotsForSpellID(baseSpellID)) then
+        return result
     end
 
     if displaySpellID and displaySpellID ~= baseSpellID then
-        shown, durationObj, realShown, sawAny, sawUnk, realDurationObj = ProbeActionSlotsForSpellID(displaySpellID)
-        if sawAny then sawAnySlot = true end
-        if sawUnk then sawUnknown = true end
-        if shown then
-            return true, durationObj, realShown, realDurationObj
+        if mergeProbe(ProbeActionSlotsForSpellID(displaySpellID)) then
+            return result
         end
     end
 
-    if sawAnySlot then
-        if sawUnknown then
-            return nil, nil, nil, nil
-        end
-        return false, nil, false, nil
+    if result.sawAnySlot and not result.sawUnknown then
+        result.shown = false
+        result.realShown = false
     end
 
-    return nil, nil, nil, nil
+    return result
 end
 
 local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
@@ -1102,6 +1124,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             fetchOk = true
         end
     elseif buttonData.type == "item" then
+        -- Items keep underlying cooldown state during aura override for visibility/desaturation.
+        -- Spell aura overrides intentionally do not: the aura owns the spell visual state.
         isGCDOnly = EvaluateItemCooldown(button, buttonData, style, false)
         fetchOk = true
     end
@@ -1119,7 +1143,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and buttonData.type == "spell"
     then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
-        button._chargeRecharging = button._chargeRecharging == true
     elseif usesChargeBehavior and buttonData.type == "item" then
         UpdateItemChargeTracking(button, buttonData)
         button._chargeRecharging = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -1263,12 +1286,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- and duration > 0).  It can report true during per-cast lockouts
             -- and recharge, so the _chargesSpent heuristic below guards both
             -- this path and the isActive fallback.
-            local slotShown, _, slotRealShown = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-            if slotShown ~= nil then
-                button._mainCDShown = slotRealShown
+            local slotProbe = ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+            if slotProbe.shown ~= nil then
+                button._mainCDShown = slotProbe.sawUnknown or slotProbe.realShown == true
             elseif not auraOverrideActive then
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
-                if spellCooldownInfo then
+                if spellCooldownResult and spellCooldownResult.fetchOk then
+                    button._mainCDShown = spellCooldownResult.state == COOLDOWN_STATE_COOLDOWN
+                elseif spellCooldownInfo then
                     button._mainCDShown = spellRealCooldownShown
                 else
                     button._mainCDShown = false

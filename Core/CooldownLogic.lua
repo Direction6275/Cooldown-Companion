@@ -56,10 +56,10 @@ function CooldownLogic.IsSpellGCDOnly(info, options)
 end
 
 function CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, gcdInfo)
-    return cdDuration and cdDuration > 0
+    return (cdDuration and cdDuration > 0
         and gcdInfo ~= nil
         and cdStart == gcdInfo.startTime
-        and cdDuration == gcdInfo.duration
+        and cdDuration == gcdInfo.duration) == true
 end
 
 ST.CooldownLogic = CooldownLogic
