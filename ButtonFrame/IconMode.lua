@@ -560,7 +560,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         -- keeps any explicit real-cooldown presentation from being hidden here.
         local suppressGCD = not style.showGCDSwipe
             and isGCDOnly
-            and button._cooldownPresentationState ~= COOLDOWN_STATE_COOLDOWN
+            and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
         if suppressGCD then
             button.cooldown:Hide()
@@ -770,7 +770,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
                and not button._noCooldown
                and (not style.readyGlowCombatOnly or inCombat)
                and button._desatCooldownActive == false
-               and button._cooldownPresentationState ~= COOLDOWN_STATE_COOLDOWN
+               and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
                and not (procOverlayActive and style.procGlowStyle ~= "none") then
             if style.readyGlowOnlyAtMaxCharges
                and buttonData.type == "spell"
@@ -822,11 +822,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._desatCooldownActive = nil
-    button._cooldownApiState = nil
-    button._cooldownState = nil
-    button._cooldownPresentationState = nil
-    button._cooldownPresentationDurationObj = nil
-    button._chargeState = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil

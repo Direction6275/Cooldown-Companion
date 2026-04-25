@@ -840,11 +840,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Invalidate cached state
     button._desaturated = nil
     button._desatCooldownActive = nil
-    button._cooldownApiState = nil
-    button._cooldownState = nil
-    button._cooldownPresentationState = nil
-    button._cooldownPresentationDurationObj = nil
-    button._chargeState = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil

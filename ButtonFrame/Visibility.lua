@@ -75,7 +75,6 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     local auraTrackingReady = button._auraTrackingReady == true
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
-    -- _cooldownDeferred: treat deferred cooldowns (timer not yet started) as "on CD".
     if buttonData.hideWhileOnCooldown and not button._noCooldown then
         if UsesChargeBehavior(buttonData) then
             if button._chargeState == CHARGE_STATE_ZERO
@@ -148,7 +147,8 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     -- Check hideWhileUnusable
     if buttonData.hideWhileUnusable and not buttonData.isPassive then
         if buttonData.type == "spell" then
-            if not C_Spell_IsSpellUsable(buttonData.id) then
+            local spellID = button._displaySpellId or buttonData.id
+            if not C_Spell_IsSpellUsable(spellID) then
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         elseif buttonData.type == "item" then

@@ -574,7 +574,8 @@ local function IsTextureIndicatorSectionActive(button, sectionKey, config)
             return false
         end
         if buttonData.type == "spell" then
-            return not C_Spell_IsSpellUsable(buttonData.id)
+            local spellID = button._displaySpellId or buttonData.id
+            return not C_Spell_IsSpellUsable(spellID)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
             return not C_Item_IsUsableItem(buttonData.id)
@@ -635,7 +636,8 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return false
         end
         if buttonData.type == "spell" then
-            return C_Spell_IsSpellUsable(buttonData.id)
+            local spellID = button._displaySpellId or buttonData.id
+            return C_Spell_IsSpellUsable(spellID)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
             return C_Item_IsUsableItem(buttonData.id)

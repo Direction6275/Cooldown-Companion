@@ -684,12 +684,6 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
-    button._cooldownApiState = nil
-    button._cooldownState = nil
-    button._cooldownPresentationState = nil
-    button._cooldownPresentationDurationObj = nil
-    button._chargeState = nil
-
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])

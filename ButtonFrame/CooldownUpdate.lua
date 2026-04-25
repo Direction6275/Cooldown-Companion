@@ -179,12 +179,13 @@ local function IsSpellCooldownDeferred(info)
     return recoveryTime <= 0
 end
 
+local ProbeActionSlotCooldownForSpell
+
 local function EvaluateSpellCooldownLane(spellID, secrecy)
     local result = {
         spellID = spellID,
         fetchOk = false,
         state = COOLDOWN_STATE_READY,
-        apiState = COOLDOWN_STATE_READY,
         realCooldownShown = false,
         isOnGCD = false,
         deferred = false,
@@ -197,6 +198,23 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
     local info = C_Spell.GetSpellCooldown(spellID)
     result.info = info
     if not info then
+        if secrecy ~= 0 and ProbeActionSlotCooldownForSpell then
+            local slotShown, durationObj, realShown, realDurationObj = ProbeActionSlotCooldownForSpell(spellID)
+            if slotShown ~= nil then
+                result.fetchOk = true
+                result.normalCooldownShown = slotShown == true
+                result.realCooldownShown = realShown == true
+                result.durationObj = durationObj
+                result.realDurationObj = realDurationObj
+                if result.realCooldownShown and realDurationObj then
+                    result.state = COOLDOWN_STATE_COOLDOWN
+                    result.renderDurationObj = realDurationObj
+                elseif slotShown and durationObj then
+                    result.state = COOLDOWN_STATE_GCD
+                    result.renderDurationObj = durationObj
+                end
+            end
+        end
         return result
     end
 
@@ -224,7 +242,6 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
     end
 
-    result.apiState = result.state
     return result
 end
 
@@ -299,10 +316,10 @@ end
 local actionSlotSeenScratch = {}
 
 local function ProbeActionSlotsForSpellID(spellID)
-    if not spellID then return false, nil, false, false, false end
+    if not spellID then return false, nil, false, false, false, nil end
 
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
-    if not slots then return false, nil, false, false, false end
+    if not slots then return false, nil, false, false, false, nil end
 
     local sawAnySlot = false
     local sawUnknown = false
@@ -335,11 +352,11 @@ local function ProbeActionSlotsForSpellID(spellID)
         end
     end
 
-    return false, nil, false, sawAnySlot, sawUnknown
+    return false, nil, false, sawAnySlot, sawUnknown, nil
 end
 
-local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    if not baseSpellID then return nil, nil, nil end
+function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
+    if not baseSpellID then return nil, nil, nil, nil end
 
     wipe(actionSlotSeenScratch)
 
@@ -364,12 +381,60 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
 
     if sawAnySlot then
         if sawUnknown then
-            return nil, nil
+            return nil, nil, nil, nil
         end
-        return false, nil
+        return false, nil, false, nil
     end
 
-    return nil, nil
+    return nil, nil, nil, nil
+end
+
+local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
+    button._isEquippableNotEquipped = false
+    local isEquippable = IsItemEquippable(buttonData)
+    if isEquippable and not C_Item.IsEquippedItem(buttonData.id) then
+        button._isEquippableNotEquipped = true
+        if renderCooldown then
+            button.cooldown:SetCooldown(0, 0)
+        end
+        button._itemCdStart = 0
+        button._itemCdDuration = 0
+        button._cooldownState = COOLDOWN_STATE_READY
+        return false
+    end
+
+    local cdStart, cdDuration, enableCooldownTimer = C_Item.GetItemCooldown(buttonData.id)
+    if not enableCooldownTimer and cdStart > 0 then
+        if renderCooldown then
+            button.cooldown:SetCooldown(0, 0)
+        end
+        button._itemCdStart = 0
+        button._itemCdDuration = 0
+        button._cooldownDeferred = true
+        button._cooldownState = COOLDOWN_STATE_COOLDOWN
+        return false
+    end
+
+    button._itemCdStart = cdStart
+    button._itemCdDuration = cdDuration
+    local itemGCDOnly = CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, CooldownCompanion._gcdInfo)
+    if cdDuration and cdDuration > 0 then
+        button._cooldownState = itemGCDOnly and COOLDOWN_STATE_GCD
+            or COOLDOWN_STATE_COOLDOWN
+    else
+        button._cooldownState = COOLDOWN_STATE_READY
+    end
+
+    if renderCooldown then
+        if button._cooldownState == COOLDOWN_STATE_GCD and style.showGCDSwipe ~= true then
+            button.cooldown:SetCooldown(0, 0)
+            button.cooldown:Hide()
+        else
+            button.cooldown:SetCooldown(cdStart, cdDuration)
+        end
+    end
+
+    return itemGCDOnly == true
 end
 
 function CooldownCompanion:UpdateButtonCooldown(button)
@@ -449,10 +514,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local prevAuraDurationObj = button._auraActive and button._durationObj or nil
     button._durationObj = nil
     button._cooldownDeferred = nil
-    button._cooldownApiState = COOLDOWN_STATE_READY
     button._cooldownState = COOLDOWN_STATE_READY
-    button._cooldownPresentationState = COOLDOWN_STATE_READY
-    button._cooldownPresentationDurationObj = nil
     button._chargeState = nil
 
     -- Fetch cooldown data and update the cooldown widget.
@@ -987,14 +1049,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         elseif buttonData.type == "item" then
             local cdStart, cdDuration = C_Item.GetItemCooldown(buttonData.id)
-            local probeIsGCDOnly = false
-            if cdDuration and cdDuration > 0 then
-                local gcdInfo = CooldownCompanion._gcdInfo
-                if gcdInfo and cdStart == gcdInfo.startTime
-                        and cdDuration == gcdInfo.duration then
-                    probeIsGCDOnly = true
-                end
-            end
+            local probeIsGCDOnly = CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, CooldownCompanion._gcdInfo)
             if cdDuration and cdDuration > 0 and not probeIsGCDOnly then
                 button.secondaryCooldown:SetCooldown(cdStart, cdDuration)
                 button._secondaryCdActive = true
@@ -1016,29 +1071,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 spellCooldownDuration = spellCooldownResult.durationObj
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
-                button._cooldownApiState = spellCooldownResult.apiState
-                    or spellCooldownResult.state
-                    or COOLDOWN_STATE_READY
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
-                button._cooldownPresentationState = spellCooldownResult.presentationState
-                    or button._cooldownState
-                button._cooldownPresentationDurationObj = spellCooldownResult.presentationDurationObj
-                    or spellCooldownResult.renderDurationObj
+                local renderDurationObj = spellCooldownResult.renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
                 isGCDOnly = button._cooldownState == COOLDOWN_STATE_GCD
 
-                if button._cooldownPresentationState == COOLDOWN_STATE_COOLDOWN then
-                    if button._cooldownPresentationDurationObj then
-                        if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
-                            button._durationObj = button._cooldownPresentationDurationObj
-                        end
-                        button.cooldown:SetCooldownFromDurationObject(button._cooldownPresentationDurationObj)
+                if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
+                    if renderDurationObj then
+                        button._durationObj = renderDurationObj
+                        button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
                     else
                         button.cooldown:SetCooldown(0, 0)
                     end
-                elseif button._cooldownPresentationState == COOLDOWN_STATE_GCD then
-                    if style.showGCDSwipe == true and button._cooldownPresentationDurationObj then
-                        button.cooldown:SetCooldownFromDurationObject(button._cooldownPresentationDurationObj)
+                elseif button._cooldownState == COOLDOWN_STATE_GCD then
+                    if style.showGCDSwipe == true and renderDurationObj then
+                        button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
                     else
                         button.cooldown:SetCooldown(0, 0)
                         button.cooldown:Hide()
@@ -1051,62 +1098,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.cooldown:SetCooldown(0, 0)
             end
         elseif buttonData.type == "item" then
-            button._isEquippableNotEquipped = false
-            local isEquippable = IsItemEquippable(buttonData)
-            if isEquippable and not C_Item.IsEquippedItem(buttonData.id) then
-                button._isEquippableNotEquipped = true
-                -- Suppress cooldown display: static desaturated icon
-                button.cooldown:SetCooldown(0, 0)
-                button._itemCdStart = 0
-                button._itemCdDuration = 0
-            else
-                button._isEquippableNotEquipped = false
-                local cdStart, cdDuration, enableCooldownTimer = C_Item.GetItemCooldown(buttonData.id)
-                if not enableCooldownTimer and cdStart > 0 then
-                    -- Deferred cooldown (e.g. Healthstone used in combat): the
-                    -- timer hasn't started yet.  Suppress the swipe to prevent
-                    -- flicker from cdStart advancing every tick with dur=0.
-                    -- Downstream code uses _cooldownDeferred for desat/visibility.
-                    button.cooldown:SetCooldown(0, 0)
-                    button._itemCdStart = 0
-                    button._itemCdDuration = 0
-                    button._cooldownDeferred = true
-                    button._cooldownApiState = COOLDOWN_STATE_COOLDOWN
-                    button._cooldownState = COOLDOWN_STATE_COOLDOWN
-                else
-                    button._itemCdStart = cdStart
-                    button._itemCdDuration = cdDuration
-                    -- GCD-only detection for items: C_Item.GetItemCooldown returns
-                    -- GCD values when the item is on GCD but has no real cooldown.
-                    -- Item cooldown values are never secret; direct comparison is safe
-                    -- (same pattern as NeverSecret spells above).
-                    if cdDuration > 0 then
-                        local gcdInfo = CooldownCompanion._gcdInfo
-                        if gcdInfo and cdStart == gcdInfo.startTime
-                                and cdDuration == gcdInfo.duration then
-                            isGCDOnly = true
-                        end
-                    end
-                    if cdDuration and cdDuration > 0 then
-                        button._cooldownApiState = isGCDOnly and COOLDOWN_STATE_GCD
-                            or COOLDOWN_STATE_COOLDOWN
-                        button._cooldownState = isGCDOnly and COOLDOWN_STATE_GCD
-                            or COOLDOWN_STATE_COOLDOWN
-                    else
-                        button._cooldownApiState = COOLDOWN_STATE_READY
-                        button._cooldownState = COOLDOWN_STATE_READY
-                    end
-
-                    if button._cooldownState == COOLDOWN_STATE_GCD and style.showGCDSwipe ~= true then
-                        button.cooldown:SetCooldown(0, 0)
-                        button.cooldown:Hide()
-                    else
-                        button.cooldown:SetCooldown(cdStart, cdDuration)
-                    end
-                end
-            end
+            isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true)
             fetchOk = true
         end
+    elseif buttonData.type == "item" then
+        isGCDOnly = EvaluateItemCooldown(button, buttonData, style, false)
+        fetchOk = true
     end
 
     -- Update spell charge data before zero-charge state classification.
@@ -1122,6 +1119,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and buttonData.type == "spell"
     then
         UpdateDisplayCountTracking(button, buttonData, cooldownSpellId)
+        button._chargeRecharging = button._chargeRecharging == true
     elseif usesChargeBehavior and buttonData.type == "item" then
         UpdateItemChargeTracking(button, buttonData)
         button._chargeRecharging = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -1203,8 +1201,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     button._isOnGCD = isOnGCD or false
-    button._isGCDOnly = isGCDOnly
-
     -- Bar mode: suppress GCD-only display in bars (checked by UpdateBarFill OnUpdate).
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
@@ -1585,7 +1581,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if buttonData.isPassive then
             button._isUnusable = false
         elseif buttonData.type == "spell" then
-            button._isUnusable = not C_Spell_IsSpellUsable(buttonData.id)
+            local spellID = button._displaySpellId or buttonData.id
+            button._isUnusable = not C_Spell_IsSpellUsable(spellID)
         elseif buttonData.type == "item" or buttonData.type == "equipitem" then
             local usable = IsUsableItem(buttonData.id)
             button._isUnusable = not usable
