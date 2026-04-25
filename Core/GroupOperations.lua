@@ -1349,6 +1349,7 @@ function CooldownCompanion:RefreshAllGroups()
     -- (e.g. after a profile switch).
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
+            self:DeleteMasqueGroup(groupId, true)
             self:UnloadGroup(groupId)
             self:DiscardDormantFrame(groupId)
         end
@@ -1396,6 +1397,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
+            self:DeleteMasqueGroup(groupId, true)
             self:UnloadGroup(groupId)
             self:DiscardDormantFrame(groupId)
         end
