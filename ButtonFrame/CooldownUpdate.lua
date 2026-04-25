@@ -115,6 +115,10 @@ local function PlainNumber(value)
     return tonumber(value)
 end
 
+local EXECUTE_TRACE_BASE_SPELL_ID = 163201
+local EXECUTE_TRACE_OVERRIDE_SPELL_ID = 280735
+local EXECUTE_TRACE_MAX_ENTRIES = 800
+
 local BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS = {
     -- Opt-in only. Execute needs gameplay cooldown continuity when its
     -- base/override cooldown APIs briefly expose only GCD data even though the
@@ -127,6 +131,159 @@ local BASE_OVERRIDE_COOLDOWN_BRIDGE_PAIRS = {
 }
 
 local EXECUTE_BRIDGE_CONTINUITY_SECONDS = 0.20
+
+local function SecretSafeValue(value)
+    if value == nil then
+        return nil
+    end
+    if issecretvalue(value) then
+        return "<secret>"
+    end
+    return value
+end
+
+local function SerializeCooldownInfo(info)
+    if not info then
+        return { present = false }
+    end
+
+    return {
+        present = true,
+        isActive = info.isActive,
+        isEnabled = info.isEnabled,
+        isOnGCD = info.isOnGCD,
+        startTime = SecretSafeValue(info.startTime),
+        startTimeSecret = info.startTime ~= nil and issecretvalue(info.startTime) or false,
+        duration = SecretSafeValue(info.duration),
+        durationSecret = info.duration ~= nil and issecretvalue(info.duration) or false,
+        modRate = SecretSafeValue(info.modRate),
+        modRateSecret = info.modRate ~= nil and issecretvalue(info.modRate) or false,
+        recovery = SecretSafeValue(info.timeUntilEndOfStartRecovery),
+        recoverySecret = info.timeUntilEndOfStartRecovery ~= nil
+            and issecretvalue(info.timeUntilEndOfStartRecovery) or false,
+    }
+end
+
+local function SerializeDurationObject(durationObj)
+    if not durationObj then
+        return { present = false }
+    end
+
+    local remaining = durationObj:GetRemainingDuration()
+    local elapsedPercent = durationObj:GetElapsedPercent()
+    local remainingPercent = durationObj:GetRemainingPercent()
+    return {
+        present = true,
+        shown = DurationObjectShowsCooldown(durationObj),
+        hasSecretValues = durationObj:HasSecretValues(),
+        remaining = SecretSafeValue(remaining),
+        remainingSecret = remaining ~= nil and issecretvalue(remaining) or false,
+        elapsedPercent = SecretSafeValue(elapsedPercent),
+        elapsedPercentSecret = elapsedPercent ~= nil and issecretvalue(elapsedPercent) or false,
+        remainingPercent = SecretSafeValue(remainingPercent),
+        remainingPercentSecret = remainingPercent ~= nil and issecretvalue(remainingPercent) or false,
+    }
+end
+
+local function SerializeCooldownLane(result)
+    if not result then
+        return nil
+    end
+
+    return {
+        spellID = result.spellID,
+        fetchOk = result.fetchOk,
+        state = result.state,
+        apiState = result.apiState,
+        presentationState = result.presentationState,
+        isOnGCD = result.isOnGCD,
+        deferred = result.deferred,
+        realCooldownShown = result.realCooldownShown,
+        normalCooldownShown = result.normalCooldownShown,
+        info = SerializeCooldownInfo(result.info),
+        durationObj = SerializeDurationObject(result.durationObj),
+        realDurationObj = SerializeDurationObject(result.realDurationObj),
+        renderDurationObj = SerializeDurationObject(result.renderDurationObj),
+        presentationDurationObj = SerializeDurationObject(result.presentationDurationObj),
+    }
+end
+
+local function ShouldTraceExecute(buttonData, cooldownSpellId)
+    local configured = PlainNumber(buttonData and buttonData.id)
+    local display = PlainNumber(cooldownSpellId)
+    return configured == EXECUTE_TRACE_BASE_SPELL_ID
+        or configured == EXECUTE_TRACE_OVERRIDE_SPELL_ID
+        or display == EXECUTE_TRACE_BASE_SPELL_ID
+        or display == EXECUTE_TRACE_OVERRIDE_SPELL_ID
+end
+
+local function GetCooldownStateTrace()
+    if type(CooldownCompanionDB) ~= "table" then
+        return nil
+    end
+
+    CooldownCompanionDB.global = CooldownCompanionDB.global or {}
+    local trace = CooldownCompanionDB.global.cooldownStateTrace
+    if type(trace) ~= "table" then
+        trace = {}
+        CooldownCompanionDB.global.cooldownStateTrace = trace
+    end
+    if trace.version ~= 3 or trace.subject ~= "execute-frame-trace" then
+        wipe(trace)
+        trace.version = 3
+        trace.subject = "execute-frame-trace"
+    end
+
+    trace.enabled = true
+    trace.maxEntries = trace.maxEntries or EXECUTE_TRACE_MAX_ENTRIES
+    if trace.maxEntries < 100 then
+        trace.maxEntries = 100
+    elseif trace.maxEntries > 1200 then
+        trace.maxEntries = 1200
+    end
+    trace.entries = trace.entries or {}
+    trace.trackedSpells = trace.trackedSpells or {
+        [EXECUTE_TRACE_BASE_SPELL_ID] = "Execute",
+        [EXECUTE_TRACE_OVERRIDE_SPELL_ID] = "Execute override",
+    }
+    trace.startedAt = trace.startedAt or GetTime()
+    trace.nextIndex = trace.nextIndex or 1
+    trace.count = trace.count or 0
+    trace.sequence = trace.sequence or 0
+    return trace
+end
+
+local function AppendCooldownStateTrace(row)
+    local trace = GetCooldownStateTrace()
+    if not trace then
+        return
+    end
+
+    trace.sequence = trace.sequence + 1
+    row.seq = trace.sequence
+    local index = trace.nextIndex
+    trace.entries[index] = row
+    trace.latestIndex = index
+    trace.nextIndex = index + 1
+    if trace.nextIndex > trace.maxEntries then
+        trace.nextIndex = 1
+    end
+    if trace.count < trace.maxEntries then
+        trace.count = trace.count + 1
+    end
+end
+
+local function SerializeSpellUsability(spellID)
+    if not spellID then
+        return nil
+    end
+    local usable, insufficientPower = C_Spell_IsSpellUsable(spellID)
+    return {
+        spellID = spellID,
+        isUsable = usable,
+        insufficientPower = insufficientPower,
+    }
+end
 
 local function GetConfiguredAuraUnit(buttonData)
     return buttonData.auraUnit or "player"
@@ -228,6 +385,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
     if info.isActive then
         result.durationObj = C_Spell.GetSpellCooldownDuration(spellID)
         result.realDurationObj = C_Spell.GetSpellCooldownDuration(spellID, true)
+        result.normalCooldownShown = DurationObjectShowsCooldown(result.durationObj)
         result.realCooldownShown = DurationObjectShowsCooldown(result.realDurationObj)
     end
 
@@ -237,8 +395,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
         result.state = COOLDOWN_STATE_COOLDOWN
         result.renderDurationObj = result.realDurationObj
     elseif CooldownLogic.IsSpellGCDOnly(info, {
-        secrecy = secrecy,
-        gcdInfo = CooldownCompanion._gcdInfo,
+        normalCooldownShown = result.normalCooldownShown,
         realCooldownShown = result.realCooldownShown,
     }) then
         result.state = COOLDOWN_STATE_GCD
@@ -274,12 +431,17 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
     local displayResult = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy)
     local result = displayResult
     local bridgeEligible = false
+    local traceLanes = {
+        display = displayResult,
+    }
 
     if cooldownSpellId and cooldownSpellId ~= buttonData.id then
         local displayBaseSpellID = C_Spell.GetBaseSpell(cooldownSpellId)
         if displayBaseSpellID == buttonData.id then
             bridgeEligible = ShouldApplyBaseOverrideCooldownBridge(buttonData.id, cooldownSpellId)
             local baseResult = EvaluateSpellCooldownLane(buttonData.id, buttonData._cooldownSecrecy)
+            traceLanes.displayBaseSpellID = displayBaseSpellID
+            traceLanes.base = baseResult
             result = SelectSpellCooldownResult(
                 result,
                 baseResult
@@ -290,7 +452,8 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
         end
     end
 
-    return result, bridgeEligible
+    traceLanes.finalBeforeBridge = result
+    return result, bridgeEligible, traceLanes
 end
 
 local function CloneCooldownResult(result)
@@ -304,9 +467,21 @@ local function CloneCooldownResult(result)
 end
 
 local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, configuredSpellID, displaySpellID)
+    button._baseOverrideBridgeTrace = {
+        eligible = bridgeEligible == true,
+        configuredSpellID = configuredSpellID,
+        displaySpellID = displaySpellID,
+        preState = result and result.state or nil,
+        preApiState = result and result.apiState or nil,
+        applied = false,
+        cleared = false,
+    }
+
     if not bridgeEligible then
         button._baseOverrideCooldownDurationObj = nil
         button._baseOverrideCooldownLastRealAt = nil
+        button._baseOverrideBridgeTrace.cleared = true
+        button._baseOverrideBridgeTrace.reason = "not-eligible"
         return result
     end
 
@@ -319,6 +494,8 @@ local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, c
         result.apiState = result.apiState or result.state
         result.presentationState = COOLDOWN_STATE_COOLDOWN
         result.presentationDurationObj = result.renderDurationObj
+        button._baseOverrideBridgeTrace.storedDirectReal = true
+        button._baseOverrideBridgeTrace.reason = "direct-real"
         return result
     end
 
@@ -328,6 +505,9 @@ local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, c
         and (GetTime() - button._baseOverrideCooldownLastRealAt) or nil
     local bridgeWindowActive = previousRealAge ~= nil
         and previousRealAge <= EXECUTE_BRIDGE_CONTINUITY_SECONDS
+    button._baseOverrideBridgeTrace.previousRealDurationShown = previousRealDurationShown
+    button._baseOverrideBridgeTrace.previousRealAge = previousRealAge
+    button._baseOverrideBridgeTrace.bridgeWindowActive = bridgeWindowActive
     if result
             and result.state == COOLDOWN_STATE_GCD
             and previousRealDurationObj
@@ -339,11 +519,23 @@ local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, c
         bridged.renderDurationObj = previousRealDurationObj
         bridged.presentationState = COOLDOWN_STATE_COOLDOWN
         bridged.presentationDurationObj = previousRealDurationObj
+        button._baseOverrideBridgeTrace.applied = true
+        button._baseOverrideBridgeTrace.reason = "bridged-gcd"
         return bridged
     end
 
     button._baseOverrideCooldownDurationObj = nil
     button._baseOverrideCooldownLastRealAt = nil
+    button._baseOverrideBridgeTrace.cleared = true
+    if not previousRealDurationObj then
+        button._baseOverrideBridgeTrace.reason = "no-previous-real"
+    elseif not previousRealDurationShown then
+        button._baseOverrideBridgeTrace.reason = "previous-real-not-shown"
+    elseif not bridgeWindowActive then
+        button._baseOverrideBridgeTrace.reason = "bridge-window-expired"
+    else
+        button._baseOverrideBridgeTrace.reason = "state-not-gcd"
+    end
     return result
 end
 
@@ -460,6 +652,82 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
     return nil, nil
 end
 
+local function TraceExecuteCooldownFrame(button, buttonData, cooldownSpellId, spellCooldownTrace, fetchOk,
+        isOnGCD, isGCDOnly, auraOverrideActive, procOverlayActive, earlyReturnReason)
+    if not ShouldTraceExecute(buttonData, cooldownSpellId) then
+        return
+    end
+
+    local actionShown, actionDurationObj, actionRealShown, actionRealDurationObj =
+        ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+    local displayBaseSpellID = cooldownSpellId and C_Spell.GetBaseSpell(cooldownSpellId) or nil
+    local overrideSpellID = buttonData.id and C_Spell.GetOverrideSpell(buttonData.id) or nil
+    local gcdInfo = CooldownCompanion._gcdInfo
+    local vertexR, vertexG, vertexB, vertexA
+    if button.icon then
+        vertexR, vertexG, vertexB, vertexA = button.icon:GetVertexColor()
+    end
+
+    AppendCooldownStateTrace({
+        t = GetTime(),
+        groupId = button._groupId,
+        index = button.index,
+        name = buttonData.name,
+        type = buttonData.type,
+        id = buttonData.id,
+        displaySpellID = cooldownSpellId,
+        displayBaseSpellID = displayBaseSpellID,
+        overrideSpellID = overrideSpellID,
+        fetchOk = fetchOk == true,
+        isOnGCD = isOnGCD == true,
+        isGCDOnly = isGCDOnly == true,
+        auraOverrideActive = auraOverrideActive == true,
+        procOverlayActive = procOverlayActive == true,
+        cooldownsDirty = CooldownCompanion._cooldownsDirty == true,
+        cooldownState = button._cooldownState,
+        cooldownApiState = button._cooldownApiState,
+        cooldownPresentationState = button._cooldownPresentationState,
+        durationObj = SerializeDurationObject(button._durationObj),
+        presentationDurationObj = SerializeDurationObject(button._cooldownPresentationDurationObj),
+        cooldownShown = button.cooldown and button.cooldown:IsShown() or false,
+        desatCooldownActive = button._desatCooldownActive == true,
+        iconDesaturated = button._desaturated == true,
+        unusableTint = button._unusableTintActive == true,
+        visibilityHidden = button._visibilityHidden == true,
+        visibilityAlphaOverride = button._visibilityAlphaOverride,
+        earlyReturnReason = earlyReturnReason,
+        bridge = button._baseOverrideBridgeTrace,
+        lanes = {
+            display = SerializeCooldownLane(spellCooldownTrace and spellCooldownTrace.display),
+            base = SerializeCooldownLane(spellCooldownTrace and spellCooldownTrace.base),
+            finalBeforeBridge = SerializeCooldownLane(spellCooldownTrace and spellCooldownTrace.finalBeforeBridge),
+            final = SerializeCooldownLane(spellCooldownTrace and spellCooldownTrace.final),
+        },
+        actionSlot = {
+            shown = actionShown,
+            durationObj = SerializeDurationObject(actionDurationObj),
+            realShown = actionRealShown,
+            realDurationObj = SerializeDurationObject(actionRealDurationObj),
+        },
+        gcd = {
+            active = CooldownCompanion._gcdActive == true,
+            info = SerializeCooldownInfo(gcdInfo),
+            durationObj = SerializeDurationObject(CooldownCompanion._gcdDurationObj),
+        },
+        usability = {
+            configured = SerializeSpellUsability(buttonData.id),
+            display = SerializeSpellUsability(cooldownSpellId),
+            override = SerializeSpellUsability(overrideSpellID),
+        },
+        vertex = {
+            r = vertexR,
+            g = vertexG,
+            b = vertexB,
+            a = vertexA,
+        },
+    })
+end
+
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
@@ -550,6 +818,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local spellRealCooldownShown = false
     local spellCooldownResult
+    local spellCooldownTrace
     local spellBaseOverrideBridgeEligible = false
     local actionSlotCooldownShown
     local actionSlotDurationObj
@@ -558,6 +827,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
     local auraProbeInfo, auraProbeIsGCDOnly
     local auraProbeDuration
+    local auraProbeNormalCooldownShown = false
     local auraProbeRealCooldownShown = false
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
@@ -1046,13 +1316,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if auraOverrideActive and buttonData.type == "spell" and not buttonData.isPassive then
         auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
         if auraProbeInfo and auraProbeInfo.isActive then
+            local auraProbeNormalDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
+            auraProbeNormalCooldownShown = DurationObjectShowsCooldown(auraProbeNormalDuration)
             auraProbeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId, true)
             auraProbeRealCooldownShown = DurationObjectShowsCooldown(auraProbeDuration)
         end
         auraProbeIsGCDOnly = auraProbeInfo and CooldownLogic.IsSpellGCDOnly(auraProbeInfo, {
-            secrecy = buttonData._cooldownSecrecy,
-            gcdInfo = CooldownCompanion._gcdInfo,
-            gcdActive = CooldownCompanion._gcdActive,
+            normalCooldownShown = auraProbeNormalCooldownShown,
             realCooldownShown = auraProbeRealCooldownShown,
         }) or false
     end
@@ -1102,7 +1372,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            spellCooldownResult, spellBaseOverrideBridgeEligible =
+            spellCooldownResult, spellBaseOverrideBridgeEligible, spellCooldownTrace =
                 EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
             spellCooldownResult = ApplyBaseOverrideCooldownBridge(
                 button,
@@ -1111,6 +1381,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 buttonData.id,
                 cooldownSpellId
             )
+            if spellCooldownTrace then
+                spellCooldownTrace.final = spellCooldownResult
+            end
             if spellCooldownResult and spellCooldownResult.fetchOk then
                 spellCooldownInfo = spellCooldownResult.info
                 spellCooldownDuration = spellCooldownResult.durationObj
@@ -1688,6 +1961,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
             end
+            TraceExecuteCooldownFrame(button, buttonData, cooldownSpellId, spellCooldownTrace,
+                fetchOk, isOnGCD, isGCDOnly, auraOverrideActive, procOverlayActive, "hidden")
             DispatchStandaloneTextureVisual(button)
             return  -- Skip all visual updates
         else
@@ -1704,6 +1979,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
+            TraceExecuteCooldownFrame(button, buttonData, cooldownSpellId, spellCooldownTrace,
+                fetchOk, isOnGCD, isGCDOnly, auraOverrideActive, procOverlayActive, "compact-hidden")
             DispatchStandaloneTextureVisual(button)
             return  -- Skip visual updates for hidden buttons
         else
@@ -1756,4 +2033,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
     end
+
+    TraceExecuteCooldownFrame(button, buttonData, cooldownSpellId, spellCooldownTrace,
+        fetchOk, isOnGCD, isGCDOnly, auraOverrideActive, procOverlayActive)
 end

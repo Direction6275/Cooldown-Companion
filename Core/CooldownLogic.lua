@@ -44,20 +44,12 @@ function CooldownLogic.IsSpellGCDOnly(info, options)
     end
 
     options = options or {}
-    if options.realCooldownShown then
+    if options.realCooldownShown or not options.normalCooldownShown then
         return false
     end
 
-    local secrecy = options.secrecy or 0
-    local gcdInfo = options.gcdInfo
     if info.isActive ~= true then
         return false
-    end
-
-    if secrecy == 0 then
-        return gcdInfo ~= nil
-            and info.startTime == gcdInfo.startTime
-            and info.duration == gcdInfo.duration
     end
 
     return info.isOnGCD == true
