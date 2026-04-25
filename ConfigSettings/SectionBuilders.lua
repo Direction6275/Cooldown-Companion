@@ -367,7 +367,7 @@ end
 
 local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback)
     local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Blizzard CDM Aura Swipe")
+    cb:SetLabel("Blizzard CDM Aura Swipe Style")
     cb:SetValue(styleTable.auraUseBlizzardSwipe == true)
     cb:SetFullWidth(true)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
