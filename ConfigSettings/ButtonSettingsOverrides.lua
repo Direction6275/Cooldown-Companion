@@ -328,17 +328,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                                     cont:AddChild(auraInvertCb)
                                     ApplyCheckboxIndent(auraInvertCb, 20)
 
-                                    local auraBlizzardSwipeCb = AceGUI:Create("CheckBox")
-                                    auraBlizzardSwipeCb:SetLabel("Use Blizzard Aura Swipe")
-                                    auraBlizzardSwipeCb:SetValue(GetEffectiveOverrideValue("auraUseBlizzardSwipe") == true)
-                                    auraBlizzardSwipeCb:SetFullWidth(true)
-                                    auraBlizzardSwipeCb:SetCallback("OnValueChanged", function(_, _, val)
-                                        overrides.auraUseBlizzardSwipe = val == true
-                                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                                        CooldownCompanion:UpdateAllCooldowns()
-                                    end)
-                                    cont:AddChild(auraBlizzardSwipeCb)
-                                    ApplyCheckboxIndent(auraBlizzardSwipeCb, 20)
                                 end
 
                                 if sectionId == "readyGlow" then

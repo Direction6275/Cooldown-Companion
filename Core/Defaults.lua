@@ -608,7 +608,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
-        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
+        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "auraUseBlizzardSwipe", "cooldownSwipeReverse", "showCooldownSwipeEdge", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
         modes = {icons = true},
     },
     showGCDSwipe = {
@@ -658,7 +658,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     auraIndicator = {
         label = "Show Aura Glow",
-        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed", "auraGlowLines", "auraUseBlizzardSwipe", "auraGlowInvert", "auraGlowCombatOnly"},
+        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed", "auraGlowLines", "auraGlowInvert", "auraGlowCombatOnly"},
         modes = {icons = true},
     },
     readyGlow = {

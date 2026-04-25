@@ -1750,18 +1750,6 @@ local function BuildAuraGlowSection(container, group, style)
     container:AddChild(auraInvertCb)
     ApplyCheckboxIndent(auraInvertCb, 20)
 
-    local auraBlizzardSwipeCb = AceGUI:Create("CheckBox")
-    auraBlizzardSwipeCb:SetLabel("Use Blizzard Aura Swipe")
-    auraBlizzardSwipeCb:SetValue(style.auraUseBlizzardSwipe == true)
-    auraBlizzardSwipeCb:SetFullWidth(true)
-    auraBlizzardSwipeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.auraUseBlizzardSwipe = val == true
-        UpdateSelectedGroupStyle()
-        CooldownCompanion:UpdateAllCooldowns()
-    end)
-    container:AddChild(auraBlizzardSwipeCb)
-    ApplyCheckboxIndent(auraBlizzardSwipeCb, 20)
-
     BuildAuraIndicatorControls(container, style, UpdateSelectedGroupStyle)
 
     local auraPreviewBtn = AceGUI:Create("Button")
@@ -2051,6 +2039,18 @@ local function BuildEffectsTab(container)
 
         -- Swipe Fill Opacity (only when fill is visible)
         if style.showCooldownSwipeFill ~= false then
+            local auraBlizzardSwipeCb = AceGUI:Create("CheckBox")
+            auraBlizzardSwipeCb:SetLabel("Use Blizzard Swipe for Aura Durations")
+            auraBlizzardSwipeCb:SetValue(style.auraUseBlizzardSwipe == true)
+            auraBlizzardSwipeCb:SetFullWidth(true)
+            auraBlizzardSwipeCb:SetCallback("OnValueChanged", function(widget, event, val)
+                style.auraUseBlizzardSwipe = val == true
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:UpdateAllCooldowns()
+            end)
+            container:AddChild(auraBlizzardSwipeCb)
+            ApplyCheckboxIndent(auraBlizzardSwipeCb, 20)
+
             local alphaSlider = AceGUI:Create("Slider")
             alphaSlider:SetLabel("Swipe Fill Opacity")
             alphaSlider:SetSliderValues(0, 1, 0.05)
