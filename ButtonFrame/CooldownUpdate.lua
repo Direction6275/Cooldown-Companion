@@ -118,6 +118,11 @@ end
 local EXECUTE_TRACE_BASE_SPELL_ID = 163201
 local EXECUTE_TRACE_OVERRIDE_SPELL_ID = 280735
 local EXECUTE_TRACE_MAX_ENTRIES = 800
+local EXECUTE_COOLDOWN_BRIDGE_MAX_SECONDS = 0.12
+local EXECUTE_COOLDOWN_BRIDGE_SPELLS = {
+    [EXECUTE_TRACE_BASE_SPELL_ID] = true,
+    [EXECUTE_TRACE_OVERRIDE_SPELL_ID] = true,
+}
 
 local function SecretSafeValue(value)
     if value == nil then
@@ -215,9 +220,9 @@ local function GetCooldownStateTrace()
         trace = {}
         CooldownCompanionDB.global.cooldownStateTrace = trace
     end
-    if trace.version ~= 3 or trace.subject ~= "execute-frame-trace" then
+    if trace.version ~= 5 or trace.subject ~= "execute-frame-trace" then
         wipe(trace)
-        trace.version = 3
+        trace.version = 5
         trace.subject = "execute-frame-trace"
     end
 
@@ -403,6 +408,15 @@ local function SelectSpellCooldownResult(current, candidate)
     return CooldownLogic.SelectStrongerCooldownState(current, candidate)
 end
 
+local function IsExecuteCooldownBridgePair(configuredSpellID, displaySpellID)
+    configuredSpellID = PlainNumber(configuredSpellID)
+    displaySpellID = PlainNumber(displaySpellID)
+    return configuredSpellID == EXECUTE_TRACE_BASE_SPELL_ID
+        and displaySpellID == EXECUTE_TRACE_OVERRIDE_SPELL_ID
+        and EXECUTE_COOLDOWN_BRIDGE_SPELLS[configuredSpellID] == true
+        and EXECUTE_COOLDOWN_BRIDGE_SPELLS[displaySpellID] == true
+end
+
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
     local displayResult = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy)
     local result = displayResult
@@ -417,6 +431,7 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
             local baseResult = EvaluateSpellCooldownLane(buttonData.id, buttonData._cooldownSecrecy)
             traceLanes.displayBaseSpellID = displayBaseSpellID
             traceLanes.base = baseResult
+            bridgeEligible = IsExecuteCooldownBridgePair(buttonData.id, cooldownSpellId)
             result = SelectSpellCooldownResult(
                 result,
                 baseResult
@@ -432,21 +447,119 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
 end
 
 local function ApplyBaseOverrideCooldownBridge(button, result, bridgeEligible, configuredSpellID, displaySpellID)
+    local previousDurationObj = button._baseOverrideCooldownDurationObj
+    local previousDurationShown = DurationObjectShowsCooldown(previousDurationObj)
+    local now = GetTime()
+
     button._baseOverrideBridgeTrace = {
-        eligible = false,
+        eligible = bridgeEligible == true,
         configuredSpellID = configuredSpellID,
         displaySpellID = displaySpellID,
         preState = result and result.state or nil,
         preApiState = result and result.apiState or nil,
         applied = false,
         cleared = false,
+        active = button._baseOverrideCooldownBridgeActive == true,
+        previousDurationShown = previousDurationShown,
+        previousLastRealWasOnGCD = button._baseOverrideCooldownLastRealWasOnGCD,
+        maxSeconds = EXECUTE_COOLDOWN_BRIDGE_MAX_SECONDS,
     }
 
-    button._baseOverrideCooldownDurationObj = nil
-    button._baseOverrideCooldownLastRealAt = nil
-    button._baseOverrideBridgeTrace.cleared = true
-    button._baseOverrideBridgeTrace.reason = "disabled"
-    return result
+    local function clearBridge(reason)
+        button._baseOverrideCooldownDurationObj = nil
+        button._baseOverrideCooldownLastRealAt = nil
+        button._baseOverrideCooldownLastRealWasOnGCD = nil
+        button._baseOverrideCooldownBridgeActive = nil
+        button._baseOverrideCooldownBridgeStartedAt = nil
+        button._baseOverrideBridgeTrace.cleared = true
+        button._baseOverrideBridgeTrace.reason = reason
+    end
+
+    if not bridgeEligible then
+        clearBridge("not-eligible")
+        return result
+    end
+
+    if not result or not result.fetchOk then
+        clearBridge("no-result")
+        return result
+    end
+
+    -- Execute can briefly report only GCD during a real cooldown.  This bridge is
+    -- deliberately opt-in and only carries forward a directly observed real
+    -- cooldown; it is not a normal cooldown source.
+    if result.state == COOLDOWN_STATE_COOLDOWN
+            and result.realCooldownShown == true
+            and result.renderDurationObj then
+        button._baseOverrideCooldownDurationObj = result.renderDurationObj
+        button._baseOverrideCooldownLastRealAt = now
+        button._baseOverrideCooldownLastRealWasOnGCD = result.isOnGCD == true
+        button._baseOverrideCooldownBridgeActive = nil
+        button._baseOverrideCooldownBridgeStartedAt = nil
+        button._baseOverrideBridgeTrace.reason = "direct-real-cooldown"
+        button._baseOverrideBridgeTrace.trackedRealSpellID = result.spellID
+        return result
+    end
+
+    if result.state ~= COOLDOWN_STATE_GCD then
+        clearBridge("direct-non-gcd")
+        return result
+    end
+
+    if not previousDurationShown then
+        clearBridge("no-active-previous-real")
+        return result
+    end
+
+    local bridgeAlreadyActive = button._baseOverrideCooldownBridgeActive == true
+    if not bridgeAlreadyActive then
+        if button._baseOverrideCooldownLastRealWasOnGCD == true then
+            clearBridge("previous-real-overlapped-gcd")
+            return result
+        end
+        button._baseOverrideCooldownBridgeStartedAt = now
+    elseif not button._baseOverrideCooldownBridgeStartedAt then
+        button._baseOverrideCooldownBridgeStartedAt = now
+    end
+
+    local bridgeElapsed = now - button._baseOverrideCooldownBridgeStartedAt
+    button._baseOverrideBridgeTrace.elapsed = bridgeElapsed
+    if bridgeElapsed > EXECUTE_COOLDOWN_BRIDGE_MAX_SECONDS then
+        clearBridge("debounce-expired")
+        button._baseOverrideBridgeTrace.elapsed = bridgeElapsed
+        return result
+    end
+
+    if not previousDurationObj then
+        clearBridge("no-previous-duration")
+        return result
+    end
+
+    if bridgeAlreadyActive then
+        previousDurationObj = button._baseOverrideCooldownDurationObj
+        if not previousDurationObj then
+            clearBridge("no-previous-duration")
+            return result
+        end
+    end
+
+    local bridged = {}
+    for key, value in pairs(result) do
+        bridged[key] = value
+    end
+    bridged.state = COOLDOWN_STATE_COOLDOWN
+    bridged.presentationState = COOLDOWN_STATE_COOLDOWN
+    bridged.renderDurationObj = previousDurationObj
+    bridged.presentationDurationObj = previousDurationObj
+    bridged.bridgeApplied = true
+
+    button._baseOverrideCooldownBridgeActive = true
+    button._baseOverrideBridgeTrace.applied = true
+    button._baseOverrideBridgeTrace.reason = bridgeAlreadyActive
+        and "presentation-debounce-continuing"
+        or "presentation-debounce-started"
+    button._baseOverrideBridgeTrace.postState = bridged.state
+    return bridged
 end
 
 local function ResolveChargeState(button, buttonData)
