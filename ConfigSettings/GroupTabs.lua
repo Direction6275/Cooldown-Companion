@@ -2452,6 +2452,8 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     -- Icon Settings (size, spacing)
     -- ================================================================
+    local masqueActive = CooldownCompanion:IsGroupMasqueActive(CS.selectedGroup, group)
+
     local iconHeading = AceGUI:Create("Heading")
     iconHeading:SetText("Icon Settings")
     ColorHeading(iconHeading)
@@ -2469,7 +2471,7 @@ local function BuildAppearanceTab(container)
     squareCb:SetLabel("Square Icons")
     squareCb:SetValue(style.maintainAspectRatio or false)
     squareCb:SetFullWidth(true)
-    if group.masqueEnabled then
+    if masqueActive then
         squareCb:SetDisabled(true)
         local masqueLabel = squareCb.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         masqueLabel:SetPoint("LEFT", squareCb.checkbg, "RIGHT", squareCb.text:GetStringWidth() + 8, 0)
@@ -2529,7 +2531,7 @@ local function BuildAppearanceTab(container)
     borderSlider:SetSliderValues(0, 5, 0.1)
     borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
     borderSlider:SetFullWidth(true)
-    if group.masqueEnabled then
+    if masqueActive then
         borderSlider:SetDisabled(true)
     end
     borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2761,7 +2763,7 @@ local function BuildAppearanceTab(container)
 
     if not borderCollapsed then
     local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-    if group.masqueEnabled then
+    if masqueActive then
         borderColor:SetDisabled(true)
     end
     end -- not borderCollapsed
@@ -2825,20 +2827,19 @@ local function BuildAppearanceTab(container)
     end -- not iconTintCollapsed
 
     -- Masque skinning (icon-only)
-    if CooldownCompanion.Masque then
-        local masqueHeading = AceGUI:Create("Heading")
-        masqueHeading:SetText("Masque")
-        ColorHeading(masqueHeading)
-        masqueHeading:SetFullWidth(true)
-        container:AddChild(masqueHeading)
+    local masqueHeading = AceGUI:Create("Heading")
+    masqueHeading:SetText("Masque")
+    ColorHeading(masqueHeading)
+    masqueHeading:SetFullWidth(true)
+    container:AddChild(masqueHeading)
 
-        local masqueCollapsed = CS.collapsedSections["appearance_masque"]
-        AttachCollapseButton(masqueHeading, masqueCollapsed, function()
-            CS.collapsedSections["appearance_masque"] = not CS.collapsedSections["appearance_masque"]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+    local masqueCollapsed = CS.collapsedSections["appearance_masque"]
+    AttachCollapseButton(masqueHeading, masqueCollapsed, function()
+        CS.collapsedSections["appearance_masque"] = not CS.collapsedSections["appearance_masque"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
 
-        if not masqueCollapsed then
+    if not masqueCollapsed then
         local masqueCb = AceGUI:Create("CheckBox")
         masqueCb:SetLabel("Enable Masque Skinning")
         masqueCb:SetValue(group.masqueEnabled or false)
@@ -2856,8 +2857,14 @@ local function BuildAppearanceTab(container)
             {"Overridden Settings:", 1, 0.82, 0},
             {"Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
         }, tabInfoButtons)
-        end -- not masqueCollapsed
-    end
+
+        if not CooldownCompanion.Masque and group.masqueEnabled then
+            local missingMasqueLabel = AceGUI:Create("Label")
+            missingMasqueLabel:SetText("|cffffcc00Masque is not loaded. This preference is saved and will apply on the next /reload after Masque is enabled.|r")
+            missingMasqueLabel:SetFullWidth(true)
+            container:AddChild(missingMasqueLabel)
+        end
+    end -- not masqueCollapsed
 
     BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 

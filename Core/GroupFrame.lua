@@ -620,8 +620,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Store the frame
     self.groupFrames[groupId] = frame
 
-    -- Create Masque group if enabled
-    if group.masqueEnabled and self.Masque then
+    -- Create Masque group if active
+    if self:IsGroupMasqueActive(groupId, group) then
         self:CreateMasqueGroup(groupId)
     end
 
@@ -900,12 +900,12 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local buttonsPerRow = style.buttonsPerRow or 12
     local isTriggerMode = group.displayMode == "trigger"
 
-    -- Clear existing buttons (remove from Masque first if enabled)
+    -- Clear existing buttons, including buttons left registered from an earlier Masque-active state.
     for _, button in ipairs(frame.buttons) do
         if CooldownCompanion.ReleaseAuraTextureVisual then
             CooldownCompanion:ReleaseAuraTextureVisual(button)
         end
-        if group.masqueEnabled then
+        if self:IsGroupMasqueActive(groupId, group) or button._masqueStaticId then
             self:RemoveButtonFromMasque(groupId, button)
         end
         button:Hide()
@@ -993,7 +993,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             table_insert(frame.buttons, button)
 
             -- Add to Masque if enabled (after button is shown and in the list, icons only)
-            if group.displayMode == "icons" and group.masqueEnabled then
+            if self:IsGroupMasqueActive(groupId, group) then
                 self:AddButtonToMasque(groupId, button)
             end
         end
@@ -1218,9 +1218,11 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
         self:AnchorGroupFrame(frame, group.anchor)
 
-        -- Recreate Masque group if it was deleted during unload
-        if group.masqueEnabled and self.Masque and not self.MasqueGroups[groupId] then
+        -- Keep Masque runtime state aligned without changing the saved user preference.
+        if self:IsGroupMasqueActive(groupId, group) and not self.MasqueGroups[self:GetMasqueStaticId(groupId)] then
             self:CreateMasqueGroup(groupId)
+        elseif self.Masque and self._masqueGroupKeys and self._masqueGroupKeys[groupId] then
+            self:DeactivateGroupMasqueRuntime(groupId)
         end
 
         self:PopulateGroupButtons(groupId)

@@ -46,7 +46,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Masque skinning support (optional)
 local Masque = LibStub("Masque", true)
-local MasqueGroups = {} -- Maps groupId -> Masque Group object
+local MasqueGroups = {} -- Maps Masque static ID -> Masque Group object
 
 CooldownCompanion.Masque = Masque
 CooldownCompanion.MasqueGroups = MasqueGroups

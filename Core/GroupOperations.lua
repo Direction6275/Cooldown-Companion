@@ -1564,7 +1564,7 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
 
     -- Recreate Masque group and re-add buttons
     local group = self.db.profile.groups[groupId]
-    if group and group.masqueEnabled and self.Masque then
+    if group and self:IsGroupMasqueActive(groupId, group) then
         self:CreateMasqueGroup(groupId)
         for _, button in ipairs(frame.buttons) do
             self:AddButtonToMasque(groupId, button)

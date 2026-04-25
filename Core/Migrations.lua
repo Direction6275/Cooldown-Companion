@@ -5,8 +5,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
-local Masque = CooldownCompanion.Masque
-
 local pairs = pairs
 local ipairs = ipairs
 local type = type
@@ -300,10 +298,6 @@ end
 function CooldownCompanion:MigrateMasqueField()
     for groupId, group in pairs(self.db.profile.groups) do
         if group.masqueEnabled == nil then
-            group.masqueEnabled = false
-        end
-        -- If Masque addon is not available but group had it enabled, disable it
-        if group.masqueEnabled and not Masque then
             group.masqueEnabled = false
         end
     end

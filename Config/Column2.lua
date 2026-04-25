@@ -192,8 +192,8 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     local group = CooldownCompanion.db.profile.groups[newPanelId]
     if opts and opts.verticalStyle and group then
         group.style.orientation = "vertical"
-        if group.masqueEnabled then
-            CooldownCompanion:ToggleGroupMasque(newPanelId, false)
+        if group.masqueEnabled and CooldownCompanion.DeactivateGroupMasqueRuntime then
+            CooldownCompanion:DeactivateGroupMasqueRuntime(newPanelId)
         end
         CooldownCompanion:RefreshGroupFrame(newPanelId)
     end

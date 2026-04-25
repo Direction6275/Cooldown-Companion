@@ -479,14 +479,6 @@ function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
     ApplyGroupSettingPresetData(self.db.profile, group, mode, presetData)
     local newMasqueEnabled = group.masqueEnabled and true or false
 
-    -- Presets can be imported from clients with Masque enabled.
-    -- If Masque is unavailable on this client, do not leave groups flagged
-    -- as Masque-enabled because that disables icon controls in config.
-    if mode == "icons" and not self.Masque and newMasqueEnabled then
-        group.masqueEnabled = false
-        newMasqueEnabled = false
-    end
-
     -- Keep Masque's internal group/button lifecycle in sync when preset apply
     -- flips skinning state for icon groups.
     if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
@@ -859,8 +851,8 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if newMode == "bars" or newMode == "text" then
         group.style.orientation = "vertical"
     end
-    if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
-        self:ToggleGroupMasque(groupId, false)
+    if newMode ~= "icons" and group.masqueEnabled and self.DeactivateGroupMasqueRuntime then
+        self:DeactivateGroupMasqueRuntime(groupId)
     end
     if newMode == "textures" or newMode == "trigger" then
         -- Entering texture mode switches from group.anchor to textureSettings,
