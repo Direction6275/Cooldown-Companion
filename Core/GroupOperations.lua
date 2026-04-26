@@ -1350,6 +1350,7 @@ function CooldownCompanion:RefreshAllGroups()
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
             self:UnloadGroup(groupId)
+            self:DeleteMasqueGroup(groupId, true)
             self:DiscardDormantFrame(groupId)
         end
     end
@@ -1397,6 +1398,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
             self:UnloadGroup(groupId)
+            self:DeleteMasqueGroup(groupId, true)
             self:DiscardDormantFrame(groupId)
         end
     end
