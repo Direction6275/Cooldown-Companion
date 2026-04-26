@@ -15,6 +15,7 @@ local wipe = wipe
 -- Some talent swaps briefly report pre-final spell charge state. Coalesce a
 -- delayed second pass so charge flags settle without duplicate refresh storms.
 local pendingTalentChargeRefreshToken = 0
+local pendingSpellAvailabilityRefreshToken = 0
 
 -- Coalesce rapid-fire ACTIONBAR_SLOT_CHANGED events (e.g. modifier-reactive
 -- macros changing many slots simultaneously) into a single rebuild pass.
@@ -31,6 +32,61 @@ local function QueueTalentChargeRefresh(addon)
         addon:RefreshAllGroups()
         addon:RefreshConfigPanel()
     end)
+end
+
+local function QueueSpellAvailabilitySettlingRefresh(addon)
+    pendingSpellAvailabilityRefreshToken = pendingSpellAvailabilityRefreshToken + 1
+    local token = pendingSpellAvailabilityRefreshToken
+    C_Timer.After(0.2, function()
+        if pendingSpellAvailabilityRefreshToken ~= token then return end
+        addon:RefreshSpellAvailabilityState({ skipSettlingRefresh = true })
+    end)
+end
+
+function CooldownCompanion:RefreshSpellAvailabilityState(opts)
+    opts = opts or {}
+    self:CachePlayerState()
+    self:CacheCurrentSpec()
+    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
+    self:RebuildTalentNodeCache()
+    if opts.refreshAllChargeTypes then
+        self:RefreshChargeFlags()
+    else
+        self:RefreshChargeFlags("spell")
+    end
+    self:RefreshAllGroupsForSpellAvailability()
+    self:RefreshConfigPanel()
+
+    if opts.applyResourceBars then
+        self:ApplyResourceBars()
+        self:UpdateAnchorStacking()
+    elseif opts.evaluateResourceBars then
+        self:EvaluateResourceBars()
+    end
+
+    if opts.rebuildViewerMap then
+        C_Timer.After(1, function()
+            self:BuildViewerAuraMap()
+        end)
+    end
+
+    if not opts.skipSettlingRefresh then
+        QueueSpellAvailabilitySettlingRefresh(self)
+    end
+end
+
+function CooldownCompanion:OnSpellAvailabilityChanged()
+    self:RefreshSpellAvailabilityState()
+end
+
+function CooldownCompanion:OnPlayerSpecializationChanged(event, unit)
+    if unit and unit ~= "player" then return end
+    self:OnSpecChanged()
+end
+
+function CooldownCompanion:OnSpellsChanged()
+    self:OnSpellUpdateIcon()
+    self:RefreshSpellAvailabilityState()
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
@@ -86,13 +142,10 @@ function CooldownCompanion:OnBagChanged()
 end
 
 function CooldownCompanion:OnTalentsChanged()
-    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
-    self:RebuildTalentNodeCache()
-    self:RefreshChargeFlags("spell")
-    self:RefreshAllGroups()
-    self:ApplyResourceBars()
-    self:UpdateAnchorStacking()
-    self:RefreshConfigPanel()
+    self:RefreshSpellAvailabilityState({
+        applyResourceBars = true,
+        skipSettlingRefresh = true,
+    })
     QueueTalentChargeRefresh(self)
 end
 
@@ -227,16 +280,11 @@ function CooldownCompanion:CacheCurrentSpec()
 end
 
 function CooldownCompanion:OnSpecChanged()
-    self:CacheCurrentSpec()
-    self:RebuildTalentNodeCache()
-    self:RefreshChargeFlags()
-    self:RefreshAllGroups()
-    self:EvaluateResourceBars()
-    self:RefreshConfigPanel()
-    -- Rebuild viewer map after a short delay to let the viewer re-populate
-    C_Timer.After(1, function()
-        self:BuildViewerAuraMap()
-    end)
+    self:RefreshSpellAvailabilityState({
+        evaluateResourceBars = true,
+        refreshAllChargeTypes = true,
+        rebuildViewerMap = true,
+    })
 end
 
 function CooldownCompanion:CachePlayerState()
@@ -264,9 +312,7 @@ function CooldownCompanion:CachePlayerState()
 end
 
 function CooldownCompanion:OnZoneChanged()
-    self:CachePlayerState()
-    self:RefreshAllGroupsVisibilityOnly()
-    self:RefreshConfigPanel()
+    self:RefreshSpellAvailabilityState()
 end
 
 function CooldownCompanion:OnRestingChanged()
@@ -305,13 +351,10 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
 end
 
 function CooldownCompanion:OnHeroTalentChanged()
-    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
-    self:RebuildTalentNodeCache()
-    self:RefreshChargeFlags("spell")
-    self:RefreshAllGroups()
-    self:ApplyResourceBars()
-    self:UpdateAnchorStacking()
-    self:RefreshConfigPanel()
+    self:RefreshSpellAvailabilityState({
+        applyResourceBars = true,
+        skipSettlingRefresh = true,
+    })
     QueueTalentChargeRefresh(self)
 end
 
@@ -327,7 +370,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
         if isFullInit then
             self:RefreshAllGroups()
         else
-            self:RefreshAllGroupsVisibilityOnly()
+            self:RefreshAllGroupsForSpellAvailability()
         end
         self:ApplyCdmAlpha()
         if isFullInit then
@@ -338,10 +381,12 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
         -- Delayed second pass: talent-dependent charge data (e.g. Hover,
         -- Keg Smash) may not be resolved when RefreshChargeFlags runs
         -- above.  A coalesced recheck catches late-loading talent state.
-        -- Only on full init — zone transitions use the visibility-only
-        -- fast path and must not schedule a full button repopulation.
+        -- Full init keeps the talent charge queue. Zone transitions get a
+        -- lighter settling pass that rebuilds only if button availability changed.
         if isFullInit then
             QueueTalentChargeRefresh(self)
+        else
+            QueueSpellAvailabilitySettlingRefresh(self)
         end
     end)
     -- Post-login sweep: clear buttons falsely stuck as aura-active from stale
