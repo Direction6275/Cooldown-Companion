@@ -1285,6 +1285,116 @@ function CooldownCompanion:IsButtonUsable(buttonData)
     return true
 end
 
+local function GetFrameForButtonSetComparison(addon, groupId)
+    local frame = addon.groupFrames and addon.groupFrames[groupId]
+    if frame then return frame end
+    return addon._dormantFrames and addon._dormantFrames[groupId] or nil
+end
+
+function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
+    local frame = GetFrameForButtonSetComparison(self, groupId)
+    if not frame or not frame.buttons then
+        return false
+    end
+    if not group.buttons then
+        return #frame.buttons > 0
+    end
+
+    local usableButtons = {}
+    local usableCount = 0
+    for _, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData) then
+            usableCount = usableCount + 1
+            usableButtons[usableCount] = buttonData
+        end
+    end
+
+    if #frame.buttons ~= usableCount then
+        return true
+    end
+
+    for i = 1, usableCount do
+        local button = frame.buttons[i]
+        if not button or button.buttonData ~= usableButtons[i] then
+            return true
+        end
+    end
+
+    return false
+end
+
+function CooldownCompanion:AnyGroupButtonSetNeedsRebuild()
+    if not self.db or not self.db.profile or not self.db.profile.groups then
+        return false
+    end
+
+    for groupId, group in pairs(self.db.profile.groups) do
+        if self:IsGroupVisibleToCurrentChar(groupId)
+            and self:IsGroupActive(groupId, {
+                group = group,
+                checkCharVisibility = false,
+                checkLoadConditions = true,
+                requireButtons = false,
+            })
+            and self:GroupButtonSetNeedsRebuild(groupId, group)
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
+function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
+    local function resetFrameButtons(frame)
+        if not frame or not frame.buttons then return end
+        for _, button in ipairs(frame.buttons) do
+            local buttonData = button.buttonData
+            if buttonData and buttonData.type == "spell" then
+                button._noCooldown = nil
+                button._displaySpellId = nil
+                button._lastSpellTexture = nil
+                button._iconDirty = true
+                button._cooldownDeferred = nil
+                button._durationObj = nil
+                button._chargeDurationObj = nil
+                button._chargeRecharging = nil
+                button._chargeState = nil
+                button._currentReadableCharges = nil
+                button._chargeCountReadable = nil
+                button._zeroChargesConfirmed = nil
+                button._displayCountZeroUsabilityFallback = nil
+            end
+        end
+    end
+
+    if self.groupFrames then
+        for _, frame in pairs(self.groupFrames) do
+            resetFrameButtons(frame)
+        end
+    end
+    if self._dormantFrames then
+        for _, frame in pairs(self._dormantFrames) do
+            resetFrameButtons(frame)
+        end
+    end
+
+    self._cooldownsDirty = true
+end
+
+function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
+    local needsFullRefresh = self:AnyGroupButtonSetNeedsRebuild()
+    self:ResetSpellAvailabilityButtonRuntime()
+
+    if needsFullRefresh then
+        self:RefreshAllGroups()
+    else
+        self:RefreshAllGroupsVisibilityOnly()
+    end
+
+    self:UpdateAllCooldowns()
+end
+
 function CooldownCompanion:CreateAllGroupFrames()
     for groupId, _ in pairs(self.db.profile.groups) do
         if self:IsGroupVisibleToCurrentChar(groupId) then
@@ -1425,6 +1535,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
             else
                 local frame = self.groupFrames[groupId]
                 if not frame then
+                    if self:GroupButtonSetNeedsRebuild(groupId, group) then
+                        self:DiscardDormantFrame(groupId)
+                    end
                     -- Recover dormant frame with buttons intact (no repopulation needed)
                     frame = self:RecoverDormantFrame(groupId)
                 end

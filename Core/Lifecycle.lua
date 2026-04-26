@@ -146,7 +146,7 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("SPELL_UPDATE_ICON", "OnSpellUpdateIcon")
     -- Spellbook rebuild — catches always-on talent transforms that resolve
     -- after init without firing SPELL_UPDATE_ICON (e.g. hero talent icon swaps).
-    self:RegisterEvent("SPELLS_CHANGED", "OnSpellUpdateIcon")
+    self:RegisterEvent("SPELLS_CHANGED", "OnSpellsChanged")
 
     -- Event-driven range checking (replaces per-tick IsSpellInRange polling)
     self:RegisterEvent("SPELL_RANGE_CHECK_UPDATE", "OnSpellRangeCheckUpdate")
@@ -156,12 +156,15 @@ function CooldownCompanion:OnEnable()
 
     -- Talent change events — refresh group frames and config panel
     self:RegisterEvent("TRAIT_CONFIG_UPDATED", "OnTalentsChanged")
+    self:RegisterEvent("PLAYER_PVP_TALENT_UPDATE", "OnSpellAvailabilityChanged")
+    self:RegisterEvent("WAR_MODE_STATUS_UPDATE", "OnSpellAvailabilityChanged")
 
     -- Pet summon/dismiss — show/hide pet spell buttons dynamically
     self:RegisterEvent("UNIT_PET", "OnPetChanged")
 
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
+    self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnPlayerSpecializationChanged")
     self:RegisterEvent("TRAIT_SUB_TREE_CHANGED", "OnHeroTalentChanged")
 
     -- Zone/instance change events — load condition evaluation
