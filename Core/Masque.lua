@@ -161,11 +161,14 @@ function CooldownCompanion:SetButtonBorderVisible(button, visible)
     end
 end
 
-function CooldownCompanion:ToggleGroupMasque(groupId, enable)
+function CooldownCompanion:ToggleGroupMasque(groupId, enable, previousMasqueEnabled)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
-    local wasMasqueEnabled = group.masqueEnabled == true
+    local wasMasqueEnabled = previousMasqueEnabled
+    if wasMasqueEnabled == nil then
+        wasMasqueEnabled = group.masqueEnabled == true
+    end
     group.masqueEnabled = enable
 
     if not self.Masque then return end

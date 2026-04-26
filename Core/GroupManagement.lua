@@ -482,7 +482,7 @@ function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
     -- Keep Masque's internal group/button lifecycle in sync when preset apply
     -- flips skinning state for icon groups.
     if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
-        self:ToggleGroupMasque(groupId, newMasqueEnabled)
+        self:ToggleGroupMasque(groupId, newMasqueEnabled, oldMasqueEnabled)
     end
 
     self:RefreshGroupFrame(groupId)
